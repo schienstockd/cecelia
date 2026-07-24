@@ -17,10 +17,10 @@ import skimage.restoration
 import skimage.morphology
 import skimage.filters
 from skimage.registration import phase_cross_correlation
-from tqdm import tqdm
 
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.slice_utils as slice_utils
+import cecelia.utils.intensity_utils as intensity_utils
 
 
 # ── Drift correction ──────────────────────────────────────────────────────────
@@ -194,197 +194,192 @@ def drift_correct_im(
 
 # ── Autofluorescence correction ───────────────────────────────────────────────
 
-def subtract_background(array, percentile_min=80):
-    if 0 not in array.shape:
-        subtract_val = np.percentile(array, percentile_min)
-        array[array < subtract_val] = subtract_val
-        array = array - subtract_val
-    return array
-
-
-def percentile(a, q=80, axis=0):
-    return np.percentile(a, q, axis=axis)
-
-
-def apply_denoise(data, dim_utils, denoise_fun='wavelet',
-                  denoise_params=None):
-    if denoise_params is None:
-        denoise_params = {'method': 'BayesShrink', 'mode': 'soft'}
-    slices = slice_utils.create_slices(data.shape, dim_utils)
-    for x in tqdm(slices):
-        chunk = np.squeeze(zarr_utils.fortify(data[x]))
-        if denoise_fun == 'tv':
-            result = skimage.restoration.denoise_tv_chambolle(
-                chunk,
-                weight=denoise_params.get('weight', 0.1),
-                channel_axis=None,
-            ) * np.iinfo(data.dtype).max
-        elif denoise_fun == 'wavelet':
-            result = skimage.restoration.denoise_wavelet(
-                chunk,
-                channel_axis=None,
-                convert2ycbcr=False,
-                method=denoise_params.get('method', 'BayesShrink'),
-                mode=denoise_params.get('mode', 'soft'),
-                rescale_sigma=True,
-            ) * np.iinfo(data.dtype).max
-        else:
-            continue
-
-        dims_diff = len(data[x].shape) - len(result.shape)
-        if dims_diff > 0:
-            result = np.expand_dims(result, axis=dim_utils.dim_idx('T'))
-        if dims_diff > 1:
-            result = np.expand_dims(result, axis=dim_utils.dim_idx('C'))
-        data[x] = result
-    return data
-
+# Per-FRAME spatial primitives (operate on one channel-frame slab: T=1, C=1, spatial). AF streams
+# per timepoint, so these replace the old whole-channel helpers that iterated dim_utils' global T
+# (which broke on a single-frame slab). Each squeezes to the spatial frame, applies the op, and
+# reshapes back to the slab shape.
 
 def non_zero_edges(im):
     true_points = np.argwhere(im)
     return {'tl': true_points.min(axis=0), 'br': true_points.max(axis=0)}
 
 
-def apply_2D_rolling_ball(im, slices, dim_utils, logfile_utils, radius=40, padding=4):
-    im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
-    edges = non_zero_edges(im_to_process)
-    crop_slices = (
-        slice(edges['tl'][0] + padding, edges['br'][0] - padding, 1),
-        slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1),
-    )
-    im[slices] = np.zeros_like(im[slices])
-    slices = list(slices)
-    slices[dim_utils.dim_idx('Y')] = crop_slices[0]
-    slices[dim_utils.dim_idx('X')] = crop_slices[1]
-    slices = tuple(slices)
-    im[slices] = (im_to_process[crop_slices]
-                  - skimage.restoration.rolling_ball(im_to_process[crop_slices], radius=radius))
+def _af_denoise_frame(slab, dtype, denoise_fun, denoise_params):
+    """Denoise one frame (tv / wavelet), rescaled to the dtype's max. Returns slab-shaped float."""
+    chunk = np.squeeze(slab)
+    if denoise_fun == 'tv':
+        r = skimage.restoration.denoise_tv_chambolle(
+            chunk, weight=denoise_params.get('weight', 0.1), channel_axis=None) * np.iinfo(dtype).max
+    elif denoise_fun == 'wavelet':
+        r = skimage.restoration.denoise_wavelet(
+            chunk, channel_axis=None, convert2ycbcr=False,
+            method=denoise_params.get('method', 'BayesShrink'),
+            mode=denoise_params.get('mode', 'soft'), rescale_sigma=True) * np.iinfo(dtype).max
+    else:
+        return slab
+    return r.reshape(slab.shape)
 
 
-def apply_3D_rolling_ball(im, slices, dim_utils, logfile_utils, radius=40, padding=4):
-    im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
-    edges = non_zero_edges(im_to_process)
-    crop_slices = (
-        slice(None),
-        slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1),
-        slice(edges['tl'][2] + padding, edges['br'][2] - padding, 1),
-    )
-    im[slices] = np.zeros_like(im[slices])
-    slices = list(slices)
-    slices[dim_utils.dim_idx('Y')] = crop_slices[1]
-    slices[dim_utils.dim_idx('X')] = crop_slices[2]
-    slices = tuple(slices)
-    im[slices] = (im_to_process[crop_slices]
-                  - skimage.restoration.rolling_ball(
-                      im_to_process[crop_slices],
-                      kernel=skimage.restoration.ellipsoid_kernel((1, radius, radius), 0.1)))
+def _af_rolling_ball_frame(slab, is_3d, radius, padding):
+    """Rolling-ball background subtraction on one frame (2D disk / 3D ellipsoid), cropped to the
+    non-zero interior with `padding` (zeros outside). Returns slab-shaped."""
+    im = np.squeeze(slab)
+    edges = non_zero_edges(im)
+    out = np.zeros_like(im)
+    if is_3d:
+        crop = (slice(None),
+                slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1),
+                slice(edges['tl'][2] + padding, edges['br'][2] - padding, 1))
+        out[crop] = im[crop] - skimage.restoration.rolling_ball(
+            im[crop], kernel=skimage.restoration.ellipsoid_kernel((1, radius, radius), 0.1))
+    else:
+        crop = (slice(edges['tl'][0] + padding, edges['br'][0] - padding, 1),
+                slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1))
+        out[crop] = im[crop] - skimage.restoration.rolling_ball(im[crop], radius=radius)
+    return out.reshape(slab.shape)
 
 
-def apply_rolling_ball(data, dim_utils, logfile_utils, radius=40, padding=4):
-    slices = slice_utils.create_slices(data.shape, dim_utils)
-    logfile_utils.log('>> Rolling ball subtraction')
-    for cur_slices in slices:
-        logfile_utils.log(f'> Slice: {cur_slices}')
-        if dim_utils.is_3D():
-            apply_3D_rolling_ball(data, cur_slices, dim_utils, logfile_utils, radius, padding)
-        else:
-            apply_2D_rolling_ball(data, cur_slices, dim_utils, logfile_utils, radius, padding)
-    return data
+def _af_top_hat_frame(slab, radius):
+    """White top-hat (background suppression) on one frame. Returns slab-shaped."""
+    im = np.squeeze(slab)
+    footprint = (np.ones((3, 2 * radius + 1, 2 * radius + 1)) if im.ndim >= 3
+                 else skimage.morphology.disk(radius))
+    return skimage.morphology.white_tophat(im, footprint=footprint).reshape(slab.shape)
 
 
-def apply_top_hat(data, dim_utils, radius=40):
-    """White top-hat (background suppression) per spatial slice."""
-    slices = slice_utils.create_slices(data.shape, dim_utils)
-    for x in tqdm(slices):
-        data_slice = np.squeeze(zarr_utils.fortify(data[x]))
-        if data_slice.ndim >= 3:
-            footprint = np.ones((3, 2 * radius + 1, 2 * radius + 1))
-        else:
-            footprint = skimage.morphology.disk(radius)
-        top_hat_result = skimage.morphology.white_tophat(data_slice, footprint=footprint)
+# ── Per-timepoint slab helpers (bounded AF — a whole channel-timecourse in float64 is what OOM'd) ──
 
-        dims_diff = len(data[x].shape) - len(top_hat_result.shape)
-        if dims_diff > 0:
-            top_hat_result = np.expand_dims(top_hat_result, axis=dim_utils.dim_idx('T'))
-        if dims_diff > 1:
-            top_hat_result = np.expand_dims(top_hat_result, axis=dim_utils.dim_idx('C'))
-        data[x] = top_hat_result
-    return data
+def _af_slab(data, dim_utils, channel_idx, t):
+    """One channel + one timepoint as numpy, full axis layout (T=1, C=1, spatial). The unit of AF
+    processing — bounded to a single frame regardless of movie length."""
+    sl = list(dim_utils.create_channel_slices(channel_idx))
+    if dim_utils.is_timeseries():
+        sl[dim_utils.dim_idx('T')] = slice(t, t + 1, 1)
+    return zarr_utils.fortify(data[tuple(sl)])
 
 
-def af_correct_channel(
-        data, channel_idx, correction_channel_idx, dim_utils,
-        channel_percentile=80, correction_percentile=40,
-        gaussian_sigma=1, apply_gaussian=True, use_dask=False,
-        correction_mode='divide', median_filter=0, generate_inverse=False,
-        summary_mode='maximum', summary_percentile=75,
-        correction_range=(1, 99)):
-    """Correct autofluorescence in one channel by division against reference channels."""
-    slices = dim_utils.create_channel_slices(channel_idx)
+def _af_write_slab(out, dim_utils, channel_idx, t, slab):
+    """Write one processed channel-frame into the on-disk (or numpy) output at (channel_idx, t)."""
+    sl = list(dim_utils.create_channel_slices(channel_idx))
+    if dim_utils.is_timeseries():
+        sl[dim_utils.dim_idx('T')] = slice(t, t + 1, 1)
+    out[tuple(sl)] = slab
 
-    # Materialise to numpy
-    channel_data = zarr_utils.fortify(data[slices])
 
-    # Build summary correction image from division channels
-    correction_parts = [
-        zarr_utils.fortify(data[dim_utils.create_channel_slices(x)])
-        for x in correction_channel_idx
-    ]
-    correction_stack = np.stack(correction_parts, axis=0)
+def _af_correction_slab(data, dim_utils, correction_channel_idx, t, summary_mode, summary_percentile):
+    """Summary correction image (max, or percentile, across the division channels) for one frame."""
+    stack = np.stack([_af_slab(data, dim_utils, x, t) for x in correction_channel_idx], axis=0)
     if summary_mode == 'percentile':
-        correction_im = np.percentile(correction_stack, summary_percentile, axis=0)
-    else:
-        correction_im = np.max(correction_stack, axis=0)
+        return np.percentile(stack, summary_percentile, axis=0)
+    return np.max(stack, axis=0)
 
-    # Background subtraction
-    cleaned_image      = subtract_background(channel_data.copy(),  percentile_min=channel_percentile) \
-                         if channel_percentile > 0 else channel_data.copy()
-    cleaned_correction = subtract_background(correction_im.copy(), percentile_min=correction_percentile) \
-                         if correction_percentile > 0 else correction_im.copy()
 
-    # AF correction
-    if correction_mode == 'divide':
-        corrected = (cleaned_image.astype(np.float64) + 1) / (cleaned_correction.astype(np.float64) + 1)
-        rescale   = np.iinfo(data.dtype).max if np.issubdtype(data.dtype, np.integer) else 255.0
-        c_min     = np.percentile(corrected.ravel(), correction_range[0])
-        c_max     = np.percentile(corrected.ravel(), correction_range[1])
-        corrected = ((corrected - c_min) / (c_max - c_min)) * rescale
-        corrected = np.clip(corrected, 0, rescale)
-    else:
-        corrected = cleaned_image.astype(np.float64)
+def _af_subtract(slab, subtract_val):
+    """Background subtraction with a GLOBAL subtract value; returns float. Same op as the old
+    subtract_background, but the percentile is computed once over the whole channel (streamed
+    histogram) and applied per frame. ``subtract_val`` None → no subtraction."""
+    f = slab.astype(np.float64)
+    if subtract_val is not None:
+        f[f < subtract_val] = subtract_val
+        f -= subtract_val
+    return f
 
-    inverse = None
-    if generate_inverse:
-        inverse = (cleaned_image.astype(np.float64) + 1) / (corrected + 1)
 
-    # Median filter with isotropic footprint (ball in 3D, disk in 2D)
-    if median_filter > 0:
-        if dim_utils.is_3D():
-            fp = skimage.morphology.ball(median_filter).astype(bool)
-        else:
-            fp = skimage.morphology.disk(median_filter).astype(bool)
-        # Expand leading non-spatial dims (T, C) to match array ndim
-        for _ in range(len(corrected.shape) - fp.ndim):
-            fp = np.expand_dims(fp, axis=0)
-        corrected = scipy.ndimage.median_filter(corrected, footprint=fp)
-        if inverse is not None:
-            inverse = scipy.ndimage.median_filter(inverse, footprint=fp)
-
-    # Gaussian filter
-    if apply_gaussian:
-        sigma = [0] * len(corrected.shape)
-        for d in dim_utils.spatial_axis():
-            sigma[dim_utils.dim_idx(d)] = gaussian_sigma
-        corrected = scipy.ndimage.gaussian_filter(corrected, sigma=sigma)
-        if inverse is not None:
-            inverse = scipy.ndimage.gaussian_filter(inverse, sigma=sigma)
-
+def _stream_division_channel(
+        data, out, dim_utils, channel_idx, out_ch, inv_ch, correction_channel_idx,
+        channel_percentile, correction_percentile, correction_mode, summary_mode, summary_percentile,
+        correction_range, median_filter, generate_inverse, gaussian_sigma, apply_gaussian,
+        rolling_ball_radius, rolling_ball_padding, top_hat_radius, logfile_utils):
+    """Divide-mode AF for one channel, streamed one timepoint at a time into ``out`` (peak memory =
+    one frame, not the whole channel). The three global-per-channel percentiles — channel background,
+    correction background, and the final rescale window — are gathered from streamed histograms; every
+    other op (subtract / divide / rescale / inverse / median / gaussian / rolling-ball / top-hat) is
+    frame-local. Result matches the old whole-channel path to within the histogram bin resolution.
+    See docs/todo/ZARR_STREAMING_PLAN.md (AF rework)."""
+    T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
     dt = data.dtype
-    corrected = corrected.astype(dt)
-    if inverse is not None:
-        inverse = inverse.astype(dt)
+    integer = np.issubdtype(dt, np.integer)
+    rescale = float(np.iinfo(dt).max) if integer else 255.0
+    nbins = (int(np.iinfo(dt).max) + 1) if integer else 256
+    hi = float(nbins)                     # corrected ratio is bounded by (0, maxval+1] = (0, nbins]
 
-    return corrected, inverse
+    sigma = [0] * len(data.shape)
+    for d in dim_utils.spatial_axis():
+        sigma[dim_utils.dim_idx(d)] = gaussian_sigma
+    fp = None
+    if median_filter > 0:
+        fp = (skimage.morphology.ball(median_filter) if dim_utils.is_3D()
+              else skimage.morphology.disk(median_filter)).astype(bool)
+
+    do_ch_sub, do_corr_sub = channel_percentile > 0, correction_percentile > 0
+
+    # Pass 1 — global background percentiles (integer histograms; exact bins for integer data)
+    H_ch, H_corr = np.zeros(nbins, np.int64), np.zeros(nbins, np.int64)
+    for t in range(T):
+        if do_ch_sub:
+            ch = _af_slab(data, dim_utils, channel_idx, t)
+            H_ch += np.bincount(np.clip(ch, 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
+        if do_corr_sub:
+            ci = _af_correction_slab(data, dim_utils, correction_channel_idx, t, summary_mode, summary_percentile)
+            H_corr += np.bincount(np.clip(np.rint(ci), 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
+    val1 = float(intensity_utils.hist_percentile(H_ch, channel_percentile)) if do_ch_sub else None
+    val2 = float(intensity_utils.hist_percentile(H_corr, correction_percentile)) if do_corr_sub else None
+
+    def _raw(t):
+        img = _af_subtract(_af_slab(data, dim_utils, channel_idx, t), val1)
+        corr = _af_subtract(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
+                                                summary_mode, summary_percentile), val2)
+        return img, (img + 1.0) / (corr + 1.0)
+
+    # Pass 2 — rescale window from the corrected-ratio distribution (divide mode only)
+    c_min, c_max = 0.0, 1.0
+    if correction_mode == 'divide':
+        Hc = np.zeros(nbins, np.int64)
+        for t in range(T):
+            _, corrected = _raw(t)
+            idx = np.clip(corrected / hi * (nbins - 1), 0, nbins - 1).astype(np.int64)
+            Hc += np.bincount(idx.ravel(), minlength=nbins)[:nbins]
+        c_min = intensity_utils.hist_percentile(Hc, correction_range[0]) / (nbins - 1) * hi
+        c_max = intensity_utils.hist_percentile(Hc, correction_range[1]) / (nbins - 1) * hi
+
+    # Pass 3 — apply + write per timepoint
+    for t in range(T):
+        img, corrected = _raw(t)
+        if correction_mode == 'divide':
+            denom = (c_max - c_min) if c_max > c_min else 1.0
+            corrected = np.clip((corrected - c_min) / denom * rescale, 0, rescale)
+        else:
+            corrected = img
+        inverse = (img + 1.0) / (corrected + 1.0) if (generate_inverse and inv_ch is not None) else None
+
+        if fp is not None:
+            f = fp
+            for _ in range(corrected.ndim - f.ndim):
+                f = np.expand_dims(f, axis=0)
+            corrected = scipy.ndimage.median_filter(corrected, footprint=f)
+            if inverse is not None:
+                inverse = scipy.ndimage.median_filter(inverse, footprint=f)
+        if apply_gaussian:
+            corrected = scipy.ndimage.gaussian_filter(corrected, sigma=sigma)
+            if inverse is not None:
+                inverse = scipy.ndimage.gaussian_filter(inverse, sigma=sigma)
+
+        # cast to the stored dtype BEFORE rolling ball / top hat (matches the old per-channel order,
+        # which cast the corrected channel to int before those spatial ops)
+        corrected = corrected.astype(out.dtype)
+        if inverse is not None:
+            inverse = inverse.astype(out.dtype)
+        is_3d = dim_utils.is_3D()
+        if rolling_ball_radius > 0:           # corrected only, per the old order
+            corrected = _af_rolling_ball_frame(corrected, is_3d, rolling_ball_radius, rolling_ball_padding)
+        if top_hat_radius > 0:                # both corrected and inverse
+            corrected = _af_top_hat_frame(corrected, top_hat_radius)
+            if inverse is not None:
+                inverse = _af_top_hat_frame(inverse, top_hat_radius)
+
+        _af_write_slab(out, dim_utils, out_ch, t, corrected)
+        if inverse is not None:
+            _af_write_slab(out, dim_utils, inv_ch, t, inverse)
 
 
 def _af_inverse_channels(af_combinations, dim_utils):
@@ -406,88 +401,50 @@ def af_correction_output_shape(input_array, dim_utils, af_combinations):
     return tuple(shape)
 
 
-def _af_process_channel(input_image, i, af_combinations, dim_utils, logfile_utils,
-                        sigma, gaussian_sigma, apply_gaussian, apply_gaussian_to_others,
-                        use_dask=False):
-    """Produce the corrected data (and optional inverse) for output channel ``i``, replicating the
-    exact operation order of the original whole-image path. Channels are independent — AF division
-    always reads the ORIGINAL ``input_image``, never another output channel — so each can be
-    computed and written on its own, which is what lets the caller stream channel-by-channel.
-    Returns ``(corrected_np, inverse_np_or_None)``."""
-    x = af_combinations.get(i)
-    ch_slice = dim_utils.create_channel_slices(i)
+def _stream_simple_channel(input_image, out, i, dim_utils, recipe, sigma,
+                           apply_gaussian_to_others, logfile_utils):
+    """Non-division output channel, streamed one timepoint at a time: optional denoise (per frame),
+    optional gaussian-to-others, then rolling ball / top hat — all frame-local. ``recipe`` is the
+    channel's af_combination entry, or None for a channel not covered by any combination."""
+    T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
+    dt = input_image.dtype
+    x = recipe or {}
+    denoise_fun = x.get('denoiseFun', 'NONE') if recipe is not None else 'NONE'
+    r = x.get('rollingBallRadius', 0) if recipe is not None else 0
+    th = x.get('topHatRadius', 0) if recipe is not None else 0
+    if denoise_fun == 'wavelet':
+        dp = {'method': x.get('waveletMethod', 'BayesShrink'), 'mode': x.get('waveletMode', 'soft')}
+    elif denoise_fun == 'tv':
+        dp = {'weight': x.get('tvWeight', 0.1)}
+    else:
+        dp = {}
 
-    if x is None:
-        # channel not covered by any combination
+    is_3d = dim_utils.is_3D()
+    for t in range(T):
+        base = _af_slab(input_image, dim_utils, i, t)
+        if denoise_fun != 'NONE':
+            base = _af_denoise_frame(base, dt, denoise_fun, dp).astype(dt)
         if apply_gaussian_to_others:
-            return scipy.ndimage.gaussian_filter(
-                zarr_utils.fortify(input_image[ch_slice]).astype(np.float64), sigma=sigma
-            ).astype(input_image.dtype), None
-        return zarr_utils.fortify(input_image[ch_slice]), None
-
-    inverse = None
-
-    # Denoise the channel's own data. NOTE: when division channels are present this result is
-    # overwritten below — af_correct_channel recomputes from the ORIGINAL input, not the denoised
-    # channel. Preserved verbatim from the original path (denoise only takes effect without division).
-    base = zarr_utils.fortify(input_image[ch_slice])
-    if x.get('denoiseFun', 'NONE') != 'NONE':
-        fn = x['denoiseFun']
-        if fn == 'wavelet':
-            dp = {'method': x.get('waveletMethod', 'BayesShrink'),
-                  'mode':   x.get('waveletMode',   'soft')}
-        elif fn == 'tv':
-            dp = {'weight': x.get('tvWeight', 0.1)}
-        else:
-            dp = {}
-        base = apply_denoise(base, dim_utils, fn, dp)
-
-    div_channels = x.get('divisionChannels', [])
-    if len(div_channels) > 0:
-        base, inverse = af_correct_channel(
-            input_image, i, div_channels, dim_utils=dim_utils,
-            channel_percentile    = x.get('channelPercentile',    80),
-            correction_percentile = x.get('correctionPercentile', 40),
-            correction_mode       = x.get('correctionMode',       'divide'),
-            summary_mode          = x.get('summaryMode',          'maximum'),
-            summary_percentile    = x.get('summaryPercentile',    75),
-            correction_range      = (x.get('correctionMin', 1),
-                                     x.get('correctionMax', 99)),
-            median_filter         = x.get('medianFilter', 0),
-            generate_inverse      = x.get('generateInverse', False),
-            gaussian_sigma        = gaussian_sigma,
-            apply_gaussian        = apply_gaussian,
-            use_dask              = use_dask,
-        )
-    elif apply_gaussian_to_others:
-        base = scipy.ndimage.gaussian_filter(
-            base.astype(np.float64), sigma=sigma).astype(input_image.dtype)
-
-    # Rolling ball (applied after correction, division or not)
-    r = x.get('rollingBallRadius', 0)
-    if r > 0:
-        base = apply_rolling_ball(base, dim_utils, logfile_utils, r, x.get('rollingBallPadding', 4))
-
-    # Top hat
-    th = x.get('topHatRadius', 0)
-    if th > 0:
-        base = apply_top_hat(base, dim_utils, th)
-        if inverse is not None:
-            inverse = apply_top_hat(inverse, dim_utils, th)
-
-    return base, inverse
+            base = scipy.ndimage.gaussian_filter(base.astype(np.float64), sigma=sigma).astype(dt)
+        if r > 0:
+            base = _af_rolling_ball_frame(base, is_3d, r, x.get('rollingBallPadding', 4))
+        if th > 0:
+            base = _af_top_hat_frame(base, th)
+        _af_write_slab(out, dim_utils, i, t, base.astype(out.dtype))
 
 
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                      gaussian_sigma=1, use_dask=False,
                      apply_gaussian=True, apply_gaussian_to_others=True, out=None):
-    """Correct autofluorescence for all channels.
+    """Correct autofluorescence for all channels, streamed ONE TIMEPOINT AT A TIME per channel.
 
-    Processes ONE CHANNEL AT A TIME (channels are independent — see ``_af_process_channel``). When
-    ``out`` is given (a pre-created on-disk zarr sized by ``af_correction_output_shape``), each
-    corrected/inverse channel is written straight to disk and freed, so the whole T×C×Z×Y×X image
-    never lives in RAM. When ``out`` is None the channels are concatenated and returned as a dask
-    array (legacy / small-image path). Both paths are byte-identical."""
+    Peak memory is a single channel-frame — casting a whole channel-timecourse to float64 (~47 GB on
+    a large movie) was the OOM. Division channels gather their three global-per-channel percentiles
+    (channel bg, correction bg, rescale window) from streamed histograms; every other op is
+    frame-local. When ``out`` is None a numpy array of the output shape is allocated and returned
+    (legacy / small-image path); production passes the on-disk zarr from
+    ``open_multiscales_for_writing`` (sized by ``af_correction_output_shape``). Output matches the
+    old whole-channel path to within the histogram bin resolution."""
     n_channels = dim_utils.dim_val('C')
     af_combinations = {int(i): x for i, x in af_combinations.items()}
 
@@ -495,37 +452,35 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     for d in dim_utils.spatial_axis():
         sigma[dim_utils.dim_idx(d)] = gaussian_sigma
 
-    # the writer owns byte order (zarr_utils.native_dtype): match the native `out` store when
-    # streaming; the out=None path returns source-order and create_multiscales makes it native.
-    out_dtype = out.dtype if out is not None else input_image.dtype
-
     # inverse channels are appended after the C corrected channels, in ascending channel order
     inverse_channels = _af_inverse_channels(af_combinations, dim_utils)
     inv_slot = {ch: n_channels + k for k, ch in enumerate(inverse_channels)}
 
-    output_parts  = []   # (legacy path) corrected channels, in channel order
-    inverse_parts = []   # (legacy path) inverse channels, in ascending channel order
+    if out is None:   # legacy/small: allocate the full output (compute still streams per frame)
+        out = np.zeros(af_correction_output_shape(input_image, dim_utils, af_combinations),
+                       dtype=zarr_utils.native_dtype(input_image.dtype))
 
     for i in range(n_channels):
-        corrected, inverse = _af_process_channel(
-            input_image, i, af_combinations, dim_utils, logfile_utils,
-            sigma, gaussian_sigma, apply_gaussian, apply_gaussian_to_others,
-            use_dask=use_dask)
-
-        if out is not None:
-            out[dim_utils.create_channel_slices(i)] = zarr_utils.fortify(corrected).astype(out_dtype)
-            if inverse is not None:
-                out[dim_utils.create_channel_slices(inv_slot[i])] = \
-                    zarr_utils.fortify(inverse).astype(out_dtype)
-            corrected = inverse = None   # free before the next channel
+        x = af_combinations.get(i)
+        div_channels = x.get('divisionChannels', []) if x is not None else []
+        if x is not None and len(div_channels) > 0:
+            _stream_division_channel(
+                input_image, out, dim_utils, channel_idx=i, out_ch=i, inv_ch=inv_slot.get(i),
+                correction_channel_idx = div_channels,
+                channel_percentile     = x.get('channelPercentile',    80),
+                correction_percentile  = x.get('correctionPercentile', 40),
+                correction_mode        = x.get('correctionMode',       'divide'),
+                summary_mode           = x.get('summaryMode',          'maximum'),
+                summary_percentile     = x.get('summaryPercentile',    75),
+                correction_range       = (x.get('correctionMin', 1), x.get('correctionMax', 99)),
+                median_filter          = x.get('medianFilter', 0),
+                generate_inverse       = x.get('generateInverse', False),
+                gaussian_sigma         = gaussian_sigma, apply_gaussian = apply_gaussian,
+                rolling_ball_radius    = x.get('rollingBallRadius', 0),
+                rolling_ball_padding   = x.get('rollingBallPadding', 4),
+                top_hat_radius         = x.get('topHatRadius', 0),
+                logfile_utils          = logfile_utils)
         else:
-            output_parts.append(zarr_utils.fortify(corrected))
-            if inverse is not None:
-                inverse_parts.append(zarr_utils.fortify(inverse))
-
-    if out is not None:
-        return out
-
-    output_np = np.concatenate(output_parts + inverse_parts, axis=dim_utils.dim_idx('C'))
-    output_np = output_np.astype(out_dtype)
-    return da.from_array(output_np, chunks='auto')
+            _stream_simple_channel(input_image, out, i, dim_utils, x, sigma,
+                                   apply_gaussian_to_others, logfile_utils)
+    return out

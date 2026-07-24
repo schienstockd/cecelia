@@ -98,7 +98,8 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
             def log(self, *_a, **_k):
                 pass
 
-        # reference: legacy in-RAM (dask) path
+        # AF now streams per frame in both cases; this pins that the on-disk (zarr) write matches the
+        # in-memory (numpy out=None) compute exactly.
         legacy = np.asarray(cu.af_correct_image(
             _src(), af_combinations, dim_utils=du, logfile_utils=_Log(),
             apply_gaussian=True, apply_gaussian_to_others=True, out=None))
@@ -126,6 +127,36 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
         combos = {"0": {"divisionChannels": [1], "correctionMode": "divide",
                         "generateInverse": True, "channelPercentile": 80,
                         "correctionPercentile": 40}}
+        self._run(du, combos)
+
+    def test_matches_prerework_golden_within_tolerance(self):
+        # The per-frame rework computes its global-per-channel percentiles from streamed histograms
+        # instead of exact np.percentile, so the output differs from the pre-rework whole-channel
+        # path by the histogram bin resolution. Pin that it stays within ~2% of the golden captured
+        # from that implementation — guards the AF method against a real drift/regression.
+        du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=17, size_x=13)
+        base = np.random.default_rng(7).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        combos = {"0": {"divisionChannels": [1], "correctionMode": "divide", "generateInverse": True,
+                        "channelPercentile": 80, "correctionPercentile": 40,
+                        "correctionMin": 1, "correctionMax": 99}}
+
+        class _Log:
+            def log(self, *_a, **_k):
+                pass
+
+        res = np.asarray(cu.af_correct_image(
+            da.from_array(base, chunks=base.shape), combos, dim_utils=du, logfile_utils=_Log(),
+            apply_gaussian=True, apply_gaussian_to_others=True, out=None))
+        GOLDEN_SUM = 3245484   # pre-rework whole-channel af_correct_image, same synthetic input
+        self.assertLess(abs(int(res.sum()) - GOLDEN_SUM) / GOLDEN_SUM, 0.02,
+                        f"AF output drifted from the golden method (sum={int(res.sum())})")
+
+    def test_divide_with_rolling_ball_and_top_hat(self):
+        # exercises the per-frame rolling-ball / top-hat primitives (streaming == in-memory)
+        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=20, size_x=16)
+        combos = {"0": {"divisionChannels": [1], "correctionMode": "divide",
+                        "channelPercentile": 80, "correctionPercentile": 40,
+                        "rollingBallRadius": 2, "rollingBallPadding": 2, "topHatRadius": 2}}
         self._run(du, combos)
 
     def test_denoise_only_channel_tv(self):
