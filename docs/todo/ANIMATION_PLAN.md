@@ -282,6 +282,35 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   `stores/animation.ts` (`titleCard`, default ON). `buildTitleCard` (title + channels? + populations +
   colour-by) is the ONE card-payload builder shared by single-record and the animation page.
 
+## Movie player (`/movies`) — DONE
+
+A simple in-app player for the movies the recorders produce (motivated by no dependable desktop
+player on the target machines). Standalone page `MoviesModule.vue` (sidebar → Analysis → **Movies**):
+lists the project's `.mp4`s under `{project}/movies/` (`GET /api/movies` → `{name,size,mtime}`,
+newest-first) and plays the selected one in a **native `<video>`** element — deliberately no player
+library. Playback **speed** (0.25–4×), **zoom** (1–8×), **autoplay-on-select** and **loop** persist
+globally in `stores/settings.ts` (`moviesPlaybackRate`/`moviesZoom`/`moviesAutoplay`/`moviesLoop`);
+`<video>` resets `playbackRate` on each new source, so it's re-applied on `loadedmetadata` (which also
+`.play()`s when autoplay is on, since the native attr only fires on first load).
+
+Zoom is **layout-based**, not a CSS transform: the video gets a concrete px box (fit-to-viewport ×
+zoom, from its intrinsic size + a `ResizeObserver` on the viewport), so a zoomed movie grows the
+layout and the `overflow:auto` viewport pans/scrolls to any edge (`margin:auto` centring avoids the
+flexbox overflow-clip bug). It's **cursor/centre-anchored** like the plot canvas (`useCanvasZoom`):
+**Shift + wheel** zooms to the cursor, **Shift +/−** and **Shift + 0** (reset) to the viewport centre,
+and the slider to the centre too — each changes the box then adjusts scroll via the pure, unit-tested
+`anchoredScroll` (`utils/movies.ts`) so the focal point stays put (fixing the "grows from the top-left
+corner" of a naive box resize).
+
+Seeking needs HTTP range: the server had none, so a **range-capable** serve route was added —
+`GET /api/movies/file?projectUid&name` in `try_serve_movie` (`server.jl`), at the **stream** level
+(it needs the socket for `206 Partial Content` partial writes, so it lives in `handle_stream`'s GET
+pre-router beside `try_serve_board_asset`, not the JSON router). `Accept-Ranges: bytes`; no `Range` →
+`200` full body, `Range: bytes=…` → `206` + `Content-Range` + only that slice, streamed in 64 KB
+chunks. `name` is validated to the sanitised `[A-Za-z0-9._-]+.mp4` the recorders write (blocks
+traversal). Pure helpers (`_parse_range`, `_valid_movie_name`; frontend `utils/movies.ts`) are unit
+tested (`api/test/runtests.jl`, `utils/movies.test.ts`).
+
 ## References
 
 - **R reference**: `old-R-shiny-version/vignettes/runAnimation.Rmd` — `generateMovies` (L28) +
