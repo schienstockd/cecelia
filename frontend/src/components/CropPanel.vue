@@ -11,6 +11,9 @@ import { cropBoxFromRect, fracRangeLabel, normalizeRange, type CropInfo, type No
 import RangeSlider from './RangeSlider.vue'
 
 const props = defineProps<{ projectUid: string; imageUid: string; imageName: string; valueName: string; setUid: string }>()
+// Emitted once the crop is DISPATCHED (not when it finishes) — the parent closes the dialog so the
+// user isn't left staring at a blocking-looking modal; the crop runs in the background (task console).
+const emit = defineEmits<{ (e: 'submitted'): void }>()
 
 const taskStore = useTaskStore()
 const ws        = useWsStore()
@@ -114,9 +117,10 @@ function save() {
     type: 'task:run', taskId: task.id, funName: 'editImages.cropImage', params,
     imageUid: props.imageUid, projectUid: props.projectUid, setUid: props.setUid, poolName: 'io',
   })
-  log.info('Cropping image → new image in the set (appears when the task finishes).', { source: 'crop' })
+  log.info('Cropping image → new image in the set (runs in the background; watch the task console).', { source: 'crop' })
   rect.value = null
-  setTimeout(() => { saving.value = false }, 1500)
+  saving.value = false
+  emit('submitted')   // close the dialog — the crop is now running in the background (task console)
 }
 </script>
 

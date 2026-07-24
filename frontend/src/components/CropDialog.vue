@@ -46,7 +46,8 @@ function defaultValueName(): string {
                :image-uid="image.uid"
                :image-name="image.name"
                :value-name="selectedValueName"
-               :set-uid="setUid" />
+               :set-uid="setUid"
+               @submitted="$emit('close')" />
   </BaseModal>
 </template>
 
