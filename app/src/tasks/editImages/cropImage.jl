@@ -1,5 +1,29 @@
 struct CropImage <: CciaTask end
 
+# Pure: derive the crop's inherited calibration meta from the SOURCE image's `meta` + the (half-open)
+# crop `box`. A crop keeps the same physical pixel size, channels and frame interval — only the extent
+# shrinks — so the physical scale/unit and channel count carry over unchanged; the Z/T counts shrink to
+# the box when that axis is trimmed (a `-1` bound means "keep the whole axis"). Kept out of `_run_task`
+# so it's unit-testable without a project/zarr on disk. See the crop-metadata note in `_run_task`.
+function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{String,Any}
+    out = Dict{String,Any}()
+    for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
+              "PhysicalSizeZ_raw", "TimeIncrement", "TimeIncrementUnit", "SizeC")
+        haskey(src_meta, k) && (out[k] = src_meta[k])
+    end
+    if box.z0 != -1 && box.z1 != -1
+        out["SizeZ"] = box.z1 - box.z0
+    elseif haskey(src_meta, "SizeZ")
+        out["SizeZ"] = src_meta["SizeZ"]
+    end
+    if box.t0 != -1 && box.t1 != -1
+        out["SizeT"] = box.t1 - box.t0
+    elseif haskey(src_meta, "SizeT")
+        out["SizeT"] = src_meta["SizeT"]
+    end
+    out
+end
+
 # Crop an image to a pixel bounding box and register the result as a NEW image in the same set (a crop
 # changes the extent, so it can't be a version of the source — it's a new image). The box (full-res
 # pixels, half-open) comes from the napari 3D-crop draw (bridge `crop_box`); z0/z1/t0/t1 are -1 when
@@ -42,13 +66,26 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     z0 = Int(get(params, "z0", -1)); z1 = Int(get(params, "z1", -1))
     t0 = Int(get(params, "t0", -1)); t1 = Int(get(params, "t1", -1))
 
+    # Inherit the source image's calibration onto the crop (SizeC/T/Z, PhysicalSize*, TimeIncrement).
+    # `read_ome_metadata` can't re-derive it here — it hardcodes the bioformats2raw nested `0/.zattrs`
+    # layout, but a crop is written FLAT by `create_multiscales` (multiscales at the ROOT `.zattrs`; see
+    # the OME-ZARR dual-format trap in CLAUDE.md) — so carry it from the source's ccid `meta`, the same
+    # source→crop pattern already used for `imChannelNames` below. Without this the crop's ccid had NO
+    # calibration, so the metadata dialog showed "—" and the strip timestamp had no Δt to draw.
+    src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    crop_meta = Dict{String,Any}(
+        "crop_source_uid"        => img.uid,
+        "crop_source_value_name" => value_name,
+        "crop_box" => Dict{String,Any}("x0"=>x0, "x1"=>x1, "y0"=>y0, "y1"=>y1,
+                                       "z0"=>z0, "z1"=>z1, "t0"=>t0, "t1"=>t1))
+    merge!(crop_meta, _crop_inherited_meta(src_meta, (; x0, x1, y0, y1, z0, z1, t0, t1)))
+    # provenance: a crop derives from the source's original file, so carry `ori_path` forward. Best-effort
+    # — images imported before source-path tracking have none, so the crop's dialog still reads "not
+    # recorded" (it inherits the source's gap rather than inventing one).
+    haskey(src_meta, "ori_path") && (crop_meta["ori_path"] = src_meta["ori_path"])
+
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
-    new_img = add_image!(s; name = "$(img.name) (cropped)", kind = img.kind,
-        meta = Dict{String,Any}(
-            "crop_source_uid"        => img.uid,
-            "crop_source_value_name" => value_name,
-            "crop_box" => Dict{String,Any}("x0"=>x0, "x1"=>x1, "y0"=>y0, "y1"=>y1,
-                                           "z0"=>z0, "z1"=>z1, "t0"=>t0, "t1"=>t1)))
+    new_img = add_image!(s; name = "$(img.name) (cropped)", kind = img.kind, meta = crop_meta)
 
     # per-task run subdirs (mirrors the import route) so downstream tasks have their homes on the new image
     task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())

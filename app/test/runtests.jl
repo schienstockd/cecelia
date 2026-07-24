@@ -861,6 +861,28 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                                           "z0" => 2, "z1" => 8, "t0" => -1, "t1" => -1)) === nothing
     end
 
+    @testset "CropImage inherits source calibration (pure helper)" begin
+        # A crop must carry the source's physical calibration onto the new image (else the metadata
+        # dialog shows "—" and the strip timestamp has no Δt) — see cropImage.jl.
+        src = Dict{String,Any}(
+            "SizeC" => 4, "SizeZ" => 20, "SizeT" => 181,
+            "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+            "PhysicalSizeUnit" => "micrometer", "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+            "ori_path" => "/should/not/carry")                       # non-calibration keys stay behind
+        # Z trimmed [2,8), T kept whole (-1) → SizeZ shrinks, SizeT & the scale/unit carry over unchanged
+        m = Cecelia._crop_inherited_meta(src, (; x0=0, x1=100, y0=0, y1=100, z0=2, z1=8, t0=-1, t1=-1))
+        @test m["SizeZ"] == 6                     # 8 - 2 (half-open)
+        @test m["SizeT"] == 181                   # axis kept → source count
+        @test m["SizeC"] == 4                     # channels invariant under crop
+        @test m["PhysicalSizeX"] == 0.33 && m["TimeIncrement"] == 15
+        @test m["TimeIncrementUnit"] == "second"
+        @test !haskey(m, "ori_path")              # only calibration is inherited
+        # T also trimmed [10,40); a source missing SizeZ → no SizeZ key invented
+        m2 = Cecelia._crop_inherited_meta(Dict{String,Any}("SizeC" => 2),
+                                          (; x0=0, x1=50, y0=0, y1=50, z0=-1, z1=-1, t0=10, t1=40))
+        @test m2["SizeT"] == 30 && m2["SizeC"] == 2 && !haskey(m2, "SizeZ")
+    end
+
     @testset "Custom module registry (drop-in tasks)" begin
         # A user drops a task by calling register_task! with an instance + a spec path; it must then
         # resolve through _task_from_fun_name / _spec_path / validate_params exactly like a built-in.
