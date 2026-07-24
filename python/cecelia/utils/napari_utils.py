@@ -420,17 +420,21 @@ def _visible_channel_legend(viewer):
 
 
 def _maybe_prepend_title(viewer, path, title_card):
-  """If a title card is enabled, prepend it to the just-recorded movie: build the Channels section from
-  the live viewer, prepend it to the Julia-assembled sections (colour-by, …), and composite via
-  ``cecelia.utils.title_card``. Best-effort — a failure logs and leaves the movie untouched; it never
-  fails the recording."""
+  """If a title card is enabled, prepend it to the just-recorded movie: add a Channels section read from
+  the live viewer (unless the payload ALREADY carries one — the animation page supplies a union across
+  all keyframes, which the single live view can't reconstruct), prepend it to the caller's sections
+  (populations / colour-by, …), and composite via ``cecelia.utils.title_card``. Best-effort — a failure
+  logs and leaves the movie untouched; it never fails the recording."""
   if not title_card or not title_card.get("enabled"):
     return
   try:
     from cecelia.utils import title_card as _tc
-    channels = _visible_channel_legend(viewer)
-    sections = ([{"heading": "Channels", "items": channels}] if channels else []) \
-        + list(title_card.get("sections") or [])
+    sections = list(title_card.get("sections") or [])
+    has_channels = any((s.get("heading") or "").strip().lower() == "channels" for s in sections)
+    if not has_channels:
+      channels = _visible_channel_legend(viewer)
+      if channels:
+        sections = [{"heading": "Channels", "items": channels}] + sections
     content = {"title": title_card.get("title", ""), "note": title_card.get("note", ""), "sections": sections}
     _tc.prepend_title_to_movie(path, content, duration_sec=float(title_card.get("durationSec", 3.0)))
   except Exception as e:
@@ -484,10 +488,8 @@ def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, title
     steps = 15 if i == 0 else max(1, int(kf.get("steps", 15)))   # first keyframe: no in-transition
     anim.capture_keyframe(steps=steps)
   anim.animate(path, fps=int(fps), canvas_only=canvas_only)
-  # Phase H4: the card reflects the FIRST keyframe (the frontend built its sections from it) — re-apply
-  # that view so _maybe_prepend_title reads the matching Channels from the viewer, then prepend.
-  if title_card and title_card.get("enabled"):
-    apply_view_state(viewer, keyframes[0].get("viewState") or {})
+  # Phase H4: the animation card carries its OWN Channels section (a union across all keyframes, built
+  # by the frontend), so _maybe_prepend_title uses that and does not read the live viewer here.
   _maybe_prepend_title(viewer, path, title_card)
   return sum(max(1, int(kf.get("steps", 15))) for kf in keyframes[1:]) + 1
 

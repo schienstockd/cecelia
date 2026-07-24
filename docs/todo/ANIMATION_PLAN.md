@@ -273,12 +273,14 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   server-side, since it has no live client snapshot). Movie panel gains a title toggle/duration/note
   row, persisted per set in `getMovieConfig().titleCard` (default ON).
 - **~~H4 — animation page~~ — DONE** (`AnimationModule.vue` → `record_keyframes`). Same live-view path
-  as single-record: the frontend builds the payload from the FIRST keyframe's snapshot via the SHARED
-  `buildTitleCard` (→ `captureViewLegend`) and sends it; `record_keyframes` re-applies keyframe 0
-  after `animate` so `_maybe_prepend_title` reads the matching Channels. Header gains a title
-  toggle/duration/note, persisted per project in `stores/animation.ts` (`titleCard`, default ON).
-  `buildTitleCard` (title + populations + colour-by) is now the ONE card-payload builder shared by
-  single-record and the animation page.
+  as single-record, but the card describes everything shown **at some point across the animation**: the
+  frontend merges all keyframes into a UNION snapshot (`unionViewSnapshot` — a layer is shown if visible
+  in any keyframe) and builds the payload from it via the SHARED `buildTitleCard` with
+  `includeChannels: true` (the recorder can't reconstruct the union from one live view, so the animation
+  card carries its own Channels section; `_maybe_prepend_title` skips the viewer read when a Channels
+  section is already present). Header gains a title toggle/duration/note, persisted per project in
+  `stores/animation.ts` (`titleCard`, default ON). `buildTitleCard` (title + channels? + populations +
+  colour-by) is the ONE card-payload builder shared by single-record and the animation page.
 
 ## References
 

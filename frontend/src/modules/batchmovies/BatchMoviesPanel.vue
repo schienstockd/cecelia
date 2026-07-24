@@ -303,21 +303,19 @@ async function previewOpen() {
 
       <!-- Title card (Phase H) — auto description slide prepended to each movie -->
       <section class="bm-sec">
-        <h4>
-          <label class="bm-title-toggle"><input type="checkbox" v-model="titleCardOn" /> Title card</label>
-          <span class="bm-sub">name, attributes, channels &amp; colours — prepended to each movie</span>
-        </h4>
-        <template v-if="titleCardOn">
-          <div class="bm-inset">
-            <span class="bm-lbl">duration</span>
-            <input type="range" min="1" max="10" step="1" v-model.number="titleDur" />
+        <div class="bm-title-row">
+          <label class="bm-title-toggle"
+                 v-tooltip.bottom="'Name, attributes, channels &amp; colours — prepended to each movie'">
+            <input type="checkbox" v-model="titleCardOn" /> Title card
+          </label>
+          <template v-if="titleCardOn">
+            <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="bm-title-range"
+                   v-tooltip.bottom="'Title-card duration (seconds)'" />
             <span class="bm-val">{{ titleDur }}s</span>
-          </div>
-          <div class="bm-attrs">
-            <span class="bm-lbl">note <span class="bm-sub">optional extra line</span></span>
-            <input type="text" class="bm-note" v-model="titleNote" placeholder="e.g. 15s intravital, day 3" />
-          </div>
-        </template>
+          </template>
+        </div>
+        <input v-if="titleCardOn" type="text" class="bm-note" v-model="titleNote"
+               placeholder="note (optional)" />
       </section>
 
       <!-- Actions -->
@@ -365,7 +363,9 @@ async function previewOpen() {
 .bm-preview { font-size: 0.76rem; color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.bm-note { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px;
+.bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
+.bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
+.bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
+.bm-note { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; margin-top: 5px;
   border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
 </style>
