@@ -92,6 +92,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## Frontend (`frontend/src/`)
 
+- **UX primitive catalog (check before building ANY control)**: `docs/UI.md` → *UX primitive catalog — CHECK BEFORE BUILDING* is the mandatory one-glance lookup for buttons / toggles / sliders / dialogs / popovers / tabs / chips / collapsibles / confirms. Use the canonical component; hand-rolling a variant is a bug (see `CLAUDE.md`). Unification status: `docs/todo/UX_PRIMITIVES_PLAN.md`.
 - **appControl store** (`stores/appControl.ts`): all app-lifecycle actions — `quit`, `checkUpdate`/`applyUpdate`, dev `restartBackend`/`switchWorktree`, setup state.
 - **ws store** (`stores/ws.ts`): THE WebSocket client (connect/reconnect/`send`/`on`/`off`); dispatches all `task:*`/`chain:*`/`napari:*`/`server:log` events.
 - **Domain stores** (`stores/`): `gating` (pop/gating, pop_type-agnostic), `project`/`projectMeta`, `settings`, `tasks`, `taskDefs`, `customModules` (user drop-in modules: status/reload + category list).

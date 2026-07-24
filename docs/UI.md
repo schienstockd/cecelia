@@ -5,6 +5,35 @@ The language-boundary and WS protocol are in `ARCHITECTURE.md`; this document is
 
 ---
 
+## UX primitive catalog — CHECK BEFORE BUILDING (mandatory)
+
+Before you render **any** of these controls, use the canonical component/utility below — **do not
+hand-roll a variant**. A new copy of a primitive that already has a canonical form is a bug (same rule
+as the H5AD/zarr/`run_py` single-helpers; see `CLAUDE.md` → *Before implementing anything*). This is
+the one glanceable lookup; each row links to its detailed section. Unification status for the few
+primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
+
+| Need | Use | Never |
+|------|-----|-------|
+| Button | `.cc-btn` + `-primary`/`-ghost`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
+| On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
+| Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
+| Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
+| Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
+| Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
+| Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
+| Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
+| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue` | a per-file chevron toggle |
+| Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
+| Range slider | `components/RangeSlider.vue` (dual-thumb) *(single-value `CcRange` in progress — see the tracker)* | a raw `<input type=range>` with bespoke label/value markup |
+| Status colour / severity | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
+
+If what you need isn't here and isn't obviously covered by an existing component, grep first
+(`INVENTORY.md` → *Frontend*); only build new if the search is genuinely empty, and then add it here +
+to `INVENTORY.md` in the same change.
+
+---
+
 ## Design tokens
 
 All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at the `<body>` level).
