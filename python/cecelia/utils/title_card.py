@@ -73,9 +73,50 @@ def title_frame_count(fps, duration_sec):
     return max(1, int(round(float(fps or 0) * float(duration_sec or 0))))
 
 
+def _fit_prefix(draw, s, font, max_w):
+    """Largest prefix length of `s` (>= 1) whose rendered width fits `max_w`."""
+    if draw.textlength(s, font=font) <= max_w:
+        return len(s)
+    lo, hi = 1, len(s)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if draw.textlength(s[:mid], font=font) <= max_w:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+def _wrap_lines(draw, text, font, max_w):
+    """Word-wrap `text` to fit `max_w`. A single word wider than the line (e.g. a long image name with
+    no spaces) is hard-broken — preferring a break just after a '-' or '_' within the fitting prefix, so
+    names like ``M1a-MERTK_KAT-…-res_0001`` split at separators rather than mid-token. Never ellipsises,
+    so the whole title is always shown."""
+    lines, cur = [], ""
+    for w in str(text).split():
+        trial = w if not cur else cur + " " + w
+        if draw.textlength(trial, font=font) <= max_w:
+            cur = trial
+            continue
+        if cur:
+            lines.append(cur)
+            cur = ""
+        while draw.textlength(w, font=font) > max_w:
+            n = _fit_prefix(draw, w, font, max_w)
+            sep = max(w.rfind("-", 0, n), w.rfind("_", 0, n))   # prefer a separator break
+            cut = sep + 1 if sep > 0 else n
+            lines.append(w[:cut])
+            w = w[cut:]
+        cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def render_card_frame(content, width, height):
-    """Render the title card once as an (H, W, 3) uint8 RGB array. Content that overflows the height
-    is clipped (movies are tall enough for the small legend in practice); long lines are ellipsised."""
+    """Render the title card once as an (H, W, 3) uint8 RGB array. The title word-wraps so the whole
+    image name shows; content that overflows the height is clipped (movies are tall enough for the
+    small legend in practice) and long legend labels are ellipsised."""
     width = max(2, int(width))
     height = max(2, int(height))
     img = Image.new("RGB", (width, height), _BG)
@@ -102,8 +143,10 @@ def render_card_frame(content, width, height):
 
     title = str(content.get("title") or "").strip()
     if title:
-        tf = _font(height * 0.06)
-        y += line(x, y, clip(title, tf), tf, _FG_TITLE) + int(height * 0.02)
+        tf = _font(height * 0.05)                     # a bit smaller so long image names fit
+        for ln in _wrap_lines(d, title, tf, max_w):   # wrap (never clip) so the whole name shows
+            y += line(x, y, ln, tf, _FG_TITLE)
+        y += int(height * 0.02)
 
     head_f = _font(height * 0.032)
     label_f = _font(height * 0.030)
