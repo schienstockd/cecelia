@@ -26,7 +26,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue` | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
-| Status colour / severity | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
+| QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
+| Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
 
 **Semantic role utilities** (global classes in `style.css` — *compose* them, add only layout in scoped CSS). These generalise recurring text/surface **scenarios** rather than a component per widget:
 

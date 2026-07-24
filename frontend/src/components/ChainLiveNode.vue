@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { TaskStatus } from '../stores/tasks'
+import { TASK_STATUS } from '../lib/taskStatus'
 
 const props = defineProps<{
   id: string
@@ -43,21 +44,8 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   cancelled: '#3f3f46',
 }
 
-const STATUS_TEXT: Record<TaskStatus, string> = {
-  queued:    '#a1a1aa',
-  running:   '#93c5fd',
-  done:      '#86efac',
-  failed:    '#fca5a5',
-  cancelled: '#71717a',
-}
-
-const STATUS_ICONS: Record<TaskStatus, string> = {
-  queued:    'pi-clock',
-  running:   'pi-spin pi-cog',
-  done:      'pi-check-circle',
-  failed:    'pi-times-circle',
-  cancelled: 'pi-ban',
-}
+// icon + text colour come from the canonical map (lib/taskStatus.ts); STATUS_COLORS above is this
+// node's own dark background tint (component chrome), kept separate.
 </script>
 
 <template>
@@ -68,9 +56,9 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
     <Handle type="source" :position="Position.Right" class="live-handle" :connectable="false" />
     <span v-if="data.restart === 'start'" class="restart-badge">resume from</span>
     <div class="live-status-bar" :style="{ background: STATUS_COLORS[data.status] }">
-      <i :class="['pi', STATUS_ICONS[data.status]]"
-         :style="{ color: STATUS_TEXT[data.status] }" />
-      <span class="live-status-label" :style="{ color: STATUS_TEXT[data.status] }">
+      <i :class="['pi', TASK_STATUS[data.status].icon]"
+         :style="{ color: TASK_STATUS[data.status].color }" />
+      <span class="live-status-label" :style="{ color: TASK_STATUS[data.status].color }">
         {{ data.status }}
       </span>
       <span v-if="elapsed" class="live-elapsed">{{ elapsed }}</span>
