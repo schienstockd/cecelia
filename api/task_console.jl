@@ -3,7 +3,8 @@
 # Connects to the running API server's WebSocket (/ws) for the live
 # task:* / chain:* event stream, and polls GET /api/tasks for the in-flight
 # snapshot (which fills in fun_name / image / pool that the WS stream alone
-# doesn't carry). REPORTING ONLY — it never sends task:run / task:cancel /
+# doesn't carry) plus GET /api/pools for live per-pool occupancy (limit vs
+# running + queued). REPORTING ONLY — it never sends task:run / task:cancel /
 # chain:* control messages, so it is safe to run alongside the GUI.
 #
 #   pixi run console                 # live dashboard (default; needs a TTY)
@@ -66,6 +67,19 @@ const MAX_LOGS   = 500
 # a task being re-counted / re-added (by a late WS event or the snapshot poll) once it has finished.
 const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0)
 const SEEN_TERM  = Set{String}()
+
+# Live resource-pool occupancy (polled from GET /api/pools): per pool, its configured concurrency
+# `limit`, how many slots are `running` now, and how many tasks are `queued` for it. Rendered as a
+# small panel so you can see at a glance how much of each pool (cpu/gpu/io/network) is in use.
+mutable struct PoolView
+    name::String
+    limit::Int
+    running::Int
+    queued::Int
+end
+const POOLS      = PoolView[]
+const POOL_ORDER = Dict("cpu" => 1, "gpu" => 2, "io" => 3, "network" => 4)   # canonical display order
+_poolsort(p) = (get(POOL_ORDER, p.name, 99), p.name)
 
 now_hms() = Dates.format(Dates.now(), "HH:MM:SS")
 # Display only the id TAIL — task ids are full UUIDs; 6 chars is plenty to eyeball-correlate a handful
@@ -130,6 +144,24 @@ function refresh_snapshot!()
         return true
     catch
         return false   # server not up yet / transient — the caller shows connection state
+    end
+end
+
+# ── Pool occupancy snapshot (GET /api/pools → limit + running + queued per pool) ──
+function refresh_pools!()
+    try
+        r = HTTP.get("$HTTP_BASE/api/pools"; connect_timeout=2, readtimeout=3, retry=false)
+        rows = JSON3.read(String(r.body))
+        lock(LOCK) do
+            empty!(POOLS)
+            for row in rows
+                push!(POOLS, PoolView(String(get(row, :name, "")), Int(get(row, :limit, 0)),
+                                      Int(get(row, :running, 0)), Int(get(row, :queued, 0))))
+            end
+        end
+        return true
+    catch
+        return false
     end
 end
 
@@ -220,7 +252,8 @@ function render()
     # per-pane minimum can push content past the window (the earlier bug: min-6 logs + min-3 activity
     # overran a short terminal and shoved the header off the top).
     haveLogs  = !isempty(LOGS)
-    content   = max(4, rows - 9 - (haveLogs ? 1 : 0))
+    havePools = !isempty(POOLS)
+    content   = max(4, rows - 9 - (haveLogs ? 1 : 0) - (havePools ? 1 : 0))
     logCap    = haveLogs ? clamp(content ÷ 3, 1, 6) : 0
     evtCap    = clamp(content ÷ 4, 1, 4)
     tableRoom = max(2, content - logCap - evtCap)
@@ -235,7 +268,19 @@ function render()
           col(DIM, " · "), col(GREEN, "$(TALLY["done"]) done"),
           col(DIM, " · "), col(RED, "$(TALLY["failed"]) failed"),
           TALLY["cancelled"] > 0 ? string(col(DIM, " · "), col(MAGENTA, "$(TALLY["cancelled"]) cancelled")) : "",
-          "\n\n")
+          "\n")
+
+    # pools panel — configured concurrency limit vs slots in use now (+ any queued) for each pool.
+    # Running count coloured (cyan when busy, dim when idle); queued shown in yellow when non-zero.
+    if havePools
+        parts = map(sort(POOLS, by = _poolsort)) do p
+            string(col(BOLD, p.name), " ",
+                   col(p.running > 0 ? CYAN : DIM, "$(p.running)/$(p.limit)"),
+                   p.queued > 0 ? col(YELLOW, " +$(p.queued)q") : "")
+        end
+        print(io, col(DIM, "pools  "), join(parts, col(DIM, "   ")), "\n")
+    end
+    print(io, "\n")
 
     # active task table
     if isempty(tasks)
@@ -298,14 +343,14 @@ function run_console()
                 # set are gone, so drop our stale view and re-seed from the fresh snapshot. Otherwise
                 # tasks from the previous server session would linger forever (we only ever add rows).
                 lock(LOCK) do
-                    empty!(TASKS); empty!(EVENTS); empty!(LOGS); empty!(SEEN_TERM)
+                    empty!(TASKS); empty!(EVENTS); empty!(LOGS); empty!(SEEN_TERM); empty!(POOLS)
                     for k in keys(TALLY); TALLY[k] = 0; end
                 end
                 # seed the snapshot, then keep it fresh + keep the socket alive
-                refresh_snapshot!()
+                refresh_snapshot!(); STREAM_MODE || refresh_pools!()
                 STREAM_MODE || render()
                 @async while connected[]
-                    try sleep(2); refresh_snapshot!(); STREAM_MODE || render() catch end
+                    try sleep(2); refresh_snapshot!(); STREAM_MODE || refresh_pools!(); STREAM_MODE || render() catch end
                 end
                 @async while connected[]
                     try sleep(20); HTTP.WebSockets.send(ws, "{\"type\":\"ping\"}") catch end

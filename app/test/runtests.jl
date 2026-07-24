@@ -896,6 +896,22 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    @testset "Pool status snapshot (pool_status)" begin
+        # pool_status() joins the pool registry (limit + in-flight slots) with the task registry
+        # (queued count). With no tasks in flight during the test, running/queued are 0 and the
+        # limit reflects the live pool budget.
+        resize_pool!("cpu", 7)
+        st = pool_status()
+        cpu = only(filter(p -> p.name == "cpu", st))
+        @test cpu.limit   == 7          # live budget
+        @test cpu.running == 0          # nothing executing in the test
+        @test cpu.queued  == 0          # nothing queued
+        # every configured pool is present with the same field set the UI consumes
+        @test Set(keys(cpu)) == Set((:name, :limit, :running, :queued))
+        @test Set(p.name for p in st) == Set(p.name for p in list_pools())
+        resize_pool!("cpu", 20)         # restore default so later tests are unaffected
+    end
+
     @testset "Custom module reload prunes deleted files" begin
         # load a module from a temp config dir, then delete its .jl and reload → the task must be
         # unregistered (no longer dispatchable) and dropped from the load report. Regression: the

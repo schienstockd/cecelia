@@ -96,6 +96,14 @@ the original "all GPU tasks run at once" bug). Add the pool to config to silence
 register `slow_pool`/`par_pool` this way). `list_pools()` returns `[(; name, limit)]` for every
 initialized pool, exposed via `GET /api/pools` and shown in the pool dropdowns.
 
+`pool_status()` returns `[(; name, limit, running, queued)]` — the same pools plus **live
+occupancy**: `running` = `in_flight` (slots currently executing) read from `_POOLS`, `queued` =
+tasks assigned to that pool sitting in `_TASKS` at status `:queued`. The two snapshots are taken
+under their own locks (`_POOLS_LOCK`, `_TASKS_LOCK`) and merged outside both — never nest them.
+This is what `GET /api/pools` actually serves; the `PoolThrottle` popover polls it (~1.5 s) to show
+a "running / limit" readout + bar under each slider. There is no `pool:*` WS event — occupancy is
+poll-only.
+
 **Slot-acquire model — concurrency is a resizable slot budget, not a worker count.** Each pool has a
 fixed `queue`, a mutable `limit` (= max concurrent jobs), a live `in_flight` count, and a
 `Threads.Condition`. A single **dispatcher** task per pool pulls each job, calls `_acquire_slot!`

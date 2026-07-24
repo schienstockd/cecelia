@@ -102,7 +102,8 @@ Long jobs — segmentation, tracking, and whole **chain runs** — are handled b
 Alongside the in-app view, you can watch them from a terminal with a live, **read-only** dashboard:
 which tasks are running, their progress, how many are queued, and how many have finished. It only
 *reads* the running Cecelia (it never starts or cancels anything), so it's safe to leave open next to
-the app.
+the app. It also shows a **pools** line — how many concurrent slots each resource pool (cpu/gpu/io/
+network) allows and how many are in use right now — so you can see what's saturated at a glance.
 
 With Cecelia running, from the install directory:
 

@@ -327,8 +327,10 @@ end
 
 # ── Resource pools ───────────────────────────────────────────────────────────
 
+# Each pool as {name, limit, running, queued} — the throttle sliders use `limit`, the occupancy
+# readout uses `running`/`queued`. Poll this for a live view (there is no pool:* WS event).
 function api_pools_list(_req)
-    pools = sort(list_pools(), by=p->p.name)
+    pools = sort(pool_status(), by=p->p.name)
     200, JSON3.write(pools)
 end
 
