@@ -47,6 +47,14 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariDiscreteGpu') === 'true'  // default false
   )
 
+  // Movie player (/movies) viewing prefs — playback speed, zoom, autoplay-on-select, loop. Persisted
+  // globally (not per-set): they're a viewing preference, not a project attribute, and the player is a
+  // project-agnostic page.
+  const moviesPlaybackRate = ref(Number(localStorage.getItem('cc.moviesPlaybackRate') ?? '1') || 1)
+  const moviesZoom = ref(Number(localStorage.getItem('cc.moviesZoom') ?? '1') || 1)
+  const moviesAutoplay = ref(localStorage.getItem('cc.moviesAutoplay') !== 'false')   // default true
+  const moviesLoop = ref(localStorage.getItem('cc.moviesLoop') === 'true')            // default false
+
   // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
   // to free up working space. Both default expanded, both persist across sessions.
   const sidebarCollapsed = ref(localStorage.getItem('cc.sidebarCollapsed') === 'true')
@@ -222,6 +230,10 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
+  watch(moviesPlaybackRate,       v => localStorage.setItem('cc.moviesPlaybackRate',       String(v)))
+  watch(moviesZoom,               v => localStorage.setItem('cc.moviesZoom',               String(v)))
+  watch(moviesAutoplay,           v => localStorage.setItem('cc.moviesAutoplay',           String(v)))
+  watch(moviesLoop,               v => localStorage.setItem('cc.moviesLoop',               String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
@@ -233,5 +245,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

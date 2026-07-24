@@ -12,6 +12,35 @@ _settings_dir_for_project(project_uid::String) = joinpath(projects_dir(), projec
 _board_assets_dir(project_uid::String) = joinpath(_settings_dir_for_project(project_uid), "board-assets")
 _valid_asset_id(id::AbstractString) = occursin(r"^[A-Za-z0-9_-]+$", id)   # guard against path traversal
 
+# Rendered movies (single-image / animation / batch recordings) live under {proj}/movies/ as .mp4.
+# The movie player (/movies page) lists and streams them from here. This mirrors `_movies_dir(img)`
+# in napari_api.jl — {proj}/movies == projects_dir()/<uid>/movies — but keyed by project uid (no image
+# needed just to list). Filenames are sanitised at write time to [A-Za-z0-9._-] (see _movie_basename /
+# _movie_named_path), so this guard both validates and blocks path traversal.
+_movies_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_uid, "movies")
+_valid_movie_name(name::AbstractString) = occursin(r"^[A-Za-z0-9._-]+\.mp4$", name)
+
+# GET /api/movies?projectUid=… → { movies: [{name, size, mtime}] } sorted newest-first. Lists the
+# project's rendered .mp4s for the player playlist; the bytes are streamed separately (range-served) by
+# try_serve_movie in server.jl. Empty list (not 404) when the movies dir doesn't exist yet.
+function api_movies_list(req::HTTP.Request)
+    query = HTTP.queryparams(HTTP.URI(req.target))
+    uid   = get(query, "projectUid", "")
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
+    dir = _movies_dir_for_project(uid)
+    movies = NamedTuple[]
+    if isdir(dir)
+        for name in readdir(dir)
+            (endswith(lowercase(name), ".mp4") && isfile(joinpath(dir, name))) || continue
+            f = joinpath(dir, name)
+            push!(movies, (; name, size=filesize(f), mtime=mtime(f)))
+        end
+        sort!(movies; by = m -> m.mtime, rev = true)
+    end
+    200, JSON3.write((; movies))
+end
+
 # Copy a captured PNG (temp file) into settings/board-assets/<id>.png; returns the new asset id.
 function _save_board_asset_file(project_uid::String, src_png::String)::String
     dir = _board_assets_dir(project_uid); mkpath(dir)

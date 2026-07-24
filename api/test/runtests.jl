@@ -1195,3 +1195,25 @@ end
     @test st2 == 400
     rm(tmp; recursive=true)
 end
+
+@testset "API: movie range parsing + name guard" begin
+    # _parse_range → inclusive (start, stop) clamped to the file, or nothing if unsatisfiable.
+    @test _parse_range("bytes=0-99", 1000) == (0, 99)
+    @test _parse_range("bytes=500-", 1000) == (500, 999)     # open-ended → to EOF
+    @test _parse_range("bytes=0-", 1000)   == (0, 999)
+    @test _parse_range("bytes=-100", 1000) == (900, 999)     # suffix: last 100 bytes
+    @test _parse_range("bytes=990-100000", 1000) == (990, 999)  # end clamped to file
+    @test _parse_range("", 1000)           === nothing       # no header
+    @test _parse_range("bytes=1000-1100", 1000) === nothing  # start past EOF → unsatisfiable
+    @test _parse_range("bytes=50-10", 1000) === nothing      # stop < start
+    @test _parse_range("bytes=-0", 1000)   === nothing       # zero-length suffix
+    @test _parse_range("bogus", 1000)      === nothing
+
+    # _valid_movie_name accepts the sanitised names the recorders write; blocks traversal/other types.
+    @test _valid_movie_name("myImage_animation.mp4")
+    @test _valid_movie_name("A1_B2_x0f2Kd.mp4")
+    @test !_valid_movie_name("../secret.mp4")
+    @test !_valid_movie_name("movie.mp4/../../etc")
+    @test !_valid_movie_name("note.txt")
+    @test !_valid_movie_name("has space.mp4")
+end

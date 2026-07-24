@@ -35,6 +35,7 @@ const router = createRouter({
     { path: '/notebooks', component: () => import('./modules/NotebooksModule.vue'),     meta: { label: 'Notebooks' } },
     { path: '/animation', component: () => import('./modules/AnimationModule.vue'),     meta: { label: 'Animation' } },
     { path: '/batch-movies', component: () => import('./modules/BatchMoviesModule.vue'), meta: { label: 'Batch movies' } },
+    { path: '/movies',    component: () => import('./modules/MoviesModule.vue'),        meta: { label: 'Movies' } },
     { path: '/tasks',     component: () => import('./modules/TasksModule.vue'),         meta: { label: 'Tasks' } },
     { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Whiteboard' } },
     // Generic page for a user custom-module category with no built-in page (docs/CUSTOM_MODULES.md).

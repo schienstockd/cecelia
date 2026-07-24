@@ -305,6 +305,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_motion_dims(req)
         elseif path == "/api/storage/summary"
             api_storage_summary(req)
+        elseif path == "/api/movies"
+            api_movies_list(req)
         else
             404, JSON3.write((; error="Not found: $path"))
         end
@@ -582,6 +584,75 @@ function try_serve_board_asset(stream::HTTP.Stream, target::AbstractString)::Boo
     true
 end
 
+# Copy `n` bytes from `io` to the response stream in bounded chunks — never slurp a whole movie (or a
+# large range slice) into memory just to hand it to the socket.
+function _stream_file!(stream::HTTP.Stream, io::IO, n::Integer)
+    remaining = Int(n)
+    buf = Vector{UInt8}(undef, 64 * 1024)
+    while remaining > 0 && !eof(io)
+        nread = readbytes!(io, buf, min(length(buf), remaining))
+        nread == 0 && break
+        write(stream, view(buf, 1:nread))
+        remaining -= nread
+    end
+end
+
+# Parse an HTTP `Range` header value into inclusive (start, stop) byte offsets clamped to the file, or
+# `nothing` if absent/unsatisfiable. Handles the forms a <video> element sends: "bytes=START-" (open
+# ended), "bytes=START-END", and "bytes=-SUFFIX" (last N bytes). Single range only (all browsers do).
+function _parse_range(header::AbstractString, total::Integer)
+    m = match(r"^bytes=(\d*)-(\d*)$", strip(header))
+    m === nothing && return nothing
+    s, e = m.captures[1], m.captures[2]
+    if isempty(s)                          # suffix form: last `e` bytes
+        (isempty(e) || total == 0) && return nothing
+        n = parse(Int, e)
+        n <= 0 && return nothing
+        return (max(0, total - n), total - 1)
+    end
+    start = parse(Int, s)
+    start >= total && return nothing       # unsatisfiable → caller falls back to 200
+    stop = isempty(e) ? total - 1 : min(parse(Int, e), total - 1)
+    stop < start && return nothing
+    (start, stop)
+end
+
+# Serve a rendered project movie as video/mp4 for the /movies player, honouring HTTP Range so seeking
+# works. GET /api/movies/file?projectUid=…&name=….mp4 — no Range → 200 full body; a Range → 206 with
+# Content-Range and only that slice. This is the server's ONLY range-capable route, and a <video>
+# element issues Range requests in every browser, so this is what makes scrubbing work at all. Streamed
+# in chunks (never buffers the whole file). Returns true iff it wrote a response.
+function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
+    q = HTTP.queryparams(HTTP.URI(target))
+    uid = get(q, "projectUid", ""); name = get(q, "name", "")
+    (isempty(uid) || !_valid_movie_name(name)) && return false
+    f = joinpath(_movies_dir_for_project(String(uid)), String(name))
+    isfile(f) || return false
+    total = filesize(f)
+    rng = _parse_range(HTTP.header(stream.message, "Range", ""), total)
+
+    HTTP.setheader(stream, "Content-Type"                => "video/mp4")
+    HTTP.setheader(stream, "Accept-Ranges"               => "bytes")
+    HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
+    if rng === nothing
+        HTTP.setheader(stream, "Content-Length" => string(total))
+        HTTP.setstatus(stream, 200)
+        HTTP.startwrite(stream)
+        open(io -> _stream_file!(stream, io, total), f)
+    else
+        start, stop = rng
+        HTTP.setheader(stream, "Content-Range"  => "bytes $start-$stop/$total")
+        HTTP.setheader(stream, "Content-Length" => string(stop - start + 1))
+        HTTP.setstatus(stream, 206)
+        HTTP.startwrite(stream)
+        open(f) do io
+            seek(io, start)
+            _stream_file!(stream, io, stop - start + 1)
+        end
+    end
+    true
+end
+
 # ── Mixed HTTP + WebSocket stream handler ─────────────────────────────────────
 
 function handle_stream(stream::HTTP.Stream)
@@ -607,6 +678,8 @@ function handle_stream(stream::HTTP.Stream)
         spath = split(HTTP.URI(req.target).path, '?')[1]
         if spath == "/api/board-assets"
             try_serve_board_asset(stream, req.target) && return   # else falls through → 404 below
+        elseif spath == "/api/movies/file"
+            try_serve_movie(stream, req.target) && return         # range-served mp4; else → 404 below
         elseif !startswith(spath, "/api/") && spath != "/ws"
             try_serve_static(stream, spath) && return
         end
