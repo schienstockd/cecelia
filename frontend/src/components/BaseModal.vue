@@ -25,13 +25,20 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 
 const boxStyle = computed(() => ({ width: props.width, ...(props.height ? { height: props.height } : {}) }))
 
+// Close on overlay click ONLY when the press *started* on the overlay — otherwise a drag that
+// begins inside the dialog (e.g. dragging a slider) and releases over the overlay fires a `click`
+// whose target is the overlay, closing the dialog mid-drag. Track the mousedown origin to guard it.
+let pressedOnOverlay = false
+function onOverlayMouseDown(e: MouseEvent) { pressedOnOverlay = e.target === e.currentTarget }
+function onOverlayClick() { if (pressedOnOverlay) emit('close'); pressedOnOverlay = false }
+
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('close') }
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="cc-modal-overlay" @click.self="emit('close')">
+  <div class="cc-modal-overlay" @mousedown="onOverlayMouseDown" @click.self="onOverlayClick">
     <div class="cc-modal" :style="boxStyle">
       <div class="cc-modal-header">
         <span class="cc-modal-title">
