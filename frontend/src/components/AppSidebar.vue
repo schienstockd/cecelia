@@ -161,33 +161,37 @@ function isNavDisabled(item: NavItem): boolean {
       </template>
     </div>
 
-    <!-- ── Navigation groups ───────────────────────────────────────────── -->
-    <template v-for="group in allGroups" :key="group.heading">
-      <button class="group-heading" @click="toggleGroup(group.heading)">
-        <span>{{ group.heading }}</span>
-        <i :class="['pi', isOpen(group.heading) ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
-      </button>
+    <!-- ── Navigation groups ───────────────────────────────────────────────
+         ONLY this region scrolls (flex:1 + overflow). The project block above and the viewer/lab-log
+         CTAs + footer below stay pinned, so a long menu never pushes them out of reach. -->
+    <div class="nav-scroll">
+      <template v-for="group in allGroups" :key="group.heading">
+        <button class="group-heading" @click="toggleGroup(group.heading)">
+          <span>{{ group.heading }}</span>
+          <i :class="['pi', isOpen(group.heading) ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
+        </button>
 
-      <template v-if="isOpen(group.heading)">
-        <RouterLink
-          v-for="item in group.items"
-          :key="item.to"
-          :to="isNavDisabled(item) ? '' : item.to"
-          class="nav-item"
-          :class="{ disabled: isNavDisabled(item) }"
-          v-tooltip.right="navTip(item)"
-          :aria-disabled="isNavDisabled(item)"
-        >
-          <i :class="['pi', item.icon, 'nav-icon']" />
-          <span class="nav-label">{{ item.label }}</span>
-          <span v-if="item.soon" class="soon-badge">soon</span>
-          <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge"
-            v-tooltip.right="'Requires an open project.'">
-            <i class="pi pi-lock" />
-          </span>
-        </RouterLink>
+        <template v-if="isOpen(group.heading)">
+          <RouterLink
+            v-for="item in group.items"
+            :key="item.to"
+            :to="isNavDisabled(item) ? '' : item.to"
+            class="nav-item"
+            :class="{ disabled: isNavDisabled(item) }"
+            v-tooltip.right="navTip(item)"
+            :aria-disabled="isNavDisabled(item)"
+          >
+            <i :class="['pi', item.icon, 'nav-icon']" />
+            <span class="nav-label">{{ item.label }}</span>
+            <span v-if="item.soon" class="soon-badge">soon</span>
+            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge"
+              v-tooltip.right="'Requires an open project.'">
+              <i class="pi pi-lock" />
+            </span>
+          </RouterLink>
+        </template>
       </template>
-    </template>
+    </div>
 
     <!-- ── Viewer ──────────────────────────────────────────────────────────
          The viewer controls are a floating dockable panel (see App.vue / FloatingPanel), not a
@@ -259,10 +263,18 @@ function isNavDisabled(item: NavItem): boolean {
   flex-shrink: 0;
   background: var(--cc-surface-1);
   border-right: 1px solid var(--cc-border);
-  overflow-y: auto;
+  overflow: hidden;               /* only .nav-scroll scrolls — the rest stays pinned */
   display: flex;
   flex-direction: column;
   padding-bottom: 0.5rem;
+}
+
+/* the scrollable middle: absorbs all spare height so the viewer/lab-log CTAs + footer sit at the
+   bottom, and scrolls on its own when the menu is long (project block above stays pinned too) */
+.nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ── Project block ────────────────────────────────────────────────────────── */
@@ -349,6 +361,7 @@ function isNavDisabled(item: NavItem): boolean {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;                 /* pinned below the scroll region — never squeezed */
   width: calc(100% - 1rem);
   margin: 0.6rem 0.5rem 0.2rem;
   padding: 0.5rem 0.6rem;
@@ -425,6 +438,7 @@ function isNavDisabled(item: NavItem): boolean {
 /* ── Footer: quick app controls, pinned to the bottom ──────────────────────── */
 .sidebar-footer {
   margin-top: auto;                 /* push to the bottom of the flex column */
+  flex-shrink: 0;                   /* pinned below the scroll region — never squeezed */
   display: flex;
   align-items: center;
   justify-content: space-between;   /* Settings on the left, quit/restart cluster on the right */
