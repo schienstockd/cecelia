@@ -1,8 +1,8 @@
 # Analysis figures & movies (animation)
 
-Status (updated 2026-07-14): **complete.** A, B, C, D, E, G, F1 (F1.1–F1.3) and F2 (MVP + render engine
-+ timeline editor) are all **done/merged**. Supersedes the ad-hoc parts of the image-strip tasks
-(#00032 legend, #00036 zoom-to-source) — both now live on the shared snapshot foundation.
+Status (updated 2026-07-24): A–G + F1/F2 **done/merged**. **Phase H (movie title card) IN PROGRESS**
+— see the H section below. Supersedes the ad-hoc parts of the image-strip tasks (#00032 legend,
+#00036 zoom-to-source) — both now live on the shared snapshot foundation.
 
 ## Goal
 
@@ -199,6 +199,65 @@ matches how figures are actually made; F2 is the advanced follow-on.
     sync napari, update-from-napari, per-keyframe reset + "edited" badge, drag-reorder, timepoint (h/min),
     fps 1–40, amber selection (`--cc-selected`). Decision (2026-07-14): **timeline, not a node graph** —
     a movie is 1-D, so the graph's branching buys nothing.
+
+## H. Movie title card (prepended description slide) — IN PROGRESS
+
+A toggle on movie generation that prepends a short **title card** to the recorded `.mp4` — an
+auto-generated description slide (image name + attributes, the channels shown with their colours, the
+populations/tracks with colours, and the colour-by legend), plus an optional free-text note. Answers
+"which image / mouse / location is this, and what are the colours?" without opening the project or a
+separate doc. Applies to all three movie paths: single record, batch, animation page.
+
+### Decisions (2026-07-24, confirmed with Dominik)
+
+1. **Content = full auto + optional note.** Auto-fill from the image + view: `title` = `img.name`
+   joined with its `img.attr` values ("MERTK — mouse 1 — location B"); a **channels** section
+   (name + colour swatch); a **populations/tracks** section (name + colour); a **colour-by** section
+   (value label + colour); plus one optional user note line. No retyping.
+2. **Duration** default **3 s**, adjustable **1–10 s** per movie.
+3. **On by default.** The toggle defaults ON — every generated movie gets a card unless turned off.
+4. **Reuse the ONE canonical legend source — do not add a third.** Pops + colour-by come from the
+   same Julia helpers behind `POST /api/napari/overlay-legend` (`_colour_overrides_for` /
+   `_pop_labels_for` / `pop_at().name/.colour`); extract a shared `overlay_legend_content(img, …)`
+   in `napari_api.jl` so the endpoint AND the card call it (consolidation, not duplication). The board
+   strip legend + napari strip already consume this — the card must produce identical rows.
+5. **Channels are read from the live napari viewer at record time**, NOT from a hardcoded map.
+   There is no Julia/Python channel-colour function — channel colour lives only in the napari layer
+   state (the frontend `viewLegend.ts`/`napariColormap.ts` approximates it for the board strip, where
+   there's no live viewer). Recording always drives the live window, so at record time the visible
+   image layers carry the authoritative `name` + `colormap`; Python reads `layer.colormap.map([1.0])`
+   → hex. This avoids duplicating the frontend's colormap→hex table.
+6. **Card is composited in Python as a post-record step** (`python/cecelia/utils/title_card.py`),
+   NOT inside napari-animation (its `anim.animate()` writes the mp4 directly; frames aren't exposed).
+   After the movie is written, render N = `duration × fps` title frames (PIL, at the movie's exact
+   resolution + fps) and prepend them, re-writing via **imageio-ffmpeg** (already a dep). One honest
+   cost: this **re-encodes the clip once** — fine for short intravital movies; documented.
+7. **Threading:** one `titleCard: { enabled, note, durationSec }` object (camelCase in JSON/Julia,
+   snake_case in the bridge cmd + Python) flows each frontend → Julia handler → the shared
+   `record_timelapse!` / `record_keyframes!` (`app/src/napari.jl`) → bridge cmd
+   (`napari_bridge.py`) → `napari_utils.record_*` → `title_card`. Non-channel content (title, note,
+   pops, colour-by) is assembled in Julia and passed in `title_card`; channels are added in Python
+   from the live viewer.
+
+### Sub-phases (independently shippable; order H1 → H2 → H3 → H4)
+
+- **H1 — render primitive (backend, unit-tested).** `python/cecelia/utils/title_card.py`:
+  `render_title_card(content, width, height, *, fps, duration_sec) -> list[frames]` and
+  `prepend_title_to_movie(movie_path, content, *, duration_sec)` (reads the movie's fps+size via
+  imageio, renders the card at that size, writes card frames + movie frames to a temp file, replaces
+  the original). `content = { title, note, sections: [{ heading, items: [{label, colour}] }] }`. Pure
+  + testable without napari (`python/cecelia/tests/test_title_card.py`). Add Pillow to the env if not
+  already declared.
+- **H2 — batch path** (richest config; the headline `generateMovies` use). Assemble content in
+  `run_batch_movies` (Julia) per image via the shared `overlay_legend_content` helper + `img.name`/
+  `img.attr`; thread `titleCard` through `record_timelapse!`; add the toggle/note/duration to
+  `BatchMoviesPanel.vue` (config in `utils/batchMovie.ts`). Channels read from the live viewer in
+  `napari_utils.record_timelapse`.
+- **H3 — single record** (`ViewerPanel.vue` → `api_napari_record_timelapse`). No overlay config
+  exists on this path, so the card shows title + channels (+ note); pops/colour-by best-effort/empty.
+- **H4 — animation page** (`AnimationModule.vue` → `record_keyframes`). Card reflects the FIRST
+  keyframe's view; channels read after applying keyframe 0. Pops/colour-by derived from the first
+  keyframe's overlay layers if feasible, else title + channels + note.
 
 ## References
 
