@@ -487,9 +487,15 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
 
     path = _movie_named_path(img, image_uid; suffix = "_animation")
 
+    # Phase H4: optional title card. Like single-record, the FRONTEND builds the non-channel sections
+    # from the FIRST keyframe's view via the shared captureViewLegend path and sends them; we pass them
+    # through unchanged and the recorder adds Channels from that keyframe. nothing/disabled → no card.
+    tc   = get(data, :titleCard, nothing)
+    card = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
+
     _with_viewer() do
         try
-            resp = record_keyframes!(v, path, keyframes; fps = fps)
+            resp = record_keyframes!(v, path, keyframes; fps = fps, title_card = card)
             200, JSON3.write((; ok = true, path = path,
                 frames = get(resp, "frames", 0), keyframes = get(resp, "keyframes", 0)))
         catch e

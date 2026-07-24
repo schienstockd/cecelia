@@ -10,6 +10,8 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
+import { useSettingsStore } from '../stores/settings'
+import { buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
 import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
@@ -18,6 +20,7 @@ const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
 const log = useLogStore()
 const anim = useAnimationStore()
+const settings = useSettingsStore()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -213,9 +216,20 @@ async function render() {
       viewState: f.snapshot,
       steps: Math.max(1, Math.round((f.duration ?? 1) * anim.fps)),
     }))
+    // Title card (Phase H4): build from the FIRST keyframe's view via the SHARED buildTitleCard (same
+    // path as single-record). The recorder re-applies keyframe 0 to add the matching Channels.
+    let titleCard: TitleCardPayload | undefined
+    if (anim.titleCard.enabled && frames.value.length) {
+      const setUid   = projectStore.setUidOfImage(openImageUid.value ?? '') ?? ''
+      const colourBy = setUid ? settings.getColourBy(setUid) : ''
+      const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
+      const first = frames.value[0].snapshot as { layers?: Record<string, unknown> } | undefined
+      titleCard = await buildTitleCard(projectUid.value, openImageUid.value ?? '', first, openImage.value,
+        { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides })
+    }
     const res = await fetch('/api/napari/record-animation', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps }),
+      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, titleCard }),
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok) { log.error(`Render failed: ${j?.error ?? res.status}`, { source: 'napari' }); return }
@@ -239,6 +253,18 @@ async function render() {
           fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
           <span class="anim-num">{{ anim.fps }}</span>
         </label>
+        <!-- Title card (Phase H4): prepend a description slide built from the FIRST keyframe's view -->
+        <label class="anim-title-toggle"
+               v-tooltip.bottom="'Prepend a title slide (name, attributes, channels & colours) from the first keyframe'">
+          <input type="checkbox" v-model="anim.titleCard.enabled" /> title
+        </label>
+        <template v-if="anim.titleCard.enabled">
+          <label class="anim-fps" v-tooltip.bottom="'Title-card duration (seconds)'">
+            <input type="range" min="1" max="10" step="1" v-model.number="anim.titleCard.durationSec" class="anim-range" />
+            <span class="anim-num">{{ anim.titleCard.durationSec }}s</span>
+          </label>
+          <input type="text" v-model="anim.titleCard.note" class="anim-note" placeholder="note (optional)" />
+        </template>
         <button class="btn-primary" :disabled="!canRender" @click="render"
                 v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
                   : 'Need ≥2 keyframes for this image, open in napari'">
@@ -349,6 +375,9 @@ async function render() {
 .anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: 0.72rem; color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
+.anim-title-toggle { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.anim-note { font-size: 0.72rem; width: 9rem; padding: 2px 6px; border: 1px solid var(--cc-border);
+  border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
 .anim-empty { font-size: 0.85rem; color: var(--cc-text-dim); margin-top: 1.5rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }

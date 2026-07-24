@@ -67,6 +67,33 @@ class RenderCardFrameTests(unittest.TestCase):
         self.assertEqual(arr.shape, (120, 200, 3))
 
 
+class WrapTests(unittest.TestCase):
+    def _draw(self):
+        from PIL import Image, ImageDraw
+        return ImageDraw.Draw(Image.new("RGB", (10, 10)))
+
+    def test_short_title_stays_one_line(self):
+        d, font = self._draw(), tc._font(16)
+        self.assertEqual(tc._wrap_lines(d, "MERTK", font, 10_000), ["MERTK"])
+
+    def test_long_name_wraps_and_every_line_fits(self):
+        d, font = self._draw(), tc._font(16)
+        name = "M1a-MERTK_KAT-SWHL-GFP-Tom-res_0001 — mouse 1 — location B"
+        max_w = 120
+        lines = tc._wrap_lines(d, name, font, max_w)
+        self.assertGreater(len(lines), 1)                       # actually wrapped
+        for ln in lines:
+            self.assertLessEqual(d.textlength(ln, font=font), max_w + 0.5)
+        # nothing dropped: joining the pieces back (ignoring the wrap spaces) preserves every character
+        self.assertEqual("".join(lines).replace(" ", ""), name.replace(" ", ""))
+
+    def test_hard_break_prefers_separator(self):
+        d, font = self._draw(), tc._font(16)
+        # a long no-space token → first line should end at a '-' or '_' where possible
+        lines = tc._wrap_lines(d, "aaa-bbb_ccc-ddd-eee", font, 40)
+        self.assertTrue(lines[0].endswith("-") or lines[0].endswith("_"))
+
+
 class PrependTests(unittest.TestCase):
     def test_prepends_card_frames(self):
         import imageio.v2 as imageio

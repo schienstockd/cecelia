@@ -467,13 +467,14 @@ def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
   return (t1 - t0) + 1
 
 
-def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True):
+def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, title_card=None):
   """Render an interpolated keyframe animation to ``path`` (mp4). Each keyframe carries a saved view
   state (``{"viewState": {...}, "steps": N}``); we apply it to ``viewer`` and capture it as a
   napari-animation keyframe with ``steps`` interpolated frames FROM the previous keyframe — so the
   movie tweens between views (camera pans/zooms, contrast/colour fades, T scrubbing). The first
   keyframe just starts the sequence (its ``steps`` is ignored). Needs ≥ 2 keyframes. The "super-simple
-  OpenShot" render path; see docs/todo/ANIMATION_PLAN.md (F2). Returns the frame count."""
+  OpenShot" render path; see docs/todo/ANIMATION_PLAN.md (F2/H4). ``title_card`` (Phase H4) optionally
+  prepends a description slide. Returns the frame count."""
   if len(keyframes) < 2:
     raise ValueError("record_keyframes needs at least 2 keyframes")
   Animation = _require_napari_animation()
@@ -483,6 +484,11 @@ def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True):
     steps = 15 if i == 0 else max(1, int(kf.get("steps", 15)))   # first keyframe: no in-transition
     anim.capture_keyframe(steps=steps)
   anim.animate(path, fps=int(fps), canvas_only=canvas_only)
+  # Phase H4: the card reflects the FIRST keyframe (the frontend built its sections from it) — re-apply
+  # that view so _maybe_prepend_title reads the matching Channels from the viewer, then prepend.
+  if title_card and title_card.get("enabled"):
+    apply_view_state(viewer, keyframes[0].get("viewState") or {})
+  _maybe_prepend_title(viewer, path, title_card)
   return sum(max(1, int(kf.get("steps", 15))) for kf in keyframes[1:]) + 1
 
 

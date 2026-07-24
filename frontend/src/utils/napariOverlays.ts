@@ -40,6 +40,36 @@ export async function captureViewLegend(
   return { channels, populations, colourBy: cby }
 }
 
+// The movie title-card payload the recorder consumes (Phase H). Channels are NOT included here — the
+// recorder adds them from the live viewer; the frontend supplies only the non-channel sections + title.
+export interface TitleCardPayload {
+  enabled: boolean
+  note: string
+  durationSec: number
+  title: string
+  sections: { heading: string; items: { label: string; colour: string }[] }[]
+}
+// Build the title-card payload for a captured view — the ONE builder shared by single-record and the
+// animation page (both live-view paths). Title = image name + its attribute values; Populations +
+// colour-by sections come from captureViewLegend (the same path as the board strip). Channels are
+// added by the recorder from the viewer, so they're intentionally omitted here.
+export async function buildTitleCard(
+  projectUid: string, imageUid: string,
+  snapshot: { layers?: Record<string, unknown> } | null | undefined,
+  image: { name?: string; attr?: Record<string, string> } | null | undefined,
+  opts: { note: string; durationSec: number; colourBy: string; colourOverrides?: Record<string, string> },
+): Promise<TitleCardPayload> {
+  const leg = await captureViewLegend(projectUid, imageUid, snapshot, opts.colourBy, opts.colourOverrides ?? {})
+  const sections: TitleCardPayload['sections'] = []
+  const pops = leg.populations.map(p => ({ label: p.name, colour: p.colour }))
+  if (pops.length) sections.push({ heading: 'Populations', items: pops })
+  const cby = (leg.colourBy?.items ?? []).filter(it => it.colour).map(it => ({ label: it.label, colour: it.colour }))
+  if (cby.length) sections.push({ heading: leg.colourBy?.column || 'Colour by', items: cby })
+  const attrs = image?.attr ? Object.keys(image.attr).sort().map(k => image.attr![k]?.trim()).filter(Boolean) : []
+  const title = [image?.name ?? '', ...attrs].filter(Boolean).join(' — ')
+  return { enabled: true, note: opts.note, durationSec: opts.durationSec, title, sections }
+}
+
 export interface PushTracksOpts {
   valueNames: string[]            // segmentations whose whole-segmentation (_tracked) ribbons to show
   showGatedTracks: boolean
