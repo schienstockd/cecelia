@@ -134,8 +134,7 @@ Cecelia.register_cohort_metrics!("customExamples.myTask", ["nCells"])
 ```
 
 The category you tag in the JSON (`"category": "customExamples"`) automatically appears in the lab-log
-mute bar's **Module pages** group — so a user can mute your module's `[Cecelia]` digest lines. A
-runnable QC example lives in `dev/modules/…/customExamples/qcProbe.jl`.
+mute bar's **Module pages** group — so a user can mute your module's `[Cecelia]` digest lines.
 
 ## Loading & reloading
 
