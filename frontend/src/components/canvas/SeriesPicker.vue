@@ -38,7 +38,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 <template>
   <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
-    <div v-if="!total" class="pm-empty">No populations in the selected segmentations.</div>
+    <div v-if="!total" class="pm-empty cc-muted">No populations in the selected segmentations.</div>
     <template v-for="grp in groups" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pm-group-head">{{ grp.valueName }}</div>
       <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
@@ -61,7 +61,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 <style scoped>
 /* row styles — applied to the population list rendered into PopulationPanelShell's default slot
    (slotted content keeps THIS component's scoped styles; the chrome lives in the shell). */
-.pm-empty { padding: 12px; color: var(--cc-text-dim); }
+.pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-group-head {
   padding: 5px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;

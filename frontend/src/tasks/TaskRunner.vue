@@ -303,7 +303,7 @@ const { width: sidebarWidth, onResizeStart } =
 
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
     <section v-if="!defs.length" class="runner-section defs-empty">
-      <p class="defs-empty-msg">No functions available — the server may still be starting.</p>
+      <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
       <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="onReloadDefs">
         <i class="pi pi-refresh" /> Reload
       </button>
@@ -537,7 +537,7 @@ const { width: sidebarWidth, onResizeStart } =
 .fn-select:focus { outline: 1px solid var(--cc-accent); }
 
 .defs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
-.defs-empty-msg { font-size: 0.8rem; color: var(--cc-text-muted); margin: 0; }
+.defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
 .fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
 .env-badge {

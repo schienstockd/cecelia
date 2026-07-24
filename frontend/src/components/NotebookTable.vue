@@ -323,7 +323,7 @@ defineExpose({ refresh })
         </tr>
         </template>
         <tr v-if="!notebooks.length && !loading">
-          <td colspan="5" class="nbt-empty">No notebooks yet — add one, or duplicate an example.</td>
+          <td colspan="5" class="nbt-empty cc-muted">No notebooks yet — add one, or duplicate an example.</td>
         </tr>
       </tbody>
     </table>
@@ -346,7 +346,7 @@ defineExpose({ refresh })
 .nbt-actions .cc-btn { padding: .25rem .45rem; }
 .nbt-danger { color: #f85149; }
 .nbt-active { color: #58a6ff; }
-.nbt-empty { color: var(--cc-text-muted, #888); text-align: center; padding: 1rem; }
+.nbt-empty { text-align: center; padding: 1rem; }   /* + .cc-muted */
 .nbt-history-row td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
 .nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: .85rem; }
 .nbt-hist-label { color: var(--cc-text-muted, #888); }

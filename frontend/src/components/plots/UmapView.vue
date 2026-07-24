@@ -623,7 +623,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
           <template v-if="usePopIdx">
             <div class="uv-opt-sep">Populations</div>
             <div class="uv-pop">
-              <div v-if="!popGroups.length" class="uv-pop-empty">No populations in the clustered segmentations.</div>
+              <div v-if="!popGroups.length" class="uv-pop-empty cc-muted">No populations in the clustered segmentations.</div>
               <template v-for="grp in popGroups" :key="grp.valueName">
                 <div v-if="grp.populations.length" class="uv-pop-head">{{ grp.valueName }}</div>
                 <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
@@ -693,7 +693,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
   border-top: 1px solid var(--cc-border); padding-top: 6px; margin-top: 2px; }
 /* population checklist (inside the options popover) */
 .uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; }
-.uv-pop-empty { padding: 10px; color: var(--cc-text-dim); font-size: 12px; }
+.uv-pop-empty { padding: 10px; }   /* + .cc-muted */
 .uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; position: sticky; top: 0; }
 .uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; color: var(--cc-text); }

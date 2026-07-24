@@ -135,7 +135,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
   <div class="notebooks-page">
     <header class="nb-header">
       <h1><i class="pi pi-book" /> Notebooks</h1>
-      <p class="nb-sub">
+      <p class="nb-sub cc-muted">
         Pure-Julia downstream analysis with <strong>Pluto</strong> — load objects, pull cell tables
         via <code>pop_df</code>, plot, and export. Runs in its own Julia session.
       </p>
@@ -175,7 +175,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
             </button>
           </template>
         </div>
-        <p v-if="server === 'starting'" class="nb-hint">
+        <p v-if="server === 'starting'" class="nb-hint cc-muted">
           First launch precompiles — this can take up to a minute.
         </p>
         <p v-if="errorMsg" class="nb-error"><i class="pi pi-exclamation-triangle" /> {{ errorMsg }}</p>
@@ -199,7 +199,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
              : sysimage === 'error' ? 'Retry fast-plot build'
              : 'Enable fast plots' }}
           </button>
-          <span class="nb-hint">
+          <span class="nb-hint cc-muted">
             {{ sysimage === 'stale'
               ? 'A package update outdated the cached image — rebuild to keep the first plot fast.'
              : sysimage === 'error'
@@ -207,7 +207,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
               : 'Optional: skip the ~20 s first-plot compile. Notebooks work without it.' }}
           </span>
         </div>
-        <p v-else-if="sysimage === 'ready'" class="nb-hint">
+        <p v-else-if="sysimage === 'ready'" class="nb-hint cc-muted">
           <i class="pi pi-bolt" /> Fast plots enabled.
         </p>
       </section>
@@ -224,7 +224,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 <style scoped>
 .notebooks-page { padding: 1.25rem 1.5rem; max-width: 980px; }
 .nb-header h1 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.4rem; }
-.nb-sub { color: var(--cc-text-muted, #888); margin: 0 0 1rem; max-width: 640px; }
+.nb-sub { margin: 0 0 1rem; max-width: 640px; }   /* + .cc-muted */
 .nb-empty { display: flex; align-items: center; gap: .5rem; color: var(--cc-text-muted, #888); padding: 2rem 0; }
 .nb-section { margin-bottom: 1.5rem; }
 .nb-section h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
@@ -232,7 +232,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 .nb-status { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
 .nb-status.is-running .pi { color: #3fb950; }
 .nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-muted, #888); }
-.nb-hint { color: var(--cc-text-muted, #888); font-size: .85rem; margin: .5rem 0 0; }
+.nb-hint { margin: .5rem 0 0; }   /* + .cc-muted */
 .nb-error { color: #f0883e; font-size: .85rem; margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
 .nb-note {
   display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;

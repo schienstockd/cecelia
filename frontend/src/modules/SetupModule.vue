@@ -84,7 +84,7 @@ async function waitForBackend(timeoutMs = 60000) {
     <div class="setup-card">
       <div class="setup-logo">🍍</div>
       <h1 class="setup-title">Welcome to Cecelia</h1>
-      <p class="setup-sub">Where would you like to store your projects?</p>
+      <p class="setup-sub cc-muted">Where would you like to store your projects?</p>
 
       <label class="setup-label" for="setup-path">Projects folder</label>
       <input id="setup-path" v-model="path" class="setup-input" type="text" spellcheck="false"
@@ -133,7 +133,7 @@ async function waitForBackend(timeoutMs = 60000) {
 }
 .setup-logo { font-size: 2.5rem; line-height: 1; }
 .setup-title { margin: 0.5rem 0 0; font-size: 1.4rem; font-weight: 600; }
-.setup-sub { margin: 0 0 1rem; color: var(--cc-text-dim); }
+.setup-sub { margin: 0 0 1rem; }   /* + .cc-muted */
 .setup-label { font-size: 0.8rem; color: var(--cc-text-dim); margin-bottom: 0.15rem; }
 .setup-input { width: 100%; font-family: var(--cc-mono, monospace); }
 .setup-hint {
