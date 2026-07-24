@@ -76,6 +76,30 @@ Remaining — incremental adoption only (no forced sweeps):
 **Healthy / no action:** Modals (`BaseModal`), popovers (`TeleportPopover`), tabs (`TabbedCanvas`),
 chips (`ChipSelect`), colour dropdown (`SwatchSelect`).
 
+## Adoption sweep — log (in progress)
+
+Migrating existing sites onto the semantic vocabulary, scenario by scenario. Roadblocks are noted and
+skipped (kept bespoke), not forced.
+
+**Done — muted text / subtitles / simple empties → `.cc-muted`:** `NotebooksModule` (`.nb-sub`/`.nb-hint`),
+`SetupModule` (`.setup-sub`), `LegacyMigrateDialog` (`.lm-sub`), `GatingCopyDialog` (`.cg-empty`),
+`FileBrowser` (`.fb-empty`), `NotebookTable` (`.nbt-empty`) — plus `MoviesModule`/`AnimationModule`
+(seeded earlier). This also **fixed several dead `--cc-text-muted` references** (an undefined token that
+silently fell back to `#888` instead of the real `--cc-text-dim`).
+
+**Roadblocks — deliberately kept bespoke (do NOT force onto the utils):**
+- **Rich empty state** — `ImageTable` `.empty-state` (+ `.empty-icon/-title/-hint/-cta`): a full icon +
+  title + hint + CTA block with generous padding. `.cc-empty` is the plain column; a rich `<EmptyState>`
+  variant could wrap it later, but it's the one genuinely rich case — leave it.
+- **Absolute-positioned overlay empty** — `UmapView` `.uv-empty` (`position:absolute; inset:0`): not a
+  flow block; `.cc-empty` doesn't apply.
+- **Tiny / italic micro-empties** — `ChainQcNode` `.qc-empty` (9px italic), `PopulationManager`
+  `.pm-chip-empty` (10px italic), `CropPanel`/`ChainQcNode` italic hints: sub-`--cc-fs-xs` sizes +
+  italic are intentional dense-context chrome; `.cc-muted` (0.75rem, non-italic) would enlarge them.
+- **`HintCallout.vue`** is a full component (icon + dismiss), not a text scenario — leave it.
+- **`ChainModule`** empties/hints (`.live-empty`, `.canvas-empty`, `.no-chains-hint`, palette hints):
+  several are richer (icons, multi-line CTAs) inside the whiteboard; adopt opportunistically, not swept.
+
 ## Convention going forward
 
 Each canonical primitive/utility gets a one-liner in `docs/UI.md` (the *when to use which*, in the
