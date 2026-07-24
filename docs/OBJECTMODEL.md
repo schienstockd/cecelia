@@ -14,7 +14,7 @@ CciaProject
         └── CciaImage  (one or more)
 ```
 
-Sets group images for processing. An image belongs to one set but lives independently on disk — the set holds only a UID reference list, not a nested directory.
+Sets group images for processing. An image belongs to one set but lives independently on disk — the set holds only a UID reference list, not a nested directory. Because of this, **moving an image between sets is a manifest-only operation** — `move_image!(proj, image_uid, from_set_uid, to_set_uid)` (`project.jl`) just edits the two sets' `image_uids` lists; the image's `0/{uid}` and `1/{uid}` dirs are UID-keyed and never move on disk. (Contrast `delete_image!`, which *does* `rm` those dirs.)
 
 ---
 

@@ -351,6 +351,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_import_register_legacy(body_bytes)
         elseif path == "/api/images/delete"
             api_images_delete(body_bytes)
+        elseif path == "/api/images/move"
+            api_images_move(body_bytes)
         elseif path == "/api/images/attr/create"
             api_images_attr_create(body_bytes)
         elseif path == "/api/images/attr/delete"
