@@ -1272,6 +1272,58 @@ function api_images_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# POST /api/images/move {projectUid, imageUid, fromSetUid, toSetUid?|newSetName?}
+# Move an image to another set in the same project. Provide EITHER an existing `toSetUid` OR a
+# `newSetName` to create the destination set on the fly. Manifest-only — no image data moves on
+# disk (see move_image!). Returns the resolved destination {toSetUid, toSetName, createdSet}.
+function api_images_move(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid  = String(get(body, :projectUid, ""))
+    image_uid    = String(get(body, :imageUid, ""))
+    from_set_uid = String(get(body, :fromSetUid, ""))
+    to_set_uid   = String(get(body, :toSetUid, ""))
+    new_set_name = strip(String(get(body, :newSetName, "")))
+    isempty(project_uid)  && return 400, JSON3.write((; error="projectUid required"))
+    isempty(image_uid)    && return 400, JSON3.write((; error="imageUid required"))
+    isempty(from_set_uid) && return 400, JSON3.write((; error="fromSetUid required"))
+    (isempty(to_set_uid) && isempty(new_set_name)) &&
+        return 400, JSON3.write((; error="toSetUid or newSetName required"))
+
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
+
+    proj = load_project(project_uid)
+
+    # resolve (or create) the destination set
+    created = false
+    to_name = ""
+    if isempty(to_set_uid)
+        existing = findfirst(s -> s.name == new_set_name, proj._sets)
+        if isnothing(existing)
+            s = add_set!(proj; name=String(new_set_name))
+            to_set_uid = s.uid; to_name = s.name; created = true
+        else
+            s = proj._sets[existing]
+            to_set_uid = s.uid; to_name = s.name
+        end
+    else
+        ti = findfirst(s -> s.uid == to_set_uid, proj._sets)
+        isnothing(ti) && return 404, JSON3.write((; error="Destination set not found: $to_set_uid"))
+        to_name = proj._sets[ti].name
+    end
+
+    try
+        move_image!(proj, image_uid, from_set_uid, to_set_uid)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+
+    @info "Moved image" uid=image_uid from=from_set_uid to=to_set_uid project=project_uid createdSet=created
+    200, JSON3.write((; ok=true, toSetUid=to_set_uid, toSetName=to_name, createdSet=created))
+end
+
 # ── Metadata management ───────────────────────────────────────────────────────
 
 function _parse_meta_request(body_bytes)

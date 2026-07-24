@@ -206,9 +206,25 @@ function lastRunTag(img: CciaImage) {
     tip: `Last run: ${e.fun}${e.valueName ? ` → ${e.valueName}` : ''} · ${fmtRunAt(e.at)}`,
   }
 }
-function toggleRunLog(uid: string, e: MouseEvent) {
-  if (runLogUid.value === uid) { runLogUid.value = null; return }
-  runLogAnchor.value = e.currentTarget as HTMLElement
+// ── Row actions overflow menu (⋯) ───────────────────────────────────────────────
+// Collapses the per-row action icons (metadata, crop, move, copy-UID, include, run-log) into one
+// popover so the name column can stay narrow — and scales cleanly as we add actions. Shares the
+// same TeleportPopover as the run-log (escapes the table's scroll/transform clipping).
+const actionsUid    = ref<string | null>(null)
+const actionsAnchor = ref<HTMLElement | null>(null)   // the clicked ⋯ button (drives placement)
+const actionsImg    = computed(() => actionsUid.value ? (images.value.find(i => i.uid === actionsUid.value) ?? null) : null)
+const actionsOpen   = computed({ get: () => actionsUid.value !== null, set: v => { if (!v) actionsUid.value = null } })
+function toggleActions(uid: string, e: MouseEvent) {
+  if (actionsUid.value === uid) { actionsUid.value = null; return }
+  actionsAnchor.value = e.currentTarget as HTMLElement
+  actionsUid.value = uid
+}
+// close the menu, then run the chosen action (opens a dialog / toggles a flag)
+function runAction(fn: () => void) { actionsUid.value = null; fn() }
+// open run-history from the menu, re-anchored to the same ⋯ button the menu came from
+function openRunLogFromMenu(uid: string) {
+  runLogAnchor.value = actionsAnchor.value
+  actionsUid.value = null
   runLogUid.value = uid
 }
 async function setIncluded(img: CciaImage, included: boolean) {
@@ -413,6 +429,62 @@ async function doDelete() {
   log.info(`Removed "${img?.name}".`, { source: 'import' })
 }
 
+// ── Move to another set ─────────────────────────────────────────────────────────
+// Manifest-only on the backend — no image data moves on disk (see /api/images/move). The picker
+// offers every OTHER set in the project plus a "New set…" option (empty target => create by name).
+const moveUid       = ref<string | null>(null)   // image being moved (opens the inline picker)
+const moveTargetUid = ref('')                     // '' = create a new set from moveNewName
+const moveNewName   = ref('')
+const moving        = ref(false)
+const moveImg = computed(() =>
+  moveUid.value ? (images.value.find(i => i.uid === moveUid.value) ?? null) : null)
+const otherSets = computed(() => project.sets.filter(s => s.uid !== props.setUid))
+
+function startMove(uid: string) {
+  moveUid.value = uid
+  moveTargetUid.value = otherSets.value[0]?.uid ?? ''   // default to first other set, else new-set mode
+  moveNewName.value = ''
+}
+
+async function doMove() {
+  if (!moveUid.value) return
+  const uid  = moveUid.value
+  const img  = images.value.find(i => i.uid === uid)
+  const newName = moveNewName.value.trim()
+  if (!moveTargetUid.value && !newName) {
+    log.warn('Pick a set or enter a new set name.', { source: 'import' }); return
+  }
+  if (!moveTargetUid.value && project.sets.some(s => s.name === newName)) {
+    log.warn(`A set named "${newName}" already exists.`, { source: 'import' }); return
+  }
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  moving.value = true
+  try {
+    const res = await fetch('/api/images/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid, imageUid: uid, fromSetUid: props.setUid,
+        ...(moveTargetUid.value ? { toSetUid: moveTargetUid.value } : { newSetName: newName }),
+      }),
+    })
+    const body = await res.json().catch(() => ({})) as
+      { toSetUid?: string; toSetName?: string; error?: string }
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    project.ensureSet(body.toSetUid!, body.toSetName ?? newName)   // no-op if it already existed
+    project.moveImage(props.setUid, body.toSetUid!, uid)
+    selected.value.delete(uid)
+    commit()
+    log.info(`Moved "${img?.name}" to "${body.toSetName ?? newName}".`, { source: 'import' })
+    moveUid.value = null
+  } catch (e) {
+    log.error(`Failed to move image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  } finally {
+    moving.value = false
+  }
+}
+
 // ── Napari ────────────────────────────────────────────────────────────────────
 
 const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
@@ -486,7 +558,7 @@ const attrKeys = computed(() => {
 const colWidths = ref<Record<string, number>>({})
 
 const DEFAULT_WIDTHS: Record<string, number> = {
-  name: 200,
+  name: 160,   // narrower now the per-row actions collapse into one ⋯ menu (drag-resizable)
 }
 function defaultWidth(key: string): number {
   if (DEFAULT_WIDTHS[key]) return DEFAULT_WIDTHS[key]
@@ -535,6 +607,22 @@ onUnmounted(stopResize)
       Remove
     </button>
     <button class="btn-ghost btn-sm" @click="deleteUid = null">Cancel</button>
+  </div>
+
+  <!-- move to another set -->
+  <div v-if="moveUid" class="move-bar">
+    <span>Move <strong>{{ moveImg?.name }}</strong> to</span>
+    <select class="move-select" v-model="moveTargetUid"
+      v-tooltip.right="'Destination set (data is not copied — only the set membership changes).'">
+      <option v-for="s in otherSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
+      <option value="">＋ New set…</option>
+    </select>
+    <input v-if="!moveTargetUid" class="move-name-input" v-model="moveNewName"
+      placeholder="New set name…" @keydown.enter="doMove" @keydown.escape="moveUid = null" autofocus />
+    <button class="btn-primary btn-sm" @click="doMove" :disabled="moving">
+      <i v-if="moving" class="pi pi-spin pi-cog" /><template v-else>Move</template>
+    </button>
+    <button class="btn-ghost btn-sm" @click="moveUid = null">Cancel</button>
   </div>
 
   <div v-if="images.length === 0" class="empty-state">
@@ -683,32 +771,11 @@ onUnmounted(stopResize)
               <i class="pi pi-ban" /> Excluded
             </span>
             <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
-            <button v-if="pageIconFor()" class="row-icon-btn" @click.stop="physSizeDialogUid = img.uid"
-              v-tooltip.right="pageIconFor()!.tip">
-              <i class="pi pi-file-edit" />
-            </button>
-            <button class="row-icon-btn" @click.stop="metaDialogUid = img.uid"
-              v-tooltip.right="'Image metadata (original file location, dimensions, channels…)'">
-              <i class="pi pi-info-circle" />
-            </button>
-            <button class="row-icon-btn" :disabled="!isImported(img)"
-              @click.stop="cropDialogUid = img.uid"
-              v-tooltip.right="isImported(img) ? 'Crop to a sub-region → new image (draw a rectangle on the projection, set z/t)' : 'Import this image first'">
-              <i class="pi pi-image" />
-            </button>
-            <button class="row-icon-btn" @click.stop="copyUid(img.uid)"
-              v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
-              <i :class="copiedUid === img.uid ? 'pi pi-check' : 'pi pi-copy'" />
-            </button>
-            <button class="row-icon-btn incl-toggle" @click.stop="setIncluded(img, isExcluded(img))"
-              v-tooltip.right="isExcluded(img) ? 'Include in processing.' : 'Exclude from processing (won\'t be run).'">
-              <i :class="isExcluded(img) ? 'pi pi-check-circle' : 'pi pi-ban'" />
-            </button>
-            <!-- run history: cog → popover listing the functions run on this image + when (provenance) -->
+            <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
             <span class="runlog-cell" @click.stop>
-              <button class="row-icon-btn runlog-cog" :class="{ on: runLogUid === img.uid }"
-                @click.stop="toggleRunLog(img.uid, $event)"
-                v-tooltip.right="'Functions run on this image'"><i class="pi pi-cog" /></button>
+              <button class="row-icon-btn actions-btn" :class="{ on: actionsUid === img.uid }"
+                @click.stop="toggleActions(img.uid, $event)"
+                v-tooltip.right="'Actions'"><i class="pi pi-ellipsis-h" /></button>
             </span>
           </span>
           <span class="uid-row">
@@ -823,6 +890,37 @@ onUnmounted(stopResize)
 
   <CropDialog v-if="cropDialogImg" :image="cropDialogImg" :set-uid="setUid"
     @close="cropDialogUid = null" />
+
+  <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
+  <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end">
+    <div v-if="actionsImg" class="actions-menu">
+      <button v-if="pageIconFor()" class="actions-item"
+        @click.stop="runAction(() => physSizeDialogUid = actionsImg!.uid)">
+        <i class="pi pi-file-edit" /> {{ pageIconFor()!.tip }}
+      </button>
+      <button class="actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
+        <i class="pi pi-info-circle" /> Metadata
+      </button>
+      <button class="actions-item" :disabled="!isImported(actionsImg)"
+        @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
+        <i class="pi pi-image" /> Crop to new image…
+      </button>
+      <button v-if="allowDelete" class="actions-item"
+        @click.stop="runAction(() => startMove(actionsImg!.uid))">
+        <i class="pi pi-arrows-h" /> Move to another set…
+      </button>
+      <button class="actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
+        <i class="pi pi-copy" /> Copy UID
+      </button>
+      <button class="actions-item" @click.stop="runAction(() => setIncluded(actionsImg!, isExcluded(actionsImg!)))">
+        <i :class="isExcluded(actionsImg) ? 'pi pi-check-circle' : 'pi pi-ban'" />
+        {{ isExcluded(actionsImg) ? 'Include in processing' : 'Exclude from processing' }}
+      </button>
+      <button class="actions-item" @click.stop="openRunLogFromMenu(actionsImg.uid)">
+        <i class="pi pi-cog" /> Run history
+      </button>
+    </div>
+  </TeleportPopover>
 
   <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
        positions from the cog rect (was clipped by the following row) -->
@@ -1145,4 +1243,31 @@ th:hover .resize-handle::after { opacity: 1; }
 .btn-ghost:hover { color: var(--cc-text); }
 .btn-danger { background: #7f1d1d44; border-color: #7f1d1d; color: #fca5a5; }
 .btn-danger:hover { background: #7f1d1d88; }
+.btn-primary { background: var(--cc-accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.move-bar {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 1rem; background: var(--cc-surface-1);
+  border-bottom: 1px solid var(--cc-border); font-size: 0.82rem; flex-shrink: 0;
+}
+.move-select { min-width: 160px; }
+.move-name-input { width: 180px; border-color: var(--cc-accent); }
+
+/* ⋯ actions button: faintly visible at rest (discoverable), full on hover/open */
+.actions-btn { opacity: 0.5; }
+.image-row:hover .actions-btn,
+.actions-btn.on { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
+
+/* ⋯ dropdown menu (inside TeleportPopover, which provides the surface/border/shadow) */
+.actions-menu { display: flex; flex-direction: column; min-width: 200px; padding: 0.25rem; }
+.actions-item {
+  display: flex; align-items: center; gap: 0.55rem;
+  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: 4px;
+  background: none; color: var(--cc-text); font-size: 0.82rem; text-align: left; cursor: pointer;
+}
+.actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
+.actions-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.actions-item .pi { width: 1rem; text-align: center; color: var(--cc-text-dim); flex-shrink: 0; }
 </style>

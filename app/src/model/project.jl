@@ -110,6 +110,41 @@ function image_by_uid(proj::CciaProject; uid::AbstractString)::Union{CciaImage,N
 end
 
 """
+    move_image!(proj, image_uid, from_set_uid, to_set_uid) -> CciaProject
+
+Move an image from one set to another WITHIN the same project. **Manifest-only**: an image's
+data (`{proj}/0/{uid}`) and metadata (`{proj}/1/{uid}`) dirs are keyed by the image UID and live
+independently of any set on disk — a set holds only a UID reference list — so nothing moves on
+disk; only the two sets' membership lists change. Both sets are persisted. No-op if the image is
+already in the destination. Errors if either set is missing or the image is not in the source set.
+"""
+function move_image!(proj::CciaProject, image_uid::String,
+                     from_set_uid::String, to_set_uid::String)::CciaProject
+    from_set_uid == to_set_uid && return proj
+    from_idx = findfirst(s -> s.uid == from_set_uid, proj._sets)
+    to_idx   = findfirst(s -> s.uid == to_set_uid,   proj._sets)
+    isnothing(from_idx) && error("Source set not found: $from_set_uid")
+    isnothing(to_idx)   && error("Destination set not found: $to_set_uid")
+    from = proj._sets[from_idx]
+    to   = proj._sets[to_idx]
+    # destination check first → idempotent: already in dest is a no-op regardless of source (robust to
+    # a double-click or a stale from_set_uid from the UI). Only then require it to be in the source.
+    (image_uid in to.image_uids)   && return proj
+    (image_uid in from.image_uids) || error("Image $image_uid not in set $from_set_uid")
+    img_idx = findfirst(i -> i.uid == image_uid, from._images)
+    img     = isnothing(img_idx) ? nothing : from._images[img_idx]
+    # detach from source
+    filter!(u -> u != image_uid, from.image_uids)
+    filter!(i -> i.uid != image_uid, from._images)
+    # attach to destination (the image's own _dir is unchanged — no data moves)
+    push!(to.image_uids, image_uid)
+    img === nothing || push!(to._images, img)
+    save!(from)
+    save!(to)
+    proj
+end
+
+"""
 Delete a set from the project: removes every member image's data + metadata dirs,
 the set's own metadata dir, drops it from the project manifest, and persists the project.
 """

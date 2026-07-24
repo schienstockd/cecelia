@@ -275,6 +275,45 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    @testset "move_image! (manifest-only, no data moved)" begin
+        proj = create_project!(name="move-test-$(rand(1000:9999))", kind="static")
+        a = add_set!(proj; name="set-A")
+        b = add_set!(proj; name="set-B")
+        img1 = add_image!(a; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        img2 = add_image!(a; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+        data_dir = joinpath(proj.root, "0", img1.uid)   # image data + metadata dirs are UID-keyed
+        meta_dir = joinpath(proj.root, "1", img1.uid)
+
+        move_image!(proj, img1.uid, a.uid, b.uid)
+
+        # membership moved …
+        @test a.image_uids == [img2.uid]
+        @test b.image_uids == [img1.uid]
+        @test image_by_uid(a; uid=img1.uid) === nothing
+        @test image_by_uid(b; uid=img1.uid) !== nothing
+        # … but NO data moved on disk (dirs are UID-keyed, independent of the set)
+        @test isdir(data_dir) && isdir(meta_dir)
+        @test !isdir(joinpath(b._dir, img1.uid))   # sets never nest image dirs
+
+        # persists: reload the project fresh and the manifests reflect the move
+        reloaded = load_project(proj.uid)
+        ra = reloaded._sets[findfirst(s -> s.uid == a.uid, reloaded._sets)]
+        rb = reloaded._sets[findfirst(s -> s.uid == b.uid, reloaded._sets)]
+        @test ra.image_uids == [img2.uid]
+        @test rb.image_uids == [img1.uid]
+        @test image_by_uid(reloaded; uid=img1.uid) !== nothing   # still findable project-wide
+
+        # idempotent / no-op guards
+        @test move_image!(proj, img1.uid, b.uid, b.uid) === proj        # same set → no-op
+        move_image!(proj, img1.uid, a.uid, b.uid)                        # already in dest → no-op
+        @test b.image_uids == [img1.uid]                                 # not duplicated
+        # error cases
+        @test_throws ErrorException move_image!(proj, "nope", a.uid, b.uid)   # image not in source
+        @test_throws ErrorException move_image!(proj, img2.uid, a.uid, "gone") # dest missing
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── REPL / notebook data-access surface (Observer Phase 2 foundation) ─────────
     @testset "REPL API surface + generated doc" begin
         # every allow-listed accessor is defined, exported, and documented — the notebook-facing

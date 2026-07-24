@@ -159,6 +159,28 @@ export const useProjectStore = defineStore('project', () => {
     set.images = set.images.filter(i => i.uid !== imageUid)
   }
 
+  // Ensure a set exists in the store (used when a move creates its destination on the fly).
+  // Unlike addSetFromApi, does NOT switch the active set — a move shouldn't yank the user away.
+  function ensureSet(uid: string, name: string): CciaSet {
+    let s = sets.value.find(x => x.uid === uid)
+    if (!s) { s = { uid, name, images: [] }; sets.value.push(s) }
+    return s
+  }
+
+  // Move an image between two sets already in the store (manifest-only, mirrors the backend).
+  // The destination must exist first (call ensureSet for a freshly created set).
+  function moveImage(fromSetUid: string, toSetUid: string, imageUid: string) {
+    if (fromSetUid === toSetUid) return
+    const from = sets.value.find(s => s.uid === fromSetUid)
+    const to   = sets.value.find(s => s.uid === toSetUid)
+    if (!from || !to) return
+    const idx = from.images.findIndex(i => i.uid === imageUid)
+    if (idx === -1) return
+    if (to.images.some(i => i.uid === imageUid)) { from.images.splice(idx, 1); return }
+    const [img] = from.images.splice(idx, 1)
+    to.images.push(img)
+  }
+
   function updateImageStatus(imageUid: string, status: CciaImage['status']) {
     for (const set of sets.value) {
       const img = set.images.find(i => i.uid === imageUid)
@@ -258,5 +280,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
