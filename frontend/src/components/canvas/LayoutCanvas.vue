@@ -381,7 +381,7 @@ defineExpose({ capturePage, collectCsvs })
 
 <template>
   <div class="layout-canvas">
-    <div v-if="!imageUid" class="lc-empty">Select one or more images above to plot.</div>
+    <div v-if="!imageUid" class="lc-empty cc-muted">Select one or more images above to plot.</div>
     <template v-else>
       <!-- controls, grouped so nothing crowds: Layout row (uniform + custom sliders), Plates row
            (varied presets, wraps to two lines), then the data/compare row. -->
@@ -567,7 +567,7 @@ defineExpose({ capturePage, collectCsvs })
 
 <style scoped>
 .layout-canvas { display: flex; flex-direction: column; }
-.lc-empty { padding: 20px; color: var(--cc-text-dim); }
+.lc-empty { padding: 20px; }   /* + .cc-muted */
 .lc-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; }
 .lc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* sits right after the sliders (NOT pushed to the far right) so it doesn't shift when the compare

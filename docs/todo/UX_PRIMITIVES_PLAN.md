@@ -83,9 +83,22 @@ skipped (kept bespoke), not forced.
 
 **Done — muted text / subtitles / simple empties → `.cc-muted`:** `NotebooksModule` (`.nb-sub`/`.nb-hint`),
 `SetupModule` (`.setup-sub`), `LegacyMigrateDialog` (`.lm-sub`), `GatingCopyDialog` (`.cg-empty`),
-`FileBrowser` (`.fb-empty`), `NotebookTable` (`.nbt-empty`) — plus `MoviesModule`/`AnimationModule`
-(seeded earlier). This also **fixed several dead `--cc-text-muted` references** (an undefined token that
-silently fell back to `#888` instead of the real `--cc-text-dim`).
+`FileBrowser` (`.fb-empty`), `NotebookTable` (`.nbt-empty`), `SummaryCanvas` (`.sc-empty`), `LayoutCanvas`
+(`.lc-empty`), `GatingPlots` (`.gp-empty`), `SeriesPicker`/`PopulationManager` (`.pm-empty`), `UmapView`
+(`.uv-pop-empty`), `TaskRunner` (`.defs-empty-msg`) — plus `MoviesModule`/`AnimationModule` (seeded
+earlier). This also **fixed several dead `--cc-text-muted` references** (an undefined token that silently
+fell back to `#888` instead of the real `--cc-text-dim`).
+
+**Roadblock — value readouts (`.cc-readout`) and eyebrows (`.cc-eyebrow`) NOT swept.** Their font sizes
+are context-tuned (0.6–0.78rem: dense inline readouts, tiny node labels) and the neighbouring widths are
+tuned to those sizes; the coarse 3-step scale (`--cc-fs-xs/sm`) would enlarge them and drift the layout.
+Some readouts are intentionally accent-coloured (`.pt-val`) or `--cc-text` (not dim). So `.cc-readout` /
+`.cc-eyebrow` are used only where the size already matches (e.g. `MoviesModule` zoom). Adopt the rest
+opportunistically per-file where the values line up — not a sweep.
+
+**Roadblock — card/surface (`.cc-card`) NOT swept.** ~29 panel/card blocks with radii spread 0.2–0.5rem
+and mixed surface-1/2; normalising all to `--cc-radius-md` + surface-1 would visibly change many. Use
+`.cc-card` for new containers; migrate existing ones only when a file is already being touched.
 
 **Roadblocks — deliberately kept bespoke (do NOT force onto the utils):**
 - **Rich empty state** — `ImageTable` `.empty-state` (+ `.empty-icon/-title/-hint/-cta`): a full icon +

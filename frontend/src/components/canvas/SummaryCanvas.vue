@@ -127,7 +127,7 @@ watch(segPops, () => {
 
 <template>
   <div class="summary-canvas">
-    <div v-if="!imageUid" class="sc-empty">Select one or more images above to plot.</div>
+    <div v-if="!imageUid" class="sc-empty cc-muted">Select one or more images above to plot.</div>
     <template v-else>
       <div class="sc-bar">
         <select class="sc-add" v-tooltip.bottom="'Add a plot'"
@@ -199,7 +199,7 @@ watch(segPops, () => {
 
 <style scoped>
 .summary-canvas { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.sc-empty { padding: 20px; color: var(--cc-text-dim); }
+.sc-empty { padding: 20px; }   /* + .cc-muted */
 .sc-bar { display: flex; align-items: center; gap: 12px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; flex-wrap: wrap; }
 .sc-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .sc-add { min-width: 8rem; }
