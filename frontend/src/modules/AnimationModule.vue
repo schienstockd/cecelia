@@ -248,7 +248,7 @@ async function render() {
     <header class="anim-head">
       <div>
         <h1>Animation</h1>
-        <p class="anim-sub">A timeline of napari view snapshots. Capture a base look, add keyframes, toggle
+        <p class="anim-sub cc-muted">A timeline of napari view snapshots. Capture a base look, add keyframes, toggle
           channels/populations per keyframe, then render — the movie interpolates between keyframes.</p>
       </div>
       <div class="anim-head-ctl">
@@ -274,8 +274,8 @@ async function render() {
       </div>
     </header>
 
-    <p v-if="!hasProject" class="anim-empty">Open a project to build an animation.</p>
-    <p v-else-if="!openImageUid" class="anim-empty">Open an image in napari to start capturing keyframes.</p>
+    <p v-if="!hasProject" class="cc-empty">Open a project to build an animation.</p>
+    <p v-else-if="!openImageUid" class="cc-empty">Open an image in napari to start capturing keyframes.</p>
 
     <template v-else>
       <div class="anim-toolbar">
@@ -297,7 +297,7 @@ async function render() {
           v-tooltip.bottom="'Show the selected keyframe in napari when you click it (so you can see / tweak it)'" />
       </div>
 
-      <p v-if="!frames.length" class="anim-empty">No keyframes yet — set up the view in napari and
+      <p v-if="!frames.length" class="cc-empty">No keyframes yet — set up the view in napari and
         <strong>Capture view</strong>.</p>
 
       <div v-else class="anim-timeline">
@@ -370,7 +370,7 @@ async function render() {
 .anim-page { padding: 1rem 1.25rem; height: 100%; overflow: auto; }
 .anim-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
 .anim-head h1 { font-size: 1.1rem; margin: 0 0 0.2rem; }
-.anim-sub { font-size: 0.8rem; color: var(--cc-text-dim); max-width: 46rem; margin: 0; }
+.anim-sub { max-width: 46rem; margin: 0; }   /* + .cc-muted */
 .anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
 .anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
@@ -378,7 +378,6 @@ async function render() {
 .anim-title-toggle { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
 .anim-note { font-size: 0.72rem; width: 9rem; padding: 2px 6px; border: 1px solid var(--cc-border);
   border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
-.anim-empty { font-size: 0.85rem; color: var(--cc-text-dim); margin-top: 1.5rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
 .anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); cursor: pointer; }

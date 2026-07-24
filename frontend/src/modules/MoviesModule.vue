@@ -166,7 +166,7 @@ function movieTime(mtime: number): string {
     <header class="mov-head">
       <div>
         <h1>Movies</h1>
-        <p class="mov-sub">Play the movies rendered for this project (single image, animation and batch).
+        <p class="mov-sub cc-muted">Play the movies rendered for this project (single image, animation and batch).
           Native player with adjustable speed and zoom.</p>
       </div>
       <div class="mov-head-ctl">
@@ -180,7 +180,7 @@ function movieTime(mtime: number): string {
           <i class="pi pi-search-plus" />
           <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
                  @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
-          <span class="mov-num">{{ zoomLabel }}</span>
+          <span class="mov-num cc-readout">{{ zoomLabel }}</span>
         </label>
         <CcToggle class="mov-ctl" v-model="settings.moviesAutoplay" label="Autoplay"
                   v-tooltip.bottom="'Play a movie automatically when you select it'" />
@@ -193,8 +193,8 @@ function movieTime(mtime: number): string {
       </div>
     </header>
 
-    <p v-if="!hasProject" class="mov-empty">Open a project to browse its movies.</p>
-    <p v-else-if="!movies.length && !loading" class="mov-empty">No movies yet — record one from the
+    <p v-if="!hasProject" class="cc-empty">Open a project to browse its movies.</p>
+    <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
       Animation, Batch movies or Viewer panels; they appear here.</p>
 
     <div v-else class="mov-body">
@@ -205,13 +205,13 @@ function movieTime(mtime: number): string {
                  :autoplay="settings.moviesAutoplay" :loop="settings.moviesLoop"
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" />
         </div>
-        <p v-else class="mov-empty">Select a movie to play.</p>
+        <p v-else class="cc-empty">Select a movie to play.</p>
         <div v-if="selected" class="mov-caption">{{ movieDisplayName(selected) }}</div>
       </div>
 
       <!-- Playlist -->
-      <aside class="mov-list">
-        <div class="mov-list-head">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}</div>
+      <aside class="mov-list cc-card">
+        <div class="mov-list-head cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}</div>
         <button v-for="m in movies" :key="m.name" class="mov-item"
                 :class="{ active: m.name === selected }" @click="select(m.name)">
           <i class="pi pi-video mov-item-ico" />
@@ -229,17 +229,15 @@ function movieTime(mtime: number): string {
 .mov-page { padding: 1rem 1.25rem; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .mov-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .mov-head h1 { margin: 0; font-size: 1.15rem; }
-.mov-sub { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--cc-text-dim); max-width: 46rem; }
+.mov-sub { margin: 0.2rem 0 0; max-width: 46rem; }   /* + .cc-muted (colour/size) */
 .mov-head-ctl { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .mov-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--cc-text-dim); }
 .mov-select {
   background: var(--cc-surface-2); color: var(--cc-text); border: 1px solid var(--cc-border);
-  border-radius: 0.3rem; padding: 0.15rem 0.35rem; font-size: 0.78rem;
+  border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem; font-size: 0.78rem;
 }
 .mov-range { width: 6rem; }
-.mov-num { font-variant-numeric: tabular-nums; min-width: 2.2rem; }
-
-.mov-empty { color: var(--cc-text-dim); font-size: 0.85rem; margin-top: 2rem; }
+.mov-num { min-width: 2.2rem; }   /* + .cc-readout (tabular-nums/colour/size) */
 
 .mov-body { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 1rem; }
 
@@ -256,14 +254,8 @@ function movieTime(mtime: number): string {
 .mov-caption { font-size: 0.8rem; color: var(--cc-text); word-break: break-all; }
 
 /* Playlist */
-.mov-list {
-  width: 18rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border);
-  border-radius: 0.4rem; background: var(--cc-surface-1); padding: 0.35rem;
-}
-.mov-list-head {
-  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
-  padding: 0.35rem 0.5rem 0.5rem;
-}
+.mov-list { width: 18rem; flex-shrink: 0; overflow-y: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
+.mov-list-head { padding: 0.35rem 0.5rem 0.5rem; }   /* + .cc-eyebrow (uppercase/dim/spacing) */
 .mov-item {
   display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
   background: none; border: none; cursor: pointer; color: var(--cc-text-dim);

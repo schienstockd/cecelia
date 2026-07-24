@@ -46,6 +46,18 @@
   --cc-runner-w:       280px;
   --cc-console-bar-h:  30px;
   --cc-console-open-h: 210px;
+
+  /* Corner radius scale — collapses the ~8 ad-hoc radii (0.2/0.25/0.3/0.35/0.4…) to two steps.
+     -sm = small controls/chips/inputs; -md = cards/panels/dialogs. Use these, not a raw rem. */
+  --cc-radius-sm: 0.25rem;
+  --cc-radius-md: 0.4rem;
+
+  /* Small-text scale — collapses the ~10 ad-hoc sizes (0.6–0.85rem) to three steps for the
+     "secondary text" scenarios (labels, hints, readouts, meta). Body stays 13px; these are for
+     de-emphasised chrome. Use with `.cc-muted` etc., not a raw rem. */
+  --cc-fs-xs: 0.68rem;
+  --cc-fs-sm: 0.75rem;
+  --cc-fs-md: 0.82rem;
 }
 
 /* ── Reset / base ──────────────────────────────────────────────────────────── */
@@ -138,6 +150,36 @@ body {
   color: #fca5a5;
 }
 .cc-btn-danger-ghost:hover:not(:disabled) { background: #7f1d1d88; }
+
+/* ── Semantic role utilities ───────────────────────────────────────────────────
+   Generalise the recurring UX *scenarios* (roles that repeat across many different elements) instead
+   of styling each site ad-hoc. Compose them; add only layout (width/margin/flex) in scoped CSS.
+   See docs/UI.md → "UX primitive catalog" and docs/todo/UX_PRIMITIVES_PLAN.md. */
+
+/* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. */
+.cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+
+/* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
+   title / CTA inside for the rich variant (it's a flex column). */
+.cc-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.4rem; padding: 2rem 1rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-md); text-align: center;
+}
+
+/* Numeric value readout shown beside a control/metric (slider values, counts, occupancy). Default is
+   muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence). */
+.cc-readout { font-variant-numeric: tabular-nums; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+.cc-readout-strong { color: var(--cc-text); font-weight: 600; }
+
+/* Eyebrow / section label — small uppercase dim heading above a group of controls. */
+.cc-eyebrow {
+  font-size: var(--cc-fs-xs); font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--cc-text-dim);
+}
+
+/* Surface / container chrome — a card/panel body (surface-1 + hairline border + md radius). */
+.cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 
 /* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
 /* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */
