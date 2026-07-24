@@ -15,6 +15,8 @@ import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
 import Toast from 'primevue/toast'
+import { useToast } from 'primevue/usetoast'
+import { useTaskStore } from './stores/tasks'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -24,6 +26,17 @@ const appCtl = useAppControlStore()
 const observer = useObserverStore()
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
+
+// Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
+// project export/import, task:run) registers via taskStore.add(), which bumps `lastStarted`. One
+// toast here means no dialog needs its own "it's running" feedback and users don't have to open the
+// task console to confirm a job started.
+const toast = useToast()
+const taskStore = useTaskStore()
+watch(() => taskStore.lastStarted, (t) => {
+  if (t) toast.add({ severity: 'success', summary: 'Started', life: 2500,
+                     detail: `${t.label} — running in the background` })
+})
 // Cecelia's automatic activity summaries: fire capture_context! after a task/chain node finishes,
 // which upserts the rolling DAILY [Cecelia] digest (app-lifetime install, since the lab-log panel is
 // v-if'd). Firing per task is cheap — the backend regenerates today's one block. See stores/labCapture.ts.
