@@ -32,20 +32,23 @@ This doc has grown; use this as the run-list. Details for each are in the number
 
 ## 1. Julia task handler
 
-Create two co-located files under `app/src/tasks/<category>/`:
+Create the co-located files under `app/src/tasks/<category>/`:
 
 ```
-app/src/tasks/<category>/<name>.jl     ← struct + _run_task
-app/src/tasks/<category>/<name>.json   ← param spec (served to Vue via API)
+app/src/tasks/<category>/<name>.jl       ← struct + _run_task
+app/src/tasks/<category>/<name>.json     ← param spec (served to Vue via API)
+app/src/tasks/<category>/<name>_run.py   ← OPTIONAL: Python compute (run by path via run_py)
 ```
 
-The filenames must match (`drift_correct.jl` ↔ `drift_correct.json`).
+The filenames must match (`drift_correct.jl` ↔ `drift_correct.json` ↔ `drift_correct_run.py`). The
+`_run.py` lives **here**, beside its `.jl` — not in the `python/` package (which is the IO library
+only). It's run by path, so it never makes `app/` an importable Python package.
 
 **Naming convention (keep it consistent — no outliers without a reason):**
 - Category dirs are camelCase: `cleanupImages`, `clustPops`, `clustTracks`, `tracking`, …
 - `fun_name` is `<category>.<name>` — category camelCase, `<name>` snake_case
   (`clustPops.cluster`, `tracking.bayesian_tracking`, `cleanupImages.afCorrect` (legacy)).
-- The Python **runner** is `python/cecelia/tasks/<category>/<name>_run.py` — the `_run` suffix marks a
+- The Python **runner** is `app/src/tasks/<category>/<name>_run.py` — the `_run` suffix marks a
   subprocess entry point; reusable logic lives in `python/cecelia/utils/*.py`.
 - Python subprocess entry points that are **not** scheduler tasks (data-layer writers invoked by
   the engine, e.g. the categorical-obs writer) live in `python/cecelia/writers/`, **not** under `tasks/`.
@@ -203,7 +206,7 @@ exact params your runner expects as the second arg (a `NamedTuple` or `Dict`).
 
 ## 2. Python script
 
-Location: `python/cecelia/tasks/<category>/<name>_run.py`
+Location: `app/src/tasks/<category>/<name>_run.py`
 
 ### Boilerplate
 

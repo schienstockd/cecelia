@@ -35,11 +35,6 @@ from btrack import utils as btrack_utils
 
 import cecelia.utils.label_props_utils as label_props_utils
 
-# vendored, proven base config (old cecelia inst/models/btrackModels/cell_config.json) —
-# loaded from disk so headless/production runs never hit btrack's network download.
-_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "tasks", "tracking", "cell_config.json")
-
 # btrack Track.to_dict() fields we keep (per-timepoint rows; ID == btrack track number)
 _TRACK_COLS = ("ID", "parent", "root", "state", "generation", "t", "label_id")
 
@@ -49,6 +44,10 @@ class BayesianTrackingUtils:
         self.log = logger
         self.task_dir   = params["taskDir"]
         self.value_name = params.get("valueName", "default")
+        # Vendored btrack base config — path supplied by the caller (the tracking task runner ships
+        # it beside itself), so this IO helper never reaches into package-data. Loaded from disk so
+        # headless/production runs never hit btrack's network download.
+        self.btrack_config_path = params["btrackConfig"]
         # explicit gated-population label IDs (None = track the whole segmentation)
         self.label_ids  = params.get("labelIds", None)
 
@@ -134,7 +133,7 @@ class BayesianTrackingUtils:
         objects = btrack_utils.objects_from_dict(
             {k: np.asarray(centroid_df[k].values) for k in centroid_df.columns})
 
-        cfg = btrack_config.load_config(_CONFIG_PATH)
+        cfg = btrack_config.load_config(self.btrack_config_path)
 
         # probability NOT to assign a track (reversed prob_to_assign), as in old cecelia:
         # assumes 0.0001 highest / 0.1 lowest.

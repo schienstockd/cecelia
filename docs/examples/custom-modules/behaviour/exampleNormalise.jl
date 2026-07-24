@@ -1,8 +1,8 @@
 # Example custom (user drop-in) task — Julia-only, no Python.
 #
 # Copy this whole `custom-modules/` tree into your per-user config dir so the layout becomes:
-#   <config_dir>/modules/sources/behaviour/exampleNormalise.jl        ← this file
-#   <config_dir>/modules/inputDefinitions/behaviour/exampleNormalise.json
+#   <config_dir>/modules/behaviour/exampleNormalise.jl        ← this file
+#   <config_dir>/modules/behaviour/exampleNormalise.json
 # (config_dir = ~/.cecelia for an installed app; your dev dir otherwise — see docs/CUSTOM_MODULES.md).
 #
 # It min-max normalises one per-cell measure column to 0..1 and writes it back as a new obs column
@@ -46,5 +46,4 @@ function Cecelia._run_task(::ExampleNormalise, img::Cecelia.CciaImage, params::D
 end
 
 Cecelia.register_task!("behaviour.exampleNormalise", ExampleNormalise();
-                       spec = joinpath(@__DIR__, "..", "..",
-                                       "inputDefinitions", "behaviour", "exampleNormalise.json"))
+                       spec = joinpath(@__DIR__, "exampleNormalise.json"))

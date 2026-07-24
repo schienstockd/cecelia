@@ -52,7 +52,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## Python tasks & writers
 
-- **Task runners**: `python/cecelia/tasks/<category>/<name>_run.py` — thin subprocess entry points (segment, cleanupImages, tracking, editImages, importImages, clustPops, clustTracks). Reusable logic lives in `utils/`, not the runners.
+- **Task runners**: `app/src/tasks/<category>/<name>_run.py` — thin subprocess entry points co-located with their `.jl`/`.json` (segment, cleanupImages, tracking, editImages, importImages, clustPops, clustTracks). Run by path via `run_py`; reusable logic lives in `python/cecelia/utils/`, not the runners. (`python/cecelia/` is the IO library only — no task runners.)
 - **Data-layer writers**: `python/cecelia/writers/*_run.py` — e.g. `write_categorical_obs_run` (delegates to `obs_utils`).
 
 ## Julia app (`app/src/`)

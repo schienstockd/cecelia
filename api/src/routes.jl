@@ -174,20 +174,21 @@ function api_task_definitions(req::HTTP.Request)
     end
 
     # ── User drop-in modules (custom tasks) ────────────────────────────────────
-    # Same directory-driven contract as the built-ins, but rooted at the per-user config dir
-    # (<config_dir>/modules/inputDefinitions/<category>/<name>.json). Category = subdir name, so a
-    # custom task in an existing category (e.g. behaviour/) appears in that module page automatically.
+    # Same directory-driven contract as the built-ins, and the SAME co-located layout, but rooted at
+    # the per-user config dir (<config_dir>/modules/<category>/<name>.json). Category = subdir name, so
+    # a custom task in an existing category (e.g. behaviour/) appears in that module page automatically.
     # Built-ins win on a fun_name clash. See docs/CUSTOM_MODULES.md and Cecelia.load_custom_modules!.
     builtin_funs = Set{String}()
     for specs in values(raw), spec in specs
         fn = string(get(spec, "fun_name", ""))
         isempty(fn) || push!(builtin_funs, fn)
     end
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules", "inputDefinitions")
+    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
     if isdir(user_defs_root)
         for entry in readdir(user_defs_root; join=true)
             isdir(entry) || continue
             category = basename(entry)
+            category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
             (!isempty(cat) && category != cat) && continue
             for f in readdir(entry; join=true)
                 endswith(f, ".json") || continue
@@ -258,13 +259,14 @@ end
 # that category (a matching dir under app/src/tasks). The frontend renders a generic page + nav entry
 # only for the NEW categories (builtin == false); tasks in an existing category already show there.
 function _custom_module_categories()
-    user_defs_root = joinpath(Cecelia.config_dir(), "modules", "inputDefinitions")
+    user_defs_root = joinpath(Cecelia.config_dir(), "modules")
     isdir(user_defs_root) || return Any[]
     builtin = Set(basename(e) for e in readdir(_TASK_SPECS_ROOT; join=true) if isdir(e))
     cats = Any[]
     for entry in readdir(user_defs_root; join=true)
         isdir(entry) || continue
         category = basename(entry)
+        category in ("sources", "inputDefinitions", "python") && continue  # legacy layout dirs
         funs = String[]
         for f in readdir(entry; join=true)
             endswith(f, ".json") || continue
@@ -868,7 +870,7 @@ end
 
 # POST /api/import/scan-legacy {sourceProjectDir, rscript?, imageUids?} → read-only preview manifest
 # of a legacy R/Shiny cecelia project (what will/won't transfer per image). See
-# python/cecelia/tasks/importImages/scan_legacy_run.py and docs/todo/LEGACY_MIGRATION_PLAN.md.
+# app/src/tasks/importImages/scan_legacy_run.py and docs/todo/LEGACY_MIGRATION_PLAN.md.
 function api_import_scan_legacy(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body")) end

@@ -9,9 +9,9 @@
 # Category `customExamples` has no built-in page, so this also exercises the generic
 # `/custom/:category` page — a "Custom" group appears in the sidebar. Copy this whole `custom-modules/`
 # tree into your config dir's `modules/` (see docs/CUSTOM_MODULES.md), giving:
-#   <config_dir>/modules/sources/customExamples/trackContext.jl              ← this file
-#   <config_dir>/modules/inputDefinitions/customExamples/trackContext.json
-#   <config_dir>/modules/python/customExamples/trackContext_run.py
+#   <config_dir>/modules/customExamples/trackContext.jl              ← this file
+#   <config_dir>/modules/customExamples/trackContext.json
+#   <config_dir>/modules/customExamples/trackContext_run.py
 #
 # The file is `include`d INTO the Cecelia module, so names resolve with the `Cecelia.` prefix.
 
@@ -66,7 +66,7 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
     pcol = jcol
     if method != "none"
         pcol   = "$jcol.$method"
-        script = joinpath(Cecelia.custom_modules_dir(), "python", "customExamples", "trackContext_run.py")
+        script = joinpath(@__DIR__, "trackContext_run.py")   # co-located beside this .jl
         ok = Cecelia.run_py(script,
                 (; labelPropsPath = path, inColumn = jcol, outColumn = pcol, method = method),
                 Cecelia.task_run_dir(img._dir);
@@ -79,5 +79,4 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
 end
 
 Cecelia.register_task!("customExamples.trackContext", TrackContext();
-                       spec = joinpath(@__DIR__, "..", "..",
-                                       "inputDefinitions", "customExamples", "trackContext.json"))
+                       spec = joinpath(@__DIR__, "trackContext.json"))   # co-located

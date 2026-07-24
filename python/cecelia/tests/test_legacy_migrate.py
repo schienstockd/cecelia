@@ -1,4 +1,4 @@
-"""Unit tests for the legacy → Pineapple h5ad rewrite (cecelia.tasks.importImages.legacy_migrate).
+"""Unit tests for the legacy → Pineapple h5ad rewrite (cecelia.utils.legacy_migrate).
 
 Builds tiny synthetic AnnData files (no R, no zarr) covering the two legacy shapes and pins the
 schema conversion: index←label, centroids var→obsm (only when absent), and dropping the excluded
@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 
-from cecelia.tasks.importImages.legacy_migrate import migrate_h5ad
+from cecelia.utils.legacy_migrate import migrate_h5ad
 
 
 def _write(tmp, adata):
