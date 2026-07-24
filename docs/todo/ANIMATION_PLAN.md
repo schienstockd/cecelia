@@ -248,11 +248,17 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   the original). `content = { title, note, sections: [{ heading, items: [{label, colour}] }] }`. Pure
   + testable without napari (`python/cecelia/tests/test_title_card.py`). Add Pillow to the env if not
   already declared.
-- **H2 — batch path** (richest config; the headline `generateMovies` use). Assemble content in
-  `run_batch_movies` (Julia) per image via the shared `overlay_legend_content` helper + `img.name`/
-  `img.attr`; thread `titleCard` through `record_timelapse!`; add the toggle/note/duration to
-  `BatchMoviesPanel.vue` (config in `utils/batchMovie.ts`). Channels read from the live viewer in
-  `napari_utils.record_timelapse`.
+- **~~H2 — batch path~~ — DONE (scoped)** (richest config; the headline `generateMovies` use).
+  `overlay_legend_content` extracted in `napari_api.jl` and reused by the overlay-legend endpoint AND
+  `_title_card_content(img, config)` (title = `img.name` + attr values; **colour-by** section from the
+  shared helper). `titleCard {enabled, note, durationSec}` threads `run_batch_movies` →
+  `record_timelapse!` (`napari.jl`) → bridge → `napari_utils.record_timelapse`, which reads the
+  **Channels** section from the live viewer (`_visible_channel_legend`, colormap→hex) and prepends the
+  card best-effort (`_maybe_prepend_title` — never fails the recording). Frontend toggle/note/duration
+  in `BatchMoviesPanel.vue` (config + clamp in `utils/batchMovie.ts`, default ON), persisted per set.
+  **Deferred:** the explicit point-**populations** rows (deriving the exact shown-pop set from the
+  batch config robustly needs care; the colour-by section already covers the split-by-cluster case).
+  Card content so far = title + channels + colour-by + note.
 - **H3 — single record** (`ViewerPanel.vue` → `api_napari_record_timelapse`). No overlay config
   exists on this path, so the card shows title + channels (+ note); pops/colour-by best-effort/empty.
 - **H4 — animation page** (`AnimationModule.vue` → `record_keyframes`). Card reflects the FIRST

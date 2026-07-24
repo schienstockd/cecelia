@@ -147,6 +147,7 @@ export const useSettingsStore = defineStore('settings', () => {
       colourLabels?: boolean
       fileAttrs?: string[]                  // attr names composing the output filename
       tStart?: number; tEnd?: number | null
+      titleCard?: { enabled: boolean; note: string; durationSec: number }   // Phase H description slide
     }
   }
   const _setPrefs = ref<Record<string, NapariSetPrefs>>(

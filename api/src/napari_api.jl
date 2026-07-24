@@ -664,6 +664,40 @@ _batch_cancelled(id)      = lock(() -> get(_batch_cancel, id, false),           
 _batch_clear!(id)         = lock(() -> delete!(_batch_cancel, id),                        _batch_cancel_lock)
 request_batch_cancel!(id) = lock(() -> (haskey(_batch_cancel, id) && (_batch_cancel[id] = true); nothing), _batch_cancel_lock)
 
+# Assemble the Julia-side title-card content for an image under a movie config (Phase H). Title = image
+# name + its attribute values ("MERTK — mouse 1 — location B"); the colour-by section from the CANONICAL
+# `overlay_legend_content` helper. CHANNELS are NOT added here — the recorder adds them from the live
+# viewer (the only place channel colour lives). Returns `nothing` when the card is disabled/absent so the
+# recorder skips it. (Point-population rows are a deferred follow-up — see ANIMATION_PLAN.md → H.)
+function _title_card_content(img, config)
+    tc = get(config, :titleCard, nothing)
+    (tc === nothing || !(tc isa AbstractDict) || !Bool(get(tc, :enabled, false))) && return nothing
+
+    attrs = String[]
+    if img.attr isa AbstractDict
+        for k in sort(collect(keys(img.attr)))
+            v = strip(String(img.attr[k])); isempty(v) || push!(attrs, v)
+        end
+    end
+    title = join(vcat([img.name], attrs), " — ")
+
+    sections = Vector{Dict{String,Any}}()
+    column   = String(get(config, :colourBy, ""))
+    if !isempty(column)
+        legend = overlay_legend_content(img, column, nothing, get(config, :colourOverrides, nothing))
+        items  = [Dict{String,Any}("label" => it["label"], "colour" => it["colour"]) for it in legend.colourBy["items"]]
+        isempty(items) || push!(sections, Dict{String,Any}("heading" => "Colour by", "items" => items))
+    end
+
+    Dict{String,Any}(
+        "enabled"     => true,
+        "durationSec" => Float64(get(tc, :durationSec, 3.0)),
+        "title"       => title,
+        "note"        => String(get(tc, :note, "")),
+        "sections"    => sections,   # the recorder prepends a "Channels" section from the live viewer
+    )
+end
+
 # F1.3 batch runner — invoked async from the WS layer (`movie:batch`). For each image: apply the config,
 # record the T-sweep to an attr-named mp4, emit task:progress/log so it drives the existing task UI. `rep`
 # = representative uid for status/result. Errors on one image are logged and the batch continues.
@@ -705,7 +739,8 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
                 _apply_movie_config!(project_uid, uid, img, config)
                 v = _viewer()
                 v === nothing && error("Napari not running")
-                record_timelapse!(v, path; fps = fps, scale = scale, t_start = t_start, t_end = t_end)
+                record_timelapse!(v, path; fps = fps, scale = scale, t_start = t_start, t_end = t_end,
+                                  title_card = _title_card_content(img, config))
             end
             done += 1
             ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
@@ -973,14 +1008,53 @@ _pop_labels_for(img, column::AbstractString, pop_types) =
 # Merge the client's user colour overrides ({value(str) => hex}, from recolouring a legend swatch) on
 # TOP of the pop-derived overrides — the user's explicit choice wins (categories with no population have
 # no colour defined anywhere, so this is the only source; for pop-backed values it's a display override).
-function _merge_user_overrides!(overrides::Dict{String,String}, data)::Dict{String,String}
-    user = get(data, :colourOverrides, nothing)
-    user === nothing && return overrides
+function _apply_user_overrides!(overrides::Dict{String,String}, user)::Dict{String,String}
+    (user === nothing || !(user isa AbstractDict)) && return overrides
     for (k, v) in pairs(user)
         (v === nothing || isempty(String(v))) && continue
         overrides[String(k)] = String(v)
     end
     overrides
+end
+_merge_user_overrides!(overrides::Dict{String,String}, data)::Dict{String,String} =
+    _apply_user_overrides!(overrides, get(data, :colourOverrides, nothing))
+
+# CANONICAL legend content for an image's overlays — the single source of truth shared by the
+# overlay-legend endpoint (strip legend / napari strip, Phase C) AND the movie title card (Phase H),
+# so all three read identical rows. Pure (no viewer). Given a `column` (colour-by measure), the
+# `overlay_pops` list ({valueName, popType, path} or nothing) and user recolours, returns:
+#  • colourBy: {column, items:[{value, colour(pop hex), label(pop name)}]} for each value on `column`
+#  • populations: [{name, colour}] for each requested point/track pop (deduped by name).
+function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
+    pt_all  = ("trackclust", "track", "clust", "flow")
+    colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
+    labels  = _pop_labels_for(img, column, pt_all)
+    cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
+           for k in sort(collect(keys(colours)))]
+
+    pops = Vector{Dict{String,Any}}()
+    if overlay_pops !== nothing
+        seen = Set{String}()   # dedupe by pop NAME — one pop spans segmentations (one layer each)
+        for pp in overlay_pops
+            vn   = String(get(pp, :valueName, ""))
+            pt   = String(get(pp, :popType, ""))
+            path = String(get(pp, :path, ""))
+            (isempty(vn) || isempty(pt)) && continue
+            if endswith(path, "_tracked")   # whole-segmentation "all tracks" → one generic grey row
+                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => "#9ca3af")); end
+                continue
+            end
+            try
+                p = pop_at(_live_map(img, vn, pt), path)
+                p.name in seen && continue
+                push!(seen, p.name)
+                push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
+            catch
+                # pop map / path unavailable → skip
+            end
+        end
+    end
+    (; colourBy = Dict{String,Any}("column" => column, "items" => cby), populations = pops)
 end
 
 # ── REST: POST /api/napari/colour-labels ──────────────────────────────────────
@@ -1033,42 +1107,9 @@ function api_napari_overlay_legend(body_bytes::Vector{UInt8})
     column      = String(get(data, :colourBy, ""))
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
-
-    # colour-by legend: pop colour + pop name per value on `column`, plus any user recolours
-    pt_all  = ("trackclust", "track", "clust", "flow")
-    colours = _merge_user_overrides!(_colour_overrides_for(img, column, pt_all), data)
-    labels  = _pop_labels_for(img, column, pt_all)
-    cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
-           for k in sort(collect(keys(colours)))]
-
-    # population legend: name + colour from each requested pop's map — points AND track/track-cluster
-    # ribbons. Entries that aren't a named population (e.g. the whole-segmentation "/_tracked" layer) fail
-    # `pop_at` and are skipped, so only real pops get a legend row.
-    pops = Vector{Dict{String,Any}}()
-    req  = get(data, :overlayPops, nothing)
-    if req !== nothing
-        seen = Set{String}()   # dedupe by pop NAME — the same cluster/pop spans segmentations (one layer
-        for pp in req          # each) but is ONE population in the legend (no "Meandering" ×N).
-            vn = String(get(pp, :valueName, ""))
-            pt = String(get(pp, :popType, ""))
-            path = String(get(pp, :path, ""))
-            (isempty(vn) || isempty(pt)) && continue
-            # whole-segmentation "all tracks" overlay isn't a named pop → one generic grey "tracks" row
-            if endswith(path, "_tracked")
-                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => "#9ca3af")); end
-                continue
-            end
-            try
-                p = pop_at(_live_map(img, vn, pt), path)
-                p.name in seen && continue
-                push!(seen, p.name)
-                push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
-            catch
-                # pop map / path unavailable → skip this entry
-            end
-        end
-    end
-    200, JSON3.write((; ok = true, colourBy = Dict("column" => column, "items" => cby), populations = pops))
+    content = overlay_legend_content(img, column, get(data, :overlayPops, nothing),
+                                     get(data, :colourOverrides, nothing))
+    200, JSON3.write((; ok = true, colourBy = content.colourBy, populations = content.populations))
 end
 
 # ── REST: POST /api/napari/start-selection ────────────────────────────────────

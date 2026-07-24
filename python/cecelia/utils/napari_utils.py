@@ -392,13 +392,59 @@ def apply_view_state(viewer, snapshot):
 # in the pixi env); kept here (not the bridge) so it's a shared, testable primitive. See
 # docs/todo/ANIMATION_PLAN.md (Phase F1) and docs/NAPARI.md.
 
+# ── Title card (Phase H) — prepend a description slide to a recorded movie ─────
+def _visible_channel_legend(viewer):
+  """``[{label, colour}]`` for each visible Image layer: channel name + its colormap's max colour as
+  hex. Channel colour lives ONLY in the napari layer state (ANIMATION_PLAN.md Phase H, decision 5), so
+  the title card reads it here rather than duplicating a colormap→hex table. (A grayscale ramp maps its
+  max to white; single-hue channels give their hue — the common case.)"""
+  try:
+    from napari.layers import Image as _ImageLayer
+  except Exception:
+    _ImageLayer = None
+  out = []
+  for layer in getattr(viewer, "layers", []):
+    if _ImageLayer is not None and not isinstance(layer, _ImageLayer):
+      continue
+    if not getattr(layer, "visible", False):
+      continue
+    colour = None
+    try:
+      rgba = layer.colormap.map(np.array([1.0]))[0]
+      colour = "#{:02x}{:02x}{:02x}".format(
+        int(round(float(rgba[0]) * 255)), int(round(float(rgba[1]) * 255)), int(round(float(rgba[2]) * 255)))
+    except Exception:
+      pass
+    out.append({"label": str(getattr(layer, "name", "")), "colour": colour})
+  return out
+
+
+def _maybe_prepend_title(viewer, path, title_card):
+  """If a title card is enabled, prepend it to the just-recorded movie: build the Channels section from
+  the live viewer, prepend it to the Julia-assembled sections (colour-by, …), and composite via
+  ``cecelia.utils.title_card``. Best-effort — a failure logs and leaves the movie untouched; it never
+  fails the recording."""
+  if not title_card or not title_card.get("enabled"):
+    return
+  try:
+    from cecelia.utils import title_card as _tc
+    channels = _visible_channel_legend(viewer)
+    sections = ([{"heading": "Channels", "items": channels}] if channels else []) \
+        + list(title_card.get("sections") or [])
+    content = {"title": title_card.get("title", ""), "note": title_card.get("note", ""), "sections": sections}
+    _tc.prepend_title_to_movie(path, content, duration_sec=float(title_card.get("durationSec", 3.0)))
+  except Exception as e:
+    print(f"[WARN] title card skipped: {e}")
+
+
 def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
-                     canvas_only=True, scale=1, t_start=0, t_end=None):
+                     canvas_only=True, scale=1, t_start=0, t_end=None, title_card=None):
   """Record ``viewer``'s T-sweep (dims slider index ``t_axis_index``) from ``t_start``..``t_end``
   (default the full ``n_timepoints`` range) to ``path`` (an ``.mp4``), one frame per timepoint, at
   ``fps``. ``canvas_only`` excludes the napari UI chrome; ``scale`` supersamples (2 = 2× resolution).
-  Returns the number of frames written. Raises ``ValueError`` for a single-timepoint stack. Ports the
-  old R ``generateMovies`` T-playback: two keyframes (first/last T) + linear slider interpolation."""
+  ``title_card`` (Phase H) optionally prepends a description slide after recording. Returns the number
+  of frames written. Raises ``ValueError`` for a single-timepoint stack. Ports the old R
+  ``generateMovies`` T-playback: two keyframes (first/last T) + linear slider interpolation."""
   n = int(n_timepoints)
   if n <= 1:
     raise ValueError("record_timelapse needs a stack with >1 timepoint (no time axis to sweep)")
@@ -417,6 +463,7 @@ def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
   _set_t(t0); anim.capture_keyframe()
   _set_t(t1); anim.capture_keyframe(steps=(t1 - t0))   # one interpolated frame per timepoint between
   anim.animate(path, fps=int(fps), canvas_only=canvas_only, scale_factor=scale)
+  _maybe_prepend_title(viewer, path, title_card)        # Phase H: optional description slide
   return (t1 - t0) + 1
 
 
