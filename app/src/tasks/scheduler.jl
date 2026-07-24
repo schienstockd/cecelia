@@ -26,6 +26,29 @@ function list_tasks()
     end
 end
 
+"""
+Per-pool live status for the UI: `limit` (configured slot budget), `running` (slots currently in
+use = `in_flight`), and `queued` (submitted-but-not-yet-started jobs assigned to this pool). Joins
+the pool registry with the task registry. The two snapshots are taken under their OWN locks and
+merged outside both — never nest `_TASKS_LOCK` inside `_POOLS_LOCK`. Read-only reporting.
+"""
+function pool_status()
+    _POOLS_INIT[] || _pools_init!()
+    # pool budget + in-flight slots (authoritative running count) — under the pools lock
+    pools = lock(_POOLS_LOCK) do
+        [(; name=p.name, limit=p.limit, running=p.in_flight) for p in values(_POOLS)]
+    end
+    # per-pool queued count from the task registry — under its own lock
+    queued = Dict{String,Int}()
+    lock(_TASKS_LOCK) do
+        for rec in values(_TASKS)
+            rec.status === :queued || continue
+            queued[rec.pool_name] = get(queued, rec.pool_name, 0) + 1
+        end
+    end
+    [(; p.name, p.limit, p.running, queued=get(queued, p.name, 0)) for p in pools]
+end
+
 function cancel_chain_run!(run_id::String)
     # 1) Flag the run so the executor skips not-yet-started nodes (checked between nodes).
     lock(_CANCELLED_CHAINS_LOCK) do; push!(_CANCELLED_CHAINS, run_id); end
