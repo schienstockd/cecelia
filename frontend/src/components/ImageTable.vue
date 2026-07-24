@@ -219,8 +219,10 @@ function toggleActions(uid: string, e: MouseEvent) {
   actionsAnchor.value = e.currentTarget as HTMLElement
   actionsUid.value = uid
 }
-// close the menu, then run the chosen action (opens a dialog / toggles a flag)
-function runAction(fn: () => void) { actionsUid.value = null; fn() }
+// Run the chosen action, THEN close the menu. Order matters: the item closures read `actionsImg`,
+// a computed derived from `actionsUid` — clearing it first would null `actionsImg` and the closure's
+// `actionsImg!.uid` would throw (silently swallowing the click). Run first, close after.
+function runAction(fn: () => void) { fn(); actionsUid.value = null }
 // open run-history from the menu, re-anchored to the same ⋯ button the menu came from
 function openRunLogFromMenu(uid: string) {
   runLogAnchor.value = actionsAnchor.value
