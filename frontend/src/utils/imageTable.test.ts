@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { timelapseDuration, imageTableCsvRows } from './imageTable'
+import { timelapseDuration, imageTableCsvRows, sortImages, imageSortValue } from './imageTable'
 import type { CciaImage } from '../stores/project'
 
 const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'u', name: 'n', kind: 'live', status: 'done', ...o } as CciaImage)
@@ -18,6 +18,47 @@ describe('timelapseDuration', () => {
   })
   it('falls back to raw value + unit for an unrecognised time unit', () => {
     expect(timelapseDuration(2, 5, 'frames')).toBe('5 frames')
+  })
+})
+
+describe('sortImages', () => {
+  const names = (imgs: CciaImage[]) => imgs.map(i => i.uid)
+
+  it('sorts names case-insensitively with natural number ordering', () => {
+    const imgs = [img({ uid: 'a', name: 'res_0010' }), img({ uid: 'b', name: 'res_0002' }),
+                  img({ uid: 'c', name: 'Res_0001' })]
+    expect(names(sortImages(imgs, 'name', 'asc'))).toEqual(['c', 'b', 'a'])   // 1 < 2 < 10, case-insensitive
+    expect(names(sortImages(imgs, 'name', 'desc'))).toEqual(['a', 'b', 'c'])
+  })
+
+  it('sorts numeric columns numerically', () => {
+    const imgs = [img({ uid: 'a', sizeC: 10 }), img({ uid: 'b', sizeC: 2 }), img({ uid: 'c', sizeC: 5 })]
+    expect(names(sortImages(imgs, 'ch', 'asc'))).toEqual(['b', 'c', 'a'])
+    expect(names(sortImages(imgs, 'ch', 'desc'))).toEqual(['a', 'c', 'b'])
+  })
+
+  it('sorts duration by absolute seconds (unit-aware), not raw value', () => {
+    const a = img({ uid: 'a', sizeT: 2, timeIncrement: 1, timeIncrementUnit: 'hour' })    // 3600s
+    const b = img({ uid: 'b', sizeT: 2, timeIncrement: 120, timeIncrementUnit: 'second' }) // 120s
+    expect(names(sortImages([a, b], 'duration', 'asc'))).toEqual(['b', 'a'])
+  })
+
+  it('always puts blanks/nulls last, in both directions, keeping their order (stable)', () => {
+    const imgs = [img({ uid: 'a', sizeC: null }), img({ uid: 'b', sizeC: 3 }),
+                  img({ uid: 'c', sizeC: null }), img({ uid: 'd', sizeC: 1 })]
+    expect(names(sortImages(imgs, 'ch', 'asc'))).toEqual(['d', 'b', 'a', 'c'])
+    expect(names(sortImages(imgs, 'ch', 'desc'))).toEqual(['b', 'd', 'a', 'c'])
+  })
+
+  it('does not mutate the input array', () => {
+    const imgs = [img({ uid: 'a', sizeC: 2 }), img({ uid: 'b', sizeC: 1 })]
+    sortImages(imgs, 'ch', 'asc')
+    expect(names(imgs)).toEqual(['a', 'b'])
+  })
+
+  it('imageSortValue reads attr columns and treats missing as null', () => {
+    expect(imageSortValue(img({ attr: { Treatment: 'X' } }), 'attr:Treatment')).toBe('X')
+    expect(imageSortValue(img({}), 'attr:Treatment')).toBeNull()
   })
 })
 

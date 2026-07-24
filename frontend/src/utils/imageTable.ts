@@ -16,6 +16,59 @@ export function timelapseDuration(sizeT?: number | null, timeIncrement?: number 
   return sec == null ? `${round2(total)} ${unit ?? ''}`.trim() : formatSeconds(sec)
 }
 
+// ── Sorting ──────────────────────────────────────────────────────────────────
+// Clickable-header sort for the image table. Column keys: 'name', 'ch' (channel count), 'z'
+// (z-slices), 'duration' (timelapse length), `attr:<key>` (a user attribute column). Kept pure +
+// tested here; the SFC only holds the sort state (which column + direction) and calls sortImages.
+export type ImageSortKey = string
+export type ImageSortDir = 'asc' | 'desc'
+
+// The comparable value for one image under one column key. `null` = "no value" and always sorts LAST
+// (in both directions), so blanks never lead the list.
+export function imageSortValue(img: CciaImage, key: ImageSortKey): string | number | null {
+  if (key === 'name') return img.name ?? ''
+  if (key === 'ch') return img.sizeC ?? null
+  if (key === 'z') return img.sizeZ ?? null
+  if (key === 'duration') return durationSeconds(img)
+  if (key.startsWith('attr:')) return img.attr?.[key.slice(5)] ?? null
+  return null
+}
+
+// Timelapse length in SECONDS (so images with different time units sort correctly against each
+// other). null when it isn't a timelapse or the unit is unknown → sorts last.
+function durationSeconds(img: CciaImage): number | null {
+  if (!img.sizeT || img.sizeT <= 1 || !img.timeIncrement || img.timeIncrement <= 0) return null
+  return toSeconds((img.sizeT - 1) * img.timeIncrement, img.timeIncrementUnit)
+}
+
+// Stable sort (equal values keep their original order) with nulls/blanks always last. Numeric strings
+// compare numerically; text compares case-insensitively with natural number ordering ("_0002" < "_0010").
+export function sortImages(images: CciaImage[], key: ImageSortKey, dir: ImageSortDir): CciaImage[] {
+  const factor = dir === 'desc' ? -1 : 1
+  return images
+    .map((img, i) => ({ img, i, v: imageSortValue(img, key) }))
+    .sort((a, b) => {
+      const ae = isBlank(a.v), be = isBlank(b.v)
+      if (ae && be) return a.i - b.i        // both blank → keep original order
+      if (ae) return 1                        // blanks always last, regardless of direction
+      if (be) return -1
+      const c = compareNonBlank(a.v!, b.v!)
+      return c !== 0 ? c * factor : a.i - b.i // stable tiebreak by original index
+    })
+    .map(x => x.img)
+}
+
+function isBlank(v: string | number | null): boolean {
+  return v === null || v === undefined || v === ''
+}
+function compareNonBlank(a: string | number, b: string | number): number {
+  if (typeof a === 'number' && typeof b === 'number') return a - b
+  const sa = String(a), sb = String(b)
+  const na = Number(sa), nb = Number(sb)
+  if (sa.trim() !== '' && sb.trim() !== '' && !isNaN(na) && !isNaN(nb)) return na - nb
+  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' })
+}
+
 // convert a value in `unit` to seconds; null when the unit isn't a recognised time unit
 function toSeconds(v: number, unit?: string | null): number | null {
   const u = (unit ?? '').toLowerCase()
