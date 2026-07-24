@@ -1151,11 +1151,11 @@ class NapariState:
                 except Exception: pass
 
     def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
-                         scale=1, t_start: int = 0, t_end=None):
+                         scale=1, t_start: int = 0, t_end=None, title_card=None):
         """Record the open image's T-sweep to `path` (mp4). Resolves the T slider index from the image
         axes and delegates to the shared `napari_utils.record_timelapse` (keyframe→animate). Returns the
         frame count + path. Raises if the image has no time axis. Phase F1 of the batch-movie work
-        (docs/todo/ANIMATION_PLAN.md); F1.2/F1.3 add per-image config + batch."""
+        (docs/todo/ANIMATION_PLAN.md); F1.2/F1.3 add per-image config + batch; H adds `title_card`."""
         axes = self._display_axes()                       # non-channel axes, dims.current_step order
         if "t" not in axes:
             raise RuntimeError("this image has no time axis to record")
@@ -1164,7 +1164,8 @@ class NapariState:
             raise RuntimeError("this image has a single timepoint — nothing to sweep")
         frames = napari_utils.record_timelapse(
             self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
-            fps=fps, canvas_only=canvas_only, scale=scale, t_start=t_start, t_end=t_end)
+            fps=fps, canvas_only=canvas_only, scale=scale, t_start=t_start, t_end=t_end,
+            title_card=title_card)
         return {"frames": frames, "path": path, "n_timepoints": n_t}
 
     def record_keyframes(self, path: str, keyframes, fps: int = 15, canvas_only: bool = True):
@@ -1296,7 +1297,8 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             res = state.record_timelapse(cmd["path"], fps=cmd.get("fps", 15),
                                          canvas_only=cmd.get("canvas_only", True),
                                          scale=cmd.get("scale", 1),
-                                         t_start=cmd.get("t_start", 0), t_end=cmd.get("t_end"))
+                                         t_start=cmd.get("t_start", 0), t_end=cmd.get("t_end"),
+                                         title_card=cmd.get("title_card"))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "record_keyframes":

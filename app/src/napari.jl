@@ -226,10 +226,14 @@ apply_view_state!(v::NapariViewer, snapshot) =
 # path). `fps`/`scale` control frame rate + supersampling; `t_start`/`t_end` bound the range (default
 # the whole stack). Phase F1 batch-movie primitive — see docs/todo/ANIMATION_PLAN.md.
 record_timelapse!(v::NapariViewer, path::String; fps::Int=15, canvas_only::Bool=true,
-                  scale::Real=1, t_start::Int=0, t_end::Union{Int,Nothing}=nothing)::Dict{String,Any} = begin
+                  scale::Real=1, t_start::Int=0, t_end::Union{Int,Nothing}=nothing,
+                  title_card=nothing)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"record_timelapse", "path"=>path, "fps"=>fps,
                            "canvas_only"=>canvas_only, "scale"=>scale, "t_start"=>t_start)
     t_end !== nothing && (cmd["t_end"] = t_end)
+    # Phase H: an optional title-card slide prepended to the recording (assembled in api/napari_api.jl;
+    # the bridge adds channels from the live viewer and composites it). nothing/disabled → no card.
+    title_card !== nothing && (cmd["title_card"] = title_card)
     send(v, cmd)
 end
 

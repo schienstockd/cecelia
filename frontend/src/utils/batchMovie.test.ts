@@ -35,6 +35,18 @@ describe('buildBatchMovieConfig', () => {
     expect(c.tailWidth).toBe(8)
     expect(c.colourOverrides).toEqual({ '2': '#ff1493' })
   })
+
+  it('defaults the title card ON with a 3s duration', () => {
+    const c = buildBatchMovieConfig({}, [], {})
+    expect(c.titleCard).toEqual({ enabled: true, note: '', durationSec: 3 })
+  })
+
+  it('passes the title card through and clamps duration to 1–10s', () => {
+    expect(buildBatchMovieConfig({ titleCard: { enabled: false, note: 'day 3', durationSec: 5 } }, [], {}).titleCard)
+      .toEqual({ enabled: false, note: 'day 3', durationSec: 5 })
+    expect(buildBatchMovieConfig({ titleCard: { enabled: true, note: '', durationSec: 99 } }, [], {}).titleCard.durationSec).toBe(10)
+    expect(buildBatchMovieConfig({ titleCard: { enabled: true, note: '', durationSec: 0 } }, [], {}).titleCard.durationSec).toBe(1)
+  })
 })
 
 describe('movieFilename', () => {

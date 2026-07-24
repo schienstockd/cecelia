@@ -5,6 +5,13 @@
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
 //    (<attr1>_<attr2>_..._<uid>.mp4; blanks dropped, uid always terminates, unsafe chars → '_').
 
+// Title-card options (Phase H) — a description slide prepended to each recorded movie.
+export interface TitleCardCfg {
+  enabled: boolean
+  note: string
+  durationSec: number
+}
+
 export interface BatchMovieCfg {
   valueName?: string
   channels?: Record<string, string>
@@ -17,6 +24,7 @@ export interface BatchMovieCfg {
   colourLabels?: boolean
   tailWidth?: number
   pointsSize?: number
+  titleCard?: TitleCardCfg
 }
 
 export interface BatchMovieRequestConfig {
@@ -33,13 +41,18 @@ export interface BatchMovieRequestConfig {
   pointsSize: number
   colourLabels: boolean
   colourOverrides: Record<string, string>
+  titleCard: TitleCardCfg
 }
+
+// Title card is ON by default (Phase H decision 3); duration clamped to 1–10s.
+export const TITLE_CARD_DEFAULT: TitleCardCfg = { enabled: true, note: '', durationSec: 3 }
 
 export function buildBatchMovieConfig(
   cfg: BatchMovieCfg,
   segNames: string[],
   colourOverrides: Record<string, string>,
 ): BatchMovieRequestConfig {
+  const tc = cfg.titleCard
   return {
     valueName: cfg.valueName ?? '',
     channels: cfg.channels ?? {},
@@ -54,6 +67,11 @@ export function buildBatchMovieConfig(
     pointsSize: cfg.pointsSize ?? 6,
     colourLabels: !!cfg.colourLabels,
     colourOverrides: colourOverrides ?? {},
+    titleCard: {
+      enabled: tc?.enabled ?? TITLE_CARD_DEFAULT.enabled,
+      note: tc?.note ?? '',
+      durationSec: Math.min(10, Math.max(1, tc?.durationSec ?? TITLE_CARD_DEFAULT.durationSec)),
+    },
   }
 }
 

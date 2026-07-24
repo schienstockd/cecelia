@@ -18,7 +18,7 @@ import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, type BatchMovieCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
@@ -63,6 +63,14 @@ const colourLabels = computed<boolean>({ get: () => !!cfg.value.colourLabels,   
 const popType      = computed<string>({ get: () => cfg.value.popType ?? 'flow',      set: v => patch({ popType: v }) })
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
+
+// Title card (Phase H) — merge-patch so each control keeps the others' values.
+function patchTitle(p: Partial<TitleCardCfg>) {
+  patch({ titleCard: { ...TITLE_CARD_DEFAULT, ...(cfg.value.titleCard ?? {}), ...p } })
+}
+const titleCardOn = computed<boolean>({ get: () => cfg.value.titleCard?.enabled ?? TITLE_CARD_DEFAULT.enabled, set: v => patchTitle({ enabled: v }) })
+const titleNote   = computed<string>({  get: () => cfg.value.titleCard?.note ?? '',                                set: v => patchTitle({ note: v }) })
+const titleDur    = computed<number>({  get: () => cfg.value.titleCard?.durationSec ?? TITLE_CARD_DEFAULT.durationSec, set: v => patchTitle({ durationSec: Math.min(10, Math.max(1, v)) }) })
 
 // channel-colormap picker options: a leading "hidden" (no colour) + the standard swatch palette
 const colormapOpts: SwatchOption[] = [
@@ -293,6 +301,25 @@ async function previewOpen() {
         <p class="bm-preview">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>
 
+      <!-- Title card (Phase H) — auto description slide prepended to each movie -->
+      <section class="bm-sec">
+        <h4>
+          <label class="bm-title-toggle"><input type="checkbox" v-model="titleCardOn" /> Title card</label>
+          <span class="bm-sub">name, attributes, channels &amp; colours — prepended to each movie</span>
+        </h4>
+        <template v-if="titleCardOn">
+          <div class="bm-inset">
+            <span class="bm-lbl">duration</span>
+            <input type="range" min="1" max="10" step="1" v-model.number="titleDur" />
+            <span class="bm-val">{{ titleDur }}s</span>
+          </div>
+          <div class="bm-attrs">
+            <span class="bm-lbl">note <span class="bm-sub">optional extra line</span></span>
+            <input type="text" class="bm-note" v-model="titleNote" placeholder="e.g. 15s intravital, day 3" />
+          </div>
+        </template>
+      </section>
+
       <!-- Actions -->
       <div class="bm-actions">
         <button class="cc-btn cc-btn-ghost" :disabled="!project.napariImageUid" @click="previewOpen"
@@ -338,4 +365,7 @@ async function previewOpen() {
 .bm-preview { font-size: 0.76rem; color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.bm-note { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px;
+  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
 </style>
