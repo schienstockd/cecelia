@@ -3,11 +3,42 @@
 // the strip) go through these builders, so there's a single request shape per endpoint instead of two
 // divergent inline copies. Each builder returns the raw Response (or undefined on a network error) so
 // callers can still harvest the legend from the reply; it does not read/parse the body itself.
-import type { OverlayPushConfig } from './overlayLayers'
+import { parseOverlays, type OverlayPushConfig } from './overlayLayers'
+import { channelLegend, type LegendItem } from './viewLegend'
 
 const _post = (path: string, body: unknown): Promise<Response | undefined> =>
   fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .catch(() => undefined)
+
+// ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
+// The ONE path that turns a captured napari view snapshot into legend pieces: channels from the
+// snapshot's layer colormaps (channelLegend), populations + colour-by from the canonical
+// /api/napari/overlay-legend (overlay pops parsed from the snapshot's layer names). Both the board
+// strip (ImageStripView) and the single-record movie card go through this, so their legends match.
+export interface CapturedViewLegend {
+  channels: LegendItem[]
+  populations: { name: string; colour: string }[]
+  colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
+}
+export async function captureViewLegend(
+  projectUid: string, imageUid: string,
+  snapshot: { layers?: Record<string, unknown> } | null | undefined,
+  colourBy: string, colourOverrides: Record<string, string> = {},
+): Promise<CapturedViewLegend> {
+  const layers = (snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
+  const channels = channelLegend(layers)
+  const overlayPops = parseOverlays(snapshot?.layers as Record<string, unknown>)
+    .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
+  let populations: { name: string; colour: string }[] = []
+  let cby: CapturedViewLegend['colourBy'] | undefined
+  const res = await _post('/api/napari/overlay-legend', { projectUid, imageUid, colourBy, overlayPops, colourOverrides })
+  if (res?.ok) {
+    const j = await res.json().catch(() => ({})) as CapturedViewLegend & { ok?: boolean }
+    populations = j.populations ?? []
+    cby = j.colourBy
+  }
+  return { channels, populations, colourBy: cby }
+}
 
 export interface PushTracksOpts {
   valueNames: string[]            // segmentations whose whole-segmentation (_tracked) ribbons to show

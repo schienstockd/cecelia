@@ -448,9 +448,16 @@ function api_napari_record_timelapse(body_bytes::Vector{UInt8})
     # if the name is blank / unsafe. (F1.3 will switch to attr-based names for batch runs.)
     path = _movie_named_path(img, image_uid)
 
+    # Phase H (H3): optional title card. Single-record captures the CURRENT view, so the FRONTEND builds
+    # the non-channel sections (title + populations + colour-by) via the shared captureViewLegend path
+    # (same as the analysis-board strip) and sends them here; we pass them through unchanged. The
+    # recorder adds the Channels section from the live viewer (as for batch). nothing/disabled → no card.
+    tc   = get(data, :titleCard, nothing)
+    card = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
+
     _with_viewer() do
         try
-            resp = record_timelapse!(v, path; fps = fps, scale = scale)
+            resp = record_timelapse!(v, path; fps = fps, scale = scale, title_card = card)
             200, JSON3.write((; ok = true, path = path,
                 frames = get(resp, "frames", 0), nTimepoints = get(resp, "n_timepoints", 0)))
         catch e
@@ -664,11 +671,62 @@ _batch_cancelled(id)      = lock(() -> get(_batch_cancel, id, false),           
 _batch_clear!(id)         = lock(() -> delete!(_batch_cancel, id),                        _batch_cancel_lock)
 request_batch_cancel!(id) = lock(() -> (haskey(_batch_cancel, id) && (_batch_cancel[id] = true); nothing), _batch_cancel_lock)
 
+# Append every non-transient, shown pop of `(vn, pt)` to `out` as {valueName, popType, path} — the shape
+# overlay_legend_content consumes. Uses the SAME pop-map primitives the show-tracks handler does, so the
+# card can't drift from what's actually rendered.
+function _append_config_pop_paths!(out::Vector{Dict{String,Any}}, img, vn::AbstractString, pt::AbstractString)
+    try
+        m = _live_map(img, vn, pt)
+        for path in pop_paths(m)
+            p = pop_at(m, path)
+            (p.transient || !p.show) && continue
+            push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => path))
+        end
+    catch
+        # pop map for this (vn, pt) unavailable → nothing to contribute
+    end
+end
+
+# The overlay pops a movie config would SHOW, as one list of {valueName, popType, path} (the shape
+# overlay_legend_content turns into {name, colour}) — point pops AND tracks together, matching the ONE
+# "Populations" section the analysis-board strip / single-record card use. Reuses the CANONICAL
+# resolvers the show-handlers use — `resolve_pops` for point pops, the pop maps for track gates &
+# clusters, "/_tracked" for a segmentation's whole-track overlay — so it can't drift from what renders.
+function _config_overlay_pops(img, config)
+    out = Vector{Dict{String,Any}}()
+    _has_label_props(img) || return out
+    segs = String[v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)]
+
+    if Bool(get(config, :showPopulations, false))
+        pt = String(get(config, :popType, "flow"))
+        for vn in segs
+            try
+                for L in resolve_pops(img, pt; value_name = vn)
+                    (L.show && !L.is_track) || continue
+                    push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path))
+                end
+            catch
+            end
+        end
+    end
+
+    if Bool(get(config, :showTracks, false))
+        for vn in collect(String, get(config, :trackValueNames, String[]))   # whole-seg → generic "tracks" row
+            haskey(img.label_props, vn) && push!(out, Dict{String,Any}("valueName" => vn, "popType" => "track", "path" => "/_tracked"))
+        end
+        for vn in segs
+            Bool(get(config, :showGatedTracks, false)) && _append_config_pop_paths!(out, img, vn, "track")
+            Bool(get(config, :showTrackclust, false))  && _append_config_pop_paths!(out, img, vn, "trackclust")
+        end
+    end
+    out
+end
+
 # Assemble the Julia-side title-card content for an image under a movie config (Phase H). Title = image
-# name + its attribute values ("MERTK — mouse 1 — location B"); the colour-by section from the CANONICAL
-# `overlay_legend_content` helper. CHANNELS are NOT added here — the recorder adds them from the live
-# viewer (the only place channel colour lives). Returns `nothing` when the card is disabled/absent so the
-# recorder skips it. (Point-population rows are a deferred follow-up — see ANIMATION_PLAN.md → H.)
+# name + its attribute values ("MERTK — mouse 1 — location B"); the Populations / Tracks / Colour-by
+# sections all come from the CANONICAL `overlay_legend_content` helper. CHANNELS are NOT added here — the
+# recorder adds them from the live viewer (the only place channel colour lives). Returns `nothing` when
+# the card is disabled/absent so the recorder skips it.
 function _title_card_content(img, config)
     tc = get(config, :titleCard, nothing)
     (tc === nothing || !(tc isa AbstractDict) || !Bool(get(tc, :enabled, false))) && return nothing
@@ -682,7 +740,16 @@ function _title_card_content(img, config)
     title = join(vcat([img.name], attrs), " — ")
 
     sections = Vector{Dict{String,Any}}()
-    column   = String(get(config, :colourBy, ""))
+    # Populations (incl. track pops) — the shown pops through the canonical legend helper → {name, colour}
+    # rows. ONE section, matching the strip / single-record card (overlay_legend_content dedups by name).
+    plist = _config_overlay_pops(img, config)
+    if !isempty(plist)
+        rows  = overlay_legend_content(img, "", plist, nothing).populations
+        items = [Dict{String,Any}("label" => p["name"], "colour" => p["colour"]) for p in rows]
+        isempty(items) || push!(sections, Dict{String,Any}("heading" => "Populations", "items" => items))
+    end
+    # Colour-by — value → pop colour + name for the colour-by measure.
+    column = String(get(config, :colourBy, ""))
     if !isempty(column)
         legend = overlay_legend_content(img, column, nothing, get(config, :colourOverrides, nothing))
         items  = [Dict{String,Any}("label" => it["label"], "colour" => it["colour"]) for it in legend.colourBy["items"]]
