@@ -86,8 +86,11 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # `MethodError(<task dir>, (), …)` before Python was ever spawned. The call now lives in a
         # standalone helper with no shadowing param in scope. This asserts it resolves via the real
         # config_dir() function (equality would fail if it ever called anything else).
-        @test Cecelia._custom_modules_pydir() == joinpath(config_dir(), "modules", "python")
-        @test endswith(Cecelia._custom_modules_pydir(), joinpath("modules", "python"))
+        # Post-#332 the custom-modules python dir IS the modules ROOT (runners are co-located under
+        # modules/<cat>/, launched by absolute path so their own dir is sys.path[0]; the root just makes
+        # the wider tree importable) — not the old shared modules/python. See py_runner.jl:_custom_modules_pydir.
+        @test Cecelia._custom_modules_pydir() == joinpath(config_dir(), "modules")
+        @test endswith(Cecelia._custom_modules_pydir(), "modules")
     end
 
     # ── First-launch setup wizard (isolated temp config dir) ────────────────────
@@ -883,6 +886,53 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test m2["SizeT"] == 30 && m2["SizeC"] == 2 && !haskey(m2, "SizeZ")
     end
 
+    @testset "Param validation — CopyImage" begin
+        @test _task_from_fun_name("editImages.copyImage") isa CopyImage
+        # valueName is required — a copy with no source version must be rejected
+        @test_throws ParamValidationError validate_params(
+            CopyImage(), Dict{String,Any}("toSetUid" => "abc"))
+        # a valid param set (dest params pass through untouched)
+        @test validate_params(
+            CopyImage(), Dict{String,Any}("valueName" => "default", "newSetName" => "New set")) === nothing
+        @test validate_params(
+            CopyImage(), Dict{String,Any}("valueName" => "driftCorrected", "toSetUid" => "xY")) === nothing
+    end
+
+    @testset "CopyImage carries calibration + provenance (pure helper)" begin
+        # A copy is a faithful duplicate of ONE version: every calibration field carries over UNCHANGED
+        # (unlike a crop), plus ori_path and a copy_source_* breadcrumb; non-calibration keys stay behind.
+        src = Dict{String,Any}(
+            "SizeC" => 4, "SizeZ" => 20, "SizeT" => 181,
+            "PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33, "PhysicalSizeZ" => 2.0,
+            "PhysicalSizeUnit" => "micrometer", "TimeIncrement" => 15, "TimeIncrementUnit" => "second",
+            "ori_path" => "/data/raw.czi", "crop_box" => Dict("x0" => 0))   # crop_box must NOT carry
+        m = Cecelia._copied_meta(src, "srcUID", "driftCorrected")
+        @test m["SizeC"] == 4 && m["SizeZ"] == 20 && m["SizeT"] == 181   # unchanged (full copy)
+        @test m["PhysicalSizeX"] == 0.33 && m["PhysicalSizeZ"] == 2.0
+        @test m["TimeIncrement"] == 15 && m["TimeIncrementUnit"] == "second"
+        @test m["ori_path"] == "/data/raw.czi"                           # same acquisition → provenance carried
+        @test m["copy_source_uid"] == "srcUID" && m["copy_source_value_name"] == "driftCorrected"
+        @test !haskey(m, "crop_box")                                     # only calibration/provenance
+    end
+
+    @testset "CopyImage copy-tree helper (recursive, verbatim)" begin
+        # The zarr copy is a byte-for-byte directory copy (preserves layout/levels/OME sidecar), NOT a
+        # zarr re-encode — assert nested files land intact and progress reports the true file count.
+        src = mktempdir()
+        dst = joinpath(mktempdir(), "out.ome.zarr")
+        mkpath(joinpath(src, "0", "sub"))
+        write(joinpath(src, ".zattrs"), "{\"multiscales\":[]}")
+        write(joinpath(src, "0", "chunk"), "abc")
+        write(joinpath(src, "0", "sub", "deep"), "xyz")
+        last = Ref((0, 0))
+        n = Cecelia._copy_tree_with_progress(src, dst; on_progress = (a, b) -> (last[] = (a, b)))
+        @test n == 3
+        @test last[][2] == 3                                             # total reported = file count
+        @test read(joinpath(dst, ".zattrs"), String) == "{\"multiscales\":[]}"
+        @test read(joinpath(dst, "0", "chunk"), String) == "abc"
+        @test read(joinpath(dst, "0", "sub", "deep"), String) == "xyz"  # nested tree preserved
+    end
+
     @testset "Custom module registry (drop-in tasks)" begin
         # A user drops a task by calling register_task! with an instance + a spec path; it must then
         # resolve through _task_from_fun_name / _spec_path / validate_params exactly like a built-in.
@@ -929,6 +979,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test poolof("importImages.omezarr")          == "io"
         @test poolof("importImages.migrateLegacy")    == "io"
         @test poolof("editImages.cropImage")          == "io"
+        @test poolof("editImages.copyImage")          == "io"
         @test poolof("cleanupImages.afCorrect")       == "cpu"
         @test poolof("tracking.bayesian_tracking")    == "cpu"
         @test poolof("segment.measureLabels")         == "cpu"
