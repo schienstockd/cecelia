@@ -243,6 +243,10 @@ export const useWsStore = defineStore('ws', () => {
             const projectUid = String((data.projectUid as string | undefined) ?? '')
               || useProjectMetaStore().current?.uid || ''
             if (projectUid) {
+              // copyImage can target a brand-new set the store doesn't know yet — ensure it exists first
+              // (no-op if already present; addImagesFromApi silently drops images for an unknown set).
+              const newImageSetName = meta.setName as string | undefined
+              if (newImageSetName) useProjectStore().ensureSet(newImageSetUid, newImageSetName)
               fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${newImageUid}`)
                 .then(r => (r.ok ? r.json() : null))
                 .then(d => { if (d?.image) useProjectStore().addImagesFromApi(newImageSetUid, [d.image]) })

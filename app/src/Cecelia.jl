@@ -91,6 +91,7 @@ export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
 export CropImage
+export CopyImage
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
@@ -157,6 +158,7 @@ include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/editImages/cropImage.jl")
+include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/tracking/bayesian_tracking.jl")

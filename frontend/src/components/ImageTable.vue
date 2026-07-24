@@ -16,6 +16,7 @@ import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import CropDialog from './CropDialog.vue'
+import CopyDialog from './CopyDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
@@ -51,6 +52,12 @@ const metaDialogImg = computed(() =>
 const cropDialogUid = ref<string | null>(null)
 const cropDialogImg = computed(() =>
   cropDialogUid.value ? (images.value.find(i => i.uid === cropDialogUid.value) ?? null) : null)
+
+// copy dialog (per-image) — duplicate one version into a new image in a new/existing set (drops derived
+// data). A re-import shortcut; dispatched over the task rail like crop.
+const copyDialogUid = ref<string | null>(null)
+const copyDialogImg = computed(() =>
+  copyDialogUid.value ? (images.value.find(i => i.uid === copyDialogUid.value) ?? null) : null)
 
 // Two distinct affordances, kept visually separate: the warning (any module, always visible when
 // flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
@@ -893,6 +900,9 @@ onUnmounted(stopResize)
   <CropDialog v-if="cropDialogImg" :image="cropDialogImg" :set-uid="setUid"
     @close="cropDialogUid = null" />
 
+  <CopyDialog v-if="copyDialogImg" :image="copyDialogImg" :set-uid="setUid"
+    @close="copyDialogUid = null" />
+
   <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
   <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end">
     <div v-if="actionsImg" class="actions-menu">
@@ -906,6 +916,10 @@ onUnmounted(stopResize)
       <button class="actions-item" :disabled="!isImported(actionsImg)"
         @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
         <i class="pi pi-image" /> Crop to new image…
+      </button>
+      <button class="actions-item" :disabled="!isImported(actionsImg)"
+        @click.stop="isImported(actionsImg) && runAction(() => copyDialogUid = actionsImg!.uid)">
+        <i class="pi pi-copy" /> Copy to new image…
       </button>
       <button v-if="allowDelete" class="actions-item"
         @click.stop="runAction(() => startMove(actionsImg!.uid))">

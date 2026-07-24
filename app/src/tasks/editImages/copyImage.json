@@ -1,0 +1,22 @@
+{
+  "task": "copyImage",
+  "fun_name": "editImages.copyImage",
+  "label": "Copy image",
+  "category": "Edit",
+  "env": ["local"],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source version",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "imFilepath",
+      "required": true,
+      "tip": "Which image version to copy (becomes the copy's default; all derived data is dropped)."
+    },
+    { "key": "toSetUid",   "label": "Destination set", "type": "text", "default": "", "tip": "UID of an existing set to copy into (leave empty to create a new set)." },
+    { "key": "newSetName", "label": "New set name",    "type": "text", "default": "", "tip": "Name for a new set to create (used when no destination set is chosen)." }
+  ]
+}
