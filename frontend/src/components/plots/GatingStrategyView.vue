@@ -20,6 +20,7 @@ import type { PanelDef } from '../../plots/montage'
 import type { VisProps } from '../../plots/plot'
 import GateMontage from './GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from './RenderModeToggle.vue'
+import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -206,9 +207,8 @@ defineExpose({ exportImage, exportSvg })
                 v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
           <div class="gs-pop">
-            <label class="gs-check"><input type="checkbox" :checked="showHierarchy"
-                   @change="showHierarchy = ($event.target as HTMLInputElement).checked" />
-              show gating hierarchy</label>
+            <CcToggle class="gs-check" label="show gating hierarchy"
+                   :model-value="showHierarchy" @update:model-value="showHierarchy = $event" />
           </div>
         </TeleportPopover>
       </div>

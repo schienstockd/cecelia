@@ -22,6 +22,7 @@ import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultC
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
+import CcToggle from '../../components/CcToggle.vue'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -304,10 +305,8 @@ async function previewOpen() {
       <!-- Title card (Phase H) — auto description slide prepended to each movie -->
       <section class="bm-sec">
         <div class="bm-title-row">
-          <label class="bm-title-toggle"
-                 v-tooltip.bottom="'Name, attributes, channels &amp; colours — prepended to each movie'">
-            <input type="checkbox" v-model="titleCardOn" /> Title card
-          </label>
+          <CcToggle class="bm-title-toggle" v-model="titleCardOn" label="Title card"
+                 v-tooltip.bottom="'Name, attributes, channels &amp; colours — prepended to each movie'" />
           <template v-if="titleCardOn">
             <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="bm-title-range"
                    v-tooltip.bottom="'Title-card duration (seconds)'" />

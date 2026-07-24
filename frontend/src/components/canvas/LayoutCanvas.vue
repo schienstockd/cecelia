@@ -35,6 +35,7 @@ import PopulationManager from './PopulationManager.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
+import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -452,9 +453,8 @@ defineExpose({ capturePage, collectCsvs })
                 </template>
               </template>
             </div>
-            <label class="lc-pool" v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only'">
-              <input type="checkbox" v-model="poolGroups" /> pool to groups
-            </label>
+            <CcToggle class="lc-pool" v-model="poolGroups" label="pool to groups"
+              v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only'" />
           </div>
         </div>
         <div class="lc-row">

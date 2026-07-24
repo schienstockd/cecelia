@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { VisProps } from '../../plots/plot'
+import CcToggle from '../CcToggle.vue'
 
 const props = withDefaults(defineProps<{
   vis: VisProps
@@ -31,26 +32,26 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <i :class="open.layout ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span>Layout</span>
       </button>
       <div v-show="open.layout" class="po-body">
-        <label class="po-row"><span>Legend</span>
-          <input type="checkbox" :checked="vis.legend" @change="set({ legend: ($event.target as HTMLInputElement).checked })" /></label>
-        <label class="po-row" v-tooltip.left="'Log scale on the measure axis'"><span>Log scale</span>
-          <input type="checkbox" :checked="vis.logScale" @change="set({ logScale: ($event.target as HTMLInputElement).checked })" /></label>
-        <label class="po-row"><span>Gridlines</span>
-          <input type="checkbox" :checked="vis.grid" @change="set({ grid: ($event.target as HTMLInputElement).checked })" /></label>
-        <label class="po-row" v-tooltip.left="'Rotate the x tick labels (angle below)'"><span>Rotate X labels</span>
-          <input type="checkbox" :checked="vis.rotateXLabel" @change="set({ rotateXLabel: ($event.target as HTMLInputElement).checked })" /></label>
+        <div class="po-row"><span>Legend</span>
+          <CcToggle :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
+        <div class="po-row" v-tooltip.left="'Log scale on the measure axis'"><span>Log scale</span>
+          <CcToggle :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
+        <div class="po-row"><span>Gridlines</span>
+          <CcToggle :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
+        <div class="po-row" v-tooltip.left="'Rotate the x tick labels (angle below)'"><span>Rotate X labels</span>
+          <CcToggle :model-value="vis.rotateXLabel" @update:model-value="set({ rotateXLabel: $event })" /></div>
         <label v-if="vis.rotateXLabel" class="po-row" v-tooltip.left="'X tick-label angle (degrees)'"><span>X angle</span>
           <input type="range" min="0" max="90" step="5" :value="vis.rotateXAngle ?? 45"
                  @input="set({ rotateXAngle: parseInt(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
-        <label class="po-row" v-tooltip.left="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
-          <input type="checkbox" :checked="vis.rotate"
-                 @change="set({ rotate: ($event.target as HTMLInputElement).checked, ...(($event.target as HTMLInputElement).checked ? { facet: false } : {}) })" /></label>
-        <label class="po-row" v-tooltip.left="'One small-multiple panel per series (mutually exclusive with rotate)'"><span>Facet</span>
-          <input type="checkbox" :checked="vis.facet"
-                 @change="set({ facet: ($event.target as HTMLInputElement).checked, ...(($event.target as HTMLInputElement).checked ? { rotate: false } : {}) })" /></label>
-        <label class="po-row"><span>Dark theme</span>
-          <input type="checkbox" :checked="vis.darkTheme" @change="set({ darkTheme: ($event.target as HTMLInputElement).checked })" /></label>
+        <div class="po-row" v-tooltip.left="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
+          <CcToggle :model-value="vis.rotate"
+                 @update:model-value="set({ rotate: $event, ...($event ? { facet: false } : {}) })" /></div>
+        <div class="po-row" v-tooltip.left="'One small-multiple panel per series (mutually exclusive with rotate)'"><span>Facet</span>
+          <CcToggle :model-value="vis.facet"
+                 @update:model-value="set({ facet: $event, ...($event ? { rotate: false } : {}) })" /></div>
+        <div class="po-row"><span>Dark theme</span>
+          <CcToggle :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y min</span>
           <input class="po-txt" type="text" :value="vis.yMin" @change="set({ yMin: ($event.target as HTMLInputElement).value })" /></label>
         <label class="po-row"><span>Y max</span>
@@ -68,8 +69,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <select class="po-sel" :value="vis.jitter" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
             <option value="beeswarm">beeswarm</option><option value="random">random</option><option value="none">none</option>
           </select></label>
-        <label class="po-row" v-tooltip.left="'Colour points by series (else grey)'"><span>Colour data</span>
-          <input type="checkbox" :checked="vis.colorData" @change="set({ colorData: ($event.target as HTMLInputElement).checked })" /></label>
+        <div class="po-row" v-tooltip.left="'Colour points by series (else grey)'"><span>Colour data</span>
+          <CcToggle :model-value="vis.colorData" @update:model-value="set({ colorData: $event })" /></div>
         <label class="po-row"><span>Point size</span>
           <input type="range" min="0.5" max="8" step="0.5" :value="vis.pointSize"
                  @input="set({ pointSize: Number(($event.target as HTMLInputElement).value) })" />

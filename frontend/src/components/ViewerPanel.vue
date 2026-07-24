@@ -8,6 +8,7 @@ import { useLogStore } from '../stores/log'
 import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import CcToggle from './CcToggle.vue'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -743,10 +744,8 @@ onUnmounted(() => {
         </div>
         <!-- Title card (Phase H): prepend a description slide (name, attributes, channels & colours) -->
         <div class="movie-row movie-title-row">
-          <label class="movie-lbl movie-title-toggle"
-                 v-tooltip.bottom="'Prepend a title slide: image name, attributes, channels & their colours'">
-            <input type="checkbox" v-model="titleCardOn" /> title
-          </label>
+          <CcToggle class="movie-lbl movie-title-toggle" v-model="titleCardOn" label="title"
+                 v-tooltip.bottom="'Prepend a title slide: image name, attributes, channels & their colours'" />
           <template v-if="titleCardOn">
             <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="movie-range"
                    v-tooltip.bottom="'Title-card duration (seconds)'" />

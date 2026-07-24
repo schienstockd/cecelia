@@ -9,6 +9,7 @@ import { buildFieldRegex, buildLookaroundRegex, extractWith,
 import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
+import CcToggle from '../../components/CcToggle.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 const { width: panelWidth, onResizeStart } =
@@ -407,9 +408,9 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               <option value="third">3rd field</option>
               <option value="last">last field</option>
             </select>
-            <label class="radio-label" v-tooltip.bottom="'Drop a trailing .extension from the captured value.'">
-              <input type="checkbox" v-model="builderStripExt" @change="applyBuilder" :disabled="attrDisabled" /> no ext
-            </label>
+            <CcToggle class="radio-label" label="no ext" :disabled="attrDisabled"
+              :model-value="builderStripExt" @update:model-value="builderStripExt = $event; applyBuilder()"
+              v-tooltip.bottom="'Drop a trailing .extension from the captured value.'" />
           </div>
         </template>
 

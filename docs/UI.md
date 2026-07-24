@@ -117,6 +117,24 @@ the "old-school inputs look inconsistent" bug). Keep only layout in scoped style
 `min-width`) plus state modifiers (`.input-error`, `[readonly]`, `:disabled`, `.mono`). If a
 `<select>` sets `background:` (shorthand) it will wipe the chevron — use `background-color`.
 
+### On/off toggles — `CcToggle`
+
+`components/CcToggle.vue` is the ONE boolean on/off switch. Use it for an **immediate boolean
+OPTION** — a setting that applies the moment you flip it (autoplay, loop, show-legend, title card,
+dark theme, "pool to groups", …). It's a styled `<input type="checkbox">` under the hood, so it
+works with `v-model` (or `:model-value` + `@update:model-value` when you also run a side-effect
+handler), keyboard focus, and `disabled`. Label via the `label` prop or the default slot (slot wins);
+add a tooltip at the call site with `v-tooltip`. It renders its own `<label>`, so **don't nest it
+inside another `<label>`** — for a label-left / control-right settings row, make the row a `<div>` and
+drop in a label-less `<CcToggle>` (see `PlotOptions`/`SummaryPanel` `.po-row`/`.sp-pop-row`).
+
+**When NOT to use it — keep a native `<input type="checkbox">`:** a multi-SELECT list or a value
+staged as part of a form (image / channel / feature / measure pickers, "select all", per-row
+selection). A column of sliding switches reads worse and misuses the on/off affordance. So the rule
+is: **toggle = one immediate option; checkbox = selection from a list.** This is the single canonical
+switch — the old bespoke `.toggle-track`/`.toggle-thumb` in `ParamRenderer` (the task `bool` widget)
+was folded into it; don't hand-roll another.
+
 ### Selection chips / segmented controls — `ChipSelect`
 
 `components/ChipSelect.vue` is the ONE canonical inline selector — use it for any pill/capsule or

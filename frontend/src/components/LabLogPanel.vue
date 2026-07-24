@@ -13,6 +13,7 @@ import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
+import CcToggle from './CcToggle.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
   visibleEntries as computeVisibleEntries,
@@ -270,14 +271,11 @@ async function dismissEntry(entry: LabLogEntry) {
                 v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
           <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
         </button>
-        <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
-          <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
-        </label>
+        <CcToggle class="ll-auto" v-model="settings.labLogAutoContext" label="Auto"
+          v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'" />
         <!-- image refs are stored as stable UIDs; opt in to showing current names -->
-        <label v-if="projectUid && hasImageNames" class="ll-auto"
-               v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'">
-          <input type="checkbox" v-model="settings.labLogShowNames" /> Show names
-        </label>
+        <CcToggle v-if="projectUid && hasImageNames" class="ll-auto" v-model="settings.labLogShowNames" label="Show names"
+          v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'" />
       </div>
 
       <span class="ll-tb-sep" aria-hidden="true" />

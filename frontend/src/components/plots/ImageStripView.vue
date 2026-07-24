@@ -23,6 +23,7 @@ import { restoreOverlays } from '../../utils/napariOverlays'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+import CcToggle from '../CcToggle.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -318,17 +319,17 @@ defineExpose({ exportImage })
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
-            <label class="is-check"><input type="checkbox" :checked="showLegend"
-              @change="showLegend = ($event.target as HTMLInputElement).checked" /> legend (channels · pops · colour-by)</label>
-            <label class="is-check" v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'">
-              <input type="checkbox" :checked="settings.cleanCapture"
-              @change="settings.cleanCapture = ($event.target as HTMLInputElement).checked" /> clean capture</label>
-            <label class="is-check" v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'">
-              <input type="checkbox" :checked="showScaleBar"
-              @change="showScaleBar = ($event.target as HTMLInputElement).checked" /> scale bar</label>
-            <label class="is-check" v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'">
-              <input type="checkbox" :checked="showTimestamp"
-              @change="showTimestamp = ($event.target as HTMLInputElement).checked" /> timestamp</label>
+            <CcToggle class="is-check" label="legend (channels · pops · colour-by)"
+              :model-value="showLegend" @update:model-value="showLegend = $event" />
+            <CcToggle class="is-check" label="clean capture"
+              v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'"
+              :model-value="settings.cleanCapture" @update:model-value="settings.cleanCapture = $event" />
+            <CcToggle class="is-check" label="scale bar"
+              v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"
+              :model-value="showScaleBar" @update:model-value="showScaleBar = $event" />
+            <CcToggle class="is-check" label="timestamp"
+              v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
+              :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
             <template v-if="separator === 'angled' && orientation === 'h'">
               <label class="is-slider">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />

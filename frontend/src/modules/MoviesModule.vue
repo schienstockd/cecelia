@@ -9,6 +9,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, type MovieEntry } from '../utils/movies'
+import CcToggle from '../components/CcToggle.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -181,13 +182,11 @@ function movieTime(mtime: number): string {
                  @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
           <span class="mov-num">{{ zoomLabel }}</span>
         </label>
-        <label class="mov-ctl" v-tooltip.bottom="'Play a movie automatically when you select it'">
-          <input type="checkbox" v-model="settings.moviesAutoplay" /> Autoplay
-        </label>
-        <label class="mov-ctl" v-tooltip.bottom="'Repeat the movie when it reaches the end'">
-          <input type="checkbox" v-model="settings.moviesLoop" /> Loop
-        </label>
-        <button class="btn-sm" :disabled="loading || !hasProject" @click="refresh"
+        <CcToggle class="mov-ctl" v-model="settings.moviesAutoplay" label="Autoplay"
+                  v-tooltip.bottom="'Play a movie automatically when you select it'" />
+        <CcToggle class="mov-ctl" v-model="settings.moviesLoop" label="Loop"
+                  v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
+        <button class="cc-btn cc-btn-ghost" :disabled="loading || !hasProject" @click="refresh"
                 v-tooltip.bottom="'Re-scan the project movies folder'">
           <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
         </button>

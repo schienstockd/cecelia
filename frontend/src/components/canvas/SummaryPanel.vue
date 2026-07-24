@@ -20,6 +20,7 @@ import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
+import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -559,11 +560,11 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
                 <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
               </select>
             </label>
-            <label v-if="matrixMode === 'profile'" class="sp-pop-row"
+            <div v-if="matrixMode === 'profile'" class="sp-pop-row"
                    v-tooltip.left="'Off: rescale each feature to 0–1 (viridis). On: z-score rows → diverging above/below-mean (RdBu).'">
               <span>Z-score rows</span>
-              <input type="checkbox" v-model="zscore" />
-            </label>
+              <CcToggle v-model="zscore" />
+            </div>
             <label v-else class="sp-pop-row" v-tooltip.left="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
@@ -573,10 +574,10 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
                 <option value="none">counts</option>
               </select>
             </label>
-            <label class="sp-pop-row" v-tooltip.left="'Print the value in each cell'">
+            <div class="sp-pop-row" v-tooltip.left="'Print the value in each cell'">
               <span>Cell values</span>
-              <input type="checkbox" v-model="heatmapValues" />
-            </label>
+              <CcToggle v-model="heatmapValues" />
+            </div>
           </template>
           <label v-if="chartType === 'histogram'" class="sp-pop-row">
             <span>Bins</span>
@@ -590,20 +591,20 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
               <option value="sd">SD</option>
             </select>
           </label>
-          <label v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row"
+          <div v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row"
                  v-tooltip.left="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
             <span>Proportion</span>
-            <input type="checkbox" v-model="normalize" />
-          </label>
+            <CcToggle v-model="normalize" />
+          </div>
           <template v-if="timeSeries">
             <label class="sp-pop-row" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
               <span>Smooth span</span>
               <input type="number" min="5" max="100" step="5" v-model.number="smooth" />
             </label>
-            <label class="sp-pop-row" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
+            <div class="sp-pop-row" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
               <span>Interval</span>
-              <input type="checkbox" v-model="interval" />
-            </label>
+              <CcToggle v-model="interval" />
+            </div>
           </template>
         </div>
         </TeleportPopover>
