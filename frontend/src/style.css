@@ -121,6 +121,24 @@ body {
 }
 .cc-btn-ghost:hover:not(:disabled) { color: var(--cc-text); }
 
+/* Destructive actions. Two variants, like primary/ghost: `danger` is solid/prominent (a standalone
+   destructive action, e.g. delete a project); `danger-ghost` is a subtle outline (an inline delete in
+   a table/bar, where a wall of solid red would be too heavy). Both were previously hand-copied per
+   component with drifted colours — this is the one source. */
+.cc-btn-danger {
+  background: #b91c1c;
+  color: #fff;
+  border-color: #b91c1c;
+}
+.cc-btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
+
+.cc-btn-danger-ghost {
+  background: #7f1d1d44;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+.cc-btn-danger-ghost:hover:not(:disabled) { background: #7f1d1d88; }
+
 /* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
 /* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */
 /* may refine spacing, but should not reintroduce old-school borders/backgrounds.  */

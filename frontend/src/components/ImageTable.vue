@@ -604,11 +604,11 @@ onUnmounted(stopResize)
   <!-- delete confirmation -->
   <div v-if="deleteUid" class="delete-confirm">
     <span>Remove <strong>{{ images.find(i => i.uid === deleteUid)?.name }}</strong>?</span>
-    <button class="btn-danger btn-sm" @click="doDelete"
+    <button class="cc-btn cc-btn-danger-ghost" @click="doDelete"
       v-tooltip.right="'Remove this image from the set. The original file is not deleted.'">
       Remove
     </button>
-    <button class="btn-ghost btn-sm" @click="deleteUid = null">Cancel</button>
+    <button class="cc-btn cc-btn-ghost" @click="deleteUid = null">Cancel</button>
   </div>
 
   <!-- move to another set -->
@@ -621,10 +621,10 @@ onUnmounted(stopResize)
     </select>
     <input v-if="!moveTargetUid" class="move-name-input" v-model="moveNewName"
       placeholder="New set name…" @keydown.enter="doMove" @keydown.escape="moveUid = null" autofocus />
-    <button class="btn-primary btn-sm" @click="doMove" :disabled="moving">
+    <button class="cc-btn cc-btn-primary" @click="doMove" :disabled="moving">
       <i v-if="moving" class="pi pi-spin pi-cog" /><template v-else>Move</template>
     </button>
-    <button class="btn-ghost btn-sm" @click="moveUid = null">Cancel</button>
+    <button class="cc-btn cc-btn-ghost" @click="moveUid = null">Cancel</button>
   </div>
 
   <div v-if="images.length === 0" class="empty-state">
@@ -1234,20 +1234,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .action-btn:disabled { opacity: 0.25 !important; cursor: not-allowed; }
 .del-btn:hover { background: #7f1d1d55; color: #fca5a5; }
 
-/* ── Shared buttons ──────────────────────────────────────────────────────────── */
-
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500; padding: 0.3rem 0.65rem;
-  border-radius: 0.35rem; border: 1px solid transparent; cursor: pointer;
-}
-.btn-ghost  { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover { color: var(--cc-text); }
-.btn-danger { background: #7f1d1d44; border-color: #7f1d1d; color: #fca5a5; }
-.btn-danger:hover { background: #7f1d1d88; }
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+/* ── Buttons: use the global .cc-btn utilities (style.css) ─────────────────────── */
 
 .move-bar {
   display: flex; align-items: center; gap: 0.6rem;

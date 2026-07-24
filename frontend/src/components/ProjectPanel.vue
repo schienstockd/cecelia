@@ -232,7 +232,7 @@ const typeColour: Record<ProjectType, string> = {
         <div v-if="projectMeta.recent.length === 0" class="pp-empty">
           <i class="pi pi-folder" style="font-size:2rem; opacity:0.2" />
           <p>No projects yet.<br>A project holds all your images and analysis for one experiment.</p>
-          <button class="btn-ghost btn-sm" @click="tab = 'new'">
+          <button class="cc-btn cc-btn-ghost" @click="tab = 'new'">
             <i class="pi pi-plus" /> Create your first project
           </button>
         </div>
@@ -347,14 +347,14 @@ const typeColour: Record<ProjectType, string> = {
 
       <!-- footer -->
       <div class="pp-footer">
-        <button class="btn-ghost btn-sm" @click="$emit('close')"
+        <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
           v-tooltip.top="'Close without changes.'">
           Cancel
         </button>
 
         <template v-if="tab === 'recent'">
           <button
-            class="btn-primary btn-sm"
+            class="cc-btn cc-btn-primary"
             :disabled="!selectedUid || projectMeta.loading || selectedUid === projectMeta.current?.uid"
             @click="openSelected"
             v-tooltip.top="selectedUid && selectedUid !== projectMeta.current?.uid
@@ -367,7 +367,7 @@ const typeColour: Record<ProjectType, string> = {
 
         <template v-if="tab === 'new'">
           <button
-            class="btn-primary btn-sm"
+            class="cc-btn cc-btn-primary"
             :disabled="projectMeta.loading"
             @click="createProject"
             v-tooltip.top="'Create the project and open it.'">
@@ -403,7 +403,7 @@ const typeColour: Record<ProjectType, string> = {
             <div class="pp-io-dest">
               <span class="dim">Exports to</span>
               <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
-              <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'export'"
+              <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'export'"
                       v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
                 <i class="pi pi-folder-open" /> Change
               </button>
@@ -423,11 +423,11 @@ const typeColour: Record<ProjectType, string> = {
                      :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
                      @keyup.enter="importBundle"
                      v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
-              <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'import'"
+              <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'import'"
                       v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
                 <i class="pi pi-folder-open" /> Browse
               </button>
-              <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
+              <button class="cc-btn cc-btn-ghost" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
                       v-tooltip.top="'Import a project from a .ccbundle folder.'">
                 <i class="pi pi-upload" /> Import
               </button>
@@ -457,16 +457,16 @@ const typeColour: Record<ProjectType, string> = {
         permanently deletes the existing project's data and cannot be undone — at your own risk.</p>
     </div>
     <template #footer>
-      <button class="btn-ghost btn-sm" @click="conflict = null"
+      <button class="cc-btn cc-btn-ghost" @click="conflict = null"
               v-tooltip.top="'Do nothing — keep the existing project.'">Cancel</button>
-      <button class="btn-danger btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
+      <button class="cc-btn cc-btn-danger" :disabled="projectMeta.current?.uid === conflict.uid"
               @click="doImport(conflict!.path, 'replace')"
               v-tooltip.top="projectMeta.current?.uid === conflict.uid
                 ? 'Close the project first — can\'t replace the one that\'s open.'
                 : 'Overwrite the existing project — destructive, cannot be undone.'">
         <i class="pi pi-exclamation-triangle" /> Replace (at your own risk)
       </button>
-      <button class="btn-primary btn-sm" @click="doImport(conflict!.path, 'copy')"
+      <button class="cc-btn cc-btn-primary" @click="doImport(conflict!.path, 'copy')"
               v-tooltip.top="'Import as a new project (new id) — keeps both.'">
         <i class="pi pi-copy" /> Import as copy
       </button>
@@ -482,9 +482,9 @@ const typeColour: Record<ProjectType, string> = {
         snapshot of a store that's being written. Best to wait until they finish.</p>
     </div>
     <template #footer>
-      <button class="btn-primary btn-sm" @click="exportWarn = null"
+      <button class="cc-btn cc-btn-primary" @click="exportWarn = null"
               v-tooltip.top="'Wait for the running tasks to finish.'">Wait</button>
-      <button class="btn-ghost btn-sm" @click="doExport(exportWarn!.p)"
+      <button class="cc-btn cc-btn-ghost" @click="doExport(exportWarn!.p)"
               v-tooltip.top="'Export now despite the running tasks.'">Export anyway</button>
     </template>
   </BaseModal>
@@ -644,21 +644,7 @@ const typeColour: Record<ProjectType, string> = {
   flex-shrink: 0;
 }
 
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 0.35rem; border: 1px solid transparent;
-  cursor: pointer;
-}
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover { color: var(--cc-text); }
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
-.btn-danger { background: #b91c1c; color: #fff; }
-.btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
-.btn-danger:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
+/* buttons use the global .cc-btn utilities (style.css) */
 .pp-danger-note {
   color: #fca5a5; font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: flex-start;
   margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: 0.3rem;

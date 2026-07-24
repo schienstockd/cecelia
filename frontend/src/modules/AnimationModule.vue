@@ -266,7 +266,7 @@ async function render() {
           </label>
           <input type="text" v-model="anim.titleCard.note" class="anim-note" placeholder="note (optional)" />
         </template>
-        <button class="btn-primary" :disabled="!canRender" @click="render"
+        <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
                 v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
                   : 'Need ≥2 keyframes for this image, open in napari'">
           <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
@@ -280,15 +280,15 @@ async function render() {
     <template v-else>
       <div class="anim-toolbar">
         <span class="anim-img">{{ imageName(openImageUid) }}</span>
-        <button class="btn-sm" :disabled="capturing" @click="capture"
+        <button class="cc-btn cc-btn-ghost" :disabled="capturing" @click="capture"
                 v-tooltip.bottom="'Capture the current napari view as a keyframe (a base look)'">
           <i :class="['pi', capturing ? 'pi-spin pi-spinner' : 'pi-camera']" /> Capture view
         </button>
-        <button class="btn-sm" :disabled="!frames.length" @click="addKeyframe"
+        <button class="cc-btn cc-btn-ghost" :disabled="!frames.length" @click="addKeyframe"
                 v-tooltip.bottom="'Duplicate the last keyframe to vary it via the rows'">
           <i class="pi pi-plus" /> Add keyframe
         </button>
-        <button class="btn-sm" :disabled="!selectedId || updating" @click="updateSelected"
+        <button class="cc-btn cc-btn-ghost" :disabled="!selectedId || updating" @click="updateSelected"
                 v-tooltip.bottom="'Replace the selected keyframe with the current napari view (re-capture)'">
           <i :class="['pi', updating ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Update selected
         </button>
@@ -424,12 +424,5 @@ async function render() {
 .tl-absent { color: var(--cc-text-dim); opacity: 0.35; }
 .tl-cam { font-size: 0.68rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 
-.btn-sm { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; padding: 0.35rem 0.6rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-2); color: var(--cc-text); cursor: pointer; }
-.btn-sm:hover:not(:disabled) { border-color: var(--cc-accent); }
-.btn-sm:disabled { opacity: 0.55; cursor: default; }
-.btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; padding: 0.4rem 0.8rem;
-  border: 1px solid var(--cc-accent); border-radius: 0.35rem; background: var(--cc-accent); color: #fff; cursor: pointer; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.55; cursor: default; }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>

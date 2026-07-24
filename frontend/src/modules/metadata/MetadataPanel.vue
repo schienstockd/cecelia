@@ -282,7 +282,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <!-- ── Physical size & timing ───────────────────────────────── -->
     <section class="panel-section">
       <div class="section-title">Physical size &amp; timing</div>
-      <button class="btn-ghost btn-sm" :disabled="!physFocusUid" @click="showPhysDialog = true"
+      <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
         v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s).'">
         <i class="pi pi-ruler" /> Open editor
         <span v-if="flaggedCount" class="warn-count" v-tooltip.bottom="`${flaggedCount} image(s) in this set are flagged`">{{ flaggedCount }}</span>
@@ -301,7 +301,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <input class="field-input flex1" v-model="newAttrName" placeholder="New attribute name…"
           @keydown.enter="createAttr"
           v-tooltip.bottom="'Name for the new metadata column — e.g. condition, timepoint.'" />
-        <button class="btn-primary btn-sm" @click="createAttr" :disabled="!newAttrName.trim()"
+        <button class="cc-btn cc-btn-primary" @click="createAttr" :disabled="!newAttrName.trim()"
           v-tooltip.bottom="'Add this attribute key to all images in the set.'">
           Create
         </button>
@@ -330,7 +330,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           :disabled="attrDisabled"
           @keydown.enter="assignSingleValue"
           v-tooltip.bottom="'Assign this value to the selected attribute for all target images.'" />
-        <button class="btn-ghost btn-sm" :disabled="attrDisabled || !singleValue"
+        <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !singleValue"
           @click="assignSingleValue"
           v-tooltip.bottom="'Apply to selected images, or all images if none are selected.'">
           Assign
@@ -346,7 +346,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           :disabled="attrDisabled"
           @keydown.enter="assignRegexp"
           v-tooltip.bottom="'Regex over the name; a (group) if present, else the whole match. e.g. M(\\d+)→4. New to regex? Use the builder.'" />
-        <button class="btn-ghost btn-sm" :disabled="attrDisabled || !regexpValue"
+        <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !regexpValue"
           @click="assignRegexp"
           v-tooltip.bottom="'Extract a value from each image filename or path.'">
           Apply
@@ -468,7 +468,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <section class="panel-section">
       <div class="section-title">Group sequences</div>
       <p class="section-hint">Numbers images within each attribute group (<strong>GroupSeq</strong>).</p>
-      <button class="btn-ghost btn-sm" @click="assignGroupSequences"
+      <button class="cc-btn cc-btn-ghost" @click="assignGroupSequences"
         :disabled="attrNames.length === 0"
         v-tooltip.bottom="'Assign GroupSeq from the current attribute values.'">
         Assign
@@ -484,7 +484,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           placeholder="One channel name per line…"
           v-tooltip.bottom="'Assign these channel names to the selected images (or all if none selected).'" />
         <div class="field-row">
-          <button class="btn-ghost btn-sm" :disabled="!channelNameList.trim()"
+          <button class="cc-btn cc-btn-ghost" :disabled="!channelNameList.trim()"
             @click="assignChannelNames"
             v-tooltip.bottom="'Set channel names on the target images.'">
             Assign channels
@@ -632,19 +632,5 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   background: #7c2d1244; color: #fcd34d;
 }
 
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500; padding: 0.3rem 0.65rem;
-  border-radius: 0.35rem; border: 1px solid transparent;
-  cursor: pointer; white-space: nowrap; transition: background 0.1s;
-}
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover:not(:disabled) { color: var(--cc-text); border-color: #484f58; }
-.btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-danger { background: #7f1d1d44; border-color: #7f1d1d; color: #fca5a5; }
-.btn-danger:hover:not(:disabled) { background: #7f1d1d88; }
-.btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>
