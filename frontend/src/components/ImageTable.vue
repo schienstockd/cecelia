@@ -9,7 +9,7 @@ import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
 import { isExcluded, isIncluded, includedUids, isImported } from '../utils/inclusion'
-import { timelapseDuration } from '../utils/imageTable'
+import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
 import { useNapariOpen } from '../composables/useNapariOpen'
@@ -233,10 +233,13 @@ async function setIncluded(img: CciaImage, included: boolean) {
 }
 
 const images = computed(() => {
-  const all = project.sets.find(s => s.uid === props.setUid)?.images ?? []
-  if (!props.filterUids) return all
-  const keep = new Set(props.filterUids)
-  return all.filter(i => keep.has(i.uid))
+  let all = project.sets.find(s => s.uid === props.setUid)?.images ?? []
+  if (props.filterUids) {
+    const keep = new Set(props.filterUids)
+    all = all.filter(i => keep.has(i.uid))
+  }
+  const s = project.getImageSort(scope.value, props.setUid)
+  return s ? sortImages(all, s.key, s.dir) : all
 })
 
 // ── Remembered selection ────────────────────────────────────────────────────
@@ -245,6 +248,27 @@ const images = computed(() => {
 // it on mount and when the set switches (dropping any UIDs no longer present, and capping to one
 // in single-select mode).
 const scope = computed(() => props.selectionScope ?? 'default')
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+// Click a column header to sort by it: asc → desc → off (natural import order). Persisted per
+// page + set in the project store (like the selection) so it survives navigating away and back.
+// Sort logic itself is the pure, tested sortImages() helper; here we only hold the chosen column.
+function toggleSort(key: string) {
+  const cur = project.getImageSort(scope.value, props.setUid)
+  if (!cur || cur.key !== key) project.setImageSort(scope.value, props.setUid, { key, dir: 'asc' })
+  else if (cur.dir === 'asc')  project.setImageSort(scope.value, props.setUid, { key, dir: 'desc' })
+  else                         project.setImageSort(scope.value, props.setUid, null)   // third click clears
+}
+function sortActive(key: string): boolean {
+  return project.getImageSort(scope.value, props.setUid)?.key === key
+}
+// Neutral (both-arrows) hint when unsorted; a direction arrow when this column is the active sort.
+function sortIcon(key: string): string {
+  const s = project.getImageSort(scope.value, props.setUid)
+  if (!s || s.key !== key) return 'pi pi-sort-alt'
+  return s.dir === 'asc' ? 'pi pi-sort-amount-up-alt' : 'pi pi-sort-amount-down'
+}
+
 function commit() {
   project.setImageSelection(scope.value, props.setUid, [...selected.value])
   emit('selectionChange', [...selected.value])
@@ -541,7 +565,10 @@ onUnmounted(stopResize)
 
         <!-- resizable: name (frozen-left) -->
         <th class="col-resize col-name" :style="{ width: colW('name'), minWidth: colW('name') }">
-          Name
+          <span class="th-sort" :class="{ active: sortActive('name') }" @click.stop="toggleSort('name')"
+            v-tooltip.bottom="'Sort by name'">
+            Name <i :class="['sort-ico', sortIcon('name')]" />
+          </span>
           <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn"
             :class="{ active: flaggedActive }" @click.stop="selectFlagged"
             v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
@@ -572,23 +599,35 @@ onUnmounted(stopResize)
           v-for="key in attrKeys" :key="'attr-' + key"
           class="col-resize col-attr"
           :style="{ width: colW('attr-' + key), minWidth: colW('attr-' + key) }"
-          v-tooltip.bottom="`Attribute: ${key}`"
+          v-tooltip.bottom="`Attribute: ${key} — click to sort`"
         >
-          {{ key }}
+          <span class="th-sort" :class="{ active: sortActive('attr:' + key) }" @click.stop="toggleSort('attr:' + key)">
+            {{ key }} <i :class="['sort-ico', sortIcon('attr:' + key)]" />
+          </span>
           <div class="resize-handle" @mousedown.stop.prevent="startResize('attr-' + key, $event)" />
         </th>
 
         <!-- fixed: channel count (only when not showing per-channel columns) -->
-        <th v-if="!showAttrs" class="col-fixed col-ch"
-          v-tooltip.bottom="'Number of channels.'">Ch</th>
+        <th v-if="!showAttrs" class="col-fixed col-ch" v-tooltip.bottom="'Number of channels — click to sort.'">
+          <span class="th-sort" :class="{ active: sortActive('ch') }" @click.stop="toggleSort('ch')">
+            Ch <i :class="['sort-ico', sortIcon('ch')]" />
+          </span>
+        </th>
 
         <!-- fixed: z-slices (only when the set has a z-stack) -->
-        <th v-if="anyZStack" class="col-fixed col-ch"
-          v-tooltip.bottom="'Number of z-slices.'">Z</th>
+        <th v-if="anyZStack" class="col-fixed col-ch" v-tooltip.bottom="'Number of z-slices — click to sort.'">
+          <span class="th-sort" :class="{ active: sortActive('z') }" @click.stop="toggleSort('z')">
+            Z <i :class="['sort-ico', sortIcon('z')]" />
+          </span>
+        </th>
 
         <!-- fixed: timelapse duration (only when the set has a timelapse) -->
         <th v-if="anyTimelapse" class="col-fixed col-dur"
-          v-tooltip.bottom="'Total timelapse duration (first → last frame).'">Duration</th>
+          v-tooltip.bottom="'Total timelapse duration (first → last frame) — click to sort.'">
+          <span class="th-sort" :class="{ active: sortActive('duration') }" @click.stop="toggleSort('duration')">
+            Duration <i :class="['sort-ico', sortIcon('duration')]" />
+          </span>
+        </th>
 
         <!-- fixed: per-module status -->
         <th v-if="module" class="col-fixed col-status">Status</th>
@@ -838,6 +877,18 @@ onUnmounted(stopResize)
   white-space: nowrap;
   overflow: hidden;
 }
+
+/* clickable sort header: label + a small arrow that cycles asc → desc → off. Neutral both-arrows
+   icon (dim) hints sortability; the active column shows a direction arrow in the accent colour. */
+.th-sort {
+  cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+}
+.th-sort:hover { color: var(--cc-text); }
+.th-sort.active { color: var(--cc-text); }
+.sort-ico { font-size: 0.6rem; opacity: 0.3; transition: opacity 0.1s, color 0.1s; }
+.th-sort:hover .sort-ico { opacity: 0.7; }
+.th-sort.active .sort-ico { opacity: 1; color: var(--cc-accent); }
 
 .select-flagged-btn {
   background: none; border: none; cursor: pointer;

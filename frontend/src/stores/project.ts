@@ -4,6 +4,9 @@ import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 
+// Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
+export interface ImageSort { key: string; dir: 'asc' | 'desc' }
+
 export interface CciaImage {
   uid: string
   name: string
@@ -76,6 +79,15 @@ export const useProjectStore = defineStore('project', () => {
     imageSelection.value = { ...imageSelection.value, [_selKey(scope, setUid)]: uids }
   }
 
+  // Remembered per-page image-table sort (column + direction), keyed like the selection so it
+  // survives navigating away and back. null = natural (import) order. Session-scoped, per-project.
+  const imageSort = ref<Record<string, ImageSort | null>>({})
+  const getImageSort = (scope: string, setUid: string): ImageSort | null =>
+    imageSort.value[_selKey(scope, setUid)] ?? null
+  function setImageSort(scope: string, setUid: string, sort: ImageSort | null) {
+    imageSort.value = { ...imageSort.value, [_selKey(scope, setUid)]: sort }
+  }
+
   const activeSet = () => sets.value.find(s => s.uid === activeSetUid.value) ?? null
 
   // Which set an image belongs to (an image lives in exactly one set). Used to key per-set napari
@@ -88,6 +100,7 @@ export const useProjectStore = defineStore('project', () => {
     sets.value = apiSets
     activeSetUid.value = sets.value[0]?.uid ?? null
     imageSelection.value = {}     // selections are per-project; don't carry across loads
+    imageSort.value = {}          // …nor the per-page table sort
     dataVersion.value = {}        // per-image versions are per-project too (uids don't cross projects)
     useCanvasPanelsStore().clear()   // open plots are per-project too
     useAnalysisTabsStore().clear()   // …and the Analysis-canvas boards
@@ -99,6 +112,7 @@ export const useProjectStore = defineStore('project', () => {
     activeSetUid.value = null
     napariImageUid.value = null
     imageSelection.value = {}
+    imageSort.value = {}
     dataVersion.value = {}
     useCanvasPanelsStore().clear()
     useAnalysisTabsStore().clear()
@@ -244,5 +258,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
