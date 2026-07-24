@@ -13,9 +13,14 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # (task-refresh; see docs/todo/TASK_DATA_REFRESH_PLAN.md). Defaults empty → single-image tasks fall back
 # to `imageUid` on the frontend.
 # `fun` carries the task fun_name so a WS observer (mcp/) can attribute a module-page run to a
-# function for the 10-attempts pattern (chain nodes already carry `fn`; module tasks didn't). Empty
-# for non-task status frames (batch movies). The frontend ignores the extra field.
-ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="") = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids, fun=fun))
+# function for the 10-attempts pattern (chain nodes already carry `fn`; module tasks didn't).
+# `pool` ATTRIBUTES the work to what governs it — scheduler tasks get theirs from the /api/tasks
+# snapshot (cpu/gpu/io/network), but non-scheduler producers (batch movies, background jobs) never
+# hit that snapshot, so they pass it here ("viewer" for the napari viewer, "job" for jobs.jl work).
+# Without it those show a BLANK pool in the task console. NOT a real scheduler pool (no slot budget) —
+# purely a label so they read as intentional instead of floating unattributed. The frontend ignores
+# both extra fields.
+ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="") = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids, fun=fun, pool=pool))
 ws_result(_ws, task_id, uid, meta)     = _broadcast_task((; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 
 ws_progress(_ws, task_id, fraction::Float64) =
@@ -77,10 +82,10 @@ function handle_project_export(ws, data)
     isempty(task_id) && return
     if isempty(project_uid) || !isdir(joinpath(projects_dir(), project_uid))
         ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
-        ws_status(ws, task_id, "failed"); return
+        ws_status(ws, task_id, "failed"; fun="project:export", pool="job"); return
     end
     Threads.@spawn begin
-        ws_status(ws, task_id, "running")
+        ws_status(ws, task_id, "running"; fun="project:export", pool="job")
         bundle = try
             export_project(project_uid;
                 out_dir     = isempty(out_dir) ? default_export_dir() : out_dir,
@@ -90,7 +95,7 @@ function handle_project_export(ws, data)
         catch ex
             ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); ""
         end
-        ws_status(ws, task_id, isempty(bundle) ? "failed" : "done")
+        ws_status(ws, task_id, isempty(bundle) ? "failed" : "done"; fun="project:export", pool="job")
     end
 end
 
@@ -101,10 +106,10 @@ function handle_project_import(ws, data)
     isempty(task_id) && return
     if isempty(bundle) || !isdir(bundle)
         ws_log(ws, task_id, "[ERROR] Bundle not found: $bundle")
-        ws_status(ws, task_id, "failed"); return
+        ws_status(ws, task_id, "failed"; fun="project:import", pool="job"); return
     end
     Threads.@spawn begin
-        ws_status(ws, task_id, "running")
+        ws_status(ws, task_id, "running"; fun="project:import", pool="job")
         uid = try
             import_project(bundle;
                 mode        = mode,
@@ -114,7 +119,7 @@ function handle_project_import(ws, data)
         catch ex
             ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); ""
         end
-        ws_status(ws, task_id, isempty(uid) ? "failed" : "done")
+        ws_status(ws, task_id, isempty(uid) ? "failed" : "done"; fun="project:import", pool="job")
     end
 end
 
@@ -127,19 +132,20 @@ function handle_maintenance_run(ws, data)
     patch_id    = String(get(data, :patchId, ""))
     project_uid = String(get(data, :projectUid, ""))
     apply       = Bool(get(data, :apply, false))
+    fun_lbl     = isempty(patch_id) ? "maintenance" : "maintenance:$patch_id"   # task-console attribution
 
     patch = maintenance_patch(patch_id)
     if isnothing(patch)
         ws_log(ws, task_id, "[ERROR] Unknown data patch: $patch_id")
-        ws_status(ws, task_id, "failed"); return
+        ws_status(ws, task_id, "failed"; fun=fun_lbl, pool="job"); return
     end
     if !isdir(joinpath(projects_dir(), project_uid))
         ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
-        ws_status(ws, task_id, "failed"); return
+        ws_status(ws, task_id, "failed"; fun=fun_lbl, pool="job"); return
     end
 
     Threads.@spawn begin
-        ws_status(ws, task_id, "running")
+        ws_status(ws, task_id, "running"; fun=fun_lbl, pool="job")
         ok = try
             proj = load_project(project_uid)
             run_maintenance_patch(patch, proj; apply = apply, task_id = task_id,
@@ -148,7 +154,7 @@ function handle_maintenance_run(ws, data)
         catch ex
             ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); false
         end
-        ws_status(ws, task_id, ok ? "done" : "failed")
+        ws_status(ws, task_id, ok ? "done" : "failed"; fun=fun_lbl, pool="job")
     end
 end
 
@@ -171,7 +177,7 @@ function handle_movie_batch(ws, data)
     scale       = get(data, :scale, 1)
     if isempty(image_uids)
         ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
-        ws_status(ws, task_id, "failed", "")
+        ws_status(ws, task_id, "failed", ""; fun="movie:batch", pool="viewer")
         return
     end
     _batch_register!(task_id)
@@ -180,7 +186,7 @@ function handle_movie_batch(ws, data)
     catch e
         @warn "batch movies crashed" exception = e
         ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")
-        ws_status(ws, task_id, "failed", first(image_uids))
+        ws_status(ws, task_id, "failed", first(image_uids); fun="movie:batch", pool="viewer")
         _batch_clear!(task_id)
     end
 end

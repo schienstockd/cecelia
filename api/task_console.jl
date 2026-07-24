@@ -173,7 +173,12 @@ function handle_ws(raw::AbstractString)
         if type == "task:status"
             id = String(get(msg, :taskId, "")); (isempty(id) || id in SEEN_TERM) && return
             status = String(get(msg, :status, ""))
-            fn = haskey(TASKS, id) ? TASKS[id].fun_name : ""
+            # Non-scheduler producers (batch movies, jobs) carry fun/pool on the event itself — they
+            # never hit the /api/tasks snapshot, so without this their rows show a blank function AND a
+            # blank pool ("floating in space"). Prefer the event's values; fall back to the snapshot's.
+            ev_fun  = String(get(msg, :fun,  ""))
+            ev_pool = String(get(msg, :pool, ""))
+            fn = !isempty(ev_fun) ? ev_fun : (haskey(TASKS, id) ? TASKS[id].fun_name : "")
             push_event!("status", string(col(BOLD, short(id)), " ",
                         col(status_colour(status), status),
                         isempty(fn) ? "" : col(DIM, " ($fn)"));
@@ -182,7 +187,9 @@ function handle_ws(raw::AbstractString)
                 _note_terminal!(id, status)            # collapse to a count, drop the row
             else
                 t = _task!(id)
-                isempty(status) || (t.status = status)
+                isempty(status)  || (t.status = status)
+                isempty(ev_fun)  || (t.fun_name = ev_fun)     # label WS-only ops (else blank FUNCTION)
+                isempty(ev_pool) || (t.pool_name = ev_pool)   # …and their POOL (viewer / job)
                 uid = String(get(msg, :imageUid, "")); isempty(uid) || (t.image_uid = uid)
                 t.updated = Dates.now()
             end

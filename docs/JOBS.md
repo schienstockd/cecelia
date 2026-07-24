@@ -5,6 +5,14 @@ the WebSocket *task rail* (`task:log` / `task:progress` / `task:status`, keyed b
 with a Cancel button) — but the backend machinery and the kind of work they suit are different. This
 doc is the map: what each is, why both exist, and where new code goes.
 
+> **Pool attribution.** A scheduler task's `pool` (cpu/gpu/io/network) is read from the `/api/tasks`
+> snapshot. A background job never hits that snapshot, so it would show a **blank pool** in the task
+> console — it's not scheduler-pooled. To keep it legible (not "floating unattributed"), jobs pass a
+> `pool` *label* on their `ws_status` frames: `"job"` for jobs.jl work (export/import/data patches),
+> `"viewer"` for the napari-viewer batch-movie path. This is a display label only — NOT a real pool
+> with a slot budget (see `ws_status` in `api/src/sockets.jl`, and the task console's `task:status`
+> handling).
+
 ## The two mechanisms
 
 ### Scheduler task — `CciaTask` (`app/src/tasks/scheduler.jl`, `docs/SCHEDULER.md`)

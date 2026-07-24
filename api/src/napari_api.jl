@@ -676,11 +676,11 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     # the live window, so napari must already be running.
     if isnothing(_viewer()) || !_viewer_alive()
         ws_log(nothing, task_id, "[ERROR] Napari is not running — open an image first, then generate")
-        ws_status(nothing, task_id, "failed", rep)
+        ws_status(nothing, task_id, "failed", rep; fun="movie:batch", pool="viewer")
         _batch_clear!(task_id)
         return nothing
     end
-    ws_status(nothing, task_id, "running", rep)
+    ws_status(nothing, task_id, "running", rep; fun="movie:batch", pool="viewer")
     ws_progress(nothing, task_id, 0, n)
     t_start = Int(get(config, :tStart, 0))
     t_end_v = get(config, :tEnd, nothing)
@@ -719,7 +719,7 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     status    = cancelled ? "cancelled" : (isempty(errors) ? "done" : "failed")
     ws_result(nothing, task_id, rep,
         Dict{String,Any}("done" => done, "total" => n, "errors" => errors, "cancelled" => cancelled))
-    ws_status(nothing, task_id, status, rep; image_uids = image_uids)
+    ws_status(nothing, task_id, status, rep; image_uids = image_uids, fun="movie:batch", pool="viewer")
     _batch_clear!(task_id)
     nothing
 end
