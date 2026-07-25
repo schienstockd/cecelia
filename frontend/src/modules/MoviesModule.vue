@@ -10,6 +10,7 @@ import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, type MovieEntry } from '../utils/movies'
 import CcToggle from '../components/CcToggle.vue'
+import ModulePage from '../components/ModulePage.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -162,36 +163,29 @@ function movieTime(mtime: number): string {
 </script>
 
 <template>
-  <div class="mov-page">
-    <header class="mov-head">
-      <div>
-        <h1>Movies</h1>
-        <p class="mov-sub cc-muted">Play the movies rendered for this project (single image, animation and batch).
-          Native player with adjustable speed and zoom.</p>
-      </div>
-      <div class="mov-head-ctl">
-        <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
-          <i class="pi pi-forward" />
-          <select v-model.number="settings.moviesPlaybackRate" class="mov-select">
-            <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
-          </select>
-        </label>
-        <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video. Shift + mouse wheel zooms to the cursor; Shift +/− and Shift + 0 (reset) also work. Scroll/pan when zoomed in.'">
-          <i class="pi pi-search-plus" />
-          <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
-                 @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
-          <span class="mov-num cc-readout">{{ zoomLabel }}</span>
-        </label>
-        <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
-                  v-tooltip.bottom="'Play a movie automatically when you select it'" />
-        <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
-                  v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
-        <button class="cc-btn cc-btn-ghost" :disabled="loading || !hasProject" @click="refresh"
-                v-tooltip.bottom="'Re-scan the project movies folder'">
-          <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
-        </button>
-      </div>
-    </header>
+  <ModulePage title="Movies" layout="fill">
+    <template #controls>
+      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
+        <i class="pi pi-forward" />
+        <select v-model.number="settings.moviesPlaybackRate" class="mov-select">
+          <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
+        </select>
+      </label>
+      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video. Shift + mouse wheel zooms to the cursor; Shift +/− and Shift + 0 (reset) also work. Scroll/pan when zoomed in.'">
+        <i class="pi pi-search-plus" />
+        <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
+               @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
+        <span class="mov-num cc-readout">{{ zoomLabel }}</span>
+      </label>
+      <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
+                v-tooltip.bottom="'Play a movie automatically when you select it'" />
+      <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
+                v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
+      <button class="cc-btn cc-btn-ghost" :disabled="loading || !hasProject" @click="refresh"
+            v-tooltip.bottom="'Re-scan the project movies folder'">
+      <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
+      </button>
+    </template>
 
     <p v-if="!hasProject" class="cc-empty">Open a project to browse its movies.</p>
     <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
@@ -222,15 +216,10 @@ function movieTime(mtime: number): string {
         </button>
       </aside>
     </div>
-  </div>
+  </ModulePage>
 </template>
 
 <style scoped>
-.mov-page { padding: 1rem 1.25rem; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.mov-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.mov-head h1 { margin: 0; font-size: 1.15rem; }
-.mov-sub { margin: 0.2rem 0 0; max-width: 46rem; }   /* + .cc-muted (colour/size) */
-.mov-head-ctl { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .mov-ctl { display: flex; align-items: center; gap: 0.35rem; }
 .mov-select {
   border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem;
