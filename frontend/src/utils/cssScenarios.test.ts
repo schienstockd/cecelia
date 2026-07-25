@@ -152,9 +152,18 @@ describe('icon-only buttons', () => {
   // all `.cc-btn` + `-bare`|`-ghost` + `-icon` now. What's left is a DIFFERENT primitive: three
   // byte-identical hand-rolled `.seg` segmented controls, which owe themselves to `ChipSelect`
   // (docs/UI.md) and need a component swap rather than a class swap. Tracked in the plan doc.
+  //
+  // …plus two FULL-HEIGHT STRIP controls. In markup these look exactly like icon-only buttons — one
+  // <i> and nothing else — but their rule sets a width and NO height, so they stretch as a flex child
+  // to fill the panel edge / tab strip. `.cc-btn-icon`'s fixed square collapsed both to a chip at the
+  // top. Markup alone cannot distinguish them, so they are exempt by name: a <button> that stretches
+  // is not a square icon button.
+  //
   // Pinned explicitly, path and all: deriving the allow-list from the findings would make the check
   // tautological, catching a new hand-rolled button only via the total count.
   const SEG_BUTTONS = [
+    'components/ModuleLayout.vue | right-handle',       // full-height right-panel collapse strip
+    'components/canvas/TabbedCanvas.vue | tab-add',     // full-height "+" cell in the tab strip
     'components/canvas/SummaryCanvas.vue | (no class)',
     'components/canvas/SummaryCanvas.vue | (no class)',
     'components/canvas/SummaryCanvas.vue | { on: showManager }',

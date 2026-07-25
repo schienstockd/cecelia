@@ -220,7 +220,7 @@ function exportBoard(kind: string) {
           </ConfirmButton>
         </template>
       </div>
-      <button class="tab-add cc-btn cc-btn-bare cc-btn-icon" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
+      <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
         <i class="pi pi-plus" />
       </button>
       <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
@@ -263,7 +263,12 @@ function exportBoard(kind: string) {
   border: 1px solid #7c3aed; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 /* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.tab-add { margin-left: 2px; }   /* + cc-btn cc-btn-bare cc-btn-icon */
+/* full-height cell in the tab strip (stretches as a flex child) — not a fixed square */
+.tab-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.8rem; border: none; background: transparent; color: var(--cc-text-dim);
+  cursor: pointer; font-size: var(--cc-fs-sm); margin-left: 2px;
+}
 .tab-add:hover { color: var(--cc-text); }
 .tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-bottom: 2px;
   padding: 3px 10px; font-size: var(--cc-fs-xs); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
