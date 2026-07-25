@@ -282,7 +282,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 .cp-fix { flex-shrink: 0; margin-left: auto; align-self: center; font-size: var(--cc-fs-xs); padding: 3px 9px;
   border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: #78350f88; }
-.cp-add { font-size: var(--cc-fs-sm); padding: 4px 8px; }
+.cp-add { padding: 4px 8px; }
 .cp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
 /* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.

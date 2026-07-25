@@ -307,7 +307,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .gp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
-.zwin input { width: 3.2rem; font-size: var(--cc-fs-sm); padding: 3px 4px; }
+.zwin input { width: 3.2rem; padding: 3px 4px; }
 /* free-floating plot workspace: panels + manager are absolutely positioned within */
 .gp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */

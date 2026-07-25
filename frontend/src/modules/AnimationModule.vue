@@ -376,7 +376,7 @@ async function render() {
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
 .anim-title-toggle { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
-.anim-note { font-size: var(--cc-fs-sm); width: 9rem; padding: 2px 6px;
+.anim-note { width: 9rem; padding: 2px 6px;
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }

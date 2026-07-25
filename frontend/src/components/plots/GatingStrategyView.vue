@@ -231,7 +231,7 @@ defineExpose({ exportImage, exportSvg })
 .gs-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .gs-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap;
   font-size: var(--cc-fs-sm); }
-.gs-bar select { font-size: var(--cc-fs-sm); max-width: 9rem; }
+.gs-bar select { max-width: 9rem; }
 /* ⚙ options popover (hierarchy toggle). margin-left:auto pins the gear to the far right so the popover —
    anchored right:0 — always opens LEFTWARD into the panel and is never clipped at the left edge. */
 .gs-opts { position: relative; display: inline-flex; margin-left: auto; }

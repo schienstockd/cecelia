@@ -181,11 +181,11 @@ defineExpose({ exportImage, getCsv, exportSvg })
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
 .feat-row { display: flex; align-items: center; gap: 5px; padding: 2px 3px; color: var(--cc-text); white-space: nowrap; }
 .feat-empty { font-size: var(--cc-fs-xs); margin: 4px; }   /* + .cc-muted (colour) */
-.hm-sel { font-size: var(--cc-fs-sm); margin-left: 6px; }
+.hm-sel { margin-left: 6px; }
 .hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
 /* .hm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.hm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.hm-export { max-width: 7rem; }
 .hm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + the two HMM panels) */
 .hm-empty { padding: 1rem; }

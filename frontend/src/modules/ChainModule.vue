@@ -1645,7 +1645,6 @@ onActivated(async () => {
 .chain-select {
   flex: 1;
   min-width: 0;
-  font-size: var(--cc-fs-sm);
   border-radius: var(--cc-radius-sm);
   padding: 0.25rem 0.4rem;
   cursor: pointer;
@@ -1677,7 +1676,6 @@ onActivated(async () => {
 .new-chain-input {
   flex: 1;
   min-width: 0;
-  font-size: var(--cc-fs-sm);
   border: 1px solid var(--cc-accent);
   border-radius: var(--cc-radius-sm);
   padding: 0.2rem 0.4rem;
@@ -1835,7 +1833,6 @@ onActivated(async () => {
 
 .config-select, .config-input {
   width: 100%;
-  font-size: var(--cc-fs-sm);
   border-radius: var(--cc-radius-sm);
   padding: 0.28rem 0.5rem;
 }

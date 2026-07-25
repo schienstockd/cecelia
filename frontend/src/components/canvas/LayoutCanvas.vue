@@ -605,7 +605,7 @@ defineExpose({ capturePage, collectCsvs })
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-md); overflow: hidden;
   display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--cc-bg); }
 /* per-slot title (figure caption): a plain-looking, centred, editable line above the plot */
-.lc-slot-cap { flex: 0 0 auto; width: 100%; box-sizing: border-box; border: none; background: transparent; font-size: var(--cc-fs-sm); font-weight: 600; text-align: center; padding: 3px 6px 1px; }
+.lc-slot-cap { flex: 0 0 auto; width: 100%; box-sizing: border-box; border: none; background: transparent; font-weight: 600; text-align: center; padding: 3px 6px 1px; }
 .lc-slot-cap::placeholder { color: var(--cc-text-dim); font-weight: 400; opacity: 0.55; }
 /* the plot area fills the rest of the slot (was the slot itself before the caption was added) */
 .lc-slot-plot { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }

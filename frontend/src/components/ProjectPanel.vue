@@ -567,8 +567,8 @@ const typeColour: Record<ProjectType, string> = {
   margin-right: auto;   /* push the Change button to the row's right edge (aligns with Import below) */
 }
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
-.pp-io-select { flex: 1 1 180px; font-size: var(--cc-fs-sm); }
-.pp-io-path { flex: 2 1 180px; font-size: var(--cc-fs-sm); }
+.pp-io-select { flex: 1 1 180px; }
+.pp-io-path { flex: 2 1 180px; }
 .pp-io-status {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   font-size: var(--cc-fs-sm); color: var(--cc-text-dim);

@@ -313,7 +313,7 @@ async function previewOpen() {
             <span class="bm-val">{{ titleDur }}s</span>
           </template>
         </div>
-        <input v-if="titleCardOn" type="text" class="bm-note cc-input-dense" v-model="titleNote"
+        <input v-if="titleCardOn" type="text" class="bm-note" v-model="titleNote"
                placeholder="note (optional)" />
       </section>
 
@@ -344,7 +344,7 @@ async function previewOpen() {
   color: var(--cc-text); font-size: var(--cc-fs-md); }
 .bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
-.bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; font-size: var(--cc-fs-sm); }
+.bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
 .bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin-left: 6px; }
 .bm-link { float: right; font-size: var(--cc-fs-xs); color: var(--cc-accent); background: none; border: none;
   cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
@@ -368,10 +368,12 @@ async function previewOpen() {
 .bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
 .bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
 .bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
-/* + cc-input-dense — the tier this field never picked, which is what made it render at the base
-   13.1px beside its --cc-fs-sm neighbours. It previously said `font: inherit`, redundant with the
-   global base and reading like a deliberate choice. (Beware `font:` on an input: it is a shorthand
-   and resets line-height/weight too.) What stays here is the surface and this panel's layout. */
+/* This field is the reason the input base got re-pitched: it rendered a tier larger than its
+   neighbours, was patched with `cc-input-dense`, and then the SAME complaint arrived for the legacy-
+   migrate dialog's fields. One field wanting the class is a site fix; two is the default being wrong.
+   The base is --cc-fs-sm now, so the class is gone from here — a plain input already renders at the
+   size this one was asking for. What stays is the surface and this panel's layout.
+   (Beware `font:` on an input: it is a shorthand and resets line-height/weight too.) */
 .bm-note { width: 100%; box-sizing: border-box; margin-top: 5px;
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 </style>

@@ -806,7 +806,7 @@ async function switchWt(path: string) {
 /* visual styling from the global form base (style.css) */
 .field-input { flex: 1; }
 .field-input[readonly] { color: var(--cc-text-dim); cursor: default; }
-.field-input.mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
+.field-input.mono { font-family: var(--cc-mono); }
 
 .field-hint {
   display: block;
@@ -951,7 +951,7 @@ async function switchWt(path: string) {
 .repl-val { color: var(--cc-text); }
 .repl-err { color: var(--cc-danger); }
 .repl-input {
-  width: 100%; resize: vertical; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
+  width: 100%; resize: vertical; font-family: var(--cc-mono);
   padding: 0.5rem; border-radius: var(--cc-radius-sm);
 }
 </style>

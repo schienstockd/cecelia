@@ -259,7 +259,7 @@ function exportBoard(kind: string) {
 .tab:hover { color: var(--cc-text); }
 .tab.active { color: var(--cc-text); background: var(--cc-bg); border-color: var(--cc-accent-strong); }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-edit { font-size: var(--cc-fs-sm); width: 8rem;
+.tab-edit { width: 8rem;
   border: 1px solid var(--cc-accent-strong); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 /* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }

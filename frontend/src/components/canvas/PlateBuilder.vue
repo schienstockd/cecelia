@@ -93,7 +93,7 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 .pb { display: flex; flex-direction: column; gap: 8px; width: 15rem; }
 .pb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pb-num { display: inline-flex; align-items: center; gap: 4px; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
-.pb-num input { width: 3rem; font-size: var(--cc-fs-sm); padding: 2px 4px; }
+.pb-num input { width: 3rem; padding: 2px 4px; }
 .pb-hint { flex-basis: 100%; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); opacity: 0.75; }
 /* the plate canvas: an A4-portrait-ish aspect so the preview reads like a page */
 .pb-grid { position: relative; display: grid; gap: 3px; aspect-ratio: 0.78; width: 100%;

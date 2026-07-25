@@ -425,14 +425,14 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 .panel-ctrl label { display: flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 /* fixed widths so the bar doesn't reflow when the selected option text changes; the rest
    (background, border, chevron, focus) comes from the global form base in style.css */
-.panel-ctrl select { width: 8rem; font-size: var(--cc-fs-sm); padding-top: 2px; padding-bottom: 2px; }
+.panel-ctrl select { width: 8rem; padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
 /* amber: this axis' preferred transform was auto-linearised because the measure's range can't use it */
 .panel-ctrl select.tsel.tsel-amber { border-color: var(--cc-sev-warn); color: var(--cc-sev-warn); }
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.gp-export { max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 4px 6px; font-size: var(--cc-fs-xs); }
