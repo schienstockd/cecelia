@@ -693,6 +693,28 @@ end
     end
 end
 
+@testset "API: attribute normalisation on write" begin
+    # The attr routes are the only place user-typed names/values enter the model, so they trim there.
+    # Untrimmed, these pairs would each be TWO distinct values — two filter chips in the image table,
+    # two segments in a generated movie name — or two separate attribute columns.
+    @test _norm_attr("a") == "a"
+    @test _norm_attr(" a ") == "a"
+    @test _norm_attr("\tLocation\n") == "Location"
+    @test _norm_attr(" a ") == _norm_attr("a")
+
+    # Whitespace-only collapses to "" — the canonical UNSET that attr/create seeds a column with.
+    # It must stay a value, not become a deletion: the key's presence is what makes the column exist.
+    @test _norm_attr("") == ""
+    @test _norm_attr("   ") == ""
+
+    # interior whitespace is content, not padding
+    @test _norm_attr(" day 3 ") == "day 3"
+
+    # and the reason it matters downstream: a blank value is already dropped from movie names, so
+    # normalising at the write is what keeps that defence from being needed in every consumer.
+    @test _movie_basename(Dict("T" => _norm_attr("  ")), "u1", ["T"]) == "u1.mp4"
+end
+
 @testset "API: batch-movie output naming" begin
     attr = Dict("Day" => "3", "Treatment" => "CNO", "Blank" => "  ")
     # attrs joined in the requested order, uid always terminates → unique name
