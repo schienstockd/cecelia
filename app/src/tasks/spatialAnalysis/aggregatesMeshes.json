@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The population to detect aggregates of. Cells whose surfaces are within the threshold are linked into aggregates."
+      "tip": "The population to detect aggregates of."
     },
     {
       "key": "maxClusterDist",
@@ -24,7 +24,7 @@
       "max": 1000,
       "step": 1,
       "default": 5,
-      "tip": "Surface-to-surface distance (microns) within which two cells are linked into the same aggregate."
+      "tip": "Surface-to-surface distance (µm) that links two cells."
     },
     {
       "key": "minCells",

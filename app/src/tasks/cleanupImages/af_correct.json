@@ -22,7 +22,7 @@
       "repeatable": true,
       "labelKey": "quotientChannel",
       "default": {},
-      "tip": "Add one entry per channel. Set the AF reference channels (Division channels) for each.",
+      "tip": "One entry per channel, with its AF reference channels.",
       "params": [
         {
           "key": "quotientChannel",

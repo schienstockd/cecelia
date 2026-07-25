@@ -9,7 +9,7 @@ const { defs: segmentDefs, reload: reloadDefs } = useTaskDefs('segment')
 
 <template>
   <ModuleLayout module="segment" :show-attrs="true" :show-filter="true"
-    hint-key="segment" hint="Run segmentation to detect cells in your images before gating or tracking.">
+    hint-key="segment" hint="Detect cells here before gating or tracking.">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="segmentDefs"

@@ -14,21 +14,21 @@
       "max": 10,
       "default": 2,
       "step": 1,
-      "tip": "Number of resolution levels in the image pyramid. Higher values allow smoother zooming for very large images. 2 is suitable for most images."
+      "tip": "Resolution levels in the image pyramid."
     },
     {
       "key": "convertTo8bit",
       "label": "Convert to 8-bit",
       "type": "bool",
       "default": false,
-      "tip": "Rescale 16-bit intensities to 8-bit on import (halves storage; mirrors the Fiji rescale-then-save-8-bit workflow). The 16-bit is transient and deleted — only the 8-bit is kept. Use for large low-dynamic-range acquisitions."
+      "tip": "Rescale 16-bit to 8-bit on import; the 16-bit is not kept."
     },
     {
       "key": "stageLocal",
       "label": "Copy to local scratch first",
       "type": "bool",
       "default": false,
-      "tip": "Copy the source (and its companion files, e.g. Olympus OIR _000nn parts) to local disk before converting. Reading a multi-file format directly over a network share (SMB) is very slow — a bulk local copy first is far faster. The copy is deleted after import."
+      "tip": "Copy the source locally first — much faster over a network share."
     },
     {
       "key": "advanced",
@@ -44,7 +44,7 @@
           "max": 50,
           "default": 0,
           "step": 0.1,
-          "tip": "Bottom of the per-channel intensity window when converting to 8-bit. 0 = the channel's true minimum. Raise it to clip a background floor."
+          "tip": "Bottom of the 8-bit intensity window (0 = true minimum)."
         },
         {
           "key": "rescaleHighPercentile",
@@ -54,7 +54,7 @@
           "max": 100,
           "default": 100,
           "step": 0.1,
-          "tip": "Top of the per-channel intensity window when converting to 8-bit. 100 = the channel's true maximum (nothing clipped). Lower it (e.g. 99.9) only if a hot pixel pins the max and squashes the signal."
+          "tip": "Top of the 8-bit intensity window (100 = true maximum)."
         },
         {
           "key": "chunkSizeX",
@@ -64,7 +64,7 @@
           "max": 2048,
           "default": 1024,
           "step": 64,
-          "tip": "Zarr chunk size in the X dimension. Larger chunks improve sequential read performance; smaller chunks improve random access."
+          "tip": "Zarr chunk size in X."
         },
         {
           "key": "chunkSizeY",

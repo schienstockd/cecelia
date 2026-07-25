@@ -11,7 +11,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Names the stored result (spatialStats/<suffix>.json). Keeps multiple runs side by side."
+      "tip": "Output suffix → spatialStats/<suffix>.json."
     },
     {
       "key": "basisPops",
@@ -21,7 +21,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "The cell types to compute pairwise contact statistics for (≥2). May span segmentations — they are pooled into one neighbour graph. Produces a log-odds association/avoidance table for every pair."
+      "tip": "Cell types for pairwise contact statistics; at least two."
     },
     {
       "key": "neighbourMethod",
@@ -33,7 +33,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "How the neighbour graph is built (squidpy). CODEX pairwise stats use the Delaunay graph."
+      "tip": "How the neighbour graph is built."
     },
     {
       "key": "neighbourRadius",

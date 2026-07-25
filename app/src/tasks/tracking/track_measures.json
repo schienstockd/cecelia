@@ -17,7 +17,7 @@
       "label": "Motion dimensions",
       "type": "motionDimsSelection",
       "default": "auto",
-      "tip": "Whether speed, turning angle and all track measures are computed in-plane (2D) or in full 3D. 'auto' detects whether the z-axis carries real migration or only jitter and recommends 2D/3D — you can override."
+      "tip": "Compute measures in 2D or 3D; auto detects and recommends."
     },
     {
       "key": "forceRecompute",

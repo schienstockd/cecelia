@@ -18,7 +18,7 @@
       "label": "Output label name",
       "type": "text",
       "default": "default",
-      "tip": "Name for the output label set. Labels are written to {task_dir}/labels/{name}.zarr."
+      "tip": "Name for the output label set."
     },
     {
       "key": "models",
@@ -39,7 +39,7 @@
           "gaussianFilter": 0.0
         }
       },
-      "tip": "Add one entry per model. Use 'base' + 'nuc' pair for nucleus-anchored segmentation.",
+      "tip": "One entry per model; pair 'base' + 'nuc' for nucleus-anchored.",
       "params": [
         {
           "key": "model",
@@ -59,7 +59,7 @@
           "label": "Match as",
           "type": "select",
           "default": "base",
-          "tip": "Role of this model's output. Use one 'base' and one 'nuc' for paired segmentation.",
+          "tip": "Role of this model's output; one 'base' + one 'nuc' to pair.",
           "options": [
             { "label": "Base (primary)", "value": "base" },
             { "label": "Nucleus",        "value": "nuc"  }
@@ -71,7 +71,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels carrying the cell signal (e.g. membrane or cytoplasm marker). Multiple channels are merged via maximum before prediction."
+          "tip": "Channels carrying the cell signal; merged by maximum."
         },
         {
           "key": "nucChannels",
@@ -79,7 +79,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels carrying the nucleus signal (e.g. DAPI). Leave empty for cytoplasm-only segmentation."
+          "tip": "Channels carrying the nucleus signal; empty = cytoplasm only."
         },
         {
           "key": "cellDiameter",
@@ -89,7 +89,7 @@
           "max": 500,
           "step": 1,
           "default": 10,
-          "tip": "Expected cell diameter in µm. Converted to pixels using the physical pixel size from OME metadata."
+          "tip": "Expected cell diameter in µm."
         },
         {
           "key": "normalise",
@@ -99,7 +99,7 @@
           "max": 100.0,
           "step": 0.1,
           "default": 99.9,
-          "tip": "Upper percentile for intensity normalisation. Lower values increase sensitivity but may saturate bright objects."
+          "tip": "Upper percentile for intensity normalisation."
         },
         {
           "key": "advanced",
@@ -115,7 +115,7 @@
               "max": 1.0,
               "step": 0.05,
               "default": 0.2,
-              "tip": "Cellpose z-stitch threshold. Non-zero enables 2D-per-slice segmentation with inter-slice stitching. 0 = run 2D on each slice independently."
+              "tip": "Cellpose z-stitch threshold; 0 = independent 2D slices."
             },
             {
               "key": "threshold",
@@ -125,7 +125,7 @@
               "max": 65535,
               "step": 1,
               "default": 0,
-              "tip": "Absolute intensity threshold; pixels below this value are set to 0 before normalisation (0 = off)."
+              "tip": "Zero pixels below this before normalisation (0 = off)."
             },
             {
               "key": "medianFilter",
@@ -165,7 +165,7 @@
           "max": 1.0,
           "step": 0.05,
           "default": 0.3,
-          "tip": "IoU threshold for matching nucleus labels to base labels. Only used when both a 'base' and 'nuc' model are present."
+          "tip": "IoU for matching nucleus labels to base labels."
         },
         {
           "key": "removeUnmatched",
@@ -192,7 +192,7 @@
           "max": 10000000,
           "step": 100,
           "default": 0,
-          "tip": "Remove objects larger than this many pixels (0 = off). Useful for rejecting debris or merged clusters."
+          "tip": "Remove objects larger than this many pixels (0 = off)."
         },
         {
           "key": "labelExpansion",
@@ -226,7 +226,7 @@
           "label": "Clear Z-depth cells",
           "type": "bool",
           "default": false,
-          "tip": "Remove cells that touch the first or last Z slice (3D images only). Equivalent to clearTouchingBorder but along the Z axis."
+          "tip": "Remove cells touching the first or last Z slice."
         }
       ]
     },
@@ -245,7 +245,7 @@
           "max": 1.0,
           "step": 0.05,
           "default": 0.0,
-          "tip": "IoU threshold for stitching cells split at tile boundaries. Labels on opposite sides of a seam with IoU >= this value are merged into one. 0 = simple max merge (no stitching)."
+          "tip": "IoU for stitching cells split at a tile seam (0 = max merge)."
         }
       ]
     },
@@ -260,14 +260,14 @@
           "label": "Global normalisation",
           "type": "bool",
           "default": true,
-          "tip": "Use the lowest-resolution level to compute global intensity percentiles. Ensures consistent normalisation across tiles and timepoints."
+          "tip": "Take intensity percentiles from the lowest-resolution level."
         },
         {
           "key": "useDask",
           "label": "Use Dask",
           "type": "bool",
           "default": false,
-          "tip": "Load image as a Dask array. Reduces peak RAM on very large images."
+          "tip": "Load as a Dask array; lowers peak RAM on very large images."
         }
       ]
     }

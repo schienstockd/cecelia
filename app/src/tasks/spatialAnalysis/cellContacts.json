@@ -24,7 +24,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "The target population. May span segmentations (e.g. a different cell type). Contact = an A cell within the distance threshold of any B cell."
+      "tip": "The target population; may span segmentations."
     },
     {
       "key": "maxContactDist",
@@ -34,7 +34,7 @@
       "max": 1000,
       "step": 1,
       "default": 10,
-      "tip": "Centroid distance (microns) at or below which an A cell counts as in contact with B. Points route — for surface-level contact on large/live cells use the mesh route."
+      "tip": "Centroid distance (µm) counting as contact."
     }
   ]
 }

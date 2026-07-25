@@ -12,7 +12,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output column suffix → regions.<suffix> and obsm['X_umap.<suffix>']. Keeps multiple region runs side by side."
+      "tip": "Output suffix → regions.<suffix>."
     },
     {
       "key": "basisPops",
@@ -22,7 +22,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "The populations that define the neighbourhood composition — “what cell types surround each cell”. May span segmentations (e.g. B cells + T cells): they are pooled into one spatial graph. Need at least two."
+      "tip": "Populations defining neighbourhood composition; at least two."
     },
     {
       "key": "neighbourMethod",
@@ -34,7 +34,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "How the neighbourhood graph is built (squidpy). Delaunay pruned by radius, kNN, or fixed radius."
+      "tip": "How the neighbourhood graph is built."
     },
     {
       "key": "neighbourRadius",
@@ -65,7 +65,7 @@
         { "value": "leiden", "label": "Leiden (resolution)" },
         { "value": "kmeans", "label": "k-means (fixed k)" }
       ],
-      "tip": "Leiden (data-driven number of regions, set by resolution) or k-means (fixed number of regions)."
+      "tip": "Leiden (resolution-driven) or k-means (fixed count)."
     },
     {
       "key": "resolution",
@@ -92,7 +92,7 @@
       "label": "Per timepoint (live)",
       "type": "bool",
       "default": false,
-      "tip": "Live imaging: build the neighbourhood graph frame by frame, so a cell's region reflects only its own timepoint and can change over time (behaviour regions). Off = pool all timepoints into one graph (static images)."
+      "tip": "Build the graph per frame, so regions can change over time."
     },
     {
       "key": "mergeUmap",

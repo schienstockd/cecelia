@@ -26,7 +26,7 @@
           "modelDiameter": 10
         }
       },
-      "tip": "Add one entry per set of channels to denoise. Different channels can use different models and diameters.",
+      "tip": "One entry per set of channels to denoise.",
       "params": [
         {
           "key": "model",
@@ -50,7 +50,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels to apply this model to. Each selected channel is processed independently."
+          "tip": "Channels this model denoises, each processed independently."
         },
         {
           "key": "modelDiameter",
@@ -60,7 +60,7 @@
           "max": 100,
           "step": 1,
           "default": 10,
-          "tip": "Expected cell diameter in µm. Converted to pixels using the physical pixel size from OME metadata before passing to Cellpose."
+          "tip": "Expected cell diameter in µm."
         }
       ]
     }
