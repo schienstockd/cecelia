@@ -707,7 +707,6 @@ const pct = computed(() => {
     var(--cc-accent) 0%, var(--cc-accent) var(--pct, 0%),
     var(--cc-surface-2) var(--pct, 0%), var(--cc-surface-2) 100%);
   cursor: pointer;
-  outline: none;
 }
 .slider::-webkit-slider-thumb {
   appearance: none;

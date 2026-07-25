@@ -1144,8 +1144,8 @@ th:hover .resize-handle::after { opacity: 1; }
 /* editable attribute cell: click to edit; subtle hover affordance */
 .attr-cell { cursor: text; border-radius: var(--cc-radius-xs); padding: 0 2px; }
 .attr-cell:hover { background: var(--cc-surface-2); outline: 1px dashed var(--cc-border); }
-.attr-edit { width: 100%; box-sizing: border-box; font: inherit; padding: 1px 3px;
-  border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
+.attr-edit { width: 100%; box-sizing: border-box; padding: 1px 3px;
+  border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 
 .uid-row {
   display: flex;

@@ -505,11 +505,7 @@ const { width: sidebarWidth, onResizeStart } =
 /* function selector */
 .fn-select {
   width: 100%;
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
-  color: var(--cc-text);
-  font-size: var(--cc-fs-md);
   padding: 0.35rem 0.5rem;
   cursor: pointer;
 }

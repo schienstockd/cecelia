@@ -434,7 +434,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
   font-size: var(--cc-fs-sm); color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); padding-top: 6px; }
 .pm-colour-custom input { width: 28px; height: 20px; padding: 0; border: none; background: none; cursor: pointer; }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pm-rename { flex: 1; background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
+.pm-rename { flex: 1; background: var(--cc-bg); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 .pm-stat small { opacity: 0.7; margin-left: 3px; }
 /* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
@@ -453,13 +453,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-ff { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-1); }
 .pm-ff-head { display: flex; gap: 5px; align-items: center; }
-.pm-ff-name { flex: 1; font-size: var(--cc-fs-xs); padding: 3px 6px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
-  background: var(--cc-surface-2); color: var(--cc-text); }
-.pm-ff-colour { width: 24px; height: 24px; padding: 0; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
+.pm-ff-name { flex: 1; font-size: var(--cc-fs-xs); padding: 3px 6px; border-radius: var(--cc-radius-xs); }
+.pm-ff-colour { width: 24px; height: 24px; padding: 0; border-radius: var(--cc-radius-xs);
   background: none; cursor: pointer; }
 .pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
-.pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: var(--cc-fs-xs); padding: 2px 4px; border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text); }
+.pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: var(--cc-fs-xs); padding: 2px 4px;
+  border-radius: var(--cc-radius-xs); }
 .pm-ff-measure { flex: 1; min-width: 0; }
 .pm-ff-fun { width: 48px; }
 .pm-ff-vals { width: 64px; }

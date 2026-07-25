@@ -666,8 +666,6 @@ const visibleUids = computed<string[]>(() =>
   padding: 0.15rem 0.4rem;
   border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-  color: var(--cc-text);
   max-width: 240px;
 }
 .proc-mode { display: flex; align-items: center; gap: 0.55rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }

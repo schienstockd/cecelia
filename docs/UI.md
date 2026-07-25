@@ -43,6 +43,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
+| Compact input / select / textarea | `.cc-input-dense` (12px) / `.cc-input-micro` (11px) — sets size AND padding | a scoped class re-typing the base's border/colour/background to change the size |
 | A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
 
 **Each utility varies on exactly one axis, and the modifier is that axis** — density (`-dense`/`-micro`),

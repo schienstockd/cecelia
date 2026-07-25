@@ -150,7 +150,7 @@ async function confirmImport() {
       </div>
       <input
         v-model="rscript"
-        class="lm-input lm-rscript"
+        class="lm-input"
         placeholder="Rscript path (optional — only if R isn't found, e.g. /usr/bin/Rscript or your renv Rscript)"
       />
 
@@ -242,11 +242,9 @@ async function confirmImport() {
 .lm-path { display: flex; gap: 0.5rem; }
 .lm-input {
   flex: 1; padding: 0.4rem 0.6rem; font-size: var(--cc-fs-lg);
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
-  background: var(--cc-surface-1); color: var(--cc-text);
+  background: var(--cc-surface-1);
 }
 .lm-input::placeholder { color: var(--cc-text-dim); }
-.lm-rscript { font-size: var(--cc-fs-md); }
 .lm-error { color: #f87171; margin: 0; font-size: var(--cc-fs-md); }
 .lm-summary { margin: 0; font-size: var(--cc-fs-lg); color: var(--cc-text); }
 .lm-tablewrap { max-height: 46vh; overflow: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }

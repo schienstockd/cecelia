@@ -98,8 +98,7 @@ async function check() {
   font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
 }
 .cohort-run select {
-  font-size: var(--cc-fs-sm); padding: 0.15rem 0.3rem; border-radius: var(--cc-radius-sm);
-  color: var(--cc-text); background: var(--cc-surface-2); border: 1px solid var(--cc-border); cursor: pointer;
+  font-size: var(--cc-fs-sm); padding: 0.15rem 0.3rem; border-radius: var(--cc-radius-sm); cursor: pointer;
 }
 .cohort-run select:disabled { opacity: 0.6; cursor: default; }
 .cohort-check-btn {

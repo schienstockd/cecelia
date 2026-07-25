@@ -561,11 +561,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 .field-input:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .field-textarea {
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
-  color: var(--cc-text);
-  font-size: var(--cc-fs-md);
   padding: 0.35rem 0.5rem;
   resize: vertical;
   font-family: var(--cc-mono);

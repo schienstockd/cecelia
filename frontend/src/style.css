@@ -392,6 +392,17 @@ input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-accent) 22%, transparent);
 }
 
+/* Density steps for form controls — the axis the base was missing, and the reason ~112 rules re-styled
+   it. To make an input smaller you had to write a class, and once you were writing a class you re-typed
+   everything you could see: 67 declarations across 19 files restated the base's own border/colour/
+   background verbatim. Font-size was never the problem (50 uses, 5 values, all tokens) and padding's 23
+   spellings were not 23 choices — sorted, they collapse to two tiers below the base, because padding
+   TRACKS the size rather than varying independently. So each step sets both, exactly as `.cc-btn-icon`
+   bundles box and glyph size. Compose: `class="my-field cc-input-dense"`, and keep only real layout
+   (width / flex / margin) in scoped CSS. Guarded by `findRestatedInputBase` in cssScenarios.test.ts. */
+.cc-input-dense { font-size: var(--cc-fs-sm); padding: 0.15rem 0.4rem; }
+.cc-input-micro { font-size: var(--cc-fs-xs); padding: 0.05rem 0.25rem; }
+
 /* native select chevron → custom caret so dropdowns match across browsers */
 select {
   appearance: none;

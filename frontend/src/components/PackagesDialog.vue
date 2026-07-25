@@ -114,7 +114,7 @@ function copyAll() {
 .pk-toolbar { display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
 .search-wrap { flex: 1; display: flex; align-items: center; gap: 0.4rem; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 0.25rem 0.5rem; }
 .search-wrap .pi-search { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
-.search-input { flex: 1; background: none; border: none; outline: none; color: var(--cc-text); font-size: var(--cc-fs-md); }
+.search-input { flex: 1; background: none; border: none; }
 .mini-btn { display: flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); padding: 0.3rem 0.6rem; border-radius: var(--cc-radius-sm); border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim); cursor: pointer; white-space: nowrap; }
 .mini-btn:hover:not(:disabled) { color: var(--cc-text); }
 .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }

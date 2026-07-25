@@ -156,28 +156,25 @@ Remaining — incremental adoption only (no forced sweeps). **No counts here on 
   this doc records. Waiting costs two small scoped rules that no detector flags. There may also be
   nothing to extract: one is already the canonical icon button, the other isn't a button at all, and the
   only shared thing is "the chevron points up when open" — one line, needing no abstraction.
-- [ ] **Form controls have no density axis — the one primitive category this audit never listed.** The
-  global `input`/`select` base is a SINGLE size (`--cc-fs-md` + `0.32rem 0.6rem`), so every compact
-  control re-styles it: **52 rules across 28 files**, in which **24 of the 37 font-sizes are
-  `--cc-fs-sm`** against **18 distinct padding spellings**. That is the same signature as the icon
-  buttons ("60 spellings of 2×4") and the raw sizes ("33 spellings of 5 values") — the codebase has
-  already voted for a dense tier 24 times and has no name for it. A `.cc-input-dense`/`-micro` pair
-  (plus the `surface-1` + `--cc-radius-xs` that the three separate "note (optional)" fields each
-  arrived at independently) is the likely shape. **Get the number from a detector before sweeping** —
-  there is no input matcher in `cssScenarios.ts` yet, so this entry deliberately quotes a one-off
-  measurement rather than a maintained count, and it should be replaced by a detector, not trusted.
-  Surfaced by a real symptom: `BatchMoviesPanel`'s `.bm-note` never picked a tier at all and rendered
-  at the base 13.1px beside its `--cc-fs-sm` neighbours, hidden behind a redundant `font: inherit`.
-- [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
-  covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
-- [ ] **Deliberately left bespoke, with reasons** (do not "fix" these without reading why):
-  `ImageTable`'s `.runlog-cog.on`/`.actions-btn.on` are the documented **hover-reveal** pattern
-  (`opacity: 0` + a parent `:hover`), not the accent-border scenario. `GatePairsPanel`'s `.chan-btn.on` is
-  a full-width select-*trigger* built from its own rules, not a `.cc-btn` — adopting the state axis there
-  means rebuilding the control first. `ModuleLayout`'s `.filter-toggle.active` sits between the outline
-  and tint intensities (accent-soft text, accent-strong border, no fill) and would change visually either
-  way; it is a popover trigger, not a toggle. `BatchMoviesPanel`'s `.bm-busy` uses amber for *in-progress*
-  where `--cc-active` is arguably the right token — a hue change, so it needs eyes, not a script.
+- [x] **Form-control density — done (2026-07-25).** The `input`/`select`/`textarea` base was a SINGLE
+  size, and that turned out to be the *mechanism* of the divergence, not a side effect: to make a
+  control smaller you had to write a class, and once writing a class sites re-typed everything they
+  could see. **67 declarations across 19 files restated the base's own `color`/`border`/`background`
+  verbatim** — no-ops by the cascade, so removing them is provably neutral.
+  Font-size was never the broken axis (50 uses, 5 values, all already tokens), and padding's 23
+  spellings were not 23 choices: sorted, they collapse to two tiers below the base, because padding
+  **tracks** the size rather than varying independently. So `.cc-input-dense` / `.cc-input-micro` set
+  both, exactly as `.cc-btn-icon` bundles box and glyph size. `BatchMoviesPanel`'s `.bm-note` — the
+  field that surfaced all this by rendering a tier too large — is the reference adoption.
+  Held by `findRestatedInputBase` as an exact list, one survivor: `.cby-swatch`, whose class is shared
+  with a `<span>` that gets nothing from the input base and so genuinely needs its own border.
+
+  Two detector-precision bugs found while building it, both now unit-tested, and both the *same shape*
+  as the blind spots above — a pattern matching more (or less) than the thing it names:
+  `\b(select)\b` matches inside `.chip-select` and `.select-flagged-btn`, because a hyphen is a word
+  boundary; and a rule must be judged by its **subject** compound, since
+  `.cc-toggle-input:checked ~ .cc-toggle-track` styles the track, not the input. The first run of the
+  check reported 77 hits across 22 files; after both fixes, 68 across 19. Nine were never real.
 
 Not swept, and NOT because they were forgotten: `ChainPicnicNode`'s amber and `AnimationModule`'s
 `.tl-badge` are **identity** hues (a node's colour, a keyframe badge), and the `.cc-del`/`.footer-btn

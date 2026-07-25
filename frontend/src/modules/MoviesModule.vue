@@ -233,7 +233,6 @@ function movieTime(mtime: number): string {
 .mov-head-ctl { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .mov-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 .mov-select {
-  background: var(--cc-surface-2); color: var(--cc-text); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem; font-size: var(--cc-fs-sm);
 }
 .mov-range { width: 6rem; }

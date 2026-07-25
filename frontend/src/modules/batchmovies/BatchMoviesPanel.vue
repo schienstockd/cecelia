@@ -313,7 +313,7 @@ async function previewOpen() {
             <span class="bm-val">{{ titleDur }}s</span>
           </template>
         </div>
-        <input v-if="titleCardOn" type="text" class="bm-note" v-model="titleNote"
+        <input v-if="titleCardOn" type="text" class="bm-note cc-input-dense" v-model="titleNote"
                placeholder="note (optional)" />
       </section>
 
@@ -368,10 +368,10 @@ async function previewOpen() {
 .bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
 .bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
 .bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
-/* --cc-fs-sm to match .bm-mini and the rest of this panel's controls. It had `font: inherit`, which is
-   redundant (the global input base already declares it) and left the field at the base 13.1px next to
-   its --cc-fs-sm neighbours — the shorthand reads like a deliberate sizing choice while actually
-   meaning "no tier was picked". Beware `font:` on an input generally: it resets line-height/weight too. */
-.bm-note { width: 100%; box-sizing: border-box; font-size: var(--cc-fs-sm); padding: 3px 6px; margin-top: 5px;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
+/* + cc-input-dense — the tier this field never picked, which is what made it render at the base
+   13.1px beside its --cc-fs-sm neighbours. It previously said `font: inherit`, redundant with the
+   global base and reading like a deliberate choice. (Beware `font:` on an input: it is a shorthand
+   and resets line-height/weight too.) What stays here is the surface and this panel's layout. */
+.bm-note { width: 100%; box-sizing: border-box; margin-top: 5px;
+  border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 </style>
