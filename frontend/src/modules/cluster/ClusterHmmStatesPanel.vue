@@ -179,7 +179,7 @@ defineExpose({ exportImage, getCsv })
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel -->
     <template #footer>
-      <button class="hmm-iconbtn" type="button" @click="emit('duplicate')"
+      <button class="hmm-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same settings) to tweak one thing'"><i class="pi pi-copy" /></button>
       <select v-if="!docked" class="hmm-export" v-tooltip.top="'Export the shown plot'" :disabled="!rows.length"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
@@ -210,9 +210,7 @@ defineExpose({ exportImage, getCsv })
 .hmm-host :deep(.plot-title-overlay) { position: absolute; top: 4px; left: 8px; max-width: 70%; font-weight: 600;
   font-size: var(--cc-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-sel { font-size: var(--cc-fs-sm); }
-.hmm-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
+/* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hmm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + ClusterHeatmapPanel) */

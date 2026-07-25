@@ -1082,7 +1082,7 @@ onActivated(async () => {
         </select>
         <button
           v-if="selectedRunId"
-          class="wb-btn live-resume-btn"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-resume-btn"
           :disabled="resumeBusy"
           @click="resumeRun"
           v-tooltip.bottom="resumeBusy
@@ -1095,7 +1095,7 @@ onActivated(async () => {
         </button>
         <button
           v-if="restartNodeId"
-          class="wb-btn live-copy-btn"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
           @click="restartNodeId = null"
           v-tooltip.bottom="'Clear the resume-from node'"
         >
@@ -1103,21 +1103,21 @@ onActivated(async () => {
         </button>
         <button
           v-if="selectedRunId"
-          class="wb-btn live-copy-btn"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
           @click="copyRunId"
           v-tooltip.bottom="`Copy run ID (${selectedRunId}) — e.g. for load_chain_run in the REPL`"
         >
           <i class="pi pi-copy" />
         </button>
         <button
-          class="wb-btn live-copy-btn"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
           @click="loadRunList"
           v-tooltip.bottom="'Reload run history from disk'"
         >
           <i class="pi pi-refresh" />
         </button>
         <button
-          class="wb-btn qc-toggle"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense qc-toggle"
           :class="{ 'qc-on': showQc }"
           @click="showQc = !showQc"
           v-tooltip.bottom="'Show/hide the segmentation QC row'"
@@ -1126,7 +1126,7 @@ onActivated(async () => {
         </button>
         <button
           ref="throttleBtn"
-          class="wb-btn"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
           :class="{ 'qc-on': throttleOpen }"
           @click="throttleOpen = !throttleOpen"
           v-tooltip.bottom="'Throttle — how many tasks of each kind run at once'"
@@ -1163,7 +1163,7 @@ onActivated(async () => {
           <div class="qc-expand-card">
             <div class="qc-expand-head">
               <span>Segmentation QC · {{ qcExpand.valueName }}</span>
-              <button class="wb-btn" @click="qcExpand = null"><i class="pi pi-times" /></button>
+              <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="qcExpand = null"><i class="pi pi-times" /></button>
             </div>
             <div class="qc-expand-body">
               <SummaryCanvas :image-uids="qcExpand.imageUids" module="segment" />
@@ -1197,7 +1197,7 @@ onActivated(async () => {
         </div>
         <div class="chain-bar-actions">
           <button
-            class="wb-btn"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             @click="showNewInput = !showNewInput"
             v-tooltip.right="'Create a new chain template.'"
           >
@@ -1208,7 +1208,7 @@ onActivated(async () => {
             armed-title="Click again to permanently delete this chain"
             @confirm="removeChain" />
           <button
-            class="wb-btn"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || hasStartNode"
             @click="addStartNode"
             v-tooltip.right="'Add a start node — link it to the task(s) a run begins from. Only tasks reachable from it run; the rest stay as drafts.'"
@@ -1216,7 +1216,7 @@ onActivated(async () => {
             <i class="pi pi-circle-fill" />
           </button>
           <button
-            class="wb-btn"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
             @click="loadChain(activeChain)"
             v-tooltip.right="'Reload chain from disk — discards unsaved edits.'"
@@ -1224,7 +1224,7 @@ onActivated(async () => {
             <i class="pi pi-refresh" />
           </button>
           <button
-            class="wb-btn wb-btn-save"
+            class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
             :disabled="!activeChain || saving"
             @click="saveChain"
             v-tooltip.right="'Save the current chain to disk.'"
@@ -1244,7 +1244,7 @@ onActivated(async () => {
           @keydown.esc="showNewInput = false; newChainName = ''"
           autofocus
         />
-        <button class="wb-btn wb-btn-save" @click="createChain" :disabled="!newChainName.trim()">
+        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save" @click="createChain" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
         </button>
       </div>
@@ -1279,7 +1279,7 @@ onActivated(async () => {
 
             <div v-if="!paletteCategories.length" class="palette-hint palette-hint-retry">
               No task definitions found.
-              <button class="wb-btn palette-retry-btn" @click="loadAllTaskDefs"
+              <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense palette-retry-btn" @click="loadAllTaskDefs"
                 v-tooltip.right="'Retry loading task definitions from the server.'">
                 <i class="pi pi-refresh" />
               </button>
@@ -1662,20 +1662,7 @@ onActivated(async () => {
   font-style: italic;
 }
 
-.wb-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px; height: 26px;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  font-size: var(--cc-fs-xs);
-  flex-shrink: 0;
-  transition: background 0.1s, color 0.1s;
-}
+.wb-btn { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .wb-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); border-color: var(--cc-accent); }
 .wb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .wb-btn-save { color: var(--cc-accent); border-color: var(--cc-accent); }

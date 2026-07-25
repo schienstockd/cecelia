@@ -203,7 +203,7 @@ defineExpose({ exportImage, exportSvg })
       </select>
       <RenderModeToggle v-model="renderMode" />
       <div class="gs-opts">
-        <button ref="gearBtn" class="gs-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+        <button ref="gearBtn" class="gs-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
           <div class="gs-pop">
@@ -235,8 +235,7 @@ defineExpose({ exportImage, exportSvg })
 /* ⚙ options popover (hierarchy toggle). margin-left:auto pins the gear to the far right so the popover —
    anchored right:0 — always opens LEFTWARD into the panel and is never clipped at the left edge. */
 .gs-opts { position: relative; display: inline-flex; margin-left: auto; }
-.gs-gear { background: var(--cc-surface-2); color: var(--cc-text-dim); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm); padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
+/* .gs-gear → cc-btn cc-btn-ghost cc-btn-icon */
 .gs-gear.on { background: var(--cc-accent); color: #fff; border-color: var(--cc-accent); }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }

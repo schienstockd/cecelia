@@ -125,7 +125,7 @@ const FILTERS: ChipOption[] = [
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
         v-tooltip.left="'Automatically select the newest running task'" />
 
-      <button ref="throttleBtn" class="tm-throttle" :class="{ active: throttleOpen }"
+      <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon" :class="{ active: throttleOpen }"
         @click="throttleOpen = !throttleOpen"
         v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
         <i class="pi pi-sliders-h" />
@@ -172,16 +172,16 @@ const FILTERS: ChipOption[] = [
 
           <div class="row-actions" @click.stop>
             <button v-if="t.status === 'running' || t.status === 'queued'"
-              class="ra-btn danger" @click="cancelTask(t)"
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(t)"
               v-tooltip.left="t.chainRunId ? 'Stop chain run' : 'Cancel task'">
               <i class="pi pi-times" />
             </button>
             <button v-if="canRerun(t)"
-              class="ra-btn" @click="rerun(t)" v-tooltip.left="'Rerun'">
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(t)" v-tooltip.left="'Rerun'">
               <i class="pi pi-replay" />
             </button>
             <button v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
-              class="ra-btn" @click="tasks.remove(t.id)" v-tooltip.left="'Dismiss'">
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(t.id)" v-tooltip.left="'Dismiss'">
               <i class="pi pi-trash" />
             </button>
           </div>
@@ -206,16 +206,16 @@ const FILTERS: ChipOption[] = [
             </div>
             <span v-if="elapsed(selected)" class="log-elapsed">{{ elapsed(selected) }}</span>
             <div class="log-actions">
-              <button class="ra-btn" @click="copyLog" v-tooltip.left="copied ? 'Copied!' : 'Copy log'">
+              <button class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog" v-tooltip.left="copied ? 'Copied!' : 'Copy log'">
                 <i :class="['pi', copied ? 'pi-check' : 'pi-copy']" />
               </button>
               <button v-if="selected.status === 'running' || selected.status === 'queued'"
-                class="ra-btn danger" @click="cancelTask(selected)"
+                class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(selected)"
                 v-tooltip.left="selected.chainRunId ? 'Stop chain run' : 'Cancel task'">
                 <i class="pi pi-times" />
               </button>
               <button v-if="canRerun(selected)"
-                class="ra-btn" @click="rerun(selected)" v-tooltip.left="'Rerun'">
+                class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(selected)" v-tooltip.left="'Rerun'">
                 <i class="pi pi-replay" />
               </button>
             </div>
@@ -278,20 +278,7 @@ const FILTERS: ChipOption[] = [
 }
 .follow-toggle input { accent-color: var(--cc-accent); cursor: pointer; }
 
-.tm-throttle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm);
-  background: none;
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.1s, color 0.1s;
-}
+.tm-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .tm-throttle:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
 .tm-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
@@ -464,15 +451,7 @@ const FILTERS: ChipOption[] = [
 }
 
 /* ── Shared button style ──────────────────────────────────────────────── */
-.ra-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-sm);
-  padding: 0.2rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-}
+/* .ra-btn → cc-btn cc-btn-bare cc-btn-icon */
 .ra-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .ra-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 </style>

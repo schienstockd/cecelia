@@ -471,7 +471,7 @@ const visibleUids = computed<string[]>(() =>
         <!-- drag the left edge to resize (persisted per module); shared by TaskRunner + every panel -->
         <div v-if="!settings.rightPanelCollapsed" class="right-resizer" @mousedown="startResize"
              v-tooltip.left="'Drag to resize'" />
-        <button class="right-handle"
+        <button class="right-handle cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
           @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
           v-tooltip.left="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'"
           :aria-label="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'">
@@ -529,21 +529,8 @@ const visibleUids = computed<string[]>(() =>
   flex-shrink: 0;
   overflow: hidden;
 }
-.right-handle {
-  flex-shrink: 0;
-  width: 1.1rem;
-  border: none;
-  border-left: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.12s, color 0.12s;
-}
+.right-handle { border-left: 1px solid var(--cc-border); transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.right-handle .pi { font-size: var(--cc-fs-xs); }
 /* drag strip on the panel's left edge to resize (col-resize); thin, highlights on hover */
 .right-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: transparent; transition: background 0.12s; }
 .right-resizer:hover { background: var(--cc-accent); }

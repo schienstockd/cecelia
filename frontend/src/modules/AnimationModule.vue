@@ -315,10 +315,10 @@ async function render() {
                 </div>
                 <div v-if="keyframeTime(f)" class="tl-time">{{ keyframeTime(f) }}</div>
                 <div class="tl-colctl">
-                  <button class="tl-ico" :disabled="i === 0" @click="anim.move(f.id, -1)" v-tooltip.bottom="'Move earlier'"><i class="pi pi-chevron-left" /></button>
+                  <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="i === 0" @click="anim.move(f.id, -1)" v-tooltip.bottom="'Move earlier'"><i class="pi pi-chevron-left" /></button>
                   <span class="tl-kf">{{ i + 1 }}</span>
-                  <button class="tl-ico" :disabled="i === frames.length - 1" @click="anim.move(f.id, 1)" v-tooltip.bottom="'Move later'"><i class="pi pi-chevron-right" /></button>
-                  <button class="tl-ico" :disabled="!isEdited(f)" @click="resetKeyframe(f)" v-tooltip.bottom="'Reset to the captured view'"><i class="pi pi-refresh" /></button>
+                  <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="i === frames.length - 1" @click="anim.move(f.id, 1)" v-tooltip.bottom="'Move later'"><i class="pi pi-chevron-right" /></button>
+                  <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!isEdited(f)" @click="resetKeyframe(f)" v-tooltip.bottom="'Reset to the captured view'"><i class="pi pi-refresh" /></button>
                   <ConfirmDeleteButton title="Delete keyframe" armed-title="Click again to delete" @confirm="deleteKeyframe(f)" />
                 </div>
                 <div class="tl-dur" v-tooltip.bottom="'Seconds this keyframe tweens from the previous'">
@@ -405,8 +405,7 @@ async function render() {
 .tl-time { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); text-align: center; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
 .tl-kf { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
-.tl-ico { display: inline-flex; border: none; background: none; color: var(--cc-text-dim); cursor: pointer;
-  padding: 0.15rem; font-size: var(--cc-fs-2xs); border-radius: var(--cc-radius-xs); }
+/* .tl-ico → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
 .tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }

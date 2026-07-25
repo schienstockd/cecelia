@@ -66,7 +66,7 @@ async function copy(key: string, value: string) {
         <h4 class="md-h">Original file</h4>
         <div v-if="img.oriPath" class="md-path">
           <code class="md-code">{{ img.oriPath }}</code>
-          <button class="md-copy" @click="copy('ori', img.oriPath!)"
+          <button class="md-copy cc-btn cc-btn-bare cc-btn-icon" @click="copy('ori', img.oriPath!)"
             v-tooltip.left="copied === 'ori' ? 'Copied!' : 'Copy path'">
             <i :class="copied === 'ori' ? 'pi pi-check' : 'pi pi-copy'" />
           </button>
@@ -171,10 +171,7 @@ async function copy(key: string, value: string) {
   color: var(--cc-text); background: var(--cc-surface-2); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm); padding: 0.3rem 0.45rem; word-break: break-all;
 }
-.md-copy {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); padding: 0.25rem 0.35rem; border-radius: var(--cc-radius-xs); font-size: var(--cc-fs-sm);
-}
+/* .md-copy → cc-btn cc-btn-bare cc-btn-icon */
 .md-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .md-none { margin: 0; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); font-style: italic; }
 

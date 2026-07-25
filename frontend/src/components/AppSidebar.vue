@@ -147,7 +147,7 @@ function isNavDisabled(item: NavItem): boolean {
             <span class="proj-type">{{ projectMeta.current.type }}</span>
           </div>
           <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
-          <button class="proj-menu-btn" @click="showPanel = true"
+          <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"
             v-tooltip.right="'Switch project or create a new one.'">
             <i class="pi pi-ellipsis-h" />
           </button>
@@ -229,23 +229,23 @@ function isNavDisabled(item: NavItem): boolean {
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
          and opposite the destructive/lifecycle controls. -->
     <div class="sidebar-footer">
-      <RouterLink to="/settings" class="footer-btn"
+      <RouterLink to="/settings" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
                   v-tooltip.right="'Settings — project name, ID, and interface preferences'">
         <i class="pi pi-sliders-h" />
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn danger" :disabled="appCtl.busy" @click="arm"
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="arm"
                   v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>
           <template v-else>
-            <button class="footer-btn danger" @click="confirm"
+            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" @click="confirm"
                     v-tooltip.right="'Confirm quit — stops napari, notebooks and the backend'"><i class="pi pi-check" /></button>
-            <button class="footer-btn" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
+            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
           </template>
         </ConfirmButton>
-        <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
+        <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
                 v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
           <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />
         </button>
@@ -308,16 +308,7 @@ function isNavDisabled(item: NavItem): boolean {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.proj-menu-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  padding: 0.15rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-  font-size: var(--cc-fs-sm);
-  flex-shrink: 0;
-}
+/* .proj-menu-btn → cc-btn cc-btn-bare cc-btn-icon */
 .proj-menu-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .open-project-btn {
@@ -450,20 +441,8 @@ function isNavDisabled(item: NavItem): boolean {
 .footer-ctl { display: flex; gap: 0.4rem; }   /* the right-hand quit + restart group */
 /* Settings link active state (RouterLink) — mark it when on /settings, like the nav items */
 .footer-btn.router-link-active { color: var(--cc-text); border-color: var(--cc-accent); }
-.footer-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
-  color: var(--cc-text-dim);
-  border-radius: var(--cc-radius-sm);
-  padding: 0.35rem 0.55rem;
-  cursor: pointer;
-  font-size: var(--cc-fs-md);
-  text-decoration: none;            /* Settings is a RouterLink (<a>) — no underline */
-  transition: background 0.12s, color 0.12s;
-}
+.footer-btn { text-decoration: none; /* Settings is a RouterLink (<a>) — no underline */
+  transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
 .footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
 .footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }

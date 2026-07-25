@@ -100,18 +100,18 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
       <span class="panel-spacer" />
       <!-- pin the auto-hiding controls open (next to the drag icon). Only when there ARE controls
            to reveal and auto-hide is active. -->
-      <button v-if="autoHide && hasControls && !collapsed" class="panel-btn" :class="{ on: pinned }"
+      <button v-if="autoHide && hasControls && !collapsed" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ on: pinned }"
               v-tooltip.bottom="pinned ? 'Auto-hide controls (show on hover)' : 'Keep controls visible'"
               @mousedown.stop @click.stop="pinned = !pinned">
         <i class="pi pi-thumbtack" />
       </button>
-      <button v-if="!docked" class="panel-btn panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
+      <button v-if="!docked" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
               @mousedown.stop @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
       <template v-if="removable">
         <span class="ctrl-sep" />
-        <button class="panel-btn panel-remove" v-tooltip.bottom="'Remove this plot'"
+        <button class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense panel-remove" v-tooltip.bottom="'Remove this plot'"
                 @mousedown.stop @click.stop="emit('remove')">
           <i class="pi pi-minus" />
         </button>
@@ -169,9 +169,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel-controls.inflow { border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }
 .panel-foot.inflow { border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.panel-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1); color: var(--cc-text-dim);
-  cursor: pointer; font-size: var(--cc-fs-xs); }
+/* .panel-btn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .panel-btn:hover { color: var(--cc-text); border-color: #484f58; }
 .panel-btn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 .panel-remove:hover { color: #f87171; border-color: #f87171; }

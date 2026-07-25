@@ -82,9 +82,46 @@ Remaining — incremental adoption only (no forced sweeps):
   **per-row disclosure** in a list — `TaskList`, `ErrorConsole` — worth naming if a third site appears.)
 - [ ] **Opportunistic muted-text / card / readout adoption.** Replace scoped `.*-empty` / `.*-val` /
   subtitle / surface blocks with the semantic utils as files are touched — NOT a dedicated sweep.
-- [ ] **Not recommended as sweeps:** single-value range wrapper (base already accent-themed; readout now
-  covered by `.cc-readout`; sliders are layout-entangled and some commit on release) and icon-only
-  buttons (~90, mostly intentional — different sizes/hover-reveal/viewer-green). Governed by the rule.
+- [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
+  covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
+- [ ] **`.seg` segmented controls** — three **byte-identical** hand-rolled copies (`SummaryCanvas`,
+  `ClusterPlots`, `GatingPlots`) of a `.seg button {…}` block that should be `ChipSelect`. Surfaced by
+  the icon-button check and allow-listed there, because it's a component swap (`v-model`), not a class
+  swap. The only remaining hand-rolled buttons in the app.
+
+### Icon-only buttons — done (2026-07-25)
+
+Long parked here as *"~90, mostly intentional — different sizes/hover-reveal/viewer-green"*. Measured,
+that was half wrong: **116 icon-only buttons carrying 60 distinct class names, but only TWO shapes**
+(boxed `surface+border`, 45; bare `transparent`, 50) **and four size tiers**. Colour was not an axis at
+all — 96 of 99 resolvable base rules were `--cc-text-dim`; the danger/viewer tones live in modifier
+classes. So the divergence was 60 spellings of 2×4.
+
+Canonical form hangs off the existing button vocabulary rather than a new family, since `.cc-btn-ghost`
+already had exactly the right colour behaviour and 4 sites already spelled it that way:
+
+```
+<button class="cc-btn cc-btn-bare  cc-btn-icon">              bare
+<button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"> boxed, dense
+```
+
+- `.cc-btn-bare` — transparent, no border, dim until hover. The app's most common button.
+- `.cc-btn-icon` — a fixed **square** (`1.5rem`), so toolbar rows align regardless of glyph width. This
+  is the reason it's a modifier and not per-site padding: 48 sites had independently discovered they
+  needed a fixed box, at **nine** different sizes.
+- Size steps `-micro`/`-dense`/`-lg` on the same density axis as the text scale (measured tiers).
+
+**103 sites across 35 files migrated**, 45 bespoke classes collapsed (−415 lines). Hover-reveal
+(`opacity: 0` + a parent `:hover` rule) and one-off tones are preserved as scoped CSS — they were the
+genuinely intentional part. `findHandRolledIconButtons` + its test now fail on any icon-only `<button>`
+not built from `.cc-btn`, with the ten `.seg` buttons pinned by path.
+
+Three defects in my own migration script, all caught by inspecting output rather than by the green
+tests: an anchored selector regex silently skipped 11 classes whose rule was preceded by a comment; the
+splice consumed the leading whitespace **and any preceding comment**, gluing rules onto one line; and
+the button scan matched `<button class="footer-btn">` inside `ConfirmButton`'s usage-example doc
+comment. Also resolved: three surviving `.foo .pi { font-size }` child rules that would have overridden
+the primitive's size — they render identically but weren't actually unified.
 
 **Healthy / no action:** Modals (`BaseModal`), popovers (`TeleportPopover`), tabs (`TabbedCanvas`),
 chips (`ChipSelect`), colour dropdown (`SwatchSelect`).

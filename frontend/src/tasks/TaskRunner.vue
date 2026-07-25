@@ -367,7 +367,7 @@ const { width: sidebarWidth, onResizeStart } =
           Pool
         </span>
         <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool" />
-        <button ref="throttleBtn" class="pool-throttle" :class="{ active: throttleOpen }"
+        <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: throttleOpen }"
           @click="throttleOpen = !throttleOpen"
           v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
           <i class="pi pi-sliders-h" />
@@ -385,14 +385,14 @@ const { width: sidebarWidth, onResizeStart } =
         <div class="tasks-heading-actions">
           <button
             v-if="activeTasks.length"
-            class="clear-btn danger"
+            class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
             @click="cancelAll"
             v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module.`"
           >
             <i class="pi pi-times-circle" />
           </button>
           <button
-            class="clear-btn"
+            class="clear-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="taskStore.clearFinished(module, projectMeta.current?.uid)"
             v-tooltip.left="'Remove all completed and failed tasks from the list.'"
           >
@@ -453,15 +453,7 @@ const { width: sidebarWidth, onResizeStart } =
   gap: 0.15rem;
 }
 
-.clear-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-sm);
-  padding: 0.15rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-}
+/* .clear-btn → cc-btn cc-btn-bare cc-btn-icon */
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
@@ -497,20 +489,7 @@ const { width: sidebarWidth, onResizeStart } =
   flex-shrink: 0;
 }
 .pool-chips { flex: 1; min-width: 0; }
-.pool-throttle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.55rem;
-  height: 1.55rem;
-  flex-shrink: 0;
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-xs);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
+.pool-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
 .pool-throttle:hover  { color: var(--cc-text); }
 .pool-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 

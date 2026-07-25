@@ -152,7 +152,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->
     <template #footer>
-      <button class="hm-iconbtn" type="button" @click="emit('duplicate')"
+      <button class="hm-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same features) to tweak one thing'"><i class="pi pi-copy" /></button>
       <!-- per-plot export dropped in a docked slot (the board exports to PDF); kept when floating -->
       <select v-if="!docked" class="hm-export" v-tooltip.top="'Export the shown plot'" :disabled="!heatmap"
@@ -183,9 +183,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
 .feat-empty { font-size: var(--cc-fs-xs); margin: 4px; }   /* + .cc-muted (colour) */
 .hm-sel { font-size: var(--cc-fs-sm); margin-left: 6px; }
 .hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
-.hm-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
+/* .hm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 .hm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }

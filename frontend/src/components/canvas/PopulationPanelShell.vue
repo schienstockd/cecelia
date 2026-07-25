@@ -56,7 +56,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
       <i class="pi pi-sitemap" />
       <span class="pm-title">{{ title }}</span>
       <span v-if="count !== undefined" class="pm-count">{{ count }}</span>
-      <button v-if="!docked" class="pm-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
+      <button v-if="!docked" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
               @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
@@ -99,7 +99,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 .pm-title { font-weight: 600; }
 .pm-count { color: var(--cc-text-dim); margin-left: auto; }
 .pm-body { max-height: 60vh; overflow-y: auto; }
-.pm-icon { background: none; border: none; color: var(--cc-text-dim); cursor: pointer; padding: 2px; }
+/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
 .pm-icon:hover { color: var(--cc-text); }
 .pm-opts { border-top: 1px solid var(--cc-border); }
 .pm-footer { display: flex; align-items: center; padding: 6px 8px; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }

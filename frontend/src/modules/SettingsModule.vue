@@ -334,7 +334,7 @@ async function switchWt(path: string) {
             <div class="field-row">
               <input class="field-input mono" :value="projectMeta.current.uid" readonly
                      v-tooltip.bottom="'Read-only unique identifier used internally.'" />
-              <button class="icon-btn" @click="copyUid" v-tooltip.left="'Copy project ID'">
+              <button class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="copyUid" v-tooltip.left="'Copy project ID'">
                 <i class="pi pi-copy" />
               </button>
             </div>
@@ -862,16 +862,7 @@ async function switchWt(path: string) {
 .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .save-btn:not(:disabled):hover { opacity: 0.85; }
 
-.icon-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-  padding: 0.3rem 0.4rem;
-  border-radius: var(--cc-radius-xs);
-  flex-shrink: 0;
-}
+/* .icon-btn → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .toggle-row {

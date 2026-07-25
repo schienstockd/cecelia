@@ -84,7 +84,7 @@ const filterOptions = computed<ChipOption[]>(() =>
     </span>
 
     <button
-      class="icon-btn bar-window-btn"
+      class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg bar-window-btn"
       @click.stop="openConsoleWindow"
       v-tooltip.top="'Open the console in a separate window'"
     >
@@ -115,7 +115,7 @@ const filterOptions = computed<ChipOption[]>(() =>
       />
 
       <button
-        class="icon-btn"
+        class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg"
         @click="log.clear()"
         v-tooltip.top="'Clear all console messages'"
         :disabled="log.entries.length === 0"
@@ -125,7 +125,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 
       <button
         v-if="!fill"
-        class="icon-btn"
+        class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg"
         @click="openConsoleWindow"
         v-tooltip.top="'Open the console in a separate window'"
       >
@@ -253,15 +253,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 /* push the trailing icon buttons to the right edge (was .filter-tabs { flex: 1 }) */
 .filter-chips { margin-right: auto; }
 
-.icon-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  padding: 0.2rem 0.4rem;
-  border-radius: var(--cc-radius-xs);
-  font-size: var(--cc-fs-md);
-}
+/* .icon-btn → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .icon-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); }
 .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 

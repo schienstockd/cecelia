@@ -44,7 +44,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <span class="cc-modal-title">
           <slot name="title"><i v-if="icon" :class="['pi', icon]" /> {{ title }}</slot>
         </span>
-        <button class="cc-modal-close" @click="emit('close')" v-tooltip.left="'Close'">
+        <button class="cc-modal-close cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="emit('close')" v-tooltip.left="'Close'">
           <i class="pi pi-times" />
         </button>
       </div>
@@ -84,11 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex: 1; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text);
   display: flex; gap: 0.45rem; align-items: center;
 }
-.cc-modal-close {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-md);
-  padding: 0.2rem 0.4rem; border-radius: var(--cc-radius-xs);
-}
+/* .cc-modal-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .cc-modal-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 /* BaseModal owns body padding — dialogs should NOT re-add their own (would double up). Use the #toolbar

@@ -282,7 +282,7 @@ const typeColour: Record<ProjectType, string> = {
               <td class="col-date dim">{{ formatDate(p.lastOpenedAt) }}</td>
               <td class="col-actions">
                 <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
-                <button class="pp-row-btn" :disabled="ioBusy" @click.stop="exportProject(p)"
+                <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy" @click.stop="exportProject(p)"
                         v-tooltip.left="'Export this project to a portable .ccbundle'">
                   <i class="pi pi-download" />
                 </button>
@@ -390,7 +390,7 @@ const typeColour: Record<ProjectType, string> = {
             <div v-if="ioBusy" class="pp-io-bar">
               <div class="pp-io-fill" :style="{ width: Math.round((ioTask.progress ?? 0) * 100) + '%' }" />
             </div>
-            <button v-if="ioBusy" class="pp-row-btn" @click="cancelIo" v-tooltip.top="'Cancel'">
+            <button v-if="ioBusy" class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" @click="cancelIo" v-tooltip.top="'Cancel'">
               <i class="pi pi-times" />
             </button>
             <span v-if="ioTask.log.length" class="pp-io-log">{{ ioTask.log[ioTask.log.length - 1] }}</span>
@@ -540,11 +540,7 @@ const typeColour: Record<ProjectType, string> = {
 .col-actions { width: 72px; white-space: nowrap; text-align: right; }
 
 /* small square row-action button (export, cancel) — matches ConfirmDeleteButton's footprint */
-.pp-row-btn {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
-  transition: color 0.1s, background 0.1s;
-}
+.pp-row-btn { transition: color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .pp-row-btn:hover:not(:disabled) { color: var(--cc-accent); background: var(--cc-surface-2); }
 .pp-row-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 

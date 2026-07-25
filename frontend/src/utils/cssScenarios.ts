@@ -98,6 +98,40 @@ export function scenarioFor(rule: CssRule): Scenario | null {
   return null
 }
 
+// ── Icon-only buttons ─────────────────────────────────────────────────────────────────────────────
+
+/** A `<button>` whose entire content is one icon, and which isn't using the `.cc-btn` family. */
+export interface IconButton {
+  path:      string
+  classAttr: string
+}
+
+// A button whose whole content is a single <i>. Style blocks and HTML comments are removed first — a
+// usage example inside a doc comment is not a call site (ConfirmButton's docs read as one).
+const ICON_BUTTON = /<button\b([^>]*)>\s*<i\b[^>]*\/>\s*<\/button>/g
+
+/**
+ * Icon-only buttons not built from `.cc-btn`. Measured before unifying: 116 sites carried 60 distinct
+ * class names, but only TWO shapes (boxed / bare) and four size steps — so the canonical form is
+ * `.cc-btn` + `-bare`|`-ghost` + `-icon` (+ a size step), not a per-file class.
+ */
+export function findHandRolledIconButtons(
+  sources: Array<{ path: string, text: string }>,
+): IconButton[] {
+  const out: IconButton[] = []
+  for (const { path, text } of sources) {
+    const template = text
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/g, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+    for (const m of template.matchAll(ICON_BUTTON)) {
+      const cls = /\bclass="([^"]*)"/.exec(m[1])
+      // no class at all is also hand-rolled — it renders as a raw browser button
+      if (!cls || !/\bcc-btn\b/.test(cls[1])) out.push({ path, classAttr: cls?.[1] ?? '(no class)' })
+    }
+  }
+  return out
+}
+
 // ── Raw values ────────────────────────────────────────────────────────────────────────────────────
 
 /** A literal `font-size` / `border-radius` where a scale token exists. */

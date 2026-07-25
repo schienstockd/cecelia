@@ -204,23 +204,23 @@ function exportBoard(kind: string) {
         />
         <template v-else>
           <span class="tab-name">{{ t.name }}</span>
-          <button class="tab-close tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
+          <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
                   v-tooltip.bottom="'Duplicate board (plots + layout)'" aria-label="Duplicate board"><i class="pi pi-copy" /></button>
           <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
                          v-slot="{ armed, arm, confirm, cancel }">
             <span @click.stop>
-              <button v-if="!armed" class="tab-close" type="button" @click="arm"
+              <button v-if="!armed" class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="arm"
                       v-tooltip.bottom="'Close board'" aria-label="Close board"><i class="pi pi-times" /></button>
               <template v-else>
-                <button class="tab-close" type="button" @click="confirm"
+                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="confirm"
                         v-tooltip.bottom="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`"><i class="pi pi-check" /></button>
-                <button class="tab-close" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-replay" /></button>
+                <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-replay" /></button>
               </template>
             </span>
           </ConfirmButton>
         </template>
       </div>
-      <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
+      <button class="tab-add cc-btn cc-btn-bare cc-btn-icon" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
         <i class="pi pi-plus" />
       </button>
       <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
@@ -261,17 +261,9 @@ function exportBoard(kind: string) {
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-edit { font-size: var(--cc-fs-sm); width: 8rem; background: var(--cc-surface-2); color: var(--cc-text);
   border: 1px solid #7c3aed; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
-.tab-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1rem; height: 1rem; border: none; border-radius: var(--cc-radius-xs);
-  background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-2xs);
-}
+/* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.tab-add {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1.8rem; border: none; background: transparent; color: var(--cc-text-dim);
-  cursor: pointer; font-size: var(--cc-fs-sm); margin-left: 2px;
-}
+.tab-add { margin-left: 2px; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .tab-add:hover { color: var(--cc-text); }
 .tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-bottom: 2px;
   padding: 3px 10px; font-size: var(--cc-fs-xs); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);

@@ -45,7 +45,7 @@ defineExpose({ exportImage, exportSvg })
     <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
     <div v-else class="ip-missing">Unknown interactive plot “{{ view }}”.</div>
     <template v-if="duplicable || exportFormats.length" #footer>
-      <button v-if="duplicable" class="ip-iconbtn" type="button" @click="emit('duplicate')"
+      <button v-if="duplicable" class="ip-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same settings) to tweak one thing'"><i class="pi pi-copy" /></button>
       <select v-if="exportFormats.length && !docked" class="ip-export" v-tooltip.top="'Export the shown plot'"
               @change="onExport(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
@@ -58,9 +58,7 @@ defineExpose({ exportImage, exportSvg })
 
 <style scoped>
 .ip-missing { padding: 1rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
-.ip-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
+/* .ip-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .ip-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .ip-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 </style>

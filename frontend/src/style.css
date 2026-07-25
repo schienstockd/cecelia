@@ -163,6 +163,36 @@ body {
 }
 .cc-btn-danger-ghost:hover:not(:disabled) { background: #7f1d1d88; }
 
+/* Bare — transparent, no border, dim until hovered. The most common button in the app by far (~50
+   icon-only sites had hand-rolled exactly this). `ghost` is its boxed counterpart: same colour
+   behaviour, but on a surface with a hairline border. */
+.cc-btn-bare {
+  background: none;
+  border-color: transparent;
+  color: var(--cc-text-dim);
+}
+.cc-btn-bare:hover:not(:disabled) { color: var(--cc-text); }
+
+/* Icon-only — a fixed SQUARE, so every icon button in a toolbar lines up regardless of glyph width.
+   That squareness is why this is a modifier rather than per-site padding: 48 sites had already
+   discovered they needed a fixed box, at nine different sizes. Compose with `-bare` or `-ghost`:
+     <button class="cc-btn cc-btn-bare  cc-btn-icon">   bare
+     <button class="cc-btn cc-btn-ghost cc-btn-icon">   boxed
+   The size steps are the same density axis as the text scale (measured: the sizes really do cluster
+   at four tiers). Tone comes from the existing variants — add `.cc-btn-danger-ghost`, or set `color`
+   in scoped CSS for the one-off tones (the napari viewer green). */
+.cc-btn-icon {
+  justify-content: center;
+  width: 1.5rem; height: 1.5rem;
+  padding: 0; gap: 0;
+  font-size: var(--cc-fs-sm);
+  border-radius: var(--cc-radius-sm);
+  flex-shrink: 0;
+}
+.cc-btn-icon.cc-btn-micro { width: 1rem;    height: 1rem;    font-size: var(--cc-fs-2xs); }
+.cc-btn-icon.cc-btn-dense { width: 1.25rem; height: 1.25rem; font-size: var(--cc-fs-xs); }
+.cc-btn-icon.cc-btn-lg    { width: 1.75rem; height: 1.75rem; font-size: var(--cc-fs-md); }
+
 /* ── Semantic role utilities ───────────────────────────────────────────────────
    Generalise the recurring UX *scenarios* (roles that repeat across many different elements) instead
    of styling each site ad-hoc. Compose them; add only layout (width/margin/flex) in scoped CSS.
