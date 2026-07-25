@@ -207,7 +207,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 
 <template>
   <div class="gating-plots">
-    <div v-if="!props.imageUid" class="gp-empty">Select one image above to gate.</div>
+    <div v-if="!props.imageUid" class="gp-empty cc-muted">Select one image above to gate.</div>
     <template v-else>
       <div class="gp-bar">
         <label>segmentation
@@ -293,7 +293,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 <style scoped>
 /* fill all available height so the plot workspace isn't capped */
 .gating-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.gp-empty { padding: 20px; color: var(--cc-text-dim); }
+.gp-empty { padding: 20px; }   /* + .cc-muted */
 .gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */

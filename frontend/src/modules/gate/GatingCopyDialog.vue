@@ -91,9 +91,9 @@ async function copy() {
       <p class="cg-warn"><i class="pi pi-exclamation-triangle" />
         Overwrites the {{ label }} on each selected image ({{ valueName }}) — no undo.</p>
 
-      <p v-if="checking" class="cg-empty">Checking images…</p>
+      <p v-if="checking" class="cg-empty cc-muted">Checking images…</p>
       <template v-else>
-        <p v-if="!siblings.length" class="cg-empty">No other images in this set.</p>
+        <p v-if="!siblings.length" class="cg-empty cc-muted">No other images in this set.</p>
 
         <template v-if="available.length">
           <label class="cg-all"><input type="checkbox" :checked="allPicked" @change="toggleAll" /> Select all</label>
@@ -106,7 +106,7 @@ async function copy() {
           <CcToggle class="cg-layout" v-model="copyLayout" label="Also copy plot layout"
             v-tooltip.top="'Also copy the plot layout (plots, channels, parents).'" />
         </template>
-        <p v-else-if="siblings.length" class="cg-empty">No images have the “{{ valueName }}” segmentation.</p>
+        <p v-else-if="siblings.length" class="cg-empty cc-muted">No images have the “{{ valueName }}” segmentation.</p>
 
         <!-- flagged: no such segmentation → never copied to -->
         <div v-if="missing.length" class="cg-missing">
@@ -130,7 +130,7 @@ async function copy() {
 .cg-body { display: flex; flex-direction: column; gap: 0.7rem; }   /* padding from BaseModal */
 .cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.78rem; color: #fcd34d;
   background: #7c2d1244; border: 1px solid #92400e55; border-radius: 0.3rem; padding: 0.4rem 0.55rem; line-height: 1.35; }
-.cg-empty { margin: 0; font-size: 0.8rem; color: var(--cc-text-dim); }
+.cg-empty { margin: 0; }   /* + .cc-muted */
 .cg-all { font-size: 0.75rem; color: var(--cc-text-dim); display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
 .cg-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 240px; overflow: auto;
   border: 1px solid var(--cc-border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; }

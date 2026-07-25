@@ -237,7 +237,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
             </tr>
 
             <tr v-if="listing && listing.entries.length === 0">
-              <td colspan="3" class="fb-empty">Empty directory</td>
+              <td colspan="3" class="fb-empty cc-muted">Empty directory</td>
             </tr>
           </tbody>
         </table>
@@ -354,7 +354,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .row-name { vertical-align: middle; }
 .dim { color: var(--cc-text-dim); font-size: 0.75rem; }
 
-.fb-empty { text-align: center; padding: 2rem; color: var(--cc-text-dim); font-size: 0.8rem; }
+.fb-empty { text-align: center; padding: 2rem; }   /* + .cc-muted */
 
 /* footer */
 .sel-count { font-size: 0.78rem; color: var(--cc-text); flex: 1; }

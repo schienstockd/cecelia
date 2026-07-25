@@ -190,10 +190,10 @@ async function confirmImport() {
                 <td><input type="checkbox" :checked="selected.has(im.uid)" @change="toggle(im.uid)" /></td>
                 <td>
                   <div class="lm-name">{{ im.name }}</div>
-                  <div class="lm-sub">{{ im.uid }} · {{ im.kind }}</div>
+                  <div class="cc-muted">{{ im.uid }} · {{ im.kind }}</div>
                   <div v-for="w in im.warnings" :key="w" class="lm-warn"><i class="pi pi-info-circle" /> {{ w }}</div>
                 </td>
-                <td class="lm-sub">
+                <td class="cc-muted">
                   <span v-if="im.size.SizeC">{{ im.size.SizeC }}c</span>
                   <span v-if="im.size.SizeZ && im.size.SizeZ > 1"> · {{ im.size.SizeZ }}z</span>
                   <span v-if="im.size.SizeT && im.size.SizeT > 1"> · {{ im.size.SizeT }}t</span>
@@ -202,11 +202,11 @@ async function confirmImport() {
                   <span class="lm-tag ok">image</span>
                   <span v-for="s in im.segmentation" :key="s" class="lm-tag ok">seg: {{ s }}</span>
                   <span v-if="isTracked(im)" class="lm-tag ok">tracking: {{ nTracks(im) }}</span>
-                  <span v-if="!im.segmentation.length" class="lm-sub">image only</span>
+                  <span v-if="!im.segmentation.length" class="cc-muted">image only</span>
                 </td>
                 <td>
                   <span v-for="x in excludedList(im)" :key="x" class="lm-tag off-tag">{{ x }}</span>
-                  <span v-if="!excludedList(im).length" class="lm-sub">—</span>
+                  <span v-if="!excludedList(im).length" class="cc-muted">—</span>
                 </td>
               </tr>
             </tbody>
@@ -255,7 +255,7 @@ async function confirmImport() {
 .lm-table thead th { position: sticky; top: 0; background: var(--cc-surface-1); font-weight: 600; color: var(--cc-text-dim); }
 .lm-table tr.off { opacity: 0.45; }
 .lm-name { font-weight: 500; }
-.lm-sub { color: var(--cc-text-dim); font-size: 0.78rem; }
+.cc-muted { color: var(--cc-text-dim); font-size: 0.78rem; }
 .lm-warn { color: #fbbf24; font-size: 0.78rem; margin-top: 0.15rem; }
 .lm-tag { display: inline-block; margin: 0.1rem 0.2rem 0.1rem 0; padding: 0.05rem 0.4rem; border-radius: 4px; font-size: 0.76rem; }
 .lm-tag.ok { background: #16653433; color: #4ade80; }

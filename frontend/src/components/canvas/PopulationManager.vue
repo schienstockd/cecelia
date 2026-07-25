@@ -273,7 +273,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </div>
       </div>
 
-      <div v-if="!visiblePops.length" class="pm-empty">
+      <div v-if="!visiblePops.length" class="pm-empty cc-muted">
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
       </div>
 
@@ -415,7 +415,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 <style scoped>
 /* row / options styles — applied to content rendered into PopulationPanelShell's slots (slotted
    content keeps THIS component's scoped styles; the floating chrome + scope footer live in the shell). */
-.pm-empty { padding: 12px; color: var(--cc-text-dim); }
+.pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
