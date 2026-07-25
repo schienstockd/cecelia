@@ -282,7 +282,7 @@ async function dismissEntry(entry: LabLogEntry) {
 
       <!-- Claude: the AI assistant (in-app one-shot + external chat handoff) -->
       <div class="ll-tb-group">
-        <button class="ll-help" @click="showClaudeOverview = true"
+        <button class="ll-help cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="showClaudeOverview = true"
                 v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
           <i class="pi pi-question-circle" />
         </button>
@@ -429,10 +429,7 @@ async function dismissEntry(entry: LabLogEntry) {
 /* brief "copied" flash on the Chat-to-Claude button (replaces the toast) */
 .ll-capture.copied { color: var(--cc-sev-ok); border-color: var(--cc-sev-ok); background: rgba(12, 163, 12, 0.1); }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
-.ll-help {
-  display: inline-flex; align-items: center; border: none; background: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 0.2rem; font-size: var(--cc-fs-md);
-}
+/* .ll-help → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .ll-help:hover { color: var(--cc-accent); }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {

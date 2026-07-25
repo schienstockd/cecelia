@@ -15,7 +15,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 
 | Need | Use | Never |
 |------|-----|-------|
-| Button | `.cc-btn` + `-primary`/`-ghost`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
+| Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
+| Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
 | On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
@@ -53,6 +54,12 @@ of them were already within 0.5px of a step), and 15 radius spellings onto 5. `-
 `font-size`/`border-radius` anywhere — scoped CSS **or** an inline `style=` — now fails
 `utils/cssScenarios.test.ts`. Exempt by rule: display type (>15px), pill radii, `0`, and `em` (which is
 deliberately container-relative, e.g. `ViewLegend` scaling with the export).
+
+**Icon buttons are a fixed square**, so a toolbar row lines up regardless of glyph width — that's why
+`-icon` is a modifier rather than per-site padding (48 sites had each discovered they needed a fixed box,
+at nine different sizes). `-bare` is transparent/dim-until-hover, `-ghost` is its boxed counterpart; tone
+comes from `-danger-ghost` or a scoped `color` for the one-offs (the napari viewer green). A `<button>`
+whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssScenarios.test.ts`.
 
 **Re-implementing a scenario is a test failure, not a style opinion.** `utils/cssScenarios.test.ts`
 detects a scoped rule that spells out a canonical utility's defining declarations — a dim colour plus a

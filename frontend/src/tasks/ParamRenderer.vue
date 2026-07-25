@@ -607,7 +607,7 @@ const pct = computed(() => {
   <div v-if="param.type === 'group'" class="param-group">
     <div class="group-header">
       <span class="group-title">{{ param.label }}</span>
-      <button v-if="param.repeatable" class="group-add-btn" type="button"
+      <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
         @click="addGroupEntry()"
         v-tooltip.right="'Add another entry'">
         <i class="pi pi-plus" />
@@ -809,19 +809,7 @@ const pct = computed(() => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-.group-add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px; height: 18px;
-  border-radius: var(--cc-radius-pill);
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  font-size: var(--cc-fs-2xs);
-  transition: background 0.1s, border-color 0.1s;
-}
+.group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .group-empty {
   font-size: var(--cc-fs-sm);

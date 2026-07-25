@@ -666,13 +666,13 @@ onUnmounted(stopResize)
             v-tooltip.bottom="'Sort by name'">
             Name <i :class="['sort-ico', sortIcon('name')]" />
           </span>
-          <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn"
+          <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
             :class="{ active: flaggedActive }" @click.stop="selectFlagged"
             v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
             <i class="pi pi-exclamation-triangle" />
           </button>
           <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
-            class="select-flagged-btn" :disabled="resyncing"
+            class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
             @click.stop="resyncFlagged"
             v-tooltip.bottom="`Re-read physical size & timing from file for all ${flaggedUids.length} flagged image(s) — use if they were imported before this check existed and are actually fine.`">
             <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
@@ -767,7 +767,7 @@ onUnmounted(stopResize)
 
         <td class="col-resize td-name col-name">
           <span class="name-row">
-            <button v-if="warnIconFor(img)" class="warn-icon-btn" @click.stop="physSizeDialogUid = img.uid"
+            <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
               v-tooltip.right="warnIconFor(img)!.tip">
               <i class="pi pi-exclamation-triangle" />
             </button>
@@ -782,7 +782,7 @@ onUnmounted(stopResize)
             <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
             <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
             <span class="runlog-cell" @click.stop>
-              <button class="row-icon-btn actions-btn" :class="{ on: actionsUid === img.uid }"
+              <button class="row-icon-btn cc-btn cc-btn-bare cc-btn-icon actions-btn" :class="{ on: actionsUid === img.uid }"
                 @click.stop="toggleActions(img.uid, $event)"
                 v-tooltip.right="'Actions'"><i class="pi pi-ellipsis-h" /></button>
             </span>
@@ -877,7 +877,7 @@ onUnmounted(stopResize)
 
         <td v-if="allowDelete" class="col-fixed col-actions" @click.stop>
           <button
-            class="action-btn del-btn"
+            class="action-btn cc-btn cc-btn-bare cc-btn-icon del-btn"
             @click="confirmDelete(img.uid)"
             v-tooltip.left="'Remove this image from the set.'"
             :disabled="img.status === 'converting'"
@@ -1002,11 +1002,7 @@ onUnmounted(stopResize)
 .th-sort:hover .sort-ico { opacity: 0.7; }
 .th-sort.active .sort-ico { opacity: 1; color: var(--cc-accent); }
 
-.select-flagged-btn {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0.3rem;
-  margin-left: 0.3rem; border-radius: var(--cc-radius-xs); vertical-align: middle;
-}
+.select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .select-flagged-btn.active { color: #fbbf24; }
 .select-flagged-btn.active:hover { color: #fcd34d; }
@@ -1094,10 +1090,7 @@ th:hover .resize-handle::after { opacity: 1; }
 /* always visible when flagged — impossible-to-miss, sits in front of the name */
 /* Calibration warning icon (metadata.* findings) → click to fix. Warn severity token (colour-blind
    palette); the shape-distinct triangle icon carries the meaning, colour is secondary. */
-.warn-icon-btn {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-sev-warn); font-size: var(--cc-fs-sm); padding: 0.1rem; line-height: 1;
-}
+.warn-icon-btn { color: var(--cc-sev-warn); }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .warn-icon-btn:hover { filter: brightness(1.2); }
 
 /* QC badge — advisory "output looks off" flag (non-metadata findings; distinct from the calibration
@@ -1137,12 +1130,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .note-text .pi { font-size: var(--cc-fs-2xs); }
 
 /* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
-.row-icon-btn {
-  flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0.2rem;
-  border-radius: var(--cc-radius-xs); line-height: 1;
-  opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
-}
+.row-icon-btn { opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .image-row:hover .row-icon-btn { opacity: 1; }
 .row-icon-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 /* disabled (e.g. Crop on a not-yet-imported image): visibly greyed, no hover highlight, not-allowed */
@@ -1236,12 +1224,7 @@ th:hover .resize-handle::after { opacity: 1; }
 
 /* ── Delete button ───────────────────────────────────────────────────────────── */
 
-.action-btn {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-sm);
-  padding: 0.2rem 0.4rem; border-radius: var(--cc-radius-xs);
-  opacity: 0; transition: opacity 0.1s, background 0.1s;
-}
+.action-btn { opacity: 0; transition: opacity 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .image-row:hover .action-btn { opacity: 1; }
 .action-btn:disabled { opacity: 0.25 !important; cursor: not-allowed; }
 .del-btn:hover { background: #7f1d1d55; color: #fca5a5; }

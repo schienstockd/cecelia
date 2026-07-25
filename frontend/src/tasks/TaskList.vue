@@ -101,7 +101,7 @@ function elapsed(t: TaskEntry) {
 
         <div class="task-info">
           <span class="task-label" v-tooltip.right="t.label">
-            <button class="jump-btn" @click.stop="jumpToTask(t)" v-tooltip.right="'Open in task manager'">
+            <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click.stop="jumpToTask(t)" v-tooltip.right="'Open in task manager'">
               <i class="pi pi-arrow-left" />
             </button>
             <span class="task-seq">#{{ t.seq }}</span>
@@ -123,7 +123,7 @@ function elapsed(t: TaskEntry) {
         <div class="task-actions">
           <button
             v-if="t.log.length"
-            class="icon-btn"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="toggleLog(t.id)"
             v-tooltip.left="expanded.has(t.id) ? 'Hide log' : 'Show task log'"
           >
@@ -132,7 +132,7 @@ function elapsed(t: TaskEntry) {
 
           <button
             v-if="t.status === 'running' || t.status === 'queued'"
-            class="icon-btn danger"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon danger"
             @click="cancelTask(t)"
             v-tooltip.left="t.chainRunId ? 'Stop chain run' : 'Cancel this task'"
           >
@@ -141,7 +141,7 @@ function elapsed(t: TaskEntry) {
 
           <button
             v-if="!t.chainRunId && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')"
-            class="icon-btn"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="rerun(t)"
             v-tooltip.left="'Rerun this task with the same parameters.'"
           >
@@ -150,7 +150,7 @@ function elapsed(t: TaskEntry) {
 
           <button
             v-if="t.log.length"
-            class="icon-btn"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="copyLog(t)"
             v-tooltip.left="copied.has(t.id) ? 'Copied!' : 'Copy log to clipboard'"
           >
@@ -159,7 +159,7 @@ function elapsed(t: TaskEntry) {
 
           <button
             v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
-            class="icon-btn"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="tasks.remove(t.id)"
             v-tooltip.left="'Dismiss this task from the list.'"
           >
@@ -269,26 +269,11 @@ function elapsed(t: TaskEntry) {
 
 .task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
-.icon-btn {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-sm);
-  padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
-}
+/* .icon-btn → cc-btn cc-btn-bare cc-btn-icon */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .icon-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
-.jump-btn {
-  display: none;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #4ade80;
-  font-size: var(--cc-fs-md);
-  padding: 0 0.15rem 0 0;
-  flex-shrink: 0;
-  line-height: 1;
-  -webkit-text-stroke: 0.4px #4ade80;
-}
+.jump-btn { color: #4ade80; -webkit-text-stroke: 0.4px #4ade80; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .task-item:hover .jump-btn { display: inline-flex; }
 
 .task-progress {

@@ -393,7 +393,7 @@ defineExpose({ capturePage, collectCsvs })
                       @update:model-value="v => applyPreset(UNIFORM_PRESETS, v as string)" />
           <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
           <div class="lc-opts">
-            <button ref="optsBtn" class="lc-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+            <button ref="optsBtn" class="lc-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
@@ -582,9 +582,7 @@ defineExpose({ capturePage, collectCsvs })
 .lc-clust select { font-size: var(--cc-fs-xs); }
 /* ⚙ grid-size / height popover */
 .lc-opts { position: relative; display: inline-flex; }
-.lc-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: var(--cc-fs-sm); }
+/* .lc-gear → cc-btn cc-btn-ghost cc-btn-icon */
 .lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
 .lc-custom { font-size: var(--cc-fs-xs); padding: 0.22rem 0.55rem; }
 .lc-custom.on { color: var(--cc-text); border-color: #7c3aed; }

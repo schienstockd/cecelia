@@ -260,7 +260,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <option v-for="f in FILTER_FUNS" :key="f" :value="f">{{ f }}</option>
           </select>
           <input v-model="c.values" class="pm-ff-vals" :placeholder="c.fun === 'in' ? 'a, b, c' : 'value'" />
-          <button v-if="fpConds.length > 1" class="pm-icon" @click="removeFpCond(i)" v-tooltip.left="'Remove condition'">
+          <button v-if="fpConds.length > 1" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" @click="removeFpCond(i)" v-tooltip.left="'Remove condition'">
             <i class="pi pi-times" />
           </button>
         </div>
@@ -295,7 +295,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <!-- filter pops are badged (vs hand-drawn gates); the badge is the EDIT affordance (click →
                open the same form pre-filled). Read-only surfaces show a static badge. Tooltip = predicate. -->
           <button v-if="isFilterPop(p) && !readonly && !p.transient" type="button"
-                  class="pm-icon pm-filter-badge" v-tooltip.top="`Edit: ${popFilterSummary(p)}`"
+                  class="pm-icon cc-btn cc-btn-bare cc-btn-icon pm-filter-badge" v-tooltip.top="`Edit: ${popFilterSummary(p)}`"
                   @click.stop="beginEditFilter(p)"><i class="pi pi-filter" /></button>
           <i v-else-if="isFilterPop(p)" class="pi pi-filter pm-filter-badge"
              v-tooltip.top="popFilterSummary(p)" />
@@ -305,16 +305,16 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
           </span>
 
-          <button v-if="p.gate" class="pm-icon" v-tooltip.left="'Show the plot where this gate was drawn'"
+          <button v-if="p.gate" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Show the plot where this gate was drawn'"
                   @click.stop="emit('showDefiningPlot', p)">
             <i class="pi pi-search" />
           </button>
-          <button class="pm-icon" :class="{ lit: isLit(p) }"
+          <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(p) }"
                   v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
                   @click.stop="emit('toggleHighlight', p.path)">
             <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
           </button>
-          <button v-if="!p.transient" class="pm-icon" :class="{ lit: p.show }"
+          <button v-if="!p.transient" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: p.show }"
                   v-tooltip.left="p.show ? 'Visible in napari (click to hide)' : 'Hidden in napari (click to show)'"
                   @click.stop="toggleNapari(p)">
             <i class="pi pi-images" />
@@ -324,7 +324,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   @confirm="g.deletePop(p.path)" />
           <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
                linger forever; there's no persisted pop to delete. -->
-          <button v-else class="pm-icon danger" v-tooltip.left="'Clear napari selection'"
+          <button v-else class="pm-icon cc-btn cc-btn-bare cc-btn-icon danger" v-tooltip.left="'Clear napari selection'"
                   @click.stop="g.clearNapariSelection()">
             <i class="pi pi-trash" />
           </button>
@@ -372,7 +372,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <div class="pm-opt-head"><span>plot</span></div>
           <div class="pm-opt-row">
             <span class="pm-opt-label">Gate labels</span>
-            <button class="seg-btn" :class="{ active: gateLabels }"
+            <button class="seg-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :class="{ active: gateLabels }"
                     v-tooltip.top="'Show population names on gates'"
                     @click="emit('update:gateLabels', !gateLabels)"><i class="pi pi-tag" /></button>
           </div>
@@ -436,7 +436,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-rename { flex: 1; background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 .pm-stat small { opacity: 0.7; margin-left: 3px; }
-.pm-icon { background: none; border: none; color: var(--cc-text-dim); cursor: pointer; padding: 2px; }
+/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
 .pm-icon:hover { color: var(--cc-text); }
 .pm-icon.lit { color: var(--cc-accent); }
 .pm-icon.danger:hover { color: #f87171; }
@@ -486,12 +486,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { margin-left: auto; }
-.seg-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1.8rem; height: 1.8rem; border-radius: var(--cc-radius-sm);
-  border: 1px solid var(--cc-border); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-md); transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
+.seg-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
 .seg-btn.active { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
 

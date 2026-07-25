@@ -83,11 +83,11 @@ function endGesture() {
     <div class="fp-header" @pointerdown="onHeaderDown">
       <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
-      <button class="fp-btn" @click="st.collapsed = !st.collapsed"
+      <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon" @click="st.collapsed = !st.collapsed"
               v-tooltip.bottom="st.collapsed ? 'Expand' : 'Collapse'">
         <i :class="['pi', st.collapsed ? 'pi-window-maximize' : 'pi-window-minimize']" />
       </button>
-      <button class="fp-btn" @click="emit('close')" v-tooltip.bottom="'Close'">
+      <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon" @click="emit('close')" v-tooltip.bottom="'Close'">
         <i class="pi pi-times" />
       </button>
     </div>
@@ -133,20 +133,7 @@ function endGesture() {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fp-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border: none;
-  background: none;
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  border-radius: var(--cc-radius-xs);
-  font-size: var(--cc-fs-sm);
-  flex-shrink: 0;
-}
+/* .fp-btn → cc-btn cc-btn-bare cc-btn-icon */
 .fp-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .fp-body { flex: 1; overflow: auto; min-height: 0; }
 .fp-resize {

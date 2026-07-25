@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
+  findHandRolledIconButtons,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -143,6 +144,33 @@ describe('hand-rolled UX scenarios', () => {
     expect(regressions).toEqual([])
     // Improvements fail too, on purpose: an un-updated baseline silently stops ratcheting.
     expect(improvements).toEqual([])
+  })
+})
+
+describe('icon-only buttons', () => {
+  // 116 sites carried 60 distinct class names — but only TWO shapes and four size steps, so they are
+  // all `.cc-btn` + `-bare`|`-ghost` + `-icon` now. What's left is a DIFFERENT primitive: three
+  // byte-identical hand-rolled `.seg` segmented controls, which owe themselves to `ChipSelect`
+  // (docs/UI.md) and need a component swap rather than a class swap. Tracked in the plan doc.
+  // Pinned explicitly, path and all: deriving the allow-list from the findings would make the check
+  // tautological, catching a new hand-rolled button only via the total count.
+  const SEG_BUTTONS = [
+    'components/canvas/SummaryCanvas.vue | (no class)',
+    'components/canvas/SummaryCanvas.vue | (no class)',
+    'components/canvas/SummaryCanvas.vue | { on: showManager }',
+    'modules/cluster/ClusterPlots.vue | (no class)',
+    'modules/cluster/ClusterPlots.vue | (no class)',
+    'modules/cluster/ClusterPlots.vue | { on: showManager }',
+    'modules/gate/GatingPlots.vue | (no class)',
+    'modules/gate/GatingPlots.vue | (no class)',
+    'modules/gate/GatingPlots.vue | (no class)',
+    'modules/gate/GatingPlots.vue | { on: showManager }',
+  ]
+
+  it('are built from .cc-btn', () => {
+    const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+    const found = findHandRolledIconButtons(sources).map(b => `${b.path} | ${b.classAttr}`)
+    expect(found.sort()).toEqual([...SEG_BUTTONS].sort())
   })
 })
 

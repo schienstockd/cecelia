@@ -108,7 +108,7 @@ async function deleteSet() {
       </select>
       <template v-if="activeSet">
         <span class="set-uid">{{ activeSet.uid }}</span>
-        <button class="set-uid-copy" @click="copySetUid(activeSet.uid)"
+        <button class="set-uid-copy cc-btn cc-btn-bare cc-btn-icon" @click="copySetUid(activeSet.uid)"
           v-tooltip.bottom="copiedSetUid ? 'Copied!' : 'Copy set UID to clipboard'">
           <i :class="copiedSetUid ? 'pi pi-check' : 'pi pi-copy'" />
         </button>
@@ -181,16 +181,7 @@ async function deleteSet() {
   color: var(--cc-text-dim);
   letter-spacing: 0.03em;
 }
-.set-uid-copy {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-sm);
-  padding: 0.2rem 0.35rem;
-  border-radius: var(--cc-radius-xs);
-  line-height: 1;
-}
+/* .set-uid-copy → cc-btn cc-btn-bare cc-btn-icon */
 .set-uid-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .set-label {
   font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text-dim);

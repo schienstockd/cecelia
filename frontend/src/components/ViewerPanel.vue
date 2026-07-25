@@ -596,31 +596,31 @@ onUnmounted(() => {
       <div class="viewer-section-title">View</div>
       <div class="viewer-opts">
         <button
-          class="opt-btn" :class="{ active: settings.napariUpdateImage }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: settings.napariUpdateImage }"
           @click="settings.napariUpdateImage = !settings.napariUpdateImage"
           v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
         ><i class="pi pi-refresh" /></button>
 
         <button
-          class="opt-btn" :class="{ active: settings.napariResetOnReload }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: settings.napariResetOnReload }"
           @click="settings.napariResetOnReload = !settings.napariResetOnReload"
           v-tooltip.bottom="'Reset on reload: reopen the whole image (not just data) when reloading — needed when a task changed the image pixels (drift/denoise). Off = reload data only.'"
         ><i class="pi pi-image" /></button>
 
         <button
-          class="opt-btn" :class="{ active: settings.napariAutoSaveLayerProps }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: settings.napariAutoSaveLayerProps }"
           @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
           v-tooltip.bottom="'Auto-save layer props: save brightness/contrast, colormap and the T/Z slider the moment you change them (survives navigation and crashes); reload on next open'"
         ><i class="pi pi-bookmark" /></button>
 
         <button
-          class="opt-btn" :class="{ active: show3D }" :disabled="!currentSetUid"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: show3D }" :disabled="!currentSetUid"
           @click="show3D = !show3D"
           v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
         ><span class="opt-text">3D</span></button>
 
         <button
-          class="opt-btn" :class="{ active: settings.napariAsDask }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: settings.napariAsDask }"
           @click="settings.napariAsDask = !settings.napariAsDask"
           v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
         ><i class="pi pi-database" /></button>
@@ -654,12 +654,12 @@ onUnmounted(() => {
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
             <button
-              class="opt-btn row-act" :class="{ active: visibleLabels[vn] }"
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ active: visibleLabels[vn] }"
               @click="toggleLabel(vn)"
               v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
             ><i class="pi pi-eye" /></button>
             <button
-              class="opt-btn row-act" :class="{ active: trackVns[vn] }"
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ active: trackVns[vn] }"
               @click="toggleTrack(vn)"
               v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
             ><i class="pi pi-share-alt" /></button>
@@ -679,19 +679,19 @@ onUnmounted(() => {
       <div class="viewer-opts">
         <button
           v-for="pt in POP_TYPES" :key="pt.key"
-          class="opt-btn" :class="{ active: popVisible(pt.key) }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: popVisible(pt.key) }"
           @click="togglePopType(pt.key)"
           v-tooltip.bottom="`${popVisible(pt.key) ? 'Hide' : 'Show'} ${pt.label} (points)`"
         ><i :class="['pi', pt.icon]" /></button>
         <!-- Tracks as ribbons (TEST/SDGF gated track pops); per-segmentation _tracked toggles live
              in the Segmentations list above (directions icon per row) -->
         <button
-          class="opt-btn" :class="{ active: gatedTracksShown }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: gatedTracksShown }"
           @click="toggleGatedTracks"
           v-tooltip.bottom="gatedTracksShown ? 'Hide track-pop ribbons' : 'Show track populations as ribbons (track-measure gates)'"
         ><i class="pi pi-share-alt" /></button>
         <button
-          class="opt-btn" :class="{ active: popVisible('trackclust') }"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: popVisible('trackclust') }"
           @click="toggleTrackclust"
           v-tooltip.bottom="popVisible('trackclust') ? 'Hide track-cluster ribbons' : 'Show track-cluster populations as ribbons'"
         ><i class="pi pi-sitemap" /></button>
@@ -736,7 +736,7 @@ onUnmounted(() => {
           <span class="movie-lbl" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
           <input type="range" min="1" max="3" step="1" v-model.number="movieScale" class="movie-range" />
           <span class="movie-val">{{ movieScale }}×</span>
-          <button class="opt-btn movie-rec" :class="{ active: recording }" :disabled="recording"
+          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ active: recording }" :disabled="recording"
                   @click="recordTimelapse"
                   v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">
             <i :class="['pi', recording ? 'pi-spin pi-spinner' : 'pi-video']" />
@@ -906,22 +906,7 @@ onUnmounted(() => {
   gap: 0.25rem;
 }
 
-.opt-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.8rem;
-  height: 1.8rem;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  font-size: var(--cc-fs-sm);
-  line-height: 1;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-  flex-shrink: 0;
-}
+.opt-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
 .opt-btn:hover        { color: var(--cc-text); border-color: #484f58; }
 .opt-btn.active       { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
 .opt-btn.active:hover { background: #3b2382; }

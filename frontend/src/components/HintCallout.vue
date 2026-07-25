@@ -19,7 +19,7 @@ function dismiss() {
   <div v-if="!dismissed" class="hint-callout" role="note">
     <i class="pi pi-info-circle hint-icon" />
     <span class="hint-text">{{ text }}</span>
-    <button class="hint-x" @click="dismiss" v-tooltip.left="'Dismiss'" aria-label="Dismiss hint">
+    <button class="hint-x cc-btn cc-btn-bare cc-btn-icon cc-btn-dense" @click="dismiss" v-tooltip.left="'Dismiss'" aria-label="Dismiss hint">
       <i class="pi pi-times" />
     </button>
   </div>
@@ -40,15 +40,6 @@ function dismiss() {
 }
 .hint-icon { color: var(--cc-accent); font-size: var(--cc-fs-md); flex-shrink: 0; }
 .hint-text { flex: 1; }
-.hint-x {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  padding: 0.15rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-  flex-shrink: 0;
-}
+/* .hint-x → cc-btn cc-btn-bare cc-btn-icon */
 .hint-x:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.hint-x .pi { font-size: var(--cc-fs-xs); }
 </style>

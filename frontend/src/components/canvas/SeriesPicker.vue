@@ -48,7 +48,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
         <span class="pm-swatch" :style="{ background: p.colour }" />
         <span class="pm-name">{{ p.name }}</span>
         <span v-if="p.popType !== 'live'" class="pm-tag" v-tooltip.left="'Gated on per-track properties'">{{ p.popType }}</span>
-        <button class="pm-icon" :class="{ lit: isLit(grp.valueName, p.path, p.popType) }"
+        <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(grp.valueName, p.path, p.popType) }"
                 v-tooltip.left="isLit(grp.valueName, p.path, p.popType) ? 'Remove from plots' : 'Plot this population'"
                 @click.stop="emit('toggle', grp.valueName, p.path, p.popType)">
           <i :class="isLit(grp.valueName, p.path, p.popType) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
@@ -74,7 +74,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 0 3px; flex-shrink: 0; }
-.pm-icon { background: none; border: none; color: var(--cc-text-dim); cursor: pointer; padding: 2px; }
+/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
 .pm-icon:hover { color: var(--cc-text); }
 .pm-icon.lit { color: var(--cc-accent); }
 </style>

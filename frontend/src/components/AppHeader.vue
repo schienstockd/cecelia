@@ -30,7 +30,7 @@ const statusTip: Record<string, string> = {
 
 <template>
   <header class="app-header">
-    <button class="nav-toggle" @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
+    <button class="nav-toggle cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
       v-tooltip.bottom="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'"
       :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
       <i class="pi pi-bars" />
@@ -46,7 +46,7 @@ const statusTip: Record<string, string> = {
             : `Update available — ${appCtl.updateLatest}. Open Settings to install.`">
       <i class="pi pi-arrow-circle-up" />
       Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
-      <button class="update-x" @click.stop="appCtl.dismissUpdate()"
+      <button class="update-x cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click.stop="appCtl.dismissUpdate()"
               v-tooltip.bottom="'Remind me later'" aria-label="Dismiss update notice">
         <i class="pi pi-times" />
       </button>
@@ -76,19 +76,7 @@ const statusTip: Record<string, string> = {
   z-index: 100;
 }
 
-.nav-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  padding: 0.25rem 0.4rem;
-  border-radius: var(--cc-radius-sm);
-  font-size: var(--cc-fs-lg);
-  margin-left: -0.3rem;
-}
+.nav-toggle { margin-left: -0.3rem; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .nav-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .logo {
@@ -138,16 +126,6 @@ const statusTip: Record<string, string> = {
 }
 .update-badge:hover { background: color-mix(in srgb, var(--cc-accent) 34%, transparent); }
 .update-badge .pi-arrow-circle-up { font-size: var(--cc-fs-md); }
-.update-x {
-  display: inline-flex;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: inherit;
-  opacity: 0.7;
-  padding: 0 0.1rem;
-  border-radius: var(--cc-radius-xs);
-}
+.update-x { color: inherit; opacity: 0.7; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .update-x:hover { opacity: 1; }
-.update-x .pi { font-size: var(--cc-fs-2xs); }
 </style>

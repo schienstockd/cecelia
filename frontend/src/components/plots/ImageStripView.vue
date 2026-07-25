@@ -315,7 +315,7 @@ defineExpose({ exportImage })
                     :model-value="separator" @update:model-value="v => separator = v as 'straight' | 'angled'" />
       </div>
       <div class="is-opts">
-        <button ref="gearEl" class="is-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+        <button ref="gearEl" class="is-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
@@ -361,11 +361,11 @@ defineExpose({ exportImage })
         </button>
         <!-- per-frame actions (hidden while capturing) -->
         <div v-if="!capturingStrip" class="is-actions">
-          <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini" @click="zoomToSource(i)"
+          <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="zoomToSource(i)"
                   :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Napari and restore the exact view'">
             <i class="pi pi-directions" /></button>
-          <button v-if="c.assetId || c.src" class="is-mini" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
-          <button v-if="cells.length > 1" class="is-mini" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
+          <button v-if="c.assetId || c.src" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
+          <button v-if="cells.length > 1" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
         </div>
       </div>
     </div>
@@ -379,9 +379,7 @@ defineExpose({ exportImage })
 .is-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap;
   font-size: var(--cc-fs-sm); }
 .is-opts { position: relative; display: inline-flex; }
-.is-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: var(--cc-fs-sm); }
+/* .is-gear → cc-btn cc-btn-ghost cc-btn-icon */
 .is-gear:hover, .is-gear.on { color: var(--cc-text); border-color: #7c3aed; }
 /* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
 .is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
@@ -431,9 +429,7 @@ defineExpose({ exportImage })
 /* per-frame action buttons — match the app's icon buttons (like .is-gear / .opt-btn) rather than the
    old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
    solid surface reads cleanly. */
-.is-mini { width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: var(--cc-fs-xs); transition: color 0.1s, border-color 0.1s, background 0.1s; }
+.is-mini { transition: color 0.1s, border-color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .is-mini:hover { color: var(--cc-text); border-color: #7c3aed; background: var(--cc-surface-1); }
 .is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the

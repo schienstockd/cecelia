@@ -509,7 +509,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 
       <!-- secondary options (split-by + chart-specific) tucked into a popover to keep the bar tidy -->
       <div v-if="hasOpts" class="sp-pop-wrap">
-        <button ref="optsBtn" class="sp-iconbtn" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
+        <button ref="optsBtn" class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot options'">
           <i class="pi pi-sliders-h" />
         </button>
@@ -614,13 +614,13 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 
     <!-- utility actions live in the footer so the header/controls never clip -->
     <template #footer>
-      <button class="sp-iconbtn" type="button" @click="emit('duplicate')"
+      <button class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="docked ? 'Duplicate this plot into the next empty slot' : 'Duplicate this plot (same series + settings) to tweak one thing'">
         <i class="pi pi-copy" />
       </button>
       <!-- Show series: pick measures → one copy of this plot per measure, to see them all at once -->
       <div v-if="canExplode" class="sp-explode-wrap">
-        <button class="sp-iconbtn" type="button" @click="openExplode"
+        <button class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="openExplode"
                 v-tooltip.top="'Show series: duplicate this plot for each selected measurement'">
           <i class="pi pi-chart-bar" />
         </button>
@@ -662,9 +662,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 .sp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 
 /* compact icon buttons (options / duplicate) */
-.sp-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
+/* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .sp-iconbtn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 
