@@ -22,7 +22,7 @@ import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultC
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
-import CcToggle from '../../components/CcToggle.vue'
+import TitleCardControls from '../../components/TitleCardControls.vue'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -69,9 +69,11 @@ const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,   
 function patchTitle(p: Partial<TitleCardCfg>) {
   patch({ titleCard: { ...TITLE_CARD_DEFAULT, ...(cfg.value.titleCard ?? {}), ...p } })
 }
-const titleCardOn = computed<boolean>({ get: () => cfg.value.titleCard?.enabled ?? TITLE_CARD_DEFAULT.enabled, set: v => patchTitle({ enabled: v }) })
-const titleNote   = computed<string>({  get: () => cfg.value.titleCard?.note ?? '',                                set: v => patchTitle({ note: v }) })
-const titleDur    = computed<number>({  get: () => cfg.value.titleCard?.durationSec ?? TITLE_CARD_DEFAULT.durationSec, set: v => patchTitle({ durationSec: Math.min(10, Math.max(1, v)) }) })
+// TitleCardControls owns the clamp and emits a whole config; this just persists it.
+const titleCardModel = computed<TitleCardCfg>({
+  get: () => ({ ...TITLE_CARD_DEFAULT, ...(cfg.value.titleCard ?? {}) }),
+  set: v => patchTitle(v),
+})
 
 // channel-colormap picker options: a leading "hidden" (no colour) + the standard swatch palette
 const colormapOpts: SwatchOption[] = [
@@ -302,19 +304,8 @@ async function previewOpen() {
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>
 
-      <!-- Title card (Phase H) — auto description slide prepended to each movie -->
       <section class="bm-sec">
-        <div class="bm-title-row">
-          <CcToggle class="bm-title-toggle" v-model="titleCardOn" label="Title card"
-                 v-tooltip.bottom="'Name, attributes, channels &amp; colours — prepended to each movie'" />
-          <template v-if="titleCardOn">
-            <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="bm-title-range"
-                   v-tooltip.bottom="'Title-card duration (seconds)'" />
-            <span class="bm-val">{{ titleDur }}s</span>
-          </template>
-        </div>
-        <input v-if="titleCardOn" type="text" class="bm-note" v-model="titleNote"
-               placeholder="note (optional)" />
+        <TitleCardControls v-model="titleCardModel" />
       </section>
 
       <!-- Actions -->
@@ -365,15 +356,4 @@ async function previewOpen() {
 .bm-preview { margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
-.bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
-.bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
-/* This field is the reason the input base got re-pitched: it rendered a tier larger than its
-   neighbours, was patched with a density class, and then the SAME complaint arrived for the legacy-
-   migrate dialog's fields. One field wanting the class is a site fix; two is the default being wrong.
-   The base is --cc-fs-sm now, so the class is gone from here — a plain input already renders at the
-   size this one was asking for. What stays is the surface and this panel's layout.
-   (Beware `font:` on an input: it is a shorthand and resets line-height/weight too.) */
-.bm-note { width: 100%; box-sizing: border-box; margin-top: 5px;
-  border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 </style>

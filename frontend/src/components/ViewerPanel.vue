@@ -8,7 +8,7 @@ import { useLogStore } from '../stores/log'
 import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
-import CcToggle from './CcToggle.vue'
+import TitleCardControls from './TitleCardControls.vue'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -87,9 +87,11 @@ const movieTitleCard = computed<TitleCardCfg>(() =>
   currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).titleCard : { enabled: true, note: '', durationSec: 3 })
 function patchMovieTitle(p: Partial<TitleCardCfg>) {
   if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { titleCard: { ...movieTitleCard.value, ...p } }) }
-const titleCardOn = computed<boolean>({ get: () => movieTitleCard.value.enabled, set: v => patchMovieTitle({ enabled: v }) })
-const titleNote   = computed<string>({  get: () => movieTitleCard.value.note,    set: v => patchMovieTitle({ note: v }) })
-const titleDur    = computed<number>({  get: () => movieTitleCard.value.durationSec, set: v => patchMovieTitle({ durationSec: Math.min(10, Math.max(1, v)) }) })
+// TitleCardControls owns the clamp and emits a whole config; this just persists it.
+const movieTitleCardModel = computed<TitleCardCfg>({
+  get: () => movieTitleCard.value,
+  set: v => patchMovieTitle(v),
+})
 
 
 watch(napariImage, (img) => {
@@ -178,7 +180,7 @@ async function recordTimelapse() {
     // SHARED buildTitleCard — the same path the animation page uses. Channels are added by the recorder
     // from the live viewer, so the frontend supplies only title + non-channel sections.
     let titleCard: TitleCardPayload | undefined
-    if (titleCardOn.value) {
+    if (movieTitleCard.value.enabled) {
       const colourBy  = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''
       const overrides = (currentSetUid.value && colourBy) ? settings.getColourOverrides(currentSetUid.value, colourBy) : {}
       let snapshot: { layers?: Record<string, unknown> } | null = null
@@ -188,7 +190,7 @@ async function recordTimelapse() {
         if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: { layers?: Record<string, unknown> } }).viewState ?? null
       } catch { /* best-effort — card still renders title + channels */ }
       titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
-        { note: titleNote.value, durationSec: titleDur.value, colourBy, colourOverrides: overrides })
+        { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
     const res = await fetch('/api/napari/record-timelapse', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -742,16 +744,8 @@ onUnmounted(() => {
             <i :class="['pi', recording ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
         </div>
-        <!-- Title card (Phase H): prepend a description slide (name, attributes, channels & colours) -->
-        <div class="movie-row movie-title-row">
-          <CcToggle class="movie-lbl movie-title-toggle cc-eyebrow cc-fs-2xs" v-model="titleCardOn" label="title"
-                 v-tooltip.bottom="'Prepend a title slide: image name, attributes, channels & their colours'" />
-          <template v-if="titleCardOn">
-            <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="movie-range"
-                   v-tooltip.bottom="'Title-card duration (seconds)'" />
-            <span class="movie-val">{{ titleDur }}s</span>
-            <input type="text" v-model="titleNote" class="movie-note" placeholder="note (optional)" />
-          </template>
+        <div class="movie-row">
+          <TitleCardControls v-model="movieTitleCardModel" />
         </div>
       </div>
     </template>
@@ -818,9 +812,6 @@ onUnmounted(() => {
 .movie-range { flex: 1; min-width: 2.5rem; accent-color: var(--cc-accent-strong); }
 .movie-val { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 1.4rem; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .movie-rec { margin-left: 0.1rem; }
-.movie-title-row { margin-top: 0.25rem; }
-.movie-title-toggle { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; text-transform: none; letter-spacing: 0; }
-.movie-note { flex: 2; min-width: 3rem; font-size: var(--cc-fs-2xs); padding: 1px 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
 .cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }
