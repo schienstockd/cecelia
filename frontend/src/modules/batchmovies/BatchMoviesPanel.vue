@@ -336,8 +336,11 @@ async function previewOpen() {
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
 .bm-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin: 2px 0; }
+/* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
+   progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
+   a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */
 .bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: var(--cc-radius-md);
-  background: color-mix(in srgb, var(--cc-warn) 16%, transparent); border: 1px solid var(--cc-warn);
+  background: color-mix(in srgb, var(--cc-sev-warn) 16%, transparent); border: 1px solid var(--cc-sev-warn);
   color: var(--cc-text); font-size: var(--cc-fs-md); }
 .bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
@@ -365,6 +368,10 @@ async function previewOpen() {
 .bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
 .bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
 .bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
-.bm-note { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; margin-top: 5px;
+/* --cc-fs-sm to match .bm-mini and the rest of this panel's controls. It had `font: inherit`, which is
+   redundant (the global input base already declares it) and left the field at the base 13.1px next to
+   its --cc-fs-sm neighbours — the shorthand reads like a deliberate sizing choice while actually
+   meaning "no tier was picked". Beware `font:` on an input generally: it resets line-height/weight too. */
+.bm-note { width: 100%; box-sizing: border-box; font-size: var(--cc-fs-sm); padding: 3px 6px; margin-top: 5px;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
 </style>
