@@ -23,6 +23,7 @@ import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.v
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import TitleCardControls from '../../components/TitleCardControls.vue'
+import MovieOutputControls from '../../components/MovieOutputControls.vue'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -284,17 +285,16 @@ async function previewOpen() {
         </select>
       </section>
 
-      <!-- Output -->
+      <!-- Movie — the same controls as the viewer recorder and the animation page -->
+      <section class="bm-sec">
+        <h4>Movie</h4>
+        <MovieOutputControls v-model:fps="fps" v-model:scale="scale" />
+        <TitleCardControls v-model="titleCardModel" />
+      </section>
+
+      <!-- Output — what is batch-specific: how each file gets named -->
       <section class="bm-sec">
         <h4>Output</h4>
-        <div class="bm-inset">
-          <span class="bm-lbl cc-muted">fps</span>
-          <input type="range" min="1" max="60" step="1" v-model.number="fps" />
-          <span class="bm-val">{{ fps }}</span>
-          <span class="bm-lbl cc-muted">res</span>
-          <input type="range" min="1" max="3" step="1" v-model.number="scale" />
-          <span class="bm-val">{{ scale }}×</span>
-        </div>
         <div class="bm-attrs">
           <span class="bm-lbl cc-muted">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
@@ -302,10 +302,6 @@ async function previewOpen() {
           <span v-else class="bm-hint cc-muted">no attributes — files named by uid</span>
         </div>
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>
-      </section>
-
-      <section class="bm-sec">
-        <TitleCardControls v-model="titleCardModel" />
       </section>
 
       <!-- Actions -->
