@@ -65,6 +65,11 @@ at nine different sizes). `-bare` is transparent/dim-until-hover, `-ghost` is it
 comes from `-danger-ghost` or a scoped `color` for the one-offs (the napari viewer green). A `<button>`
 whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssScenarios.test.ts`.
 
+> **Where the checks live:** `frontend/src/utils/cssScenarios.ts` and `cssTokens.ts`, each with a
+> `.test.ts` beside it (`pixi run test-frontend`). Full index of what each detector owns and what its
+> bar is: [`docs/todo/UX_PRIMITIVES_PLAN.md`](todo/UX_PRIMITIVES_PLAN.md) → *The detectors*. Need a
+> count for this area? Read those — never re-derive one by grep.
+
 **Re-implementing a scenario is a test failure, not a style opinion.** `utils/cssScenarios.test.ts`
 detects a scoped rule that spells out a canonical utility's defining declarations — a dim colour plus a
 hard-coded size *is* `.cc-muted` — and holds a per-file baseline that **may shrink and must never grow**.
