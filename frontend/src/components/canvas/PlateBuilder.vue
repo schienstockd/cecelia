@@ -67,11 +67,11 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 <template>
   <div class="pb">
     <div class="pb-head">
-      <label class="pb-num"><span>cols</span>
+      <label class="pb-num cc-muted cc-fs-xs"><span>cols</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="cols" @change="cols = clamp(cols)" /></label>
-      <label class="pb-num"><span>rows</span>
+      <label class="pb-num cc-muted cc-fs-xs"><span>rows</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="rows" @change="rows = clamp(rows)" /></label>
-      <span class="pb-hint">drag to merge · click a merge to split</span>
+      <span class="pb-hint cc-muted cc-fs-2xs">drag to merge · click a merge to split</span>
     </div>
 
     <div ref="gridRef" class="pb-grid" :style="gridTmpl" @pointerdown.prevent="onDown">
@@ -81,7 +81,7 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
     </div>
 
     <div class="pb-foot">
-      <span class="pb-count">{{ slotCount }} panel{{ slotCount === 1 ? '' : 's' }}</span>
+      <span class="pb-count cc-muted cc-fs-xs">{{ slotCount }} panel{{ slotCount === 1 ? '' : 's' }}</span>
       <span class="pb-spacer" />
       <button class="cc-btn cc-btn-ghost" type="button" @click="emit('cancel')">Cancel</button>
       <button class="cc-btn cc-btn-primary" type="button" @click="apply">Apply</button>
@@ -92,9 +92,9 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 <style scoped>
 .pb { display: flex; flex-direction: column; gap: 8px; width: 15rem; }
 .pb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pb-num { display: inline-flex; align-items: center; gap: 4px; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.pb-num { display: inline-flex; align-items: center; gap: 4px; }
 .pb-num input { width: 3rem; padding: 2px 4px; }
-.pb-hint { flex-basis: 100%; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); opacity: 0.75; }
+.pb-hint { flex-basis: 100%; opacity: 0.75; }
 /* the plate canvas: an A4-portrait-ish aspect so the preview reads like a page */
 .pb-grid { position: relative; display: grid; gap: 3px; aspect-ratio: 0.78; width: 100%;
   padding: 3px; background: var(--cc-border); border-radius: var(--cc-radius-sm); user-select: none; touch-action: none; }
@@ -109,6 +109,6 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 .pb-drag { pointer-events: none; z-index: 3; border-radius: var(--cc-radius-xs);
   background: color-mix(in srgb, var(--cc-accent) 22%, transparent); border: 1px dashed var(--cc-accent); }
 .pb-foot { display: flex; align-items: center; gap: 6px; }
-.pb-count { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+
 .pb-spacer { flex: 1; }
 </style>

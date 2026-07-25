@@ -215,7 +215,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           </button>
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span class="cp-hint cc-muted cc-muted-xs">drag plots by their title · resize from the corner</span>
+        <span class="cp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
 
       <!-- membership: cluster pops only apply to images that were in the run (carry clusters.{suffix}).

@@ -516,7 +516,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
         <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-end">
         <div class="sp-pop" @click.stop>
           <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
-          <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row"
+          <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row cc-muted"
                  v-tooltip.left="'Split the measure by a categorical column (e.g. HMM state)'">
             <span>Split by</span>
             <select v-model="groupBy">
@@ -525,7 +525,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
             </select>
           </label>
           <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
-          <label v-if="canStatUnit" class="sp-pop-row"
+          <label v-if="canStatUnit" class="sp-pop-row cc-muted"
                  v-tooltip.left="'Individual: every cell/track is a datapoint. Image mean: each image contributes one point (its mean) — one dot per image (n = images, pseudoreplication-safe).'">
             <span>Datapoint</span>
             <select v-model="statUnit">
@@ -533,7 +533,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
               <option value="image">image</option>
             </select>
           </label>
-          <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row"
+          <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row cc-muted"
                  v-tooltip.left="'How to collapse each image to its one point: mean (average) or median (robust to outliers).'">
             <span>Per image</span>
             <select v-model="imageAgg">
@@ -546,26 +546,26 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
                (state signature = profile, transition matrix = crosstab) pin their mode, so the two
                plots stay distinct rather than each being able to become the other. -->
           <template v-if="chartType === 'heatmap'">
-            <label v-if="!specPinnedMode" class="sp-pop-row" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
+            <label v-if="!specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
               <span>Mode</span>
               <select v-model="matrixMode">
                 <option value="profile">profile</option>
                 <option value="crosstab">crosstab</option>
               </select>
             </label>
-            <label v-if="groupByOpts.length" class="sp-pop-row"
+            <label v-if="groupByOpts.length" class="sp-pop-row cc-muted"
                    v-tooltip.left="'Categorical column: profile columns / crosstab from_to pairs'">
               <span>Category</span>
               <select v-model="categorySel">
                 <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
               </select>
             </label>
-            <div v-if="matrixMode === 'profile'" class="sp-pop-row"
+            <div v-if="matrixMode === 'profile'" class="sp-pop-row cc-muted"
                    v-tooltip.left="'Off: rescale each feature to 0–1 (viridis). On: z-score rows → diverging above/below-mean (RdBu).'">
               <span>Z-score rows</span>
               <CcToggle v-model="zscore" />
             </div>
-            <label v-else class="sp-pop-row" v-tooltip.left="'Normalise the transition matrix'">
+            <label v-else class="sp-pop-row cc-muted" v-tooltip.left="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
                 <option value="row">row · P(to|from)</option>
@@ -574,16 +574,16 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
                 <option value="none">counts</option>
               </select>
             </label>
-            <div class="sp-pop-row" v-tooltip.left="'Print the value in each cell'">
+            <div class="sp-pop-row cc-muted" v-tooltip.left="'Print the value in each cell'">
               <span>Cell values</span>
               <CcToggle v-model="heatmapValues" />
             </div>
           </template>
-          <label v-if="chartType === 'histogram'" class="sp-pop-row">
+          <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted">
             <span>Bins</span>
             <input type="number" min="5" max="100" step="5" v-model.number="bins" />
           </label>
-          <label v-else-if="chartType === 'bar'" class="sp-pop-row">
+          <label v-else-if="chartType === 'bar'" class="sp-pop-row cc-muted">
             <span>Error</span>
             <select v-model="errorMetric">
               <option value="ci95">95% CI</option>
@@ -591,17 +591,17 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
               <option value="sd">SD</option>
             </select>
           </label>
-          <div v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row"
+          <div v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row cc-muted"
                  v-tooltip.left="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
             <span>Proportion</span>
             <CcToggle v-model="normalize" />
           </div>
           <template v-if="timeSeries">
-            <label class="sp-pop-row" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
+            <label class="sp-pop-row cc-muted" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
               <span>Smooth span</span>
               <input type="number" min="5" max="100" step="5" v-model.number="smooth" />
             </label>
-            <div class="sp-pop-row" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
+            <div class="sp-pop-row cc-muted" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
               <span>Interval</span>
               <CcToggle v-model="interval" />
             </div>
@@ -625,7 +625,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
           <i class="pi pi-chart-bar" />
         </button>
         <div v-if="showExplode" class="sp-explode-pop" @click.stop>
-          <div class="sp-explode-hd">Measurements to plot</div>
+          <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
           <label v-for="m in measureOpts" :key="m" class="sp-explode-row">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ m }}
           </label>
@@ -647,9 +647,9 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
     </template>
 
     <div class="sp-body">
-      <div v-if="!series.length" class="sp-msg">Select one or more populations (eye icon) to plot.</div>
-      <div v-else-if="error" class="sp-msg sp-err">{{ error }}</div>
-      <div v-else-if="!hasData && !loading" class="sp-msg">No data for the selected populations.</div>
+      <div v-if="!series.length" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
+      <div v-else-if="error" class="sp-msg sp-err cc-muted">{{ error }}</div>
+      <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">No data for the selected populations.</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
     </div>
@@ -671,7 +671,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
   min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
   box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: var(--cc-fs-sm); }
-.sp-explode-hd { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); margin-bottom: 6px; }
+.sp-explode-hd { margin-bottom: 6px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
 .sp-explode-ft { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 
@@ -683,11 +683,10 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
    positioning mode live here. New plot popovers should reuse this pattern (docs/PLOTS.md §0). */
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
-.sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sp-pop-row select { max-width: 7rem; }
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
-.sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); text-align: center; padding: 12px; }
+.sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; padding: 12px; }
 .sp-err { color: var(--cc-danger); }
 </style>

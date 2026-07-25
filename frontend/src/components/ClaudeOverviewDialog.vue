@@ -19,7 +19,7 @@ defineEmits<{ (e: 'close'): void }>()
     <div class="co-entries">
       <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry cc-card cc-card-2">
         <div class="co-entry-head"><i :class="['pi', e.icon]" /> {{ e.name }}</div>
-        <p class="co-entry-what cc-muted cc-muted-md">{{ e.what }}</p>
+        <p class="co-entry-what cc-muted cc-fs-md">{{ e.what }}</p>
         <ol class="co-steps">
           <li v-for="(s, i) in e.steps" :key="i">{{ s }}</li>
         </ol>

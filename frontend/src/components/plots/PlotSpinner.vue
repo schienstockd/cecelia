@@ -15,7 +15,7 @@ defineProps<{ label?: string }>()
 <template>
   <div class="plot-spinner" role="status" aria-live="polite">
     <div class="plot-spinner__wheel" aria-hidden="true" />
-    <span v-if="label" class="plot-spinner__label cc-muted cc-muted-xs">{{ label }}</span>
+    <span v-if="label" class="plot-spinner__label cc-muted cc-fs-xs">{{ label }}</span>
   </div>
 </template>
 

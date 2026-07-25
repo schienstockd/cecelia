@@ -217,7 +217,7 @@ function movieTime(mtime: number): string {
           <i class="pi pi-video mov-item-ico" />
           <span class="mov-item-body">
             <span class="mov-item-name">{{ movieDisplayName(m.name) }}</span>
-            <span class="mov-item-meta cc-muted cc-muted-xs">{{ formatBytes(m.size) }} · {{ movieTime(m.mtime) }}</span>
+            <span class="mov-item-meta cc-muted cc-fs-xs">{{ formatBytes(m.size) }} · {{ movieTime(m.mtime) }}</span>
           </span>
         </button>
       </aside>

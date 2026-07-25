@@ -163,12 +163,12 @@ const FILTERS: ChipOption[] = [
                 <i class="pi pi-sitemap" />{{ t.chainName || t.chainRunId }}
               </span>
               <span class="row-label">
-                <span class="row-seq">#{{ t.seq }}</span>
+                <span class="row-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
                 {{ t.label }}
               </span>
-              <span v-if="elapsed(t)" class="row-elapsed">{{ elapsed(t) }}</span>
+              <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
             </div>
-            <div class="row-image">{{ t.imageName }}</div>
+            <div class="row-image cc-muted cc-fs-xs">{{ t.imageName }}</div>
           </div>
 
           <div class="row-actions" @click.stop>
@@ -203,9 +203,9 @@ const FILTERS: ChipOption[] = [
                   <i class="pi pi-sitemap" />{{ selected.chainName || selected.chainRunId }}
                 </span>
               </div>
-              <span class="log-image">{{ selected.imageName }}</span>
+              <span class="log-image cc-muted cc-fs-xs">{{ selected.imageName }}</span>
             </div>
-            <span v-if="elapsed(selected)" class="log-elapsed">{{ elapsed(selected) }}</span>
+            <span v-if="elapsed(selected)" class="log-elapsed cc-muted cc-fs-xs">{{ elapsed(selected) }}</span>
             <div class="log-actions">
               <button class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog" v-tooltip.left="copied ? 'Copied!' : 'Copy log'">
                 <i :class="['pi', copied ? 'pi-check' : 'pi-copy']" />
@@ -229,7 +229,7 @@ const FILTERS: ChipOption[] = [
           <pre ref="logEl" class="log-body">{{ selected.log.join('\n') || '— no output yet —' }}</pre>
         </template>
 
-        <div v-else class="log-empty">
+        <div v-else class="log-empty cc-empty">
           <i class="pi pi-list-check" />
           <span>Select a task to view its log.</span>
         </div>
@@ -352,7 +352,7 @@ const FILTERS: ChipOption[] = [
   text-overflow: ellipsis;
   flex: 1;
 }
-.row-seq { font-size: var(--cc-fs-2xs); font-family: var(--cc-mono); color: var(--cc-text-dim); margin-right: 0.2rem; }
+.row-seq { font-family: var(--cc-mono); margin-right: 0.2rem; }
 .chain-pill {
   display: inline-flex;
   align-items: center;
@@ -374,8 +374,8 @@ const FILTERS: ChipOption[] = [
 .chain-pill .pi { font-size: var(--cc-fs-3xs); flex-shrink: 0; }
 .chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
-.row-elapsed { font-size: var(--cc-fs-2xs); font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
-.row-image { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
+.row-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .row-actions {
   display: flex;
@@ -394,16 +394,7 @@ const FILTERS: ChipOption[] = [
   overflow: hidden;
   background: var(--cc-bg);
 }
-.log-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-}
+.log-empty { flex: 1; }
 .log-empty .pi { font-size: 1.5rem; opacity: 0.3; }
 
 .log-header {
@@ -420,8 +411,8 @@ const FILTERS: ChipOption[] = [
 
 .log-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .log-title { font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.log-image { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.log-elapsed { font-size: var(--cc-fs-xs); font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
+.log-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 .log-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
 .log-progress {

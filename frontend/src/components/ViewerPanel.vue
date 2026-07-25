@@ -593,7 +593,7 @@ onUnmounted(() => {
          Top of the panel — these are always available, even before an image is open. -->
     <!-- Convention: append new toggles at the END of the row. -->
     <div class="viewer-section first">
-      <div class="viewer-section-title">View</div>
+      <div class="viewer-section-title cc-eyebrow cc-fs-2xs">View</div>
       <div class="viewer-opts">
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariUpdateImage }"
@@ -630,7 +630,7 @@ onUnmounted(() => {
     <template v-if="napariImage">
       <!-- ── Current image: what's open + its versions + segmentation label sets ── -->
       <div class="viewer-section">
-        <div class="viewer-section-title">Current image</div>
+        <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Current image</div>
         <div class="viewer-image">
           <i class="pi pi-eye viewer-eye" />
           <span class="viewer-name" :title="napariImage.name">{{ napariImage.name }}</span>
@@ -644,13 +644,13 @@ onUnmounted(() => {
         >
           <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
         </select>
-        <span v-else class="viewer-hint">No versions registered.</span>
+        <span v-else class="viewer-hint cc-muted">No versions registered.</span>
 
         <!-- segmentation label sets: show labels / tracks, delete -->
         <div v-if="hasLabels" class="viewer-labels-list">
           <div v-for="vn in labelNames" :key="vn" class="viewer-label-row">
             <i class="pi pi-th-large viewer-label-icon" />
-            <span class="viewer-label-name" :title="vn">{{ vn }}</span>
+            <span class="viewer-label-name cc-muted" :title="vn">{{ vn }}</span>
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
             <button
@@ -675,7 +675,7 @@ onUnmounted(() => {
     <!-- pop toggles show coloured centroid POINTS (layers namespaced by pop type, so they coexist);
          the ribbon toggles show gated / cluster track populations as napari Tracks layers. -->
     <div class="viewer-section">
-      <div class="viewer-section-title">Populations &amp; tracks</div>
+      <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Populations &amp; tracks</div>
       <div class="viewer-opts">
         <button
           v-for="pt in POP_TYPES" :key="pt.key"
@@ -700,7 +700,7 @@ onUnmounted(() => {
 
       <!-- ── Colour by: shade tracks + labels by an obs column (e.g. HMM state); '' = default ── -->
       <div v-if="obsCols.length" class="viewer-section">
-        <div class="viewer-section-title">Colour by</div>
+        <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Colour by</div>
         <select class="opt-colourby" :value="colourByCol" @change="onColourBy"
                 v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state). Values matching a population use its colour.'">
           <option value="">default</option>
@@ -708,7 +708,7 @@ onUnmounted(() => {
         </select>
         <!-- legend for a categorical colour-by: value → colour (a population's colour where one matches) -->
         <div v-if="legendItems.length" class="cby-legend">
-          <span v-for="item in legendItems" :key="item.key" class="cby-item"
+          <span v-for="item in legendItems" :key="item.key" class="cby-item cc-muted cc-fs-xs"
                 v-tooltip.right="item.editable
                   ? `${item.label} — click the swatch to recolour`
                   : `population: ${item.label} — colour set in the population manager`">
@@ -728,12 +728,12 @@ onUnmounted(() => {
            Records exactly what's shown (channels, populations, tracks, colour-by). fps + resolution
            are per-set; the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3. -->
       <div class="viewer-section">
-        <div class="viewer-section-title">Movie</div>
+        <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <span class="movie-lbl" v-tooltip.bottom="'Frames per second'">fps</span>
+          <span class="movie-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
           <input type="range" min="1" max="60" step="1" v-model.number="movieFps" class="movie-range" />
           <span class="movie-val">{{ movieFps }}</span>
-          <span class="movie-lbl" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
+          <span class="movie-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
           <input type="range" min="1" max="3" step="1" v-model.number="movieScale" class="movie-range" />
           <span class="movie-val">{{ movieScale }}×</span>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording }" :disabled="recording"
@@ -744,7 +744,7 @@ onUnmounted(() => {
         </div>
         <!-- Title card (Phase H): prepend a description slide (name, attributes, channels & colours) -->
         <div class="movie-row movie-title-row">
-          <CcToggle class="movie-lbl movie-title-toggle" v-model="titleCardOn" label="title"
+          <CcToggle class="movie-lbl movie-title-toggle cc-eyebrow cc-fs-2xs" v-model="titleCardOn" label="title"
                  v-tooltip.bottom="'Prepend a title slide: image name, attributes, channels & their colours'" />
           <template v-if="titleCardOn">
             <input type="range" min="1" max="10" step="1" v-model.number="titleDur" class="movie-range"
@@ -755,7 +755,7 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
-    <div v-else class="viewer-section"><span class="viewer-hint">No image open in Napari.</span></div>
+    <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open in Napari.</span></div>
   </div>
 </template>
 
@@ -814,7 +814,7 @@ onUnmounted(() => {
 .opt-colourby { font-size: var(--cc-fs-xs); width: 100%; min-width: 0; }
 /* movie recording params — one compact row: fps slider · res slider · record button */
 .movie-row { display: flex; align-items: center; gap: 0.3rem; }
-.movie-lbl { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.movie-lbl { flex-shrink: 0; }
 .movie-range { flex: 1; min-width: 2.5rem; accent-color: var(--cc-accent-strong); }
 .movie-val { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 1.4rem; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .movie-rec { margin-left: 0.1rem; }
@@ -824,7 +824,7 @@ onUnmounted(() => {
 
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
 .cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }
-.cby-item { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.cby-item { display: inline-flex; align-items: center; gap: 0.25rem; }
 .cby-swatch { width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-border); }
 /* editable swatch: a native colour input squeezed to swatch size (categories with no population) */
 .cby-swatch-edit { padding: 0; cursor: pointer; background: none; -webkit-appearance: none; appearance: none; }
@@ -850,18 +850,6 @@ onUnmounted(() => {
 }
 /* the top section (View) sits flush against the panel top — no leading divider */
 .viewer-section.first { padding-top: 0; border-top: none; }
-.viewer-section-title {
-  font-size: var(--cc-fs-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-}
-
-.viewer-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-}
 
 .viewer-labels-list {
   display: flex;
@@ -879,14 +867,7 @@ onUnmounted(() => {
   color: var(--cc-accent);
   flex-shrink: 0;
 }
-.viewer-label-name {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.viewer-label-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .opt-btn.danger:hover { border-color: var(--cc-danger); color: var(--cc-danger); }
 /* row action icons (eye / directions / trash): hidden until the row is hovered to keep the narrow
    sidebar uncluttered; an ACTIVE toggle (shown layer/tracks) stays visible so state is readable */

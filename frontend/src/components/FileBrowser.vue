@@ -160,11 +160,11 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
       <!-- body -->
       <div class="fb-body">
-        <div v-if="loading" class="fb-state cc-muted cc-muted-md">
+        <div v-if="loading" class="fb-state cc-muted cc-fs-md">
           <i class="pi pi-spin pi-cog" /> Loading…
         </div>
 
-        <div v-else-if="error" class="fb-state error cc-muted cc-muted-md">
+        <div v-else-if="error" class="fb-state error cc-muted cc-fs-md">
           <i class="pi pi-exclamation-triangle" /> {{ error }}
           <button class="cc-btn cc-btn-ghost" @click="navigate('')">Back to home</button>
         </div>
@@ -248,7 +248,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       <span class="sel-count" v-else-if="selected.size > 0">
         {{ selected.size }} {{ mode === 'bundle' ? 'bundle' : 'file' }}{{ selected.size > 1 ? 's' : '' }} selected
       </span>
-      <span class="sel-count dim cc-muted" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
+      <span class="sel-count cc-muted" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
 
       <div class="footer-actions">
         <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
@@ -353,7 +353,9 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .fb-empty { text-align: center; padding: 2rem; }   /* + .cc-muted */
 
 /* footer */
-.sel-count { font-size: var(--cc-fs-sm); color: var(--cc-text); flex: 1; }
+/* no colour here: the placeholder variant composes .cc-muted, and a scoped colour would
+   outrank it. The other two spans inherit --cc-text from the shell regardless. */
+.sel-count { font-size: var(--cc-fs-sm); flex: 1; }
 .footer-actions { display: flex; gap: 0.4rem; }
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

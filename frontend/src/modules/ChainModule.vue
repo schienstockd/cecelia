@@ -1136,7 +1136,7 @@ onActivated(async () => {
         <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
           <PoolThrottle />
         </TeleportPopover>
-        <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
+        <span v-if="!runOptions.length" class="live-hint cc-muted">No runs yet — start a chain run to see progress.</span>
       </div>
 
       <div v-if="liveNodes.length" class="live-canvas-wrap">
@@ -1171,7 +1171,7 @@ onActivated(async () => {
           </div>
         </div>
       </div>
-      <div v-else class="live-empty">
+      <div v-else class="live-empty cc-empty">
         <i class="pi pi-hourglass" style="font-size:2rem; opacity:0.2" />
         <p>No nodes for this run yet.</p>
       </div>
@@ -1193,7 +1193,7 @@ onActivated(async () => {
           >
             <option v-for="name in chainNames" :key="name" :value="name">{{ name }}</option>
           </select>
-          <span v-else class="no-chains-hint">No chains yet</span>
+          <span v-else class="no-chains-hint cc-muted">No chains yet</span>
         </div>
         <div class="chain-bar-actions">
           <button
@@ -1249,7 +1249,7 @@ onActivated(async () => {
         </button>
       </div>
 
-      <div v-if="!projectMeta.hasProject" class="palette-hint">
+      <div v-if="!projectMeta.hasProject" class="palette-hint cc-muted">
         Open a project first.
       </div>
 
@@ -1263,7 +1263,7 @@ onActivated(async () => {
               :key="cat.name"
               class="palette-category"
             >
-              <div class="palette-cat-heading cc-eyebrow cc-eyebrow-2xs">{{ cat.name }}</div>
+              <div class="palette-cat-heading cc-eyebrow cc-fs-2xs">{{ cat.name }}</div>
               <div
                 v-for="def in cat.defs"
                 :key="def.fun_name"
@@ -1277,7 +1277,7 @@ onActivated(async () => {
               </div>
             </div>
 
-            <div v-if="!paletteCategories.length" class="palette-hint palette-hint-retry">
+            <div v-if="!paletteCategories.length" class="palette-hint palette-hint-retry cc-muted">
               No task definitions found.
               <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense palette-retry-btn" @click="loadAllTaskDefs"
                 v-tooltip.right="'Retry loading task definitions from the server.'">
@@ -1289,14 +1289,14 @@ onActivated(async () => {
 
         <!-- Plots (collapsible) — drag plot nodes onto the canvas; not built yet -->
         <CollapsibleSection label="Plots" :default-open="false" max-height="50vh">
-          <div class="palette-soon">
+          <div class="palette-soon cc-muted">
             Plot nodes — drop summary plots into the chain — coming soon.
           </div>
         </CollapsibleSection>
 
         <!-- ── Run table ──────────────────────────────────────────────────── -->
         <div class="run-table-section">
-          <div class="run-section-heading cc-eyebrow cc-eyebrow-2xs">Run</div>
+          <div class="run-section-heading cc-eyebrow cc-fs-2xs">Run</div>
 
           <select
             v-if="project.sets.length"
@@ -1306,7 +1306,7 @@ onActivated(async () => {
           >
             <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
           </select>
-          <span v-else class="palette-hint">No sets in project.</span>
+          <span v-else class="palette-hint cc-muted">No sets in project.</span>
 
           <!-- Image list -->
           <div v-if="runImages.length" class="run-image-list">
@@ -1323,7 +1323,7 @@ onActivated(async () => {
                   runSomeSelected  ? 'pi-minus-circle' : 'pi-stop'
                 ]" />
               </span>
-              <span class="run-all-label">All ({{ includedRunUids.length }})</span>
+              <span class="run-all-label cc-muted">All ({{ includedRunUids.length }})</span>
               <span class="run-sel-count" v-if="runSomeSelected">{{ runSelectedUids.length }}</span>
             </div>
 
@@ -1339,7 +1339,7 @@ onActivated(async () => {
               <span class="run-check-icon">
                 <i :class="['pi', isExcluded(img) ? 'pi-ban' : runSelectedUids.includes(img.uid) ? 'pi-check-square' : 'pi-stop']" />
               </span>
-              <span class="run-img-name">{{ img.name }}</span>
+              <span class="run-img-name cc-muted">{{ img.name }}</span>
             </div>
           </div>
 
@@ -1379,14 +1379,14 @@ onActivated(async () => {
 
         <!-- Empty state -->
         <template v-if="!activeChain && projectMeta.hasProject" #empty>
-          <div class="canvas-empty">
+          <div class="canvas-empty cc-empty">
             <i class="pi pi-sitemap" />
             <p>Select a chain or create one to start editing.</p>
           </div>
         </template>
       </VueFlow>
 
-      <div class="canvas-hints">
+      <div class="canvas-hints cc-muted cc-fs-2xs">
         Drag to pan · Scroll to zoom · Double-click edge to remove
       </div>
     </div>
@@ -1404,7 +1404,7 @@ onActivated(async () => {
         </div>
 
         <div v-if="selectedNode.type === 'start'" class="config-section">
-          <p class="no-params-hint">Link this to the task(s) a run should begin from. Only tasks
+          <p class="no-params-hint cc-muted">Link this to the task(s) a run should begin from. Only tasks
           reachable from it will run — the rest stay in the editor as drafts.</p>
         </div>
 
@@ -1475,17 +1475,17 @@ onActivated(async () => {
         </div>
 
         <div class="config-section" v-else-if="selectedTaskDef && !selectedTaskDef.params.length">
-          <span class="no-params-hint">No parameters for this function.</span>
+          <span class="no-params-hint cc-muted">No parameters for this function.</span>
         </div>
 
         <div class="config-section" v-else>
-          <span class="no-params-hint">Function not found in task definitions.</span>
+          <span class="no-params-hint cc-muted">Function not found in task definitions.</span>
         </div>
         </template>
 
       </template>
 
-      <div v-else class="config-placeholder">
+      <div v-else class="config-placeholder cc-empty">
         <i class="pi pi-mouse-pointer" style="font-size:1.4rem; opacity:0.3" />
         <p>Click a node to configure it.</p>
       </div>
@@ -1574,11 +1574,7 @@ onActivated(async () => {
 }
 .qc-expand-body { flex: 1; min-height: 0; overflow: auto; }
 
-.live-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-}
+.live-hint { font-style: italic; }
 
 .live-canvas-wrap {
   flex: 1;
@@ -1586,17 +1582,7 @@ onActivated(async () => {
   position: relative;
 }
 
-.live-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-  font-style: italic;
-}
+.live-empty { flex: 1; font-style: italic; }
 
 /* Edit tab: flex row layout ─────────────────────────────────────────────── */
 .edit-content {
@@ -1604,7 +1590,6 @@ onActivated(async () => {
   display: flex;
   overflow: hidden;
 }
-
 
 /* ── Palette ──────────────────────────────────────────────────────────────── */
 .wb-palette {
@@ -1651,12 +1636,7 @@ onActivated(async () => {
 }
 .chain-select:focus { outline: 1px solid var(--cc-accent); }
 
-.no-chains-hint {
-  flex: 1;
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-}
+.no-chains-hint { flex: 1; font-style: italic; }
 
 .wb-btn { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .wb-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); border-color: var(--cc-accent); }
@@ -1689,7 +1669,7 @@ onActivated(async () => {
 
 .palette-category { margin-bottom: 0.25rem; }
 
-.palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-2xs */
+.palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-fs-2xs */
 
 .palette-item {
   display: flex;
@@ -1721,19 +1701,8 @@ onActivated(async () => {
   text-overflow: ellipsis;
 }
 
-.palette-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-  padding: 0.75rem 0.65rem;
-}
-.palette-soon {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-  padding: 0.75rem 0.65rem;
-  opacity: 0.7;
-}
+.palette-hint { font-style: italic; padding: 0.75rem 0.65rem; }
+.palette-soon { font-style: italic; padding: 0.75rem 0.65rem; opacity: 0.7; }
 .palette-hint-retry {
   display: flex;
   align-items: center;
@@ -1758,28 +1727,10 @@ onActivated(async () => {
   height: 100%;
 }
 
-.canvas-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-  font-style: italic;
-}
+.canvas-empty { font-style: italic; }
 .canvas-empty i { font-size: 2rem; opacity: 0.25; }
 
-.canvas-hints {
-  position: absolute;
-  bottom: 0.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: var(--cc-fs-2xs);
-  color: var(--cc-text-dim);
-  opacity: 0.5;
-  pointer-events: none;
-  white-space: nowrap;
-}
+.canvas-hints { position: absolute; bottom: 0.5rem; left: 50%; transform: translateX(-50%); opacity: 0.5; pointer-events: none; white-space: nowrap; }
 
 /* ── Config panel ─────────────────────────────────────────────────────────── */
 .wb-config {
@@ -1797,17 +1748,7 @@ onActivated(async () => {
   overflow-y: auto;
 }
 
-.config-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 2rem 1rem;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-sm);
-  font-style: italic;
-  text-align: center;
-}
+.config-placeholder { padding: 2rem 1rem; font-style: italic; }
 
 .config-header {
   display: flex;
@@ -1841,11 +1782,7 @@ onActivated(async () => {
 
 .config-section-heading { margin-bottom: 0.35rem; }   /* + .cc-eyebrow */
 .config-params { display: flex; flex-direction: column; }
-.no-params-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-}
+.no-params-hint { font-style: italic; }
 
 /* ── Run table ────────────────────────────────────────────────────────────── */
 .run-table-section {
@@ -1857,7 +1794,7 @@ onActivated(async () => {
   background: var(--cc-bg);
 }
 
-.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-2xs */
+.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-fs-2xs */
 
 .run-set-select {
   margin: 0 0.45rem 0.3rem;
@@ -1907,26 +1844,14 @@ onActivated(async () => {
 .run-row:not(.active) .run-check-icon { color: var(--cc-border); }
 .run-row-all .run-check-icon { color: var(--cc-accent); }
 
-.run-all-label {
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  color: var(--cc-text-dim);
-  flex: 1;
-}
+.run-all-label { font-weight: 600; flex: 1; }
 .run-sel-count {
   font-size: var(--cc-fs-2xs);
   font-family: var(--cc-mono);
   color: var(--cc-accent);
 }
 
-.run-img-name {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 130px;
-}
+.run-img-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
 
 .run-chain-btn {
   display: flex;

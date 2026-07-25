@@ -342,7 +342,7 @@ async function switchWt(path: string) {
         </div>
       </template>
 
-      <p v-else class="no-project">No project open. Open or create a project first.</p>
+      <p v-else class="no-project cc-muted cc-fs-md">No project open. Open or create a project first.</p>
     </section>
 
     <!-- ── Interface ───────────────────────────────────────────────────── -->
@@ -378,7 +378,7 @@ async function switchWt(path: string) {
             {{ appCtl.updateChecking ? 'Checking…' : 'Check' }}
           </button>
         </div>
-        <span v-if="!appCtl.updateAvailable && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint">
+        <span v-if="!appCtl.updateAvailable && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">
           You're on the latest version.
         </span>
       </div>
@@ -397,12 +397,12 @@ async function switchWt(path: string) {
       </div>
 
       <!-- shared system-wide install: updates are admin-only (see docs/todo/ONBOARDING_PLAN.md D4/D5) -->
-      <span v-else-if="appCtl.updateAvailable && appCtl.updateScope === 'system'" class="field-hint">
+      <span v-else-if="appCtl.updateAvailable && appCtl.updateScope === 'system'" class="field-hint cc-muted cc-fs-xs">
         {{ appCtl.updateLatest }} is available. This is a shared installation — updates must be run by
         an administrator (re-run the install-system script).
       </span>
 
-      <span v-if="appCtl.updateMsg" class="field-hint">{{ appCtl.updateMsg }}</span>
+      <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
     </section>
 
     <!-- ── Custom modules ──────────────────────────────────────────────── -->
@@ -418,10 +418,10 @@ async function switchWt(path: string) {
             {{ storage ? 'Re-scan' : 'Scan storage' }}
           </button>
         </div>
-        <span v-if="!storage && !storageScan" class="field-hint">
+        <span v-if="!storage && !storageScan" class="field-hint cc-muted cc-fs-xs">
           Scan to see disk usage and superseded image versions that can be freed (everything except the active one).
         </span>
-        <span v-if="storageError" class="field-hint" style="color: var(--cc-sev-fail);">{{ storageError }}</span>
+        <span v-if="storageError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ storageError }}</span>
       </div>
 
       <template v-if="storage">
@@ -434,18 +434,18 @@ async function switchWt(path: string) {
         <div v-if="storage.reclaimable.length" class="stor-reclaim">
           <div class="stor-reclaim-head">
             Reclaimable <strong>{{ formatBytes(storage.reclaimableBytes) }}</strong>
-            <span class="field-hint">({{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }} with superseded versions; the active version is kept)</span>
+            <span class="field-hint cc-muted cc-fs-xs">({{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }} with superseded versions; the active version is kept)</span>
           </div>
           <ul class="stor-list">
             <li v-for="r in storage.reclaimable.slice(0, 8)" :key="r.imageUid">
               <span class="stor-name">{{ r.name || r.imageUid }}</span>
               <span class="stor-size">{{ formatBytes(r.bytes) }}</span>
-              <span class="field-hint"
+              <span class="field-hint cc-muted cc-fs-xs"
                     v-tooltip.top="'Frees: ' + (r.versions?.map(v => v.valueName).join(', ') ?? '') + ' — keeps ' + r.activeVersion">
                 → keeps {{ r.activeVersion }}
               </span>
             </li>
-            <li v-if="storage.reclaimable.length > 8" class="field-hint">…{{ storage.reclaimable.length - 8 }} more</li>
+            <li v-if="storage.reclaimable.length > 8" class="field-hint cc-muted cc-fs-xs">…{{ storage.reclaimable.length - 8 }} more</li>
           </ul>
           <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
@@ -460,7 +460,7 @@ async function switchWt(path: string) {
             </template>
           </ConfirmButton>
         </div>
-        <span v-else class="field-hint">Nothing to reclaim — every image has only its active version.</span>
+        <span v-else class="field-hint cc-muted cc-fs-xs">Nothing to reclaim — every image has only its active version.</span>
       </template>
     </section>
 
@@ -480,7 +480,7 @@ async function switchWt(path: string) {
             {{ customModules.loading ? 'Reloading…' : 'Reload' }}
           </button>
         </div>
-        <span class="field-hint">
+        <span class="field-hint cc-muted cc-fs-xs">
           Drop tasks into this folder to add them without a rebuild — see docs/CUSTOM_MODULES.md.
         </span>
       </div>
@@ -493,14 +493,14 @@ async function switchWt(path: string) {
           <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ shortModulePath(m.path) }}</span>
         </div>
       </div>
-      <span v-else class="field-hint">No custom modules loaded.</span>
+      <span v-else class="field-hint cc-muted cc-fs-xs">No custom modules loaded.</span>
     </section>
 
     <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
     <section class="settings-section">
       <h2 class="section-title">Data patches</h2>
-      <p class="field-hint">One-off fixes applied to the currently open project's data. Dry-run first to see what would change.</p>
-      <div v-if="!projectMeta.current" class="field-hint">Open a project to run patches.</div>
+      <p class="field-hint cc-muted cc-fs-xs">One-off fixes applied to the currently open project's data. Dry-run first to see what would change.</p>
+      <div v-if="!projectMeta.current" class="field-hint cc-muted cc-fs-xs">Open a project to run patches.</div>
       <div v-for="p in patches" :key="p.id" class="patch-row">
         <div class="patch-head">
           <span class="patch-title">{{ p.title }}</span>
@@ -520,12 +520,12 @@ async function switchWt(path: string) {
             <button v-if="patchBusy(p.id)" class="save-btn ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
           </span>
         </div>
-        <span class="field-hint">{{ p.description }}</span>
+        <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
         <div v-if="patchRun(p.id)" class="patch-run">
           <div v-if="patchRun(p.id)!.progress != null" class="patch-bar">
             <span :style="{ width: (patchRun(p.id)!.progress! * 100) + '%' }" /></div>
           <pre class="repl-log patch-log">{{ patchRun(p.id)!.log.join('\n') }}</pre>
-          <span class="field-hint">status: {{ patchRun(p.id)!.status }}</span>
+          <span class="field-hint cc-muted cc-fs-xs">status: {{ patchRun(p.id)!.status }}</span>
         </div>
       </div>
     </section>
@@ -542,7 +542,7 @@ async function switchWt(path: string) {
       <div class="svc-row">
         <span class="svc-name">Application</span>
         <span class="svc-pill ok"><span class="dot" /> Running</span>
-        <span class="svc-port" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend server (dev): the supervisor relaunches it, page reconnects when it is back'">
@@ -579,7 +579,7 @@ async function switchWt(path: string) {
       <div class="svc-row">
         <span class="svc-name">Napari viewer</span>
         <span class="svc-pill" :class="stateInfo(napariSt).tone"><span class="dot" /> {{ stateInfo(napariSt).label }}</span>
-        <span class="svc-port" v-tooltip.top="'Napari bridge WebSocket'">:{{ diag?.napariPort ?? '7655' }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Napari bridge WebSocket'">:{{ diag?.napariPort ?? '7655' }}</span>
         <span class="svc-actions">
           <button class="save-btn" :disabled="svcBusy === 'napari'" @click="napariAction('restart')"
                   v-tooltip.top="'Close and relaunch the napari bridge (picks up bridge code changes)'">
@@ -601,7 +601,7 @@ async function switchWt(path: string) {
           Use discrete GPU for napari
           <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:var(--cc-fs-xs);" />
         </CcToggle>
-        <span v-if="!gpuSupported" class="field-hint">
+        <span v-if="!gpuSupported" class="field-hint cc-muted cc-fs-xs">
           Only configurable on Linux — on this system the GPU is selected by the OS/driver.
         </span>
       </div>
@@ -609,7 +609,7 @@ async function switchWt(path: string) {
       <div class="svc-row">
         <span class="svc-name">Notebooks</span>
         <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
-        <span class="svc-port" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
         <span class="svc-actions">
           <button v-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
@@ -631,11 +631,11 @@ async function switchWt(path: string) {
       <div class="svc-row">
         <span class="svc-name">Frontend (GUI)</span>
         <span class="svc-pill ok"><span class="dot" /> This window</span>
-        <span class="svc-port" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
       </div>
 
-      <span class="field-hint">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
-      <span v-if="svcMsg" class="field-hint">{{ svcMsg }}</span>
+      <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
+      <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
     </section>
 
     <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
@@ -677,8 +677,8 @@ async function switchWt(path: string) {
           <i class="pi pi-box" /> Packages…
         </button>
       </div>
-      <span v-if="diag && diag.threads > 1" class="field-hint">Multithreaded API active ({{ diag.threads }} threads).</span>
-      <span v-else-if="diag" class="field-hint">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
+      <span v-if="diag && diag.threads > 1" class="field-hint cc-muted cc-fs-xs">Multithreaded API active ({{ diag.threads }} threads).</span>
+      <span v-else-if="diag" class="field-hint cc-muted cc-fs-xs">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
     </section>
 
     <!-- ── Developer ───────────────────────────────────────────────────── -->
@@ -692,7 +692,7 @@ async function switchWt(path: string) {
       </div>
 
       <!-- toggle is on but the server is network-bound → eval is refused server-side (loopback required) -->
-      <span v-if="replToggle && !diag.loopback" class="field-hint">
+      <span v-if="replToggle && !diag.loopback" class="field-hint cc-muted cc-fs-xs">
         The server is bound to <code>{{ diag.host }}</code>, so the console is disabled for safety.
         Relaunch loopback-only to use it: <code>CECELIA_HOST=127.0.0.1 CECELIA_REPL=1 pixi run dev</code>.
       </span>
@@ -701,7 +701,7 @@ async function switchWt(path: string) {
     <!-- ── Debug console — only when BOTH gates pass: flag on AND loopback bind ─── -->
     <section v-if="diag?.replAvailable" class="settings-section">
       <h2 class="section-title">Debug console</h2>
-      <span class="field-hint">
+      <span class="field-hint cc-muted cc-fs-xs">
         Evaluates Julia in the running server — full access, use with care.
         Concurrent task logs may briefly appear here during a run.
       </span>
@@ -808,12 +808,7 @@ async function switchWt(path: string) {
 .field-input[readonly] { color: var(--cc-text-dim); cursor: default; }
 .field-input.mono { font-family: var(--cc-mono); }
 
-.field-hint {
-  display: block;
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-  margin-top: 0.25rem;
-}
+.field-hint { display: block; margin-top: 0.25rem; }
 
 /* Storage box */
 .stor-line {
@@ -878,11 +873,6 @@ async function switchWt(path: string) {
 .toggle-row.disabled { opacity: 0.5; cursor: not-allowed; }
 .toggle-row.disabled input { cursor: not-allowed; }
 
-.no-project {
-  font-size: var(--cc-fs-md);
-  color: var(--cc-text-dim);
-}
-
 /* system control panel: aligned grid — name · status pill · port · actions */
 .svc-row { display: grid; grid-template-columns: 8rem 7rem 3.5rem 1fr; align-items: center;
   column-gap: 0.6rem; margin-bottom: 0.55rem; }
@@ -897,7 +887,7 @@ async function switchWt(path: string) {
 .svc-pill.idle .dot { background: var(--cc-text-dim); }
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
-.svc-port { justify-self: start; font-family: var(--cc-mono); font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.svc-port { justify-self: start; font-family: var(--cc-mono); }
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
 .save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
 .save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }

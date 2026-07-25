@@ -281,7 +281,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
     <!-- ── Physical size & timing ───────────────────────────────── -->
     <section class="panel-section">
-      <div class="section-title">Physical size &amp; timing</div>
+      <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
       <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
         v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s).'">
         <i class="pi pi-ruler" /> Open editor
@@ -294,7 +294,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
     <!-- ── Attribute management ─────────────────────────────────── -->
     <section class="panel-section">
-      <div class="section-title">Attributes</div>
+      <div class="section-title cc-eyebrow">Attributes</div>
 
       <!-- create -->
       <div class="field-row">
@@ -324,7 +324,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
     <!-- ── Assign single value ─────────────────────────────────── -->
     <section class="panel-section" :class="{ disabled: attrDisabled }">
-      <div class="section-title">Assign value</div>
+      <div class="section-title cc-eyebrow">Assign value</div>
       <div class="field-row">
         <input class="field-input flex1" v-model="singleValue" placeholder="Value…"
           :disabled="attrDisabled"
@@ -340,7 +340,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
     <!-- ── Regex ──────────────────────────────────────────────── -->
     <section class="panel-section" :class="{ disabled: attrDisabled }">
-      <div class="section-title">Extract via regex</div>
+      <div class="section-title cc-eyebrow">Extract via regex</div>
       <div class="field-row">
         <input class="field-input flex1" v-model="regexpValue" placeholder="Regular expression…"
           :disabled="attrDisabled"
@@ -379,7 +379,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       </button>
       <div v-if="builderOpen" class="builder" :class="{ disabled: attrDisabled }">
         <div class="field-row">
-          <span class="builder-label">Mode</span>
+          <span class="builder-label cc-muted">Mode</span>
           <select class="field-input" v-model="builderMode" @change="applyBuilder" :disabled="attrDisabled">
             <option value="field">Split into fields</option>
             <option value="around">Around a marker</option>
@@ -389,7 +389,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <!-- Field mode: split by a separator, take a field -->
         <template v-if="builderMode === 'field'">
           <div class="field-row">
-            <span class="builder-label">Split by</span>
+            <span class="builder-label cc-muted">Split by</span>
             <select class="field-input" v-model="builderSep" @change="applyBuilder" :disabled="attrDisabled">
               <option value="-">- dash</option>
               <option value="_">_ underscore</option>
@@ -401,7 +401,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               v-model="builderCustomSep" @input="applyBuilder" maxlength="4" placeholder="sep" :disabled="attrDisabled" />
           </div>
           <div class="field-row">
-            <span class="builder-label">Take</span>
+            <span class="builder-label cc-muted">Take</span>
             <select class="field-input" v-model="builderPos" @change="applyBuilder" :disabled="attrDisabled">
               <option value="first">1st field</option>
               <option value="second">2nd field</option>
@@ -417,7 +417,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <!-- Look-around mode: extract a token bounded by context — e.g. "M1a" → digits after "M" → 1 -->
         <template v-else>
           <div class="field-row">
-            <span class="builder-label">Preceded by</span>
+            <span class="builder-label cc-muted">Preceded by</span>
             <input type="text" class="field-input flex1"
               v-model="beforeText" @input="applyBuilder" placeholder="text, e.g. M" :disabled="attrDisabled" />
             <select class="field-input" v-model="beforeCls" @change="applyBuilder" :disabled="attrDisabled"
@@ -430,7 +430,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
             </select>
           </div>
           <div class="field-row">
-            <span class="builder-label">Extract</span>
+            <span class="builder-label cc-muted">Extract</span>
             <select class="field-input" v-model="extractKind" @change="applyBuilder" :disabled="attrDisabled">
               <option value="digits">a number</option>
               <option value="letters">letters</option>
@@ -443,7 +443,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               v-model="extractText" @input="applyBuilder" placeholder="e.g. [a-d]" :disabled="attrDisabled" />
           </div>
           <div class="field-row">
-            <span class="builder-label">Followed by</span>
+            <span class="builder-label cc-muted">Followed by</span>
             <input type="text" class="field-input flex1"
               v-model="afterText" @input="applyBuilder" placeholder="text, e.g. -" :disabled="attrDisabled" />
             <select class="field-input" v-model="afterCls" @change="applyBuilder" :disabled="attrDisabled"
@@ -457,17 +457,17 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           </div>
         </template>
 
-        <p v-if="builderMode === 'around'" class="builder-hint">
+        <p v-if="builderMode === 'around'" class="builder-hint cc-muted">
           Each side: fixed text + a part that varies (<em>+ number</em>, <em>+ letters</em>).
         </p>
-        <p class="builder-hint">Adjusts the pattern above — watch the preview, then <strong>Apply</strong>.</p>
+        <p class="builder-hint cc-muted">Adjusts the pattern above — watch the preview, then <strong>Apply</strong>.</p>
       </div>
     </section>
 
     <!-- ── Group sequences ────────────────────────────────────── -->
     <section class="panel-section">
-      <div class="section-title">Group sequences</div>
-      <p class="section-hint">Numbers images within each attribute group (<strong>GroupSeq</strong>).</p>
+      <div class="section-title cc-eyebrow">Group sequences</div>
+      <p class="section-hint cc-muted">Numbers images within each attribute group (<strong>GroupSeq</strong>).</p>
       <button class="cc-btn cc-btn-ghost" @click="assignGroupSequences"
         :disabled="attrNames.length === 0"
         v-tooltip.bottom="'Assign GroupSeq from the current attribute values.'">
@@ -477,7 +477,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
     <!-- ── Channel names ──────────────────────────────────────── -->
     <section class="panel-section">
-      <div class="section-title">Channel names</div>
+      <div class="section-title cc-eyebrow">Channel names</div>
 
       <div class="field-col">
         <textarea class="field-textarea" v-model="channelNameList" rows="4"
@@ -492,7 +492,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         </div>
       </div>
 
-      <p class="section-hint">Or edit channel names directly in the image table.</p>
+      <p class="section-hint cc-muted">Or edit channel names directly in the image table.</p>
     </section>
 
     </div>
@@ -531,19 +531,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 }
 .panel-section.disabled { opacity: 0.45; pointer-events: none; }
 
-.section-title {
-  font-size: var(--cc-fs-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--cc-text-dim);
-}
-.section-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  margin: 0;
-  line-height: 1.5;
-}
+.section-hint { margin: 0; line-height: 1.5; }
 
 .field-row {
   display: flex;
@@ -602,11 +590,11 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 }
 .builder.disabled { opacity: 0.5; pointer-events: none; }
 /* fixed label width + flexible controls → every select/input lines up down the builder */
-.builder-label { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); flex: 0 0 5rem; white-space: nowrap; }
+.builder-label { flex: 0 0 5rem; white-space: nowrap; }
 .builder .field-input { flex: 1 1 0; min-width: 0; }
 .builder .builder-custom { flex: 0 0 3.5rem; }
 
-.builder-hint { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin: 0; line-height: 1.4; }
+.builder-hint { margin: 0; line-height: 1.4; }
 
 /* single preview for the regex field (typed or built) */
 .regex-preview { display: flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); min-width: 0; }

@@ -230,6 +230,89 @@ export function findHandRolledIconButtons(
   return out
 }
 
+// ── Utilities shadowed by a scoped class on the same element ──────────────────────────────────────
+
+/** A global utility that another class on the same element overrides, so it does nothing. */
+export interface ShadowedUtility {
+  path:     string
+  utility:  string
+  by:       string
+  props:    string[]
+}
+
+/**
+ * A utility class that a scoped class on the SAME element beats on the utility's own properties.
+ *
+ * This is the failure mode adopting a utility *introduces*, and it is invisible: scoped CSS weighs
+ * (0,2,0) once Vue adds `[data-v-…]`, a global utility weighs (0,1,0). So a rule that used to win a
+ * same-specificity tie on SOURCE ORDER starts losing outright the moment the class it was tying with
+ * becomes a utility. `TaskList`'s log placeholder did exactly this — `.dim` sat after `.task-log` and
+ * won; migrating `.dim` to `.cc-muted` silently handed the property back to `.task-log`.
+ *
+ * The check cannot tell a deliberate override from an accidental one — both are "a scoped class sets
+ * the same property" — so it pins an exact list and each survivor states why it is intentional. That
+ * is the same shape as the icon-button and input-base lists, and those have held.
+ *
+ * Deliberately narrow, and the first cut of it was not: run across every utility it flagged ~30 sites,
+ * nearly all `.cc-btn` overridden on `padding`/`transition`/`gap`. That is not a defect — composing a
+ * button and adjusting its geometry is exactly what the button vocabulary is for. Only the TEXT
+ * scenarios have a role that a shadow silently cancels, and only on the properties that ARE the role.
+ * Same precision-over-recall call that dropped the `card` matcher.
+ */
+const SHADOW_UTILS = new Set(['cc-muted', 'cc-eyebrow', 'cc-readout', 'cc-empty'])
+const SHADOW_PROPS = new Set([
+  'color', 'font-size', 'font-weight', 'text-transform', 'letter-spacing', 'font-variant-numeric',
+])
+
+export function findShadowedUtilities(
+  sources: Array<{ path: string, text: string }>,
+  utilProps: Record<string, Set<string>>,
+): ShadowedUtility[] {
+  const out: ShadowedUtility[] = []
+  for (const { path, text } of sources) {
+    const si = text.indexOf('<style')
+    if (si < 0) continue
+    const template = text.slice(0, si)
+
+    // scoped rules keyed by a BARE single class → the properties they set
+    const scoped: Record<string, Set<string>> = {}
+    for (const rule of cssRules(text.slice(si))) {
+      for (const part of rule.selector.split(',')) {
+        const m = /^\.([\w-]+)$/.exec(part.trim())
+        if (!m) continue
+        const props = (scoped[m[1]] ??= new Set<string>())
+        for (const d of rule.body.split(';')) {
+          const i = d.indexOf(':')
+          if (i > 0) props.add(d.slice(0, i).trim())
+        }
+      }
+    }
+
+    const seen = new Set<string>()
+    for (const m of template.matchAll(/\bclass="([^"]*)"/g)) {
+      const names = m[1].split(/\s+/).filter(Boolean)
+      for (const util of names) {
+        // only the BASE utility carries declarations worth shadowing; a modifier sets one property
+        // and is meant to be overridden by the site
+        if (!SHADOW_UTILS.has(util)) continue
+        const own = utilProps[util]
+        if (!own) continue
+        for (const other of names) {
+          if (other === util || other.startsWith('cc-')) continue
+          const clash = [...(scoped[other] ?? [])]
+            .filter(p => own.has(p) && SHADOW_PROPS.has(p)).sort()
+          if (!clash.length) continue
+          const key = `${util}|${other}|${clash.join(',')}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push({ path, utility: util, by: other, props: clash })
+        }
+      }
+    }
+  }
+  return out
+}
+
 // ── Form controls ─────────────────────────────────────────────────────────────────────────────────
 
 /** A scoped declaration on an input/select/textarea that re-states what the global base already gives. */

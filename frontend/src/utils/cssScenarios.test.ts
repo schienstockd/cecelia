@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
   findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
-  findScopedUtilityOverride, utilityRules, SCENARIO_HINT,
+  findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -169,80 +169,45 @@ describe('inputBase', () => {
   })
 })
 
-// ── The ratchet ───────────────────────────────────────────────────────────────────────────────────
+// ── Hand-rolled scenarios: an exact list, and it is down to one ───────────────────────────────────
 //
-// ~130 rules still hand-roll a scenario that `docs/UI.md` has a utility for. Migrating them all at once
-// would be a churn diff across 45 files, and the plan explicitly warns off that. But the thing actually
-// worth preventing is NEW divergence, and that doesn't require the backlog to be empty first — it
-// requires the count to never rise. So: a per-file baseline that may shrink and must never grow.
+// This was a per-file BASELINE of ~310 rules that "may shrink and must never grow", because migrating
+// them all at once would have been a churn diff across 45 files. It is now empty except for one
+// genuinely un-adoptable site, so the ratchet has become what it was always converging on: an exact
+// list. That is a stronger bar — a count-based baseline silently permits swapping one violation for
+// another within a file, and it stops meaning anything once it reaches zero.
 //
-// Touching a file in this list? Migrate its rules and lower the number. Adding a file? Use the utility
-// instead. The failure message tells you which.
-//
-// The four chain-node files that briefly appeared here are gone again, and how they showed up is worth
-// remembering: the `muted` matcher keys on `color: var(--cc-text-dim)` and never matched the
-// `color: var(--cc-text-dim, #8b8ca7)` spelling, so stripping the dead hex fallbacks revealed six
-// long-standing rules this check had been blind to. That was the third blind spot of one shape — a
-// matcher pinned to ONE spelling of a value the codebase writes more than one way (the others: only
-// reading <style> blocks, so inline `style="font-size:…"` was invisible; and keying on a *literal*
-// size, so tokenising a rule silently un-flagged it). When adding a matcher, ask which other spellings
-// of the same declaration exist: token vs literal, with fallback vs without, scoped vs inline.
-const BASELINE: Record<string, number> = {
-  'components/ImageMetadataDialog.vue': 3,
-  'components/ImageTable.vue': 3,
-  'components/LabLogPanel.vue': 5,
-  'components/ModuleLayout.vue': 5,
-  'components/PackagesDialog.vue': 4,
-  'components/ProjectPanel.vue': 5,
-  'components/ViewerPanel.vue': 5,
-  'components/canvas/LayoutCanvas.vue': 3,
-  'components/canvas/PlateBuilder.vue': 3,
-  'components/canvas/PopulationManager.vue': 4,
-  'components/canvas/SummaryPanel.vue': 3,
-  'components/plots/GateScatterCell.vue': 3,
-  'modules/AnimationModule.vue': 6,
-  'modules/ChainModule.vue': 11,
-  'modules/SettingsModule.vue': 3,
-  'modules/TasksModule.vue': 6,
-  'modules/batchmovies/BatchMoviesPanel.vue': 4,
-  'modules/metadata/MetadataPanel.vue': 4,
-  'tasks/ParamRenderer.vue': 5,
-  'tasks/TaskList.vue': 5,
-}
+// It is now EMPTY. The last survivor was `AnimationModule`'s `.tl-group .tl-rowhead`, exempted on the
+// grounds that the base `.tl-rowhead` set both `color` and `font-size` so no global utility could win.
+// That was true but it was the wrong conclusion: the base had no business owning either — the colour
+// was redundant (nothing above the timeline dims) and the size belonged on the cells. Asking "why is
+// this one different?" was enough to dissolve it. Treat a new entry here the same way: "the utility
+// cannot apply" is usually a fact about the *base* rule, and the base rule is yours to change.
+const ALLOWED_SCENARIOS: string[] = []
 
 const RAW = import.meta.glob('/src/**/*.{vue,css}', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>
 
 describe('hand-rolled UX scenarios', () => {
-  it('never increase — see docs/UI.md for the canonical utility', () => {
+  it('do not exist — every one is migrated', () => {
     const sources = Object.entries(RAW)
       .filter(([path]) => path !== '/src/style.css')          // style.css DEFINES the utilities
       .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
 
     expect(sources.length).toBeGreaterThan(100)               // the glob resolved
 
-    const counts: Record<string, number> = {}
-    const rules: Record<string, string[]> = {}
-    for (const hit of findReimplementedScenarios(sources)) {
-      counts[hit.path] = (counts[hit.path] ?? 0) + 1
-      ;(rules[hit.path] ??= []).push(`${hit.selector} → ${SCENARIO_HINT[hit.scenario]}`)
-    }
+    // Name the rule AND the utility it wants: a file and a count leave the next reader re-deriving
+    // which rule moved and where it should go — by grep, which got a wrong number every time.
+    const found = findReimplementedScenarios(sources)
+      .map(h => `${h.path} :: ${h.scenario} :: ${h.selector}`)
+    const extra = found.filter(f => !ALLOWED_SCENARIOS.includes(f))
+      .map(f => `${f}  → use ${SCENARIO_HINT[findReimplementedScenarios(sources)
+        .find(h => `${h.path} :: ${h.scenario} :: ${h.selector}` === f)!.scenario]}`)
 
-    const regressions: string[] = []
-    const improvements: string[] = []
-    for (const path of new Set([...Object.keys(BASELINE), ...Object.keys(counts)])) {
-      const was = BASELINE[path] ?? 0
-      const now = counts[path] ?? 0
-      // Name the rules, not just the delta: a file and a count leave you re-deriving which rule moved
-      // and which utility it wants — by grep, which is how every count in this area got wrong before.
-      if (now > was) regressions.push(`${path}: ${was} → ${now}\n    ${rules[path].join('\n    ')}`)
-      if (now < was) improvements.push(`${path}: ${was} → ${now} (lower the BASELINE entry)`)
-    }
-
-    expect(regressions).toEqual([])
-    // Improvements fail too, on purpose: an un-updated baseline silently stops ratcheting.
-    expect(improvements).toEqual([])
+    expect(extra).toEqual([])
+    // Fails on improvement too: if the survivor is ever restructured, drop it from the list.
+    expect(found.sort()).toEqual([...ALLOWED_SCENARIOS].sort())
   })
 })
 
@@ -267,6 +232,70 @@ describe('scoped overrides of a global utility', () => {
     const found = findScopedUtilityOverride(sources, utils)
       .map(r => `${r.path} | ${r.selector} | ${r.decl}`)
     expect(found.sort()).toEqual([])
+  })
+})
+
+describe('the shared size ladder', () => {
+  // Two classes of equal specificity are decided by SOURCE ORDER, and `.cc-muted`, `.cc-empty`,
+  // `.cc-readout` and `.cc-eyebrow` each set a font-size of their own. So `.cc-fs-*` only wins if it
+  // is declared after all of them. The first cut of the collapse put the ladder above them: markup
+  // right, class names right, and every `.cc-eyebrow .cc-fs-2xs` silently rendering at the eyebrow's
+  // 11px. Nothing caught it — the classes were all present and correct, which is all the other checks
+  // look at. Hence an explicit ordering assertion.
+  it('is declared after every scenario that sets a font-size of its own', () => {
+    const css = RAW['/src/style.css'] ?? ''
+    const at = (sel: string) => {
+      const i = css.search(new RegExp(`^\\${sel}\\s*\\{`, 'm'))
+      expect(i, `${sel} not found in style.css`).toBeGreaterThan(-1)
+      return i
+    }
+    const firstStep = at('.cc-fs-lg')
+    for (const scenario of ['.cc-muted', '.cc-empty', '.cc-readout', '.cc-eyebrow']) {
+      expect(at(scenario), `${scenario} must be declared BEFORE the .cc-fs-* ladder, or it wins the ` +
+        'equal-specificity tie and the size modifier silently does nothing').toBeLessThan(firstStep)
+    }
+  })
+})
+
+describe('shadowed utilities', () => {
+  // The failure mode that adopting a utility INTRODUCES. Scoped CSS weighs (0,2,0) with Vue's
+  // [data-v-…]; a global utility weighs (0,1,0). So a scoped class that used to win a same-specificity
+  // tie on source order starts winning outright — and the utility you just added does nothing.
+  // `TaskList`'s log placeholder hit this during the migration that emptied the list above.
+  //
+  // An exact list: the check cannot distinguish a deliberate override from an accident, so each
+  // survivor says which it is. All of these deliberately set a DIFFERENT value.
+  const ALLOWED = [
+    // hints that are muted in colour but italic and a tier down — the file comments say so
+    'components/CopyDialog.vue | cc-muted shadowed by copy-hint on font-size',
+    'components/CropPanel.vue | cc-muted shadowed by crop-hint on font-size',
+    'components/ProjectPanel.vue | cc-muted shadowed by pp-io-hint on font-size',
+    'modules/cluster/ClusterHeatmapPanel.vue | cc-muted shadowed by feat-empty on font-size',
+    // an error line: muted layout, danger colour
+    'components/canvas/SummaryPanel.vue | cc-muted shadowed by sp-err on color',
+    // deliberately CANCELS the eyebrow's caps for the one toggle that shares the label class
+    'components/ViewerPanel.vue | cc-eyebrow shadowed by movie-title-toggle on letter-spacing,text-transform',
+    // tick labels size off the dynamic --gate-font, so only the colour comes from the utility
+    'components/plots/GateScatterCell.vue | cc-muted shadowed by xtick-lbl on font-size',
+    'components/plots/GateScatterCell.vue | cc-muted shadowed by ytick-lbl on font-size',
+    // `color: inherit` on purpose — the label follows the section header's colour, which changes on
+    // hover and when open, rather than sitting at the eyebrow's fixed dim.
+    'components/CollapsibleSection.vue | cc-eyebrow shadowed by cs-label on color',
+    // Same VALUE as the utility's base, so the shadow changes nothing — and load-bearing for the two
+    // sibling spans that carry `.sel-count` without `.cc-muted` and would otherwise inherit body size.
+    // (Its `color` was NOT deliberate and is gone: it was silently un-dimming the placeholder.)
+    'components/FileBrowser.vue | cc-muted shadowed by sel-count on font-size',
+  ]
+
+  it('are all deliberate — a utility that loses to its own element is a no-op', () => {
+    const utils = utilityRules(RAW['/src/style.css'] ?? '')
+    const sources = Object.entries(RAW)
+      .filter(([path]) => path !== '/src/style.css')
+      .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+
+    const found = findShadowedUtilities(sources, utils)
+      .map(s => `${s.path} | ${s.utility} shadowed by ${s.by} on ${s.props.join(',')}`)
+    expect(found.sort()).toEqual([...ALLOWED].sort())
   })
 })
 

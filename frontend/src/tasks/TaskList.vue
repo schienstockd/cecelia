@@ -84,7 +84,7 @@ function elapsed(t: TaskEntry) {
 
 <template>
   <div class="task-list">
-    <div v-if="items.length === 0" class="task-empty">
+    <div v-if="items.length === 0" class="task-empty cc-muted">
       No tasks yet — select images and click Run.
     </div>
 
@@ -104,18 +104,18 @@ function elapsed(t: TaskEntry) {
             <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click.stop="jumpToTask(t)" v-tooltip.right="'Open in task manager'">
               <i class="pi pi-arrow-left" />
             </button>
-            <span class="task-seq">#{{ t.seq }}</span>
+            <span class="task-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
             <i v-if="t.chainRunId" class="pi pi-sitemap chain-badge"
                v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`" />
             {{ t.label }}
           </span>
-          <span class="task-image" v-tooltip.right="`UID: ${t.imageUid}`">
+          <span class="task-image cc-muted cc-fs-xs" v-tooltip.right="`UID: ${t.imageUid}`">
             <span class="task-uid">{{ t.imageUid }}</span>
             {{ t.imageName }}
           </span>
         </div>
 
-        <span v-if="elapsed(t)" class="task-elapsed"
+        <span v-if="elapsed(t)" class="task-elapsed cc-muted cc-fs-xs"
           v-tooltip.left="t.startedAt ? `Started ${t.startedAt.toLocaleTimeString()}` : ''">
           {{ elapsed(t) }}
         </span>
@@ -175,7 +175,7 @@ function elapsed(t: TaskEntry) {
 
       <!-- log -->
       <pre v-if="expanded.has(t.id) && t.log.length" class="task-log">{{ t.log.join('\n') }}</pre>
-      <div v-else-if="expanded.has(t.id)" class="task-log dim">No log output yet.</div>
+      <div v-else-if="expanded.has(t.id)" class="task-log">No log output yet.</div>
     </div>
   </div>
 </template>
@@ -187,12 +187,7 @@ function elapsed(t: TaskEntry) {
   gap: 0.3rem;
 }
 
-.task-empty {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  text-align: center;
-  padding: 1.5rem 0.5rem;
-}
+.task-empty { padding: 1.5rem 0.5rem; }
 
 .task-item {
   border-radius: var(--cc-radius-md);
@@ -227,28 +222,13 @@ function elapsed(t: TaskEntry) {
   align-items: center;
   gap: 0.3rem;
 }
-.task-seq {
-  font-size: var(--cc-fs-2xs);
-  font-family: var(--cc-mono);
-  font-weight: 700;
-  color: var(--cc-text-dim);
-  flex-shrink: 0;
-}
+.task-seq { font-family: var(--cc-mono); flex-shrink: 0; }
 .chain-badge {
   font-size: var(--cc-fs-2xs);
   color: var(--cc-accent);
   flex-shrink: 0;
 }
-.task-image {
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
+.task-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 0.3rem; }
 .task-uid {
   font-family: var(--cc-mono);
   font-size: var(--cc-fs-2xs);
@@ -260,12 +240,7 @@ function elapsed(t: TaskEntry) {
   border-radius: var(--cc-radius-xs);
 }
 
-.task-elapsed {
-  font-size: var(--cc-fs-xs);
-  font-family: var(--cc-mono);
-  color: var(--cc-text-dim);
-  flex-shrink: 0;
-}
+.task-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 
 .task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
@@ -301,5 +276,5 @@ function elapsed(t: TaskEntry) {
   word-break: break-all;
   border-top: 1px solid var(--cc-border);
 }
-.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+
 </style>

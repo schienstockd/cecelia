@@ -14,7 +14,7 @@ defineProps<{ id: string; selected: boolean }>()
 <template>
   <div class="chain-start-node" :class="{ selected }" title="Start — link to the task(s) a run begins from">
     <span class="start-dot" />
-    <span class="cc-eyebrow cc-eyebrow-3xs">start</span>
+    <span class="cc-eyebrow cc-fs-3xs">start</span>
     <!-- initial node: source only (no target handle) -->
     <Handle type="source" :position="Position.Right" class="node-handle" />
   </div>

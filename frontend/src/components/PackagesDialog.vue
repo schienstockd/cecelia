@@ -71,39 +71,39 @@ function copyAll() {
     </template>
 
     <div class="pk-body">
-      <p v-if="loading" class="state-line"><i class="pi pi-spin pi-cog" /> Reading packages…</p>
-      <p v-else-if="error" class="state-line err"><i class="pi pi-times-circle" /> {{ error }}</p>
+      <p v-if="loading" class="state-line cc-muted"><i class="pi pi-spin pi-cog" /> Reading packages…</p>
+      <p v-else-if="error" class="state-line err cc-muted"><i class="pi pi-times-circle" /> {{ error }}</p>
 
       <template v-else-if="data">
         <!-- Python env (pixi: conda + pypi) -->
         <div class="grp-head">
-          Python env <span class="grp-sub">pixi · conda + pypi</span>
+          Python env <span class="grp-sub cc-muted cc-fs-xs">pixi · conda + pypi</span>
           <span class="grp-count">{{ py.length }}</span>
         </div>
-        <p v-if="data.pythonError" class="state-line warn">
+        <p v-if="data.pythonError" class="state-line warn cc-muted">
           <i class="pi pi-exclamation-triangle" /> {{ data.pythonError }}
         </p>
         <div v-else class="pkg-grid">
           <template v-for="p in py" :key="'py-' + p.name">
             <span class="pk-name">{{ p.name }}</span>
-            <span class="pk-ver mono">{{ p.version }}</span>
-            <span class="pk-kind" :class="p.kind">{{ p.kind }}</span>
+            <span class="pk-ver mono cc-muted">{{ p.version }}</span>
+            <span class="pk-kind cc-eyebrow cc-fs-2xs" :class="p.kind">{{ p.kind }}</span>
           </template>
-          <p v-if="!py.length" class="state-line dim">No matches.</p>
+          <p v-if="!py.length" class="state-line dim cc-muted">No matches.</p>
         </div>
 
         <!-- Julia (juliaup + Manifest — outside pixi) -->
         <div class="grp-head">
-          Julia <span class="grp-sub">juliaup · Manifest</span>
+          Julia <span class="grp-sub cc-muted cc-fs-xs">juliaup · Manifest</span>
           <span class="grp-count">{{ jl.length }}</span>
         </div>
         <div class="pkg-grid">
           <template v-for="p in jl" :key="'jl-' + p.name">
             <span class="pk-name">{{ p.name }}</span>
-            <span class="pk-ver mono">{{ p.version }}</span>
-            <span class="pk-kind" />
+            <span class="pk-ver mono cc-muted">{{ p.version }}</span>
+            <span class="pk-kind cc-eyebrow cc-fs-2xs" />
           </template>
-          <p v-if="!jl.length" class="state-line dim">No matches.</p>
+          <p v-if="!jl.length" class="state-line dim cc-muted">No matches.</p>
         </div>
       </template>
     </div>
@@ -121,18 +121,18 @@ function copyAll() {
 
 .grp-head { display: flex; align-items: baseline; gap: 0.5rem; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); margin: 0.85rem 0 0.4rem; position: sticky; top: 0; background: var(--cc-surface-1); padding: 0.2rem 0; }
 .grp-head:first-child { margin-top: 0.2rem; }
-.grp-sub { font-size: var(--cc-fs-xs); font-weight: 400; color: var(--cc-text-dim); }
+
 .grp-count { margin-left: auto; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); background: var(--cc-surface-2); border-radius: var(--cc-radius-pill); padding: 0.05rem 0.5rem; }
 
 .pkg-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 0.1rem 0.75rem; align-items: baseline; }
 .pk-name { font-size: var(--cc-fs-sm); color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pk-ver { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
-.pk-kind { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-text-dim); min-width: 3.2rem; }
+
+.pk-kind { min-width: 3.2rem; }
 .pk-kind.conda { color: #34d399; }
 .pk-kind.pypi  { color: #60a5fa; }
 
 .mono { font-variant-numeric: tabular-nums; }
-.state-line { display: flex; align-items: center; gap: 0.4rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin: 0.4rem 0; }
+.state-line { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .state-line.err  { color: #f87171; }
 .state-line.warn { color: #fbbf24; }
 .state-line.dim  { grid-column: 1 / -1; }

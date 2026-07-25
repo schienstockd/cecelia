@@ -313,7 +313,7 @@ const visibleUids = computed<string[]>(() =>
         <div class="action-bar">
           <slot name="actions" :has-set="!!activeSet" />
 
-          <span class="image-count" v-if="activeSet">
+          <span class="image-count cc-muted" v-if="activeSet">
             <template v-if="showFilter && filteredUids">
               {{ filteredUids.length }} / {{ activeSet.images.length }}
             </template>
@@ -331,7 +331,7 @@ const visibleUids = computed<string[]>(() =>
               &nbsp;·&nbsp;{{ selectedUids.length }} selected
             </template>
           </span>
-          <span class="no-set-hint" v-else>{{ noSetHint }}</span>
+          <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
 
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
@@ -387,14 +387,14 @@ const visibleUids = computed<string[]>(() =>
         <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
         <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="attr-filter">
           <div class="filter-row proc-row">
-            <span class="filter-key" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
+            <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
             <div class="proc-controls">
               <select v-model="procFun" class="proc-select"
                 v-tooltip.bottom="'Only show images this function has been run on'">
                 <option value="">any function…</option>
                 <option v-for="fun in runFuns" :key="fun" :value="fun">{{ procFunLabel(fun) }}</option>
               </select>
-              <div class="proc-mode" :class="{ disabled: !procFun }">
+              <div class="proc-mode cc-muted" :class="{ disabled: !procFun }">
                 <label v-tooltip.bottom="'Match images the function has EVER been run on'">
                   <input type="radio" value="ever" v-model="procMode" :disabled="!procFun" /> ever
                 </label>
@@ -410,7 +410,7 @@ const visibleUids = computed<string[]>(() =>
         <div v-if="showFilter && activeSet && attrKeys.length > 0 && filtersOpen" class="attr-filter">
           <div class="filter-rows">
             <div v-for="key in attrKeys" :key="key" class="filter-row">
-              <span class="filter-key" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
+              <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
               <ChipSelect class="filter-chips" multiple :options="attrChipOpts(key)"
                 :model-value="attrFilters[key] ?? []"
                 @update:model-value="v => setAttrFilter(key, v as string[])" />
@@ -430,7 +430,7 @@ const visibleUids = computed<string[]>(() =>
         <div class="panel-scroll">
           <CollapsibleSection label="Images" max-height="none"
             :storage-key="`cc-images-open:${module ?? 'default'}`">
-            <div v-if="!activeSet" class="no-set">
+            <div v-if="!activeSet" class="no-set cc-empty">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
               <p>No set selected.</p>
             </div>
@@ -567,13 +567,7 @@ const visibleUids = computed<string[]>(() =>
   flex-shrink: 0;
 }
 
-.image-count {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
+.image-count { display: flex; align-items: center; gap: 0.4rem; }
 .excluded-note { color: var(--cc-sev-warn); }
 
 .filter-badge {
@@ -587,11 +581,7 @@ const visibleUids = computed<string[]>(() =>
   color: var(--cc-accent-soft);
 }
 
-.no-set-hint {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-}
+.no-set-hint { font-style: italic; }
 
 /* ── Attr filter ──────────────────────────────────────────────────────────── */
 
@@ -667,7 +657,7 @@ const visibleUids = computed<string[]>(() =>
   background: var(--cc-surface-1);
   max-width: 240px;
 }
-.proc-mode { display: flex; align-items: center; gap: 0.55rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.proc-mode { display: flex; align-items: center; gap: 0.55rem; }
 .proc-mode label { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
 .proc-mode.disabled { opacity: 0.4; }
 .proc-mode input { cursor: pointer; }
@@ -681,18 +671,7 @@ const visibleUids = computed<string[]>(() =>
   min-height: 1.6rem;
 }
 
-.filter-key {
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  color: var(--cc-text-dim);
-  min-width: 80px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+.filter-key { min-width: 80px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .filter-chips  { flex: 1; min-width: 0; }
 
@@ -706,15 +685,5 @@ const visibleUids = computed<string[]>(() =>
   min-height: 0;
 }
 
-.no-set {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1rem;
-  gap: 0.4rem;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-}
 .no-set p { margin: 0; }
 </style>

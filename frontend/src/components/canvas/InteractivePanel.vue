@@ -43,7 +43,7 @@ defineExpose({ exportImage, exportSvg })
                :title="entry?.label ?? view" :square="entry?.square ?? false"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
-    <div v-else class="ip-missing cc-muted cc-muted-md">Unknown interactive plot “{{ view }}”.</div>
+    <div v-else class="ip-missing cc-muted cc-fs-md">Unknown interactive plot “{{ view }}”.</div>
     <template v-if="duplicable || exportFormats.length" #footer>
       <button v-if="duplicable" class="ip-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same settings) to tweak one thing'"><i class="pi pi-copy" /></button>

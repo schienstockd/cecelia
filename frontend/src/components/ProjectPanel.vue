@@ -229,7 +229,7 @@ const typeColour: Record<ProjectType, string> = {
       <!-- ── RECENT tab ─────────────────────────────────────────────────── -->
       <div v-if="tab === 'recent'" class="pp-body">
 
-        <div v-if="projectMeta.recent.length === 0" class="pp-empty">
+        <div v-if="projectMeta.recent.length === 0" class="pp-empty cc-empty">
           <i class="pi pi-folder" style="font-size:2rem; opacity:0.2" />
           <p>No projects yet.<br>A project holds all your images and analysis for one experiment.</p>
           <button class="cc-btn cc-btn-ghost" @click="tab = 'new'">
@@ -276,10 +276,10 @@ const typeColour: Record<ProjectType, string> = {
                   {{ p.type }}
                 </span>
               </td>
-              <td class="col-path dim" v-tooltip.bottom="p.path">
+              <td class="col-path dim cc-muted" v-tooltip.bottom="p.path">
                 {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
               </td>
-              <td class="col-date dim">{{ formatDate(p.lastOpenedAt) }}</td>
+              <td class="col-date dim cc-muted">{{ formatDate(p.lastOpenedAt) }}</td>
               <td class="col-actions">
                 <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
                 <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy" @click.stop="exportProject(p)"
@@ -330,7 +330,7 @@ const typeColour: Record<ProjectType, string> = {
         </div>
 
         <div class="form-row">
-          <span class="field-hint"
+          <span class="field-hint cc-muted"
             v-tooltip.right="'Override with the CECELIA_PROJECTS_DIR environment variable when starting the Julia server.'">
             <i class="pi pi-folder" />
             <template v-if="projectMeta.projectsDir">
@@ -384,7 +384,7 @@ const typeColour: Record<ProjectType, string> = {
            or import stays visible even when the controls are collapsed. -->
       <template v-if="tab === 'recent'">
         <div v-if="ioTask" class="pp-io pp-io-live">
-          <div class="pp-io-status" :class="ioTask.status">
+          <div class="pp-io-status cc-muted" :class="ioTask.status">
             <span class="pp-io-label">{{ ioTask.label }}</span>
             <span class="pp-io-state">{{ ioTask.status }}</span>
             <div v-if="ioBusy" class="pp-io-bar">
@@ -401,14 +401,14 @@ const typeColour: Record<ProjectType, string> = {
                             storage-key="cc-pm-io-open" max-height="none">
           <div class="pp-io">
             <div class="pp-io-dest">
-              <span class="dim">Exports to</span>
+              <span class="dim cc-muted">Exports to</span>
               <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
               <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'export'"
                       v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
                 <i class="pi pi-folder-open" /> Change
               </button>
             </div>
-            <p class="pp-io-hint dim">Export a project to a portable <code>.ccbundle</code> with the
+            <p class="pp-io-hint dim cc-muted">Export a project to a portable <code>.ccbundle</code> with the
               <i class="pi pi-download" /> button on any row above. Import one below.</p>
             <div class="pp-io-import">
               <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
@@ -449,7 +449,7 @@ const typeColour: Record<ProjectType, string> = {
     <div class="pp-conflict">
       <p>A project <strong>{{ conflict.name }}</strong> (<code>{{ conflict.uid }}</code>) already
         exists on disk. What would you like to do?</p>
-      <ul class="pp-conflict-opts">
+      <ul class="pp-conflict-opts cc-muted cc-fs-md">
         <li><strong>Import as copy</strong> — keep both; the import gets a new id and its name is suffixed.</li>
         <li><strong>Replace</strong> — overwrite the existing project with the bundle. <em>Destructive.</em></li>
       </ul>
@@ -514,12 +514,7 @@ const typeColour: Record<ProjectType, string> = {
 /* body — BaseModal's cc-modal-body owns the scroll; the tab panes are plain flow. */
 .pp-body { display: flex; flex-direction: column; }
 
-.pp-empty {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 0.75rem;
-  padding: 3rem 1rem;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-md);
-}
+.pp-empty { gap: 0.75rem; padding: 3rem 1rem; }
 .pp-empty p { margin: 0; }
 
 /* project table */
@@ -556,7 +551,7 @@ const typeColour: Record<ProjectType, string> = {
 .pp-conflict { padding: 1rem 1.25rem; font-size: var(--cc-fs-md); color: var(--cc-text); }
 .pp-conflict p { margin: 0 0 0.6rem; }
 .pp-conflict code { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); }
-.pp-conflict-opts { margin: 0; padding-left: 1.1rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
+.pp-conflict-opts { margin: 0; padding-left: 1.1rem; }
 .pp-conflict-opts li { margin: 0.2rem 0; }
 
 .pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: var(--cc-fs-sm); flex-wrap: wrap; }
@@ -569,10 +564,7 @@ const typeColour: Record<ProjectType, string> = {
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .pp-io-select { flex: 1 1 180px; }
 .pp-io-path { flex: 2 1 180px; }
-.pp-io-status {
-  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
-}
+.pp-io-status { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
 .pp-io-state { text-transform: uppercase; font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; }
 .pp-io-status.done  .pp-io-state { color: #34d399; }
@@ -603,7 +595,6 @@ const typeColour: Record<ProjectType, string> = {
   border: 1px solid #a78bfa44;
 }
 .type-badge { font-size: var(--cc-fs-sm); font-weight: 600; text-transform: uppercase; }
-.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 
 /* form */
 .pp-form { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
@@ -618,10 +609,7 @@ const typeColour: Record<ProjectType, string> = {
 .form-input::placeholder { color: var(--cc-text-dim); }
 
 .field-error { font-size: var(--cc-fs-sm); color: #fca5a5; }
-.field-hint {
-  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
-  display: flex; align-items: center; gap: 0.3rem;
-}
+.field-hint { display: flex; align-items: center; gap: 0.3rem; }
 .dir-hint {
   font-family: var(--cc-mono);
   font-size: var(--cc-fs-xs);

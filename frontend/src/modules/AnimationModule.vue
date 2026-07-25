@@ -252,7 +252,7 @@ async function render() {
           channels/populations per keyframe, then render — the movie interpolates between keyframes.</p>
       </div>
       <div class="anim-head-ctl">
-        <label class="anim-fps" v-tooltip.bottom="'Output frames per second'">
+        <label class="anim-fps cc-muted" v-tooltip.bottom="'Output frames per second'">
           fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
           <span class="anim-num">{{ anim.fps }}</span>
         </label>
@@ -260,7 +260,7 @@ async function render() {
         <CcToggle class="anim-title-toggle" v-model="anim.titleCard.enabled" label="Title card"
                v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'" />
         <template v-if="anim.titleCard.enabled">
-          <label class="anim-fps" v-tooltip.bottom="'Title-card duration (seconds)'">
+          <label class="anim-fps cc-muted" v-tooltip.bottom="'Title-card duration (seconds)'">
             <input type="range" min="1" max="10" step="1" v-model.number="anim.titleCard.durationSec" class="anim-range" />
             <span class="anim-num">{{ anim.titleCard.durationSec }}s</span>
           </label>
@@ -313,10 +313,10 @@ async function render() {
                   <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" />
                   <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
                 </div>
-                <div v-if="keyframeTime(f)" class="tl-time">{{ keyframeTime(f) }}</div>
+                <div v-if="keyframeTime(f)" class="tl-time cc-readout cc-fs-2xs">{{ keyframeTime(f) }}</div>
                 <div class="tl-colctl">
                   <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="i === 0" @click="anim.move(f.id, -1)" v-tooltip.bottom="'Move earlier'"><i class="pi pi-chevron-left" /></button>
-                  <span class="tl-kf">{{ i + 1 }}</span>
+                  <span class="tl-kf cc-muted cc-fs-xs">{{ i + 1 }}</span>
                   <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="i === frames.length - 1" @click="anim.move(f.id, 1)" v-tooltip.bottom="'Move later'"><i class="pi pi-chevron-right" /></button>
                   <button class="tl-ico cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!isEdited(f)" @click="resetKeyframe(f)" v-tooltip.bottom="'Reset to the captured view'"><i class="pi pi-refresh" /></button>
                   <ConfirmDeleteButton title="Delete keyframe" armed-title="Click again to delete" @confirm="deleteKeyframe(f)" />
@@ -324,15 +324,15 @@ async function render() {
                 <div class="tl-dur" v-tooltip.bottom="'Seconds this keyframe tweens from the previous'">
                   <input type="range" min="0.1" max="10" step="0.1" :value="f.duration ?? 1" class="tl-durrange"
                          @input="f.duration = Number(($event.target as HTMLInputElement).value)" />
-                  <span class="tl-durval">{{ (f.duration ?? 1).toFixed(1) }}s</span>
+                  <span class="tl-durval cc-readout cc-fs-2xs">{{ (f.duration ?? 1).toFixed(1) }}s</span>
                 </div>
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr class="tl-group"><td class="tl-rowhead">Channels</td><td v-for="f in frames" :key="f.id" /></tr>
+            <tr class="tl-group"><td class="tl-rowhead cc-eyebrow cc-fs-3xs">Channels</td><td v-for="f in frames" :key="f.id" /></tr>
             <tr v-for="name in channelRows" :key="'c'+name" class="tl-row">
-              <td class="tl-rowhead" :title="name">{{ name }}</td>
+              <td class="tl-rowhead cc-fs-sm" :title="name">{{ name }}</td>
               <td v-for="f in frames" :key="f.id" class="tl-cell">
                 <button v-if="cellState(f, name) !== null" class="tl-dot" :class="{ on: cellState(f, name) }"
                         :style="cellState(f, name) ? { background: layerColour(f, name), borderColor: layerColour(f, name) } : undefined"
@@ -342,9 +342,9 @@ async function render() {
             </tr>
 
             <template v-if="popRows.length">
-              <tr class="tl-group"><td class="tl-rowhead">Populations &amp; overlays</td><td v-for="f in frames" :key="f.id" /></tr>
+              <tr class="tl-group"><td class="tl-rowhead cc-eyebrow cc-fs-3xs">Populations &amp; overlays</td><td v-for="f in frames" :key="f.id" /></tr>
               <tr v-for="name in popRows" :key="'p'+name" class="tl-row">
-                <td class="tl-rowhead" :title="name">{{ name }}</td>
+                <td class="tl-rowhead cc-fs-sm" :title="name">{{ name }}</td>
                 <td v-for="f in frames" :key="f.id" class="tl-cell">
                   <button v-if="cellState(f, name) !== null" class="tl-dot" :class="{ on: cellState(f, name) }"
                           :style="cellState(f, name) ? { background: layerColour(f, name), borderColor: layerColour(f, name) } : undefined"
@@ -354,10 +354,10 @@ async function render() {
               </tr>
             </template>
 
-            <tr class="tl-group"><td class="tl-rowhead">Camera</td><td v-for="f in frames" :key="f.id" /></tr>
+            <tr class="tl-group"><td class="tl-rowhead cc-eyebrow cc-fs-3xs">Camera</td><td v-for="f in frames" :key="f.id" /></tr>
             <tr class="tl-row">
-              <td class="tl-rowhead">zoom</td>
-              <td v-for="f in frames" :key="f.id" class="tl-cell tl-cam">{{ cameraZoom(f) }}</td>
+              <td class="tl-rowhead cc-fs-sm">zoom</td>
+              <td v-for="f in frames" :key="f.id" class="tl-cell tl-cam cc-readout cc-fs-xs">{{ cameraZoom(f) }}</td>
             </tr>
           </tbody>
         </table>
@@ -372,7 +372,7 @@ async function render() {
 .anim-head h1 { font-size: 1.1rem; margin: 0 0 0.2rem; }
 .anim-sub { max-width: 46rem; margin: 0; }   /* + .cc-muted */
 .anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
-.anim-fps { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
+.anim-fps { display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
 .anim-title-toggle { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
@@ -386,8 +386,11 @@ async function render() {
 .anim-timeline { overflow-x: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg);
   background: var(--cc-surface-1); padding: 0.6rem 0.7rem 0.8rem; }
 .tl { border-collapse: separate; border-spacing: 0; }
-.tl-rowhead { position: sticky; left: 0; background: var(--cc-surface-1); text-align: left; font-size: var(--cc-fs-sm);
-  color: var(--cc-text); padding: 0.25rem 0.9rem 0.25rem 0.1rem; max-width: 11rem; overflow: hidden;
+/* No colour or size here: the group-header cells compose .cc-eyebrow, and a scoped class outranks a
+   global utility (0,2,0 vs 0,1,0), so owning either property here made the utility a no-op. The
+   colour was redundant regardless — nothing above the timeline dims, so these inherit --cc-text. */
+.tl-rowhead { position: sticky; left: 0; background: var(--cc-surface-1); text-align: left;
+  padding: 0.25rem 0.9rem 0.25rem 0.1rem; max-width: 11rem; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; z-index: 1; }
 .tl-corner { min-width: 7rem; }
 .tl-col { padding: 0 0.35rem 0.4rem; vertical-align: top; text-align: center; }
@@ -402,17 +405,17 @@ async function render() {
 .tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
 .tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.04em; color: #1f1400; background: var(--cc-warn); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
-.tl-time { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); text-align: center; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
+.tl-time { margin-top: 0.15rem; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
-.tl-kf { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
+.tl-kf { min-width: 0.9rem; text-align: center; }
 /* .tl-ico → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
 .tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }
 .tl-durrange { width: 68px; accent-color: var(--cc-accent); }
-.tl-durval { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums; min-width: 1.8rem; text-align: left; }
-.tl-group .tl-rowhead { font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--cc-text-dim); padding-top: 0.7rem; padding-bottom: 0.2rem; }
+.tl-durval { min-width: 1.8rem; text-align: left; }
+/* + .cc-eyebrow .cc-fs-3xs on the cell — only the spacing is the timeline's business */
+.tl-group .tl-rowhead { padding-top: 0.7rem; padding-bottom: 0.2rem; }
 .tl-row:hover .tl-cell, .tl-row:hover .tl-rowhead { background: rgba(255, 255, 255, 0.03); }
 .tl-cell { text-align: center; padding: 0.22rem 0.35rem; }
 .tl-dot { width: 15px; height: 15px; border-radius: var(--cc-radius-pill); border: 1.5px solid var(--cc-border);
@@ -420,7 +423,6 @@ async function render() {
 .tl-dot:hover { transform: scale(1.18); }
 .tl-dot.on { border-style: solid; }         /* on: filled with the layer colour (set inline) */
 .tl-absent { color: var(--cc-text-dim); opacity: 0.35; }
-.tl-cam { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

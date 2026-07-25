@@ -625,7 +625,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
             <div class="uv-pop">
               <div v-if="!popGroups.length" class="uv-pop-empty cc-muted">No populations in the clustered segmentations.</div>
               <template v-for="grp in popGroups" :key="grp.valueName">
-                <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-eyebrow-2xs">{{ grp.valueName }}</div>
+                <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-fs-2xs">{{ grp.valueName }}</div>
                 <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
                      class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
                      @click="togglePop(grp.valueName, p.path, p.popType)">
@@ -693,7 +693,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 /* population checklist (inside the options popover) */
 .uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); }
 .uv-pop-empty { padding: 10px; }   /* + .cc-muted */
-/* + .cc-eyebrow .cc-eyebrow-2xs (case/tracking/weight/colour at the 10px tier) */
+/* + .cc-eyebrow .cc-fs-2xs (case/tracking/weight/colour at the 10px tier) */
 .uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); position: sticky; top: 0; }
 .uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); color: var(--cc-text); }
 .uv-pop-row:hover { background: var(--cc-surface-2); }
