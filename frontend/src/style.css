@@ -131,7 +131,18 @@ body {
   border: 1px solid #30363d;
   color: #e6edf3;
   border-radius: var(--cc-radius-sm);
-  max-width: 280px;
+  /* `width: max-content` is load-bearing, not cosmetic. PrimeVue positions the tooltip by setting
+     `style.left` on an element absolutely positioned in `document.body` and gives it no width, so with
+     only a `max-width` the box shrink-wraps to whatever space is LEFT of the viewport edge. Near the
+     right edge (e.g. the 280px TaskRunner panel) that is ~25px, and the text wraps one character per
+     line into a vertical strip.
+     Worse, it disabled the library's own escape hatch: `align()` tries right → left → top → bottom,
+     testing `isOutOfBounds` each time — but that measures the ALREADY-collapsed width, which fits, so
+     it reported in-bounds and never flipped. Sizing to content keeps the measurement honest, so the
+     flip fires and the tooltip lands on the target's left instead.
+     Clamp the cap to the viewport too, so a narrow window shortens the line rather than overflowing. */
+  width: max-content;
+  max-width: min(280px, calc(100vw - 1rem));
   line-height: 1.45;
 }
 .p-tooltip-arrow { display: none; }
