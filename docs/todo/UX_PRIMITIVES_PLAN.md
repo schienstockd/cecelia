@@ -36,6 +36,7 @@ read these; do not re-derive one by grep.
 | `findRestatedInputBase` + `inputBase` | `cssScenarios.ts` | form-control rules re-stating the global input base | exact list (2 survivors, each a class shared with a non-input element) |
 | `findDeadTokenRefs` | `cssTokens.ts` | a reference to a `--*` property `style.css` never declares | must be empty |
 | `findNonRootTokenDecls` | `cssTokens.ts` | the global scale declared anywhere but `:root` (declared ≠ *reachable*) | must be empty |
+| the ladder-order assertion | `cssScenarios.test.ts` | `.cc-fs-*` must be declared AFTER every scenario base that sets a font-size — equal specificity, so source order decides | must hold |
 
 Shared plumbing at the top of `cssScenarios.ts`: `styleBlocks()` and `cssRules()` (which recurses into
 `@media`). `SCENARIO_HINT` supplies the "migrate it to this" text the ratchet prints. Three things that
@@ -50,11 +51,14 @@ are easy to break:
   labelled `muted`. Nothing in the CSS separates them, so `SCENARIO_HINT` names both candidates rather
   than talking the next migrator out of the tabular figures.
 
-## Open
+## Status: the sweep is finished
 
-- **Nothing.** The scenario backlog is done: ~310 → 132 → 90 → **0**, and the ratchet is an exact
-  empty list rather than a shrinking per-file count. New divergence fails immediately and there is no
-  longer a backlog to hide in.
+**The scenario backlog is zero** — ~310 → 132 → 90 → **0** — and the ratchet is an exact empty list
+rather than a shrinking per-file count. New divergence fails immediately, and there is no longer a
+backlog for it to hide in. What follows is the standing not-doing list, not open work.
+
+## Deliberately not extracted
+
 - **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — distinct from a section header, and
   deliberately NOT extracted. Inspected, the two sites differ on **four** axes: `TaskList` uses a
   focusable `<button>` (already `.cc-btn-bare .cc-btn-icon`) with a tooltip, the icon as click target and
