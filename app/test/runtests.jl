@@ -5719,4 +5719,62 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    # ── UI copy budget: task-spec `tip` fields ────────────────────────────────────────────────────
+    #
+    # The enforceable half of `docs/UI.md` → *UI copy — keep it short*, for the surface Julia owns.
+    # A `tip` renders as a tooltip on the task form, so it carries the same bar as any other tooltip:
+    # one line, under 90 characters, no second sentence explaining itself. This lives here rather than
+    # in the frontend suite because task specs are backend files and the frontend never holds a copy.
+    #
+    # 56 of 175 tips had drifted past the budget (worst: 332 chars, three sentences on a form field)
+    # before this existed. An exact allow-list, not a count — a count silently permits swapping one
+    # violation for another. Before adding an entry, check whether the fact belongs in a `docs/` file:
+    # that was true of every tip the sweep shortened.
+    @testset "task spec tips stay short" begin
+        COPY_MAX = 90
+        ALLOWED = String[]
+
+        # `tip`s nest inside `section`/`group` params, so recurse.
+        function collect_tips!(out, params, file)
+            params isa AbstractVector || return out
+            for p in params
+                p isa AbstractDict || continue
+                t = get(p, :tip, get(p, "tip", nothing))
+                t isa AbstractString && push!(out, (file, join(split(String(t))," ")))
+                collect_tips!(out, get(p, :params, get(p, "params", nothing)), file)
+            end
+            out
+        end
+
+        # A trailing dot here is an abbreviation, not a sentence end ("e.g. HMM state").
+        ABBREV = r"(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|approx|fig|no)\.$"i
+        function multi_sentence(s)
+            for m in eachmatch(r"\S*\.\s+(?=[A-Z(])", s)
+                occursin(ABBREV, rstrip(m.match)) || return true
+            end
+            false
+        end
+
+        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
+        tips = Tuple{String,String}[]
+        nspecs = 0
+        for (root, _, files) in walkdir(tasks_dir), f in files
+            endswith(f, ".json") || continue
+            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
+            spec isa AbstractDict || continue
+            nspecs += 1
+            collect_tips!(tips, get(spec, :params, nothing), f)
+        end
+
+        @test nspecs > 20                       # the walk found the specs
+        @test length(tips) > 100                # ...and their tips
+
+        too_long = ["$f: [$(length(t))] $t" for (f, t) in tips
+                    if length(t) > COPY_MAX && !(t in ALLOWED)]
+        @test isempty(too_long)
+
+        two_sentence = ["$f: $t" for (f, t) in tips if multi_sentence(t) && !(t in ALLOWED)]
+        @test isempty(two_sentence)
+    end
+
 end

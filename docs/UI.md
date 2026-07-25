@@ -179,6 +179,23 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
 explaining, put it in the relevant `docs/<AREA>.md` and leave the UI silent.
 
+**Two of these are now enforced, not just asked for.** `utils/uiCopy.test.ts` fails the build on a
+`v-tooltip` literal, a `ModuleLayout` `hint`, or a task-JSON `tip` that runs past **90 characters** or
+into a **second sentence** — across every SFC and every task spec. It holds an **exact allow-list**,
+not a count (the `cssScenarios` lesson: a count silently permits swapping one violation for another,
+and stops meaning anything at zero). Both surfaces were swept to zero, so the bar is that list and
+nothing else, and the current single entry is a *notification* whose second sentence is a call to
+action rather than an explanation. Before adding an entry, check whether the fact belongs in
+`docs/<AREA>.md` instead — that was true of every one of the ~100 strings the sweeps shortened.
+
+> **Measure the rendered string, not the binding.** A tooltip binding is an *expression*, so
+> `v-tooltip="flagged ? 'Deselect flagged images' : 'Select all N flagged image(s)'"` is 95 characters
+> while both branches a user actually sees are well inside budget. Counting expressions over-reports by
+> roughly 80% (73 "violations" against a true 41) and sends you off to rewrite ternaries that were
+> already fine. `uiCopy.tooltipStrings` extracts the string literals inside each binding and strips
+> `${…}`, whose rendered width is unknowable at check time; page subtitles, empty states and QC text
+> are not machine-checked at all and stay a review question.
+
 ---
 
 ## Design tokens
