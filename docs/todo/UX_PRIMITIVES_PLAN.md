@@ -116,8 +116,17 @@ already had exactly the right colour behaviour and 4 sites already spelled it th
 genuinely intentional part. `findHandRolledIconButtons` + its test now fail on any icon-only `<button>`
 not built from `.cc-btn`, with the ten `.seg` buttons pinned by path.
 
-Three defects in my own migration script, all caught by inspecting output rather than by the green
-tests: an anchored selector regex silently skipped 11 classes whose rule was preceded by a comment; the
+**Regression, found in the GUI (not by any check): full-height strip controls.** `ModuleLayout`
+`.right-handle` (the right-panel collapse strip) and `TabbedCanvas` `.tab-add` (the "+" cell in the tab
+strip) are markup-identical to an icon-only button — one `<i>`, nothing else — but their rules set a
+**width and no height**, so they stretch as a flex child to fill the panel edge. `.cc-btn-icon`'s fixed
+square collapsed both to a chip at the top. Both restored to their own rules and exempted by name in
+the test. **Markup cannot distinguish these**, so the rule to carry forward is: if a `<button>` has no
+height of its own and relies on stretching, it is not a square icon button — check the geometry, not
+just the contents. The class name said so (`-handle`) and I noted it and moved on anyway.
+
+Three further defects in my own migration script, all caught by inspecting output rather than by the
+green tests: an anchored selector regex silently skipped 11 classes whose rule was preceded by a comment; the
 splice consumed the leading whitespace **and any preceding comment**, gluing rules onto one line; and
 the button scan matched `<button class="footer-btn">` inside `ConfirmButton`'s usage-example doc
 comment. Also resolved: three surviving `.foo .pi { font-size }` child rules that would have overridden

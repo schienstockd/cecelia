@@ -204,7 +204,13 @@ function setAttrFilter(key: string, next: string[]) {
 }
 // chips for one attribute key (value = label, tooltip = the value)
 function attrChipOpts(key: string): ChipOption[] {
-  return (attrValueMap.value[key] ?? []).map(v => ({ value: v, label: v, tip: v }))
+  // A blank attribute value is a legitimate filter ("which images did I not annotate?"), but its chip
+  // rendered as an unlabelled pill: ChipSelect hides the label span when label === '' (that's how
+  // icon-only chips work), so an empty label with no icon leaves an empty chip. Keep the value — the
+  // filter matches on it — and give it something to show.
+  return (attrValueMap.value[key] ?? []).map(v => v.trim() === ''
+    ? { value: v, label: '—', tip: `No ${key} set` }
+    : { value: v, label: v, tip: v })
 }
 function applyFilters() {
   appliedFilters.value = Object.fromEntries(
@@ -471,7 +477,7 @@ const visibleUids = computed<string[]>(() =>
         <!-- drag the left edge to resize (persisted per module); shared by TaskRunner + every panel -->
         <div v-if="!settings.rightPanelCollapsed" class="right-resizer" @mousedown="startResize"
              v-tooltip.left="'Drag to resize'" />
-        <button class="right-handle cc-btn cc-btn-bare cc-btn-icon cc-btn-dense"
+        <button class="right-handle"
           @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
           v-tooltip.left="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'"
           :aria-label="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'">
@@ -529,7 +535,22 @@ const visibleUids = computed<string[]>(() =>
   flex-shrink: 0;
   overflow: hidden;
 }
-.right-handle { border-left: 1px solid var(--cc-border); transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
+/* Full-height strip down the panel's edge, NOT an icon button: it has no height of its own and
+   stretches as a flex child. .cc-btn-icon's fixed square collapsed it to a chip at the top. */
+.right-handle {
+  flex-shrink: 0;
+  width: 1.1rem;
+  border: none;
+  border-left: 1px solid var(--cc-border);
+  background: var(--cc-surface-1);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.right-handle .pi { font-size: var(--cc-fs-xs); }
 .right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 /* drag strip on the panel's left edge to resize (col-resize); thin, highlights on hover */
 .right-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: transparent; transition: background 0.12s; }
