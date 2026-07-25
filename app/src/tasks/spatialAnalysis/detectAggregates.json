@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The population to detect aggregates of (e.g. T cells). Spatially-proximal groups of these cells become aggregates; the rest are non-aggregated."
+      "tip": "The population to detect aggregates of."
     },
     {
       "key": "clustDiameter",
@@ -41,7 +41,7 @@
       "label": "Per timepoint",
       "type": "bool",
       "default": false,
-      "tip": "Live imaging: detect aggregates independently at each timepoint (aggregate IDs stay unique across time). Off = pool all timepoints."
+      "tip": "Detect aggregates per timepoint; off = pool all."
     }
   ]
 }

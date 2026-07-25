@@ -13,14 +13,14 @@
       "type": "valueNameSelection",
       "field": "labels",
       "default": "default",
-      "tip": "Select which label set to measure. Reads {task_dir}/labels/{name}.zarr and writes {task_dir}/labelProps/{name}.h5ad."
+      "tip": "Which label set to measure."
     },
     {
       "key": "intensityValueName",
       "label": "Image for intensities",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Which image version to measure channel intensities from. Can differ from the image used for segmentation."
+      "tip": "Which image version to measure intensities from."
     },
     {
       "key": "measureOptions",
@@ -54,7 +54,7 @@
           "label": "Extended 3D measures",
           "type": "bool",
           "default": false,
-          "tip": "Compute trimesh-based 3D shape descriptors (surface area, sphericity, compactness, ellipsoid axes). Slow but comprehensive for 3D images."
+          "tip": "3D shape descriptors (surface area, sphericity, …); slow."
         }
       ]
     },

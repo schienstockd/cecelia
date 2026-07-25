@@ -10,7 +10,7 @@ import GatingPlots from './gate/GatingPlots.vue'
 
 <template>
   <ModuleLayout module="gate" :show-attrs="true" :show-filter="true" :single-select="true" plots-label="Gating"
-    hint-key="gate" hint="Draw a gate by clicking to place polygon vertices, or drag to draw a rectangle.">
+    hint-key="gate" hint="Click to place polygon points, or drag for a rectangle.">
     <template #plots="{ selectedUids, orderedUids, selectUids }">
       <GatingPlots :image-uid="selectedUids[0] ?? null" :ordered-uids="orderedUids" :select-uids="selectUids" />
     </template>

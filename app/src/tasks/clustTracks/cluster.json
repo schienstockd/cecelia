@@ -12,7 +12,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output column suffix → clusters.<suffix> and obsm['X_umap.<suffix>'] on the per-track table. Keeps multiple resolutions / re-clusterings side by side."
+      "tip": "Output suffix → clusters.<suffix> on the track table."
     },
     {
       "key": "popsToCluster",
@@ -22,7 +22,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Track populations to cluster, across any segmentation — “<seg>/_tracked” is every tracked object of that segmentation (shown when it has ungated tracks), plus any gated tracked sub-populations (e.g. <seg>/qc/_tracked). All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+      "tip": "Track populations to cluster; every selection clustered jointly."
     },
     {
       "key": "clusterMeasures",
@@ -31,7 +31,7 @@
       "popType": "track",
       "multiple": true,
       "default": [],
-      "tip": "Base measures to cluster on. Whole-track motility (live.track.speed, …) is used directly; each cell measure (channels, morphology) and behaviour column (HMM state / transitions) is aggregated to ALL per-track stats automatically (mean/median/sum/quantiles/sd; categorical → within-track frequencies)."
+      "tip": "Base measures; cell measures are aggregated per track automatically."
     },
     {
       "key": "minTracklength",
@@ -74,7 +74,7 @@
           ],
           "tip": "Per-feature percentile rescale to [0,1], per-track total normalisation, or none." },
         { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each feature by its median before the percentile rescale." },
-        { "key": "maxFraction", "label": "Max fraction (per-track)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Per-track normalisation: exclude features exceeding this fraction of a track's total (0 = off)." },
+        { "key": "maxFraction", "label": "Max fraction (per-track)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Exclude features above this fraction of a track's total (0 = off)." },
         { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-feature normalisation." },
         { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-feature normalisation." }
       ]

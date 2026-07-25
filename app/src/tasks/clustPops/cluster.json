@@ -12,7 +12,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output column suffix → clusters.<suffix> and obsm['X_umap.<suffix>']. Keeps multiple resolutions / re-clusterings side by side."
+      "tip": "Output suffix → clusters.<suffix>."
     },
     {
       "key": "popsToCluster",
@@ -22,7 +22,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Populations to cluster, across any segmentation — “<seg> · all” is every cell of that segmentation, plus any gated sub-populations. All selected cells from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+      "tip": "Cells to cluster; every selection is clustered jointly."
     },
     {
       "key": "clusterMeasures",
@@ -31,7 +31,7 @@
       "multiple": true,
       "includeChannels": true,
       "default": [],
-      "tip": "Feature columns to cluster on — channel intensities (mean_intensity_N) and/or object/morphology measures (area, sphericity, …)."
+      "tip": "Feature columns to cluster on."
     },
     {
       "key": "resolution",
@@ -64,7 +64,7 @@
           ],
           "tip": "Per-channel percentile rescale to [0,1], per-cell total normalisation, or none." },
         { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each channel by its median before the percentile rescale." },
-        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Per-cell normalisation: exclude channels exceeding this fraction of a cell's total (0 = off)." },
+        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Exclude channels above this fraction of a cell's total (0 = off)." },
         { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-channel normalisation." },
         { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-channel normalisation." }
       ]

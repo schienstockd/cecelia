@@ -15,7 +15,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Track populations to model, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked, or a gated tracked subset like A/qc/_tracked). One HMM is fitted jointly over all selected populations and all selected images."
+      "tip": "Track populations to model; one HMM is fitted jointly."
     },
     {
       "key": "colName",
@@ -30,7 +30,7 @@
       "type": "labelPropsColsSelection",
       "multiple": true,
       "default": ["live.cell.speed", "live.cell.angle"],
-      "tip": "Per-cell measures to model (Gaussian emissions, one per measurement). Tracking measures (live.cell.*) and object measures (intensities by channel, shape) are listed separately."
+      "tip": "Per-cell measures to model, one Gaussian emission each."
     },
     {
       "key": "numStates",
@@ -69,7 +69,7 @@
             { "value": "mean",   "label": "mean" }
           ],
           "tip": "Statistic the normalised measurements are divided by." },
-        { "key": "scaleMeasurements", "label": "Scale (÷ sd)", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Measurements to divide by their standard deviation (no centring), as in R scale(center=FALSE)." }
+        { "key": "scaleMeasurements", "label": "Scale (÷ sd)", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Divide by standard deviation, without centring." }
       ]
     }
   ]

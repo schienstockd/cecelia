@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The cells to connect into a spatial neighbour graph. Pick a segmentation's 'all' entry for every cell, or specific populations to restrict it. The graph is saved as <segmentation>.spatial.h5ad, named from the pick."
+      "tip": "Cells to connect into a spatial neighbour graph."
     },
     {
       "key": "neighbourMethod",
@@ -26,7 +26,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "Delaunay triangulation (pruned by radius), k nearest neighbours, or a fixed-radius graph — squidpy sq.gr.spatial_neighbors."
+      "tip": "Delaunay (radius-pruned), kNN, or fixed radius."
     },
     {
       "key": "neighbourRadius",
@@ -36,7 +36,7 @@
       "max": 1000,
       "step": 1,
       "default": 30,
-      "tip": "Neighbourhood radius in microns. Used by the fixed-radius graph and to prune Delaunay edges. Centroids are scaled to physical units before building the graph."
+      "tip": "Neighbourhood radius in µm; also prunes Delaunay edges."
     },
     {
       "key": "nNeighbours",

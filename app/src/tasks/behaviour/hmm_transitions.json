@@ -15,7 +15,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Track populations whose HMM state columns to read, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked). Same selection style as HMM States."
+      "tip": "Track populations whose HMM states to read."
     },
     {
       "key": "colName",
@@ -32,7 +32,7 @@
       "trimPrefix": "live.cell.hmm.state.",
       "hideInComposite": true,
       "default": [],
-      "tip": "One or more HMM state columns. Several are combined into a hybrid state before transitions. In the combined HMM task this is set automatically from the states step."
+      "tip": "HMM state columns; several combine into a hybrid state."
     },
     {
       "key": "includeStart",
