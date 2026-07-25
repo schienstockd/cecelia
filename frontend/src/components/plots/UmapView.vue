@@ -625,7 +625,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
             <div class="uv-pop">
               <div v-if="!popGroups.length" class="uv-pop-empty cc-muted">No populations in the clustered segmentations.</div>
               <template v-for="grp in popGroups" :key="grp.valueName">
-                <div v-if="grp.populations.length" class="uv-pop-head">{{ grp.valueName }}</div>
+                <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-eyebrow-dense">{{ grp.valueName }}</div>
                 <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
                      class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
                      @click="togglePop(grp.valueName, p.path, p.popType)">
@@ -660,7 +660,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
             <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title"
                   :style="{ left: t.x + 'px', top: t.y + 'px', fontSize: labelFont + 'px', color: legendInk }">{{ t.label }}</span>
           </template>
-          <div v-else class="uv-empty">
+          <div v-else class="uv-empty cc-empty cc-empty-overlay">
             <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
             <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
           </div>
@@ -680,42 +680,42 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 <style scoped>
 /* position: relative so the overlaid .uv-ctrl (.cc-panel-controls) anchors to the plot box */
 .uv { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12px; color: var(--cc-text-dim); }
+.uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 /* active (ticked) label toggle: filled accent so it's clearly on/off */
 .uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
 /* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */
 .uv-opts { width: 15rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--cc-text-dim); }
-.uv-opt select { font-size: 12px; padding: 2px 4px; max-width: 8.5rem; }
-.uv-opt-sep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
+.uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.uv-opt select { font-size: var(--cc-fs-sm); padding: 2px 4px; max-width: 8.5rem; }
+.uv-opt-sep { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 6px; margin-top: 2px; }
 /* population checklist (inside the options popover) */
-.uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; }
+.uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); }
 .uv-pop-empty { padding: 10px; }   /* + .cc-muted */
-.uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; position: sticky; top: 0; }
-.uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; color: var(--cc-text); }
+/* + .cc-eyebrow .cc-eyebrow-dense (case/tracking/weight/colour at the 10px tier) */
+.uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); position: sticky; top: 0; }
+.uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); color: var(--cc-text); }
 .uv-pop-row:hover { background: var(--cc-surface-2); }
 .uv-pop-row.on { color: var(--cc-accent); }
 .uv-pop-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.uv-pop-tag { font-size: 9px; text-transform: uppercase; color: var(--cc-text-dim); border: 1px solid var(--cc-border); border-radius: 3px; padding: 0 3px; }
+.uv-pop-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; color: var(--cc-text-dim); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 0 3px; }
 .uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
 /* .uv-square (SquarePlot) provides the centred 1:1 box; .uv-plot fills it and carries the ground/frame */
-.uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
+.uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
-  color: #111; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.55); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
+  color: #111; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.55); border-radius: var(--cc-radius-xs); padding: 0 4px; line-height: 1.4; z-index: 2; }
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
 .uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
-  font-size: 10px; font-weight: 700; white-space: nowrap; }
-.uv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }
+  font-size: var(--cc-fs-2xs); font-weight: 700; white-space: nowrap; }
+.uv-empty { padding: 1rem; }   /* + .cc-empty .cc-empty-overlay (stretched over the plot box) */
 .uv-empty .pi { font-size: 1.4rem; opacity: 0.6; }
-.uv-empty p { margin: 0; font-size: 0.8rem; max-width: 22rem; }
-.uv-legend { width: 9.5rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; padding: 5px; }
-.leg-row { display: flex; align-items: center; gap: 5px; padding: 1px 2px; font-size: 11px; }
-.leg-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex-shrink: 0; }
+.uv-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }
+.uv-legend { width: 9.5rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; }
+.leg-row { display: flex; align-items: center; gap: 5px; padding: 1px 2px; font-size: var(--cc-fs-xs); }
+.leg-dot { width: 0.65rem; height: 0.65rem; border-radius: var(--cc-radius-pill); flex-shrink: 0; }
 /* legend ink is themed inline on .uv-legend (light on dark ground, dark on light) so it stays
    legible in the exported PNG; children inherit it. */
 .leg-lbl { flex: 1; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

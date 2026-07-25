@@ -160,9 +160,9 @@ function save() {
           Cancel
         </button>
       </div>
-      <span class="crop-hint">{{ rect ? 'Drag to redraw the rectangle, set z/t, then Save.' : 'Drag a rectangle over the structure to crop.' }}</span>
+      <span class="crop-hint cc-muted">{{ rect ? 'Drag to redraw the rectangle, set z/t, then Save.' : 'Drag a rectangle over the structure to crop.' }}</span>
     </template>
-    <div v-else class="crop-hint">Loading crop preview…</div>
+    <div v-else class="crop-hint cc-muted">Loading crop preview…</div>
   </div>
 </template>
 
@@ -172,15 +172,15 @@ function save() {
    version's MIP by an INTEGER factor to a ≤512px long side, so different native dims render at different
    pixel sizes. width:100% pins the width; only the true aspect ratio (height) varies between versions. */
 .crop-view { position: relative; display: block; width: 100%; line-height: 0; cursor: crosshair; touch-action: none; user-select: none; }
-.crop-img { display: block; width: 100%; height: auto; border: 1px solid var(--cc-border, #2a2a2a); border-radius: 0.3rem; background: #000; }
-.crop-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 8rem; color: var(--cc-text-muted, #888); }
+.crop-img { display: block; width: 100%; height: auto; border: 1px solid var(--cc-border, #2a2a2a); border-radius: var(--cc-radius-sm); background: #000; }
+.crop-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 8rem; color: var(--cc-text-dim); }
 .crop-rect { position: absolute; border: 1.5px solid var(--cc-accent, #a855f7); background: color-mix(in srgb, var(--cc-accent, #a855f7) 12%, transparent); pointer-events: none; }
-.crop-loading { position: absolute; top: 0.3rem; right: 0.3rem; color: var(--cc-accent); font-size: 0.8rem; }
+.crop-loading { position: absolute; top: 0.3rem; right: 0.3rem; color: var(--cc-accent); font-size: var(--cc-fs-md); }
 .crop-row { display: flex; align-items: center; gap: 0.4rem; }
 .crop-row input[type=range] { flex: 1 1 auto; }
-.crop-lbl { color: var(--cc-text-muted, #888); font-size: 0.7rem; width: 2.6rem; }
-.crop-tval { font-size: 0.62rem; color: var(--cc-text); width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+.crop-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); width: 2.6rem; }
+.crop-tval { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
 .crop-actions { display: flex; gap: 0.4rem; }
-.crop-hint { font-size: 0.68rem; color: var(--cc-text-muted, #888); font-style: italic; }
-.crop-err { font-size: 0.7rem; color: #f85149; }
+.crop-hint { font-size: var(--cc-fs-xs); font-style: italic; }   /* + .cc-muted (colour) */
+.crop-err { font-size: var(--cc-fs-xs); color: #f85149; }
 </style>

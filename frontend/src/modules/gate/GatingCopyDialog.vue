@@ -128,17 +128,17 @@ async function copy() {
 
 <style scoped>
 .cg-body { display: flex; flex-direction: column; gap: 0.7rem; }   /* padding from BaseModal */
-.cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.78rem; color: #fcd34d;
-  background: #7c2d1244; border: 1px solid #92400e55; border-radius: 0.3rem; padding: 0.4rem 0.55rem; line-height: 1.35; }
+.cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: var(--cc-fs-sm); color: #fcd34d;
+  background: #7c2d1244; border: 1px solid #92400e55; border-radius: var(--cc-radius-sm); padding: 0.4rem 0.55rem; line-height: 1.35; }
 .cg-empty { margin: 0; }   /* + .cc-muted */
-.cg-all { font-size: 0.75rem; color: var(--cc-text-dim); display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+.cg-all { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
 .cg-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 240px; overflow: auto;
-  border: 1px solid var(--cc-border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; }
-.cg-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--cc-text); cursor: pointer; padding: 0.15rem 0; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 0.4rem 0.5rem; }
+.cg-item { display: flex; align-items: center; gap: 0.5rem; font-size: var(--cc-fs-md); color: var(--cc-text); cursor: pointer; padding: 0.15rem 0; }
 .cg-item input, .cg-all input, .cg-layout input { accent-color: var(--cc-accent); cursor: pointer; }
 .cg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cg-layout { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--cc-text); cursor: pointer; }
-.cg-missing { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.72rem; color: var(--cc-text-dim);
+.cg-layout { display: flex; align-items: center; gap: 0.4rem; font-size: var(--cc-fs-md); color: var(--cc-text); cursor: pointer; }
+.cg-missing { display: flex; flex-direction: column; gap: 0.2rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 0.5rem; }
 .cg-missing-head { display: flex; align-items: center; gap: 0.35rem; color: #f59e0b; }
 .cg-missing-names { padding-left: 1.1rem; word-break: break-word; }

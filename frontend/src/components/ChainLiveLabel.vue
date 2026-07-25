@@ -23,7 +23,7 @@ defineProps<{
 
 <style scoped>
 .live-label {
-  font-size: 10px;
+  font-size: var(--cc-fs-2xs);
   color: var(--cc-text-dim, #8b8ca7);
   white-space: nowrap;
   pointer-events: none;
@@ -57,7 +57,7 @@ defineProps<{
   text-overflow: ellipsis;
 }
 .live-label-sub {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-family: monospace;
   opacity: 0.7;
 }

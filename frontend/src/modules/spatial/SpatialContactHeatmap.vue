@@ -57,17 +57,18 @@ useDataRefresh(() => props.imageUids, load)   // refetch when a spatial task fin
           <option v-for="s in resp.suffixes" :key="s" :value="s">{{ s }}</option>
         </select>
       </label>
-      <span v-if="resp" class="ch-meta">{{ resp.nCells }} cells · {{ resp.nEdges }} contacts</span>
+      <span v-if="resp" class="ch-meta cc-readout">{{ resp.nCells }} cells · {{ resp.nEdges }} contacts</span>
     </div>
     <PlotChart v-if="data" :data="data" :opts="opts" />
-    <div v-else-if="loading" class="ch-empty">Loading…</div>
-    <div v-else class="ch-empty">No contact statistics — run “Contact statistics” for this image first.</div>
+    <div v-else-if="loading" class="ch-empty cc-empty-inline">Loading…</div>
+    <div v-else class="ch-empty cc-empty-inline">No contact statistics — run “Contact statistics” for this image first.</div>
   </div>
 </template>
 
 <style scoped>
 .contact-heatmap { display: flex; flex-direction: column; gap: 0.5rem; }
-.ch-controls { display: flex; align-items: center; gap: 1rem; font-size: 0.85rem; }
-.ch-meta { color: var(--text-muted, #888); }
-.ch-empty { padding: 1rem; color: var(--text-muted, #888); font-size: 0.9rem; }
+.ch-controls { display: flex; align-items: center; gap: 1rem; font-size: var(--cc-fs-md); }
+/* + .cc-readout / .cc-empty-inline — both previously read a `--text-muted` token that has never
+   existed in this app (the real one is --cc-text-dim), so both silently rendered the #888 fallback */
+.ch-empty { padding: 1rem; font-size: var(--cc-fs-lg); }
 </style>

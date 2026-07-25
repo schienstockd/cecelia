@@ -85,8 +85,8 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 .pop-manager {
   position: absolute; z-index: 20; width: 300px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-  font-size: 12px; color: var(--cc-text); user-select: none;
+  border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/shadow), fills its container column */
 .pop-manager.docked { position: static; z-index: auto; width: 100%; box-shadow: none; }
@@ -94,7 +94,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 .pm-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--cc-radius-md) 6px 0 0;
 }
 .pm-title { font-weight: 600; }
 .pm-count { color: var(--cc-text-dim); margin-left: auto; }

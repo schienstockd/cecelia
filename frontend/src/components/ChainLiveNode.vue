@@ -75,9 +75,9 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 .live-node {
   background: var(--cc-surface-1, #1e1b2e);
   border: 1.5px solid #3f3f46;
-  border-radius: 5px;
+  border-radius: var(--cc-radius-sm);
   padding: 5px 9px;
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
   min-width: 110px;
   cursor: pointer;              /* clickable: pick as the resume-from node */
   position: relative;
@@ -96,13 +96,13 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 .restart-badge {
   position: absolute;
   top: -8px; left: 6px;
-  font-size: 8px;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cc-surface-1, #1e1b2e);
   background: var(--cc-accent, #a78bfa);
-  border-radius: 3px;
+  border-radius: var(--cc-radius-xs);
   padding: 1px 4px;
   z-index: 1;
 }
@@ -122,12 +122,12 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   gap: 0.25rem;
   margin: -5px -9px 5px;
   padding: 3px 9px;
-  border-radius: 3px 3px 0 0;
-  font-size: 9px;
+  border-radius: var(--cc-radius-xs) 3px 0 0;
+  font-size: var(--cc-fs-3xs);
 }
 
 .live-status-label {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -135,13 +135,13 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 
 .live-elapsed {
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-family: monospace;
   opacity: 0.8;
 }
 
 .live-fn {
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
   font-weight: 600;
   color: var(--cc-text, #e2e2f0);
   white-space: nowrap;
@@ -154,12 +154,12 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   margin-top: 3px;
 }
 .live-variant {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-family: var(--cc-mono, monospace);
   font-weight: 600;
   color: var(--cc-accent, #a78bfa);
   background: color-mix(in srgb, var(--cc-accent, #a78bfa) 18%, transparent);
-  border-radius: 3px;
+  border-radius: var(--cc-radius-xs);
   padding: 1px 4px;
 }
 </style>

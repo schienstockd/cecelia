@@ -64,16 +64,16 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 .pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-group-head {
   padding: 5px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.06em;
   border-bottom: 1px solid var(--cc-border); position: sticky; top: 0; z-index: 1;
 }
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
-.pm-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.2); }
+.pm-swatch { width: 14px; height: 14px; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid rgba(255,255,255,0.2); }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pm-tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
-  border: 1px solid var(--cc-border); border-radius: 3px; padding: 0 3px; flex-shrink: 0; }
+.pm-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 0 3px; flex-shrink: 0; }
 .pm-icon { background: none; border: none; color: var(--cc-text-dim); cursor: pointer; padding: 2px; }
 .pm-icon:hover { color: var(--cc-text); }
 .pm-icon.lit { color: var(--cc-accent); }

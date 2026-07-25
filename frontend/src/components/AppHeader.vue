@@ -85,8 +85,8 @@ const statusTip: Record<string, string> = {
   cursor: pointer;
   color: var(--cc-text-dim);
   padding: 0.25rem 0.4rem;
-  border-radius: 0.3rem;
-  font-size: 0.9rem;
+  border-radius: var(--cc-radius-sm);
+  font-size: var(--cc-fs-lg);
   margin-left: -0.3rem;
 }
 .nav-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
@@ -105,14 +105,14 @@ const statusTip: Record<string, string> = {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 500;
   padding: 0.2rem 0.65rem;
-  border-radius: 999px;
+  border-radius: var(--cc-radius-pill);
   cursor: default;
   white-space: nowrap;
 }
-.dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); }
 
 .ws-badge.connected    { background: #14532d33; color: #86efac; }
 .ws-badge.connected .dot { background: #4ade80; box-shadow: 0 0 5px #4ade80; }
@@ -127,17 +127,17 @@ const statusTip: Record<string, string> = {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   padding: 0.2rem 0.4rem 0.2rem 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--cc-radius-pill);
   cursor: pointer;
   white-space: nowrap;
   background: color-mix(in srgb, var(--cc-accent) 22%, transparent);
   color: var(--cc-accent);
 }
 .update-badge:hover { background: color-mix(in srgb, var(--cc-accent) 34%, transparent); }
-.update-badge .pi-arrow-circle-up { font-size: 0.8rem; }
+.update-badge .pi-arrow-circle-up { font-size: var(--cc-fs-md); }
 .update-x {
   display: inline-flex;
   background: none;
@@ -146,8 +146,8 @@ const statusTip: Record<string, string> = {
   color: inherit;
   opacity: 0.7;
   padding: 0 0.1rem;
-  border-radius: 0.25rem;
+  border-radius: var(--cc-radius-xs);
 }
 .update-x:hover { opacity: 1; }
-.update-x .pi { font-size: 0.6rem; }
+.update-x .pi { font-size: var(--cc-fs-2xs); }
 </style>

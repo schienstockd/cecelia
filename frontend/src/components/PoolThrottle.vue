@@ -97,26 +97,26 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .pt-root { width: 260px; padding: 0.6rem 0.7rem; }
-.pt-head { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-bottom: 0.5rem; }
+.pt-head { font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text); margin-bottom: 0.5rem; }
 .pt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.9rem; }
 .pt-cell { display: flex; flex-direction: column; gap: 0.15rem; }
 .pt-cell-head { display: flex; justify-content: space-between; align-items: baseline; }
-.pt-label { font-size: 0.76rem; color: var(--cc-text); }
-.pt-val { font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--cc-accent, var(--cc-text)); }
+.pt-label { font-size: var(--cc-fs-sm); color: var(--cc-text); }
+.pt-val { font-size: var(--cc-fs-sm); font-variant-numeric: tabular-nums; color: var(--cc-accent, var(--cc-text)); }
 .pt-slider { width: 100%; accent-color: var(--cc-accent); cursor: pointer; }
 .pt-slider:disabled { opacity: 0.5; cursor: default; }
 
 /* live occupancy readout under each slider — dim when idle, brightens when the pool is busy */
 .pt-occ {
   display: flex; justify-content: space-between; align-items: baseline; gap: 0.3rem;
-  font-size: 0.64rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums;
+  font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums;
 }
 .pt-occ.busy { color: var(--cc-text); }
 .pt-occ.busy .pt-occ-n { color: var(--cc-accent); font-weight: 600; }
 .pt-occ-sep { opacity: 0.5; margin: 0 1px; }
 .pt-occ-q { color: var(--cc-accent); }
-.pt-bar { height: 3px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; margin-top: 2px; }
+.pt-bar { height: 3px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; margin-top: 2px; }
 .pt-bar-fill { height: 100%; background: var(--cc-accent); transition: width 0.3s; }
 
-.pt-hint { font-size: 0.68rem; color: var(--cc-text-dim); margin: 0.55rem 0 0; }
+.pt-hint { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin: 0.55rem 0 0; }
 </style>

@@ -33,7 +33,7 @@ watch(open, v => {
     <button class="cs-toggle" @click="open = !open"
       v-tooltip.right="open ? `Collapse ${label}` : `Expand ${label}`">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
-      <span class="cs-label">{{ label }}</span>
+      <span class="cs-label cc-eyebrow">{{ label }}</span>
     </button>
     <!-- with a real max-height the body scrolls itself; with max-height:none it must NOT be a scroll
          container (overflow-y:auto would still make it the sticky scrollport, so a `position:sticky`
@@ -63,20 +63,17 @@ watch(open, v => {
   border: none;
   cursor: pointer;
   color: var(--cc-text-dim);
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   text-align: left;
   transition: background 0.1s, color 0.1s;
   flex-shrink: 0;
 }
 .cs-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.cs-toggle .pi  { font-size: 0.65rem; }
+.cs-toggle .pi  { font-size: var(--cc-fs-2xs); }
 
-.cs-label {
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.65rem;
-}
+/* the heading IS the eyebrow scenario — colour/weight/tracking/case/size all come from .cc-eyebrow,
+   which this component previously hand-rolled (and at a size the scale had no step for) */
+.cs-label { color: inherit; }
 
 .cs-body {
   overflow-y: auto;

@@ -257,7 +257,7 @@ const FILTERS: ChipOption[] = [
   background: var(--cc-surface-1);
 }
 .tm-title {
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   font-weight: 600;
   color: var(--cc-text);
   flex-shrink: 0;
@@ -270,7 +270,7 @@ const FILTERS: ChipOption[] = [
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   cursor: pointer;
   flex-shrink: 0;
@@ -285,7 +285,7 @@ const FILTERS: ChipOption[] = [
   width: 1.7rem;
   height: 1.7rem;
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   background: none;
   color: var(--cc-text-dim);
   cursor: pointer;
@@ -315,7 +315,7 @@ const FILTERS: ChipOption[] = [
 }
 .tm-empty {
   padding: 2rem 1rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   text-align: center;
   background: var(--cc-bg);
@@ -342,22 +342,22 @@ const FILTERS: ChipOption[] = [
   border-radius: 0 2px 2px 0;
 }
 
-.row-icon { font-size: 0.82rem; flex-shrink: 0; }
+.row-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .row-body  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .row-top   { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
 .mod-pill  {
-  font-size: 0.6rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 700;
   padding: 0.05rem 0.3rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
   flex-shrink: 0;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .row-label {
-  font-size: 0.76rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 500;
   color: var(--cc-text);
   white-space: nowrap;
@@ -365,15 +365,15 @@ const FILTERS: ChipOption[] = [
   text-overflow: ellipsis;
   flex: 1;
 }
-.row-seq { font-size: 0.62rem; font-family: var(--cc-mono); color: var(--cc-text-dim); margin-right: 0.2rem; }
+.row-seq { font-size: var(--cc-fs-2xs); font-family: var(--cc-mono); color: var(--cc-text-dim); margin-right: 0.2rem; }
 .chain-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.58rem;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   padding: 0.05rem 0.3rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
   background: #a78bfa22;
   color: #a78bfa;
   flex-shrink: 0;
@@ -384,11 +384,11 @@ const FILTERS: ChipOption[] = [
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.chain-pill .pi { font-size: 0.55rem; flex-shrink: 0; }
-.chain-pill.sm { font-size: 0.62rem; padding: 0.1rem 0.4rem; max-width: 10rem; }
+.chain-pill .pi { font-size: var(--cc-fs-3xs); flex-shrink: 0; }
+.chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
-.row-elapsed { font-size: 0.65rem; font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
-.row-image { font-size: 0.68rem; color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-elapsed { font-size: var(--cc-fs-2xs); font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
+.row-image { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .row-actions {
   display: flex;
@@ -415,7 +415,7 @@ const FILTERS: ChipOption[] = [
   justify-content: center;
   gap: 0.5rem;
   color: var(--cc-text-dim);
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
 }
 .log-empty .pi { font-size: 1.5rem; opacity: 0.3; }
 
@@ -428,13 +428,13 @@ const FILTERS: ChipOption[] = [
   flex-shrink: 0;
   background: var(--cc-surface-1);
 }
-.log-status-icon { font-size: 0.9rem; flex-shrink: 0; }
+.log-status-icon { font-size: var(--cc-fs-lg); flex-shrink: 0; }
 /* log-status-icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .log-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.log-title { font-size: 0.82rem; font-weight: 600; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.log-image { font-size: 0.7rem; color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.log-elapsed { font-size: 0.7rem; font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
+.log-title { font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-image { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-elapsed { font-size: var(--cc-fs-xs); font-family: var(--cc-mono); color: var(--cc-text-dim); flex-shrink: 0; }
 .log-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
 .log-progress {
@@ -455,7 +455,7 @@ const FILTERS: ChipOption[] = [
   margin: 0;
   padding: 0.75rem 1rem;
   font-family: var(--cc-mono);
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   background: var(--cc-console-bg, var(--cc-bg));
   white-space: pre-wrap;
@@ -469,9 +469,9 @@ const FILTERS: ChipOption[] = [
   border: none;
   cursor: pointer;
   color: var(--cc-text-dim);
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.2rem 0.3rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
 }
 .ra-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .ra-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }

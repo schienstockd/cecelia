@@ -377,25 +377,25 @@ defineExpose({ exportImage })
 .is-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* angle/width live in a ⚙ popover (below), so the bar stays short and never wraps */
 .is-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap;
-  font-size: 12px; }
+  font-size: var(--cc-fs-sm); }
 .is-opts { position: relative; display: inline-flex; }
 .is-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
-  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.72rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text-dim);
+  cursor: pointer; font-size: var(--cc-fs-sm); }
 .is-gear:hover, .is-gear.on { color: var(--cc-text); border-color: #7c3aed; }
 /* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
 .is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
-.is-err { color: #fca5a5; font-size: 11px; }
-.is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: 11px; }
+.is-err { color: #fca5a5; font-size: var(--cc-fs-xs); }
+.is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 .is-slider input[type="range"] { width: 4.5rem; }
-.is-check { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); font-size: 11px; }
+.is-check { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 /* view legend (shared <ViewLegend>): overlaid bottom-left of the frame (z above the auto-hide toolbar
    like the caption/actions); included in the PDF export (not hidden while capturing). The container
    sets the on-image styling (white text, shadow, dark chip); ViewLegend inherits color + font-size. */
-.is-legend { position: absolute; bottom: 6px; left: 6px; padding: 3px 5px; border-radius: 3px;
+.is-legend { position: absolute; bottom: 6px; left: 6px; padding: 3px 5px; border-radius: var(--cc-radius-xs);
   background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7;
-  color: #fff; font-size: 10px; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); }
+  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); }
 .is-strip { flex: 1; min-height: 0; display: flex; padding: 6px; gap: 0; overflow: auto; }
 .is-strip.col { flex-direction: column; }
 /* straight: no box around each frame — just a thin rule BETWEEN frames */
@@ -416,7 +416,7 @@ defineExpose({ exportImage })
    Cecelia-drawn scale bar) will let frames go edge-to-edge again without losing the annotations. */
 .is-img { flex: 1; width: 100%; object-fit: contain; min-height: 0; }
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
-  border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 12px; }
+  border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-sm); }
 .is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
 /* per-frame actions (zoom-to-source / recapture / remove): BOTTOM-left, revealed on cell hover.
    They used to sit TOP-right (z-index 7) — but that's exactly where the CanvasPanel's OWN controls
@@ -432,14 +432,14 @@ defineExpose({ exportImage })
    old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
    solid surface reads cleanly. */
 .is-mini { width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.7rem; transition: color 0.1s, border-color 0.1s, background 0.1s; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text-dim);
+  cursor: pointer; font-size: var(--cc-fs-xs); transition: color 0.1s, border-color 0.1s, background 0.1s; }
 .is-mini:hover { color: var(--cc-text); border-color: #7c3aed; background: var(--cc-surface-1); }
 .is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
    exported strip is just the images */
 .is-strip.capturing .is-mini, .is-strip.capturing .is-capture { display: none; }
 .is-btn { display: inline-flex; align-items: center; gap: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  border: 1px solid var(--cc-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-xs); }
 .is-btn:hover { color: var(--cc-text); }
 </style>

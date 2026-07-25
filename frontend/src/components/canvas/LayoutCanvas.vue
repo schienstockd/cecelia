@@ -568,34 +568,34 @@ defineExpose({ capturePage, collectCsvs })
 <style scoped>
 .layout-canvas { display: flex; flex-direction: column; }
 .lc-empty { padding: 20px; }   /* + .cc-muted */
-.lc-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; }
+.lc-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .lc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* sits right after the sliders (NOT pushed to the far right) so it doesn't shift when the compare
    dropdown changes width (e.g. "by attribute" adds selects) */
 .lc-right { display: flex; align-items: center; gap: 10px; }
-.lc-lbl { color: var(--cc-text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.lc-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
 .lc-sep { width: 1px; height: 1.4rem; background: var(--cc-border); }
 .lc-nm { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .lc-nm input[type="range"] { width: 5rem; }
 .lc-clust { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
-  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
-.lc-clust select { font-size: 11px; }
+  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
+.lc-clust select { font-size: var(--cc-fs-xs); }
 /* ⚙ grid-size / height popover */
 .lc-opts { position: relative; display: inline-flex; }
 .lc-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
-  border: 1px solid var(--cc-border); border-radius: 5px; background: var(--cc-surface-2); color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.72rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-2); color: var(--cc-text-dim);
+  cursor: pointer; font-size: var(--cc-fs-sm); }
 .lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
-.lc-custom { font-size: 11px; padding: 0.22rem 0.55rem; }
+.lc-custom { font-size: var(--cc-fs-xs); padding: 0.22rem 0.55rem; }
 .lc-custom.on { color: var(--cc-text); border-color: #7c3aed; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cc-text-dim); }
+.lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 .lc-pop-row span:first-child { width: 3rem; }
 .lc-pop-row input[type="range"] { flex: 1; }
 .lc-val { min-width: 0.9rem; text-align: center; font-weight: 700; color: var(--cc-text); }
 .lc-compare { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
-  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
+  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .lc-x { opacity: 0.6; }
 .lc-pool { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 /* the board sizes to its grid (rowHeight × rows); the page's panel-scroll handles overflow */
@@ -605,11 +605,11 @@ defineExpose({ capturePage, collectCsvs })
 .lc-canvas-wrap { flex: 1; min-width: 0; overflow: auto; }
 .lc-zoom { display: block; }
 .lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; }
-.lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: 6px; overflow: hidden;
+.lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-md); overflow: hidden;
   display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--cc-bg); }
 /* per-slot title (figure caption): a plain-looking, centred, editable line above the plot */
 .lc-slot-cap { flex: 0 0 auto; width: 100%; box-sizing: border-box; border: none; background: transparent;
-  color: var(--cc-text); font-size: 12px; font-weight: 600; text-align: center; padding: 3px 6px 1px; }
+  color: var(--cc-text); font-size: var(--cc-fs-sm); font-weight: 600; text-align: center; padding: 3px 6px 1px; }
 .lc-slot-cap::placeholder { color: var(--cc-text-dim); font-weight: 400; opacity: 0.55; }
 .lc-slot-cap:focus { outline: none; background: var(--cc-surface-2); }
 /* the plot area fills the rest of the slot (was the slot itself before the caption was added) */
@@ -623,7 +623,7 @@ defineExpose({ capturePage, collectCsvs })
 /* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.lc-add-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.6; }
+.lc-add-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.6; }
 /* stick to the top of the scroll viewport so the pop manager stays reachable as the (tall) board
    scrolls past — otherwise you must scroll back up to change the selection. align-self so the sticky
    box hugs the top of the flex row; its own overflow-y scrolls a manager taller than the viewport. */

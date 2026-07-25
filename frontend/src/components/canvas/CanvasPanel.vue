@@ -134,7 +134,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 <style scoped>
 /* free-floating, draggable + resizable box */
 .panel { position: absolute; display: flex; flex-direction: column; border: 1px solid var(--cc-border);
-  border-radius: 6px; background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  border-radius: var(--cc-radius-md); background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.35);
   width: 460px; height: 440px; min-width: 340px; min-height: 320px; resize: both; z-index: 5;
   transition: border-color 0.12s, box-shadow 0.12s; }
 .panel.active { border-color: var(--cc-selected); box-shadow: 0 0 0 1px var(--cc-selected), 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
@@ -147,13 +147,13 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: move;
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); }
 /* min-width:0 lets the title shrink; the text span truncates so it never shoves the head buttons */
-.panel-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px;
+.panel-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: var(--cc-fs-sm);
   letter-spacing: 0.02em; user-select: none; min-width: 0; }
 .panel-title-txt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.drag-icon { font-size: 10px; opacity: 0.55; flex: none; }
+.drag-icon { font-size: var(--cc-fs-2xs); opacity: 0.55; flex: none; }
 /* docked panels: the drag icon IS the reorder handle (in-flow in the header → aligned with the other
    buttons, no absolute overlay to collide with the pin). Its native dragstart bubbles to the board slot. */
-.drag-icon.grip { cursor: grab; font-size: 12px; opacity: 0.7; padding: 2px; margin: -2px 0; }
+.drag-icon.grip { cursor: grab; font-size: var(--cc-fs-sm); opacity: 0.7; padding: 2px; margin: -2px 0; }
 .drag-icon.grip:active { cursor: grabbing; }
 .panel-spacer { flex: 1; }
 /* main region below the head: the anchor for the auto-hide control overlays (position: relative) and
@@ -170,8 +170,8 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel-foot.inflow { border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .panel-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1); color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.7rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1); color: var(--cc-text-dim);
+  cursor: pointer; font-size: var(--cc-fs-xs); }
 .panel-btn:hover { color: var(--cc-text); border-color: #484f58; }
 .panel-btn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 .panel-remove:hover { color: #f87171; border-color: #f87171; }

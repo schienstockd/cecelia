@@ -291,10 +291,10 @@ function isNavDisabled(item: NavItem): boolean {
   gap: 0.4rem;
   min-width: 0;
 }
-.proj-icon { font-size: 0.85rem; color: var(--cc-accent); flex-shrink: 0; }
+.proj-icon { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; }
 .proj-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .proj-name {
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   font-weight: 600;
   color: var(--cc-text);
   white-space: nowrap;
@@ -303,7 +303,7 @@ function isNavDisabled(item: NavItem): boolean {
   cursor: default;
 }
 .proj-type {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   color: var(--cc-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -314,8 +314,8 @@ function isNavDisabled(item: NavItem): boolean {
   cursor: pointer;
   color: var(--cc-text-dim);
   padding: 0.15rem 0.3rem;
-  border-radius: 0.2rem;
-  font-size: 0.75rem;
+  border-radius: var(--cc-radius-xs);
+  font-size: var(--cc-fs-sm);
   flex-shrink: 0;
 }
 .proj-menu-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
@@ -325,12 +325,12 @@ function isNavDisabled(item: NavItem): boolean {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 500;
   color: var(--cc-accent);
   background: #a78bfa14;
   border: 1px dashed #a78bfa55;
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   padding: 0.35rem 0.6rem;
   cursor: pointer;
   transition: background 0.12s;
@@ -346,7 +346,7 @@ function isNavDisabled(item: NavItem): boolean {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -355,7 +355,7 @@ function isNavDisabled(item: NavItem): boolean {
   transition: color 0.1s;
 }
 .group-heading:hover { color: var(--cc-text); }
-.group-chevron { font-size: 0.55rem; opacity: 0.6; }
+.group-chevron { font-size: var(--cc-fs-3xs); opacity: 0.6; }
 /* Viewer controls: a prominent call-to-action (it drives most napari controls, so it must stand out
    from the dim nav headings — a bordered, filled button with a title + subtitle). */
 .viewer-cta {
@@ -368,7 +368,7 @@ function isNavDisabled(item: NavItem): boolean {
   padding: 0.5rem 0.6rem;
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.4rem;
+  border-radius: var(--cc-radius-md);
   cursor: pointer;
   color: var(--cc-text);
   text-align: left;
@@ -379,10 +379,10 @@ function isNavDisabled(item: NavItem): boolean {
 .viewer-cta:hover { border-color: #16a34a; background: #14261a; }
 .viewer-cta.viewer-on { background: #0f3d24; border-color: var(--cc-viewer); color: #bbf7d0; }
 .viewer-cta-icon { font-size: 0.95rem; color: var(--cc-viewer); flex-shrink: 0; }
-.viewer-cta-title { flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 700; }
-.viewer-cta-state { font-size: 0.8rem; opacity: 0.75; flex-shrink: 0; }
+.viewer-cta-title { flex: 1; min-width: 0; font-size: var(--cc-fs-sm); font-weight: 700; }
+.viewer-cta-state { font-size: var(--cc-fs-md); opacity: 0.75; flex-shrink: 0; }
 /* badge: Claude added a lab-log note while the panel was closed */
-.lablog-badge { font-size: 0.8rem; color: var(--cc-accent); flex-shrink: 0; margin-left: 0.2rem; }
+.lablog-badge { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; margin-left: 0.2rem; }
 .lablog-cta.lablog-unseen { border-color: var(--cc-accent); }
 /* Lab log CTA: a neutral/whiteish variant so it reads as its own thing, distinct from the coloured
    Viewer control. Overrides the .viewer-cta base (defined above → these win on equal specificity). */
@@ -400,9 +400,9 @@ function isNavDisabled(item: NavItem): boolean {
   align-items: center;
   gap: 0.55rem;
   padding: 0.45rem 0.85rem;
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   margin: 0 0.35rem;
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   font-weight: 500;
   color: var(--cc-text-dim);
   text-decoration: none;
@@ -421,20 +421,20 @@ function isNavDisabled(item: NavItem): boolean {
 }
 .nav-item.disabled { opacity: 0.4; cursor: not-allowed; }
 
-.nav-icon  { font-size: 0.85rem; flex-shrink: 0; }
+.nav-icon  { font-size: var(--cc-fs-md); flex-shrink: 0; }
 .nav-label { flex: 1; }
 
 .soon-badge {
-  font-size: 0.6rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 700;
   padding: 0.05rem 0.3rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2);
   color: var(--cc-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.lock-badge { font-size: 0.68rem; color: var(--cc-text-dim); opacity: 0.7; }
+.lock-badge { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); opacity: 0.7; }
 
 /* ── Footer: quick app controls, pinned to the bottom ──────────────────────── */
 .sidebar-footer {
@@ -457,10 +457,10 @@ function isNavDisabled(item: NavItem): boolean {
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   color: var(--cc-text-dim);
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   padding: 0.35rem 0.55rem;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--cc-fs-md);
   text-decoration: none;            /* Settings is a RouterLink (<a>) — no underline */
   transition: background 0.12s, color 0.12s;
 }

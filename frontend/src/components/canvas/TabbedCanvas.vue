@@ -251,34 +251,34 @@ function exportBoard(kind: string) {
 }
 .tab {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 10px; font-size: 12px; cursor: pointer; user-select: none;
+  padding: 5px 10px; font-size: var(--cc-fs-sm); cursor: pointer; user-select: none;
   color: var(--cc-text-dim); background: var(--cc-surface-1);
   border: 1px solid var(--cc-border); border-bottom: none;
-  border-radius: 6px 6px 0 0; max-width: 16rem;
+  border-radius: var(--cc-radius-md) 6px 0 0; max-width: 16rem;
 }
 .tab:hover { color: var(--cc-text); }
 .tab.active { color: var(--cc-text); background: var(--cc-bg); border-color: #7c3aed; }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-edit { font-size: 12px; width: 8rem; background: var(--cc-surface-2); color: var(--cc-text);
-  border: 1px solid #7c3aed; border-radius: 3px; padding: 1px 4px; }
+.tab-edit { font-size: var(--cc-fs-sm); width: 8rem; background: var(--cc-surface-2); color: var(--cc-text);
+  border: 1px solid #7c3aed; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .tab-close {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1rem; height: 1rem; border: none; border-radius: 3px;
-  background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 0.6rem;
+  width: 1rem; height: 1rem; border: none; border-radius: var(--cc-radius-xs);
+  background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-2xs);
 }
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .tab-add {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.8rem; border: none; background: transparent; color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.75rem; margin-left: 2px;
+  cursor: pointer; font-size: var(--cc-fs-sm); margin-left: 2px;
 }
 .tab-add:hover { color: var(--cc-text); }
 .tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-bottom: 2px;
-  padding: 3px 10px; font-size: 11px; border: 1px solid var(--cc-border); border-radius: 5px;
+  padding: 3px 10px; font-size: var(--cc-fs-xs); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1); color: var(--cc-text-dim); cursor: pointer; }
 .tab-pdf:hover:not(:disabled) { color: var(--cc-text); border-color: #7c3aed; }
 .tab-pdf:disabled { opacity: 0.5; cursor: default; }
 /* info hint for the figure-export format choice */
-.tab-info { align-self: center; margin-left: 4px; margin-bottom: 2px; font-size: 12px; color: var(--cc-text-dim); cursor: help; }
+.tab-info { align-self: center; margin-left: 4px; margin-bottom: 2px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: help; }
 .tab-info:hover { color: var(--cc-text); }
 </style>

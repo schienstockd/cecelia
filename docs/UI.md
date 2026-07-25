@@ -33,12 +33,43 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 
 | Scenario | Use | Never |
 |------|-----|-------|
-| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` | a scoped `color: var(--cc-text-dim); font-size: …` |
-| Empty / "nothing here yet" state | `.cc-empty` (drop icon/title/CTA inside for the rich variant) | a new `.*-empty` class |
-| Numeric value readout beside a control | `.cc-readout` (+ `.cc-readout-strong` for a prominent count) | a bespoke `.*-val`/`.*-num` |
-| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` | a scoped uppercase-heading rule |
-| Card / panel / surface container | `.cc-card` | a scoped `surface + 1px border + radius` block |
-| Corner radius / small text size | tokens `--cc-radius-sm/md`, `--cc-fs-xs/sm/md` | a raw `rem` radius or font-size |
+| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-dense`/`-micro` in dense chrome) | a scoped `color: var(--cc-text-dim); font-size: …` |
+| Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
+| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent, `-dense` inline) | a bespoke `.*-val`/`.*-num` |
+| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (+ `-dense` for list/table headers) | a scoped uppercase-heading rule |
+| Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
+| Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
+| Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
+
+**Each utility varies on exactly one axis, and the modifier is that axis** — density (`-dense`/`-micro`),
+surface (`-2`), layout (`-inline`/`-overlay`/`-lg`). Reach for the modifier instead of re-declaring the
+scenario locally: baking a value into the base is what stranded ~10 sites as "bespoke" before. Per-site
+*emphasis* (`font-style: italic`) and *geometry* (width/margin/flex/padding) still belong in scoped CSS.
+
+**There are no raw sizes or radii left, and the tests keep it that way.** Both scales were derived from
+the actual distribution rather than guessed: 33 distinct font-size spellings collapsed onto 6 steps (98%
+of them were already within 0.5px of a step), and 15 radius spellings onto 5. `--cc-radius-sm` was retuned
+`0.25rem`→`0.3rem` because 4.8px is the modal radius, which halved the worst-case shift. A literal
+`font-size`/`border-radius` anywhere — scoped CSS **or** an inline `style=` — now fails
+`utils/cssScenarios.test.ts`. Exempt by rule: display type (>15px), pill radii, `0`, and `em` (which is
+deliberately container-relative, e.g. `ViewLegend` scaling with the export).
+
+**Re-implementing a scenario is a test failure, not a style opinion.** `utils/cssScenarios.test.ts`
+detects a scoped rule that spells out a canonical utility's defining declarations — a dim colour plus a
+hard-coded size *is* `.cc-muted` — and holds a per-file baseline that **may shrink and must never grow**.
+Touch a file, migrate its rules and lower its number; add a new one and the suite names it. Card chrome
+is deliberately *not* checked: `surface + border + radius` is the shape of a card, an input, a chip, a
+badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
+review-time rule.
+
+**Every custom property you reference must be declared somewhere.** An undeclared one does not warn —
+it makes the whole declaration invalid at computed-value time, so `var(--cc-text-muted, #888)` silently
+freezes a hard-coded grey that never tracks the theme, and a fallback-less `background: var(--cc-surface)`
+drops the *entire* `background` shorthand (a `<select>` lost both its fill and the global custom caret this
+way). `utils/cssTokens.test.ts` fails the build on any such reference — add the token, don't add a fallback.
+It checks **all** `--*` properties, not just `--cc-*` (a stray `--text-muted` had been hiding behind the
+prefix), and counts a component-local declaration — including an inline `:style="{ '--foo': … }"` for a
+dynamic value — as valid.
 
 If what you need isn't here and isn't obviously covered by an existing component, grep first
 (`INVENTORY.md` → *Frontend*); only build new if the search is genuinely empty, and then add it here +
@@ -67,6 +98,8 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-sev-warn` | `#fab219` | Severity **warn** (a QC warn finding) |
 | `--cc-sev-fail` | `#d03b3b` | Severity **fail** (a task failed) |
 | `--cc-mono` | system monospace stack | Log output, code |
+| `--cc-radius-sm` / `-md` | `0.25rem` / `0.4rem` | Small controls/chips/inputs · cards/panels/dialogs |
+| `--cc-fs-3xs` … `-md` | `0.56` / `0.62` / `0.68` / `0.75` / `0.82rem` | Small-text scale (≈9/10/11/12px + 0.82). Use in place of a raw `rem` **or** `px` size |
 | `--cc-header-h` | `40px` | Fixed header height |
 | `--cc-sidebar-w` | `190px` | Fixed sidebar width |
 | `--cc-runner-w` | `280px` | TaskRunner panel width |

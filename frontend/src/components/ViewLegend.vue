@@ -33,5 +33,5 @@ withDefaults(defineProps<{ sections: LegendSection[]; swatch?: number; vertical?
 /* vertical: one item per line (channel names stacked), left-aligned */
 .vl-items.vertical { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 1px; }
 .vl-item { display: inline-flex; align-items: center; gap: 4px; font-size: 0.9em; white-space: nowrap; }
-.vl-swatch { border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(128, 128, 128, 0.4); }
+.vl-swatch { border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid rgba(128, 128, 128, 0.4); }
 </style>

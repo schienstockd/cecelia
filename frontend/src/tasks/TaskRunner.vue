@@ -458,9 +458,9 @@ const { width: sidebarWidth, onResizeStart } =
   border: none;
   cursor: pointer;
   color: var(--cc-text-dim);
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.15rem 0.3rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
 }
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
@@ -491,7 +491,7 @@ const { width: sidebarWidth, onResizeStart } =
   margin-top: 0.5rem;
 }
 .pool-label {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   white-space: nowrap;
   flex-shrink: 0;
@@ -505,7 +505,7 @@ const { width: sidebarWidth, onResizeStart } =
   height: 1.55rem;
   flex-shrink: 0;
   border: 1px solid var(--cc-border);
-  border-radius: 0.25rem;
+  border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2);
   color: var(--cc-text-dim);
   cursor: pointer;
@@ -515,7 +515,7 @@ const { width: sidebarWidth, onResizeStart } =
 .pool-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 .section-heading {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -528,9 +528,9 @@ const { width: sidebarWidth, onResizeStart } =
   width: 100%;
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   color: var(--cc-text);
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   padding: 0.35rem 0.5rem;
   cursor: pointer;
 }
@@ -541,11 +541,11 @@ const { width: sidebarWidth, onResizeStart } =
 
 .fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
 .env-badge {
-  font-size: 0.62rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   padding: 0.1rem 0.4rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2);
   color: var(--cc-text-dim);
   border: 1px solid var(--cc-border);
@@ -567,10 +567,10 @@ const { width: sidebarWidth, onResizeStart } =
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   font-weight: 600;
   padding: 0.55rem;
-  border-radius: 0.4rem;
+  border-radius: var(--cc-radius-md);
   border: none;
   background: var(--cc-accent);
   color: #fff;

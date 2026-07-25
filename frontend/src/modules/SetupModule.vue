@@ -125,7 +125,7 @@ async function waitForBackend(timeoutMs = 60000) {
   max-width: calc(100vw - 2rem);
   background: var(--cc-surface-1);
   border: 1px solid var(--cc-border);
-  border-radius: 12px;
+  border-radius: var(--cc-radius-lg);
   padding: 2rem;
   display: flex;
   flex-direction: column;
@@ -134,12 +134,12 @@ async function waitForBackend(timeoutMs = 60000) {
 .setup-logo { font-size: 2.5rem; line-height: 1; }
 .setup-title { margin: 0.5rem 0 0; font-size: 1.4rem; font-weight: 600; }
 .setup-sub { margin: 0 0 1rem; }   /* + .cc-muted */
-.setup-label { font-size: 0.8rem; color: var(--cc-text-dim); margin-bottom: 0.15rem; }
+.setup-label { font-size: var(--cc-fs-md); color: var(--cc-text-dim); margin-bottom: 0.15rem; }
 .setup-input { width: 100%; font-family: var(--cc-mono, monospace); }
 .setup-hint {
   min-height: 1.2rem;
   margin: 0.15rem 0 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   color: var(--cc-text-dim);
   display: flex;
   align-items: center;

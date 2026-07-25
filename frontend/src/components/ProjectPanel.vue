@@ -501,7 +501,7 @@ const typeColour: Record<ProjectType, string> = {
 }
 .pp-tab {
   background: none; border: none; cursor: pointer;
-  font-size: 0.8rem; font-weight: 500;
+  font-size: var(--cc-fs-md); font-weight: 500;
   color: var(--cc-text-dim);
   padding: 0.55rem 1rem;
   display: flex; align-items: center; gap: 0.4rem;
@@ -518,14 +518,14 @@ const typeColour: Record<ProjectType, string> = {
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 0.75rem;
   padding: 3rem 1rem;
-  color: var(--cc-text-dim); font-size: 0.85rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-md);
 }
 .pp-empty p { margin: 0; }
 
 /* project table */
-.proj-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.proj-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); }
 .proj-table thead th {
-  text-align: left; font-size: 0.68rem; font-weight: 600;
+  text-align: left; font-size: var(--cc-fs-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--cc-text-dim);
   padding: 0.4rem 0.75rem;
@@ -542,7 +542,7 @@ const typeColour: Record<ProjectType, string> = {
 /* small square row-action button (export, cancel) — matches ConfirmDeleteButton's footprint */
 .pp-row-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); padding: 0.2rem 0.3rem; border-radius: 0.25rem;
+  color: var(--cc-text-dim); padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
   transition: color 0.1s, background 0.1s;
 }
 .pp-row-btn:hover:not(:disabled) { color: var(--cc-accent); background: var(--cc-surface-2); }
@@ -555,37 +555,37 @@ const typeColour: Record<ProjectType, string> = {
 }
 /* live export/import progress — standalone below the footer, so it needs its own top separator */
 .pp-io-live { border-top: 1px solid var(--cc-border); }
-.pp-io-hint { margin: 0; font-size: 0.72rem; }
-.pp-io-hint .pi { font-size: 0.7rem; }
-.pp-conflict { padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--cc-text); }
+.pp-io-hint { margin: 0; font-size: var(--cc-fs-sm); }
+.pp-io-hint .pi { font-size: var(--cc-fs-xs); }
+.pp-conflict { padding: 1rem 1.25rem; font-size: var(--cc-fs-md); color: var(--cc-text); }
 .pp-conflict p { margin: 0 0 0.6rem; }
-.pp-conflict code { font-family: var(--cc-mono); font-size: 0.75rem; background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: 0.2rem; }
-.pp-conflict-opts { margin: 0; padding-left: 1.1rem; color: var(--cc-text-dim); font-size: 0.8rem; }
+.pp-conflict code { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); }
+.pp-conflict-opts { margin: 0; padding-left: 1.1rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
 .pp-conflict-opts li { margin: 0.2rem 0; }
 
-.pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem; flex-wrap: wrap; }
+.pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: var(--cc-fs-sm); flex-wrap: wrap; }
 .pp-io-destpath {
-  font-family: var(--cc-mono); font-size: 0.7rem; color: var(--cc-text);
-  background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: 0.2rem;
+  font-family: var(--cc-mono); font-size: var(--cc-fs-xs); color: var(--cc-text);
+  background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: var(--cc-radius-xs);
   max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin-right: auto;   /* push the Change button to the row's right edge (aligns with Import below) */
 }
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
-.pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }
-.pp-io-path { flex: 2 1 180px; font-size: 0.78rem; }
+.pp-io-select { flex: 1 1 180px; font-size: var(--cc-fs-sm); }
+.pp-io-path { flex: 2 1 180px; font-size: var(--cc-fs-sm); }
 .pp-io-status {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-  font-size: 0.75rem; color: var(--cc-text-dim);
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
 }
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
-.pp-io-state { text-transform: uppercase; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; }
+.pp-io-state { text-transform: uppercase; font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; }
 .pp-io-status.done  .pp-io-state { color: #34d399; }
 .pp-io-status.failed .pp-io-state, .pp-io-status.cancelled .pp-io-state { color: #fca5a5; }
-.pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; }
+.pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; }
 .pp-io-fill { height: 100%; background: var(--cc-accent); transition: width 0.2s; }
 .pp-io-log {
   flex: 1 1 100%; min-width: 0;
-  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.75;
+  font-family: var(--cc-mono); font-size: var(--cc-fs-xs); opacity: 0.75;
   white-space: normal; word-break: break-all; user-select: text;   /* show full path, selectable */
 }
 
@@ -601,37 +601,37 @@ const typeColour: Record<ProjectType, string> = {
 
 .proj-name { color: var(--cc-text); font-weight: 500; margin-right: 0.4rem; }
 .open-badge {
-  font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
-  padding: 0.05rem 0.35rem; border-radius: 0.2rem;
+  font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase;
+  padding: 0.05rem 0.35rem; border-radius: var(--cc-radius-xs);
   background: #a78bfa22; color: var(--cc-accent);
   border: 1px solid #a78bfa44;
 }
-.type-badge { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-.dim { color: var(--cc-text-dim); font-size: 0.78rem; }
+.type-badge { font-size: var(--cc-fs-sm); font-weight: 600; text-transform: uppercase; }
+.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 
 /* form */
 .pp-form { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
 
 .form-row { display: flex; flex-direction: column; gap: 0.35rem; }
 .form-label {
-  font-size: 0.78rem; font-weight: 600;
+  font-size: var(--cc-fs-sm); font-weight: 600;
   color: var(--cc-text); cursor: default;
 }
 /* visual styling from the global form base (style.css) */
 .form-input.input-error { border-color: #ef4444; }
 .form-input::placeholder { color: var(--cc-text-dim); }
 
-.field-error { font-size: 0.75rem; color: #fca5a5; }
+.field-error { font-size: var(--cc-fs-sm); color: #fca5a5; }
 .field-hint {
-  font-size: 0.72rem; color: var(--cc-text-dim);
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
   display: flex; align-items: center; gap: 0.3rem;
 }
 .dir-hint {
   font-family: var(--cc-mono);
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   background: var(--cc-surface-2);
   padding: 0.1rem 0.35rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
   color: var(--cc-text);
 }
 
@@ -646,8 +646,8 @@ const typeColour: Record<ProjectType, string> = {
 
 /* buttons use the global .cc-btn utilities (style.css) */
 .pp-danger-note {
-  color: #fca5a5; font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: flex-start;
-  margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: 0.3rem;
+  color: #fca5a5; font-size: var(--cc-fs-sm); display: flex; gap: 0.4rem; align-items: flex-start;
+  margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: var(--cc-radius-sm);
   background: #b91c1c1a; border: 1px solid #b91c1c44;
 }
 </style>

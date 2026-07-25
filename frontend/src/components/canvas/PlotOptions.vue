@@ -127,15 +127,15 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 <style scoped>
 .po { display: flex; flex-direction: column; }
 .po-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; }
 .po-toggle:hover { color: var(--cc-text); }
 .po-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
-.po-row { display: flex; align-items: center; gap: 8px; color: var(--cc-text-dim); font-size: 11px; }
+.po-row { display: flex; align-items: center; gap: 8px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 .po-row > span:first-child { flex: 1; }
 .po-row input[type="range"] { flex: 1; max-width: 110px; }
 .po-val { width: 2.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-.po-sel { font-size: 11px; max-width: 7rem; }
-.po-txt { font-size: 11px; width: 4rem; padding: 1px 4px; }
+.po-sel { font-size: var(--cc-fs-xs); max-width: 7rem; }
+.po-txt { font-size: var(--cc-fs-xs); width: 4rem; padding: 1px 4px; }
 .po-txt.wide { width: 100%; }
 .po-col { flex-direction: column; align-items: stretch; gap: 3px; }
 .po-col > span:first-child { flex: none; }

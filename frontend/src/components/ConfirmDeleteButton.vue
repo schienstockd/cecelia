@@ -48,8 +48,8 @@ defineEmits<{ confirm: [] }>()
 /* compact, self-contained danger icon button (dim by default → danger on hover → solid danger when
    armed), so it reads the same in every toolbar/row/footer. */
 .cc-del { display: inline-flex; align-items: center; gap: 5px; background: none;
-  border: 1px solid transparent; border-radius: 5px; color: var(--cc-text-dim); cursor: pointer;
-  padding: 4px 6px; font-size: 12px; line-height: 1; }
+  border: 1px solid transparent; border-radius: var(--cc-radius-sm); color: var(--cc-text-dim); cursor: pointer;
+  padding: 4px 6px; font-size: var(--cc-fs-sm); line-height: 1; }
 .cc-del:hover:not(:disabled) { color: var(--cc-danger); background: var(--cc-surface-2); }
 .cc-del.armed { color: #fff; background: var(--cc-danger); border-color: var(--cc-danger); }
 .cc-del:disabled { opacity: 0.35; cursor: not-allowed; }

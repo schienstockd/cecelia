@@ -55,7 +55,7 @@ const barY = computed(() => ey.value - my.value - barH.value)
 /* timestamp: white with a dark outline (four text-shadows ≈ SVG paint-order stroke) so it reads on any
    background, matching the channel legend's on-image styling (.is-legend). */
 .ovl-ts { position: absolute; top: 5px; left: 6px; color: #fff; font-weight: 700; line-height: 1;
-  font-family: system-ui, sans-serif; font-size: 11px;
+  font-family: system-ui, sans-serif; font-size: var(--cc-fs-xs);
   text-shadow: -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85),
                -1px 1px 0 rgba(0,0,0,0.85), 1px 1px 0 rgba(0,0,0,0.85); }
 /* white with a dark outline so it reads on any background (like napari's overlays) */

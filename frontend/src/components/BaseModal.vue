@@ -68,7 +68,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .cc-modal {
   background: var(--cc-surface-1);
   border: 1px solid var(--cc-border);
-  border-radius: 0.6rem;
+  border-radius: var(--cc-radius-lg);
   max-width: 96vw; max-height: 90vh;
   display: flex; flex-direction: column;
   overflow: hidden;
@@ -81,13 +81,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex-shrink: 0;
 }
 .cc-modal-title {
-  flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--cc-text);
+  flex: 1; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text);
   display: flex; gap: 0.45rem; align-items: center;
 }
 .cc-modal-close {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.8rem;
-  padding: 0.2rem 0.4rem; border-radius: 0.25rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-md);
+  padding: 0.2rem 0.4rem; border-radius: var(--cc-radius-xs);
 }
 .cc-modal-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 

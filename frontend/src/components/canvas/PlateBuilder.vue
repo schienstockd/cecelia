@@ -92,23 +92,23 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 <style scoped>
 .pb { display: flex; flex-direction: column; gap: 8px; width: 15rem; }
 .pb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pb-num { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--cc-text-dim); }
-.pb-num input { width: 3rem; font-size: 12px; padding: 2px 4px; }
-.pb-hint { flex-basis: 100%; font-size: 10px; color: var(--cc-text-dim); opacity: 0.75; }
+.pb-num { display: inline-flex; align-items: center; gap: 4px; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.pb-num input { width: 3rem; font-size: var(--cc-fs-sm); padding: 2px 4px; }
+.pb-hint { flex-basis: 100%; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); opacity: 0.75; }
 /* the plate canvas: an A4-portrait-ish aspect so the preview reads like a page */
 .pb-grid { position: relative; display: grid; gap: 3px; aspect-ratio: 0.78; width: 100%;
-  padding: 3px; background: var(--cc-border); border-radius: 5px; user-select: none; touch-action: none; }
-.pb-cell { background: var(--cc-surface-2); border-radius: 3px; cursor: crosshair; }
+  padding: 3px; background: var(--cc-border); border-radius: var(--cc-radius-sm); user-select: none; touch-action: none; }
+.pb-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); cursor: crosshair; }
 .pb-cell:hover { background: var(--cc-surface-1); }
 /* a merged span: one contiguous block over the cells it covers (spanning a grid-area covers the
    internal gaps automatically); pointer-events none so a click passes through to the cell to split */
-.pb-span { pointer-events: none; z-index: 2; border-radius: 3px;
+.pb-span { pointer-events: none; z-index: 2; border-radius: var(--cc-radius-xs);
   background: color-mix(in srgb, var(--cc-accent) 30%, var(--cc-surface-2));
   border: 1px solid var(--cc-accent); }
 /* live drag highlight */
-.pb-drag { pointer-events: none; z-index: 3; border-radius: 3px;
+.pb-drag { pointer-events: none; z-index: 3; border-radius: var(--cc-radius-xs);
   background: color-mix(in srgb, var(--cc-accent) 22%, transparent); border: 1px dashed var(--cc-accent); }
 .pb-foot { display: flex; align-items: center; gap: 6px; }
-.pb-count { font-size: 11px; color: var(--cc-text-dim); }
+.pb-count { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 .pb-spacer { flex: 1; }
 </style>

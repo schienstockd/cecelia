@@ -32,7 +32,7 @@ defineProps<{
       <span class="policy-val">{{ data.barrier_policy }}</span>
     </div>
     <div v-if="data.resource_pool" class="node-pool">
-      <i class="pi pi-server" style="font-size:0.6rem" />
+      <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
       {{ data.resource_pool }}
     </div>
 
@@ -44,9 +44,9 @@ defineProps<{
 .chain-picnic-node {
   background: #1c1505;
   border: 2px solid #f59e0b;
-  border-radius: 6px;
+  border-radius: var(--cc-radius-md);
   padding: 7px 11px;
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   min-width: 140px;
   cursor: pointer;
   position: relative;
@@ -63,12 +63,12 @@ defineProps<{
   margin-bottom: 0.25rem;
 }
 .picnic-diamond {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   color: #f59e0b;
   line-height: 1;
 }
 .picnic-badge {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -76,7 +76,7 @@ defineProps<{
 }
 
 .node-label {
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: #fef3c7;
   white-space: nowrap;
@@ -85,7 +85,7 @@ defineProps<{
   max-width: 160px;
 }
 .node-fn {
-  font-size: 10px;
+  font-size: var(--cc-fs-2xs);
   color: #d97706;
   font-family: monospace;
   margin-top: 2px;
@@ -101,12 +101,12 @@ defineProps<{
   margin-top: 4px;
 }
 .policy-label {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   color: #92400e;
   font-weight: 600;
 }
 .policy-val {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   color: #f59e0b;
   font-family: monospace;
 }
@@ -114,7 +114,7 @@ defineProps<{
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   color: #f97316;
   margin-top: 3px;
 }

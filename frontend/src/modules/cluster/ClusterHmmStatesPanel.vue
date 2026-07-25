@@ -191,7 +191,7 @@ defineExpose({ exportImage, getCsv })
     </template>
     <div class="hmm-body">
       <div v-show="rows.length" ref="host" class="hmm-host" :style="{ background: hostBg }" />
-      <div v-if="!rows.length" class="hmm-empty">
+      <div v-if="!rows.length" class="hmm-empty cc-empty cc-empty-overlay">
         <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-bar']" />
         <p>{{ loading ? 'Loading…' : (err || 'No HMM states to show.') }}</p>
       </div>
@@ -201,21 +201,22 @@ defineExpose({ exportImage, getCsv })
 
 <style scoped>
 .hmm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
-.hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: 3px; overflow: hidden; }
+.hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; }
 .hmm-host :deep(svg) { display: block; }
 /* themed legend/title overlays (float over the plot, theme ink) — see plots/overlays.ts */
 .hmm-host :deep(.plot-legend-overlay) { position: absolute; top: 4px; right: 6px; display: flex; flex-wrap: wrap;
-  gap: 2px 10px; max-width: 62%; justify-content: flex-end; border-radius: 3px; padding: 1px 4px; }
+  gap: 2px 10px; max-width: 62%; justify-content: flex-end; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .hmm-host :deep(.plot-legend-overlay *) { color: inherit !important; }
 .hmm-host :deep(.plot-title-overlay) { position: absolute; top: 4px; left: 8px; max-width: 70%; font-weight: 600;
-  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cc-sel { font-size: 12px; }
+  font-size: var(--cc-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-sel { font-size: var(--cc-fs-sm); }
 .hmm-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.hmm-export { font-size: 12px; max-width: 7rem; }
-.hmm-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }
+.hmm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + ClusterHeatmapPanel) */
+.hmm-empty { padding: 1rem; }
 .hmm-empty .pi { font-size: 1.4rem; opacity: 0.6; }
-.hmm-empty p { margin: 0; font-size: 0.8rem; max-width: 22rem; }
+.hmm-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }
 </style>

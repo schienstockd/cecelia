@@ -43,21 +43,21 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
 <style scoped>
 .ss { position: relative; min-width: 150px; }
 .ss-btn { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-  font-size: 0.8rem; color: var(--cc-text); background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border); border-radius: 0.4rem; padding: 0.32rem 0.5rem; cursor: pointer; }
+  font-size: var(--cc-fs-md); color: var(--cc-text); background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 0.32rem 0.5rem; cursor: pointer; }
 .ss-btn:hover { border-color: #484f58; }
 .ss.open .ss-btn { border-color: var(--cc-accent); }
 .ss-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ss-caret { font-size: 0.6rem; opacity: 0.6; }
+.ss-caret { font-size: var(--cc-fs-2xs); opacity: 0.6; }
 /* swatch — same size/shape as .cby-swatch */
-.ss-sw { width: 0.8rem; height: 0.8rem; border-radius: 2px; flex-shrink: 0; border: 1px solid var(--cc-border); }
+.ss-sw { width: 0.8rem; height: 0.8rem; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-border); }
 .ss-sw.none { background: repeating-linear-gradient(45deg, transparent, transparent 2px, var(--cc-text-dim) 2px, var(--cc-text-dim) 3px); }
 .ss-menu { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 2px); margin: 0; padding: 3px;
   list-style: none; max-height: 220px; overflow: auto; background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border); border-radius: 0.4rem; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
-.ss-opt { display: flex; align-items: center; gap: 6px; padding: 0.28rem 0.4rem; border-radius: 0.3rem;
-  font-size: 0.8rem; cursor: pointer; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+.ss-opt { display: flex; align-items: center; gap: 6px; padding: 0.28rem 0.4rem; border-radius: var(--cc-radius-sm);
+  font-size: var(--cc-fs-md); cursor: pointer; }
 .ss-opt:hover { background: var(--cc-surface-2); }
 .ss-opt.sel { color: var(--cc-text); }
-.ss-check { font-size: 0.6rem; color: var(--cc-accent); }
+.ss-check { font-size: var(--cc-fs-2xs); color: var(--cc-accent); }
 </style>

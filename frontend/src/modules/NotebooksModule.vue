@@ -141,7 +141,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
       </p>
     </header>
 
-    <div v-if="!hasProject" class="nb-empty">
+    <div v-if="!hasProject" class="nb-empty cc-empty-inline">
       <i class="pi pi-lock" /> Open or create a project first.
     </div>
 
@@ -225,18 +225,18 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 .notebooks-page { padding: 1.25rem 1.5rem; max-width: 980px; }
 .nb-header h1 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.4rem; }
 .nb-sub { margin: 0 0 1rem; max-width: 640px; }   /* + .cc-muted */
-.nb-empty { display: flex; align-items: center; gap: .5rem; color: var(--cc-text-muted, #888); padding: 2rem 0; }
+.nb-empty { padding: 2rem 0; }   /* + .cc-empty-inline (row/gap/colour) */
 .nb-section { margin-bottom: 1.5rem; }
 .nb-section h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
 .nb-server-row { display: flex; align-items: center; gap: 1rem; }
-.nb-status { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
+.nb-status { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--cc-fs-lg); }
 .nb-status.is-running .pi { color: #3fb950; }
-.nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-muted, #888); }
+.nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-dim); }
 .nb-hint { margin: .5rem 0 0; }   /* + .cc-muted */
-.nb-error { color: #f0883e; font-size: .85rem; margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
+.nb-error { color: #f0883e; font-size: var(--cc-fs-md); margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
 .nb-note {
   display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;
-  font-size: .85rem; line-height: 1.4; border-radius: 6px;
+  font-size: var(--cc-fs-md); line-height: 1.4; border-radius: var(--cc-radius-md);
   color: var(--cc-text, #cdd9e5); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
 }
 .nb-note .pi { margin-top: .1rem; color: #58a6ff; }

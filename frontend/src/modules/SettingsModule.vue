@@ -599,7 +599,7 @@ async function switchWt(path: string) {
                @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
                v-tooltip.right="'Render napari on the discrete GPU (hybrid graphics). Restarts napari to apply. Linux only.'">
           Use discrete GPU for napari
-          <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:0.7rem;" />
+          <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:var(--cc-fs-xs);" />
         </CcToggle>
         <span v-if="!gpuSupported" class="field-hint">
           Only configurable on Linux — on this system the GPU is selected by the OS/driver.
@@ -768,7 +768,7 @@ async function switchWt(path: string) {
 }
 
 .section-title {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -791,7 +791,7 @@ async function switchWt(path: string) {
 
 .field-label {
   display: block;
-  font-size: 0.76rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text);
   margin-bottom: 0.3rem;
@@ -806,11 +806,11 @@ async function switchWt(path: string) {
 /* visual styling from the global form base (style.css) */
 .field-input { flex: 1; }
 .field-input[readonly] { color: var(--cc-text-dim); cursor: default; }
-.field-input.mono { font-family: var(--cc-mono); font-size: 0.74rem; }
+.field-input.mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 
 .field-hint {
   display: block;
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   margin-top: 0.25rem;
 }
@@ -820,12 +820,12 @@ async function switchWt(path: string) {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.2rem 0.6rem;
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   margin: 0.4rem 0 0.6rem;
 }
 .stor-line strong { justify-self: end; }
 .stor-reclaim { margin-top: 0.5rem; }
-.stor-reclaim-head { font-size: 0.82rem; margin-bottom: 0.35rem; }
+.stor-reclaim-head { font-size: var(--cc-fs-md); margin-bottom: 0.35rem; }
 .stor-reclaim-head .field-hint { display: inline; margin-left: 0.35rem; }
 .stor-list {
   list-style: none;
@@ -838,7 +838,7 @@ async function switchWt(path: string) {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  font-size: 0.76rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.1rem 0;
 }
 .stor-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -849,9 +849,9 @@ async function switchWt(path: string) {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.76rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.35rem 0.7rem;
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   border: 1px solid var(--cc-accent);
   background: var(--cc-accent);
   color: #fff;
@@ -867,9 +867,9 @@ async function switchWt(path: string) {
   border: none;
   cursor: pointer;
   color: var(--cc-text-dim);
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   padding: 0.3rem 0.4rem;
-  border-radius: 0.25rem;
+  border-radius: var(--cc-radius-xs);
   flex-shrink: 0;
 }
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
@@ -878,7 +878,7 @@ async function switchWt(path: string) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
   color: var(--cc-text);
   cursor: pointer;
   user-select: none;
@@ -888,25 +888,25 @@ async function switchWt(path: string) {
 .toggle-row.disabled input { cursor: not-allowed; }
 
 .no-project {
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   color: var(--cc-text-dim);
 }
 
 /* system control panel: aligned grid — name · status pill · port · actions */
 .svc-row { display: grid; grid-template-columns: 8rem 7rem 3.5rem 1fr; align-items: center;
   column-gap: 0.6rem; margin-bottom: 0.55rem; }
-.svc-name { font-size: 0.8rem; color: var(--cc-text); }
-.wt-select { font-size: 0.8rem; padding: 2px 6px; max-width: 18rem; }
-.svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem;
-  color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: 999px;
+.svc-name { font-size: var(--cc-fs-md); color: var(--cc-text); }
+.wt-select { font-size: var(--cc-fs-md); padding: 2px 6px; max-width: 18rem; }
+.svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm);
+  color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
   white-space: nowrap; }
-.svc-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cc-text-dim); }
+.svc-pill .dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
 .svc-pill.ok .dot   { background: #22c55e; }
 .svc-pill.warn .dot { background: #f59e0b; }
 .svc-pill.idle .dot { background: var(--cc-text-dim); }
-.svc-tag { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: 3px; padding: 0 0.3rem; }
-.svc-port { justify-self: start; font-family: var(--cc-mono); font-size: 0.68rem; color: var(--cc-text-dim); }
+.svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
+.svc-port { justify-self: start; font-family: var(--cc-mono); font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
 .save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
 .save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
@@ -917,16 +917,16 @@ async function switchWt(path: string) {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 0.3rem 0.9rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text);
 }
 .diag-grid > span:nth-child(odd) { color: var(--cc-text-dim); }
-.mono { font-family: var(--cc-mono); font-size: 0.74rem; word-break: break-all; }
-.field-hint code, .diag-grid code { font-family: var(--cc-mono); font-size: 0.72rem; }
+.mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); word-break: break-all; }
+.field-hint code, .diag-grid code { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 /* stale-process flag: amber value + a small chip (problem short; the action is in the tooltip) */
 .diag-stale { color: var(--cc-warn); }
-.diag-stale-note { margin-left: 0.4rem; font-size: 0.68rem; color: var(--cc-warn); white-space: nowrap; cursor: default; }
-.diag-stale-note .pi { font-size: 0.66rem; }
+.diag-stale-note { margin-left: 0.4rem; font-size: var(--cc-fs-xs); color: var(--cc-warn); white-space: nowrap; cursor: default; }
+.diag-stale-note .pi { font-size: var(--cc-fs-xs); }
 
 /* debug console */
 .repl-log {
@@ -934,7 +934,7 @@ async function switchWt(path: string) {
   overflow: auto;
   margin: 0.6rem 0;
   border: 1px solid var(--cc-border);
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
   padding: 0.4rem 0.6rem;
 }
@@ -942,25 +942,25 @@ async function switchWt(path: string) {
 .patch-row { padding: 0.5rem 0; border-bottom: 1px solid var(--cc-border); }
 .patch-row:last-child { border-bottom: none; }
 .patch-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; }
-.patch-title { font-size: 0.82rem; font-weight: 600; color: var(--cc-text); flex: 1; }
+.patch-title { font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); flex: 1; }
 .patch-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 .patch-run { margin-top: 0.4rem; }
-.patch-bar { height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; margin-bottom: 0.35rem; }
+.patch-bar { height: 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; margin-bottom: 0.35rem; }
 .patch-bar span { display: block; height: 100%; background: var(--cc-accent); transition: width 0.2s; }
-.patch-log { max-height: 200px; font-family: var(--cc-mono); font-size: 0.72rem; color: var(--cc-text); white-space: pre-wrap; }
+.patch-log { max-height: 200px; font-family: var(--cc-mono); font-size: var(--cc-fs-sm); color: var(--cc-text); white-space: pre-wrap; }
 
 .repl-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--cc-border); }
 .repl-entry:last-child { border-bottom: none; }
-.repl-code { font-family: var(--cc-mono); font-size: 0.74rem; color: var(--cc-accent); white-space: pre-wrap; }
+.repl-code { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); color: var(--cc-accent); white-space: pre-wrap; }
 .repl-out, .repl-val, .repl-err {
-  margin: 0.2rem 0 0; font-family: var(--cc-mono); font-size: 0.72rem;
+  margin: 0.2rem 0 0; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
   white-space: pre-wrap; word-break: break-word;
 }
 .repl-out { color: var(--cc-text-dim); }
 .repl-val { color: var(--cc-text); }
 .repl-err { color: var(--cc-danger, #f87171); }
 .repl-input {
-  width: 100%; resize: vertical; font-family: var(--cc-mono); font-size: 0.76rem;
-  padding: 0.5rem; border-radius: 0.35rem;
+  width: 100%; resize: vertical; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
+  padding: 0.5rem; border-radius: var(--cc-radius-sm);
 }
 </style>

@@ -17,7 +17,7 @@ defineEmits<{ (e: 'close'): void }>()
   <BaseModal title="What Claude can do here" icon="pi-sparkles" width="620px" @close="$emit('close')">
     <!-- two entry points, side by side: the how-to -->
     <div class="co-entries">
-      <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry">
+      <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry cc-card cc-card-2">
         <div class="co-entry-head"><i :class="['pi', e.icon]" /> {{ e.name }}</div>
         <p class="co-entry-what">{{ e.what }}</p>
         <ol class="co-steps">
@@ -48,19 +48,17 @@ defineEmits<{ (e: 'close'): void }>()
 
 <style scoped>
 .co-entries { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-.co-entry {
-  border: 1px solid var(--cc-border); border-radius: 8px; padding: 14px 16px;
-  background: var(--cc-surface-2);
-}
+/* a raised card ON the dialog's surface-1 body — the surface-2 variant of .cc-card */
+.co-entry { padding: 14px 16px; }
 .co-entry-head { font-weight: 600; color: var(--cc-text); display: flex; align-items: center; gap: 6px; }
 .co-entry-head .pi { color: var(--cc-accent); }
-.co-entry-what { margin: 8px 0 10px; color: var(--cc-text-dim); font-size: 0.85rem; line-height: 1.4; }
-.co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: 0.82rem; line-height: 1.55; }
+.co-entry-what { margin: 8px 0 10px; color: var(--cc-text-dim); font-size: var(--cc-fs-md); line-height: 1.4; }
+.co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
 .co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.co-cell { border: 1px solid var(--cc-border); border-radius: 8px; padding: 12px 14px; }
+.co-cell { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg); padding: 12px 14px; }
 .co-cell-head { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.co-cell ul { margin: 0; padding-left: 18px; font-size: 0.8rem; line-height: 1.55; color: var(--cc-text); }
+.co-cell ul { margin: 0; padding-left: 18px; font-size: var(--cc-fs-md); line-height: 1.55; color: var(--cc-text); }
 .co-cell.tone-good .co-cell-head { color: #56d364; }
 .co-cell.tone-good .co-cell-head .pi { color: #56d364; }
 .co-cell.tone-neutral .co-cell-head .pi { color: var(--cc-accent); }
@@ -68,10 +66,10 @@ defineEmits<{ (e: 'close'): void }>()
 .co-cell.tone-muted .co-cell-head { color: var(--cc-text-dim); }
 
 .co-examples { margin-top: 18px; }
-.co-examples-label { display: block; font-size: 0.78rem; color: var(--cc-text-dim); margin-bottom: 6px; }
+.co-examples-label { display: block; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-bottom: 6px; }
 .co-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .co-chip {
-  font-size: 0.78rem; color: var(--cc-text); background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border); border-radius: 999px; padding: 3px 10px;
+  font-size: var(--cc-fs-sm); color: var(--cc-text); background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill); padding: 3px 10px;
 }
 </style>

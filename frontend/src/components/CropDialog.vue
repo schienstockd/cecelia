@@ -53,11 +53,11 @@ function defaultValueName(): string {
 
 <style scoped>
 .crop-version-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-.crop-version-lbl { color: var(--cc-text-muted, #888); font-size: 0.7rem; }
+.crop-version-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 .crop-version-select { flex: 0 1 auto; }
 .crop-version-tag {
-  margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 0.5rem;
-  font-size: 0.62rem; font-weight: 600; vertical-align: middle;
+  margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-lg);
+  font-size: var(--cc-fs-2xs); font-weight: 600; vertical-align: middle;
   color: var(--cc-accent, #a855f7);
   background: color-mix(in srgb, var(--cc-accent, #a855f7) 15%, transparent);
 }

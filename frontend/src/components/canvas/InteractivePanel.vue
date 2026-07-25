@@ -57,10 +57,10 @@ defineExpose({ exportImage, exportSvg })
 </template>
 
 <style scoped>
-.ip-missing { padding: 1rem; color: var(--cc-text-dim); font-size: 0.85rem; }
+.ip-missing { padding: 1rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
 .ip-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
 .ip-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.ip-export { font-size: 12px; max-width: 7rem; }
+.ip-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 </style>

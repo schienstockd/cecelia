@@ -177,7 +177,7 @@ async function deleteSet() {
 .set-selector { display: flex; align-items: center; gap: 0.5rem; }
 .set-uid {
   font-family: var(--cc-mono);
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   letter-spacing: 0.03em;
 }
@@ -186,14 +186,14 @@ async function deleteSet() {
   border: none;
   cursor: pointer;
   color: var(--cc-text-dim);
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.2rem 0.35rem;
-  border-radius: 0.25rem;
+  border-radius: var(--cc-radius-xs);
   line-height: 1;
 }
 .set-uid-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .set-label {
-  font-size: 0.75rem; font-weight: 600; color: var(--cc-text-dim);
+  font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text-dim);
   text-transform: uppercase; letter-spacing: 0.06em; cursor: default;
 }
 /* visual styling from the global form base (style.css) */
@@ -201,6 +201,6 @@ async function deleteSet() {
 .set-select:disabled { opacity: 0.4; cursor: not-allowed; }
 .set-name-input { width: 180px; border-color: var(--cc-accent); }
 .spacer { flex: 1; }
-.confirm-text { font-size: 0.82rem; color: var(--cc-text-dim); }
+.confirm-text { font-size: var(--cc-fs-md); color: var(--cc-text-dim); }
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

@@ -1071,7 +1071,7 @@ onActivated(async () => {
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'live'" class="chain-live">
       <div class="live-toolbar">
-        <label class="live-label">Run</label>
+        <label class="live-label cc-eyebrow">Run</label>
         <select
           v-if="runOptions.length"
           class="chain-select live-run-select"
@@ -1263,7 +1263,7 @@ onActivated(async () => {
               :key="cat.name"
               class="palette-category"
             >
-              <div class="palette-cat-heading">{{ cat.name }}</div>
+              <div class="palette-cat-heading cc-eyebrow cc-eyebrow-dense">{{ cat.name }}</div>
               <div
                 v-for="def in cat.defs"
                 :key="def.fun_name"
@@ -1296,7 +1296,7 @@ onActivated(async () => {
 
         <!-- ── Run table ──────────────────────────────────────────────────── -->
         <div class="run-table-section">
-          <div class="run-section-heading">Run</div>
+          <div class="run-section-heading cc-eyebrow cc-eyebrow-dense">Run</div>
 
           <select
             v-if="project.sets.length"
@@ -1396,7 +1396,7 @@ onActivated(async () => {
       <template v-if="selectedNode">
 
         <div class="config-header">
-          <div class="config-title">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</div>
+          <div class="config-title cc-eyebrow">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</div>
           <ConfirmDeleteButton
             title="Remove this node and its connections from the chain."
             armed-title="Click again to remove this node"
@@ -1411,15 +1411,15 @@ onActivated(async () => {
         <template v-else>
         <!-- Identity -->
         <div class="config-section">
-          <label class="config-label">ID</label>
+          <label class="config-label cc-eyebrow">ID</label>
           <div class="config-value mono">{{ selectedNode.id }}</div>
-          <label class="config-label" style="margin-top:0.5rem">Function</label>
+          <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Function</label>
           <div class="config-value mono">{{ selectedNode.data.fn }}</div>
         </div>
 
         <!-- Scope -->
         <div class="config-section">
-          <label class="config-label">Scope</label>
+          <label class="config-label cc-eyebrow">Scope</label>
           <select
             class="config-select"
             :value="selectedNode.data.scope"
@@ -1432,7 +1432,7 @@ onActivated(async () => {
           </select>
 
           <template v-if="selectedNode.data.scope === 'set'">
-            <label class="config-label" style="margin-top:0.5rem">Barrier policy</label>
+            <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Barrier policy</label>
             <select
               class="config-select"
               :value="selectedNode.data.barrier_policy"
@@ -1445,7 +1445,7 @@ onActivated(async () => {
             </select>
           </template>
 
-          <label class="config-label" style="margin-top:0.5rem">Resource pool</label>
+          <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Resource pool</label>
           <select
             class="config-select"
             :value="selectedNode.data.resource_pool"
@@ -1461,7 +1461,7 @@ onActivated(async () => {
 
         <!-- Params -->
         <div class="config-section" v-if="selectedTaskDef && selectedTaskDef.params.length">
-          <div class="config-section-heading">Parameters</div>
+          <div class="config-section-heading cc-eyebrow">Parameters</div>
           <div class="config-params">
             <ParamRenderer
               v-for="p in selectedTaskDef.params"
@@ -1531,14 +1531,7 @@ onActivated(async () => {
   flex-shrink: 0;
 }
 
-.live-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-  flex-shrink: 0;
-}
+.live-label { flex-shrink: 0; }   /* + .cc-eyebrow */
 
 /* Live toolbar: keep the run selector tight (it otherwise stretches full width via .chain-select
    flex:1) with the copy button right beside it. */
@@ -1571,18 +1564,18 @@ onActivated(async () => {
 }
 .qc-expand-card {
   width: 96%; height: 94%;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.5rem;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .qc-expand-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--cc-border);
-  font-size: 0.8rem; font-weight: 600; color: var(--cc-text);
+  font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text);
 }
 .qc-expand-body { flex: 1; min-height: 0; overflow: auto; }
 
 .live-hint {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
 }
@@ -1601,7 +1594,7 @@ onActivated(async () => {
   justify-content: center;
   gap: 0.5rem;
   color: var(--cc-text-dim);
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   font-style: italic;
 }
 
@@ -1652,10 +1645,10 @@ onActivated(async () => {
 .chain-select {
   flex: 1;
   min-width: 0;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   color: var(--cc-text);
   padding: 0.25rem 0.4rem;
   cursor: pointer;
@@ -1664,7 +1657,7 @@ onActivated(async () => {
 
 .no-chains-hint {
   flex: 1;
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
 }
@@ -1674,12 +1667,12 @@ onActivated(async () => {
   align-items: center;
   justify-content: center;
   width: 26px; height: 26px;
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   border: 1px solid var(--cc-border);
   background: var(--cc-surface-2);
   color: var(--cc-text-dim);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   flex-shrink: 0;
   transition: background 0.1s, color 0.1s;
 }
@@ -1700,10 +1693,10 @@ onActivated(async () => {
 .new-chain-input {
   flex: 1;
   min-width: 0;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-accent);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   color: var(--cc-text);
   padding: 0.2rem 0.4rem;
   outline: none;
@@ -1717,24 +1710,17 @@ onActivated(async () => {
 
 .palette-category { margin-bottom: 0.25rem; }
 
-.palette-cat-heading {
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-text-dim);
-  padding: 0.5rem 0.65rem 0.2rem;
-}
+.palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-dense */
 
 .palette-item {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   padding: 0.3rem 0.65rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   cursor: grab;
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   margin: 0 0.3rem;
   transition: background 0.1s, color 0.1s;
   user-select: none;
@@ -1746,7 +1732,7 @@ onActivated(async () => {
 .palette-item:active { cursor: grabbing; }
 
 .drag-grip {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   opacity: 0.4;
   flex-shrink: 0;
 }
@@ -1757,13 +1743,13 @@ onActivated(async () => {
 }
 
 .palette-hint {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
   padding: 0.75rem 0.65rem;
 }
 .palette-soon {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
   padding: 0.75rem 0.65rem;
@@ -1775,7 +1761,7 @@ onActivated(async () => {
   gap: 0.4rem;
 }
 .palette-retry-btn {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   padding: 0.1rem 0.3rem;
   flex-shrink: 0;
 }
@@ -1799,7 +1785,7 @@ onActivated(async () => {
   align-items: center;
   gap: 0.5rem;
   color: var(--cc-text-dim);
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   font-style: italic;
 }
 .canvas-empty i { font-size: 2rem; opacity: 0.25; }
@@ -1809,7 +1795,7 @@ onActivated(async () => {
   bottom: 0.5rem;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   color: var(--cc-text-dim);
   opacity: 0.5;
   pointer-events: none;
@@ -1839,7 +1825,7 @@ onActivated(async () => {
   gap: 0.5rem;
   padding: 2rem 1rem;
   color: var(--cc-text-dim);
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-style: italic;
   text-align: center;
 }
@@ -1852,57 +1838,36 @@ onActivated(async () => {
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
-.config-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-text-dim);
-}
+/* .config-title is purely the eyebrow scenario → .cc-eyebrow */
 
 .config-section {
   padding: 0.65rem 0.75rem;
   border-bottom: 1px solid var(--cc-border);
 }
-.config-label {
-  display: block;
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-  margin-bottom: 0.25rem;
-}
+.config-label { display: block; margin-bottom: 0.25rem; }   /* + .cc-eyebrow */
 .config-value {
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text);
   word-break: break-all;
 }
-.config-value.mono { font-family: var(--cc-mono, monospace); font-size: 0.7rem; }
+.config-value.mono { font-family: var(--cc-mono, monospace); font-size: var(--cc-fs-xs); }
 
 .config-select, .config-input {
   width: 100%;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   color: var(--cc-text);
   padding: 0.28rem 0.5rem;
 }
 .config-select:focus, .config-input:focus { outline: 1px solid var(--cc-accent); border-color: var(--cc-accent); }
 .config-input::placeholder { color: var(--cc-text-dim); font-style: italic; }
 
-.config-section-heading {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--cc-text-dim);
-  margin-bottom: 0.35rem;
-}
+.config-section-heading { margin-bottom: 0.35rem; }   /* + .cc-eyebrow */
 .config-params { display: flex; flex-direction: column; }
 .no-params-hint {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
 }
@@ -1917,14 +1882,7 @@ onActivated(async () => {
   background: var(--cc-bg);
 }
 
-.run-section-heading {
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-text-dim);
-  padding: 0.45rem 0.65rem 0.2rem;
-}
+.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-dense */
 
 .run-set-select {
   margin: 0 0.45rem 0.3rem;
@@ -1965,7 +1923,7 @@ onActivated(async () => {
 .run-row-all:hover { background: var(--cc-surface-2); }
 
 .run-check-icon {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-accent);
   flex-shrink: 0;
   width: 14px;
@@ -1975,19 +1933,19 @@ onActivated(async () => {
 .run-row-all .run-check-icon { color: var(--cc-accent); }
 
 .run-all-label {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text-dim);
   flex: 1;
 }
 .run-sel-count {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   font-family: var(--cc-mono);
   color: var(--cc-accent);
 }
 
 .run-img-name {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -2003,9 +1961,9 @@ onActivated(async () => {
   margin: 0 0.45rem 0.5rem;
   width: calc(100% - 0.9rem);
   padding: 0.35rem 0.5rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   border: 1px solid #10b981;
   background: #0c1a0e;
   color: #6ee7b7;

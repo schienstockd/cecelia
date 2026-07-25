@@ -187,7 +187,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 
 <template>
   <div class="cluster-plots">
-    <div v-if="!imageUids.length" class="cp-empty">Select clustered image(s) above to explore clusters.</div>
+    <div v-if="!imageUids.length" class="cp-empty cc-empty-inline">Select clustered image(s) above to explore clusters.</div>
     <template v-else>
       <div class="cp-bar">
         <label>clustering
@@ -268,20 +268,20 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 
 <style scoped>
 .cluster-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.cp-empty { padding: 20px; color: var(--cc-text-dim); }
-.cp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; }
+.cp-empty { padding: 20px; }   /* + .cc-empty-inline (row/colour) */
+.cp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .cp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .cp-bar select { min-width: 7rem; }
-.cp-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.7; }
+.cp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
 .cp-members { display: flex; align-items: flex-start; gap: 6px; margin: 0 4px 6px; padding: 6px 9px;
-  font-size: 11px; color: #fcd34d; background: #78350f22; border: 1px solid #b4530933; border-radius: 5px; }
+  font-size: var(--cc-fs-xs); color: #fcd34d; background: #78350f22; border: 1px solid #b4530933; border-radius: var(--cc-radius-sm); }
 .cp-members .pi { margin-top: 1px; }
-.cp-fix { flex-shrink: 0; margin-left: auto; align-self: center; font-size: 11px; padding: 3px 9px;
-  border: 1px solid #b45309; border-radius: 4px; background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
+.cp-fix { flex-shrink: 0; margin-left: auto; align-self: center; font-size: var(--cc-fs-xs); padding: 3px 9px;
+  border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: #78350f88; }
-.cp-add { font-size: 12px; padding: 4px 8px; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
+.cp-add { font-size: var(--cc-fs-sm); padding: 4px 8px; }
+.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
 .seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }

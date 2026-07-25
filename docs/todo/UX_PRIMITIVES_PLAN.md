@@ -24,10 +24,13 @@ and use it. When you unify a category, tick it here and add the rule to `docs/UI
 | Modal / dialog | `components/BaseModal.vue` | backdrop + panel + close; ~9 consumers. |
 | Popover / dropdown | `components/TeleportPopover.vue` | ~11 consumers. |
 | Tabs | `components/canvas/TabbedCanvas.vue` | + `ChipSelect` segmented. |
-| Collapsible section | `components/CollapsibleSection.vue` | ~7 consumers; **but ~15 hand-rolled chevron toggles bypass it** (see Phase 4). |
-| Range (dual-thumb) | `components/RangeSlider.vue` | min+max only; **no single-value wrapper yet** (see Phase 2). |
-| Plot-area spinner | `components/plots/PlotSpinner.vue` | plot area only; inline busy spinners are ad-hoc (see Phase 6). |
+| Collapsible section | `components/CollapsibleSection.vue` | ~7 consumers; **but ~10 hand-rolled chevron toggles bypass it** (see *Remaining*). |
+| Range (dual-thumb) | `components/RangeSlider.vue` | min+max only; no single-value wrapper (not recommended — see *Remaining*). |
+| Plot-area spinner | `components/plots/PlotSpinner.vue` | plot area only. Inline busy spinners were long listed here as "ad-hoc" — **measured, and they aren't**: of 48 `pi-spin` usages only 13 carry a styled class, all token-sized or inheriting, and the rest are the shared `<i class="pi pi-spin pi-spinner" />` idiom inline in a button. Nothing to unify. |
 | Severity colours | `lib/severity.ts` + `--cc-sev-*` | status colours should route through this. |
+| Task/chain status | `lib/taskStatus.ts` (`TASK_STATUS`) | the ONE 5-state status→icon/colour map. |
+| Semantic text/surface scenarios | `.cc-muted` · `.cc-empty` · `.cc-readout` · `.cc-eyebrow` · `.cc-card` (+ one modifier axis each) | full catalog in `docs/UI.md`. |
+| Design tokens | `--cc-fs-3xs…md`, `--cc-radius-sm/md`, colours in `style.css` | guarded: `utils/cssTokens.test.ts` fails on an undeclared `--cc-*`. |
 
 ## Approach — generalise by SCENARIO, not one component per widget
 
@@ -56,6 +59,12 @@ Done — semantic-role vocabulary (the generalisation; adopt incrementally):
   (section label), `.cc-card` (surface). Seeded in `MoviesModule` + `AnimationModule` as the reference
   adoptions. This scenario vocabulary replaces the would-be Phase 2/3/6/7 components — the ~23 `*-empty`
   classes, the slider readouts, the subtitles/hints, and the card chrome all compose from it.
+- [x] **One modifier axis per scenario** — density (`-dense`/`-micro` + `--cc-fs-2xs/3xs`), surface
+  (`.cc-card-2`), layout (`.cc-empty-inline/-overlay/-lg`). This is what unblocked the stalled
+  adoption sweep; see *Re-read of the roadblocks* below for why the axes were the whole problem.
+- [x] **Dead-token guard** — `utils/cssTokens.ts` + test: referencing a `--cc-*` token that `style.css`
+  doesn't declare now fails the suite (it was silently freezing hard-coded greys and, once, killing a
+  `<select>`'s fill *and* caret).
 
 Done — the correctness item:
 - [x] **Status/severity colours.** `lib/taskStatus.ts` (`TASK_STATUS`) — the ONE 5-state status map;
@@ -64,9 +73,13 @@ Done — the correctness item:
   `ParamRenderer`'s QC flag already used `lib/severity.ts`. (PR #TBD)
 
 Remaining — incremental adoption only (no forced sweeps):
-- [ ] **Collapsible section headers.** `CollapsibleSection` exists but ~15 chevron+heading toggles
-  bypass it (`PlotOptions` ×4, `MetadataPanel`, `ParamRenderer`, `PopulationManager`, …). Migrate
-  opportunistically, or extract `.cc-section-toggle`.
+- [ ] **Collapsible section headers.** `CollapsibleSection` exists but **~10** chevron+heading toggles
+  bypass it: `PlotOptions` ×4, `ParamRenderer` ×2, `ModuleLayout` ×2, `MetadataPanel`, `PopulationManager`.
+  Migrate opportunistically, or extract `.cc-section-toggle`. (Recount: the earlier "~15" swept in six
+  sites that are **not** sections and should stay as they are — `AnimationModule`'s two chevron-left/right
+  *reorder* buttons, the dropdown carets in `SwatchSelect`/`GatePairsPanel`, and the whole-panel collapse
+  in `CanvasPanel`/`PopulationPanelShell`. A seventh scenario is genuinely distinct and recurring:
+  **per-row disclosure** in a list — `TaskList`, `ErrorConsole` — worth naming if a third site appears.)
 - [ ] **Opportunistic muted-text / card / readout adoption.** Replace scoped `.*-empty` / `.*-val` /
   subtitle / surface blocks with the semantic utils as files are touched — NOT a dedicated sweep.
 - [ ] **Not recommended as sweeps:** single-value range wrapper (base already accent-themed; readout now
@@ -89,29 +102,132 @@ skipped (kept bespoke), not forced.
 earlier). This also **fixed several dead `--cc-text-muted` references** (an undefined token that silently
 fell back to `#888` instead of the real `--cc-text-dim`).
 
-**Roadblock — value readouts (`.cc-readout`) and eyebrows (`.cc-eyebrow`) NOT swept.** Their font sizes
-are context-tuned (0.6–0.78rem: dense inline readouts, tiny node labels) and the neighbouring widths are
-tuned to those sizes; the coarse 3-step scale (`--cc-fs-xs/sm`) would enlarge them and drift the layout.
-Some readouts are intentionally accent-coloured (`.pt-val`) or `--cc-text` (not dim). So `.cc-readout` /
-`.cc-eyebrow` are used only where the size already matches (e.g. `MoviesModule` zoom). Adopt the rest
-opportunistically per-file where the values line up — not a sweep.
+### Re-read of the roadblocks (2026-07-25) — they were one problem, and it's fixed
 
-**Roadblock — card/surface (`.cc-card`) NOT swept.** ~29 panel/card blocks with radii spread 0.2–0.5rem
-and mixed surface-1/2; normalising all to `--cc-radius-md` + surface-1 would visibly change many. Use
-`.cc-card` for new containers; migrate existing ones only when a file is already being touched.
+Every roadblock above had the same cause: **the utility hard-coded a value on an axis where sites
+legitimately differ**, so adopting it forced a visual change, so the site stayed hand-rolled and got
+written down as "bespoke". There were only three such axes. Giving each scenario its missing axis as a
+modifier turned the whole list into mechanical, visually-neutral migrations:
 
-**Roadblocks — deliberately kept bespoke (do NOT force onto the utils):**
-- **Rich empty state** — `ImageTable` `.empty-state` (+ `.empty-icon/-title/-hint/-cta`): a full icon +
-  title + hint + CTA block with generous padding. `.cc-empty` is the plain column; a rich `<EmptyState>`
-  variant could wrap it later, but it's the one genuinely rich case — leave it.
-- **Absolute-positioned overlay empty** — `UmapView` `.uv-empty` (`position:absolute; inset:0`): not a
-  flow block; `.cc-empty` doesn't apply.
-- **Tiny / italic micro-empties** — `ChainQcNode` `.qc-empty` (9px italic), `PopulationManager`
-  `.pm-chip-empty` (10px italic), `CropPanel`/`ChainQcNode` italic hints: sub-`--cc-fs-xs` sizes +
-  italic are intentional dense-context chrome; `.cc-muted` (0.75rem, non-italic) would enlarge them.
+| Axis | Was baked in | Now |
+|---|---|---|
+| Density | one font size per util | `.cc-muted/-readout/-eyebrow` + `-dense` (≈10px) / `-micro` (≈9px) |
+| Surface | `.cc-card` = surface-1 | `.cc-card` (border+radius) + `.cc-card-2` (raised) |
+| Layout | `.cc-empty` = padded centred column | + `-inline` / `-overlay` / `-lg` |
+
+Two measurement errors had kept the picture wrong:
+
+1. **The size audit only counted `rem`.** There are ~430 `rem` *and* ~149 `px` font-size declarations,
+   and they are the same scale in two spellings: `12px` **is** `--cc-fs-sm`, `11px` **is** `--cc-fs-xs`,
+   and `10px`/`9px` are two tiers *below the old floor*. So the "tiny/italic micro-empties" were never
+   exceptions — they were exactly the two missing steps. Added `--cc-fs-2xs` / `--cc-fs-3xs`.
+   The tell: `CollapsibleSection` — the *canonical* component — hand-rolled its own eyebrow (uppercase +
+   600 + 0.06em + dim) at `0.65rem`, below `--cc-fs-xs`. The reference implementation could not adopt the
+   vocabulary it was meant to model. It does now.
+2. **The card count conflated cards with controls.** Of the "~29 panel/card blocks", nearly all are small
+   *controls* (search wraps, mini/gear buttons, tabs, pills, segmented rows, native inputs) whose canonical
+   form is the control — `.cc-btn`, `ChipSelect`, the global `select`/`input` base — not `.cc-card`. The
+   genuine card population is a handful. Radius was never the blocker either: `0.3rem`→`0.25rem` is **0.8px**.
+   Surface was, and `.cc-card-2` covers it. **There is no card sweep to do** — the leftovers are the
+   icon/mini-button question the entry below already parks.
+
+Migrated on the back of that (each visually equivalent unless noted):
+`ChainQcNode` `.qc-empty` · `PopulationManager` `.pm-chip-empty` · `UmapView` `.uv-empty` (overlay) +
+`.uv-pop-head` (eyebrow; now 600-weight, the one intended change) · `ImageTable` `.empty-state` (rich) ·
+`GatePlotPanel` `.gate-empty` (inline empty *wearing card chrome* — the composite case) ·
+`CollapsibleSection` `.cs-label` · `NotebooksModule` `.nb-empty` · `ClaudeOverviewDialog` `.co-entry`
+(`.cc-card-2`) · `CropPanel` `.crop-hint` · `CopyDialog` `.copy-hint`.
+
+**Still deliberately bespoke:**
 - **`HintCallout.vue`** is a full component (icon + dismiss), not a text scenario — leave it.
 - **`ChainModule`** empties/hints (`.live-empty`, `.canvas-empty`, `.no-chains-hint`, palette hints):
   several are richer (icons, multi-line CTAs) inside the whiteboard; adopt opportunistically, not swept.
+- **Accent-coloured readouts** (`.pt-val` and friends) — a readout that is *deliberately* accent or
+  `--cc-text` rather than dim. Prominence, not density; `.cc-readout-strong` covers the common case.
+- **Per-site italic and geometry.** `font-style: italic` marks provisional/advisory prose in ~20 places;
+  it is emphasis, not a tier, and stays a one-line scoped rule (as do width/margin/flex/padding).
+
+### Correctness find — dead design tokens (the actually-broken thing)
+
+Measuring the above turned up **16 references to 4 tokens `style.css` never declares**. An undeclared
+`--cc-*` doesn't warn: the declaration is invalid at computed-value time and drops to `unset`.
+- 13 × `--cc-text-muted` — the `, #888` fallback *masked* it, freezing a hard-coded grey instead of
+  `--cc-text-dim` `#7d8590`. (This is why the earlier sweep only caught "several": the fallbacks hid them.)
+- 2 × `--cc-font-mono` (the token is `--cc-mono`) — silently fell back to bare `monospace`.
+- 1 × `--cc-surface-3` — never existed.
+- 2 × fallback-less `background: var(--cc-surface)` in `LabLogPanel`. Worst case: on a `<select>` the
+  invalid **shorthand** dropped `background-image` too, killing the global custom caret — that dropdown
+  rendered transparent *and* arrowless.
+
+All fixed, and `frontend/src/utils/cssTokens.ts` + `cssTokens.test.ts` now fail the suite on any
+reference to an undeclared custom property (`vite.config.ts` sets `test.css: true`, without which Vitest
+stubs `style.css` to `''` and the guard would pass vacuously). **Add the token, never a fallback.**
+The guard was later widened from `--cc-*` to **all** `--*` properties — and immediately found a 17th
+site, `SpatialContactHeatmap`'s `var(--text-muted, #888)`, which had been hiding behind the prefix
+filter. Component-local declarations count as valid, including inline `:style="{ '--foo': … }"` for
+dynamic values (`--gate-font`, `--sk`, `--sep-thick`, `--pct` are all legitimately set that way).
+
+### Enforcement — the ratchet (2026-07-25)
+
+The mandatory-lookup clause in `CLAUDE.md` and the catalog in `docs/UI.md` are review-time discipline,
+and this project's history *is* the record of that discipline failing across fresh context windows. So
+the scenarios are now machine-checked: `utils/cssScenarios.ts` + `cssScenarios.test.ts` detect a scoped
+rule that spells out a utility's defining declarations, and hold a **per-file baseline that may shrink
+and must never grow**. ~130 rules remain in 45 files; new divergence fails immediately, and the backlog
+drains as files get touched. This decouples "stop the drift" from "finish the sweep" — which is what had
+stalled the whole exercise.
+
+Precision was chosen over recall, deliberately, because the allow-list a noisy check would force is
+where this kind of thing rots. Three matchers were dropped or tightened during calibration:
+- **`card` — dropped entirely.** `surface + 1px border + radius` is the shape of a card, an input, a
+  chip, a badge *and* an icon-button; ~60% of matches wanted `.cc-btn`/`ChipSelect`/the global input
+  base, not `.cc-card`. Nothing in scoped CSS distinguishes them. Review-time rule only.
+- **Controls excluded from the text matchers.** A dim colour + a size also describes every ghost/icon
+  button (`.action-btn`, `.icon-btn`, `.ra-btn`, …), whose canonical form is `.cc-btn-ghost`.
+- **`empty` narrowed to rules that re-declare the colour.** `.foo-empty p { margin: 0; font-size: 0.8rem }`
+  is styling its own contents, not re-implementing the scenario.
+
+Calibration took the count from 310 → 262 → 155 → 130. **The first three figures were wrong**, and so
+was the "~80" estimated from class-name greps (`*-hint`/`*-sub`/`*-val`) — most muted text has no such
+word in its class name. That is the fourth miscount in this saga; the lesson is that every count here
+should come from a committed detector, not a grep.
+
+### Raw sizes and radii — done, and it was never churn
+
+This was written off twice as "churn: touches every file for no behavioural gain". That was wrong, and
+the reasoning was inconsistent: the argument for adding `--cc-fs-2xs/3xs` was *"the scale should have the
+steps the app actually uses"*, and it simply wasn't applied to the middle of the scale. Worse, the ratchet
+had been built with the largest category carved out of it, so those values would have kept growing.
+
+Measuring settled it — **33 distinct font-size spellings, of which 98% (541/553) were already within
+0.5px of an existing token.** 33 spellings of 5 values. The "it's a visual change" objection was about
+sub-pixel shifts. So both scales were derived from the distribution and everything was tokenised:
+
+- `--cc-fs-lg: 0.9rem` added (a real 9-use cluster one step above body).
+- Radius scale went 2 steps → 5: `xs/sm/md/lg/pill`, and **`--cc-radius-sm` was retuned `0.25rem`→`0.3rem`**
+  because 4.8px is the modal radius (33 uses) — that halved the worst-case shift from 1.6px to 0.8px. Only
+  one site consumed the old value.
+- **~770 declarations tokenised** across 83 files. `findRawValues` + its test now fail on any literal.
+- Exempt by rule: display type (>15px), pill radii, `0`, and `em` (container-relative by design —
+  `ViewLegend` scales with the export). One inline-documented exception: `ChainQcNode` `.qc-bar`'s 1px
+  radius, where the 3px token would round a 4px-wide bar into a blob.
+
+Two blind spots surfaced while finishing, both now covered: the detector and the sweep only looked inside
+`<style>` blocks, so four **inline `style="font-size:…"`** icon sizes were invisible; and the `muted`
+matcher keyed on a *literal* size, so tokenising a rule would have silently un-flagged it —
+`color: dim` + `font-size: var(--cc-fs-sm)` is still `.cc-muted` spelled longhand.
+
+**Residual risk (needs eyes in a browser).** ~139 declarations shifted by ~0.48px, which is up to **4%
+relative** at these sizes. Absolute shift is imperceptible, but a +4% label in a tightly-fitted fixed-width
+element could newly wrap or ellipsize. Most likely spots: the chain whiteboard node footers (8px → 8.96px,
+in a 120px-min node) and the dense table/readout rows.
+
+Migrated on top of the earlier batch: the **three byte-identical overlay-empty triples** in
+`ClusterHeatmapPanel` / `ClusterHmmStatesPanel` / `ClusterHmmTransitionsPanel` (the same rule as
+`UmapView`'s, copy-pasted four times) · `ClusterHeatmapPanel` `.feat-empty` · `ClusterPlots` `.cp-empty` ·
+`SpatialContactHeatmap` `.ch-empty`/`.ch-meta` · and the **six** hand-rolled eyebrows in `ChainModule`
+(sizes 0.6/0.65/0.68rem, weights 600/700, tracking 0.06/0.07/0.08 — all one role). Those four files are
+now fully clean. The eyebrow unification is the one visible change: weight and tracking normalise.
 
 ## Convention going forward
 

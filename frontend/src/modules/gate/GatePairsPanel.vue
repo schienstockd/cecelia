@@ -198,42 +198,42 @@ function exportAs(kind: string) {
 </template>
 
 <style scoped>
-.ro-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
-  border: 1px solid var(--cc-border); border-radius: 3px; padding: 1px 5px; }
+.ro-tag { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; }
 /* heavy-matrix warning strip (brief; numbers + the fix live in the tooltip) */
-.pairs-warn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px;
+.pairs-warn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: var(--cc-fs-xs);
   color: var(--cc-warn, #f59e0b); background: color-mix(in srgb, var(--cc-warn, #f59e0b) 12%, transparent);
   border-bottom: 1px solid var(--cc-border); cursor: help; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 /* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
-.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
 .ax-lbl { width: 2.6rem; color: var(--cc-text-dim); flex-shrink: 0; }
 .ax-chan { width: 12rem; flex: none; }
 .tsel { width: 5.5rem; flex-shrink: 0; }
 /* amber: some channels' range can't use the chosen transform → those tiles auto-shown on linear */
 .tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
-.ax-warn { color: #f59e0b; font-size: 0.7rem; flex-shrink: 0; cursor: help; }
+.ax-warn { color: #f59e0b; font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 /* channel multiselect popover */
 .chan-pick { position: relative; flex: 1; min-width: 0; }
 .chan-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px;
   background: var(--cc-surface-2); color: var(--cc-text); border: 1px solid var(--cc-border);
-  border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+  border-radius: var(--cc-radius-sm); padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .chan-btn.on { border-color: var(--cc-accent); }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .chan-pop { width: 15rem; max-width: 80vw; padding: 6px; }
 .chan-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px;
-  color: var(--cc-text-dim); font-size: 11px; border-bottom: 1px solid var(--cc-border); }
-.chan-clear { background: none; border: none; color: var(--cc-accent); cursor: pointer; font-size: 11px; }
+  color: var(--cc-text-dim); font-size: var(--cc-fs-xs); border-bottom: 1px solid var(--cc-border); }
+.chan-clear { background: none; border: none; color: var(--cc-accent); cursor: pointer; font-size: var(--cc-fs-xs); }
 .chan-clear:disabled { color: var(--cc-text-dim); cursor: default; }
 .chan-list { max-height: 220px; overflow-y: auto; padding: 4px 0; }
 .chan-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: pointer; color: var(--cc-text); }
 .chan-item:hover { background: var(--cc-surface-2); }
 .chan-item.disabled { color: var(--cc-text-dim); cursor: default; }
-.chan-cap { padding: 5px 4px 2px; font-size: 10px; color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.chan-cap { padding: 5px 4px 2px; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); }
+.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
-.gp-export { font-size: 12px; max-width: 7rem; }
+.gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 </style>

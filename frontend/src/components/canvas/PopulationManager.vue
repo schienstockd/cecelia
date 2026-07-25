@@ -339,7 +339,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
                   v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
                   @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
-          <span v-if="!props.clusterIds.length" class="pm-chip-empty">no clusters at this suffix</span>
+          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-muted-dense">no clusters at this suffix</span>
         </div>
       </template>
 
@@ -420,20 +420,20 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
 .pm-row.transient { font-style: italic; background: color-mix(in srgb, #22d3ee 8%, transparent); }
-.pm-napari { width: 16px; text-align: center; font-size: 13px; }
-.pm-swatch { width: 16px; height: 16px; padding: 0; border: 1px solid var(--cc-border); border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+.pm-napari { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
+.pm-swatch { width: 16px; height: 16px; padding: 0; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); cursor: pointer; flex-shrink: 0; }
 .pm-swatch:disabled { cursor: default; opacity: 0.7; }
 /* colour picker popover (Cecelia palette + native custom) — TeleportPopover gives surface/border */
 .pm-colours { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .pm-colours-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.pm-colour-chip { width: 22px; height: 22px; border: 1px solid var(--cc-border); border-radius: 4px; cursor: pointer; padding: 0; }
+.pm-colour-chip { width: 22px; height: 22px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); cursor: pointer; padding: 0; }
 .pm-colour-chip:hover { transform: scale(1.08); }
 .pm-colour-chip.on { outline: 2px solid var(--cc-text); outline-offset: 1px; }
 .pm-colour-custom { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  font-size: 12px; color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); padding-top: 6px; }
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); padding-top: 6px; }
 .pm-colour-custom input { width: 28px; height: 20px; padding: 0; border: none; background: none; cursor: pointer; }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pm-rename { flex: 1; background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-accent); border-radius: 3px; padding: 1px 4px; }
+.pm-rename { flex: 1; background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 .pm-stat small { opacity: 0.7; margin-left: 3px; }
 .pm-icon { background: none; border: none; color: var(--cc-text-dim); cursor: pointer; padding: 2px; }
@@ -443,8 +443,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 
 /* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
 .pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border); }
-.pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 4px 9px;
-  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2);
+.pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cc-fs-xs); padding: 4px 9px;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2);
   color: var(--cc-text); cursor: pointer; }
 .pm-add-btn:hover { border-color: #7c3aed; color: #c4b5fd; }
 .pm-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -452,29 +452,29 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-ff { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-1); }
 .pm-ff-head { display: flex; gap: 5px; align-items: center; }
-.pm-ff-name { flex: 1; font-size: 11px; padding: 3px 6px; border: 1px solid var(--cc-border); border-radius: 4px;
+.pm-ff-name { flex: 1; font-size: var(--cc-fs-xs); padding: 3px 6px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2); color: var(--cc-text); }
-.pm-ff-colour { width: 24px; height: 24px; padding: 0; border: 1px solid var(--cc-border); border-radius: 4px;
+.pm-ff-colour { width: 24px; height: 24px; padding: 0; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
   background: none; cursor: pointer; }
-.pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; font-size: 11px; color: var(--cc-text-dim); }
-.pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: 11px; padding: 2px 4px; border: 1px solid var(--cc-border);
-  border-radius: 3px; background: var(--cc-surface-2); color: var(--cc-text); }
+.pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: var(--cc-fs-xs); padding: 2px 4px; border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); color: var(--cc-text); }
 .pm-ff-measure { flex: 1; min-width: 0; }
 .pm-ff-fun { width: 48px; }
 .pm-ff-vals { width: 64px; }
 .pm-ff-actions { display: flex; justify-content: space-between; align-items: center; }
-.pm-ff-cond-add { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 2px; }
+.pm-ff-cond-add { background: none; border: none; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); cursor: pointer; padding: 2px; }
 .pm-ff-cond-add:hover { color: var(--cc-text); }
-.pm-ff-title { font-size: 11px; font-weight: 600; color: var(--cc-text); }
+.pm-ff-title { font-size: var(--cc-fs-xs); font-weight: 600; color: var(--cc-text); }
 .pm-ff-spacer { flex: 1; }
-.pm-ff-cancel { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 4px 6px; }
+.pm-ff-cancel { background: none; border: none; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); cursor: pointer; padding: 4px 6px; }
 .pm-ff-cancel:hover { color: var(--cc-text); }
-.pm-filter-badge { font-size: 10px; color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
+.pm-filter-badge { font-size: var(--cc-fs-2xs); color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }
 .pm-clusters { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
-.pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: 11px; line-height: 1;
-  border: 1px solid var(--cc-border); border-radius: 3px; background: var(--cc-surface-1);
+.pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: var(--cc-fs-xs); line-height: 1;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1);
   color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }
 .pm-chip:hover { border-color: #7c3aed; color: var(--cc-text); }
 .pm-chip.on { font-weight: 700; }
@@ -482,15 +482,15 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-chip.ro { cursor: default; }
 .pm-chip.ro:hover { border-color: var(--cc-border); color: var(--cc-text-dim); }
 .pm-chip.ro.on:hover { color: #111; }
-.pm-chip-empty { font-size: 10px; color: var(--cc-text-dim); font-style: italic; }
+.pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-dense (row/colour/10px tier) */
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { margin-left: auto; }
 .seg-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.8rem; height: 1.8rem; border-radius: 0.3rem;
+  width: 1.8rem; height: 1.8rem; border-radius: var(--cc-radius-sm);
   border: 1px solid var(--cc-border); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.8rem; transition: background 0.1s, color 0.1s, border-color 0.1s;
+  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-md); transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 .seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
 .seg-btn.active { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
@@ -498,16 +498,16 @@ button.pm-filter-badge:hover { opacity: 1; }
 /* ── extra options ── */
 .pm-opts { border-top: 1px solid var(--cc-border); }
 .pm-opts-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; }
 .pm-opts-toggle:hover { color: var(--cc-text); }
 .pm-opts-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 /* small section heading: ──── plot ──── */
 .pm-opt-head { display: flex; align-items: center; gap: 6px; margin-top: 2px;
-  color: var(--cc-text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+  color: var(--cc-text-dim); font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.08em; }
 .pm-opt-head::before, .pm-opt-head::after { content: ""; flex: 1; height: 1px; background: var(--cc-border); }
 .pm-opt-head:first-child { margin-top: 0; }
 .pm-opt-row { display: flex; align-items: center; gap: 8px; }
-.pm-opt-label { color: var(--cc-text-dim); font-size: 11px; flex: 1; }
+.pm-opt-label { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); flex: 1; }
 .pm-opt-row input[type="range"] { flex: 1; max-width: 110px; }
-.pm-opt-val { color: var(--cc-text-dim); font-size: 11px; width: 1.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+.pm-opt-val { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); width: 1.8rem; text-align: right; font-variant-numeric: tabular-nums; }
 </style>

@@ -327,24 +327,24 @@ async function fillFlagged() {
 
 <style scoped>
 /* Shell (overlay/box/header/footer) lives in BaseModal; only dialog-specific styles remain here. */
-.info-dot { font-size: 0.72rem; color: var(--cc-text-dim); cursor: default; }
+.info-dot { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: default; }
 .pp-form { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
 
-.focus-name { margin: 0; font-size: 0.82rem; font-weight: 600; color: var(--cc-text); }
+.focus-name { margin: 0; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); }
 
 .warn-line {
   display: flex; align-items: center; gap: 0.4rem; margin: 0;
-  font-size: 0.78rem; color: #fcd34d;
+  font-size: var(--cc-fs-sm); color: #fcd34d;
   background: #7c2d1244; border: 1px solid #92400e55;
-  border-radius: 0.3rem; padding: 0.35rem 0.55rem; cursor: help;
+  border-radius: var(--cc-radius-sm); padding: 0.35rem 0.55rem; cursor: help;
 }
 
 /* Informational (not an error): downstream artifacts need a re-run after a calibration change. */
 .rerun-line {
   display: flex; align-items: center; gap: 0.4rem; margin: 0;
-  font-size: 0.78rem; color: var(--cc-text-dim);
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
   background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: 0.3rem; padding: 0.35rem 0.55rem; cursor: help;
+  border-radius: var(--cc-radius-sm); padding: 0.35rem 0.55rem; cursor: help;
 }
 
 .toggle-row { gap: 0.35rem; }
@@ -353,7 +353,7 @@ async function fillFlagged() {
 .dims-row.excluded { opacity: 0.4; }
 .dim-label {
   flex-shrink: 0; width: 1.2rem; text-align: right;
-  font-size: 0.75rem; font-weight: 600; color: var(--cc-text-dim);
+  font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text-dim);
 }
 .field-input { flex: 1; min-width: 0; }
 .field-input.warn { border-color: #f59e0b !important; background: #7c2d1222; }

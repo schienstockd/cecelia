@@ -27,7 +27,7 @@ defineProps<{ label?: string; disabled?: boolean }>()
 .cc-toggle-input { display: none; }
 .cc-toggle-track {
   width: 32px; height: 17px;
-  border-radius: 999px;
+  border-radius: var(--cc-radius-pill);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   position: relative;
@@ -41,11 +41,11 @@ defineProps<{ label?: string; disabled?: boolean }>()
 .cc-toggle-thumb {
   position: absolute;
   width: 11px; height: 11px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   background: #fff;
   top: 2px; left: 2px;
   transition: left 0.15s;
 }
 .cc-toggle-input:checked ~ .cc-toggle-track .cc-toggle-thumb { left: 17px; }
-.cc-toggle-label { font-size: 0.8rem; color: var(--cc-text); }
+.cc-toggle-label { font-size: var(--cc-fs-md); color: var(--cc-text); }
 </style>

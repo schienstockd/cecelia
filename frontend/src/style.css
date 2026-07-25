@@ -52,15 +52,24 @@
 
   /* Corner radius scale — collapses the ~8 ad-hoc radii (0.2/0.25/0.3/0.35/0.4…) to two steps.
      -sm = small controls/chips/inputs; -md = cards/panels/dialogs. Use these, not a raw rem. */
-  --cc-radius-sm: 0.25rem;
-  --cc-radius-md: 0.4rem;
+  --cc-radius-xs:   0.2rem;   /* ≈  3px — chips, swatches, inline code, micro chrome */
+  --cc-radius-sm:   0.3rem;   /* ≈  5px — buttons, inputs, small controls */
+  --cc-radius-md:   0.4rem;   /* ≈  6px — cards, panels, dialogs */
+  --cc-radius-lg:   0.5rem;   /* =  8px — large dialogs / prominent surfaces */
+  --cc-radius-pill: 999px;    /* fully rounded — pills and dots */
 
-  /* Small-text scale — collapses the ~10 ad-hoc sizes (0.6–0.85rem) to three steps for the
-     "secondary text" scenarios (labels, hints, readouts, meta). Body stays 13px; these are for
-     de-emphasised chrome. Use with `.cc-muted` etc., not a raw rem. */
-  --cc-fs-xs: 0.68rem;
-  --cc-fs-sm: 0.75rem;
-  --cc-fs-md: 0.82rem;
+  /* Small-text scale for the "secondary text" scenarios (labels, hints, readouts, meta). Body stays
+     13px; these are for de-emphasised chrome. Use with `.cc-muted` etc., not a raw rem.
+     The two smallest steps exist because dense chrome (whiteboard nodes, chip rows, list headers)
+     genuinely sits below the -xs floor, and the codebase spells the same scale in px as well as rem
+     — 12px IS -sm, 11px IS -xs. Without -2xs/-3xs those sites could not adopt the scenario utilities
+     without growing, which is exactly why they were stranded as "bespoke". */
+  --cc-fs-3xs: 0.56rem;   /* ≈  9px — micro labels inside dense nodes/chips */
+  --cc-fs-2xs: 0.62rem;   /* ≈ 10px — dense chrome, list headers */
+  --cc-fs-xs:  0.68rem;   /* ≈ 11px */
+  --cc-fs-sm:  0.75rem;   /* =  12px */
+  --cc-fs-md:  0.82rem;
+  --cc-fs-lg:  0.9rem;    /* ≈ 14px — the one step ABOVE body: dialog prose, prominent hints */
 }
 
 /* ── Reset / base ──────────────────────────────────────────────────────────── */
@@ -70,7 +79,7 @@
 body {
   margin: 0;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  font-size: 13px;
+  font-size: var(--cc-fs-md);
   line-height: 1.5;
   background: #0f1117;
   color: #e6edf3;
@@ -86,18 +95,18 @@ body {
 
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-thumb  { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb  { background: #30363d; border-radius: var(--cc-radius-xs); }
 ::-webkit-scrollbar-thumb:hover { background: #484f58; }
 
 /* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
 
 .p-tooltip .p-tooltip-text {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.3rem 0.6rem;
   background: #21262d;
   border: 1px solid #30363d;
   color: #e6edf3;
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   max-width: 280px;
   line-height: 1.45;
 }
@@ -110,10 +119,10 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 500;
   padding: 0.28rem 0.65rem;
-  border-radius: 0.35rem;
+  border-radius: var(--cc-radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
   transition: filter 0.1s, background 0.1s, color 0.1s;
@@ -159,30 +168,58 @@ body {
    of styling each site ad-hoc. Compose them; add only layout (width/margin/flex) in scoped CSS.
    See docs/UI.md → "UX primitive catalog" and docs/todo/UX_PRIMITIVES_PLAN.md. */
 
-/* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. */
+/* Each scenario below is `base class + optional modifier`, and the modifiers exist for one reason:
+   the axis a site legitimately varies on. Bake that axis into the base and adoption forces a visual
+   change, so the site stays hand-rolled — which is how the "kept bespoke" list in
+   UX_PRIMITIVES_PLAN.md accumulated. The axes are DENSITY (-dense/-micro, for dense chrome),
+   SURFACE (-2) and LAYOUT (-inline/-overlay/-lg). Per-site emphasis (italic) and geometry
+   (width/margin/flex) still belong in scoped CSS. */
+
+/* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. -dense/-micro drop to the
+   two smallest tiers for dense contexts (chip rows, whiteboard nodes) without changing the role. */
 .cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+.cc-muted-dense { font-size: var(--cc-fs-2xs); }
+.cc-muted-micro { font-size: var(--cc-fs-3xs); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
-   title / CTA inside for the rich variant (it's a flex column). */
+   title / CTA inside for the rich variant (it's a flex column).
+   Layout modifiers, because the same scenario appears in three shapes:
+     -inline  a one-line placeholder in a row of chrome (no padding, no centring block)
+     -overlay stretched over a plot/canvas that has its own box rather than a flow block
+     -lg      a full-page empty with generous breathing room (icon + title + hint + CTA) */
 .cc-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.4rem; padding: 2rem 1rem;
   color: var(--cc-text-dim); font-size: var(--cc-fs-md); text-align: center;
 }
+.cc-empty-inline {
+  display: inline-flex; flex-direction: row; align-items: center; justify-content: flex-start;
+  gap: 0.4rem; padding: 0; text-align: left; color: var(--cc-text-dim);
+}
+.cc-empty-overlay { position: absolute; inset: 0; }
+.cc-empty-lg { padding: 4rem 2rem; gap: 0.5rem; }
 
 /* Numeric value readout shown beside a control/metric (slider values, counts, occupancy). Default is
-   muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence). */
+   muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence), or
+   .cc-readout-dense for an inline readout in dense chrome. */
 .cc-readout { font-variant-numeric: tabular-nums; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 .cc-readout-strong { color: var(--cc-text); font-weight: 600; }
+.cc-readout-dense { font-size: var(--cc-fs-2xs); }
 
-/* Eyebrow / section label — small uppercase dim heading above a group of controls. */
+/* Eyebrow / section label — small uppercase dim heading above a group of controls. -dense for the
+   sticky list/table headers, which sit a tier smaller. */
 .cc-eyebrow {
   font-size: var(--cc-fs-xs); font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--cc-text-dim);
 }
+.cc-eyebrow-dense { font-size: var(--cc-fs-2xs); }
 
-/* Surface / container chrome — a card/panel body (surface-1 + hairline border + md radius). */
+/* Surface / container chrome — a card/panel body (hairline border + md radius). Surface is the axis:
+   the base is the recessed surface-1, `.cc-card-2` the raised surface-2 (a card sitting ON a
+   surface-1 panel). Radius is NOT an axis — the ad-hoc radii differ by well under a pixel at this
+   scale, so -sm/-md are the only two steps worth having. */
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
+.cc-card-2 { background: var(--cc-surface-2); }
 
 /* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
 /* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */
@@ -192,11 +229,11 @@ select,
 input[type="text"], input[type="number"], input[type="search"],
 input[type="password"], input[type="email"], textarea {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   color: var(--cc-text);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.4rem;
+  border-radius: var(--cc-radius-md);
   padding: 0.32rem 0.6rem;
   transition: border-color 0.12s, box-shadow 0.12s;
   outline: none;
