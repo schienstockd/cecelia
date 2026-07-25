@@ -79,21 +79,21 @@ function onTrackDown(e: PointerEvent) {
   position: absolute;
   left: 0; right: 0;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
 }
 .rs-fill {
   position: absolute;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--cc-radius-xs);
   background: var(--cc-accent);
 }
 .rs-thumb {
   position: absolute;
   width: 11px;
   height: 11px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   background: var(--cc-accent);
   border: 1px solid var(--cc-bg);
   transform: translateX(-50%);

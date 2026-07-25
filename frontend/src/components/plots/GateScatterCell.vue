@@ -317,5 +317,5 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
 /* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl; white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
-.panel-loading { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--cc-text-dim); }
+.panel-loading { position: absolute; top: 4px; right: 6px; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 </style>

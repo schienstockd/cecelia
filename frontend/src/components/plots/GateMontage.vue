@@ -305,7 +305,7 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 /* light theme for PDF export: dark ink on white */
 .gm-grid.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff; --cc-surface-2: #f0f0f3; }
 .gm-cell { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--cc-border);
-  border-radius: 5px; overflow: hidden; background: var(--cc-bg); }
+  border-radius: var(--cc-radius-sm); overflow: hidden; background: var(--cc-bg); }
 /* montage plot area is SQUARE — but the SQUARE is the DOTS (.panel-plot in GateScatterCell), not this
    outer box: the capture's axis padding is asymmetric (room for the rotated y-name + the x-name below),
    so squaring the OUTER box made the dots taller than wide ("flow plots elongate on export"). We size
@@ -330,13 +330,13 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
   flex: none; aspect-ratio: 1; min-height: 0; width: min(100%, calc(100cqh - 82px)); }
 /* diagonal label cell (matrix): channel name centred, matches the tile square */
 .gm-diag { align-items: center; justify-content: center; aspect-ratio: 1; background: var(--cc-surface-2);
-  color: var(--cc-text); font-weight: 700; font-size: 12px; padding: 4px; text-align: center; word-break: break-word; }
+  color: var(--cc-text); font-weight: 700; font-size: var(--cc-fs-sm); padding: 4px; text-align: center; word-break: break-word; }
 /* upper-triangle correlation cell (ggpairs): "Corr" label + the value, text scaled by |r| */
 .gm-corr { align-items: center; justify-content: center; aspect-ratio: 1; gap: 2px; border-color: var(--cc-border); }
-.gm-corr-k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); }
+.gm-corr-k { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); }
 .gm-corr-v { font-weight: 700; color: var(--cc-text); font-variant-numeric: tabular-nums; line-height: 1; }
-.gm-title { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 6px; color: var(--cc-text-dim);
+.gm-title { flex-shrink: 0; font-size: var(--cc-fs-xs); font-weight: 700; padding: 3px 6px; color: var(--cc-text-dim);
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--cc-text-dim); aspect-ratio: 1; }
-.gm-msg { grid-column: 1 / -1; padding: 16px; color: var(--cc-text-dim); font-size: 13px; }
+.gm-msg { grid-column: 1 / -1; padding: 16px; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
 </style>

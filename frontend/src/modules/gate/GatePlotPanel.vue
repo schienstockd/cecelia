@@ -392,7 +392,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
       <!-- untracked segmentation on a track plot: nothing to show, point the user at tracking -->
-      <div v-if="notTracked" class="gate-empty">
+      <div v-if="notTracked" class="gate-empty cc-empty-inline cc-card">
         <i class="pi pi-share-alt" />
         <span>Not tracked yet — run tracking on this segmentation first.</span>
       </div>
@@ -416,39 +416,38 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
    this component's scoped styles). */
 /* axis controls now live in the auto-hide overlay (#actions); take a full line below the icon tools
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
-.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
 .ax-lbl { width: 1.8rem; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }
-.panel-ctrl label { display: flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: 12px; }
+.panel-ctrl label { display: flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 /* fixed widths so the bar doesn't reflow when the selected option text changes; the rest
    (background, border, chevron, focus) comes from the global form base in style.css */
-.panel-ctrl select { width: 8rem; font-size: 12px; padding-top: 2px; padding-bottom: 2px; }
+.panel-ctrl select { width: 8rem; font-size: var(--cc-fs-sm); padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
 /* amber: this axis' preferred transform was auto-linearised because the measure's range can't use it */
 .panel-ctrl select.tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
-.ax-warn { color: #f59e0b; font-size: 0.7rem; flex-shrink: 0; cursor: help; }
+.ax-warn { color: #f59e0b; font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { outline: none; border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.gp-export { font-size: 12px; max-width: 7rem; }
+.gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: 4px; padding: 4px 6px; font-size: 11px; }
-.panel-name input { background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-border); border-radius: 3px; padding: 1px 5px; width: 90px; }
+  background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 4px 6px; font-size: var(--cc-fs-xs); }
+.panel-name input { background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; width: 90px; }
 .panel-name input.name-invalid { border-color: var(--cc-danger, #ef4444); }
-.name-hint { color: var(--cc-danger, #ef4444); font-size: 10px; max-width: 150px; line-height: 1.2; }
+.name-hint { color: var(--cc-danger, #ef4444); font-size: var(--cc-fs-2xs); max-width: 150px; line-height: 1.2; }
 /* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
 .gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
-  font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
+  font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); white-space: nowrap; }
 
-/* centred empty-state over the plot: track-grained pop type on an untracked segmentation */
+/* centred empty-state over the plot: track-grained pop type on an untracked segmentation.
+   + .cc-empty-inline .cc-card — an inline empty wearing card chrome; only the centring is local */
 .gate-empty { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
-  display: flex; align-items: center; gap: 6px; padding: 8px 12px; pointer-events: none;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 6px;
-  font-size: 12px; color: var(--cc-text-dim); }
-.gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: 3px;
+  padding: 8px 12px; pointer-events: none; font-size: var(--cc-fs-sm); }
+.gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
   padding: 0 3px; color: var(--cc-text); }
 </style>

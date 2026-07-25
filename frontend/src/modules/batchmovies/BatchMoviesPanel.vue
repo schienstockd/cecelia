@@ -335,36 +335,36 @@ async function previewOpen() {
 
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
-.bm-hint { color: var(--cc-text-dim); font-size: 0.78rem; margin: 2px 0; }
-.bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 6px;
+.bm-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin: 2px 0; }
+.bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: var(--cc-radius-md);
   background: color-mix(in srgb, var(--cc-warn) 16%, transparent); border: 1px solid var(--cc-warn);
-  color: var(--cc-text); font-size: 0.8rem; }
-.bm-sec { border: 1px solid var(--cc-border); border-radius: 6px; padding: 6px 8px; background: var(--cc-surface-1); }
-.bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: 0.8rem; font-weight: 700; }
-.bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; font-size: 0.72rem; }
-.bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: 0.72rem; margin-left: 6px; }
-.bm-link { float: right; font-size: 0.7rem; color: var(--cc-accent); background: none; border: none;
+  color: var(--cc-text); font-size: var(--cc-fs-md); }
+.bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
+.bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
+.bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; font-size: var(--cc-fs-sm); }
+.bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin-left: 6px; }
+.bm-link { float: right; font-size: var(--cc-fs-xs); color: var(--cc-accent); background: none; border: none;
   cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
 .bm-link:hover:not(:disabled) { text-decoration: underline; }
 .bm-link:disabled { opacity: 0.4; cursor: not-allowed; }
 .bm-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-.bm-ch { flex: 1; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-ch { flex: 1; font-size: var(--cc-fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bm-row select, .bm-sec > select { min-width: 150px; }
-.bm-chk { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin: 3px 0; cursor: pointer; }
+.bm-chk { display: flex; align-items: center; gap: 6px; font-size: var(--cc-fs-md); margin: 3px 0; cursor: pointer; }
 .bm-chk.inline { display: inline-flex; margin-right: 10px; }
 .bm-inset { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }
 /* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so two on one row
    (fps + res) overflow the sidebar. Let them flex down to share the available width. */
 .bm-inset input[type="range"] { flex: 1; min-width: 0; }
-.bm-lbl { font-size: 0.72rem; color: var(--cc-text-dim); }
-.bm-val { font-size: 0.72rem; min-width: 1.6rem; }
+.bm-lbl { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.bm-val { font-size: var(--cc-fs-sm); min-width: 1.6rem; }
 .bm-attrs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.bm-preview { font-size: 0.76rem; color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
+.bm-preview { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .bm-title-row { display: flex; align-items: center; gap: 0.5rem; }
 .bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
 .bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
 .bm-note { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; margin-top: 5px;
-  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
 </style>

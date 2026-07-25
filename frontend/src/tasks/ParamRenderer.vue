@@ -579,7 +579,7 @@ const pct = computed(() => {
     <!-- fallback -->
     <div v-else class="picker-placeholder"
       v-tooltip.right="`${param.type} — populated from image metadata`">
-      <i class="pi pi-spinner pi-spin" style="font-size:0.7rem" />
+      <i class="pi pi-spinner pi-spin" style="font-size:var(--cc-fs-xs)" />
       {{ param.type }}
     </div>
   </div>
@@ -682,7 +682,7 @@ const pct = computed(() => {
 .param-row:last-child { border-bottom: none; }
 
 .param-label {
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 500;
   color: var(--cc-text-dim);
   display: flex;
@@ -690,7 +690,7 @@ const pct = computed(() => {
   gap: 0.3rem;
   cursor: default;
 }
-.tip-icon { font-size: 0.65rem; opacity: 0.6; }
+.tip-icon { font-size: var(--cc-fs-2xs); opacity: 0.6; }
 
 /* slider */
 .slider-wrap {
@@ -702,7 +702,7 @@ const pct = computed(() => {
   flex: 1;
   appearance: none;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--cc-radius-xs);
   background: linear-gradient(to right,
     var(--cc-accent) 0%, var(--cc-accent) var(--pct, 0%),
     var(--cc-surface-2) var(--pct, 0%), var(--cc-surface-2) 100%);
@@ -712,13 +712,13 @@ const pct = computed(() => {
 .slider::-webkit-slider-thumb {
   appearance: none;
   width: 13px; height: 13px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   background: var(--cc-accent);
   cursor: pointer;
   box-shadow: 0 0 4px #a78bfa55;
 }
 .slider-val {
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-family: var(--cc-mono);
   color: var(--cc-text);
   min-width: 28px;
@@ -742,7 +742,7 @@ const pct = computed(() => {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text-dim);
   text-transform: uppercase;
@@ -756,35 +756,35 @@ const pct = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   background: var(--cc-surface-2);
   border: 1px dashed var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   padding: 0.35rem 0.5rem;
 }
 
 /* channel selection */
 .channel-select-wrap { width: 100%; }
 .channel-empty {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
   padding: 0.2rem 0;
 }
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
-.md-note { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); }
-.md-note .pi { font-size: 0.72rem; }
+.md-note { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.md-note .pi { font-size: var(--cc-fs-sm); }
 .md-note.warn { color: #fbbf24; }
 /* traffic-light flag: how usable is the z-axis (ok real 3D · warn borderline · fail jitter). A
    shape-distinct severity icon (canonical severity model) — colour is never the sole cue. */
-.md-flag { font-size: 0.72rem; flex: none; }
+.md-flag { font-size: var(--cc-fs-sm); flex: none; }
 
 .col-group { margin-bottom: 0.4rem; }
 .col-group:last-child { margin-bottom: 0; }
 .col-group-title {
-  font-size: 0.62rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -803,7 +803,7 @@ const pct = computed(() => {
   padding: 0.45rem 0 0.3rem;
 }
 .group-title {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text-dim);
   text-transform: uppercase;
@@ -814,17 +814,17 @@ const pct = computed(() => {
   align-items: center;
   justify-content: center;
   width: 18px; height: 18px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   border: 1px solid var(--cc-border);
   background: var(--cc-surface-2);
   color: var(--cc-text-dim);
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: var(--cc-fs-2xs);
   transition: background 0.1s, border-color 0.1s;
 }
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .group-empty {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
   padding: 0.3rem 0;
@@ -832,7 +832,7 @@ const pct = computed(() => {
 .group-entry {
   margin-bottom: 0.4rem;
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   overflow: hidden;
 }
 .group-entry-hdr {
@@ -844,7 +844,7 @@ const pct = computed(() => {
   border-bottom: 1px solid var(--cc-border);
 }
 .group-entry-num {
-  font-size: 0.68rem;
+  font-size: var(--cc-fs-xs);
   font-weight: 700;
   font-family: var(--cc-mono);
   color: var(--cc-accent);
@@ -854,12 +854,12 @@ const pct = computed(() => {
   align-items: center;
   justify-content: center;
   width: 14px; height: 14px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   border: none;
   background: none;
   color: var(--cc-text-dim);
   cursor: pointer;
-  font-size: 0.55rem;
+  font-size: var(--cc-fs-3xs);
   transition: color 0.1s;
 }
 .group-remove-btn:hover { color: #f87171; }
@@ -876,7 +876,7 @@ const pct = computed(() => {
   border: none;
   border-top: 1px solid var(--cc-border);
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: var(--cc-fs-xs);
   font-weight: 600;
   color: var(--cc-text-dim);
   text-transform: uppercase;
@@ -884,7 +884,7 @@ const pct = computed(() => {
   text-align: left;
 }
 .group-section-toggle:hover { color: var(--cc-text); }
-.group-section-toggle .pi { font-size: 0.6rem; }
+.group-section-toggle .pi { font-size: var(--cc-fs-2xs); }
 
 .group-section-body {
   padding-left: 0.4rem;

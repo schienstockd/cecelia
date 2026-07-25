@@ -105,7 +105,7 @@ function endGesture() {
   flex-direction: column;
   background: var(--cc-surface-1);          /* solid — floats over content, must not be see-through */
   border: 1px solid var(--cc-border);
-  border-radius: 0.5rem;
+  border-radius: var(--cc-radius-lg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   min-width: 220px;
@@ -121,10 +121,10 @@ function endGesture() {
   user-select: none;
   flex-shrink: 0;
 }
-.fp-icon { font-size: 0.8rem; color: var(--cc-accent); flex-shrink: 0; }
+.fp-icon { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; }
 .fp-title {
   flex: 1;
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -143,11 +143,11 @@ function endGesture() {
   background: none;
   color: var(--cc-text-dim);
   cursor: pointer;
-  border-radius: 0.25rem;
-  font-size: 0.72rem;
+  border-radius: var(--cc-radius-xs);
+  font-size: var(--cc-fs-sm);
   flex-shrink: 0;
 }
-.fp-btn:hover { color: var(--cc-text); background: var(--cc-surface-3, rgba(255, 255, 255, 0.06)); }
+.fp-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .fp-body { flex: 1; overflow: auto; min-height: 0; }
 .fp-resize {
   position: absolute;

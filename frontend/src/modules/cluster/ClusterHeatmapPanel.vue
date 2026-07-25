@@ -139,7 +139,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
           <label v-for="f in featureOptions" :key="f" class="feat-row">
             <input type="checkbox" :checked="features.includes(f)" @change="toggleFeature(f)" /> {{ label(f) }}
           </label>
-          <p v-if="!featureOptions.length" class="feat-empty">No recorded features — re-run clustering, or this run predates feature tracking.</p>
+          <p v-if="!featureOptions.length" class="feat-empty cc-muted">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
       <select v-model="heatmapScale" class="hm-sel"
@@ -165,7 +165,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
     </template>
     <div class="hm-body">
       <PlotChart v-if="heatmap" ref="plotRef" :data="heatmap" :opts="opts" />
-      <div v-else class="hm-empty">
+      <div v-else class="hm-empty cc-empty cc-empty-overlay">
         <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-table']" />
         <p>{{ loading ? 'Loading…' : (err || 'Pick features to build the cluster heatmap.') }}</p>
       </div>
@@ -174,22 +174,23 @@ defineExpose({ exportImage, getCsv, exportSvg })
 </template>
 
 <style scoped>
-.feat { position: relative; font-size: 12px; }
-.feat summary { cursor: pointer; color: var(--cc-text-dim); list-style: none; padding: 2px 6px; border: 1px solid var(--cc-border); border-radius: 4px; }
+.feat { position: relative; font-size: var(--cc-fs-sm); }
+.feat summary { cursor: pointer; color: var(--cc-text-dim); list-style: none; padding: 2px 6px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); }
 .feat[open] summary { color: var(--cc-text); }
 .feat-list { position: absolute; z-index: 10; top: 1.7rem; left: 0; min-width: 12rem; max-height: 16rem; overflow-y: auto;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 5px; padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
 .feat-row { display: flex; align-items: center; gap: 5px; padding: 2px 3px; color: var(--cc-text); white-space: nowrap; }
-.feat-empty { color: var(--cc-text-dim); font-size: 11px; margin: 4px; }
-.hm-sel { font-size: 12px; margin-left: 6px; }
-.hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
+.feat-empty { font-size: var(--cc-fs-xs); margin: 4px; }   /* + .cc-muted (colour) */
+.hm-sel { font-size: var(--cc-fs-sm); margin-left: 6px; }
+.hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
 .hm-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
 .hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.hm-export { font-size: 12px; max-width: 7rem; }
+.hm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 .hm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
-.hm-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }
+/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + the two HMM panels) */
+.hm-empty { padding: 1rem; }
 .hm-empty .pi { font-size: 1.4rem; opacity: 0.6; }
-.hm-empty p { margin: 0; font-size: 0.8rem; max-width: 22rem; }
+.hm-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }
 </style>

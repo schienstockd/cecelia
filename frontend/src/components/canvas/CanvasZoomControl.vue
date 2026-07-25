@@ -23,12 +23,12 @@ const pct = () => Math.round(props.zoom * 100)
 
 <style scoped>
 .cz { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--cc-border);
-  border-radius: 5px; padding: 1px 4px; background: var(--cc-surface-2); }
+  border-radius: var(--cc-radius-sm); padding: 1px 4px; background: var(--cc-surface-2); }
 .cz-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem;
-  background: transparent; color: var(--cc-text-dim); border: none; cursor: pointer; font-size: 0.72rem; }
+  background: transparent; color: var(--cc-text-dim); border: none; cursor: pointer; font-size: var(--cc-fs-sm); }
 .cz-btn:hover { color: var(--cc-text); }
 .cz-range { width: 6rem; }
 .cz-val { min-width: 2.6rem; text-align: center; background: transparent; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  color: var(--cc-text-dim); font-size: var(--cc-fs-xs); font-variant-numeric: tabular-nums; }
 .cz-val:hover { color: var(--cc-text); }
 </style>

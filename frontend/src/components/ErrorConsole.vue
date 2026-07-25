@@ -166,7 +166,7 @@ const filterOptions = computed<ChipOption[]>(() =>
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text-dim);
   background: none;
@@ -195,7 +195,7 @@ const filterOptions = computed<ChipOption[]>(() =>
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   flex: 1;
   overflow: hidden;
   white-space: nowrap;
@@ -208,7 +208,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 
 .lvl-dot {
   width: 6px; height: 6px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   flex-shrink: 0;
 }
 .bar-last.error .lvl-dot { background: #ef4444; }
@@ -221,10 +221,10 @@ const filterOptions = computed<ChipOption[]>(() =>
 .unread-badge {
   background: #7f1d1d;
   color: #fca5a5;
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   font-weight: 700;
   padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--cc-radius-pill);
   min-width: 1.4em;
   text-align: center;
 }
@@ -259,8 +259,8 @@ const filterOptions = computed<ChipOption[]>(() =>
   cursor: pointer;
   color: var(--cc-text-dim);
   padding: 0.2rem 0.4rem;
-  border-radius: 0.25rem;
-  font-size: 0.8rem;
+  border-radius: var(--cc-radius-xs);
+  font-size: var(--cc-fs-md);
 }
 .icon-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); }
 .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -270,7 +270,7 @@ const filterOptions = computed<ChipOption[]>(() =>
   flex: 1;
   overflow-y: auto;
   font-family: var(--cc-mono);
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.25rem 0;
 }
 
@@ -294,10 +294,10 @@ const filterOptions = computed<ChipOption[]>(() =>
 .lvl {
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   flex-shrink: 0;
   padding: 0.05rem 0.35rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
 }
 .error .lvl { background: #7f1d1d; color: #fca5a5; }
 .warn  .lvl { background: #78350f; color: #fcd34d; }
@@ -307,17 +307,17 @@ const filterOptions = computed<ChipOption[]>(() =>
 .error .msg { color: #fca5a5; }
 .warn  .msg { color: #fcd34d; }
 
-.expand-icon { color: var(--cc-text-dim); font-size: 0.65rem; flex-shrink: 0; }
+.expand-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-2xs); flex-shrink: 0; }
 
 .detail {
   width: 100%;
   margin: 0.35rem 0 0.2rem;
   padding: 0.5rem 0.75rem;
   background: var(--cc-surface-1);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   border-left: 2px solid var(--cc-border);
   color: var(--cc-text-dim);
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   white-space: pre-wrap;
   word-break: break-all;
   overflow-x: auto;
@@ -327,6 +327,6 @@ const filterOptions = computed<ChipOption[]>(() =>
   padding: 1.5rem;
   text-align: center;
   color: var(--cc-text-dim);
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
 }
 </style>

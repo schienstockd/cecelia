@@ -26,7 +26,7 @@ defineProps<{
     <div class="node-label">{{ data.label || data.fn }}</div>
     <div class="node-fn">{{ data.fn }}</div>
     <div v-if="data.resource_pool" class="node-pool">
-      <i class="pi pi-server" style="font-size:0.6rem" />
+      <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
       {{ data.resource_pool }}
     </div>
 
@@ -38,9 +38,9 @@ defineProps<{
 .chain-task-node {
   background: var(--cc-surface-1, #1e1b2e);
   border: 1.5px solid var(--cc-accent, #a78bfa);
-  border-radius: 6px;
+  border-radius: var(--cc-radius-md);
   padding: 7px 11px;
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   min-width: 140px;
   cursor: pointer;
   position: relative;
@@ -63,13 +63,13 @@ defineProps<{
 .scope-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   background: var(--cc-accent, #a78bfa);
   flex-shrink: 0;
 }
 .incremental .scope-dot { background: #60a5fa; }
 .scope-label {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -77,7 +77,7 @@ defineProps<{
 }
 
 .node-label {
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text, #e2e2f0);
   white-space: nowrap;
@@ -86,7 +86,7 @@ defineProps<{
   max-width: 160px;
 }
 .node-fn {
-  font-size: 10px;
+  font-size: var(--cc-fs-2xs);
   color: var(--cc-text-dim, #8b8ca7);
   font-family: monospace;
   margin-top: 2px;
@@ -99,7 +99,7 @@ defineProps<{
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   color: #f97316;
   margin-top: 4px;
 }

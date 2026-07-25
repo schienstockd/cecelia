@@ -188,14 +188,14 @@ function elapsed(t: TaskEntry) {
 }
 
 .task-empty {
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   text-align: center;
   padding: 1.5rem 0.5rem;
 }
 
 .task-item {
-  border-radius: 0.4rem;
+  border-radius: var(--cc-radius-md);
   border: 1px solid var(--cc-border);
   overflow: hidden;
   background: var(--cc-surface-1);
@@ -212,12 +212,12 @@ function elapsed(t: TaskEntry) {
   padding: 0.4rem 0.6rem;
 }
 
-.task-icon { font-size: 0.85rem; flex-shrink: 0; }
+.task-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .task-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .task-label {
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text);
   white-space: nowrap;
@@ -228,19 +228,19 @@ function elapsed(t: TaskEntry) {
   gap: 0.3rem;
 }
 .task-seq {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   font-family: var(--cc-mono);
   font-weight: 700;
   color: var(--cc-text-dim);
   flex-shrink: 0;
 }
 .chain-badge {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   color: #a78bfa;
   flex-shrink: 0;
 }
 .task-image {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -251,17 +251,17 @@ function elapsed(t: TaskEntry) {
 }
 .task-uid {
   font-family: var(--cc-mono);
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   color: var(--cc-text-dim);
   opacity: 0.6;
   flex-shrink: 0;
   background: var(--cc-surface-2);
   padding: 0 0.25rem;
-  border-radius: 0.2rem;
+  border-radius: var(--cc-radius-xs);
 }
 
 .task-elapsed {
-  font-size: 0.68rem;
+  font-size: var(--cc-fs-xs);
   font-family: var(--cc-mono);
   color: var(--cc-text-dim);
   flex-shrink: 0;
@@ -271,8 +271,8 @@ function elapsed(t: TaskEntry) {
 
 .icon-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.72rem;
-  padding: 0.2rem 0.3rem; border-radius: 0.2rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-sm);
+  padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
 }
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .icon-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
@@ -283,7 +283,7 @@ function elapsed(t: TaskEntry) {
   border: none;
   cursor: pointer;
   color: #4ade80;
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   padding: 0 0.15rem 0 0;
   flex-shrink: 0;
   line-height: 1;
@@ -305,7 +305,7 @@ function elapsed(t: TaskEntry) {
 
 .task-log {
   font-family: var(--cc-mono);
-  font-size: 0.68rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   background: var(--cc-console-bg);
   padding: 0.5rem 0.6rem;
@@ -316,5 +316,5 @@ function elapsed(t: TaskEntry) {
   word-break: break-all;
   border-top: 1px solid var(--cc-border);
 }
-.dim { color: var(--cc-text-dim); font-size: 0.72rem; }
+.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 </style>

@@ -230,19 +230,19 @@ defineExpose({ exportImage, exportSvg })
 /* position: relative so the overlaid .gs-bar (.cc-panel-controls) anchors to the plot box, not the panel */
 .gs-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .gs-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap;
-  font-size: 12px; }
-.gs-bar select { font-size: 12px; max-width: 9rem; }
+  font-size: var(--cc-fs-sm); }
+.gs-bar select { font-size: var(--cc-fs-sm); max-width: 9rem; }
 /* ⚙ options popover (hierarchy toggle). margin-left:auto pins the gear to the far right so the popover —
    anchored right:0 — always opens LEFTWARD into the panel and is never clipped at the left edge. */
 .gs-opts { position: relative; display: inline-flex; margin-left: auto; }
 .gs-gear { background: var(--cc-surface-2); color: var(--cc-text-dim); border: 1px solid var(--cc-border);
-  border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+  border-radius: var(--cc-radius-sm); padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .gs-gear.on { background: var(--cc-accent); color: #fff; border-color: var(--cc-accent); }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: 12px; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+.gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: var(--cc-fs-sm); }
+.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
 </style>

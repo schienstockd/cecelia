@@ -34,11 +34,11 @@ function dismiss() {
   background: color-mix(in srgb, var(--cc-accent) 12%, var(--cc-surface-1));
   border-bottom: 1px solid var(--cc-border);
   border-left: 2px solid var(--cc-accent);
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   color: var(--cc-text);
   flex-shrink: 0;
 }
-.hint-icon { color: var(--cc-accent); font-size: 0.85rem; flex-shrink: 0; }
+.hint-icon { color: var(--cc-accent); font-size: var(--cc-fs-md); flex-shrink: 0; }
 .hint-text { flex: 1; }
 .hint-x {
   background: none;
@@ -46,9 +46,9 @@ function dismiss() {
   cursor: pointer;
   color: var(--cc-text-dim);
   padding: 0.15rem 0.3rem;
-  border-radius: 0.25rem;
+  border-radius: var(--cc-radius-xs);
   flex-shrink: 0;
 }
 .hint-x:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.hint-x .pi { font-size: 0.7rem; }
+.hint-x .pi { font-size: var(--cc-fs-xs); }
 </style>

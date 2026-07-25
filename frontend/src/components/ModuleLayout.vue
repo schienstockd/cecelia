@@ -543,7 +543,7 @@ const visibleUids = computed<string[]>(() =>
   transition: background 0.12s, color 0.12s;
 }
 .right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.right-handle .pi { font-size: 0.7rem; }
+.right-handle .pi { font-size: var(--cc-fs-xs); }
 /* drag strip on the panel's left edge to resize (col-resize); thin, highlights on hover */
 .right-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: transparent; transition: background 0.12s; }
 .right-resizer:hover { background: var(--cc-accent); }
@@ -560,7 +560,7 @@ const visibleUids = computed<string[]>(() =>
 }
 
 .image-count {
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   display: flex;
   align-items: center;
@@ -569,18 +569,18 @@ const visibleUids = computed<string[]>(() =>
 .excluded-note { color: var(--cc-sev-warn); }
 
 .filter-badge {
-  font-size: 0.65rem;
+  font-size: var(--cc-fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--cc-radius-pill);
   background: #2d1b69;
   color: #c4b5fd;
 }
 
 .no-set-hint {
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   font-style: italic;
 }
@@ -609,7 +609,7 @@ const visibleUids = computed<string[]>(() =>
   gap: 0.3rem;
   padding: 0.2rem 0.5rem;
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
   cursor: pointer;
   color: var(--cc-text-dim);
@@ -617,11 +617,11 @@ const visibleUids = computed<string[]>(() =>
 }
 .filter-toggle:hover { color: var(--cc-text); border-color: #484f58; }
 .filter-toggle.active { color: #c4b5fd; border-color: #7c3aed; }
-.filter-toggle .pi { font-size: 0.7rem; }
-.filter-toggle .filter-caret { font-size: 0.55rem; opacity: 0.7; }
+.filter-toggle .pi { font-size: var(--cc-fs-xs); }
+.filter-toggle .filter-caret { font-size: var(--cc-fs-3xs); opacity: 0.7; }
 
 .filter-label {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -641,7 +641,7 @@ const visibleUids = computed<string[]>(() =>
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   cursor: pointer;
   user-select: none;
@@ -654,15 +654,15 @@ const visibleUids = computed<string[]>(() =>
 .proc-row .filter-key { min-width: 104px; }
 .proc-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .proc-select {
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   padding: 0.15rem 0.4rem;
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
   border: 1px solid var(--cc-border);
   color: var(--cc-text);
   max-width: 240px;
 }
-.proc-mode { display: flex; align-items: center; gap: 0.55rem; font-size: 0.75rem; color: var(--cc-text-dim); }
+.proc-mode { display: flex; align-items: center; gap: 0.55rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 .proc-mode label { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
 .proc-mode.disabled { opacity: 0.4; }
 .proc-mode input { cursor: pointer; }
@@ -677,7 +677,7 @@ const visibleUids = computed<string[]>(() =>
 }
 
 .filter-key {
-  font-size: 0.72rem;
+  font-size: var(--cc-fs-sm);
   font-weight: 600;
   color: var(--cc-text-dim);
   min-width: 80px;
@@ -709,7 +709,7 @@ const visibleUids = computed<string[]>(() =>
   padding: 2rem 1rem;
   gap: 0.4rem;
   color: var(--cc-text-dim);
-  font-size: 0.85rem;
+  font-size: var(--cc-fs-md);
 }
 .no-set p { margin: 0; }
 </style>

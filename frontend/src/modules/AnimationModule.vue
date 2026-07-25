@@ -372,26 +372,26 @@ async function render() {
 .anim-head h1 { font-size: 1.1rem; margin: 0 0 0.2rem; }
 .anim-sub { max-width: 46rem; margin: 0; }   /* + .cc-muted */
 .anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
-.anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
+.anim-fps { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
-.anim-num { font-size: 0.72rem; color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
-.anim-title-toggle { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
-.anim-note { font-size: 0.72rem; width: 9rem; padding: 2px 6px; border: 1px solid var(--cc-border);
-  border-radius: 4px; background: var(--cc-surface-1); color: var(--cc-text); }
+.anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
+.anim-title-toggle { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.anim-note { font-size: var(--cc-fs-sm); width: 9rem; padding: 2px 6px; border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
-.anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
-.anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); cursor: pointer; }
+.anim-img { font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
+.anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: pointer; }
 
 /* clean matrix (not a bordered table): sticky row labels, colour-coded toggle dots, rounded thumbs */
-.anim-timeline { overflow-x: auto; border: 1px solid var(--cc-border); border-radius: 0.6rem;
+.anim-timeline { overflow-x: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg);
   background: var(--cc-surface-1); padding: 0.6rem 0.7rem 0.8rem; }
 .tl { border-collapse: separate; border-spacing: 0; }
-.tl-rowhead { position: sticky; left: 0; background: var(--cc-surface-1); text-align: left; font-size: 0.72rem;
+.tl-rowhead { position: sticky; left: 0; background: var(--cc-surface-1); text-align: left; font-size: var(--cc-fs-sm);
   color: var(--cc-text); padding: 0.25rem 0.9rem 0.25rem 0.1rem; max-width: 11rem; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; z-index: 1; }
 .tl-corner { min-width: 7rem; }
 .tl-col { padding: 0 0.35rem 0.4rem; vertical-align: top; text-align: center; }
-.tl-thumb { position: relative; width: 96px; height: 96px; background: #000; border-radius: 0.5rem;
+.tl-thumb { position: relative; width: 96px; height: 96px; background: #000; border-radius: var(--cc-radius-lg);
   overflow: hidden; border: 1px solid var(--cc-border); transition: box-shadow 0.12s, border-color 0.12s; }
 .tl-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .tl-thumb { cursor: grab; }
@@ -400,28 +400,28 @@ async function render() {
 /* selected keyframe = the highlighted box → amber ring (--cc-selected), matching the plot panels'
    selected state. "edited" is a separate flag (the badge), not a ring. */
 .tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
-.tl-badge { position: absolute; top: 4px; right: 4px; font-size: 0.55rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-warn); padding: 1px 5px; border-radius: 999px; }
-.tl-time { font-size: 0.6rem; color: var(--cc-text-dim); text-align: center; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
+.tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-warn); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
+.tl-time { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); text-align: center; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
-.tl-kf { font-size: 0.66rem; color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
+.tl-kf { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
 .tl-ico { display: inline-flex; border: none; background: none; color: var(--cc-text-dim); cursor: pointer;
-  padding: 0.15rem; font-size: 0.62rem; border-radius: 0.25rem; }
+  padding: 0.15rem; font-size: var(--cc-fs-2xs); border-radius: var(--cc-radius-xs); }
 .tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
 .tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }
 .tl-durrange { width: 68px; accent-color: var(--cc-accent); }
-.tl-durval { font-size: 0.62rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; min-width: 1.8rem; text-align: left; }
-.tl-group .tl-rowhead { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+.tl-durval { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums; min-width: 1.8rem; text-align: left; }
+.tl-group .tl-rowhead { font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--cc-text-dim); padding-top: 0.7rem; padding-bottom: 0.2rem; }
 .tl-row:hover .tl-cell, .tl-row:hover .tl-rowhead { background: rgba(255, 255, 255, 0.03); }
 .tl-cell { text-align: center; padding: 0.22rem 0.35rem; }
-.tl-dot { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--cc-border);
+.tl-dot { width: 15px; height: 15px; border-radius: var(--cc-radius-pill); border: 1.5px solid var(--cc-border);
   background: transparent; cursor: pointer; padding: 0; transition: transform 0.1s; }
 .tl-dot:hover { transform: scale(1.18); }
 .tl-dot.on { border-style: solid; }         /* on: filled with the layer colour (set inline) */
 .tl-absent { color: var(--cc-text-dim); opacity: 0.35; }
-.tl-cam { font-size: 0.68rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+.tl-cam { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

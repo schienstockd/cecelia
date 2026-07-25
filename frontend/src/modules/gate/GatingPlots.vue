@@ -294,13 +294,13 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* fill all available height so the plot workspace isn't capped */
 .gating-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 .gp-empty { padding: 20px; }   /* + .cc-muted */
-.gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; }
+.gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
-.gp-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.7; }
+.gp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
 /* window-arrange segmented icons */
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
@@ -308,7 +308,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .seg button:disabled:hover { color: var(--cc-text-dim); }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
-.zwin input { width: 3.2rem; font-size: 12px; padding: 3px 4px; }
+.zwin input { width: 3.2rem; font-size: var(--cc-fs-sm); padding: 3px 4px; }
 /* free-floating plot workspace: panels + manager are absolutely positioned within */
 .gp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */

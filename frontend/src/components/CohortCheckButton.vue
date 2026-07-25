@@ -95,21 +95,21 @@ async function check() {
 .cohort-check { display: inline-flex; align-items: center; gap: 0.35rem; }
 .cohort-run {
   display: inline-flex; align-items: center; gap: 0.25rem;
-  font-size: 0.72rem; color: var(--cc-text-muted, var(--cc-text));
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
 }
 .cohort-run select {
-  font-size: 0.72rem; padding: 0.15rem 0.3rem; border-radius: 0.3rem;
+  font-size: var(--cc-fs-sm); padding: 0.15rem 0.3rem; border-radius: var(--cc-radius-sm);
   color: var(--cc-text); background: var(--cc-surface-2); border: 1px solid var(--cc-border); cursor: pointer;
 }
 .cohort-run select:disabled { opacity: 0.6; cursor: default; }
 .cohort-check-btn {
   display: inline-flex; align-items: center; gap: 0.3rem;
-  font-size: 0.72rem; padding: 0.25rem 0.55rem; border-radius: 0.3rem; cursor: pointer;
+  font-size: var(--cc-fs-sm); padding: 0.25rem 0.55rem; border-radius: var(--cc-radius-sm); cursor: pointer;
   color: var(--cc-text); background: var(--cc-surface-2); border: 1px solid var(--cc-border);
 }
 .cohort-check-btn:hover:not(:disabled) { border-color: var(--cc-accent); }
 .cohort-check-btn:disabled { opacity: 0.6; cursor: default; }
-.cohort-check-btn .pi { font-size: 0.72rem; }
+.cohort-check-btn .pi { font-size: var(--cc-fs-sm); }
 /* amber when the last check flagged an outlier — the cross-image detail is in the lab log */
 .cohort-check-btn.warn { color: var(--cc-sev-warn); border-color: var(--cc-sev-warn); background: rgba(250, 178, 25, 0.1); }
 .cohort-check-btn.warn:hover:not(:disabled) { border-color: var(--cc-sev-warn); }

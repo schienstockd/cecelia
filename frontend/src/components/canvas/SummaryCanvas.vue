@@ -200,19 +200,19 @@ watch(segPops, () => {
 <style scoped>
 .summary-canvas { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 .sc-empty { padding: 20px; }   /* + .cc-muted */
-.sc-bar { display: flex; align-items: center; gap: 12px; padding: 8px 4px; font-size: 12px; flex-shrink: 0; flex-wrap: wrap; }
+.sc-bar { display: flex; align-items: center; gap: 12px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; flex-wrap: wrap; }
 .sc-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .sc-add { min-width: 8rem; }
 /* compare cluster: one tight group so the mode + attribute selects read as a unit */
 .sc-compare { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
-  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
-.sc-lbl { font-size: 11px; opacity: 0.8; }
+  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
+.sc-lbl { font-size: var(--cc-fs-xs); opacity: 0.8; }
 .sc-cmp { min-width: 8rem; }
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
-.sc-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.7; margin-left: auto; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
+.sc-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; margin-left: auto; }
+.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
 .seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }

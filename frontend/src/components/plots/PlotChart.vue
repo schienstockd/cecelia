@@ -102,19 +102,19 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null
 <style scoped>
 /* white plot ground (theme_classic) — fills the panel body. position:relative anchors the legend
    overlay. color:#111 so any HTML text (legend) is dark on the white ground (not the app's light grey). */
-.plot-host { position: relative; width: 100%; height: 100%; background: white; border-radius: 3px; overflow: hidden; color: #111; }
+.plot-host { position: relative; width: 100%; height: 100%; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; color: #111; }
 .plot-host :deep(svg) { display: block; }
 /* legend drawn as an absolute overlay (top-right) so it never eats height / clips the x-axis.
    colour is set inline by PlotChart (theme ink); descendants inherit it (force inherit so Plot's
    own swatch styles don't override the dark-theme ink). */
 .plot-host :deep(.plot-legend-overlay) {
   position: absolute; top: 4px; right: 6px; display: flex; flex-wrap: wrap; gap: 2px 10px;
-  max-width: 58%; justify-content: flex-end; border-radius: 3px; padding: 1px 4px;
+  max-width: 58%; justify-content: flex-end; border-radius: var(--cc-radius-xs); padding: 1px 4px;
 }
 .plot-host :deep(.plot-legend-overlay *) { color: inherit !important; }
 /* title overlay (top-left), theme ink set inline */
 .plot-host :deep(.plot-title-overlay) {
-  position: absolute; top: 4px; left: 8px; max-width: 60%; font-weight: 600; font-size: 12px;
+  position: absolute; top: 4px; left: 8px; max-width: 60%; font-weight: 600; font-size: var(--cc-fs-sm);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 </style>

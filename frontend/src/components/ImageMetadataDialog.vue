@@ -149,45 +149,45 @@ async function copy(key: string, value: string) {
 <style scoped>
 /* Shell (overlay/box/header/footer) lives in BaseModal; only dialog-specific styles here. */
 .md-body { display: flex; flex-direction: column; gap: 1rem; }   /* padding from BaseModal */
-.md-name { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--cc-text); }
+.md-name { margin: 0; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); }
 
 .md-section { display: flex; flex-direction: column; gap: 0.4rem; }
 .md-h {
-  margin: 0; font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  margin: 0; font-size: var(--cc-fs-xs); font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--cc-text-dim);
 }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;
-  gap: 0.25rem 1rem; font-size: 0.8rem; align-items: baseline;
+  gap: 0.25rem 1rem; font-size: var(--cc-fs-md); align-items: baseline;
 }
 .md-k { color: var(--cc-text-dim); white-space: nowrap; }
 .md-v { color: var(--cc-text); word-break: break-word; }
-.md-mono, .md-v.md-mono { font-family: var(--cc-font-mono, monospace); font-size: 0.74rem; }
+.md-mono, .md-v.md-mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 
 .md-path { display: flex; align-items: flex-start; gap: 0.4rem; }
 .md-code {
-  flex: 1; min-width: 0; font-family: var(--cc-font-mono, monospace); font-size: 0.74rem;
+  flex: 1; min-width: 0; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
   color: var(--cc-text); background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: 0.3rem; padding: 0.3rem 0.45rem; word-break: break-all;
+  border-radius: var(--cc-radius-sm); padding: 0.3rem 0.45rem; word-break: break-all;
 }
 .md-copy {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); padding: 0.25rem 0.35rem; border-radius: 0.25rem; font-size: 0.75rem;
+  color: var(--cc-text-dim); padding: 0.25rem 0.35rem; border-radius: var(--cc-radius-xs); font-size: var(--cc-fs-sm);
 }
 .md-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
-.md-none { margin: 0; font-size: 0.78rem; color: var(--cc-text-dim); font-style: italic; }
+.md-none { margin: 0; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); font-style: italic; }
 
 .md-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; counter-reset: ch; }
 .md-chip {
-  font-size: 0.74rem; color: var(--cc-text);
+  font-size: var(--cc-fs-sm); color: var(--cc-text);
   background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: 999px; padding: 0.12rem 0.5rem;
+  border-radius: var(--cc-radius-pill); padding: 0.12rem 0.5rem;
 }
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
 .md-file { display: flex; align-items: baseline; gap: 0.5rem; }
-.md-file-vn { flex-shrink: 0; font-size: 0.74rem; color: var(--cc-text-dim); min-width: 6rem; }
+.md-file-vn { flex-shrink: 0; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); min-width: 6rem; }
 
-.md-note-text { margin: 0; font-size: 0.8rem; color: var(--cc-text); white-space: pre-wrap; }
+.md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
 </style>

@@ -387,28 +387,28 @@ async function dismissEntry(entry: LabLogEntry) {
 </template>
 
 <style scoped>
-.ll { display: flex; flex-direction: column; height: 100%; font-size: 0.8rem; }
+.ll { display: flex; flex-direction: column; height: 100%; font-size: var(--cc-fs-md); }
 
 .ll-compose { padding: 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
 .ll-compose.correcting { background: rgba(210, 153, 34, 0.08); }
 .ll-correcting {
   display: flex; align-items: center; gap: 0.35rem;
-  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.04em;
   color: #d29922; margin-bottom: 0.3rem;
 }
 .ll-input {
   width: 100%; resize: vertical; box-sizing: border-box;
   background: var(--cc-surface-2); color: var(--cc-text);
-  border: 1px solid var(--cc-border); border-radius: 0.35rem;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
   padding: 0.4rem 0.5rem; font: inherit; line-height: 1.35;
 }
 .ll-input:focus { outline: none; border-color: var(--cc-accent); }
 .ll-input:disabled { opacity: 0.6; }
 .ll-compose-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.35rem; }
-.ll-hint { font-size: 0.66rem; color: var(--cc-text-dim); }
+.ll-hint { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 .ll-save {
   border: 1px solid var(--cc-accent); background: var(--cc-accent); color: #fff;
-  border-radius: 0.35rem; padding: 0.22rem 0.6rem; font-size: 0.72rem; cursor: pointer;
+  border-radius: var(--cc-radius-sm); padding: 0.22rem 0.6rem; font-size: var(--cc-fs-sm); cursor: pointer;
 }
 .ll-save:disabled { opacity: 0.5; cursor: default; }
 
@@ -423,7 +423,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-capture {
   display: inline-flex; align-items: center; gap: 0.3rem;
   border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text);
-  border-radius: 0.35rem; padding: 0.2rem 0.5rem; font-size: 0.7rem; cursor: pointer;
+  border-radius: var(--cc-radius-sm); padding: 0.2rem 0.5rem; font-size: var(--cc-fs-xs); cursor: pointer;
 }
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
 /* brief "copied" flash on the Chat-to-Claude button (replaces the toast) */
@@ -431,33 +431,35 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-help {
   display: inline-flex; align-items: center; border: none; background: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 0.2rem; font-size: 0.85rem;
+  color: var(--cc-text-dim); cursor: pointer; padding: 0.2rem; font-size: var(--cc-fs-md);
 }
 .ll-help:hover { color: var(--cc-accent); }
-.ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
+.ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {
-  font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
-  background: var(--cc-surface); border: 1px solid var(--cc-border); border-radius: 3px;
+  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
+  /* background-COLOR, not the shorthand: the global `select` rule paints the custom caret via
+     background-image, and a shorthand here would reset it to none (leaving an arrowless select). */
+  background-color: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
 }
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */
-.ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
+.ll-note { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin-left: auto; }
 /* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */
-.ll-tokens { font-size: 0.66rem; color: var(--cc-text-dim); }
+.ll-tokens { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 .ll-clearctx {
   border: none; background: transparent; color: var(--cc-text-dim);
-  font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
+  font-size: var(--cc-fs-xs); cursor: pointer; text-decoration: underline; padding: 0;
 }
 .ll-clearctx:hover { color: var(--cc-text); }
 /* setup hint — install/login guidance when Claude Code is missing or not authenticated */
 .ll-setup {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-2); padding: 0.4rem 0.6rem;
-  font-size: 0.68rem; color: var(--cc-text-dim); line-height: 1.5;
+  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); line-height: 1.5;
 }
 .ll-setup strong { color: var(--cc-text); }
 .ll-setup code {
-  font-size: 0.64rem; padding: 0 0.2rem; border-radius: 3px;
-  background: var(--cc-surface); border: 1px solid var(--cc-border);
+  font-size: var(--cc-fs-2xs); padding: 0 0.2rem; border-radius: var(--cc-radius-xs);
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border);
 }
 .ll-setup a { margin-left: 0.3rem; color: var(--cc-accent); white-space: nowrap; }
 /* Claude activity log — collapsible; each Ask-Claude pass with its verdict, cost + outcome */
@@ -466,22 +468,22 @@ async function dismissEntry(entry: LabLogEntry) {
   background: var(--cc-surface-2); padding: 0.3rem 0.6rem; max-height: 11rem; overflow-y: auto;
 }
 .ll-activity > summary {
-  font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; user-select: none;
+  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; user-select: none;
 }
 .ll-pass { margin-top: 0.35rem; padding-left: 0.4rem; border-left: 2px solid var(--cc-border); }
 .ll-pass.appended { border-left-color: var(--cc-accent); }
 .ll-pass.failed   { border-left-color: #f85149; }
-.ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: 0.64rem; }
+.ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: var(--cc-fs-2xs); }
 .ll-pass-trig { display: inline-flex; align-items: center; gap: 0.2rem; font-weight: 600; color: var(--cc-accent); }
-.ll-pass-trig .pi { font-size: 0.6rem; }
+.ll-pass-trig .pi { font-size: var(--cc-fs-2xs); }
 .ll-pass-meta { color: var(--cc-text-dim); }
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
-.ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
+.ll-pass-note { font-size: var(--cc-fs-xs); color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
 
-.ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
+.ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: var(--cc-fs-sm); }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
-.ll-empty { color: var(--cc-text-dim); text-align: center; padding: 1.2rem 0.5rem; font-size: 0.74rem; }
+.ll-empty { color: var(--cc-text-dim); text-align: center; padding: 1.2rem 0.5rem; font-size: var(--cc-fs-sm); }
 
 .ll-entry {
   border-left: 3px solid var(--cc-border);
@@ -501,13 +503,13 @@ async function dismissEntry(entry: LabLogEntry) {
 .k-cecelia .ll-author { color: #8b949e; }
 
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
-.ll-author { font-weight: 700; font-size: 0.72rem; }
-.ll-date { color: var(--cc-text-dim); font-size: 0.68rem; }
+.ll-author { font-weight: 700; font-size: var(--cc-fs-sm); }
+.ll-date { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 /* per-entry actions: hidden until hover (thumbs prefill a note — they carry no persisted state) */
 .ll-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 0.15rem; visibility: hidden; }
 .ll-entry:hover .ll-actions { visibility: visible; }
 .ll-thumb {
-  border: none; background: none; cursor: pointer; font-size: 0.8rem; line-height: 1;
+  border: none; background: none; cursor: pointer; font-size: var(--cc-fs-md); line-height: 1;
   padding: 0 0.1rem; opacity: 0.8; filter: grayscale(0.5);
 }
 .ll-thumb:hover { opacity: 1; filter: none; }
@@ -516,7 +518,7 @@ async function dismissEntry(entry: LabLogEntry) {
 
 .ll-link {
   border: none; background: none; color: var(--cc-text-dim);
-  cursor: pointer; font-size: 0.68rem; padding: 0; text-decoration: underline;
+  cursor: pointer; font-size: var(--cc-fs-xs); padding: 0; text-decoration: underline;
 }
 .ll-link:hover { color: var(--cc-text); }
 </style>

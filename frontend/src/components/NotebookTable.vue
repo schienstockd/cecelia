@@ -333,14 +333,14 @@ defineExpose({ refresh })
 <style scoped>
 .nbt-add { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .nbt-add input { flex: 0 1 240px; }
-.nbt-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.nbt-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-lg); }
 .nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border, #2a2a2a); }
-.nbt-table th { color: var(--cc-text-muted, #888); font-weight: 600; }
+.nbt-table th { color: var(--cc-text-dim); font-weight: 600; }
 .nbt-name { white-space: nowrap; }
 .nbt-desc input { width: 100%; }
 .nbt-editable { cursor: text; }
-.nbt-muted { color: var(--cc-text-muted, #888); font-style: italic; }
-.nbt-ver { white-space: nowrap; color: var(--cc-text-muted, #888); }
+.nbt-muted { color: var(--cc-text-dim); font-style: italic; }
+.nbt-ver { white-space: nowrap; color: var(--cc-text-dim); }
 .nbt-actions-h { text-align: right; }
 .nbt-actions { display: flex; gap: .3rem; justify-content: flex-end; }
 .nbt-actions .cc-btn { padding: .25rem .45rem; }
@@ -348,13 +348,13 @@ defineExpose({ refresh })
 .nbt-active { color: #58a6ff; }
 .nbt-empty { text-align: center; padding: 1rem; }   /* + .cc-muted */
 .nbt-history-row td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
-.nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: .85rem; }
-.nbt-hist-label { color: var(--cc-text-muted, #888); }
+.nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: var(--cc-fs-md); }
+.nbt-hist-label { color: var(--cc-text-dim); }
 .nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */
-.nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border, #333); border-radius: 6px; padding: .1rem .1rem .1rem .5rem; }
+.nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border, #333); border-radius: var(--cc-radius-md); padding: .1rem .1rem .1rem .5rem; }
 .nbt-snap-ver { font-variant-numeric: tabular-nums; }
 .nbt-snap .cc-btn { padding: .15rem .4rem; }
-.nb-badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--cc-border, #333); }
+.nb-badge { font-size: var(--cc-fs-sm); padding: .1rem .45rem; border-radius: var(--cc-radius-pill); border: 1px solid var(--cc-border, #333); }
 .nb-badge.scope-project { color: #58a6ff; border-color: #58a6ff55; }
 .nb-badge.scope-example { color: #888; }
 </style>

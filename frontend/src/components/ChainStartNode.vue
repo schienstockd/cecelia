@@ -32,7 +32,7 @@ defineProps<{ id: string; selected: boolean }>()
 .start-dot {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   background: var(--cc-text, #e2e2f0);
   border: 3px solid var(--cc-accent, #a78bfa);
   box-shadow: 0 0 0 2px transparent;
@@ -42,7 +42,7 @@ defineProps<{ id: string; selected: boolean }>()
   box-shadow: 0 0 0 3px var(--cc-accent, #a78bfa);
 }
 .start-label {
-  font-size: 9px;
+  font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;

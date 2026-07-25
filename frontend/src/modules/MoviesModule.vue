@@ -231,10 +231,10 @@ function movieTime(mtime: number): string {
 .mov-head h1 { margin: 0; font-size: 1.15rem; }
 .mov-sub { margin: 0.2rem 0 0; max-width: 46rem; }   /* + .cc-muted (colour/size) */
 .mov-head-ctl { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.mov-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--cc-text-dim); }
+.mov-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 .mov-select {
   background: var(--cc-surface-2); color: var(--cc-text); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem; font-size: 0.78rem;
+  border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem; font-size: var(--cc-fs-sm);
 }
 .mov-range { width: 6rem; }
 .mov-num { min-width: 2.2rem; }   /* + .cc-readout (tabular-nums/colour/size) */
@@ -248,10 +248,10 @@ function movieTime(mtime: number): string {
 .mov-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .mov-viewport {
   flex: 1; min-height: 0; display: flex; overflow: auto;
-  background: #000; border: 1px solid var(--cc-border); border-radius: 0.4rem;
+  background: #000; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
 }
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
-.mov-caption { font-size: 0.8rem; color: var(--cc-text); word-break: break-all; }
+.mov-caption { font-size: var(--cc-fs-md); color: var(--cc-text); word-break: break-all; }
 
 /* Playlist */
 .mov-list { width: 18rem; flex-shrink: 0; overflow-y: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
@@ -259,12 +259,12 @@ function movieTime(mtime: number): string {
 .mov-item {
   display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
   background: none; border: none; cursor: pointer; color: var(--cc-text-dim);
-  padding: 0.45rem 0.5rem; border-radius: 0.35rem; transition: background 0.12s, color 0.12s;
+  padding: 0.45rem 0.5rem; border-radius: var(--cc-radius-sm); transition: background 0.12s, color 0.12s;
 }
 .mov-item:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .mov-item.active { background: var(--cc-surface-2); color: var(--cc-text); }
-.mov-item-ico { font-size: 0.85rem; flex-shrink: 0; color: var(--cc-accent); }
+.mov-item-ico { font-size: var(--cc-fs-md); flex-shrink: 0; color: var(--cc-accent); }
 .mov-item-body { display: flex; flex-direction: column; min-width: 0; }
-.mov-item-name { font-size: 0.8rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mov-item-meta { font-size: 0.68rem; color: var(--cc-text-dim); }
+.mov-item-name { font-size: var(--cc-fs-md); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mov-item-meta { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 </style>

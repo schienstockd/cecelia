@@ -36,13 +36,13 @@ defineProps<{ label?: string }>()
 .plot-spinner__wheel {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--cc-radius-pill);
   border: 2.5px solid var(--cc-border);
   border-top-color: var(--cc-accent);
   animation: plot-spinner-rot 0.7s linear infinite;
 }
 .plot-spinner__label {
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
 }
 @keyframes plot-spinner-rot { to { transform: rotate(360deg); } }

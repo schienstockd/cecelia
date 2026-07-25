@@ -282,7 +282,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
   display: flex; align-items: center; gap: 0.15rem;
   padding: 0.4rem 1rem;
   border-bottom: 1px solid var(--cc-border);
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   background: var(--cc-surface-1);
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -294,19 +294,19 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
   border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-1);
 }
-.fb-sc-icon { font-size: 0.7rem; color: var(--cc-text-dim); margin-right: 0.1rem; }
+.fb-sc-icon { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin-right: 0.1rem; }
 .fb-shortcut {
   background: var(--cc-surface-2); border: 1px solid var(--cc-border); cursor: pointer;
-  color: var(--cc-text); font-size: 0.72rem;
-  padding: 0.12rem 0.5rem; border-radius: 0.9rem;
+  color: var(--cc-text); font-size: var(--cc-fs-sm);
+  padding: 0.12rem 0.5rem; border-radius: var(--cc-radius-pill);
 }
 .fb-shortcut:hover { border-color: var(--cc-accent); color: var(--cc-accent); }
 
 .crumb-sep { color: var(--cc-text-dim); }
 .crumb {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-accent); font-size: 0.75rem;
-  padding: 0.1rem 0.25rem; border-radius: 0.2rem;
+  color: var(--cc-accent); font-size: var(--cc-fs-sm);
+  padding: 0.1rem 0.25rem; border-radius: var(--cc-radius-xs);
 }
 .crumb:hover { background: var(--cc-surface-2); }
 
@@ -314,14 +314,14 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
 .fb-state {
   display: flex; align-items: center; gap: 0.5rem;
-  padding: 2rem; color: var(--cc-text-dim); font-size: 0.82rem;
+  padding: 2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md);
 }
 .fb-state.error { color: #fca5a5; flex-direction: column; align-items: flex-start; }
 
 /* table */
-.fb-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.fb-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); }
 .fb-table thead th {
-  text-align: left; font-size: 0.68rem; font-weight: 600;
+  text-align: left; font-size: var(--cc-fs-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--cc-text-dim);
   padding: 0.4rem 0.75rem;
@@ -346,18 +346,18 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .non-image { opacity: 0.4; cursor: default; }
 .row-selected { background: #a78bfa14; }
 
-.row-icon { font-size: 0.8rem; margin-right: 0.4rem; }
+.row-icon { font-size: var(--cc-fs-md); margin-right: 0.4rem; }
 .dir-row  .row-icon { color: #fcd34d; }
 .image-row .row-icon { color: var(--cc-accent); }
 
 .col-name { display: table-cell; }
 .row-name { vertical-align: middle; }
-.dim { color: var(--cc-text-dim); font-size: 0.75rem; }
+.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 
 .fb-empty { text-align: center; padding: 2rem; }   /* + .cc-muted */
 
 /* footer */
-.sel-count { font-size: 0.78rem; color: var(--cc-text); flex: 1; }
+.sel-count { font-size: var(--cc-fs-sm); color: var(--cc-text); flex: 1; }
 .footer-actions { display: flex; gap: 0.4rem; }
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

@@ -38,7 +38,7 @@ const fmt = (n?: number) => n == null ? '—' : n.toLocaleString()
     <div class="qc-count">{{ fmt(data.total) }} <span class="qc-unit">cells</span></div>
     <div class="qc-spark">
       <span v-for="(h, i) in bars" :key="i" class="qc-bar" :style="{ height: h + 'px' }" />
-      <span v-if="!bars.length" class="qc-empty">no data</span>
+      <span v-if="!bars.length" class="qc-empty cc-empty-inline cc-muted-micro">no data</span>
     </div>
     <div class="qc-foot">{{ data.imageCount ?? 0 }} img · expand</div>
   </div>
@@ -48,20 +48,21 @@ const fmt = (n?: number) => n == null ? '—' : n.toLocaleString()
 .qc-node {
   background: var(--cc-surface-1, #1e1b2e);
   border: 1px dashed var(--cc-accent, #a78bfa);
-  border-radius: 6px;
+  border-radius: var(--cc-radius-md);
   padding: 5px 9px;
   min-width: 120px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
 }
 .qc-head { display: flex; align-items: center; gap: 5px; color: var(--cc-accent, #a78bfa); }
-.qc-head .pi { font-size: 0.7rem; }
-.qc-name { font-size: 9px; font-weight: 700; font-family: var(--cc-mono, monospace); letter-spacing: 0.04em; }
-.qc-spin { margin-left: auto; font-size: 0.6rem; opacity: 0.7; }
-.qc-count { font-size: 15px; font-weight: 700; color: var(--cc-text, #e2e2f0); margin: 2px 0; }
-.qc-unit { font-size: 9px; font-weight: 400; color: var(--cc-text-dim, #8b8ca7); }
+.qc-head .pi { font-size: var(--cc-fs-xs); }
+.qc-name { font-size: var(--cc-fs-3xs); font-weight: 700; font-family: var(--cc-mono, monospace); letter-spacing: 0.04em; }
+.qc-spin { margin-left: auto; font-size: var(--cc-fs-2xs); opacity: 0.7; }
+.qc-count { font-size: var(--cc-fs-lg); font-weight: 700; color: var(--cc-text, #e2e2f0); margin: 2px 0; }
+.qc-unit { font-size: var(--cc-fs-3xs); font-weight: 400; color: var(--cc-text-dim, #8b8ca7); }
 .qc-spark { display: flex; align-items: flex-end; gap: 2px; height: 24px; }
+/* 1px is deliberate and off-scale: --cc-radius-xs (3px) on a 4px-wide bar rounds it to a blob */
 .qc-bar { width: 4px; background: var(--cc-accent, #a78bfa); opacity: 0.7; border-radius: 1px; }
-.qc-empty { font-size: 9px; color: var(--cc-text-dim, #8b8ca7); font-style: italic; }
-.qc-foot { font-size: 8px; color: var(--cc-text-dim, #8b8ca7); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.qc-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-micro (row/colour/9px tier) */
+.qc-foot { font-size: var(--cc-fs-3xs); color: var(--cc-text-dim, #8b8ca7); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
 </style>

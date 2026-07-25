@@ -532,14 +532,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 .panel-section.disabled { opacity: 0.45; pointer-events: none; }
 
 .section-title {
-  font-size: 0.7rem;
+  font-size: var(--cc-fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--cc-text-dim);
 }
 .section-hint {
-  font-size: 0.75rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   margin: 0;
   line-height: 1.5;
@@ -563,9 +563,9 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 .field-textarea {
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
-  border-radius: 0.3rem;
+  border-radius: var(--cc-radius-sm);
   color: var(--cc-text);
-  font-size: 0.8rem;
+  font-size: var(--cc-fs-md);
   padding: 0.35rem 0.5rem;
   resize: vertical;
   font-family: var(--cc-mono);
@@ -583,7 +583,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.78rem;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim);
   cursor: pointer;
 }
@@ -592,29 +592,29 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 .builder-toggle {
   display: inline-flex; align-items: center; gap: 0.3rem;
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.75rem; padding: 0.1rem 0;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0;
   margin-top: 0.15rem;
 }
 .builder-toggle:hover { color: var(--cc-text); }
 .builder-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
-.builder-toggle .pi { font-size: 0.6rem; }
+.builder-toggle .pi { font-size: var(--cc-fs-2xs); }
 
 .builder {
   display: flex; flex-direction: column; gap: 0.4rem;
   margin-top: 0.35rem; padding: 0.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
 }
 .builder.disabled { opacity: 0.5; pointer-events: none; }
 /* fixed label width + flexible controls → every select/input lines up down the builder */
-.builder-label { font-size: 0.75rem; color: var(--cc-text-dim); flex: 0 0 5rem; white-space: nowrap; }
+.builder-label { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); flex: 0 0 5rem; white-space: nowrap; }
 .builder .field-input { flex: 1 1 0; min-width: 0; }
 .builder .builder-custom { flex: 0 0 3.5rem; }
 
-.builder-hint { font-size: 0.72rem; color: var(--cc-text-dim); margin: 0; line-height: 1.4; }
+.builder-hint { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin: 0; line-height: 1.4; }
 
 /* single preview for the regex field (typed or built) */
-.regex-preview { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; min-width: 0; }
+.regex-preview { display: flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); min-width: 0; }
 .preview-src {
   color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   flex: 1; min-width: 0;
@@ -628,7 +628,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 .warn-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem;
-  border-radius: 999px; font-size: 0.65rem; font-weight: 700;
+  border-radius: var(--cc-radius-pill); font-size: var(--cc-fs-2xs); font-weight: 700;
   background: #7c2d1244; color: #fcd34d;
 }
 

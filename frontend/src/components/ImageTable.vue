@@ -634,7 +634,7 @@ onUnmounted(stopResize)
     <button class="cc-btn cc-btn-ghost" @click="moveUid = null">Cancel</button>
   </div>
 
-  <div v-if="images.length === 0" class="empty-state">
+  <div v-if="images.length === 0" class="cc-empty cc-empty-lg">
     <i class="pi pi-images empty-icon" />
     <p class="empty-title">No images yet</p>
     <p class="empty-hint">Import your first image to get started.<br>
@@ -959,16 +959,14 @@ onUnmounted(stopResize)
 .delete-confirm {
   display: flex; align-items: center; gap: 0.6rem;
   padding: 0.5rem 1rem; background: #7f1d1d22;
-  border-bottom: 1px solid #7f1d1d55; font-size: 0.82rem; flex-shrink: 0;
+  border-bottom: 1px solid #7f1d1d55; font-size: var(--cc-fs-md); flex-shrink: 0;
 }
 
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 4rem 2rem; gap: 0.5rem; color: var(--cc-text-dim);
-}
+/* the one genuinely RICH empty state (icon + title + hint + CTA); the chrome comes from
+   .cc-empty .cc-empty-lg, only the icon/title/hint/CTA details are local */
 .empty-icon  { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.3; }
 .empty-title { font-size: 0.95rem; font-weight: 600; color: var(--cc-text); margin: 0; }
-.empty-hint  { font-size: 0.8rem; margin: 0; text-align: center; }
+.empty-hint  { font-size: var(--cc-fs-md); margin: 0; text-align: center; }
 .empty-cta   { margin-top: 0.85rem; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
@@ -978,12 +976,12 @@ onUnmounted(stopResize)
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: var(--cc-fs-md);
 }
 
 .image-table thead th {
   text-align: left;
-  font-size: 0.7rem; font-weight: 600;
+  font-size: var(--cc-fs-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--cc-text-dim);
   padding: 0.5rem 0.75rem;
@@ -1000,14 +998,14 @@ onUnmounted(stopResize)
 }
 .th-sort:hover { color: var(--cc-text); }
 .th-sort.active { color: var(--cc-text); }
-.sort-ico { font-size: 0.6rem; opacity: 0.3; transition: opacity 0.1s, color 0.1s; }
+.sort-ico { font-size: var(--cc-fs-2xs); opacity: 0.3; transition: opacity 0.1s, color 0.1s; }
 .th-sort:hover .sort-ico { opacity: 0.7; }
 .th-sort.active .sort-ico { opacity: 1; color: var(--cc-accent); }
 
 .select-flagged-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.72rem; padding: 0.1rem 0.3rem;
-  margin-left: 0.3rem; border-radius: 0.2rem; vertical-align: middle;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0.3rem;
+  margin-left: 0.3rem; border-radius: var(--cc-radius-xs); vertical-align: middle;
 }
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .select-flagged-btn.active { color: #fbbf24; }
@@ -1098,7 +1096,7 @@ th:hover .resize-handle::after { opacity: 1; }
    palette); the shape-distinct triangle icon carries the meaning, colour is secondary. */
 .warn-icon-btn {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-sev-warn); font-size: 0.75rem; padding: 0.1rem; line-height: 1;
+  color: var(--cc-sev-warn); font-size: var(--cc-fs-sm); padding: 0.1rem; line-height: 1;
 }
 .warn-icon-btn:hover { filter: brightness(1.2); }
 
@@ -1106,22 +1104,22 @@ th:hover .resize-handle::after { opacity: 1; }
    warning icon). Uses the canonical severity tokens. */
 .qc-badge {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
-  padding: 0.05rem 0.3rem; border-radius: 0.25rem; cursor: help;
+  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); cursor: help;
   border: 1px solid transparent;
 }
-.qc-badge .pi { font-size: 0.62rem; }
+.qc-badge .pi { font-size: var(--cc-fs-2xs); }
 .qc-badge.warn { color: var(--cc-sev-warn); background: color-mix(in srgb, var(--cc-sev-warn) 15%, transparent); border-color: color-mix(in srgb, var(--cc-sev-warn) 40%, transparent); }
 .qc-badge.info { color: var(--cc-text-dim); background: var(--cc-surface-2); border-color: var(--cc-border); }
 
 /* excluded badge — persistent "this image is excluded" pill; carries the note as its tooltip */
 .excl-badge {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
-  padding: 0.05rem 0.3rem; border-radius: 0.25rem; cursor: help;
+  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); cursor: help;
   color: #fca5a5; background: #7f1d1d33; border: 1px solid #7f1d1d66;
 }
-.excl-badge .pi { font-size: 0.62rem; }
+.excl-badge .pi { font-size: var(--cc-fs-2xs); }
 
 /* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
    an excluded row so there's an obvious way back */
@@ -1131,18 +1129,18 @@ th:hover .resize-handle::after { opacity: 1; }
 /* exclusion note — editable reason under the uid, only on excluded rows */
 .note-row { display: flex; align-items: center; margin-top: 0.15rem; }
 .note-text {
-  font-size: 0.68rem; color: var(--cc-text-dim); cursor: text;
+  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: text;
   display: inline-flex; align-items: center; gap: 0.25rem;
-  border-radius: 3px; padding: 0 2px;
+  border-radius: var(--cc-radius-xs); padding: 0 2px;
 }
 .note-text:hover { background: var(--cc-surface-2); outline: 1px dashed var(--cc-border); }
-.note-text .pi { font-size: 0.62rem; }
+.note-text .pi { font-size: var(--cc-fs-2xs); }
 
 /* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
 .row-icon-btn {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.72rem; padding: 0.1rem 0.2rem;
-  border-radius: 0.2rem; line-height: 1;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0.2rem;
+  border-radius: var(--cc-radius-xs); line-height: 1;
   opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
 }
 .image-row:hover .row-icon-btn { opacity: 1; }
@@ -1153,10 +1151,10 @@ th:hover .resize-handle::after { opacity: 1; }
 .row-icon-btn:disabled:hover { color: var(--cc-text-dim); background: none; }
 
 /* editable attribute cell: click to edit; subtle hover affordance */
-.attr-cell { cursor: text; border-radius: 3px; padding: 0 2px; }
+.attr-cell { cursor: text; border-radius: var(--cc-radius-xs); padding: 0 2px; }
 .attr-cell:hover { background: var(--cc-surface-2); outline: 1px dashed var(--cc-border); }
 .attr-edit { width: 100%; box-sizing: border-box; font: inherit; padding: 1px 3px;
-  border: 1px solid var(--cc-accent); border-radius: 3px; background: var(--cc-surface-1); color: var(--cc-text); }
+  border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
 
 .uid-row {
   display: flex;
@@ -1170,15 +1168,15 @@ th:hover .resize-handle::after { opacity: 1; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; padding: 6px 8px; }
-.runlog-hd { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); margin-bottom: 4px; }
-.runlog-empty { font-size: 0.7rem; color: var(--cc-text-dim); }
-.runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: 0.7rem; }
+.runlog-hd { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); margin-bottom: 4px; }
+.runlog-empty { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: var(--cc-fs-xs); }
 .runlog-fun { font-weight: 600; color: var(--cc-text); font-family: var(--cc-mono); }
-.runlog-vn { color: var(--cc-accent); font-size: 0.62rem; }
+.runlog-vn { color: var(--cc-accent); font-size: var(--cc-fs-2xs); }
 .runlog-at { margin-left: auto; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .img-uid {
   font-family: var(--cc-mono);
-  font-size: 0.68rem;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-text-dim);
   letter-spacing: 0.03em;
   overflow: hidden;
@@ -1193,9 +1191,9 @@ th:hover .resize-handle::after { opacity: 1; }
 .run-tag {
   display: inline-flex; align-items: baseline; gap: 0.3rem; flex-shrink: 0;
   max-width: 60%;
-  padding: 0.05rem 0.4rem; border-radius: 0.25rem;
+  padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs);
   border: 1px solid transparent;
-  font-size: 0.64rem; line-height: 1.5;
+  font-size: var(--cc-fs-2xs); line-height: 1.5;
 }
 .run-tag-mod { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
 .run-tag-fun { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1206,8 +1204,8 @@ th:hover .resize-handle::after { opacity: 1; }
 
 .status-badge {
   display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem;
-  border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: var(--cc-fs-xs); font-weight: 600; padding: 0.15rem 0.5rem;
+  border-radius: var(--cc-radius-pill); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .st-pending  { background: #27272a;    color: #71717a; }
 .st-queued   { background: #2d1b69;    color: #c4b5fd; }
@@ -1216,7 +1214,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .st-failed   { background: #7f1d1d44;  color: #fca5a5; }
 
 .spinner {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 7px; height: 7px; border-radius: var(--cc-radius-pill);
   border: 1.5px solid #93c5fd44; border-top-color: #93c5fd;
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
@@ -1226,8 +1224,8 @@ th:hover .resize-handle::after { opacity: 1; }
 
 .viewer-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.8rem;
-  padding: 0.2rem 0.3rem; border-radius: 0.25rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-md);
+  padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
   opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
 .image-row:hover .viewer-btn { opacity: 0.6; }
@@ -1240,8 +1238,8 @@ th:hover .resize-handle::after { opacity: 1; }
 
 .action-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.75rem;
-  padding: 0.2rem 0.4rem; border-radius: 0.25rem;
+  color: var(--cc-text-dim); font-size: var(--cc-fs-sm);
+  padding: 0.2rem 0.4rem; border-radius: var(--cc-radius-xs);
   opacity: 0; transition: opacity 0.1s, background 0.1s;
 }
 .image-row:hover .action-btn { opacity: 1; }
@@ -1253,7 +1251,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .move-bar {
   display: flex; align-items: center; gap: 0.6rem;
   padding: 0.5rem 1rem; background: var(--cc-surface-1);
-  border-bottom: 1px solid var(--cc-border); font-size: 0.82rem; flex-shrink: 0;
+  border-bottom: 1px solid var(--cc-border); font-size: var(--cc-fs-md); flex-shrink: 0;
 }
 .move-select { min-width: 160px; }
 .move-name-input { width: 180px; border-color: var(--cc-accent); }
@@ -1267,8 +1265,8 @@ th:hover .resize-handle::after { opacity: 1; }
 .actions-menu { display: flex; flex-direction: column; min-width: 200px; padding: 0.25rem; }
 .actions-item {
   display: flex; align-items: center; gap: 0.55rem;
-  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: 4px;
-  background: none; color: var(--cc-text); font-size: 0.82rem; text-align: left; cursor: pointer;
+  width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);
+  background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
 }
 .actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
 .actions-item:disabled { opacity: 0.4; cursor: not-allowed; }

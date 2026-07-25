@@ -657,14 +657,14 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 </template>
 
 <style scoped>
-.sp-measure { font-size: 12px; max-width: 12rem; }
-.sp-chart { font-size: 12px; max-width: 8rem; }
-.sp-export { font-size: 12px; max-width: 7rem; }
+.sp-measure { font-size: var(--cc-fs-sm); max-width: 12rem; }
+.sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
+.sp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 
 /* compact icon buttons (options / duplicate) */
 .sp-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
-  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-xs); }
 .sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .sp-iconbtn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 
@@ -672,9 +672,9 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 .sp-explode-wrap { position: relative; display: inline-flex; }
 .sp-explode-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30;
   min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.4rem;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: 12px; }
-.sp-explode-hd { color: var(--cc-text-dim); font-size: 11px; margin-bottom: 6px; }
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: var(--cc-fs-sm); }
+.sp-explode-hd { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); margin-bottom: 6px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
 .sp-explode-ft { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 
@@ -687,10 +687,10 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  font-size: 12px; color: var(--cc-text-dim); }
-.sp-pop-row select { font-size: 12px; max-width: 7rem; }
-.sp-pop-row input[type="number"] { width: 3.6rem; font-size: 12px; padding: 2px 4px; }
+  font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.sp-pop-row select { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.sp-pop-row input[type="number"] { width: 3.6rem; font-size: var(--cc-fs-sm); padding: 2px 4px; }
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
-.sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: 12px; text-align: center; padding: 12px; }
+.sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); text-align: center; padding: 12px; }
 .sp-err { color: var(--cc-danger, #f87171); }
 </style>
