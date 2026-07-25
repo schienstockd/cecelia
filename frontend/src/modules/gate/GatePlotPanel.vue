@@ -428,8 +428,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 .panel-ctrl select { width: 8rem; font-size: var(--cc-fs-sm); padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
 /* amber: this axis' preferred transform was auto-linearised because the measure's range can't use it */
-.panel-ctrl select.tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
-.ax-warn { color: #f59e0b; font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
+.panel-ctrl select.tsel.tsel-amber { border-color: var(--cc-sev-warn); color: var(--cc-sev-warn); }
+.ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { outline: none; border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
@@ -437,8 +437,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 4px 6px; font-size: var(--cc-fs-xs); }
 .panel-name input { background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; width: 90px; }
-.panel-name input.name-invalid { border-color: var(--cc-danger, #ef4444); }
-.name-hint { color: var(--cc-danger, #ef4444); font-size: var(--cc-fs-2xs); max-width: 150px; line-height: 1.2; }
+.panel-name input.name-invalid { border-color: var(--cc-sev-fail); }
+.name-hint { color: var(--cc-sev-fail); font-size: var(--cc-fs-2xs); max-width: 150px; line-height: 1.2; }
 /* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
 .gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px;

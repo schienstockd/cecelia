@@ -585,11 +585,11 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 <template>
   <div class="uv">
     <div class="uv-ctrl cc-panel-controls">
-      <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
+      <button class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-on cc-btn-on-solid':labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle centroid labels'"><i class="pi pi-tag" /> #</button>
       <!-- legend visibility follows the picker's Legend option (vis.legend) — no separate toggle here -->
       <!-- colour + facet controls live in a single options popover to keep the (often docked) bar tidy -->
-      <button ref="optsBtn" class="cc-btn cc-btn-ghost" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+      <button ref="optsBtn" class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-on cc-btn-on-solid':optsOpen }" @click="optsOpen = !optsOpen"
               v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
       <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-start">
         <div class="uv-opts">
@@ -682,7 +682,6 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 .uv { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
 /* active (ticked) label toggle: filled accent so it's clearly on/off */
-.uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
 /* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */

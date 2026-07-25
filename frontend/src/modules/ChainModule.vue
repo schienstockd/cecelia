@@ -368,7 +368,7 @@ const liveEdges = computed<Edge[]>(() => {
       const d = idOf.get(`${e.to}::${uid}`)
       if (s && d) out.push({
         id: `${s}->${d}`, source: s, target: d,
-        style: { stroke: 'var(--cc-border, #3f3f46)', strokeWidth: 1.5 },
+        style: { stroke: 'var(--cc-border)', strokeWidth: 1.5 },
       })
     }
   }
@@ -622,7 +622,7 @@ function applyTemplate(
     id:     `${e.from}->${e.to}`,
     source: e.from,
     target: e.to,
-    style:  { stroke: 'var(--cc-accent, #a78bfa)' },
+    style:  { stroke: 'var(--cc-accent)' },
   }))
 
   // Reconstruct the UML start dot + its edges (pure logic in utils/startDot): links restored from the
@@ -891,7 +891,7 @@ onConnect((params) => {
     ...params,
     id: `${params.source}->${params.target}`,
     // start-dot edges are dashed (they mark the entry, not a data dependency)
-    style: { stroke: 'var(--cc-accent, #a78bfa)', ...(fromStart ? { strokeDasharray: '4 3' } : {}) },
+    style: { stroke: 'var(--cc-accent)', ...(fromStart ? { strokeDasharray: '4 3' } : {}) },
   }])
   // value-name propagation is a task→task concern; the start dot has no output, so skip it there
   if (params.source && params.target && !fromStart) propagateValueName(params.source, params.target)

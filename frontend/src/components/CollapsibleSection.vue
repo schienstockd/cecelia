@@ -30,7 +30,7 @@ watch(open, v => {
 
 <template>
   <div class="collapsible-section">
-    <button class="cs-toggle" @click="open = !open"
+    <button class="cs-toggle cc-section-toggle" @click="open = !open"
       v-tooltip.right="open ? `Collapse ${label}` : `Expand ${label}`">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
       <span class="cs-label cc-eyebrow">{{ label }}</span>
@@ -53,23 +53,14 @@ watch(open, v => {
   flex-shrink: 0;
 }
 
+/* the row itself is .cc-section-toggle; what's left here is this component's own chrome — the
+   panel-rail bar (a surface + generous padding) that the bare inline adopters deliberately omit */
 .cs-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
   padding: 0.35rem 1rem;
   background: var(--cc-surface-1);
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
   font-size: var(--cc-fs-xs);
-  text-align: left;
-  transition: background 0.1s, color 0.1s;
-  flex-shrink: 0;
 }
-.cs-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.cs-toggle .pi  { font-size: var(--cc-fs-2xs); }
+.cs-toggle:hover { background: var(--cc-surface-2); }
 
 /* the heading IS the eyebrow scenario — colour/weight/tracking/case/size all come from .cc-eyebrow,
    which this component previously hand-rolled (and at a size the scale had no step for) */

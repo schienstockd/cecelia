@@ -367,7 +367,8 @@ const { width: sidebarWidth, onResizeStart } =
           Pool
         </span>
         <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool" />
-        <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon" :class="{ active: throttleOpen }"
+        <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon"
+          :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
           @click="throttleOpen = !throttleOpen"
           v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
           <i class="pi pi-sliders-h" />
@@ -491,7 +492,6 @@ const { width: sidebarWidth, onResizeStart } =
 .pool-chips { flex: 1; min-width: 0; }
 .pool-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
 .pool-throttle:hover  { color: var(--cc-text); }
-.pool-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 .section-heading {
   font-size: var(--cc-fs-2xs);

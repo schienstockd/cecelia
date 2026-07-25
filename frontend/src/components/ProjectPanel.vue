@@ -614,7 +614,7 @@ const typeColour: Record<ProjectType, string> = {
   color: var(--cc-text); cursor: default;
 }
 /* visual styling from the global form base (style.css) */
-.form-input.input-error { border-color: #ef4444; }
+.form-input.input-error { border-color: var(--cc-sev-fail); }
 .form-input::placeholder { color: var(--cc-text-dim); }
 
 .field-error { font-size: var(--cc-fs-sm); color: #fca5a5; }

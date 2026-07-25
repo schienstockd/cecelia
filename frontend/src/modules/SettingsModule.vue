@@ -421,7 +421,7 @@ async function switchWt(path: string) {
         <span v-if="!storage && !storageScan" class="field-hint">
           Scan to see disk usage and superseded image versions that can be freed (everything except the active one).
         </span>
-        <span v-if="storageError" class="field-hint" style="color: var(--cc-sev-fail, #c0392b);">{{ storageError }}</span>
+        <span v-if="storageError" class="field-hint" style="color: var(--cc-sev-fail);">{{ storageError }}</span>
       </div>
 
       <template v-if="storage">
@@ -892,8 +892,8 @@ async function switchWt(path: string) {
   color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
   white-space: nowrap; }
 .svc-pill .dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
-.svc-pill.ok .dot   { background: #22c55e; }
-.svc-pill.warn .dot { background: #f59e0b; }
+.svc-pill.ok .dot   { background: var(--cc-viewer); }
+.svc-pill.warn .dot { background: var(--cc-sev-warn); }
 .svc-pill.idle .dot { background: var(--cc-text-dim); }
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
@@ -901,7 +901,7 @@ async function switchWt(path: string) {
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
 .save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
 .save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
-.save-btn.danger { background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
+.save-btn.danger { background: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* diagnostics key/value grid */
 .diag-grid {
@@ -915,8 +915,8 @@ async function switchWt(path: string) {
 .mono { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); word-break: break-all; }
 .field-hint code, .diag-grid code { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); }
 /* stale-process flag: amber value + a small chip (problem short; the action is in the tooltip) */
-.diag-stale { color: var(--cc-warn); }
-.diag-stale-note { margin-left: 0.4rem; font-size: var(--cc-fs-xs); color: var(--cc-warn); white-space: nowrap; cursor: default; }
+.diag-stale { color: var(--cc-sev-warn); }
+.diag-stale-note { margin-left: 0.4rem; font-size: var(--cc-fs-xs); color: var(--cc-sev-warn); white-space: nowrap; cursor: default; }
 .diag-stale-note .pi { font-size: var(--cc-fs-xs); }
 
 /* debug console */
@@ -949,7 +949,7 @@ async function switchWt(path: string) {
 }
 .repl-out { color: var(--cc-text-dim); }
 .repl-val { color: var(--cc-text); }
-.repl-err { color: var(--cc-danger, #f87171); }
+.repl-err { color: var(--cc-danger); }
 .repl-input {
   width: 100%; resize: vertical; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
   padding: 0.5rem; border-radius: var(--cc-radius-sm);

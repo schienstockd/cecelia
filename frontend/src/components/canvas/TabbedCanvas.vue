@@ -257,10 +257,10 @@ function exportBoard(kind: string) {
   border-radius: var(--cc-radius-md) 6px 0 0; max-width: 16rem;
 }
 .tab:hover { color: var(--cc-text); }
-.tab.active { color: var(--cc-text); background: var(--cc-bg); border-color: #7c3aed; }
+.tab.active { color: var(--cc-text); background: var(--cc-bg); border-color: var(--cc-accent-strong); }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-edit { font-size: var(--cc-fs-sm); width: 8rem; background: var(--cc-surface-2); color: var(--cc-text);
-  border: 1px solid #7c3aed; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
+  border: 1px solid var(--cc-accent-strong); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 /* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 /* full-height cell in the tab strip (stretches as a flex child) — not a fixed square */
@@ -273,7 +273,7 @@ function exportBoard(kind: string) {
 .tab-pdf { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-bottom: 2px;
   padding: 3px 10px; font-size: var(--cc-fs-xs); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1); color: var(--cc-text-dim); cursor: pointer; }
-.tab-pdf:hover:not(:disabled) { color: var(--cc-text); border-color: #7c3aed; }
+.tab-pdf:hover:not(:disabled) { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 .tab-pdf:disabled { opacity: 0.5; cursor: default; }
 /* info hint for the figure-export format choice */
 .tab-info { align-self: center; margin-left: 4px; margin-bottom: 2px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: help; }

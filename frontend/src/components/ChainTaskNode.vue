@@ -36,8 +36,8 @@ defineProps<{
 
 <style scoped>
 .chain-task-node {
-  background: var(--cc-surface-1, #1e1b2e);
-  border: 1.5px solid var(--cc-accent, #a78bfa);
+  background: var(--cc-surface-1);
+  border: 1.5px solid var(--cc-accent);
   border-radius: var(--cc-radius-md);
   padding: 7px 11px;
   font-size: var(--cc-fs-sm);
@@ -47,7 +47,7 @@ defineProps<{
   transition: box-shadow 0.12s;
 }
 .chain-task-node.selected {
-  box-shadow: 0 0 0 2px var(--cc-accent, #a78bfa);
+  box-shadow: 0 0 0 2px var(--cc-accent);
 }
 .chain-task-node.incremental {
   border-style: dashed;
@@ -64,7 +64,7 @@ defineProps<{
   width: 6px;
   height: 6px;
   border-radius: var(--cc-radius-pill);
-  background: var(--cc-accent, #a78bfa);
+  background: var(--cc-accent);
   flex-shrink: 0;
 }
 .incremental .scope-dot { background: #60a5fa; }
@@ -73,13 +73,13 @@ defineProps<{
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--cc-text-dim, #8b8ca7);
+  color: var(--cc-text-dim);
 }
 
 .node-label {
   font-size: var(--cc-fs-sm);
   font-weight: 600;
-  color: var(--cc-text, #e2e2f0);
+  color: var(--cc-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,7 +87,7 @@ defineProps<{
 }
 .node-fn {
   font-size: var(--cc-fs-2xs);
-  color: var(--cc-text-dim, #8b8ca7);
+  color: var(--cc-text-dim);
   font-family: monospace;
   margin-top: 2px;
   white-space: nowrap;

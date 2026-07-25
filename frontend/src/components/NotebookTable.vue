@@ -334,7 +334,7 @@ defineExpose({ refresh })
 .nbt-add { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .nbt-add input { flex: 0 1 240px; }
 .nbt-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-lg); }
-.nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border, #2a2a2a); }
+.nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border); }
 .nbt-table th { color: var(--cc-text-dim); font-weight: 600; }
 .nbt-name { white-space: nowrap; }
 .nbt-desc input { width: 100%; }
@@ -351,10 +351,10 @@ defineExpose({ refresh })
 .nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: var(--cc-fs-md); }
 .nbt-hist-label { color: var(--cc-text-dim); }
 .nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */
-.nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border, #333); border-radius: var(--cc-radius-md); padding: .1rem .1rem .1rem .5rem; }
+.nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: .1rem .1rem .1rem .5rem; }
 .nbt-snap-ver { font-variant-numeric: tabular-nums; }
 .nbt-snap .cc-btn { padding: .15rem .4rem; }
-.nb-badge { font-size: var(--cc-fs-sm); padding: .1rem .45rem; border-radius: var(--cc-radius-pill); border: 1px solid var(--cc-border, #333); }
+.nb-badge { font-size: var(--cc-fs-sm); padding: .1rem .45rem; border-radius: var(--cc-radius-pill); border: 1px solid var(--cc-border); }
 .nb-badge.scope-project { color: #58a6ff; border-color: #58a6ff55; }
 .nb-badge.scope-example { color: #888; }
 </style>

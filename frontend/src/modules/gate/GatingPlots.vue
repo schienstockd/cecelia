@@ -224,14 +224,16 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <i class="pi pi-plus" /> Pairs
         </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
-        <div v-if="!isTrack" class="seg">
+        <div v-if="!isTrack" class="cc-btn-group">
           <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
                here we only offer the spatial cell-selection brush. -->
-          <button v-tooltip.bottom="'Draw a region on the napari image to highlight those cells here'"
+          <button class="cc-btn cc-btn-bare cc-btn-icon"
+                  v-tooltip.bottom="'Draw a region on the napari image to highlight those cells here'"
                   @click="g.startCellSelection"><i class="pi pi-pencil" /></button>
           <!-- z scope: whole stack (default) vs only the current z-slice (± window). Changing this
                re-evaluates any active selection live (and applies to the next one). -->
-          <button :class="{ on: g.napariZMode === 'slice' }"
+          <button class="cc-btn cc-btn-bare"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': g.napariZMode === 'slice' }"
                   v-tooltip.bottom="g.napariZMode === 'slice'
                     ? `Selecting cells from the current z-slice ±${g.napariZWindow} — click for the whole stack`
                     : 'Selecting cells across the whole z-stack — click to restrict to the current z-slice'"
@@ -243,19 +245,24 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                v-tooltip.bottom="'z-slice window: include cells within ± this many slices of the current z (0 = current slice only)'">
           ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
         </label>
-        <div class="seg">
-          <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
+        <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
+                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
+                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
-        <div class="seg">
-          <button :class="{ on: showManager }" @click="showManager = !showManager"
+        <div class="cc-btn-group">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+                  @click="showManager = !showManager"
                   v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
             <i class="pi pi-sitemap" />
           </button>
         </div>
-        <div class="seg" v-tooltip.bottom="'Step to the previous / next image in the list'">
-          <button :disabled="!hasPrev" @click="navTo(-1)" aria-label="Previous image">&laquo;</button>
-          <button :disabled="!hasNext" @click="navTo(1)" aria-label="Next image">&raquo;</button>
+        <div class="cc-btn-group" v-tooltip.bottom="'Step to the previous / next image in the list'">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="!hasPrev"
+                  @click="navTo(-1)" aria-label="Previous image">&laquo;</button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="!hasNext"
+                  @click="navTo(1)" aria-label="Next image">&raquo;</button>
         </div>
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
@@ -298,14 +305,6 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
 .gp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
-/* window-arrange segmented icons */
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button:hover { color: var(--cc-text); }
-.seg button.on { background: var(--cc-accent); color: #fff; }
-.seg button:disabled { opacity: 0.35; cursor: default; }
-.seg button:disabled:hover { color: var(--cc-text-dim); }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; font-size: var(--cc-fs-sm); padding: 3px 4px; }

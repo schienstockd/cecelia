@@ -24,7 +24,7 @@ defineProps<{
 <style scoped>
 .live-label {
   font-size: var(--cc-fs-2xs);
-  color: var(--cc-text-dim, #8b8ca7);
+  color: var(--cc-text-dim);
   white-space: nowrap;
   pointer-events: none;
   display: flex;
@@ -35,7 +35,7 @@ defineProps<{
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--cc-text, #e2e2f0);
+  color: var(--cc-text);
   max-width: 170px;
 }
 .live-label.row {
@@ -47,7 +47,7 @@ defineProps<{
 }
 .live-label.row .live-label-text {
   font-weight: 600;
-  color: var(--cc-text, #e2e2f0);
+  color: var(--cc-text);
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;

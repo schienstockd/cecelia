@@ -211,8 +211,8 @@ const filterOptions = computed<ChipOption[]>(() =>
   border-radius: var(--cc-radius-pill);
   flex-shrink: 0;
 }
-.bar-last.error .lvl-dot { background: #ef4444; }
-.bar-last.warn  .lvl-dot { background: #f59e0b; }
+.bar-last.error .lvl-dot { background: var(--cc-sev-fail); }
+.bar-last.warn  .lvl-dot { background: var(--cc-sev-warn); }
 .bar-last.info  .lvl-dot { background: #3b82f6; }
 
 /* pop-out button on the collapsed bar — pin to the right edge, don't shrink */
@@ -293,7 +293,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 }
 .error .lvl { background: #7f1d1d; color: #fca5a5; }
 .warn  .lvl { background: #78350f; color: #fcd34d; }
-.info  .lvl { background: #1e3a5f; color: #93c5fd; }
+.info  .lvl { background: #1e3a5f; color: var(--cc-active); }
 
 .msg { color: var(--cc-text); flex: 1; }
 .error .msg { color: #fca5a5; }

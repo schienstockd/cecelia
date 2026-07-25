@@ -17,6 +17,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
+| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
+| Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
 | On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
@@ -24,7 +26,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
-| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue` | a per-file chevron toggle |
+| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
@@ -41,6 +43,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
+| A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
 
 **Each utility varies on exactly one axis, and the modifier is that axis** — density (`-dense`/`-micro`),
 surface (`-2`), layout (`-inline`/`-overlay`/`-lg`). Reach for the modifier instead of re-declaring the
@@ -97,13 +100,24 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-text-dim` | `#7d8590` | Secondary text, labels |
 | `--cc-border` | `#30363d` | All borders |
 | `--cc-accent` | `#a78bfa` | Active elements, buttons, links |
+| `--cc-accent-strong` | `#7c3aed` | Deeper violet — the border of an engaged/active control |
+| `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
+| `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
 | `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
-| `--cc-warn` | `#f59e0b` | Amber warnings (e.g. heavy-load hints) |
-| `--cc-danger` | `#ef4444` | Destructive / error state (delete, invalid) |
+| `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
+| `--cc-danger` | `#ef4444` | The **destructive-action** tone (a delete button's hover/armed state) — an action, not a status |
 | `--cc-viewer` | `#22c55e` | Green accent for the napari viewer controls button + its floating-panel border (stands apart from purple chrome) |
 | `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
-| `--cc-sev-warn` | `#fab219` | Severity **warn** (a QC warn finding) |
-| `--cc-sev-fail` | `#d03b3b` | Severity **fail** (a task failed) |
+| `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
+| `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
+
+> **`--cc-warn`/`--cc-danger` vs `--cc-sev-*`.** The split is **status vs not**, and it decides which
+> of two similar reds/ambers you reach for. If the colour tells the user *the state of something*
+> (valid/invalid, fresh/stale, ok/warn/fail), it is a severity and must use `--cc-sev-*` — that is the
+> CVD-validated palette, and opting out of it silently costs colour-blind separation. If the colour is
+> a destructive **action**'s tone (a delete button) or a decorative/identity hue (a chain node), it is
+> not a severity and stays on `--cc-warn`/`--cc-danger`. Severity is never the sole cue either way:
+> pair it with the shape-distinct icon from `lib/severity.ts`.
 | `--cc-mono` | system monospace stack | Log output, code |
 | `--cc-radius-sm` / `-md` | `0.25rem` / `0.4rem` | Small controls/chips/inputs · cards/panels/dialogs |
 | `--cc-fs-3xs` … `-md` | `0.56` / `0.62` / `0.68` / `0.75` / `0.82rem` | Small-text scale (≈9/10/11/12px + 0.82). Use in place of a raw `rem` **or** `px` size |

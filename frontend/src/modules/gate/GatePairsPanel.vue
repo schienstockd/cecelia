@@ -202,7 +202,7 @@ function exportAs(kind: string) {
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; }
 /* heavy-matrix warning strip (brief; numbers + the fix live in the tooltip) */
 .pairs-warn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: var(--cc-fs-xs);
-  color: var(--cc-warn, #f59e0b); background: color-mix(in srgb, var(--cc-warn, #f59e0b) 12%, transparent);
+  color: var(--cc-warn); background: color-mix(in srgb, var(--cc-warn) 12%, transparent);
   border-bottom: 1px solid var(--cc-border); cursor: help; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 /* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
@@ -212,8 +212,8 @@ function exportAs(kind: string) {
 .ax-chan { width: 12rem; flex: none; }
 .tsel { width: 5.5rem; flex-shrink: 0; }
 /* amber: some channels' range can't use the chosen transform → those tiles auto-shown on linear */
-.tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
-.ax-warn { color: #f59e0b; font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
+.tsel.tsel-amber { border-color: var(--cc-sev-warn); color: var(--cc-sev-warn); }
+.ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 /* channel multiselect popover */
 .chan-pick { position: relative; flex: 1; min-width: 0; }
 .chan-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px;
@@ -231,9 +231,5 @@ function exportAs(kind: string) {
 .chan-item:hover { background: var(--cc-surface-2); }
 .chan-item.disabled { color: var(--cc-text-dim); cursor: default; }
 .chan-cap { padding: 5px 4px 2px; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 3px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button.on { background: var(--cc-accent); color: #fff; }
 .gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
 </style>

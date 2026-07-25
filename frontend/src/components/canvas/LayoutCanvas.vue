@@ -393,7 +393,7 @@ defineExpose({ capturePage, collectCsvs })
                       @update:model-value="v => applyPreset(UNIFORM_PRESETS, v as string)" />
           <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
           <div class="lc-opts">
-            <button ref="optsBtn" class="lc-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+            <button ref="optsBtn" class="lc-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
@@ -465,7 +465,7 @@ defineExpose({ capturePage, collectCsvs })
                       @update:model-value="v => applyPreset(platePresets, v as string)" />
           <!-- custom plate builder: drag cells to merge into varied-size panels -->
           <div class="lc-opts">
-            <button ref="builderBtn" class="cc-btn cc-btn-ghost lc-custom" :class="{ on: builderOpen }" @click="builderOpen = !builderOpen"
+            <button ref="builderBtn" class="cc-btn cc-btn-ghost lc-custom" :class="{ 'cc-btn-on': builderOpen }" @click="builderOpen = !builderOpen"
                     v-tooltip.bottom="'Build a custom plate — drag cells to merge, click a merge to split'">
               <i class="pi pi-th-large" /> Custom…</button>
             <TeleportPopover v-model="builderOpen" :anchor="builderBtn">
@@ -583,9 +583,8 @@ defineExpose({ capturePage, collectCsvs })
 /* ⚙ grid-size / height popover */
 .lc-opts { position: relative; display: inline-flex; }
 /* .lc-gear → cc-btn cc-btn-ghost cc-btn-icon */
-.lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
+.lc-gear:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 .lc-custom { font-size: var(--cc-fs-xs); padding: 0.22rem 0.55rem; }
-.lc-custom.on { color: var(--cc-text); border-color: #7c3aed; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
@@ -616,7 +615,7 @@ defineExpose({ capturePage, collectCsvs })
 /* selection = amber, matching CanvasPanel .panel.active and every module page (was a clashing violet).
    A FILLED slot's panel already draws the amber border + glow, so don't double it there — only an empty
    slot needs its own amber selection border. */
-.lc-slot.active { border-color: #ff8c1a; }
+.lc-slot.active { border-color: var(--cc-selected); }
 .lc-slot.filled.active { border-color: var(--cc-border); }
 /* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */

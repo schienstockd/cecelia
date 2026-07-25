@@ -43,7 +43,7 @@ defineProps<{
 <style scoped>
 .chain-picnic-node {
   background: #1c1505;
-  border: 2px solid #f59e0b;
+  border: 2px solid var(--cc-warn);
   border-radius: var(--cc-radius-md);
   padding: 7px 11px;
   font-size: var(--cc-fs-sm);
@@ -53,7 +53,7 @@ defineProps<{
   transition: box-shadow 0.12s;
 }
 .chain-picnic-node.selected {
-  box-shadow: 0 0 0 2px #f59e0b;
+  box-shadow: 0 0 0 2px var(--cc-warn);
 }
 
 .picnic-header {
@@ -64,7 +64,7 @@ defineProps<{
 }
 .picnic-diamond {
   font-size: var(--cc-fs-2xs);
-  color: #f59e0b;
+  color: var(--cc-warn);
   line-height: 1;
 }
 .picnic-badge {
@@ -72,7 +72,7 @@ defineProps<{
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #f59e0b;
+  color: var(--cc-warn);
 }
 
 .node-label {
@@ -107,7 +107,7 @@ defineProps<{
 }
 .policy-val {
   font-size: var(--cc-fs-3xs);
-  color: #f59e0b;
+  color: var(--cc-warn);
   font-family: monospace;
 }
 .node-pool {
