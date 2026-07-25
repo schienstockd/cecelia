@@ -160,11 +160,11 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
       <!-- body -->
       <div class="fb-body">
-        <div v-if="loading" class="fb-state">
+        <div v-if="loading" class="fb-state cc-muted cc-muted-md">
           <i class="pi pi-spin pi-cog" /> Loading…
         </div>
 
-        <div v-else-if="error" class="fb-state error">
+        <div v-else-if="error" class="fb-state error cc-muted cc-muted-md">
           <i class="pi pi-exclamation-triangle" /> {{ error }}
           <button class="cc-btn cc-btn-ghost" @click="navigate('')">Back to home</button>
         </div>
@@ -196,7 +196,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
                 <i class="pi pi-arrow-up row-icon" />
                 <span class="row-name">..</span>
               </td>
-              <td class="col-type dim">parent</td>
+              <td class="col-type dim cc-muted">parent</td>
               <td class="col-size" />
             </tr>
 
@@ -232,8 +232,8 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
                 ]" />
                 <span class="row-name">{{ entry.name }}</span>
               </td>
-              <td class="col-type dim">{{ entry.isdir ? 'folder' : entry.ext }}</td>
-              <td class="col-size dim">{{ entry.isdir ? '' : formatSize(entry.size) }}</td>
+              <td class="col-type dim cc-muted">{{ entry.isdir ? 'folder' : entry.ext }}</td>
+              <td class="col-size dim cc-muted">{{ entry.isdir ? '' : formatSize(entry.size) }}</td>
             </tr>
 
             <tr v-if="listing && listing.entries.length === 0">
@@ -248,7 +248,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       <span class="sel-count" v-else-if="selected.size > 0">
         {{ selected.size }} {{ mode === 'bundle' ? 'bundle' : 'file' }}{{ selected.size > 1 ? 's' : '' }} selected
       </span>
-      <span class="sel-count dim" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
+      <span class="sel-count dim cc-muted" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
 
       <div class="footer-actions">
         <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
@@ -312,10 +312,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
 /* body — BaseModal's cc-modal-body owns the scroll; .fb-body needs no shell styling. */
 
-.fb-state {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md);
-}
+.fb-state { display: flex; align-items: center; gap: 0.5rem; padding: 2rem; }
 .fb-state.error { color: #fca5a5; flex-direction: column; align-items: flex-start; }
 
 /* table */
@@ -352,7 +349,6 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
 .col-name { display: table-cell; }
 .row-name { vertical-align: middle; }
-.dim { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 
 .fb-empty { text-align: center; padding: 2rem; }   /* + .cc-muted */
 

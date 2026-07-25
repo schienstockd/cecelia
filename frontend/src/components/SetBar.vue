@@ -107,7 +107,7 @@ async function deleteSet() {
         <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
       </select>
       <template v-if="activeSet">
-        <span class="set-uid">{{ activeSet.uid }}</span>
+        <span class="set-uid cc-muted cc-muted-xs">{{ activeSet.uid }}</span>
         <button class="set-uid-copy cc-btn cc-btn-bare cc-btn-icon" @click="copySetUid(activeSet.uid)"
           v-tooltip.bottom="copiedSetUid ? 'Copied!' : 'Copy set UID to clipboard'">
           <i :class="copiedSetUid ? 'pi pi-check' : 'pi pi-copy'" />
@@ -150,7 +150,7 @@ async function deleteSet() {
         </button>
       </template>
       <template v-if="confirmDelete">
-        <span class="confirm-text">Delete <strong>{{ activeSet?.name }}</strong>?</span>
+        <span class="confirm-text cc-muted cc-muted-md">Delete <strong>{{ activeSet?.name }}</strong>?</span>
         <button class="cc-btn cc-btn-danger-ghost" @click="deleteSet"
           v-tooltip.bottom="'Permanently delete this set and remove all its images from disk.'">
           Confirm
@@ -175,12 +175,7 @@ async function deleteSet() {
   flex-shrink: 0;
 }
 .set-selector { display: flex; align-items: center; gap: 0.5rem; }
-.set-uid {
-  font-family: var(--cc-mono);
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-  letter-spacing: 0.03em;
-}
+.set-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; }
 /* .set-uid-copy → cc-btn cc-btn-bare cc-btn-icon */
 .set-uid-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .set-label {
@@ -192,6 +187,6 @@ async function deleteSet() {
 .set-select:disabled { opacity: 0.4; cursor: not-allowed; }
 .set-name-input { width: 180px; border-color: var(--cc-accent); }
 .spacer { flex: 1; }
-.confirm-text { font-size: var(--cc-fs-md); color: var(--cc-text-dim); }
+
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

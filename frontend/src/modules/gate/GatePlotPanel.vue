@@ -346,7 +346,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl">
-        <label class="ax-row"><span class="ax-lbl">X</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
           <select class="ax-chan" v-model="xChan">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
@@ -357,7 +357,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
-        <label class="ax-row"><span class="ax-lbl">Y</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
           <select class="ax-chan" v-model="yChan">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
@@ -368,10 +368,10 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
-        <label class="ax-row"><span class="ax-lbl">pop</span>
+        <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
-          <span v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</span></label>
+          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-muted-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
       </div>
     </template>
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->
@@ -422,7 +422,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 /* fixed widths so the controls don't stretch when the plot is resized */
 .ax-chan { width: 9rem; flex: none; }
 .ax-row .tsel { flex-shrink: 0; }
-.panel-ctrl label { display: flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+/* + cc-muted on each label — only the row layout is this panel's business */
+.panel-ctrl label { display: flex; align-items: center; gap: 4px; }
 /* fixed widths so the bar doesn't reflow when the selected option text changes; the rest
    (background, border, chevron, focus) comes from the global form base in style.css */
 .panel-ctrl select { width: 8rem; padding-top: 2px; padding-bottom: 2px; }
@@ -441,8 +442,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 .name-hint { color: var(--cc-sev-fail); font-size: var(--cc-fs-2xs); max-width: 150px; line-height: 1.2; }
 /* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
-.gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
-  font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); white-space: nowrap; }
+.gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 
 /* centred empty-state over the plot: track-grained pop type on an untracked segmentation.
    + .cc-empty-inline .cc-card — an inline empty wearing card chrome; only the centring is local */

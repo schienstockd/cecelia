@@ -272,15 +272,15 @@ async function fillFlagged() {
           v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct.'" />
 
         <div class="dims-row" :class="{ excluded: !includeX && !includeY && !includeZ }">
-          <label class="dim-label" v-tooltip.bottom="'Pixel size in X'">X</label>
+          <label class="dim-label cc-muted" v-tooltip.bottom="'Pixel size in X'">X</label>
           <input class="field-input" :class="{ warn: targetFlags.has('x'), mixed: isMixed('physicalSizeX') }"
             type="number" step="any" v-model.number="physX" :disabled="!includeX" placeholder="—"
             v-tooltip.bottom="isMixed('physicalSizeX') ? 'Other selected images have a different X — this is just ' + focusedImg?.name + '\'s.' : null" />
-          <label class="dim-label" v-tooltip.bottom="'Pixel size in Y'">Y</label>
+          <label class="dim-label cc-muted" v-tooltip.bottom="'Pixel size in Y'">Y</label>
           <input class="field-input" :class="{ warn: targetFlags.has('y'), mixed: isMixed('physicalSizeY') }"
             type="number" step="any" v-model.number="physY" :disabled="!includeY" placeholder="—"
             v-tooltip.bottom="isMixed('physicalSizeY') ? 'Other selected images have a different Y — this is just ' + focusedImg?.name + '\'s.' : null" />
-          <label class="dim-label" v-tooltip.bottom="'Voxel depth — the Z step'">Z</label>
+          <label class="dim-label cc-muted" v-tooltip.bottom="'Voxel depth — the Z step'">Z</label>
           <input class="field-input" :class="{ warn: targetFlags.has('z'), mixed: isMixed('physicalSizeZ') }"
             type="number" step="any" v-model.number="physZ" :disabled="!includeZ" placeholder="—"
             v-tooltip.bottom="isMixed('physicalSizeZ') ? 'Other selected images have a different Z — this is just ' + focusedImg?.name + '\'s.' : null" />
@@ -292,7 +292,7 @@ async function fillFlagged() {
         </div>
 
         <div class="dims-row" :class="{ excluded: !includeT }">
-          <label class="dim-label" v-tooltip.bottom="'Time between frames'">Δt</label>
+          <label class="dim-label cc-muted" v-tooltip.bottom="'Time between frames'">Δt</label>
           <input class="field-input" :class="{ warn: targetFlags.has('t'), mixed: isMixed('timeIncrement') }"
             type="number" step="any" v-model.number="timeInc" :disabled="!includeT" placeholder="—"
             v-tooltip.bottom="isMixed('timeIncrement') ? 'Other selected images have a different Δt — this is just ' + focusedImg?.name + '\'s.' : null" />
@@ -351,10 +351,7 @@ async function fillFlagged() {
 
 .dims-row { display: flex; align-items: center; gap: 0.4rem; transition: opacity 0.1s; }
 .dims-row.excluded { opacity: 0.4; }
-.dim-label {
-  flex-shrink: 0; width: 1.2rem; text-align: right;
-  font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text-dim);
-}
+.dim-label { flex-shrink: 0; width: 1.2rem; text-align: right; font-weight: 600; }
 .field-input { flex: 1; min-width: 0; }
 .field-input.warn { border-color: var(--cc-sev-warn) !important; background: #7c2d1222; }
 .field-input.mixed { border: 1px dashed #60a5fa !important; background: #1e3a5f55; cursor: help; }

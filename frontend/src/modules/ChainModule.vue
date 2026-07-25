@@ -1263,7 +1263,7 @@ onActivated(async () => {
               :key="cat.name"
               class="palette-category"
             >
-              <div class="palette-cat-heading cc-eyebrow cc-eyebrow-dense">{{ cat.name }}</div>
+              <div class="palette-cat-heading cc-eyebrow cc-eyebrow-2xs">{{ cat.name }}</div>
               <div
                 v-for="def in cat.defs"
                 :key="def.fun_name"
@@ -1296,7 +1296,7 @@ onActivated(async () => {
 
         <!-- ── Run table ──────────────────────────────────────────────────── -->
         <div class="run-table-section">
-          <div class="run-section-heading cc-eyebrow cc-eyebrow-dense">Run</div>
+          <div class="run-section-heading cc-eyebrow cc-eyebrow-2xs">Run</div>
 
           <select
             v-if="project.sets.length"
@@ -1689,7 +1689,7 @@ onActivated(async () => {
 
 .palette-category { margin-bottom: 0.25rem; }
 
-.palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-dense */
+.palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-2xs */
 
 .palette-item {
   display: flex;
@@ -1857,7 +1857,7 @@ onActivated(async () => {
   background: var(--cc-bg);
 }
 
-.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-dense */
+.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-eyebrow-2xs */
 
 .run-set-select {
   margin: 0 0.45rem 0.3rem;

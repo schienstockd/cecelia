@@ -319,22 +319,22 @@ defineExpose({ exportImage })
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
-            <CcToggle class="is-check" label="legend (channels · pops · colour-by)"
+            <CcToggle class="is-check cc-muted cc-muted-xs" label="legend (channels · pops · colour-by)"
               :model-value="showLegend" @update:model-value="showLegend = $event" />
-            <CcToggle class="is-check" label="clean capture"
+            <CcToggle class="is-check cc-muted cc-muted-xs" label="clean capture"
               v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'"
               :model-value="settings.cleanCapture" @update:model-value="settings.cleanCapture = $event" />
-            <CcToggle class="is-check" label="scale bar"
+            <CcToggle class="is-check cc-muted cc-muted-xs" label="scale bar"
               v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"
               :model-value="showScaleBar" @update:model-value="showScaleBar = $event" />
-            <CcToggle class="is-check" label="timestamp"
+            <CcToggle class="is-check cc-muted cc-muted-xs" label="timestamp"
               v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
               :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
             <template v-if="separator === 'angled' && orientation === 'h'">
-              <label class="is-slider">angle
+              <label class="is-slider cc-muted cc-muted-xs">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ skew }}</span></label>
-              <label class="is-slider">width
+              <label class="is-slider cc-muted cc-muted-xs">width
                 <input type="range" min="1" max="12" :value="thick" @input="thick = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ thick }}</span></label>
             </template>
@@ -385,9 +385,9 @@ defineExpose({ exportImage })
 .is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
 .is-err { color: #fca5a5; font-size: var(--cc-fs-xs); }
-.is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+.is-slider { display: inline-flex; align-items: center; gap: 4px; }
 .is-slider input[type="range"] { width: 4.5rem; }
-.is-check { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+.is-check { display: inline-flex; align-items: center; gap: 6px; }
 /* view legend (shared <ViewLegend>): overlaid bottom-left of the frame (z above the auto-hide toolbar
    like the caption/actions); included in the PDF export (not hidden while capturing). The container
    sets the on-image styling (white text, shadow, dark chip); ViewLegend inherits color + font-size. */

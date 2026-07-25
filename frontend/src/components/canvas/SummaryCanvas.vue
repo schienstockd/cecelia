@@ -174,8 +174,8 @@ watch(segPops, () => {
           </button>
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span v-if="!specs.length" class="sc-hint">No plot types available for this module yet.</span>
-        <span v-else class="sc-hint">eye-select populations to plot · drag plots by their title</span>
+        <span v-if="!specs.length" class="sc-hint cc-muted cc-muted-xs">No plot types available for this module yet.</span>
+        <span v-else class="sc-hint cc-muted cc-muted-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
       <div ref="canvasRef" class="sc-canvas">
         <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
@@ -213,7 +213,7 @@ watch(segPops, () => {
 .sc-cmp { min-width: 8rem; }
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
-.sc-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; margin-left: auto; }
+.sc-hint { opacity: 0.7; margin-left: auto; }
 .sc-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace (offsetParent for the floating panels); size + transform set inline by
    useCanvasWorkspace — grows to viewport/zoom when zoomed out so the whole page stays usable */

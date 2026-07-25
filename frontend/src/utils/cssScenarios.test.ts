@@ -188,51 +188,26 @@ describe('inputBase', () => {
 // size, so tokenising a rule silently un-flagged it). When adding a matcher, ask which other spellings
 // of the same declaration exist: token vs literal, with fallback vs without, scoped vs inline.
 const BASELINE: Record<string, number> = {
-  'components/AppSidebar.vue': 2,
-  'components/ClaudeOverviewDialog.vue': 2,
-  'components/CohortCheckButton.vue': 1,
-  'components/CopyDialog.vue': 1,
-  'components/CropDialog.vue': 1,
-  'components/CropPanel.vue': 1,
-  'components/ErrorConsole.vue': 2,
-  'components/FileBrowser.vue': 2,
   'components/ImageMetadataDialog.vue': 3,
   'components/ImageTable.vue': 3,
   'components/LabLogPanel.vue': 5,
-  'components/LegacyMigrateDialog.vue': 1,
   'components/ModuleLayout.vue': 5,
   'components/PackagesDialog.vue': 4,
-  'components/PhysicalSizeDialog.vue': 1,
-  'components/PoolThrottle.vue': 2,
   'components/ProjectPanel.vue': 5,
-  'components/SetBar.vue': 2,
   'components/ViewerPanel.vue': 5,
-  'components/canvas/InteractivePanel.vue': 1,
   'components/canvas/LayoutCanvas.vue': 3,
   'components/canvas/PlateBuilder.vue': 3,
-  'components/canvas/PlotOptions.vue': 1,
   'components/canvas/PopulationManager.vue': 4,
-  'components/canvas/SummaryCanvas.vue': 1,
   'components/canvas/SummaryPanel.vue': 3,
-  'components/plots/GateMontage.vue': 2,
   'components/plots/GateScatterCell.vue': 3,
-  'components/plots/ImageStripView.vue': 2,
-  'components/plots/PlotSpinner.vue': 1,
-  'components/plots/UmapView.vue': 2,
   'modules/AnimationModule.vue': 6,
   'modules/ChainModule.vue': 11,
-  'modules/MoviesModule.vue': 2,
   'modules/SettingsModule.vue': 3,
-  'modules/SetupModule.vue': 2,
   'modules/TasksModule.vue': 6,
   'modules/batchmovies/BatchMoviesPanel.vue': 4,
-  'modules/cluster/ClusterPlots.vue': 1,
-  'modules/gate/GatePlotPanel.vue': 2,
-  'modules/gate/GatingPlots.vue': 1,
   'modules/metadata/MetadataPanel.vue': 4,
   'tasks/ParamRenderer.vue': 5,
   'tasks/TaskList.vue': 5,
-  'tasks/TaskRunner.vue': 2,
 }
 
 const RAW = import.meta.glob('/src/**/*.{vue,css}', {
@@ -347,7 +322,7 @@ describe('raw colours', () => {
 })
 
 describe('form controls', () => {
-  // The input/select/textarea base is one size, and until `.cc-input-dense`/`-micro` existed there was
+  // The input/select/textarea base is one size, and until the density steps existed there was
   // no way to make a control smaller except to write a class — at which point sites re-typed the base's
   // border/colour/background too. 67 such declarations across 19 files were removed; they were no-ops
   // by the cascade, so the removal is provably neutral.

@@ -267,7 +267,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span class="gp-hint">drag plots by their title · resize from the corner</span>
+        <span class="gp-hint cc-muted cc-muted-xs">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
@@ -304,7 +304,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
-.gp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
+.gp-hint { opacity: 0.7; }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }

@@ -21,10 +21,10 @@ defineProps<{
 
     <div class="node-scope" :title="`scope: ${data.scope}`">
       <span class="scope-dot" />
-      <span class="cc-eyebrow cc-eyebrow-micro">{{ data.scope }}</span>
+      <span class="cc-eyebrow cc-eyebrow-3xs">{{ data.scope }}</span>
     </div>
     <div class="node-label">{{ data.label || data.fn }}</div>
-    <div class="node-fn cc-muted cc-muted-dense">{{ data.fn }}</div>
+    <div class="node-fn cc-muted cc-muted-2xs">{{ data.fn }}</div>
     <div v-if="data.resource_pool" class="node-pool">
       <i class="pi pi-server" style="font-size:var(--cc-fs-2xs)" />
       {{ data.resource_pool }}
@@ -78,7 +78,7 @@ defineProps<{
   text-overflow: ellipsis;
   max-width: 160px;
 }
-/* + cc-muted cc-muted-dense — the mono face and truncation are this site's */
+/* + cc-muted cc-muted-2xs — the mono face and truncation are this site's */
 .node-fn {
   font-family: var(--cc-mono);
   margin-top: 2px;

@@ -136,17 +136,17 @@ function save() {
       </div>
 
       <div v-if="info.nT > 1" class="crop-row">
-        <span class="crop-lbl" v-tooltip.top="'Scrub timepoints to pick the clearest footprint'">frame</span>
+        <span class="crop-lbl cc-muted cc-muted-xs" v-tooltip.top="'Scrub timepoints to pick the clearest footprint'">frame</span>
         <input type="range" min="0" :max="info.nT - 1" v-model.number="t" />
         <span class="crop-tval">{{ t + 1 }}/{{ info.nT }}</span>
       </div>
       <div v-if="info.nZ > 1" class="crop-row">
-        <span class="crop-lbl" v-tooltip.top="'Keep this z-range — also re-projects the preview to just these slices'">z</span>
+        <span class="crop-lbl cc-muted cc-muted-xs" v-tooltip.top="'Keep this z-range — also re-projects the preview to just these slices'">z</span>
         <RangeSlider v-model:lo="zLo" v-model:hi="zHi" />
         <span class="crop-tval">{{ zLabel }}</span>
       </div>
       <div v-if="info.nT > 1" class="crop-row">
-        <span class="crop-lbl" v-tooltip.top="'Keep this time range'">t</span>
+        <span class="crop-lbl cc-muted cc-muted-xs" v-tooltip.top="'Keep this time range'">t</span>
         <RangeSlider v-model:lo="tLo" v-model:hi="tHi" />
         <span class="crop-tval">{{ tLabel }}</span>
       </div>
@@ -178,7 +178,7 @@ function save() {
 .crop-loading { position: absolute; top: 0.3rem; right: 0.3rem; color: var(--cc-accent); font-size: var(--cc-fs-md); }
 .crop-row { display: flex; align-items: center; gap: 0.4rem; }
 .crop-row input[type=range] { flex: 1 1 auto; }
-.crop-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); width: 2.6rem; }
+.crop-lbl { width: 2.6rem; }
 .crop-tval { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
 .crop-actions { display: flex; gap: 0.4rem; }
 .crop-hint { font-size: var(--cc-fs-xs); font-style: italic; }   /* + .cc-muted (colour) */

@@ -73,7 +73,7 @@ const filterOptions = computed<ChipOption[]>(() =>
       Console
     </span>
 
-    <span v-if="log.lastEntry" class="bar-last" :class="log.lastEntry.level">
+    <span v-if="log.lastEntry" class="bar-last cc-muted" :class="log.lastEntry.level">
       <span class="lvl-dot" />
       {{ log.lastEntry.message }}
     </span>
@@ -153,7 +153,7 @@ const filterOptions = computed<ChipOption[]>(() =>
         <pre v-if="expandedId === entry.id && entry.detail" class="detail">{{ entry.detail }}</pre>
       </div>
 
-      <div v-if="visible.length === 0" class="empty">
+      <div v-if="visible.length === 0" class="empty cc-empty">
         No {{ filter === 'all' ? '' : filter + ' ' }}messages
       </div>
     </div>
@@ -191,17 +191,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 }
 .console-bar:hover { background: var(--cc-surface-2); }
 
-.bar-last {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--cc-fs-sm);
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--cc-text-dim);
-}
+.bar-last { display: flex; align-items: center; gap: 0.4rem; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bar-last.error { color: #fca5a5; }
 .bar-last.warn  { color: #fcd34d; }
 .bar-last.info  { color: var(--cc-text-dim); }
@@ -315,10 +305,6 @@ const filterOptions = computed<ChipOption[]>(() =>
   overflow-x: auto;
 }
 
-.empty {
-  padding: 1.5rem;
-  text-align: center;
-  color: var(--cc-text-dim);
-  font-size: var(--cc-fs-md);
-}
+/* + cc-empty — padding is this console's own geometry, the rest is the scenario */
+.empty { padding: 1.5rem; }
 </style>

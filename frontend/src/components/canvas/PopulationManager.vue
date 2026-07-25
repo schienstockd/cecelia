@@ -339,7 +339,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
                   v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
                   @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
-          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-muted-dense">no clusters at this suffix</span>
+          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-muted-2xs">no clusters at this suffix</span>
         </div>
       </template>
 
@@ -482,7 +482,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-chip.ro { cursor: default; }
 .pm-chip.ro:hover { border-color: var(--cc-border); color: var(--cc-text-dim); }
 .pm-chip.ro.on:hover { color: #111; }
-.pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-dense (row/colour/10px tier) */
+.pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-2xs (row/colour/10px tier) */
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { margin-left: auto; }
