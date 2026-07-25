@@ -6,6 +6,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import NotebookTable from '../components/NotebookTable.vue'
+import ModulePage from '../components/ModulePage.vue'
 import { notebooksApi } from '../utils/serviceApi'
 
 const projectMeta = useProjectMetaStore()
@@ -132,15 +133,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 </script>
 
 <template>
-  <div class="notebooks-page">
-    <header class="nb-header">
-      <h1><i class="pi pi-book" /> Notebooks</h1>
-      <p class="nb-sub cc-muted">
-        Pure-Julia downstream analysis with <strong>Pluto</strong> — load objects, pull cell tables
-        via <code>pop_df</code>, plot, and export. Runs in its own Julia session.
-      </p>
-    </header>
-
+  <ModulePage class="notebooks-page" title="Notebooks" icon="pi pi-book">
     <div v-if="!hasProject" class="nb-empty cc-empty-inline">
       <i class="pi pi-lock" /> Open or create a project first.
     </div>
@@ -218,13 +211,12 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         <NotebookTable :project-uid="projectUid" :server-url="url" :server-secret="secret" :server-running="serverRunning" />
       </section>
     </template>
-  </div>
+  </ModulePage>
 </template>
 
 <style scoped>
-.notebooks-page { padding: 1.25rem 1.5rem; max-width: 980px; }
-.nb-header h1 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.4rem; }
-.nb-sub { margin: 0 0 1rem; max-width: 640px; }   /* + .cc-muted */
+/* + ModulePage — only the reading width is this page's own (it is a document, not a pane) */
+.notebooks-page { max-width: 980px; }
 .nb-empty { padding: 2rem 0; }   /* + .cc-empty-inline (row/gap/colour) */
 .nb-section { margin-bottom: 1.5rem; }
 .nb-section h2 { font-size: 1.05rem; margin: 0 0 .5rem; }

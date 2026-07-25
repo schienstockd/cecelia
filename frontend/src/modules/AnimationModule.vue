@@ -16,6 +16,7 @@ import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import CcToggle from '../components/CcToggle.vue'
+import ModulePage from '../components/ModulePage.vue'
 
 const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
@@ -244,35 +245,28 @@ async function render() {
 </script>
 
 <template>
-  <div class="anim-page">
-    <header class="anim-head">
-      <div>
-        <h1>Animation</h1>
-        <p class="anim-sub cc-muted">A timeline of napari view snapshots. Capture a base look, add keyframes, toggle
-          channels/populations per keyframe, then render — the movie interpolates between keyframes.</p>
-      </div>
-      <div class="anim-head-ctl">
-        <label class="anim-fps cc-muted" v-tooltip.bottom="'Output frames per second'">
-          fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
-          <span class="anim-num">{{ anim.fps }}</span>
+  <ModulePage title="Animation" layout="scroll">
+    <template #controls>
+      <label class="anim-fps cc-muted" v-tooltip.bottom="'Output frames per second'">
+        fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
+        <span class="anim-num">{{ anim.fps }}</span>
+      </label>
+      <!-- Title card (Phase H4): prepend a slide describing everything shown across the keyframes -->
+      <CcToggle class="anim-title-toggle" v-model="anim.titleCard.enabled" label="Title card"
+             v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'" />
+      <template v-if="anim.titleCard.enabled">
+        <label class="anim-fps cc-muted" v-tooltip.bottom="'Title-card duration (seconds)'">
+          <input type="range" min="1" max="10" step="1" v-model.number="anim.titleCard.durationSec" class="anim-range" />
+          <span class="anim-num">{{ anim.titleCard.durationSec }}s</span>
         </label>
-        <!-- Title card (Phase H4): prepend a slide describing everything shown across the keyframes -->
-        <CcToggle class="anim-title-toggle" v-model="anim.titleCard.enabled" label="Title card"
-               v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'" />
-        <template v-if="anim.titleCard.enabled">
-          <label class="anim-fps cc-muted" v-tooltip.bottom="'Title-card duration (seconds)'">
-            <input type="range" min="1" max="10" step="1" v-model.number="anim.titleCard.durationSec" class="anim-range" />
-            <span class="anim-num">{{ anim.titleCard.durationSec }}s</span>
-          </label>
-          <input type="text" v-model="anim.titleCard.note" class="anim-note" placeholder="note (optional)" />
-        </template>
-        <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
-                v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
-                  : 'Need ≥2 keyframes for this image, open in napari'">
-          <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
-        </button>
-      </div>
-    </header>
+        <input type="text" v-model="anim.titleCard.note" class="anim-note" placeholder="note (optional)" />
+      </template>
+      <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
+              v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
+                : 'Need ≥2 keyframes for this image, open in napari'">
+        <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
+      </button>
+    </template>
 
     <p v-if="!hasProject" class="cc-empty">Open a project to build an animation.</p>
     <p v-else-if="!openImageUid" class="cc-empty">Open an image in napari to start capturing keyframes.</p>
@@ -363,15 +357,10 @@ async function render() {
         </table>
       </div>
     </template>
-  </div>
+  </ModulePage>
 </template>
 
 <style scoped>
-.anim-page { padding: 1rem 1.25rem; height: 100%; overflow: auto; }
-.anim-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
-.anim-head h1 { font-size: 1.1rem; margin: 0 0 0.2rem; }
-.anim-sub { max-width: 46rem; margin: 0; }   /* + .cc-muted */
-.anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
 .anim-fps { display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }

@@ -26,6 +26,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
+| Standalone module page (not the image-table layout) | `components/ModulePage.vue` — title + `#controls` slot + content | a per-page `.x-page`/`.x-head` wrapper, or a descriptive subtitle paragraph |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
@@ -111,6 +112,22 @@ Touch a file, migrate its rules and lower its number; add a new one and the suit
 is deliberately *not* checked: `surface + border + radius` is the shape of a card, an input, a chip, a
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
+
+**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 15 of the 23 module
+pages are built on `ModuleLayout` and were already consistent. The 8 standalone ones were not: Notebooks,
+Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
+two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under
+different names. (The h1 sizes escaped the size sweep because `findRawValues` exempts anything over 15px
+as display type.) `ModulePage` fixes title, controls and spacing; `layout="flow|scroll|fill"` is the one
+real axis — whether the page flows, scrolls itself, or is a full-height pane whose child scrolls. Per-page
+extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
+still applies).
+
+**Do not write a page subtitle.** All three carried a paragraph explaining the feature to a first-time
+reader — permanent noise on a screen its owner uses daily, and the clearest tell that a page was
+AI-written. `ModulePage` has no subtitle slot on purpose. The title and the controls say what the page is;
+the explanation belongs in `docs/`. Same rule as tooltips and QC findings: if you are tempted to explain
+in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
 
 **Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
 (`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
