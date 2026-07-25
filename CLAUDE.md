@@ -507,6 +507,8 @@ WS upgrades. Full stream-handler/WS-upgrade/response conventions are in
 
 See [`docs/UI.md`](docs/UI.md) for the full reference: design tokens, button utilities, module page authoring, component catalog, plot integration, and WS event patterns.
 
+**Keep UI copy short.** Default to NO explanatory text in the app — no page subtitles, no paragraph tooltips, no prose QC findings. Where orientation genuinely isn't self-evident, one phrase under ~10 words, never two sentences. Long in-app prose is noise forever for the person who uses the page daily, and is the most reliable tell that a screen was generated. The explanation goes in the relevant `docs/<AREA>.md`. Per-surface budgets: `docs/UI.md` → *UI copy — keep it short*.
+
 **Persist every user-settable option.** Any option on a module page / canvas (chart type, scope, compare mode, highlights, sliders, …) MUST live in persisted view state (`useViewState` over a store-backed bag / panel `state`), never a bare `ref()` — a `ref()` resets on remount, so options vanish when the user navigates away and back. This is a hard convention for new pages; see `docs/MODULES.md` → "RULE: persist every user-settable option" and `docs/UI.md` → "Persisting view state".
 
 ---

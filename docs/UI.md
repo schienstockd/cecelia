@@ -137,6 +137,31 @@ to `INVENTORY.md` in the same change.
 
 ---
 
+## UI copy — keep it short (mandatory)
+
+**Default to no explanatory text.** A page title plus its controls almost always says what the page
+is. Where orientation genuinely isn't self-evident, one short phrase — **under ~10 words, never two
+sentences**.
+
+Why: a paragraph written to explain a feature once sits permanently on a page its owner uses daily,
+so it buys clarity once and costs noise forever. Verbose in-app prose is also the most reliable tell
+that a screen was generated rather than designed — it makes the whole app read that way. The real
+explanation belongs in `docs/`, which is where it actually gets looked up.
+
+| Surface | Budget |
+|---|---|
+| Page / panel subtitle | none by default; a short phrase only if the page is genuinely opaque |
+| Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
+| Task-JSON `tip` | omit unless the param is non-obvious; then one short line |
+| QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
+| Empty state (`.cc-empty`) | one line; a following action, not a rationale |
+| First-use hint (`HintCallout`) | one line, by construction |
+
+Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
+explaining, put it in the relevant `docs/<AREA>.md` and leave the UI silent.
+
+---
+
 ## Design tokens
 
 All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at the `<body>` level).
@@ -207,7 +232,8 @@ UI imports these; do not hand-pick a green/amber/red or a coloured dot. See
 ## Hard requirements
 
 Every interactive element must carry a `v-tooltip.right="'Description'"`.
-CellProfiler is the reference for tooltip density — if a button does something non-obvious, it has a tooltip.
+CellProfiler is the reference for tooltip *density* — if a button does something non-obvious, it has a
+tooltip. Density, not length: one line each, per *UI copy — keep it short* above.
 
 All errors go to `useLogStore().error(msg, { source, detail })`.
 Task failures must never be silent — errors must reach the console bar visible to the user.
