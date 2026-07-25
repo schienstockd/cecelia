@@ -23,6 +23,42 @@ gating **QC gate gives us a ground-truth-free way to measure it** (Dominik's ide
 
 ~87–92% of labels are rejected by the QC gate — heavy over-segmentation under v3.
 
+## OUTCOME (2026-07-25) — v4 rejected; pivot to coastal-native segmentation
+
+The phased plan below ran to a conclusion. Summary of what we found:
+
+- **Phase 1 (fix v3):** Dominik had already swept v3 params — **13.4% (T) / 7.9% (B) QC-pass is v3's
+  ceiling** on this data. A pure `min_size` filter recovers most passing cells (vol>300 keeps ~all
+  qc-pass, drops ~86% of junk) but only prunes tiny fragments; it doesn't fix split/missed cells. So
+  v3 is at its practical best and still over-segments.
+- **Phase 2 (benchmark Cellpose 4):** built the QC-gate harness — cellpose-4 native `eval` (isolated
+  `uv` env; v3/v4 are the same PyPI package, mutually exclusive) → cecelia `measure_utils` (real
+  `volume_mesh`, **not** hand-rolled) → the `qc` gate (`gate_from_spec` + `inside`; scorer validated by
+  reproducing v3's exact 13.4%). **Fully matched** to v3 (from `EaMaVq/ccid.json`: cyto2, diam 10 µm ≈
+  17 px, `stitchThreshold` 0.2, 2D+stitch — full-3D doesn't work — input `driftCorrected`, T-cell
+  channel):
+
+  | segmenter | objects | QC-pass |
+  |---|---|---|
+  | v3 (cyto2, tuned) | 11,070 | **13.4%** |
+  | v4 (cpsam, matched) | 65 / 5 frames | **0.0%** (0/65) |
+
+  v4's objects are small + dim (`volume_mesh` med 199, `mean_int1` med 498 — squarely in v3's *reject*
+  region). cpsam's idiomatic no-diameter mode fails outright (~0–4 cells); `do_3D` over-produces (840).
+  **Verdict: Cellpose-SAM is worse than tuned v3 on intravital** — no config found that works
+  out-of-the-box. (Caveat: one image/channel/5 frames, but the gap is categorical, not marginal; no
+  cpsam fine-tuning attempted — a separate, large effort.)
+
+- **Phase 3 (decision):** **v4 migration DROPPED.** Cellpose's generalist/SAM direction diverges from
+  intravital needs (dim 3D, moving cells). → **New north star: make `coastal` cecelia's own denoise +
+  segmentation engine, independent of cellpose** (Dominik). Denoise is already done (`coastal.denoise`);
+  coastal already has a **flow + temporal-embedding segmenter** (`segment.py`/`model.py`/`train.py`/
+  `flow.py`) with the right inductive bias for moving-cell data. **The same QC-gate harness is the
+  yardstick** for it. Tracked as task #17; supersedes the "which cellpose version" framing entirely.
+  The `cellpose==3` pin now stays until coastal provides *both* denoise and segmentation.
+
+The phases below are kept as the historical record of how we got here.
+
 ## Locked decisions
 
 1. **QC-gate pass-yield is the seg-quality metric.** No hand-annotation needed: the `qc` population
