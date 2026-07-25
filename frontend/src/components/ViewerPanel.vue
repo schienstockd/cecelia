@@ -607,13 +607,13 @@ onUnmounted(() => {
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariResetOnReload }"
           @click="settings.napariResetOnReload = !settings.napariResetOnReload"
-          v-tooltip.bottom="'Reset on reload: reopen the whole image (not just data) when reloading — needed when a task changed the image pixels (drift/denoise). Off = reload data only.'"
+          v-tooltip.bottom="'Reopen the whole image, not just data — needed after pixels change'"
         ><i class="pi pi-image" /></button>
 
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAutoSaveLayerProps }"
           @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
-          v-tooltip.bottom="'Auto-save layer props: save brightness/contrast, colormap and the T/Z slider the moment you change them (survives navigation and crashes); reload on next open'"
+          v-tooltip.bottom="'Save contrast, colormap and T/Z as you change them'"
         ><i class="pi pi-bookmark" /></button>
 
         <button
@@ -625,7 +625,7 @@ onUnmounted(() => {
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAsDask }"
           @click="settings.napariAsDask = !settings.napariAsDask"
-          v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
+          v-tooltip.bottom="'Fast open, slices on demand; untick for smoother viewing'"
         ><i class="pi pi-database" /></button>
       </div>
     </div>
@@ -705,7 +705,7 @@ onUnmounted(() => {
       <div v-if="obsCols.length" class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Colour by</div>
         <select class="opt-colourby" :value="colourByCol" @change="onColourBy"
-                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state). Values matching a population use its colour.'">
+                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state)'">
           <option value="">default</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>

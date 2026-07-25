@@ -254,7 +254,7 @@ async function fillFlagged() {
     <template #title>
       <i class="pi pi-ruler" /> Physical size &amp; timing
       <i class="pi pi-info-circle info-dot"
-         v-tooltip.bottom="'Read from the file at import when possible. A flagged value means we couldn\'t find it, or it looked unusual — check Fiji (Image ▸ Properties) or your acquisition settings.'" />
+         v-tooltip.bottom="'Flagged = missing or unusual; check Fiji (Image ▸ Properties)'" />
     </template>
 
       <div class="pp-form">
@@ -305,7 +305,7 @@ async function fillFlagged() {
 
     <template #footer>
       <button class="cc-btn cc-btn-ghost" :disabled="propagating" @click="fillFlagged"
-        v-tooltip.top="'Fill this image\'s values into the OTHER selected images that are flagged — same-session acquisitions usually match exactly.'">
+        v-tooltip.top="'Fill these values into the other flagged selected images'">
         <i v-if="propagating" class="pi pi-spin pi-cog" /><i v-else class="pi pi-share-alt" />
         Fill flagged
       </button>
@@ -317,7 +317,7 @@ async function fillFlagged() {
       <span class="footer-spacer" />
       <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
       <button class="cc-btn cc-btn-primary" :disabled="saving" @click="apply"
-        v-tooltip.top="`Apply to ${targetUids.length} image(s). Doesn't retroactively recompute derived measures (e.g. track speed).`">
+        v-tooltip.top="`Apply to ${targetUids.length} image(s); derived measures are not recomputed`">
         <i v-if="saving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-check" />
         Apply
       </button>

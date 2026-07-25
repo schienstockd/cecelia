@@ -414,7 +414,7 @@ defineExpose({ capturePage, collectCsvs })
           </div>
           <!-- A4 sheet lock: keep the board at page proportions (WYSIWYG with the PDF) or let it fill -->
           <ChipSelect variant="segmented" :options="SHEET_OPTIONS" :model-value="sheet" aria-label="Sheet size"
-                      v-tooltip.bottom="'Sheet — A4 locks the board to page proportions (what you see is the exported page); Free fills the width'"
+                      v-tooltip.bottom="'A4 locks the board to page proportions; Free fills the width'"
                       @update:model-value="v => sheet = v as 'free' | 'a4-portrait' | 'a4-landscape'" />
           <!-- fit-to-view zoom (visual only; the exported page is unchanged) -->
           <CanvasZoomControl v-if="sheet !== 'free'" :zoom="zoom"

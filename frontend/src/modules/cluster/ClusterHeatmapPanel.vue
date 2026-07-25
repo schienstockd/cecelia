@@ -143,7 +143,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
         </div>
       </details>
       <select v-model="heatmapScale" class="hm-sel"
-              v-tooltip.bottom="'Colour scale: 0–1 rescales each feature to its min→max (viridis); z-score shows above/below the feature mean (diverging)'">
+              v-tooltip.bottom="'0–1 rescales each feature; z-score shows above/below its mean'">
         <option value="minmax">0–1</option>
         <option value="zscore">z-score</option>
       </select>

@@ -93,7 +93,7 @@ async function deleteSet() {
   <div class="set-bar">
     <div class="set-selector">
       <label class="set-label"
-        v-tooltip.bottom="'The active image set. All operations apply to images in this set.'">
+        v-tooltip.bottom="'The active image set — all operations apply to it'">
         Set
       </label>
       <select
@@ -145,7 +145,7 @@ async function deleteSet() {
 
       <template v-if="activeSet && !confirmDelete">
         <button class="cc-btn cc-btn-danger-ghost" @click="confirmDelete = true"
-          v-tooltip.bottom="`Delete set '${activeSet.name}' and all its images. This cannot be undone.`">
+          v-tooltip.bottom="`Delete set '${activeSet.name}' and all its images — cannot be undone`">
           <i class="pi pi-trash" /> Delete set
         </button>
       </template>

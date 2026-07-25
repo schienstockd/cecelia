@@ -356,7 +356,7 @@ async function switchWt(path: string) {
 
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
-          v-tooltip.right="'Keep plots in sync with your data: when a task finishes, any plot or population list showing the affected image(s) reloads on its own. Turn off to keep plots steady while you work — they update next time you open or change them.'" />
+          v-tooltip.right="'Reload plots automatically when a task finishes'" />
       </div>
     </section>
 
@@ -449,7 +449,7 @@ async function switchWt(path: string) {
           </ul>
           <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
-                    v-tooltip.top="'Delete every non-active image version (incl. the original import); the active version is kept'">
+                    v-tooltip.top="'Delete every non-active image version'">
               <i :class="['pi', storageBusy ? 'pi-spin pi-cog' : 'pi-trash']" /> Free up space
             </button>
             <template v-else>
@@ -474,7 +474,7 @@ async function switchWt(path: string) {
             class="save-btn"
             :disabled="customModules.loading"
             @click="customModules.reload"
-            v-tooltip.right="'Rescan for newly dropped modules. Edits to already-loaded modules need a server restart.'"
+            v-tooltip.right="'Rescan for newly dropped modules; edits need a server restart'"
           >
             <i :class="['pi', customModules.loading ? 'pi-spin pi-cog' : 'pi-refresh']" />
             {{ customModules.loading ? 'Reloading…' : 'Reload' }}
@@ -545,7 +545,7 @@ async function switchWt(path: string) {
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
-                  v-tooltip.top="'Restart the backend server (dev): the supervisor relaunches it, page reconnects when it is back'">
+                  v-tooltip.top="'Restart the backend (dev); the page reconnects'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
@@ -569,7 +569,7 @@ async function switchWt(path: string) {
         <select class="wt-select" :disabled="appCtl.busy"
                 :value="appCtl.worktrees.find(w => w.current)?.path ?? ''"
                 @change="switchWt(($event.target as HTMLSelectElement).value)"
-                v-tooltip.top="'Relaunch the backend from another git worktree (dev). The page reconnects when it is back.'">
+                v-tooltip.top="'Relaunch the backend from another git worktree (dev)'">
           <option v-for="w in appCtl.worktrees" :key="w.path" :value="w.path">
             {{ wtFolder(w.path) }} — {{ w.branch }}{{ w.primary ? ' (main)' : '' }}{{ w.current ? ' (current)' : '' }}
           </option>
@@ -597,7 +597,7 @@ async function switchWt(path: string) {
         <CcToggle class="toggle-row" :disabled="!gpuSupported || gpuBusy"
                :model-value="settings.napariDiscreteGpu"
                @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
-               v-tooltip.right="'Render napari on the discrete GPU (hybrid graphics). Restarts napari to apply. Linux only.'">
+               v-tooltip.right="'Render napari on the discrete GPU; restarts napari (Linux only)'">
           Use discrete GPU for napari
           <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:var(--cc-fs-xs);" />
         </CcToggle>
@@ -648,7 +648,7 @@ async function switchWt(path: string) {
         <span v-if="diag.commit" class="mono" :class="{ 'diag-stale': diag.stale }">
           {{ diag.commit }}
           <span v-if="diag.stale" class="diag-stale-note"
-                v-tooltip.bottom="`Backend runs an older commit than your files (HEAD ${diag.commitCurrent}) — restart it to load the latest.`">
+                v-tooltip.bottom="`Backend is behind your files (HEAD ${diag.commitCurrent}) — restart it`">
             <i class="pi pi-exclamation-triangle" /> stale
           </span>
         </span>
@@ -688,7 +688,7 @@ async function switchWt(path: string) {
       <div class="field">
         <CcToggle class="toggle-row" label="Enable debug console"
           :model-value="replToggle" @update:model-value="replToggle = $event; toggleRepl()"
-          v-tooltip.right="'Show a Julia console that evaluates code in the running server. Only works when the server is loopback-bound (127.0.0.1); a network-bound server refuses it regardless.'" />
+          v-tooltip.right="'Julia console in the running server; loopback-bound only'" />
       </div>
 
       <!-- toggle is on but the server is network-bound → eval is refused server-side (loopback required) -->

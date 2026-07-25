@@ -1089,7 +1089,7 @@ onActivated(async () => {
             ? 'Run is still in progress'
             : restartLabel
               ? `Re-run from “${restartLabel}” and everything downstream (upstream stays done)`
-              : 'Resume: re-run failed / unfinished / changed nodes. Click a node to re-run from there instead.'"
+              : 'Re-run failed, unfinished or changed nodes'"
         >
           <i class="pi pi-play" />
         </button>
@@ -1211,7 +1211,7 @@ onActivated(async () => {
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || hasStartNode"
             @click="addStartNode"
-            v-tooltip.right="'Add a start node — link it to the task(s) a run begins from. Only tasks reachable from it run; the rest stay as drafts.'"
+            v-tooltip.right="'Add a start node — only tasks reachable from it run'"
           >
             <i class="pi pi-circle-fill" />
           </button>
@@ -1424,7 +1424,7 @@ onActivated(async () => {
             class="config-select"
             :value="selectedNode.data.scope"
             @change="updateSelectedNodeData({ scope: ($event.target as HTMLSelectElement).value })"
-            v-tooltip.left="'image: runs once per image in parallel. set: synchronises all images (picnic node). incremental: event-driven plot watcher.'"
+            v-tooltip.left="'image = per image, set = synchronised, incremental = event-driven'"
           >
             <option value="image">image</option>
             <option value="set">set (picnic)</option>
@@ -1437,7 +1437,7 @@ onActivated(async () => {
               class="config-select"
               :value="selectedNode.data.barrier_policy"
               @change="updateSelectedNodeData({ barrier_policy: ($event.target as HTMLSelectElement).value })"
-              v-tooltip.left="'all: run regardless of upstream failures. require_all: abort if any image failed. successful_only: skip failed images.'"
+              v-tooltip.left="'all = ignore failures, require_all = abort, successful_only = skip'"
             >
               <option value="all">all</option>
               <option value="require_all">require_all</option>
@@ -1450,7 +1450,7 @@ onActivated(async () => {
             class="config-select"
             :value="selectedNode.data.resource_pool"
             @change="updateSelectedNodeData({ resource_pool: ($event.target as HTMLSelectElement).value })"
-            v-tooltip.left="'Limits how many nodes share a concurrency slot. GPU tasks should use the gpu pool (limit: 1) to avoid running multiple models at once.'"
+            v-tooltip.left="'How many nodes share a concurrency slot; GPU tasks use the gpu pool'"
           >
             <option value="">— none (unbounded) —</option>
             <option v-for="p in pools" :key="p.name" :value="p.name">
