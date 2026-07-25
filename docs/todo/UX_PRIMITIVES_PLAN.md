@@ -20,6 +20,33 @@ intentional" (2 shapes × 4 sizes spelled 60 ways). The font-size audit counted 
 `utils/cssTokens.ts` are the authority, and the ratchet baseline in `cssScenarios.test.ts` is the live
 backlog.
 
+### Why this doc kept changing between sessions (2026-07-25) — and the rule that fixes it
+
+Three fresh sessions each re-audited this area and each produced a slightly different picture. That is
+not "the nature of CSS". Measured against the record, **the picture was stable everywhere a committed
+detector held the number, and drifted everywhere prose held it.** The `BASELINE`, the `ALLOWED` list and
+the `SEG_BUTTONS` list are assertions — they cannot go stale without failing the suite. The *Remaining*
+section was prose, and every one of its claims that a session re-checked turned out wrong:
+
+| Prose claim | Measured |
+|---|---|
+| "three **byte-identical** `.seg` copies" | **five** copies — two of them **dead CSS** with no markup left, and the live three had **drifted** (two spell `.on` as accent-text-on-surface-1, three as a solid accent fill) |
+| "should be `ChipSelect` … a component swap (`v-model`)" | none of them is a select — they are strips of independent actions (tile/cascade, prev/next). There is no value to bind, so it was a **class** swap all along |
+| "**~10** chevron toggles bypass it: … `ModuleLayout` ×2 …" | **8**, in 4 files. `ModuleLayout`'s two are chevron-**up/down** dropdown carets on popover triggers, not sections — the same species of miscount this doc already corrected once for six other sites |
+
+There is a real CSS-specific cause underneath, worth stating because it bounds what any future audit can
+know: **CSS cannot express intent.** A button, a card, a chip, a badge and an input are all `surface +
+1px border + radius`; that is why the `card` matcher had to be dropped, and why `.cc-btn-icon` collapsed
+the full-height strips — markup *and* CSS together still could not encode "this one stretches". Any
+measurement that reads the stylesheet infers role from a shadow of it, and a grep over class names is
+worse again. So the number must come from a detector, and where a detector cannot be precise, the
+category gets a review-time rule and **no number at all**.
+
+**The rule, going forward: this doc states no counts.** Every open category below points at the
+committed detector that owns its number. Add a category → add a detector or an explicitly pinned list.
+A number written in prose here is stale the moment someone touches a file, and re-deriving it by grep is
+how four sessions produced four pictures.
+
 ## Canonical components/utilities (the baseline — use these)
 
 | Primitive | Canonical | Notes |
@@ -30,6 +57,9 @@ backlog.
 | Confirm / delete | `components/ConfirmButton.vue`, `ConfirmDeleteButton.vue` | arm→confirm; some dialogs still inline their own confirm flow. |
 | Buttons | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | never hand-roll `.btn-*` in scoped CSS. `-bare` = transparent/dim-until-hover (the commonest); `-ghost` is its boxed counterpart. |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a fixed **square**, so toolbar rows align regardless of glyph width. Guarded: `utils/cssScenarios.test.ts` fails on an icon-only `<button>` not built from `.cc-btn`. **Exception:** a button with a width and NO height *stretches* (a full-height edge strip / tab-strip cell) and is NOT this primitive — see *Icon-only buttons* below. |
+| Engaged/pressed button | `.cc-btn-on` (+ `-on-tint` / `-on-solid`) | the button vocabulary's **fourth axis** (tone / density / icon / state), and the one that was missing. Intensity is the axis. The `:hover` rules double the class on purpose — a scoped `.foo:hover` weighs (0,3,0) and would repaint the engaged state on mouseover. |
+| Joined button strip | `.cc-btn-group` + ordinary `.cc-btn` children | the group owns the outline and the hairline dividers, so children use the `-bare` tone. **Not** `ChipSelect` — that's a select; this is a row of independent actions. |
+| Section-toggle row | `.cc-section-toggle` | the chevron+heading ROW without `CollapsibleSection`'s panel-bar chrome, for a sub-section inside a popover or param form. `CollapsibleSection` composes it (the reference adoption). |
 | Modal / dialog | `components/BaseModal.vue` | backdrop + panel + close; ~9 consumers. |
 | Popover / dropdown | `components/TeleportPopover.vue` | ~11 consumers. |
 | Tabs | `components/canvas/TabbedCanvas.vue` | + `ChipSelect` segmented. |
@@ -39,7 +69,7 @@ backlog.
 | Severity colours | `lib/severity.ts` + `--cc-sev-*` | status colours should route through this. |
 | Task/chain status | `lib/taskStatus.ts` (`TASK_STATUS`) | the ONE 5-state status→icon/colour map. |
 | Semantic text/surface scenarios | `.cc-muted` · `.cc-empty` · `.cc-readout` · `.cc-eyebrow` · `.cc-card` (+ one modifier axis each) | full catalog in `docs/UI.md`. |
-| Design tokens | `--cc-fs-3xs/2xs/xs/sm/md/lg`, `--cc-radius-xs/sm/md/lg/pill`, colours in `style.css` | **two** guards: `cssTokens.test.ts` fails on a reference to an undeclared custom property (all `--*`, not just `--cc-*`; an inline `:style` declaration counts as valid), and `cssScenarios.test.ts` fails on a literal `font-size`/`border-radius` — in scoped CSS **or** an inline `style=`. Exempt: display type (>15px), pill radii, `0`, `em`. |
+| Design tokens | `--cc-fs-3xs/2xs/xs/sm/md/lg`, `--cc-radius-xs/sm/md/lg/pill`, colours in `style.css` | **three** guards: `cssTokens.test.ts` fails on a reference to an undeclared custom property (all `--*`, not just `--cc-*`; an inline `:style` declaration counts as valid); `cssScenarios.test.ts` fails on a literal `font-size`/`border-radius` — in scoped CSS **or** an inline `style=` (exempt: display type >15px, pill radii, `0`, `em`); and `findRawColours` fails on a hex literal that a token already holds exactly, **or** any `var(--x, #hex)` fallback. |
 
 ## Approach — generalise by SCENARIO, not one component per widget
 
@@ -81,22 +111,57 @@ Done — the correctness item:
   neutral. Replaced the 3 drifted per-file maps (`TasksModule`, `TaskList`, `ChainLiveNode`);
   `ParamRenderer`'s QC flag already used `lib/severity.ts`. (PR #TBD)
 
-Remaining — incremental adoption only (no forced sweeps):
-- [ ] **Collapsible section headers.** `CollapsibleSection` exists but **~10** chevron+heading toggles
-  bypass it: `PlotOptions` ×4, `ParamRenderer` ×2, `ModuleLayout` ×2, `MetadataPanel`, `PopulationManager`.
-  Migrate opportunistically, or extract `.cc-section-toggle`. (Recount: the earlier "~15" swept in six
-  sites that are **not** sections and should stay as they are — `AnimationModule`'s two chevron-left/right
-  *reorder* buttons, the dropdown carets in `SwatchSelect`/`GatePairsPanel`, and the whole-panel collapse
-  in `CanvasPanel`/`PopulationPanelShell`. A seventh scenario is genuinely distinct and recurring:
-  **per-row disclosure** in a list — `TaskList`, `ErrorConsole` — worth naming if a third site appears.)
-- [ ] **Opportunistic muted-text / card / readout adoption.** Replace scoped `.*-empty` / `.*-val` /
-  subtitle / surface blocks with the semantic utils as files are touched — NOT a dedicated sweep.
+Done — the button state axis + the strips + the section row (2026-07-25):
+- [x] **`.cc-btn-on` — the missing fourth axis.** `.cc-btn` could say what a button looked like (tone,
+  density, icon) but not that it was **pressed**, so every toggle in the app hand-rolled a `.on`/`.active`
+  rule. Measured: 46 state rules across 24 files, ~17 of them on buttons, in three intensities — solid
+  accent (6 spellings; `ChipSelect`'s `.chip.on` was already exactly this), outline (~9, several
+  hard-coding `#7c3aed` for the token), and a violet tint (3, two of them byte-identical in `ViewerPanel`
+  and `PopulationManager`). Same failure as the text utilities — *a utility that hard-codes a value on an
+  axis where sites legitimately differ* — which is why `.seg` and the icon-button leftovers could not be
+  finished before it existed. Intensity is the axis: `.cc-btn-on` / `-on-tint` / `-on-solid`.
+  Two things worth carrying forward: the `:hover` rules **must** double the class, because a scoped
+  `.foo:hover` weighs (0,3,0) once Vue adds `[data-v]` and would otherwise repaint an engaged button back
+  to its resting colours (`ViewerPanel`'s `.opt-btn:hover` did exactly that); and a hover-reveal rule
+  keyed on the old state class (`.row-act.active { opacity: 1 }`) has to be re-keyed to `.cc-btn-on` or
+  the engaged control silently becomes invisible until hover.
+- [x] **`.cc-btn-group` — the `.seg` strips.** Five copies, not three: two were **dead CSS** (deleted),
+  and the live three had drifted. They were never `ChipSelect` candidates (see the table above), so this
+  was a class swap. Unpinned from `SEG_BUTTONS`, which is now just the two full-height strip exemptions.
+- [x] **`.cc-section-toggle` — the 8 section headers** (`PlotOptions` ×4, `ParamRenderer` ×2,
+  `MetadataPanel`, `PopulationManager`). They could not adopt `CollapsibleSection` because it is a
+  panel-rail *bar* (its own surface, generous padding, a scrolling body) and these are bare inline rows in
+  popovers and param forms — the chrome was the axis they differed on. So the ROW was extracted and the
+  component now composes it. Three of the adopters also turned out to be hand-rolled eyebrows and took
+  `.cc-eyebrow` (weight and tracking normalise — the one intended visual change).
+- [x] **Colours tokenised + ratcheted.** Colour was the last scale with no guard at all: 67 hex literals
+  in scoped CSS exactly duplicated a token (16 × `#a78bfa`, which *is* `--cc-accent`), plus 33 dead
+  `var(--token, #hex)` fallbacks that misreported the rendered value. New `--cc-accent-strong/-soft/-tint`
+  tokens for the violet family the engaged states are built from, and `findRawColours` + test to hold it.
+  Severity-*meaning* warn/danger routed to the CVD-safe `--cc-sev-*`; see *the status-vs-not split* below.
+
+Remaining — incremental adoption only (no forced sweeps). **No counts here on purpose — the detector owns them:**
+- [ ] **The scenario backlog** (muted text / empty / readout / eyebrow / card re-declarations). The live
+  list is the per-file `BASELINE` in `utils/cssScenarios.test.ts`; it may shrink and must never grow.
+  Touch a file in it → migrate its rules and lower the number. This is deliberately decoupled from
+  "finish the sweep": new divergence fails immediately, the backlog drains as files get touched.
+- [ ] **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — a genuinely distinct, recurring
+  scenario that is *not* a section header. Worth naming if a third site appears; two is not yet a pattern.
 - [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
   covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
-- [ ] **`.seg` segmented controls** — three **byte-identical** hand-rolled copies (`SummaryCanvas`,
-  `ClusterPlots`, `GatingPlots`) of a `.seg button {…}` block that should be `ChipSelect`. Surfaced by
-  the icon-button check and allow-listed there, because it's a component swap (`v-model`), not a class
-  swap. The only remaining hand-rolled buttons in the app.
+- [ ] **Deliberately left bespoke, with reasons** (do not "fix" these without reading why):
+  `ImageTable`'s `.runlog-cog.on`/`.actions-btn.on` are the documented **hover-reveal** pattern
+  (`opacity: 0` + a parent `:hover`), not the accent-border scenario. `GatePairsPanel`'s `.chan-btn.on` is
+  a full-width select-*trigger* built from its own rules, not a `.cc-btn` — adopting the state axis there
+  means rebuilding the control first. `ModuleLayout`'s `.filter-toggle.active` sits between the outline
+  and tint intensities (accent-soft text, accent-strong border, no fill) and would change visually either
+  way; it is a popover trigger, not a toggle. `BatchMoviesPanel`'s `.bm-busy` uses amber for *in-progress*
+  where `--cc-active` is arguably the right token — a hue change, so it needs eyes, not a script.
+
+Not swept, and NOT because they were forgotten: `ChainPicnicNode`'s amber and `AnimationModule`'s
+`.tl-badge` are **identity** hues (a node's colour, a keyframe badge), and the `.cc-del`/`.footer-btn
+.danger`/`.save-btn.danger`/`.opt-btn.danger` reds are **destructive-action tones**. Neither is a status,
+so both correctly stay on `--cc-warn`/`--cc-danger` rather than `--cc-sev-*`.
 
 ### Icon-only buttons — done (2026-07-25)
 
@@ -222,6 +287,32 @@ site, `SpatialContactHeatmap`'s `var(--text-muted, #888)`, which had been hiding
 filter. Component-local declarations count as valid, including inline `:style="{ '--foo': … }"` for
 dynamic values (`--gate-font`, `--sk`, `--sep-thick`, `--pct` are all legitimately set that way).
 
+### Colour — the last unratcheted scale, and the status-vs-not split (2026-07-25)
+
+The sizes-and-radii sweep tokenised two scales and stopped. Colour had **no** guard: `cssTokens.ts`
+catches referencing a token that doesn't exist, but nothing caught never referencing one — so 67 hex
+literals sat in scoped CSS holding a value a token already held *exactly*, `#a78bfa` sixteen times when
+`--cc-accent` **is** `#a78bfa`. Alongside them, 33 `var(--token, #hex)` fallbacks: all provably dead
+(`cssTokens.test.ts` proves every referenced token is declared), all misreporting the real colour to the
+next reader — `var(--cc-accent, #a855f7)` reads as if accent were a different purple.
+
+`findRawColours` is deliberately the **narrow** check, the same precision-over-recall call that killed the
+`card` matcher. Only ~67 of ~330 raw hex declarations were flagged, because most raw hex is a genuine
+one-off (chart series, chain-node hues) and *nothing in the stylesheet distinguishes those from a system
+colour*. An exact match to a token is not a judgement call, so the check has zero false positives and
+needs no allow-list to rot. `#fff`/`#000` are exempt — not a scale, and what `.cc-btn-primary` uses.
+
+**The status-vs-not split.** `style.css` says `--cc-sev-*` supersedes `--cc-warn`/`--cc-danger` for
+severity semantics, and the values genuinely differ (`#fab219` vs `#f59e0b`, `#d03b3b` vs `#ef4444`), so a
+hard-coded `#ef4444` on a *status* indicator silently opted out of the CVD-validated palette. The rule
+applied, now in `docs/UI.md`: if the colour states **what condition something is in** (valid/invalid,
+fresh/stale, ok/warn/fail) it is a severity → `--cc-sev-*`. If it is a destructive **action**'s tone or a
+decorative/identity hue, it is not → `--cc-warn`/`--cc-danger`. That reading is why `.viewer-stale`,
+`.field-input.warn`, `.input-error`, `.ax-warn`, `.name-invalid`, `.svc-pill.warn` and the `ErrorConsole`
+level dots moved, and why the delete-button reds and the chain-node ambers did not. This is the one part
+of the sweep that is a **visible** change, and it is a judgement call per site — it is written down here
+rather than left implicit precisely so it can be argued with.
+
 ### Enforcement — the ratchet (2026-07-25)
 
 The mandatory-lookup clause in `CLAUDE.md` and the catalog in `docs/UI.md` are review-time discipline,
@@ -246,6 +337,16 @@ Calibration took the count from 310 → 262 → 155 → 130. **The first three f
 was the "~80" estimated from class-name greps (`*-hint`/`*-sub`/`*-val`) — most muted text has no such
 word in its class name. That is the fourth miscount in this saga; the lesson is that every count here
 should come from a committed detector, not a grep.
+
+**A detector can have blind spots too, and they share one shape.** Stripping the dead colour fallbacks
+made the ratchet jump by six rules in four chain-node files. Not new divergence — the `muted` matcher keys
+on `color: var(--cc-text-dim)` and never matched the `color: var(--cc-text-dim, #8b8ca7)` spelling, so it
+had been blind to them all along. They are in the `BASELINE` now at their true count. That is the **third**
+blind spot of exactly this shape (the others: the detector only reading `<style>` blocks, so inline
+`style="font-size:…"` was invisible; and the `muted` matcher keying on a *literal* size, so tokenising a
+rule would have silently un-flagged it). All three have one cause: **a matcher pinned to one spelling of a
+value the codebase writes more than one way.** When adding a matcher, ask which other spellings of the
+same declaration exist — token vs literal, with fallback vs without, scoped vs inline.
 
 ### Raw sizes and radii — done, and it was never churn
 

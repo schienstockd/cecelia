@@ -356,7 +356,7 @@ async function fillFlagged() {
   font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text-dim);
 }
 .field-input { flex: 1; min-width: 0; }
-.field-input.warn { border-color: #f59e0b !important; background: #7c2d1222; }
+.field-input.warn { border-color: var(--cc-sev-warn) !important; background: #7c2d1222; }
 .field-input.mixed { border: 1px dashed #60a5fa !important; background: #1e3a5f55; cursor: help; }
 .unit-input { flex: 0 0 4.2rem; }
 

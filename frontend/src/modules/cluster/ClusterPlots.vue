@@ -201,12 +201,15 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           <option value="" disabled selected>+ Plot…</option>
           <option v-for="t in plotTypes" :key="t.kind" :value="t.kind">{{ t.label }}</option>
         </select>
-        <div class="seg" v-tooltip.bottom="'Arrange windows'">
-          <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
+        <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
+                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
+                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
-        <div class="seg">
-          <button :class="{ on: showManager }" @click="showManager = !showManager"
+        <div class="cc-btn-group">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+                  @click="showManager = !showManager"
                   v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
             <i class="pi pi-sitemap" />
           </button>
@@ -280,11 +283,6 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
   border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
 .cp-fix:hover { background: #78350f88; }
 .cp-add { font-size: var(--cc-fs-sm); padding: 4px 8px; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button:hover { color: var(--cc-text); }
-.seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .cp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
 /* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.

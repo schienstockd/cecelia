@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
-  findHandRolledIconButtons,
+  findHandRolledIconButtons, findRawColours, colourTokens,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -58,6 +58,32 @@ describe('scenarioFor', () => {
   })
 })
 
+describe('findRawColours', () => {
+  const tokens = { '#a78bfa': '--cc-accent', '#ef4444': '--cc-danger' }
+  const find = (css: string) =>
+    findRawColours([{ path: 'x.vue', text: `<style scoped>${css}</style>` }], tokens)
+      .map(r => `${r.hex} → ${r.token}`)
+
+  it('flags a literal that a token already holds, and ignores one that no token holds', () => {
+    expect(find('.a { color: #a78bfa }')).toEqual(['#a78bfa → --cc-accent'])
+    expect(find('.a { color: #123456 }')).toEqual([])
+  })
+
+  it('is case-insensitive but never truncates an 8-digit hex to match a 6-digit token', () => {
+    expect(find('.a { color: #A78BFA }')).toEqual(['#a78bfa → --cc-accent'])
+    expect(find('.a { background: #a78bfa14 }')).toEqual([])   // an alpha tint is its own value
+  })
+
+  it('flags a hex fallback whatever its value, and counts it only once', () => {
+    expect(find('.a { color: var(--cc-accent, #a855f7) }')).toEqual(['#a855f7 → --cc-accent (fallback)'])
+    expect(find('.a { color: var(--cc-accent, #a78bfa) }')).toEqual(['#a78bfa → --cc-accent (fallback)'])
+  })
+
+  it('exempts plain white/black — not a scale, and what .cc-btn-primary itself uses', () => {
+    expect(find('.a { color: #fff } .b { color: #000000 }')).toEqual([])
+  })
+})
+
 // ── The ratchet ───────────────────────────────────────────────────────────────────────────────────
 //
 // ~130 rules still hand-roll a scenario that `docs/UI.md` has a utility for. Migrating them all at once
@@ -67,8 +93,20 @@ describe('scenarioFor', () => {
 //
 // Touching a file in this list? Migrate its rules and lower the number. Adding a file? Use the utility
 // instead. The failure message tells you which.
+//
+// THE FALLBACKS WERE HIDING SIX OF THESE. The `muted` matcher keys on `color: var(--cc-text-dim)`,
+// which never matched the `color: var(--cc-text-dim, #8b8ca7)` spelling — so stripping the dead hex
+// fallbacks (see "raw colours" below) revealed six long-standing hand-rolled rules in four chain-node
+// files that this check had been blind to. They are backlog, not new divergence: entries added below
+// at their true count. That is the third blind spot of this exact shape (the others: the detector only
+// reading <style> blocks, and the muted matcher keying on a literal size), and they share a cause —
+// a matcher pinned to ONE spelling of a value that the codebase writes more than one way.
 const BASELINE: Record<string, number> = {
   'components/AppSidebar.vue': 2,
+  'components/ChainLiveLabel.vue': 1,
+  'components/ChainQcNode.vue': 2,
+  'components/ChainStartNode.vue': 1,
+  'components/ChainTaskNode.vue': 2,
   'components/ClaudeOverviewDialog.vue': 2,
   'components/CohortCheckButton.vue': 1,
   'components/CopyDialog.vue': 1,
@@ -149,37 +187,52 @@ describe('hand-rolled UX scenarios', () => {
 
 describe('icon-only buttons', () => {
   // 116 sites carried 60 distinct class names — but only TWO shapes and four size steps, so they are
-  // all `.cc-btn` + `-bare`|`-ghost` + `-icon` now. What's left is a DIFFERENT primitive: three
-  // byte-identical hand-rolled `.seg` segmented controls, which owe themselves to `ChipSelect`
-  // (docs/UI.md) and need a component swap rather than a class swap. Tracked in the plan doc.
+  // all `.cc-btn` + `-bare`|`-ghost` + `-icon` now.
   //
-  // …plus two FULL-HEIGHT STRIP controls. In markup these look exactly like icon-only buttons — one
-  // <i> and nothing else — but their rule sets a width and NO height, so they stretch as a flex child
-  // to fill the panel edge / tab strip. `.cc-btn-icon`'s fixed square collapsed both to a chip at the
-  // top. Markup alone cannot distinguish them, so they are exempt by name: a <button> that stretches
-  // is not a square icon button.
+  // The ten hand-rolled `.seg` buttons that used to sit here are gone: they were a joined button
+  // STRIP, not a segmented select, so they became `.cc-btn-group` + ordinary `.cc-btn` children
+  // rather than the `ChipSelect` swap the plan had prescribed (there was no value to v-model).
+  //
+  // What remains is two FULL-HEIGHT STRIP controls. In markup these look exactly like icon-only
+  // buttons — one <i> and nothing else — but their rule sets a width and NO height, so they stretch
+  // as a flex child to fill the panel edge / tab strip. `.cc-btn-icon`'s fixed square collapsed both
+  // to a chip at the top. Markup alone cannot distinguish them, so they are exempt by name: a
+  // <button> that stretches is not a square icon button.
   //
   // Pinned explicitly, path and all: deriving the allow-list from the findings would make the check
   // tautological, catching a new hand-rolled button only via the total count.
   const SEG_BUTTONS = [
     'components/ModuleLayout.vue | right-handle',       // full-height right-panel collapse strip
     'components/canvas/TabbedCanvas.vue | tab-add',     // full-height "+" cell in the tab strip
-    'components/canvas/SummaryCanvas.vue | (no class)',
-    'components/canvas/SummaryCanvas.vue | (no class)',
-    'components/canvas/SummaryCanvas.vue | { on: showManager }',
-    'modules/cluster/ClusterPlots.vue | (no class)',
-    'modules/cluster/ClusterPlots.vue | (no class)',
-    'modules/cluster/ClusterPlots.vue | { on: showManager }',
-    'modules/gate/GatingPlots.vue | (no class)',
-    'modules/gate/GatingPlots.vue | (no class)',
-    'modules/gate/GatingPlots.vue | (no class)',
-    'modules/gate/GatingPlots.vue | { on: showManager }',
   ]
 
   it('are built from .cc-btn', () => {
     const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
     const found = findHandRolledIconButtons(sources).map(b => `${b.path} | ${b.classAttr}`)
     expect(found.sort()).toEqual([...SEG_BUTTONS].sort())
+  })
+})
+
+describe('raw colours', () => {
+  // Colour was the last scale with no ratchet at all: `cssTokens.test.ts` catches referencing a token
+  // that doesn't exist, and `findRawValues` catches literal sizes/radii, but nothing caught a literal
+  // colour — so 67 hex values sat in scoped CSS duplicating a token exactly (16 × #a78bfa, which IS
+  // --cc-accent), plus 33 dead `var(--token, #hex)` fallbacks reporting the wrong value.
+  //
+  // Deliberately narrow, like the dropped `card` matcher: most raw hex in this app is a genuine
+  // one-off (chart series, chain node hues) and nothing in the stylesheet distinguishes those from a
+  // system colour. An EXACT match to a declared token is not a judgement call, so this check has no
+  // false positives and therefore needs no allow-list to rot. It is an exact list, not a count.
+  it('are always tokens — never a literal that a token already holds, never a hex fallback', () => {
+    const tokens = colourTokens(RAW['/src/style.css'] ?? '')
+    expect(Object.keys(tokens).length).toBeGreaterThan(10)   // style.css resolved with its tokens
+
+    const sources = Object.entries(RAW)
+      .filter(([path]) => path !== '/src/style.css')          // style.css DECLARES the tokens
+      .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+
+    const found = findRawColours(sources, tokens).map(r => `${r.path} | ${r.selector} | ${r.hex} → ${r.token}`)
+    expect(found.sort()).toEqual([])
   })
 })
 

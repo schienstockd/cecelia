@@ -58,7 +58,7 @@ function defaultValueName(): string {
 .crop-version-tag {
   margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-lg);
   font-size: var(--cc-fs-2xs); font-weight: 600; vertical-align: middle;
-  color: var(--cc-accent, #a855f7);
-  background: color-mix(in srgb, var(--cc-accent, #a855f7) 15%, transparent);
+  color: var(--cc-accent);
+  background: color-mix(in srgb, var(--cc-accent) 15%, transparent);
 }
 </style>

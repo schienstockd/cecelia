@@ -109,7 +109,7 @@ const statusTip: Record<string, string> = {
 .ws-badge.disconnected { background: #27272a55; color: #71717a; }
 .ws-badge.disconnected .dot { background: #52525b; }
 .ws-badge.error        { background: #7f1d1d33; color: #fca5a5; }
-.ws-badge.error .dot   { background: #ef4444; box-shadow: 0 0 5px #ef4444; }
+.ws-badge.error .dot   { background: var(--cc-sev-fail); box-shadow: 0 0 5px var(--cc-sev-fail); }
 
 .update-badge {
   display: flex;

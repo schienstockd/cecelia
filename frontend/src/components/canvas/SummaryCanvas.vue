@@ -160,12 +160,15 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only (no separation by population or image)'" />
-        <div class="seg" v-tooltip.bottom="'Arrange windows'">
-          <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
+        <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
+                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
+                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
-        <div class="seg">
-          <button :class="{ on: showManager }" @click="showManager = !showManager"
+        <div class="cc-btn-group">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+                  @click="showManager = !showManager"
                   v-tooltip.bottom="showManager ? 'Hide the population picker' : 'Show the population picker'">
             <i class="pi pi-sitemap" />
           </button>
@@ -211,11 +214,6 @@ watch(segPops, () => {
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
 .sc-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; margin-left: auto; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: var(--cc-fs-sm); }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button:hover { color: var(--cc-text); }
-.seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .sc-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace (offsetParent for the floating panels); size + transform set inline by
    useCanvasWorkspace — grows to viewport/zoom when zoomed out so the whole page stays usable */

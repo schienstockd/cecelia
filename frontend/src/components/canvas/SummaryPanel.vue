@@ -509,7 +509,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 
       <!-- secondary options (split-by + chart-specific) tucked into a popover to keep the bar tidy -->
       <div v-if="hasOpts" class="sp-pop-wrap">
-        <button ref="optsBtn" class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
+        <button ref="optsBtn" class="sp-iconbtn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button" :class="{ 'cc-btn-on': optsOpen }" @click.stop="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot options'">
           <i class="pi pi-sliders-h" />
         </button>
@@ -664,7 +664,6 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 /* compact icon buttons (options / duplicate) */
 /* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.sp-iconbtn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 
 /* "show series" measure-picker popover (opens upward from the footer button) */
 .sp-explode-wrap { position: relative; display: inline-flex; }
@@ -690,5 +689,5 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 .sp-pop-row input[type="number"] { width: 3.6rem; font-size: var(--cc-fs-sm); padding: 2px 4px; }
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); text-align: center; padding: 12px; }
-.sp-err { color: var(--cc-danger, #f87171); }
+.sp-err { color: var(--cc-danger); }
 </style>

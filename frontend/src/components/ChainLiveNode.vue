@@ -73,7 +73,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 
 <style scoped>
 .live-node {
-  background: var(--cc-surface-1, #1e1b2e);
+  background: var(--cc-surface-1);
   border: 1.5px solid #3f3f46;
   border-radius: var(--cc-radius-sm);
   padding: 5px 9px;
@@ -86,12 +86,12 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 /* resume-from highlight: the chosen start node (solid accent) + everything downstream that will
    re-run (dashed accent). Overrides the status border while a start node is picked. */
 .live-node.restart-start {
-  border-color: var(--cc-accent, #a78bfa) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-accent, #a78bfa) 40%, transparent);
+  border-color: var(--cc-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-accent) 40%, transparent);
 }
 .live-node.restart-rerun {
   border-style: dashed;
-  border-color: var(--cc-accent, #a78bfa) !important;
+  border-color: var(--cc-accent) !important;
 }
 .restart-badge {
   position: absolute;
@@ -100,8 +100,8 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--cc-surface-1, #1e1b2e);
-  background: var(--cc-accent, #a78bfa);
+  color: var(--cc-surface-1);
+  background: var(--cc-accent);
   border-radius: var(--cc-radius-xs);
   padding: 1px 4px;
   z-index: 1;
@@ -143,7 +143,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 .live-fn {
   font-size: var(--cc-fs-xs);
   font-weight: 600;
-  color: var(--cc-text, #e2e2f0);
+  color: var(--cc-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -157,8 +157,8 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   font-size: var(--cc-fs-3xs);
   font-family: var(--cc-mono, monospace);
   font-weight: 600;
-  color: var(--cc-accent, #a78bfa);
-  background: color-mix(in srgb, var(--cc-accent, #a78bfa) 18%, transparent);
+  color: var(--cc-accent);
+  background: color-mix(in srgb, var(--cc-accent) 18%, transparent);
   border-radius: var(--cc-radius-xs);
   padding: 1px 4px;
 }

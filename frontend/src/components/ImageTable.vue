@@ -1199,14 +1199,14 @@ th:hover .resize-handle::after { opacity: 1; }
   border-radius: var(--cc-radius-pill); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .st-pending  { background: #27272a;    color: #71717a; }
-.st-queued   { background: #2d1b69;    color: #c4b5fd; }
-.st-running  { background: #1e3a5f;    color: #93c5fd; }
+.st-queued   { background: var(--cc-accent-tint);    color: var(--cc-accent-soft); }
+.st-running  { background: #1e3a5f;    color: var(--cc-active); }
 .st-done     { background: #14532d44;  color: #86efac; }
 .st-failed   { background: #7f1d1d44;  color: #fca5a5; }
 
 .spinner {
   width: 7px; height: 7px; border-radius: var(--cc-radius-pill);
-  border: 1.5px solid #93c5fd44; border-top-color: #93c5fd;
+  border: 1.5px solid #93c5fd44; border-top-color: var(--cc-active);
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1220,7 +1220,7 @@ th:hover .resize-handle::after { opacity: 1; }
   opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
 .image-row:hover .viewer-btn { opacity: 0.6; }
-.viewer-btn:hover { opacity: 1 !important; color: #93c5fd; background: #1e3a5f44; }
+.viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: #1e3a5f44; }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
 .viewer-active { opacity: 1 !important; color: #f97316; }
 .viewer-active:hover { color: #fb923c; background: #f9731622; }

@@ -373,7 +373,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
       <!-- Builder: split by a separator, take a field — writes into the SAME regex field above, so
            there's only ever one input + one preview. For the common "no clue about regex" case. -->
-      <button class="builder-toggle" @click="builderOpen = !builderOpen" :disabled="attrDisabled"
+      <button class="builder-toggle cc-section-toggle" @click="builderOpen = !builderOpen" :disabled="attrDisabled"
         v-tooltip.bottom="'Build the pattern above without writing regex — pick a separator and field.'">
         <i :class="['pi', builderOpen ? 'pi-chevron-down' : 'pi-chevron-right']" /> Builder
       </button>
@@ -589,13 +589,12 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 }
 
 /* ── Regex builder ─────────────────────────────────────────────────────────── */
+/* + cc-section-toggle (row). This one is deliberately INLINE — it sits next to the pattern field
+   rather than heading a block — so it overrides the row's full width. */
 .builder-toggle {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-sm); padding: 0.1rem 0;
-  margin-top: 0.15rem;
+  display: inline-flex; width: auto;
+  font-size: var(--cc-fs-sm); padding: 0.1rem 0; margin-top: 0.15rem;
 }
-.builder-toggle:hover { color: var(--cc-text); }
 .builder-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .builder-toggle .pi { font-size: var(--cc-fs-2xs); }
 

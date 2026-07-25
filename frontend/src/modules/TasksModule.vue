@@ -125,7 +125,8 @@ const FILTERS: ChipOption[] = [
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
         v-tooltip.left="'Automatically select the newest running task'" />
 
-      <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon" :class="{ active: throttleOpen }"
+      <button ref="throttleBtn" class="tm-throttle cc-btn cc-btn-bare cc-btn-icon"
+        :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
         @click="throttleOpen = !throttleOpen"
         v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
         <i class="pi pi-sliders-h" />
@@ -280,7 +281,6 @@ const FILTERS: ChipOption[] = [
 
 .tm-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .tm-throttle:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
-.tm-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 .tm-body {
@@ -362,7 +362,7 @@ const FILTERS: ChipOption[] = [
   padding: 0.05rem 0.3rem;
   border-radius: var(--cc-radius-xs);
   background: #a78bfa22;
-  color: #a78bfa;
+  color: var(--cc-accent);
   flex-shrink: 0;
   max-width: 7rem;
   overflow: hidden;

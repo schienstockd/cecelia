@@ -315,7 +315,7 @@ defineExpose({ exportImage })
                     :model-value="separator" @update:model-value="v => separator = v as 'straight' | 'angled'" />
       </div>
       <div class="is-opts">
-        <button ref="gearEl" class="is-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+        <button ref="gearEl" class="is-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
@@ -380,7 +380,7 @@ defineExpose({ exportImage })
   font-size: var(--cc-fs-sm); }
 .is-opts { position: relative; display: inline-flex; }
 /* .is-gear → cc-btn cc-btn-ghost cc-btn-icon */
-.is-gear:hover, .is-gear.on { color: var(--cc-text); border-color: #7c3aed; }
+.is-gear:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 /* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
 .is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
@@ -415,7 +415,7 @@ defineExpose({ exportImage })
 .is-img { flex: 1; width: 100%; object-fit: contain; min-height: 0; }
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: var(--cc-fs-sm); }
-.is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
+.is-capture:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 /* per-frame actions (zoom-to-source / recapture / remove): BOTTOM-left, revealed on cell hover.
    They used to sit TOP-right (z-index 7) — but that's exactly where the CanvasPanel's OWN controls
    live (pin / duplicate / ⋯ menu, z-index 6), so the always-on strip actions sat on top and blocked
@@ -430,7 +430,7 @@ defineExpose({ exportImage })
    old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
    solid surface reads cleanly. */
 .is-mini { transition: color 0.1s, border-color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.is-mini:hover { color: var(--cc-text); border-color: #7c3aed; background: var(--cc-surface-1); }
+.is-mini:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); background: var(--cc-surface-1); }
 .is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
    exported strip is just the images */

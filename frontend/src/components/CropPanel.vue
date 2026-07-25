@@ -172,9 +172,9 @@ function save() {
    version's MIP by an INTEGER factor to a ≤512px long side, so different native dims render at different
    pixel sizes. width:100% pins the width; only the true aspect ratio (height) varies between versions. */
 .crop-view { position: relative; display: block; width: 100%; line-height: 0; cursor: crosshair; touch-action: none; user-select: none; }
-.crop-img { display: block; width: 100%; height: auto; border: 1px solid var(--cc-border, #2a2a2a); border-radius: var(--cc-radius-sm); background: #000; }
+.crop-img { display: block; width: 100%; height: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); background: #000; }
 .crop-placeholder { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 8rem; color: var(--cc-text-dim); }
-.crop-rect { position: absolute; border: 1.5px solid var(--cc-accent, #a855f7); background: color-mix(in srgb, var(--cc-accent, #a855f7) 12%, transparent); pointer-events: none; }
+.crop-rect { position: absolute; border: 1.5px solid var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 12%, transparent); pointer-events: none; }
 .crop-loading { position: absolute; top: 0.3rem; right: 0.3rem; color: var(--cc-accent); font-size: var(--cc-fs-md); }
 .crop-row { display: flex; align-items: center; gap: 0.4rem; }
 .crop-row input[type=range] { flex: 1 1 auto; }

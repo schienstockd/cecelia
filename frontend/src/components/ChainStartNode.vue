@@ -33,20 +33,20 @@ defineProps<{ id: string; selected: boolean }>()
   width: 34px;
   height: 34px;
   border-radius: var(--cc-radius-pill);
-  background: var(--cc-text, #e2e2f0);
-  border: 3px solid var(--cc-accent, #a78bfa);
+  background: var(--cc-text);
+  border: 3px solid var(--cc-accent);
   box-shadow: 0 0 0 2px transparent;
   transition: box-shadow 0.12s;
 }
 .chain-start-node.selected .start-dot {
-  box-shadow: 0 0 0 3px var(--cc-accent, #a78bfa);
+  box-shadow: 0 0 0 3px var(--cc-accent);
 }
 .start-label {
   font-size: var(--cc-fs-3xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--cc-text-dim, #8b8ca7);
+  color: var(--cc-text-dim);
 }
 .node-handle {
   width: 10px;

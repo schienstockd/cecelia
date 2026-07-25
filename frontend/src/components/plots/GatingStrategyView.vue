@@ -203,7 +203,7 @@ defineExpose({ exportImage, exportSvg })
       </select>
       <RenderModeToggle v-model="renderMode" />
       <div class="gs-opts">
-        <button ref="gearBtn" class="gs-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+        <button ref="gearBtn" class="gs-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
           <div class="gs-pop">
@@ -236,12 +236,7 @@ defineExpose({ exportImage, exportSvg })
    anchored right:0 — always opens LEFTWARD into the panel and is never clipped at the left edge. */
 .gs-opts { position: relative; display: inline-flex; margin-left: auto; }
 /* .gs-gear → cc-btn cc-btn-ghost cc-btn-icon */
-.gs-gear.on { background: var(--cc-accent); color: #fff; border-color: var(--cc-accent); }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: var(--cc-fs-sm); }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button.on { background: var(--cc-accent); color: #fff; }
 </style>

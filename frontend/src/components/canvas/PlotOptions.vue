@@ -28,8 +28,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
   <div class="po">
     <!-- Layout / scale -->
     <template v-if="has('layout')">
-      <button class="po-toggle" @click="open.layout = !open.layout">
-        <i :class="open.layout ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span>Layout</span>
+      <button class="po-toggle cc-section-toggle" @click="open.layout = !open.layout">
+        <i :class="open.layout ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Layout</span>
       </button>
       <div v-show="open.layout" class="po-body">
         <div class="po-row"><span>Legend</span>
@@ -61,8 +61,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 
     <!-- Points / data -->
     <template v-if="has('points')">
-      <button class="po-toggle" @click="open.points = !open.points">
-        <i :class="open.points ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span>Points</span>
+      <button class="po-toggle cc-section-toggle" @click="open.points = !open.points">
+        <i :class="open.points ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Points</span>
       </button>
       <div v-show="open.points" class="po-body">
         <label class="po-row" v-tooltip.left="'Data offset (beeswarm / random / none)'"><span>Offset</span>
@@ -84,8 +84,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 
     <!-- Colours -->
     <template v-if="has('colours')">
-      <button class="po-toggle" @click="open.colours = !open.colours">
-        <i :class="open.colours ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span>Colours</span>
+      <button class="po-toggle cc-section-toggle" @click="open.colours = !open.colours">
+        <i :class="open.colours ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Colours</span>
       </button>
       <div v-show="open.colours" class="po-body">
         <label class="po-row"><span>Palette</span>
@@ -105,8 +105,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 
     <!-- Labels / captions -->
     <template v-if="has('labels')">
-      <button class="po-toggle" @click="open.labels = !open.labels">
-        <i :class="open.labels ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span>Labels</span>
+      <button class="po-toggle cc-section-toggle" @click="open.labels = !open.labels">
+        <i :class="open.labels ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Labels</span>
       </button>
       <div v-show="open.labels" class="po-body">
         <label class="po-row po-col"><span>Title</span>
@@ -126,9 +126,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 
 <style scoped>
 .po { display: flex; flex-direction: column; }
-.po-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; }
-.po-toggle:hover { color: var(--cc-text); }
+/* + cc-section-toggle (row) — this keeps only the padding and the uppercase section-label tier */
+.po-toggle { padding: 6px 8px; }
 .po-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .po-row { display: flex; align-items: center; gap: 8px; color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
 .po-row > span:first-child { flex: 1; }

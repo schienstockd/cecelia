@@ -583,8 +583,8 @@ const visibleUids = computed<string[]>(() =>
   letter-spacing: 0.05em;
   padding: 0.1rem 0.45rem;
   border-radius: var(--cc-radius-pill);
-  background: #2d1b69;
-  color: #c4b5fd;
+  background: var(--cc-accent-tint);
+  color: var(--cc-accent-soft);
 }
 
 .no-set-hint {
@@ -624,7 +624,7 @@ const visibleUids = computed<string[]>(() =>
   flex-shrink: 0;
 }
 .filter-toggle:hover { color: var(--cc-text); border-color: #484f58; }
-.filter-toggle.active { color: #c4b5fd; border-color: #7c3aed; }
+.filter-toggle.active { color: var(--cc-accent-soft); border-color: var(--cc-accent-strong); }
 .filter-toggle .pi { font-size: var(--cc-fs-xs); }
 .filter-toggle .filter-caret { font-size: var(--cc-fs-3xs); opacity: 0.7; }
 

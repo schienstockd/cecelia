@@ -46,23 +46,23 @@ const fmt = (n?: number) => n == null ? '—' : n.toLocaleString()
 
 <style scoped>
 .qc-node {
-  background: var(--cc-surface-1, #1e1b2e);
-  border: 1px dashed var(--cc-accent, #a78bfa);
+  background: var(--cc-surface-1);
+  border: 1px dashed var(--cc-accent);
   border-radius: var(--cc-radius-md);
   padding: 5px 9px;
   min-width: 120px;
   cursor: pointer;
   font-size: var(--cc-fs-xs);
 }
-.qc-head { display: flex; align-items: center; gap: 5px; color: var(--cc-accent, #a78bfa); }
+.qc-head { display: flex; align-items: center; gap: 5px; color: var(--cc-accent); }
 .qc-head .pi { font-size: var(--cc-fs-xs); }
 .qc-name { font-size: var(--cc-fs-3xs); font-weight: 700; font-family: var(--cc-mono, monospace); letter-spacing: 0.04em; }
 .qc-spin { margin-left: auto; font-size: var(--cc-fs-2xs); opacity: 0.7; }
-.qc-count { font-size: var(--cc-fs-lg); font-weight: 700; color: var(--cc-text, #e2e2f0); margin: 2px 0; }
-.qc-unit { font-size: var(--cc-fs-3xs); font-weight: 400; color: var(--cc-text-dim, #8b8ca7); }
+.qc-count { font-size: var(--cc-fs-lg); font-weight: 700; color: var(--cc-text); margin: 2px 0; }
+.qc-unit { font-size: var(--cc-fs-3xs); font-weight: 400; color: var(--cc-text-dim); }
 .qc-spark { display: flex; align-items: flex-end; gap: 2px; height: 24px; }
 /* 1px is deliberate and off-scale: --cc-radius-xs (3px) on a 4px-wide bar rounds it to a blob */
-.qc-bar { width: 4px; background: var(--cc-accent, #a78bfa); opacity: 0.7; border-radius: 1px; }
+.qc-bar { width: 4px; background: var(--cc-accent); opacity: 0.7; border-radius: 1px; }
 .qc-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-micro (row/colour/9px tier) */
-.qc-foot { font-size: var(--cc-fs-3xs); color: var(--cc-text-dim, #8b8ca7); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+.qc-foot { font-size: var(--cc-fs-3xs); color: var(--cc-text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
 </style>

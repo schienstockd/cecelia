@@ -586,7 +586,7 @@ const pct = computed(() => {
 
   <!-- section rendered outside .param-row so it spans full width -->
   <div v-if="param.type === 'section'" class="param-section">
-    <button class="section-toggle" @click="sectionOpen = !sectionOpen"
+    <button class="section-toggle cc-section-toggle cc-eyebrow" @click="sectionOpen = !sectionOpen"
       v-tooltip.left="sectionOpen ? 'Collapse advanced parameters.' : 'Expand advanced parameters.'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
       {{ param.label }}
@@ -637,7 +637,7 @@ const pct = computed(() => {
           <!-- Section inside group: collapsible visual box, flat data storage -->
           <template v-if="p.type === 'section'">
             <button
-              class="group-section-toggle"
+              class="group-section-toggle cc-section-toggle cc-eyebrow"
               @click="toggleGroupSection(entry.key, p.key, p.collapsed ?? false)"
             >
               <i :class="['pi', isGroupSectionOpen(entry.key, p.key, p.collapsed ?? false)
@@ -733,23 +733,9 @@ const pct = computed(() => {
 /* placeholder */
 /* section */
 .param-section { border-bottom: 1px solid var(--cc-border); }
-.section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  width: 100%;
-  padding: 0.45rem 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  color: var(--cc-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  text-align: left;
-}
-.section-toggle:hover { color: var(--cc-text); }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier). Only the padding and the one-step-larger
+   size are this site's: an advanced-params header sits above body text, not inside dense chrome. */
+.section-toggle { padding: 0.45rem 0; font-size: var(--cc-fs-sm); }
 .section-body { padding-left: 0.5rem; border-left: 2px solid var(--cc-border); margin-left: 0.25rem; }
 
 .picker-placeholder {
@@ -854,25 +840,8 @@ const pct = computed(() => {
 .group-entry-body { padding: 0 0.4rem; }
 .group-entry-body .param-row:last-child { border-bottom: none; }
 
-.group-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  width: 100%;
-  padding: 0.3rem 0;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--cc-border);
-  cursor: pointer;
-  font-size: var(--cc-fs-xs);
-  font-weight: 600;
-  color: var(--cc-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  text-align: left;
-}
-.group-section-toggle:hover { color: var(--cc-text); }
-.group-section-toggle .pi { font-size: var(--cc-fs-2xs); }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier) — the divider is this site's own */
+.group-section-toggle { padding: 0.3rem 0; border-top: 1px solid var(--cc-border); }
 
 .group-section-body {
   padding-left: 0.4rem;

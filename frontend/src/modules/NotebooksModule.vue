@@ -237,7 +237,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 .nb-note {
   display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;
   font-size: var(--cc-fs-md); line-height: 1.4; border-radius: var(--cc-radius-md);
-  color: var(--cc-text, #cdd9e5); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
+  color: var(--cc-text); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
 }
 .nb-note .pi { margin-top: .1rem; color: #58a6ff; }
 .nb-build-row { display: flex; align-items: center; gap: .75rem; margin: .75rem 0 0; flex-wrap: wrap; }

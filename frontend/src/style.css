@@ -15,6 +15,13 @@
   /* borders / accents */
   --cc-border:     #30363d;
   --cc-accent:     #a78bfa;
+  /* Accent ramp. The base above is the light violet; these three are the rest of the family, and they
+     existed as raw hex long before they existed as tokens (measured: 14 × #7c3aed, 6 × #c4b5fd,
+     4 × #2d1b69 across 22 files). They are what an ENGAGED control is built from — see .cc-btn-on. */
+  --cc-accent-strong: #7c3aed;   /* deeper violet — borders on an engaged/active control */
+  --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
+  --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
+  --cc-accent-tint-2: #3b2382;   /* its hover step */
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
      analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
   --cc-selected:   #ff8c1a;
@@ -192,6 +199,109 @@ body {
 .cc-btn-icon.cc-btn-micro { width: 1rem;    height: 1rem;    font-size: var(--cc-fs-2xs); }
 .cc-btn-icon.cc-btn-dense { width: 1.25rem; height: 1.25rem; font-size: var(--cc-fs-xs); }
 .cc-btn-icon.cc-btn-lg    { width: 1.75rem; height: 1.75rem; font-size: var(--cc-fs-md); }
+
+/* State — a toggle button that is currently ENGAGED. This is the button vocabulary's fourth axis
+   (tone / density / icon / STATE), and it was the missing one: `.cc-btn` could say what a button
+   looked like but not that it was pressed, so ~17 sites hand-rolled a `.on`/`.active` rule in three
+   intensities. Exactly the "utility hard-codes a value on an axis where sites legitimately differ"
+   failure that stranded the text utilities — see docs/todo/UX_PRIMITIVES_PLAN.md.
+
+   INTENSITY is the axis. Pick by how loud the control should be, not by what's nearby:
+     .cc-btn-on                    outline — accent border + brightened text, no fill. The default,
+                                             and right for a 1.25rem icon square where a solid violet
+                                             block shouts (gear-is-open, panel-is-pinned).
+     .cc-btn-on + .cc-btn-on-tint  tinted  — + an accent-washed surface. An enabled *option* that
+                                             should read as on at a glance (viewer toggles).
+     .cc-btn-on + .cc-btn-on-solid solid   — accent fill, white text. Prominent/segmented toggles.
+
+   Always composed onto a tone: `class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-on"`.
+
+   SPECIFICITY, and why the :hover rules exist and are spelled `.cc-btn.cc-btn-on…`. These rules are
+   global; the tone rules a site keeps in scoped CSS are not. Vue adds `[data-v-…]` to every scoped
+   selector, so a component's own `.foo:hover { border-color: … }` weighs (0,3,0) and would repaint an
+   engaged button back to its resting colours on mouseover — a real regression, not a theoretical one
+   (ViewerPanel's `.opt-btn:hover` does exactly this). Doubling the class on the hover rules puts them
+   at (0,4,0), above any single-class scoped hover, and each one must therefore RE-STATE every property
+   the resting state set. */
+.cc-btn-on {
+  color: var(--cc-text);
+  border-color: var(--cc-accent);
+}
+.cc-btn.cc-btn-on:hover:not(:disabled) {
+  color: var(--cc-text);
+  border-color: var(--cc-accent);
+}
+
+.cc-btn-on.cc-btn-on-tint {
+  background: var(--cc-accent-tint);
+  border-color: var(--cc-accent-strong);
+  color: var(--cc-accent-soft);
+}
+.cc-btn.cc-btn-on.cc-btn-on-tint:hover:not(:disabled) {
+  background: var(--cc-accent-tint-2);
+  border-color: var(--cc-accent-strong);
+  color: var(--cc-accent-soft);
+}
+
+.cc-btn-on.cc-btn-on-solid {
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: #fff;
+}
+.cc-btn.cc-btn-on.cc-btn-on-solid:hover:not(:disabled) {
+  filter: brightness(1.12);
+  background: var(--cc-accent);
+  border-color: var(--cc-accent);
+  color: #fff;
+}
+
+/* Button GROUP — a joined strip of related buttons sharing one outline, with hairline dividers
+   instead of gaps. Three copies of this lived in canvas toolbars as a hand-rolled `.seg` block (plus
+   two more that were dead CSS with no markup left).
+
+   It is NOT `ChipSelect`, and that mis-diagnosis is why the unification stalled: a chip row is a
+   SELECT (v-model over options, one or more `on`), whereas every real site here is a strip of
+   independent ACTIONS — tile/cascade, prev/next image — optionally with one member carrying
+   `.cc-btn-on`. There is no value to bind. So this is a class swap, not a component swap.
+   Children are ordinary `.cc-btn`s; the group supplies the outline, so use the `-bare` tone. */
+.cc-btn-group {
+  display: inline-flex;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.cc-btn-group > .cc-btn {
+  border-radius: 0;
+  background: var(--cc-surface-2);
+}
+.cc-btn-group > .cc-btn + .cc-btn { border-left: 1px solid var(--cc-border); }
+
+/* Section toggle — the chevron + heading row that expands/collapses a block. `CollapsibleSection` is
+   the full component (a panel-rail bar: border-top, its own surface, a scrolling body); this is just
+   the CLICKABLE ROW, for the sites that need the affordance without the chrome — a sub-section inside
+   an options popover or a param form, where a full-width surface bar would be wrong. Eight of those
+   hand-rolled the same row, which is why the component alone never finished the job.
+
+   The row only owns what every site agreed on: full-width bare button, chevron + label, dim → bright
+   on hover. Everything the sites legitimately differ on stays theirs — padding, the divider rule, and
+   the text tier (compose `.cc-eyebrow` for an uppercase section label, or set a weight/size). Pair the
+   chevron with `pi-chevron-down`/`-right` (nested/inline) or `-up`/`-down` (a bar), matching the site. */
+.cc-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--cc-text-dim);
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.cc-section-toggle:hover { color: var(--cc-text); }
+.cc-section-toggle > .pi { font-size: var(--cc-fs-2xs); }
 
 /* ── Semantic role utilities ───────────────────────────────────────────────────
    Generalise the recurring UX *scenarios* (roles that repeat across many different elements) instead

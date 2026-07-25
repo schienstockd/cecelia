@@ -146,6 +146,6 @@ async function waitForBackend(timeoutMs = 60000) {
   gap: 0.35rem;
 }
 .setup-hint.ok  { color: var(--cc-viewer); }
-.setup-hint.bad { color: var(--cc-danger); }
+.setup-hint.bad { color: var(--cc-sev-fail); }
 .setup-go { margin-top: 0.5rem; align-self: flex-end; }
 </style>

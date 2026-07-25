@@ -377,7 +377,7 @@ function isNavDisabled(item: NavItem): boolean {
 .lablog-cta.lablog-unseen { border-color: var(--cc-accent); }
 /* Lab log CTA: a neutral/whiteish variant so it reads as its own thing, distinct from the coloured
    Viewer control. Overrides the .viewer-cta base (defined above → these win on equal specificity). */
-.lablog-cta .viewer-cta-icon { color: #e6edf3; }
+.lablog-cta .viewer-cta-icon { color: var(--cc-text); }
 .lablog-cta:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
 .lablog-cta.viewer-on {
   background: rgba(255, 255, 255, 0.1);
@@ -444,7 +444,7 @@ function isNavDisabled(item: NavItem): boolean {
 .footer-btn { text-decoration: none; /* Settings is a RouterLink (<a>) — no underline */
   transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
-.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
+.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger); border-color: var(--cc-danger); }
 .footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 </style>

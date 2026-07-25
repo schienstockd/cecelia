@@ -236,7 +236,7 @@ function elapsed(t: TaskEntry) {
 }
 .chain-badge {
   font-size: var(--cc-fs-2xs);
-  color: #a78bfa;
+  color: var(--cc-accent);
   flex-shrink: 0;
 }
 .task-image {

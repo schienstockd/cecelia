@@ -363,16 +363,17 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
          (the plot group); trackclust has no viewer control either, so the whole block is hidden. ── -->
     <template v-if="props.popType !== 'trackclust'" #options>
       <div class="pm-opts">
-        <button class="pm-opts-toggle" @click="optionsOpen = !optionsOpen">
+        <button class="pm-opts-toggle cc-section-toggle" @click="optionsOpen = !optionsOpen">
           <i :class="optionsOpen ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-          <span>Options</span>
+          <span class="cc-eyebrow">Options</span>
         </button>
         <div v-show="optionsOpen" class="pm-opts-body">
           <template v-if="!clusterMode">
           <div class="pm-opt-head"><span>plot</span></div>
           <div class="pm-opt-row">
             <span class="pm-opt-label">Gate labels</span>
-            <button class="seg-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :class="{ active: gateLabels }"
+            <button class="seg-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
+                    :class="{ 'cc-btn-on cc-btn-on-tint': gateLabels }"
                     v-tooltip.top="'Show population names on gates'"
                     @click="emit('update:gateLabels', !gateLabels)"><i class="pi pi-tag" /></button>
           </div>
@@ -446,7 +447,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--cc-fs-xs); padding: 4px 9px;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-2);
   color: var(--cc-text); cursor: pointer; }
-.pm-add-btn:hover { border-color: #7c3aed; color: #c4b5fd; }
+.pm-add-btn:hover { border-color: var(--cc-accent-strong); color: var(--cc-accent-soft); }
 .pm-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 /* filter-population form (Decision 15) */
 .pm-ff { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
@@ -476,7 +477,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: var(--cc-fs-xs); line-height: 1;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1);
   color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }
-.pm-chip:hover { border-color: #7c3aed; color: var(--cc-text); }
+.pm-chip:hover { border-color: var(--cc-accent-strong); color: var(--cc-text); }
 .pm-chip.on { font-weight: 700; }
 /* read-only (Analysis board): chips show assignment but aren't clickable */
 .pm-chip.ro { cursor: default; }
@@ -488,13 +489,11 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-seg { margin-left: auto; }
 .seg-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
-.seg-btn.active { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
 
 /* ── extra options ── */
 .pm-opts { border-top: 1px solid var(--cc-border); }
-.pm-opts-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none;
-  color: var(--cc-text-dim); cursor: pointer; padding: 6px 8px; font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.05em; }
-.pm-opts-toggle:hover { color: var(--cc-text); }
+/* + cc-section-toggle (row) + cc-eyebrow on the label — padding is all that is this site's */
+.pm-opts-toggle { padding: 6px 8px; }
 .pm-opts-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 /* small section heading: ──── plot ──── */
 .pm-opt-head { display: flex; align-items: center; gap: 6px; margin-top: 2px;

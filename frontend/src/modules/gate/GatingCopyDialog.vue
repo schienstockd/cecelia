@@ -140,7 +140,7 @@ async function copy() {
 .cg-layout { display: flex; align-items: center; gap: 0.4rem; font-size: var(--cc-fs-md); color: var(--cc-text); cursor: pointer; }
 .cg-missing { display: flex; flex-direction: column; gap: 0.2rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 0.5rem; }
-.cg-missing-head { display: flex; align-items: center; gap: 0.35rem; color: #f59e0b; }
+.cg-missing-head { display: flex; align-items: center; gap: 0.35rem; color: var(--cc-sev-warn); }
 .cg-missing-names { padding-left: 1.1rem; word-break: break-word; }
 
 /* buttons use the global .cc-btn utilities (style.css) */
