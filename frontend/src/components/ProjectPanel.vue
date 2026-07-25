@@ -302,7 +302,7 @@ const typeColour: Record<ProjectType, string> = {
 
         <div class="form-row">
           <label class="form-label"
-            v-tooltip.right="'A short, descriptive name for this project. It does not have to match the folder name.'">
+            v-tooltip.right="'Name for this project; need not match the folder name'">
             Project name
           </label>
           <input
@@ -318,7 +318,7 @@ const typeColour: Record<ProjectType, string> = {
 
         <div class="form-row">
           <label class="form-label"
-            v-tooltip.right="'Static: fixed-tissue microscopy. Live: time-lapse with cell tracking. Flow: flow/mass cytometry without images.'">
+            v-tooltip.right="'Static (fixed tissue), Live (time-lapse + tracking), Flow (no images)'">
             Project type
           </label>
           <ChipSelect
@@ -331,7 +331,7 @@ const typeColour: Record<ProjectType, string> = {
 
         <div class="form-row">
           <span class="field-hint cc-muted"
-            v-tooltip.right="'Override with the CECELIA_PROJECTS_DIR environment variable when starting the Julia server.'">
+            v-tooltip.right="'Override with CECELIA_PROJECTS_DIR'">
             <i class="pi pi-folder" />
             <template v-if="projectMeta.projectsDir">
               Project will be created in

@@ -275,7 +275,7 @@ async function dismissEntry(entry: LabLogEntry) {
           v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'" />
         <!-- image refs are stored as stable UIDs; opt in to showing current names -->
         <CcToggle v-if="projectUid && hasImageNames" class="ll-auto" v-model="settings.labLogShowNames" label="Show names"
-          v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'" />
+          v-tooltip.top="'Show current image names instead of stable IDs'" />
       </div>
 
       <span class="ll-tb-sep" aria-hidden="true" />
@@ -289,19 +289,19 @@ async function dismissEntry(entry: LabLogEntry) {
         <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
                 @click="askClaude"
                 v-tooltip.top="observerAvailable
-                  ? 'Ask the assistant to review recent activity and note anything worth flagging in the lab log'
-                  : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
+                  ? 'Review recent activity and note anything worth flagging'
+                  : 'Needs Claude Code'">
           <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
         </button>
         <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
-                v-tooltip.top="'Which model Ask Claude runs. Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
+                v-tooltip.top="'Model Ask Claude runs'">
           <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
         </select>
         <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
              one-shot. Copies a starter prompt; no `claude` install needed. -->
         <button class="ll-capture" :class="{ copied: chatCopied }" :disabled="!projectUid" @click="chatToClaude"
                 v-tooltip.top="chatCopied ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
-                  : 'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
+                  : 'Copy a starter prompt for a full chat in Claude Code'">
           <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
         </button>
         <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"

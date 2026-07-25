@@ -234,8 +234,7 @@ function exportBoard(kind: string) {
         <option value="csv">CSV only</option>
       </select>
       <!-- opens LEFT (into the page): this is the rightmost control, a bottom tooltip would clip the edge -->
-      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF: raster, for viewing/printing. ' +
-         'SVG: vector, editable in Illustrator. CSV: data → Prism. Image + HMM panels stay raster; huge point clouds warn.'" />
+      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data'" />
     </div>
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->

@@ -236,7 +236,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
            Same form creates AND edits (fpEditPath) — editing is not a special path. -->
       <div v-if="!readonly && !clusterMode" class="pm-add">
         <button class="pm-add-btn" @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
-                v-tooltip.bottom="'Define a population by filtering on obs measures (region, cluster, aggregate, intensity, speed…)'">
+                v-tooltip.bottom="'Define a population by filtering on obs measures'">
           <i class="pi pi-filter" /> New filter population
         </button>
       </div>

@@ -137,7 +137,7 @@ watch(segPops, () => {
         </select>
         <!-- compare cluster: mode + (by attribute) its attribute selects, kept tight in one group -->
         <div v-if="canCompare" class="sc-compare"
-             v-tooltip.bottom="'Compare across the selected images: this image, one series per image, pooled, or grouped by an image attribute (e.g. Treatment × Mouse)'">
+             v-tooltip.bottom="'How to compare across the selected images'">
           <span class="sc-lbl">compare</span>
           <select v-model="compareMode" class="sc-cmp">
             <option value="image">this image</option>
@@ -159,7 +159,7 @@ watch(segPops, () => {
           </template>
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
-          v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only (no separation by population or image)'" />
+          v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
         <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
                   @click="arrangeGrid"><i class="pi pi-th-large" /></button>

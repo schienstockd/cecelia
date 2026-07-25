@@ -363,7 +363,7 @@ const { width: sidebarWidth, onResizeStart } =
 
       <div class="pool-row" v-if="pools.length > 0">
         <span class="pool-label cc-muted cc-fs-xs"
-          v-tooltip.right="'Resource pool controls how many tasks share a concurrency slot. GPU tasks should use the gpu pool to avoid running multiple models at once.'">
+          v-tooltip.right="'How many tasks share a concurrency slot; GPU tasks use the gpu pool'">
           Pool
         </span>
         <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool" />

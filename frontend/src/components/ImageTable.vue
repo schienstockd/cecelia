@@ -615,7 +615,7 @@ onUnmounted(stopResize)
   <div v-if="deleteUid" class="delete-confirm">
     <span>Remove <strong>{{ images.find(i => i.uid === deleteUid)?.name }}</strong>?</span>
     <button class="cc-btn cc-btn-danger-ghost" @click="doDelete"
-      v-tooltip.right="'Remove this image from the set. The original file is not deleted.'">
+      v-tooltip.right="'Remove from the set; the original file is not deleted'">
       Remove
     </button>
     <button class="cc-btn cc-btn-ghost" @click="deleteUid = null">Cancel</button>
@@ -677,7 +677,7 @@ onUnmounted(stopResize)
           <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
             class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
             @click.stop="resyncFlagged"
-            v-tooltip.bottom="`Re-read physical size & timing from file for all ${flaggedUids.length} flagged image(s) — use if they were imported before this check existed and are actually fine.`">
+            v-tooltip.bottom="`Re-read size & timing from file for ${flaggedUids.length} flagged image(s)`">
             <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
           </button>
           <div class="resize-handle" @mousedown.stop.prevent="startResize('name', $event)" />

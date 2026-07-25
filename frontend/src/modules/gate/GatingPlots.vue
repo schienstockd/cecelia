@@ -219,7 +219,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a plot'" @click="add">
           <i class="pi pi-plus" /> Plot
         </button>
-        <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a read-only channel-pairs matrix (ggpairs): compare a set of channels against each other'"
+        <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a read-only channel-pairs matrix'"
                 @click="addPairs">
           <i class="pi pi-plus" /> Pairs
         </button>
@@ -242,7 +242,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           </button>
         </div>
         <label v-if="!isTrack && g.napariZMode === 'slice'" class="zwin"
-               v-tooltip.bottom="'z-slice window: include cells within ± this many slices of the current z (0 = current slice only)'">
+               v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
           ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
         </label>
         <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">

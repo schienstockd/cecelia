@@ -322,7 +322,7 @@ defineExpose({ exportImage })
             <CcToggle class="is-check cc-muted cc-fs-xs" label="legend (channels · pops · colour-by)"
               :model-value="showLegend" @update:model-value="showLegend = $event" />
             <CcToggle class="is-check cc-muted cc-fs-xs" label="clean capture"
-              v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'"
+              v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing'"
               :model-value="settings.cleanCapture" @update:model-value="settings.cleanCapture = $event" />
             <CcToggle class="is-check cc-muted cc-fs-xs" label="scale bar"
               v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'"

@@ -200,7 +200,7 @@ function isNavDisabled(item: NavItem): boolean {
          populations, tracks, colour-by — so it must be noticeable), not a dim group heading. -->
     <button class="viewer-cta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
             @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
-            v-tooltip.right="'Napari viewer controls: populations, tracks, colour-by. Floating panel — drag it anywhere.'">
+            v-tooltip.right="'Napari viewer controls: populations, tracks, colour-by'">
       <i class="pi pi-sliders-h viewer-cta-icon" />
       <span class="viewer-cta-title">Viewer controls</span>
       <i :class="['pi', settings.viewerPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
@@ -214,7 +214,7 @@ function isNavDisabled(item: NavItem): boolean {
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen
               ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
-              : 'Lab log: append-only analysis notes for this project (you + Claude). Floating panel — drag it anywhere.'">
+              : 'Lab log — analysis notes for this project (you + Claude)'">
       <i class="pi pi-book viewer-cta-icon" />
       <span class="viewer-cta-title">Lab log</span>
       <!-- badge: Claude (sparkles) or Cecelia (bell, coloured by severity) added something while the

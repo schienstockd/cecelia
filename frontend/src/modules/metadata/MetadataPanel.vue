@@ -345,7 +345,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <input class="field-input flex1" v-model="regexpValue" placeholder="Regular expression…"
           :disabled="attrDisabled"
           @keydown.enter="assignRegexp"
-          v-tooltip.bottom="'Regex over the name; a (group) if present, else the whole match. e.g. M(\\d+)→4. New to regex? Use the builder.'" />
+          v-tooltip.bottom="'Regex over the name; a (group) if present, e.g. M(\\d+)→4'" />
         <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !regexpValue"
           @click="assignRegexp"
           v-tooltip.bottom="'Extract a value from each image filename or path.'">

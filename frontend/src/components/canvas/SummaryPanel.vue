@@ -526,7 +526,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
           </label>
           <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
           <label v-if="canStatUnit" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'Individual: every cell/track is a datapoint. Image mean: each image contributes one point (its mean) — one dot per image (n = images, pseudoreplication-safe).'">
+                 v-tooltip.left="'Individual cells/tracks, or one point per image (n = images)'">
             <span>Datapoint</span>
             <select v-model="statUnit">
               <option value="individual">individual</option>
@@ -534,7 +534,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
             </select>
           </label>
           <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'How to collapse each image to its one point: mean (average) or median (robust to outliers).'">
+                 v-tooltip.left="'How to collapse each image to one point'">
             <span>Per image</span>
             <select v-model="imageAgg">
               <option value="mean">mean</option>
@@ -561,7 +561,7 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
               </select>
             </label>
             <div v-if="matrixMode === 'profile'" class="sp-pop-row cc-muted"
-                   v-tooltip.left="'Off: rescale each feature to 0–1 (viridis). On: z-score rows → diverging above/below-mean (RdBu).'">
+                   v-tooltip.left="'Off = 0–1 per feature; on = z-score rows'">
               <span>Z-score rows</span>
               <CcToggle v-model="zscore" />
             </div>

@@ -171,7 +171,7 @@ function movieTime(mtime: number): string {
           <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
         </select>
       </label>
-      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video. Shift + mouse wheel zooms to the cursor; Shift +/− and Shift + 0 (reset) also work. Scroll/pan when zoomed in.'">
+      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video (Shift + wheel, Shift +/−, Shift + 0 to reset)'">
         <i class="pi pi-search-plus" />
         <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
                @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
