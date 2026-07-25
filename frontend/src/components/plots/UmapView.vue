@@ -584,7 +584,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 
 <template>
   <div class="uv">
-    <div class="uv-ctrl cc-panel-controls">
+    <div class="uv-ctrl cc-panel-controls cc-muted">
       <button class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-on cc-btn-on-solid':labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle centroid labels'"><i class="pi pi-tag" /> #</button>
       <!-- legend visibility follows the picker's Legend option (vis.legend) — no separate toggle here -->
@@ -593,27 +593,27 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
               v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
       <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-start">
         <div class="uv-opts">
-          <label class="uv-opt"><span>Colour by</span>
+          <label class="uv-opt cc-muted"><span>Colour by</span>
             <select v-model="colourBy">
               <option value="cluster">cluster</option>
               <option value="population">population</option>
               <option value="attribute">attribute</option>
             </select>
           </label>
-          <label v-if="colourBy === 'attribute'" class="uv-opt"><span>Colour attribute</span>
+          <label v-if="colourBy === 'attribute'" class="uv-opt cc-muted"><span>Colour attribute</span>
             <select v-model="colourAttr">
               <option value="" disabled>attribute…</option>
               <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
             </select>
           </label>
-          <label class="uv-opt"><span>Facet by</span>
+          <label class="uv-opt cc-muted"><span>Facet by</span>
             <select v-model="facetBy">
               <option value="none">no facet</option>
               <option value="attribute">attribute</option>
               <option value="population">population</option>
             </select>
           </label>
-          <label v-if="facetBy === 'attribute'" class="uv-opt"><span>Facet attribute</span>
+          <label v-if="facetBy === 'attribute'" class="uv-opt cc-muted"><span>Facet attribute</span>
             <select v-model="facetAttr">
               <option value="" disabled>attribute…</option>
               <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
@@ -625,7 +625,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
             <div class="uv-pop">
               <div v-if="!popGroups.length" class="uv-pop-empty cc-muted">No populations in the clustered segmentations.</div>
               <template v-for="grp in popGroups" :key="grp.valueName">
-                <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-eyebrow-dense">{{ grp.valueName }}</div>
+                <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-eyebrow-2xs">{{ grp.valueName }}</div>
                 <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
                      class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
                      @click="togglePop(grp.valueName, p.path, p.popType)">
@@ -680,20 +680,20 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 <style scoped>
 /* position: relative so the overlaid .uv-ctrl (.cc-panel-controls) anchors to the plot box */
 .uv { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; }
 /* active (ticked) label toggle: filled accent so it's clearly on/off */
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
 /* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */
 .uv-opts { width: 15rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .uv-opt select { padding: 2px 4px; max-width: 8.5rem; }
 .uv-opt-sep { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 6px; margin-top: 2px; }
 /* population checklist (inside the options popover) */
 .uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); }
 .uv-pop-empty { padding: 10px; }   /* + .cc-muted */
-/* + .cc-eyebrow .cc-eyebrow-dense (case/tracking/weight/colour at the 10px tier) */
+/* + .cc-eyebrow .cc-eyebrow-2xs (case/tracking/weight/colour at the 10px tier) */
 .uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); position: sticky; top: 0; }
 .uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: var(--cc-fs-sm); color: var(--cc-text); }
 .uv-pop-row:hover { background: var(--cc-surface-2); }

@@ -86,13 +86,13 @@ async function waitForBackend(timeoutMs = 60000) {
       <h1 class="setup-title">Welcome to Cecelia</h1>
       <p class="setup-sub cc-muted">Where would you like to store your projects?</p>
 
-      <label class="setup-label" for="setup-path">Projects folder</label>
+      <label class="setup-label cc-muted cc-muted-md" for="setup-path">Projects folder</label>
       <input id="setup-path" v-model="path" class="setup-input" type="text" spellcheck="false"
              autocomplete="off" placeholder="~/cecelia-projects"
              @keyup.enter="submit" />
 
       <!-- validation hint: neutral until checked, green when usable, danger when not -->
-      <p class="setup-hint" :class="check ? (check.ok ? 'ok' : 'bad') : ''">
+      <p class="setup-hint cc-muted cc-muted-md" :class="check ? (check.ok ? 'ok' : 'bad') : ''">
         <template v-if="check">
           <i :class="check.ok ? 'pi pi-check-circle' : 'pi pi-exclamation-circle'" />
           {{ check.message }}
@@ -134,17 +134,9 @@ async function waitForBackend(timeoutMs = 60000) {
 .setup-logo { font-size: 2.5rem; line-height: 1; }
 .setup-title { margin: 0.5rem 0 0; font-size: 1.4rem; font-weight: 600; }
 .setup-sub { margin: 0 0 1rem; }   /* + .cc-muted */
-.setup-label { font-size: var(--cc-fs-md); color: var(--cc-text-dim); margin-bottom: 0.15rem; }
+.setup-label { margin-bottom: 0.15rem; }
 .setup-input { width: 100%; font-family: var(--cc-mono, monospace); }
-.setup-hint {
-  min-height: 1.2rem;
-  margin: 0.15rem 0 0.5rem;
-  font-size: var(--cc-fs-md);
-  color: var(--cc-text-dim);
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
+.setup-hint { min-height: 1.2rem; margin: 0.15rem 0 0.5rem; display: flex; align-items: center; gap: 0.35rem; }
 .setup-hint.ok  { color: var(--cc-viewer); }
 .setup-hint.bad { color: var(--cc-sev-fail); }
 .setup-go { margin-top: 0.5rem; align-self: flex-end; }

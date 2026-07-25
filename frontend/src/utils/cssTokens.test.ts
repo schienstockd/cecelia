@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { definedTokens, referencedTokens, findDeadTokenRefs } from './cssTokens'
+import { definedTokens, referencedTokens, findDeadTokenRefs, findNonRootTokenDecls } from './cssTokens'
 
 describe('definedTokens', () => {
   it('collects declarations and ignores references', () => {
@@ -53,6 +53,20 @@ describe('findDeadTokenRefs', () => {
   })
 })
 
+describe('findNonRootTokenDecls', () => {
+  it('accepts :root and flags a scale hidden behind a class', () => {
+    expect(findNonRootTokenDecls(':root { --cc-fs-sm: 0.75rem; }')).toEqual([])
+    expect(findNonRootTokenDecls(':root, .cc-dark { --cc-fs-sm: 0.75rem; }')).toEqual([])
+    expect(findNonRootTokenDecls('.cc-dark { --cc-fs-sm: 0.75rem; }'))
+      .toEqual([{ selector: '.cc-dark', token: '--cc-fs-sm' }])
+  })
+
+  // A component-local token set on its own class is fine — this check is only about style.css.
+  it('ignores non-token declarations', () => {
+    expect(findNonRootTokenDecls('.foo { color: red; }')).toEqual([])
+  })
+})
+
 // ── The real check: no component may reference a token style.css doesn't declare ──────────────────
 
 // Sources are pulled in with Vite's raw glob rather than node's fs, so this test needs no
@@ -72,5 +86,14 @@ describe('the app stylesheet', () => {
     const dead = findDeadTokenRefs(RAW['/src/style.css'], sources)
     // Reported as readable lines so a failure names the file and token directly.
     expect(dead.map(d => `${d.path}: ${d.token}`)).toEqual([])
+  })
+
+  // Declared is not the same as reachable, and the symptoms are identical. The scale lived on
+  // `.cc-dark` — a <div> inside <body> — so PrimeVue's tooltip, which it appends to document.body,
+  // was a sibling of that div and resolved none of these: its font-size and radius dropped and it
+  // rendered at the browser default 16px, with the token guard green the whole time.
+  it('declares the global scale on :root, so body-appended overlays can reach it', () => {
+    const stray = findNonRootTokenDecls(RAW['/src/style.css'])
+    expect(stray.map(s => `${s.selector} declares ${s.token}`)).toEqual([])
   })
 })

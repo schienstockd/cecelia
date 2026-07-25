@@ -15,14 +15,14 @@ defineProps<{
 </script>
 
 <template>
-  <div class="live-label cc-muted cc-muted-dense" :class="data.kind">
+  <div class="live-label cc-muted cc-muted-2xs" :class="data.kind">
     <span class="live-label-text">{{ data.text }}</span>
     <span v-if="data.sub" class="live-label-sub">{{ data.sub }}</span>
   </div>
 </template>
 
 <style scoped>
-/* + cc-muted cc-muted-dense (colour + the 10px tier); the rest is this label's geometry */
+/* + cc-muted cc-muted-2xs (colour + the 10px tier); the rest is this label's geometry */
 .live-label {
   white-space: nowrap;
   pointer-events: none;

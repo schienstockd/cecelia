@@ -37,7 +37,7 @@ function defaultValueName(): string {
       <span v-if="selectedValueName" class="crop-version-tag">{{ selectedValueName }}</span>
     </template>
     <div v-if="valueNames.length > 1" class="crop-version-row">
-      <span class="crop-version-lbl" v-tooltip.right="'Which image version/iteration to crop'">Version</span>
+      <span class="crop-version-lbl cc-muted cc-muted-xs" v-tooltip.right="'Which image version/iteration to crop'">Version</span>
       <select v-model="selectedValueName" class="crop-version-select">
         <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
       </select>
@@ -53,7 +53,7 @@ function defaultValueName(): string {
 
 <style scoped>
 .crop-version-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-.crop-version-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+
 .crop-version-select { flex: 0 1 auto; }
 .crop-version-tag {
   margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-lg);

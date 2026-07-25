@@ -267,15 +267,15 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 
 <template>
   <div ref="gridRef" class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
-    <div v-if="err" class="gm-msg">{{ err }}</div>
-    <div v-else-if="!defs.length" class="gm-msg"><slot name="empty">Nothing to show.</slot></div>
+    <div v-if="err" class="gm-msg cc-muted cc-muted-md">{{ err }}</div>
+    <div v-else-if="!defs.length" class="gm-msg cc-muted cc-muted-md"><slot name="empty">Nothing to show.</slot></div>
     <template v-for="d in defs" :key="d.key">
       <!-- DIAGONAL (ggpairs): the channel name — labels its whole row and column -->
       <div v-if="d.role === 'diagonal'" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
       <!-- UPPER triangle (ggpairs): the pair's correlation, reused from its mirror scatter -->
       <div v-else-if="d.role === 'corr'" class="gm-cell gm-corr"
            v-tooltip.top="`corr(${colLabel(d.xChan)}, ${colLabel(d.yChan)})`">
-        <span class="gm-corr-k">Corr</span>
+        <span class="gm-corr-k cc-eyebrow cc-eyebrow-2xs">Corr</span>
         <span class="gm-corr-v" :style="{ fontSize: corrFont(corrFor(d)) }">{{ fmtCorr(corrFor(d)) }}</span>
       </div>
       <div v-else class="gm-cell">
@@ -333,10 +333,10 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
   color: var(--cc-text); font-weight: 700; font-size: var(--cc-fs-sm); padding: 4px; text-align: center; word-break: break-word; }
 /* upper-triangle correlation cell (ggpairs): "Corr" label + the value, text scaled by |r| */
 .gm-corr { align-items: center; justify-content: center; aspect-ratio: 1; gap: 2px; border-color: var(--cc-border); }
-.gm-corr-k { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); }
+
 .gm-corr-v { font-weight: 700; color: var(--cc-text); font-variant-numeric: tabular-nums; line-height: 1; }
 .gm-title { flex-shrink: 0; font-size: var(--cc-fs-xs); font-weight: 700; padding: 3px 6px; color: var(--cc-text-dim);
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--cc-text-dim); aspect-ratio: 1; }
-.gm-msg { grid-column: 1 / -1; padding: 16px; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
+.gm-msg { grid-column: 1 / -1; padding: 16px; }
 </style>

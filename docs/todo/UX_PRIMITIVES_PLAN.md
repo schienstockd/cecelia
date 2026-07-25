@@ -34,6 +34,7 @@ read these; do not re-derive one by grep.
 | `findRawColours` + `colourTokens` | `cssScenarios.ts` | a hex a token already holds exactly; any `var(--x, #hex)` fallback | must be empty |
 | `findRestatedInputBase` + `inputBase` | `cssScenarios.ts` | form-control rules re-stating the global input base | exact list (2 survivors, each a class shared with a non-input element) |
 | `findDeadTokenRefs` | `cssTokens.ts` | a reference to a `--*` property `style.css` never declares | must be empty |
+| `findNonRootTokenDecls` | `cssTokens.ts` | the global scale declared anywhere but `:root` (declared ≠ *reachable*) | must be empty |
 
 Shared plumbing at the top of `cssScenarios.ts`: `styleBlocks()` and `cssRules()` (which recurses into
 `@media`). `SCENARIO_HINT` supplies the "migrate it to this" text the ratchet prints. Three things that
@@ -53,8 +54,8 @@ are easy to break:
 - **The scenario backlog.** The live list is the per-file `BASELINE` in `cssScenarios.test.ts`; it may
   shrink and must never grow. Touch a file in it → migrate its rules and lower the number. Deliberately
   decoupled from "finish the sweep": new divergence fails immediately, the backlog drains as files get
-  touched. Roughly half the listed files hold one or two rules apiece, so those are one-line diffs;
-  the failure message now names the offending selector and the utility it wants.
+  touched. The ≤2-rule tail has been drained (45 files → 20), so what's left is the concentrated
+  remainder; the failure message names the offending selector and the utility it wants.
 - **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — distinct from a section header, and
   deliberately NOT extracted. Inspected, the two sites differ on **four** axes: `TaskList` uses a
   focusable `<button>` (already `.cc-btn-bare .cc-btn-icon`) with a tooltip, the icon as click target and
@@ -99,7 +100,9 @@ The blow-by-blow is in git (`git log --oneline -- frontend/src/style.css`). What
 2. **A utility that hard-codes a value on an axis where sites legitimately differ will not be adopted.**
    Every site written off as "bespoke" had this one cause. There were only three such axes — density,
    surface, layout — and giving each scenario its missing modifier turned the whole stalled list into
-   mechanical migrations.
+   mechanical migrations. **Name the modifier after the scale step it selects, not a relative amount**
+   (`-xs`, not `-dense`) — a relative name can only express the steps you thought of, which is how
+   `.cc-muted` ended up with no 11px step under the largest remaining cluster of hand-rolled text.
 3. **A tier most sites override by hand is the wrong default.** Corollary of (2), and the more expensive
    half: the form-control base sat a step too large, so 33 controls across 24 files each hand-wrote the
    size they wanted while exactly one adopted the opt-in class. Count the overrides before adding
@@ -107,19 +110,27 @@ The blow-by-blow is in git (`git log --oneline -- frontend/src/style.css`). What
 4. **When tokenising a value between two steps, check which side the element belongs on.** Rounding to
    the nearest step took the input base and the tooltip *up* into body size; both surfaced later as
    visible regressions. Dense chrome rounds down.
-5. **A matcher pinned to one spelling has a blind spot, and they all look alike.** Four of them so far:
+5. **Declared is not reachable, and a green guard can mean neither.** The token scale sat on
+   `.cc-dark`, a `<div>` inside `<body>`, so PrimeVue's tooltip — which it appends to `document.body` —
+   resolved none of it and rendered at the browser default 16px for months. `findDeadTokenRefs` was
+   green and correct throughout: the tokens *were* declared. Two visible regressions were misdiagnosed
+   as rounding before anyone checked the DOM. When a value refuses to change, verify the rule is
+   *reaching* the element before tuning the value again — and note the sweep is what broke it, by
+   turning a working literal into a token reference in a scope that has no tokens.
+
+6. **A matcher pinned to one spelling has a blind spot, and they all look alike.** Four of them so far:
    reading only `<style>` blocks (inline `style="font-size:…"` invisible); keying on a *literal* size (so
    tokenising silently un-flagged a rule); keying on `var(--cc-text-dim)` and missing the
    `var(--cc-text-dim, #8b8ca7)` spelling; and `\b(select)\b` matching inside `.chip-select`, because a
    hyphen is a word boundary. When adding a matcher, ask which other spellings of the same declaration
    exist — token vs literal, with fallback vs without, scoped vs inline — and judge a rule by its
    **subject** compound, not any part of the selector.
-6. **CSS cannot express intent, so prefer precision over recall.** A button, a card, a chip, a badge and
+7. **CSS cannot express intent, so prefer precision over recall.** A button, a card, a chip, a badge and
    an input are all `surface + 1px border + radius` — which is why the `card` matcher was dropped, and
    why `.cc-btn-icon`'s fixed square collapsed two full-height strip controls that were markup-identical
    to an icon button. A noisy check grows an allow-list, and the allow-list is where this rots. Where a
    detector can't be precise, the category gets a review-time rule in `docs/UI.md` and no number at all.
-7. **A rule stated in one place while its neighbour keeps doing the old thing is the recurring tell.**
+8. **A rule stated in one place while its neighbour keeps doing the old thing is the recurring tell.**
    The ratchet was first built with the largest category carved out of it; the "no counts" rule was added
    to one section while the table above it kept its stale counts; the size audit counted `rem` and
    ignored `px`. When you add a rule here, grep the whole file for what it forbids before claiming it

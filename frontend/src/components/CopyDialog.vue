@@ -83,21 +83,21 @@ function copyImage() {
     </template>
 
     <div v-if="valueNames.length > 1" class="copy-row">
-      <span class="copy-lbl" v-tooltip.right="'Which image version to copy (becomes the copy\'s default)'">Version</span>
+      <span class="copy-lbl cc-muted" v-tooltip.right="'Which image version to copy (becomes the copy\'s default)'">Version</span>
       <select v-model="selectedValueName" class="copy-select">
         <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
       </select>
     </div>
 
     <div class="copy-row">
-      <span class="copy-lbl" v-tooltip.right="'Where to put the copy (data IS duplicated on disk).'">To set</span>
+      <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copy (data IS duplicated on disk).'">To set</span>
       <select v-model="targetUid" class="copy-select">
         <option v-for="s in allSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
         <option value="">＋ New set…</option>
       </select>
     </div>
     <div v-if="!targetUid" class="copy-row">
-      <span class="copy-lbl" />
+      <span class="copy-lbl cc-muted" />
       <input class="copy-name-input" v-model="newName" placeholder="New set name…"
              @keydown.enter="copyImage" autofocus />
     </div>
@@ -118,7 +118,7 @@ function copyImage() {
 
 <style scoped>
 .copy-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem; }
-.copy-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); width: 4rem; flex-shrink: 0; }
+.copy-lbl { width: 4rem; flex-shrink: 0; }
 .copy-select, .copy-name-input { flex: 1 1 auto; }
 .copy-hint { font-size: var(--cc-fs-xs); font-style: italic; margin: 0.3rem 0 0; }   /* + .cc-muted (colour) */
 .copy-version-tag {

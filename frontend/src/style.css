@@ -1,7 +1,18 @@
 /* ── Cecelia design tokens ──────────────────────────────────────────────────── */
 /* Dark-first. The .cc-dark class is always applied at shell level.             */
 
-.cc-dark {
+/* Declared on :root, NOT on .cc-dark — and that is load-bearing, not tidiness.
+   `.cc-dark` is a <div> inside <body> (App.vue's shell), so anything a library appends to
+   document.body is a SIBLING of it and inherits none of these. PrimeVue's tooltip does exactly that
+   (`document.body.appendChild(container)`), so every `var(--cc-*)` in the tooltip override was invalid
+   at computed-value time — the declaration dropped, and the tooltip fell back to inheriting from
+   <body>, whose own `font-size: var(--cc-fs-md)` was dead for the same reason. It had been rendering
+   at the browser default 16px. Same for `body`'s size and the tooltip's radius.
+   `TeleportPopover` had already hit this and worked around it by re-adding `.cc-dark` to its
+   teleported node; that is a patch on one caller, this is the fix.
+   Note this is NOT what `cssTokens.test.ts` checks — the tokens were all correctly *declared*. The
+   blind spot is reachability: declared in a scope the element never sees. */
+:root {
   /* backgrounds */
   --cc-bg:         #0f1117;
   --cc-surface-1:  #161b22;
@@ -108,8 +119,12 @@ body {
 /* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
 
 .p-tooltip .p-tooltip-text {
-  /* Same rounding-up as the input base: this was 0.72rem and the sweep took it to the nearer step,
-     which happened to be the larger one. A tooltip is dense chrome, so it belongs on --cc-fs-xs. */
+  /* --cc-fs-xs (≈10.9px) is the step nearest the 0.72rem this rule carried before the tokenisation
+     sweep. The sweep's own choice (--cc-fs-sm) was defensible on rounding, but it silently turned a
+     working literal into an unreachable token — see the :root note above — so the tooltip stopped
+     being 11.5px and started inheriting the browser default 16px. That, not the rounding, is why
+     tooltips looked oversized. This is the first version of this rule whose font-size actually
+     applies. */
   font-size: var(--cc-fs-xs);
   padding: 0.3rem 0.6rem;
   background: #21262d;
@@ -313,15 +328,26 @@ body {
 /* Each scenario below is `base class + optional modifier`, and the modifiers exist for one reason:
    the axis a site legitimately varies on. Bake that axis into the base and adoption forces a visual
    change, so the site stays hand-rolled — which is how the "kept bespoke" list in
-   UX_PRIMITIVES_PLAN.md accumulated. The axes are DENSITY (-dense/-micro, for dense chrome),
+   UX_PRIMITIVES_PLAN.md accumulated. The axes are DENSITY (a step on the --cc-fs-* scale),
    SURFACE (-2) and LAYOUT (-inline/-overlay/-lg). Per-site emphasis (italic) and geometry
-   (width/margin/flex) still belong in scoped CSS. */
+   (width/margin/flex) still belong in scoped CSS.
 
-/* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. -dense/-micro drop to the
-   two smallest tiers for dense contexts (chip rows, whiteboard nodes) without changing the role. */
+   DENSITY MODIFIERS NAME THE SCALE STEP (-md/-xs/-2xs/-3xs), not a relative amount. They were
+   -dense/-micro, and that broke twice for the same reason: a relative name can only ever express the
+   steps you thought of. `.cc-muted` had no 11px step — the single largest cluster of hand-rolled muted
+   text in the app, 14 rules — because "dense" was already spent on 10px, and there was no name at all
+   for the step ABOVE the base. Worse, -dense was not even a consistent step: two tiers down from
+   `.cc-muted`'s 12px base and one from `.cc-eyebrow`'s 11px. Naming the step makes the axis complete by
+   construction and the next one obvious to add. */
+
+/* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. The modifier picks the tier;
+   the role (dim, secondary) is what the base class means and does not change with size. */
 .cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
-.cc-muted-dense { font-size: var(--cc-fs-2xs); }
-.cc-muted-micro { font-size: var(--cc-fs-3xs); }
+.cc-muted-lg  { font-size: var(--cc-fs-lg); }
+.cc-muted-md  { font-size: var(--cc-fs-md); }
+.cc-muted-xs  { font-size: var(--cc-fs-xs); }
+.cc-muted-2xs { font-size: var(--cc-fs-2xs); }
+.cc-muted-3xs { font-size: var(--cc-fs-3xs); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).
@@ -342,23 +368,23 @@ body {
 .cc-empty-lg { padding: 4rem 2rem; gap: 0.5rem; }
 
 /* Numeric value readout shown beside a control/metric (slider values, counts, occupancy). Default is
-   muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence), or
-   .cc-readout-dense for an inline readout in dense chrome. */
+   muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence), or a density
+   step for an inline readout in dense chrome. */
 .cc-readout { font-variant-numeric: tabular-nums; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 .cc-readout-strong { color: var(--cc-text); font-weight: 600; }
-.cc-readout-dense { font-size: var(--cc-fs-2xs); }
+.cc-readout-xs  { font-size: var(--cc-fs-xs); }
+.cc-readout-2xs { font-size: var(--cc-fs-2xs); }
 
-/* Eyebrow / section label — small uppercase dim heading above a group of controls. -dense for the
-   sticky list/table headers, which sit a tier smaller. */
+/* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
+   tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */
 .cc-eyebrow {
   font-size: var(--cc-fs-xs); font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--cc-text-dim);
 }
-.cc-eyebrow-dense { font-size: var(--cc-fs-2xs); }
-/* The density axis runs one step further for eyebrows than it did — `.cc-muted` always had both
-   -dense and -micro, `.cc-eyebrow` only -dense, and the missing bottom step is exactly why the
-   whiteboard nodes (start/scope labels, the QC footer) kept their own 9px uppercase rule. */
-.cc-eyebrow-micro { font-size: var(--cc-fs-3xs); }
+.cc-eyebrow-2xs { font-size: var(--cc-fs-2xs); }
+/* The bottom step is why the whiteboard nodes (start/scope labels, the QC footer) kept their own 9px
+   uppercase rule for so long — the axis simply stopped above them. */
+.cc-eyebrow-3xs { font-size: var(--cc-fs-3xs); }
 
 /* Surface / container chrome — a card/panel body (hairline border + md radius). Surface is the axis:
    the base is the recessed surface-1, `.cc-card-2` the raised surface-2 (a card sitting ON a
@@ -378,7 +404,7 @@ input[type="password"], input[type="email"], textarea {
   /* One step BELOW body, which is what this base has always meant to be: it started life at 0.8rem
      and the tokenisation sweep rounded it UP to the nearest step (--cc-fs-md, = body). That read as
      "the fields got bigger" in every dialog, and the density axis was not the answer — measured, only
-     ONE of ~25 text fields had ever opted into `.cc-input-dense`, so the tier sites actually wanted
+     ONE of ~25 text fields had ever opted into the density class, so the tier sites actually wanted
      was the DEFAULT, not an opt-in. The steps below are re-pitched accordingly. */
   font-size: var(--cc-fs-sm);
   color: var(--cc-text);
@@ -405,15 +431,15 @@ input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
    background verbatim. Padding's 23 spellings were not 23 choices — sorted, they collapse to two tiers
    below the base, because padding TRACKS the size rather than varying independently. So each step sets
    both, exactly as `.cc-btn-icon` bundles box and glyph size. Compose:
-   `class="my-field cc-input-dense"`, and keep only real layout (width / flex / margin) in scoped CSS.
+   `class="my-field cc-input-xs"`, and keep only real layout (width / flex / margin) in scoped CSS.
    Guarded by `findRestatedInputBase` in cssScenarios.test.ts.
 
    Re-pitched one step down when the base was: adding the axis was right, but it was hung off a base
    that had itself drifted a tier too large, so the steps started at the size the base should have
    been. Adoption proved it — one call site in the whole app, and it existed to get a field back to
    the size a plain input should already have rendered at. */
-.cc-input-dense { font-size: var(--cc-fs-xs); padding: 0.15rem 0.4rem; }
-.cc-input-micro { font-size: var(--cc-fs-2xs); padding: 0.05rem 0.25rem; }
+.cc-input-xs  { font-size: var(--cc-fs-xs);  padding: 0.15rem 0.4rem; }
+.cc-input-2xs { font-size: var(--cc-fs-2xs); padding: 0.05rem 0.25rem; }
 
 /* native select chevron → custom caret so dropdowns match across browsers */
 select {

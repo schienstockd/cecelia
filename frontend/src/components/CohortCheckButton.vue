@@ -76,7 +76,7 @@ async function check() {
 
 <template>
   <span v-if="canCheck" class="cohort-check">
-    <label v-if="showSelector" class="cohort-run" v-tooltip.bottom="'Which clustering run to check'">
+    <label v-if="showSelector" class="cohort-run cc-muted" v-tooltip.bottom="'Which clustering run to check'">
       run:
       <select v-model="selectedRun" :disabled="busy">
         <option value="">All runs</option>
@@ -93,10 +93,7 @@ async function check() {
 
 <style scoped>
 .cohort-check { display: inline-flex; align-items: center; gap: 0.35rem; }
-.cohort-run {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  font-size: var(--cc-fs-sm); color: var(--cc-text-dim);
-}
+.cohort-run { display: inline-flex; align-items: center; gap: 0.25rem; }
 .cohort-run select { padding: 0.15rem 0.3rem; border-radius: var(--cc-radius-sm); cursor: pointer;
 }
 .cohort-run select:disabled { opacity: 0.6; cursor: default; }

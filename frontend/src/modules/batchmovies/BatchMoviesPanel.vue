@@ -369,7 +369,7 @@ async function previewOpen() {
 .bm-title-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0; font-weight: 600; }
 .bm-title-range { flex: 1; min-width: 3rem; accent-color: var(--cc-accent); }
 /* This field is the reason the input base got re-pitched: it rendered a tier larger than its
-   neighbours, was patched with `cc-input-dense`, and then the SAME complaint arrived for the legacy-
+   neighbours, was patched with a density class, and then the SAME complaint arrived for the legacy-
    migrate dialog's fields. One field wanting the class is a site fix; two is the default being wrong.
    The base is --cc-fs-sm now, so the class is gone from here — a plain input already renders at the
    size this one was asking for. What stays is the surface and this panel's layout.

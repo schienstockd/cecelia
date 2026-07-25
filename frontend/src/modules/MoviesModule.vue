@@ -170,21 +170,21 @@ function movieTime(mtime: number): string {
           Native player with adjustable speed and zoom.</p>
       </div>
       <div class="mov-head-ctl">
-        <label class="mov-ctl" v-tooltip.bottom="'Playback speed'">
+        <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
           <i class="pi pi-forward" />
           <select v-model.number="settings.moviesPlaybackRate" class="mov-select">
             <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
           </select>
         </label>
-        <label class="mov-ctl" v-tooltip.bottom="'Zoom the video. Shift + mouse wheel zooms to the cursor; Shift +/− and Shift + 0 (reset) also work. Scroll/pan when zoomed in.'">
+        <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video. Shift + mouse wheel zooms to the cursor; Shift +/− and Shift + 0 (reset) also work. Scroll/pan when zoomed in.'">
           <i class="pi pi-search-plus" />
           <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
                  @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
           <span class="mov-num cc-readout">{{ zoomLabel }}</span>
         </label>
-        <CcToggle class="mov-ctl" v-model="settings.moviesAutoplay" label="Autoplay"
+        <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
                   v-tooltip.bottom="'Play a movie automatically when you select it'" />
-        <CcToggle class="mov-ctl" v-model="settings.moviesLoop" label="Loop"
+        <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
                   v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
         <button class="cc-btn cc-btn-ghost" :disabled="loading || !hasProject" @click="refresh"
                 v-tooltip.bottom="'Re-scan the project movies folder'">
@@ -217,7 +217,7 @@ function movieTime(mtime: number): string {
           <i class="pi pi-video mov-item-ico" />
           <span class="mov-item-body">
             <span class="mov-item-name">{{ movieDisplayName(m.name) }}</span>
-            <span class="mov-item-meta">{{ formatBytes(m.size) }} · {{ movieTime(m.mtime) }}</span>
+            <span class="mov-item-meta cc-muted cc-muted-xs">{{ formatBytes(m.size) }} · {{ movieTime(m.mtime) }}</span>
           </span>
         </button>
       </aside>
@@ -231,7 +231,7 @@ function movieTime(mtime: number): string {
 .mov-head h1 { margin: 0; font-size: 1.15rem; }
 .mov-sub { margin: 0.2rem 0 0; max-width: 46rem; }   /* + .cc-muted (colour/size) */
 .mov-head-ctl { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.mov-ctl { display: flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.mov-ctl { display: flex; align-items: center; gap: 0.35rem; }
 .mov-select {
   border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem;
 }
@@ -265,5 +265,5 @@ function movieTime(mtime: number): string {
 .mov-item-ico { font-size: var(--cc-fs-md); flex-shrink: 0; color: var(--cc-accent); }
 .mov-item-body { display: flex; flex-direction: column; min-width: 0; }
 .mov-item-name { font-size: var(--cc-fs-md); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mov-item-meta { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+
 </style>

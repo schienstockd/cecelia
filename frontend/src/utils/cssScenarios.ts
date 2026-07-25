@@ -115,9 +115,9 @@ export function scenarioFor(rule: CssRule): Scenario | null {
  * picks. Asserting `.cc-muted` there would silently talk people out of the tabular figures.
  */
 export const SCENARIO_HINT: Record<Scenario, string> = {
-  muted:   '.cc-muted (or .cc-readout if it is a numeric value beside a control)',
+  muted:   '.cc-muted + the step (-lg/-md/-xs/-2xs/-3xs), or .cc-readout for a numeric value',
   empty:   '.cc-empty (+ -inline / -overlay / -lg)',
-  eyebrow: '.cc-eyebrow (+ -dense / -micro)',
+  eyebrow: '.cc-eyebrow (+ -2xs / -3xs)',
 }
 
 // ── Scoped overrides of a global utility ──────────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ export function inputBase(styleCss: string): Record<string, string> {
  * density steps — of ~112 rules touching a form control, 67 declarations across 19 files were pure
  * re-statement (`color`, `border`, `background` dominating), while font-size used only 5 values (all
  * already tokens) and padding's 23 spellings collapsed to two tiers once sorted, because padding
- * TRACKS the size rather than varying independently. Hence `.cc-input-dense`/`-micro` set both.
+ * TRACKS the size rather than varying independently. Hence `.cc-input-xs`/`-2xs` set both.
  *
  * A rule counts as targeting a form control when its SUBJECT names one, or names a class this file's
  * template puts on one — the same markup-informed test the icon-button check uses.

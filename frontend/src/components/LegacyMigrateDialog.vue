@@ -124,7 +124,7 @@ async function confirmImport() {
     <div v-if="done" class="lm lm-donebox">
       <p class="lm-doneline"><i class="pi pi-check-circle" /> Added <strong>{{ done }}</strong>
         image{{ done === 1 ? '' : 's' }} to the set.</p>
-      <p class="lm-lead">
+      <p class="lm-lead cc-muted cc-muted-lg">
         These are placeholders — no data has moved yet. To transfer the images, segmentation and
         tracking, select them and run the <strong>“Migrate legacy image”</strong> task from the task
         panel.
@@ -132,7 +132,7 @@ async function confirmImport() {
     </div>
 
     <div v-else class="lm">
-      <p class="lm-lead">
+      <p class="lm-lead cc-muted cc-muted-lg">
         Import images, segmentation &amp; tracking from an old (R/Shiny) cecelia project.
         <strong>Clustering, gating and HMM aren’t transferred.</strong> The source is never modified.
       </p>
@@ -235,7 +235,7 @@ async function confirmImport() {
 
 <style scoped>
 .lm { display: flex; flex-direction: column; gap: 0.75rem; color: var(--cc-text); }
-.lm-lead { margin: 0; font-size: var(--cc-fs-lg); color: var(--cc-text-dim); }
+.lm-lead { margin: 0; }
 .lm-donebox { padding: 0.5rem 0.25rem; }
 .lm-doneline { margin: 0 0 0.4rem; font-size: 1rem; color: var(--cc-text); }
 .lm-doneline .pi-check-circle { color: #4ade80; margin-right: 0.35rem; }

@@ -144,7 +144,7 @@ function isNavDisabled(item: NavItem): boolean {
             <span class="proj-name" v-tooltip.right="`Project: ${projectMeta.current.name} (${projectMeta.current.type})`">
               {{ projectMeta.current.name }}
             </span>
-            <span class="proj-type">{{ projectMeta.current.type }}</span>
+            <span class="proj-type cc-eyebrow cc-eyebrow-2xs">{{ projectMeta.current.type }}</span>
           </div>
           <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
           <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"
@@ -185,7 +185,7 @@ function isNavDisabled(item: NavItem): boolean {
             <i :class="['pi', item.icon, 'nav-icon']" />
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.soon" class="soon-badge">soon</span>
-            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge"
+            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-muted-xs"
               v-tooltip.right="'Requires an open project.'">
               <i class="pi pi-lock" />
             </span>
@@ -302,12 +302,7 @@ function isNavDisabled(item: NavItem): boolean {
   text-overflow: ellipsis;
   cursor: default;
 }
-.proj-type {
-  font-size: var(--cc-fs-2xs);
-  color: var(--cc-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
+
 /* .proj-menu-btn → cc-btn cc-btn-bare cc-btn-icon */
 .proj-menu-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
@@ -425,7 +420,7 @@ function isNavDisabled(item: NavItem): boolean {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.lock-badge { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); opacity: 0.7; }
+.lock-badge { opacity: 0.7; }
 
 /* ── Footer: quick app controls, pinned to the bottom ──────────────────────── */
 .sidebar-footer {

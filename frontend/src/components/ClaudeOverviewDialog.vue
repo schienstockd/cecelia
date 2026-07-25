@@ -19,7 +19,7 @@ defineEmits<{ (e: 'close'): void }>()
     <div class="co-entries">
       <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry cc-card cc-card-2">
         <div class="co-entry-head"><i :class="['pi', e.icon]" /> {{ e.name }}</div>
-        <p class="co-entry-what">{{ e.what }}</p>
+        <p class="co-entry-what cc-muted cc-muted-md">{{ e.what }}</p>
         <ol class="co-steps">
           <li v-for="(s, i) in e.steps" :key="i">{{ s }}</li>
         </ol>
@@ -38,7 +38,7 @@ defineEmits<{ (e: 'close'): void }>()
 
     <!-- example prompts to try -->
     <div class="co-examples">
-      <span class="co-examples-label">Try asking</span>
+      <span class="co-examples-label cc-muted">Try asking</span>
       <div class="co-chips">
         <span v-for="(ex, i) in CLAUDE_EXAMPLES" :key="i" class="co-chip">{{ ex }}</span>
       </div>
@@ -52,7 +52,7 @@ defineEmits<{ (e: 'close'): void }>()
 .co-entry { padding: 14px 16px; }
 .co-entry-head { font-weight: 600; color: var(--cc-text); display: flex; align-items: center; gap: 6px; }
 .co-entry-head .pi { color: var(--cc-accent); }
-.co-entry-what { margin: 8px 0 10px; color: var(--cc-text-dim); font-size: var(--cc-fs-md); line-height: 1.4; }
+.co-entry-what { margin: 8px 0 10px; line-height: 1.4; }
 .co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
 .co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -66,7 +66,7 @@ defineEmits<{ (e: 'close'): void }>()
 .co-cell.tone-muted .co-cell-head { color: var(--cc-text-dim); }
 
 .co-examples { margin-top: 18px; }
-.co-examples-label { display: block; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-bottom: 6px; }
+.co-examples-label { display: block; margin-bottom: 6px; }
 .co-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .co-chip {
   font-size: var(--cc-fs-sm); color: var(--cc-text); background: var(--cc-surface-2);

@@ -215,7 +215,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           </button>
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span class="cp-hint">drag plots by their title · resize from the corner</span>
+        <span class="cp-hint cc-muted cc-muted-xs">drag plots by their title · resize from the corner</span>
       </div>
 
       <!-- membership: cluster pops only apply to images that were in the run (carry clusters.{suffix}).
@@ -275,7 +275,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 .cp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .cp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .cp-bar select { min-width: 7rem; }
-.cp-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.7; }
+.cp-hint { opacity: 0.7; }
 .cp-members { display: flex; align-items: flex-start; gap: 6px; margin: 0 4px 6px; padding: 6px 9px;
   font-size: var(--cc-fs-xs); color: #fcd34d; background: #78350f22; border: 1px solid #b4530933; border-radius: var(--cc-radius-sm); }
 .cp-members .pi { margin-top: 1px; }

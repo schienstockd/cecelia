@@ -15,7 +15,7 @@ defineProps<{ label?: string }>()
 <template>
   <div class="plot-spinner" role="status" aria-live="polite">
     <div class="plot-spinner__wheel" aria-hidden="true" />
-    <span v-if="label" class="plot-spinner__label">{{ label }}</span>
+    <span v-if="label" class="plot-spinner__label cc-muted cc-muted-xs">{{ label }}</span>
   </div>
 </template>
 
@@ -41,10 +41,7 @@ defineProps<{ label?: string }>()
   border-top-color: var(--cc-accent);
   animation: plot-spinner-rot 0.7s linear infinite;
 }
-.plot-spinner__label {
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-}
+
 @keyframes plot-spinner-rot { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .plot-spinner__wheel { animation-duration: 2.4s; }

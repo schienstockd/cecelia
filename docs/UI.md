@@ -41,19 +41,25 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 
 | Scenario | Use | Never |
 |------|-----|-------|
-| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-dense`/`-micro` in dense chrome) | a scoped `color: var(--cc-text-dim); font-size: …` |
+| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-lg`/`-md`/`-xs`/`-2xs`/`-3xs` — the modifier NAMES the scale step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
-| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent, `-dense` inline) | a bespoke `.*-val`/`.*-num` |
-| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (+ `-dense` list/table headers, `-micro` whiteboard-node labels) | a scoped uppercase-heading rule |
+| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; `-xs`/`-2xs` in dense chrome) | a bespoke `.*-val`/`.*-num` |
+| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + `-2xs` list/table headers, `-3xs` whiteboard-node labels) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
-| Compact input / select / textarea | `.cc-input-dense` (11px) / `.cc-input-micro` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
+| Compact input / select / textarea | `.cc-input-xs` (11px) / `.cc-input-2xs` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
 | A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
 
-**Each utility varies on exactly one axis, and the modifier is that axis** — density (`-dense`/`-micro`),
-surface (`-2`), layout (`-inline`/`-overlay`/`-lg`). Reach for the modifier instead of re-declaring the
+**Each utility varies on exactly one axis, and the modifier is that axis** — density (a step on the
+`--cc-fs-*` scale), surface (`-2`), layout (`-inline`/`-overlay`/`-lg`).
+
+**Density modifiers name the scale step, not a relative amount** (`-xs`, not `-dense`). A relative name
+can only express the steps someone thought of: `.cc-muted` had no 11px step — the single largest cluster
+of hand-rolled muted text in the app — because "dense" was already spent on 10px, and there was no name
+at all for the step *above* the base. `-dense` was not even a consistent step: two tiers below
+`.cc-muted`'s base and one below `.cc-eyebrow`'s. Naming the step makes the axis complete by construction. Reach for the modifier instead of re-declaring the
 scenario locally: baking a value into the base is what stranded ~10 sites as "bespoke" before. Per-site
 *emphasis* (`font-style: italic`) and *geometry* (width/margin/flex/padding) still belong in scoped CSS.
 
@@ -89,7 +95,7 @@ the bug. Add layout in scoped CSS; never re-state a property the utility itself 
 **A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
 and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was
 not another opt-in class: **33 form controls across 24 files had each hand-written
-`font-size: var(--cc-fs-sm)`**, while exactly *one* site had ever adopted `.cc-input-dense`. When two
+`font-size: var(--cc-fs-sm)`**, while exactly *one* site had ever adopted the density class. When two
 thirds of the population corrects the default by hand, the default is wrong. The base is `--cc-fs-sm`
 (12px) now, the density steps re-pitched below it, and those 33 declarations are gone as provable no-ops.
 The same rounding caused the tooltip regression (`0.72rem` → nearest step, which happened to be the larger
@@ -103,6 +109,16 @@ Touch a file, migrate its rules and lower its number; add a new one and the suit
 is deliberately *not* checked: `surface + border + radius` is the shape of a card, an input, a chip, a
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
+
+**Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
+(`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
+nothing declared there. PrimeVue's tooltip does exactly that — so while the scale sat on `.cc-dark`,
+every `var(--cc-*)` in the tooltip override was invalid at computed-value time and the tooltip rendered
+at the browser default **16px**, with `<body>`'s own `font-size` dead the same way. Declared ≠ reachable,
+and the symptoms are identical, which is why the token guard stayed green throughout. If you style
+anything that mounts outside the app shell (a portal, teleport, or library overlay), check that the
+properties it references resolve *there*. `utils/cssTokens.test.ts` now fails if the global scale is
+declared anywhere but `:root`.
 
 **Every custom property you reference must be declared somewhere.** An undeclared one does not warn —
 it makes the whole declaration invalid at computed-value time, so `var(--cc-text-muted, #888)` silently

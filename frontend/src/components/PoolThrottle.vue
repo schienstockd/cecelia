@@ -84,14 +84,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
                @input="pools[name] = +($event.target as HTMLInputElement).value"
                @change="setPool(name, +($event.target as HTMLInputElement).value)" />
         <!-- live occupancy: how many tasks are running now vs the limit, + any queued for this pool -->
-        <div class="pt-occ" :class="{ busy: runningOf(name) > 0 || queuedOf(name) > 0 }">
+        <div class="pt-occ cc-readout cc-readout-2xs" :class="{ busy: runningOf(name) > 0 || queuedOf(name) > 0 }">
           <span><span class="pt-occ-n">{{ runningOf(name) }}</span><span class="pt-occ-sep">/</span>{{ pools[name] }} running</span>
           <span v-if="queuedOf(name) > 0" class="pt-occ-q">+{{ queuedOf(name) }} queued</span>
         </div>
         <div class="pt-bar"><div class="pt-bar-fill" :style="{ width: fillPct(name) }" /></div>
       </div>
     </div>
-    <p class="pt-hint">Lower to throttle, raise to run more at once. Saved automatically.</p>
+    <p class="pt-hint cc-muted cc-muted-xs">Lower to throttle, raise to run more at once. Saved automatically.</p>
   </div>
 </template>
 
@@ -107,10 +107,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .pt-slider:disabled { opacity: 0.5; cursor: default; }
 
 /* live occupancy readout under each slider — dim when idle, brightens when the pool is busy */
-.pt-occ {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 0.3rem;
-  font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); font-variant-numeric: tabular-nums;
-}
+.pt-occ { display: flex; justify-content: space-between; align-items: baseline; gap: 0.3rem; }
 .pt-occ.busy { color: var(--cc-text); }
 .pt-occ.busy .pt-occ-n { color: var(--cc-accent); font-weight: 600; }
 .pt-occ-sep { opacity: 0.5; margin: 0 1px; }
@@ -118,5 +115,5 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .pt-bar { height: 3px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; margin-top: 2px; }
 .pt-bar-fill { height: 100%; background: var(--cc-accent); transition: width 0.3s; }
 
-.pt-hint { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin: 0.55rem 0 0; }
+.pt-hint { margin: 0.55rem 0 0; }
 </style>

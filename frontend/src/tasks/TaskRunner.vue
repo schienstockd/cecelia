@@ -311,7 +311,7 @@ const { width: sidebarWidth, onResizeStart } =
 
     <!-- ── Function selector ── -->
     <section v-if="defs.length" class="runner-section">
-      <h3 class="section-heading">Function</h3>
+      <h3 class="section-heading cc-eyebrow cc-eyebrow-2xs">Function</h3>
       <select
         class="fn-select"
         v-model="selectedTask"
@@ -334,7 +334,7 @@ const { width: sidebarWidth, onResizeStart } =
 
     <!-- ── Parameters ── -->
     <section class="runner-section params-section" v-if="taskDef">
-      <h3 class="section-heading">Parameters</h3>
+      <h3 class="section-heading cc-eyebrow cc-eyebrow-2xs">Parameters</h3>
       <div class="params-list">
         <ParamRenderer
           v-for="p in taskDef.params"
@@ -362,7 +362,7 @@ const { width: sidebarWidth, onResizeStart } =
       </button>
 
       <div class="pool-row" v-if="pools.length > 0">
-        <span class="pool-label"
+        <span class="pool-label cc-muted cc-muted-xs"
           v-tooltip.right="'Resource pool controls how many tasks share a concurrency slot. GPU tasks should use the gpu pool to avoid running multiple models at once.'">
           Pool
         </span>
@@ -382,7 +382,7 @@ const { width: sidebarWidth, onResizeStart } =
     <!-- ── Task list ── -->
     <section class="runner-section tasks-section">
       <div class="tasks-heading">
-        <h3 class="section-heading">Tasks</h3>
+        <h3 class="section-heading cc-eyebrow cc-eyebrow-2xs">Tasks</h3>
         <div class="tasks-heading-actions">
           <button
             v-if="activeTasks.length"
@@ -483,24 +483,12 @@ const { width: sidebarWidth, onResizeStart } =
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
-.pool-label {
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
+.pool-label { white-space: nowrap; flex-shrink: 0; }
 .pool-chips { flex: 1; min-width: 0; }
 .pool-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
 .pool-throttle:hover  { color: var(--cc-text); }
 
-.section-heading {
-  font-size: var(--cc-fs-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-text-dim);
-  margin: 0 0 0.5rem;
-}
+.section-heading { margin: 0 0 0.5rem; }
 
 /* function selector */
 .fn-select {
