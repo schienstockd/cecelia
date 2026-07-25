@@ -38,6 +38,16 @@ license.
 | PyQt5 | GPL-3.0 (Qt bindings) |
 | websockets | BSD-3-Clause |
 
+> **Cellpose image restoration (denoise) — method lineage.** The cleanup/denoise task
+> (`cleanupImages.cellposeCorrect`, using Cellpose 3's `DenoiseModel` — `denoise_cyto3`/`_cyto2`/
+> `_nuclei`, weights distributed with **cellpose 3.1.1.2**) builds on prior content-aware /
+> self-supervised fluorescence-restoration work, whose attribution is preserved here:
+> **CARE / CSBDeep** — Weigert et al., *Nature Methods* 2018,
+> [DOI 10.1038/s41592-018-0216-7](https://doi.org/10.1038/s41592-018-0216-7); **Noise2Void** —
+> Krull et al., CVPR 2019; **Noise2Self** — Batson & Royer, ICML 2019. The sibling **coastal**
+> project reimplements this denoise inference path (CPnet) from scratch; see its `THIRD_PARTY.md`
+> for the architecture-reimplementation attribution.
+
 ### Julia package (`app/Project.toml`)
 
 | Package | License |
