@@ -18,6 +18,7 @@ import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import TitleCardControls from '../components/TitleCardControls.vue'
+import MovieOutputControls from '../components/MovieOutputControls.vue'
 
 const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
@@ -234,7 +235,7 @@ async function render() {
     }
     const res = await fetch('/api/napari/record-animation', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, titleCard }),
+      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, scale: anim.scale, titleCard }),
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok) { log.error(`Render failed: ${j?.error ?? res.status}`, { source: 'napari' }); return }
@@ -248,10 +249,7 @@ async function render() {
 <template>
   <ModulePage title="Animation" layout="scroll">
     <template #controls>
-      <label class="anim-fps cc-muted" v-tooltip.bottom="'Output frames per second'">
-        fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
-        <span class="anim-num">{{ anim.fps }}</span>
-      </label>
+      <MovieOutputControls v-model:fps="anim.fps" v-model:scale="anim.scale" />
       <TitleCardControls v-model="anim.titleCard" />
       <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
               v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'

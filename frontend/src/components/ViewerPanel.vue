@@ -9,6 +9,7 @@ import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pus
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import TitleCardControls from './TitleCardControls.vue'
+import MovieOutputControls from './MovieOutputControls.vue'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -732,12 +733,7 @@ onUnmounted(() => {
       <div class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <span class="movie-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
-          <input type="range" min="1" max="60" step="1" v-model.number="movieFps" class="movie-range" />
-          <span class="movie-val">{{ movieFps }}</span>
-          <span class="movie-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
-          <input type="range" min="1" max="3" step="1" v-model.number="movieScale" class="movie-range" />
-          <span class="movie-val">{{ movieScale }}×</span>
+          <MovieOutputControls v-model:fps="movieFps" v-model:scale="movieScale" />
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording }" :disabled="recording"
                   @click="recordTimelapse"
                   v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">

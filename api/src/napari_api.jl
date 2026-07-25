@@ -476,6 +476,7 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     fps         = Int(get(data, :fps, 15))
+    scale       = Int(get(data, :scale, 1))
     keyframes   = get(data, :keyframes, nothing)
     (keyframes === nothing || length(keyframes) < 2) &&
         return 400, JSON3.write((; error = "need at least 2 keyframes"))
@@ -495,7 +496,7 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
 
     _with_viewer() do
         try
-            resp = record_keyframes!(v, path, keyframes; fps = fps, title_card = card)
+            resp = record_keyframes!(v, path, keyframes; fps = fps, scale = scale, title_card = card)
             200, JSON3.write((; ok = true, path = path,
                 frames = get(resp, "frames", 0), keyframes = get(resp, "keyframes", 0)))
         catch e

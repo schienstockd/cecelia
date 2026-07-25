@@ -111,12 +111,15 @@ the `cellpose==3.1.1.2` pin), imported lazily.
 is the shared primitive: it captures a keyframe at the first T, another at the last (with
 `steps = n-1` → one interpolated frame per timepoint), and calls napari-animation's `Animation.animate`
 (mp4 via imageio-ffmpeg). The bridge (`NapariState.record_timelapse`) resolves the T slider index from
-**Keyframe animation** — `napari_utils.record_keyframes(viewer, path, keyframes, fps)` renders an
+**Keyframe animation** — `napari_utils.record_keyframes(viewer, path, keyframes, fps, scale)` renders an
 *interpolated* movie: each keyframe carries a saved `viewState` + `steps`; the bridge applies it and
 captures a napari-animation keyframe with `steps` tween frames from the previous one, so the output
 **interpolates between views** — camera pans/zooms, contrast/colour fades, T-scrub. `record_keyframes!`
-→ `POST /api/napari/record-animation` (`{keyframes:[{viewState,steps}], fps}` → `{project}/movies/
-{imageName}_animation.mp4`). This is the render engine behind the timeline animation editor (F2). The
+→ `POST /api/napari/record-animation` (`{keyframes:[{viewState,steps}], fps, scale}` → `{project}/movies/
+{imageName}_animation.mp4`). `scale` supersamples exactly as it does for the timelapse recorder — it was
+added when the three movie-producing panels were given one shared control pair, because the animation
+path had simply never passed `Animation.animate`'s `scale_factor` through. This is the render engine
+behind the timeline animation editor (F2). The
 per-timepoint recorder below is the simpler single-view case:
 
 `record_timelapse!(v, path; fps, scale)` → `POST /api/napari/record-timelapse`
