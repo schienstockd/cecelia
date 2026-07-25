@@ -63,7 +63,7 @@ async function copy(key: string, value: string) {
 
       <!-- headline: the original source file this image was converted from -->
       <section class="md-section">
-        <h4 class="md-h">Original file</h4>
+        <h4 class="md-h cc-eyebrow">Original file</h4>
         <div v-if="img.oriPath" class="md-path">
           <code class="md-code">{{ img.oriPath }}</code>
           <button class="md-copy cc-btn cc-btn-bare cc-btn-icon" @click="copy('ori', img.oriPath!)"
@@ -71,11 +71,11 @@ async function copy(key: string, value: string) {
             <i :class="copied === 'ori' ? 'pi pi-check' : 'pi pi-copy'" />
           </button>
         </div>
-        <p v-else class="md-none">Not recorded — imported before source paths were tracked, or created in-app.</p>
+        <p v-else class="md-none cc-muted">Not recorded — imported before source paths were tracked, or created in-app.</p>
       </section>
 
       <section class="md-section">
-        <h4 class="md-h">Identity</h4>
+        <h4 class="md-h cc-eyebrow">Identity</h4>
         <div class="md-grid">
           <span class="md-k">UID</span><span class="md-v md-mono">{{ img.uid }}</span>
           <span class="md-k">Kind</span><span class="md-v">{{ img.kind || '—' }}</span>
@@ -84,7 +84,7 @@ async function copy(key: string, value: string) {
       </section>
 
       <section class="md-section">
-        <h4 class="md-h">Dimensions &amp; calibration</h4>
+        <h4 class="md-h cc-eyebrow">Dimensions &amp; calibration</h4>
         <div class="md-grid">
           <span class="md-k">Channels (C)</span><span class="md-v">{{ num(img.sizeC) }}</span>
           <span class="md-k">Z-slices (Z)</span><span class="md-v">{{ num(img.sizeZ) }}</span>
@@ -97,31 +97,31 @@ async function copy(key: string, value: string) {
       </section>
 
       <section v-if="channels.length" class="md-section">
-        <h4 class="md-h">Channels</h4>
+        <h4 class="md-h cc-eyebrow">Channels</h4>
         <ol class="md-chips">
           <li v-for="(c, i) in channels" :key="i" class="md-chip">{{ c }}</li>
         </ol>
       </section>
 
       <section class="md-section">
-        <h4 class="md-h">Stored files</h4>
+        <h4 class="md-h cc-eyebrow">Stored files</h4>
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
         </div>
         <div v-for="[vn, fn] in versions" :key="'v-' + vn" class="md-file">
-          <span class="md-file-vn">{{ vn }}</span>
+          <span class="md-file-vn cc-muted">{{ vn }}</span>
           <code class="md-code">{{ fn }}</code>
         </div>
         <template v-if="labels.length">
           <div v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-file">
-            <span class="md-file-vn">labels · {{ vn }}</span>
+            <span class="md-file-vn cc-muted">labels · {{ vn }}</span>
             <code class="md-code">{{ fns.join(', ') }}</code>
           </div>
         </template>
       </section>
 
       <section v-if="attrs.length" class="md-section">
-        <h4 class="md-h">Attributes</h4>
+        <h4 class="md-h cc-eyebrow">Attributes</h4>
         <div class="md-grid">
           <template v-for="[k, v] in attrs" :key="'a-' + k">
             <span class="md-k">{{ k }}</span><span class="md-v">{{ v }}</span>
@@ -130,7 +130,7 @@ async function copy(key: string, value: string) {
       </section>
 
       <section v-if="extra.length" class="md-section">
-        <h4 class="md-h">Other metadata</h4>
+        <h4 class="md-h cc-eyebrow">Other metadata</h4>
         <div class="md-grid">
           <template v-for="[k, v] in extra" :key="'e-' + k">
             <span class="md-k">{{ k }}</span><span class="md-v">{{ v }}</span>
@@ -139,7 +139,7 @@ async function copy(key: string, value: string) {
       </section>
 
       <section v-if="img.note" class="md-section">
-        <h4 class="md-h">Note</h4>
+        <h4 class="md-h cc-eyebrow">Note</h4>
         <p class="md-note-text">{{ img.note }}</p>
       </section>
     </div>
@@ -152,10 +152,7 @@ async function copy(key: string, value: string) {
 .md-name { margin: 0; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); }
 
 .md-section { display: flex; flex-direction: column; gap: 0.4rem; }
-.md-h {
-  margin: 0; font-size: var(--cc-fs-xs); font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--cc-text-dim);
-}
+.md-h { margin: 0; }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;
@@ -173,7 +170,7 @@ async function copy(key: string, value: string) {
 }
 /* .md-copy → cc-btn cc-btn-bare cc-btn-icon */
 .md-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
-.md-none { margin: 0; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); font-style: italic; }
+.md-none { margin: 0; font-style: italic; }
 
 .md-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; counter-reset: ch; }
 .md-chip {
@@ -184,7 +181,7 @@ async function copy(key: string, value: string) {
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
 .md-file { display: flex; align-items: baseline; gap: 0.5rem; }
-.md-file-vn { flex-shrink: 0; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); min-width: 6rem; }
+.md-file-vn { flex-shrink: 0; min-width: 6rem; }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
 </style>

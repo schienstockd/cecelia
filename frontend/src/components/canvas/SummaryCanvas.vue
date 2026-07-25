@@ -174,8 +174,8 @@ watch(segPops, () => {
           </button>
         </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span v-if="!specs.length" class="sc-hint cc-muted cc-muted-xs">No plot types available for this module yet.</span>
-        <span v-else class="sc-hint cc-muted cc-muted-xs">eye-select populations to plot · drag plots by their title</span>
+        <span v-if="!specs.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
+        <span v-else class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
       <div ref="canvasRef" class="sc-canvas">
         <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->

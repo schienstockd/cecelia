@@ -371,7 +371,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
         <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
-          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-muted-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
+          <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
       </div>
     </template>
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->

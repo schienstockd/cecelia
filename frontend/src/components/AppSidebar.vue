@@ -144,7 +144,7 @@ function isNavDisabled(item: NavItem): boolean {
             <span class="proj-name" v-tooltip.right="`Project: ${projectMeta.current.name} (${projectMeta.current.type})`">
               {{ projectMeta.current.name }}
             </span>
-            <span class="proj-type cc-eyebrow cc-eyebrow-2xs">{{ projectMeta.current.type }}</span>
+            <span class="proj-type cc-eyebrow cc-fs-2xs">{{ projectMeta.current.type }}</span>
           </div>
           <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
           <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"
@@ -185,7 +185,7 @@ function isNavDisabled(item: NavItem): boolean {
             <i :class="['pi', item.icon, 'nav-icon']" />
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.soon" class="soon-badge">soon</span>
-            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-muted-xs"
+            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-fs-xs"
               v-tooltip.right="'Requires an open project.'">
               <i class="pi pi-lock" />
             </span>

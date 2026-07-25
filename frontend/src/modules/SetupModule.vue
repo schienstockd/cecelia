@@ -86,13 +86,13 @@ async function waitForBackend(timeoutMs = 60000) {
       <h1 class="setup-title">Welcome to Cecelia</h1>
       <p class="setup-sub cc-muted">Where would you like to store your projects?</p>
 
-      <label class="setup-label cc-muted cc-muted-md" for="setup-path">Projects folder</label>
+      <label class="setup-label cc-muted cc-fs-md" for="setup-path">Projects folder</label>
       <input id="setup-path" v-model="path" class="setup-input" type="text" spellcheck="false"
              autocomplete="off" placeholder="~/cecelia-projects"
              @keyup.enter="submit" />
 
       <!-- validation hint: neutral until checked, green when usable, danger when not -->
-      <p class="setup-hint cc-muted cc-muted-md" :class="check ? (check.ok ? 'ok' : 'bad') : ''">
+      <p class="setup-hint cc-muted cc-fs-md" :class="check ? (check.ok ? 'ok' : 'bad') : ''">
         <template v-if="check">
           <i :class="check.ok ? 'pi pi-check-circle' : 'pi pi-exclamation-circle'" />
           {{ check.message }}

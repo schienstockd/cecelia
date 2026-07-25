@@ -217,7 +217,7 @@ async function previewOpen() {
 
 <template>
   <div class="bm">
-    <p v-if="!selectedUids.length" class="bm-hint">Select one or more images (left) to author a batch of movies.</p>
+    <p v-if="!selectedUids.length" class="bm-hint cc-muted">Select one or more images (left) to author a batch of movies.</p>
 
     <template v-else>
       <!-- BUSY banner: the batch takes over the single napari viewer -->
@@ -229,13 +229,13 @@ async function previewOpen() {
       <!-- Channels -->
       <section class="bm-sec">
         <h4>
-          Channels <span class="bm-sub">shown channels + colormap (others hidden)</span>
+          Channels <span class="bm-sub cc-muted">shown channels + colormap (others hidden)</span>
           <button class="bm-link" :disabled="seeding || !project.napariImageUid" @click="fillFromView(true)"
                   title="Copy the channel colours + overlays from the image currently open in napari">
             <i class="pi pi-sync" /> fill from view
           </button>
         </h4>
-        <p v-if="!channelList.length" class="bm-hint">No channel names on the selected images.</p>
+        <p v-if="!channelList.length" class="bm-hint cc-muted">No channel names on the selected images.</p>
         <div v-for="ch in channelList" :key="ch" class="bm-row">
           <span class="bm-ch">{{ ch }}</span>
           <SwatchSelect :model-value="channels[ch] ?? ''" :options="colormapOpts"
@@ -245,11 +245,11 @@ async function previewOpen() {
 
       <!-- Overlays -->
       <section class="bm-sec">
-        <h4>Overlays <span class="bm-sub">click to toggle</span></h4>
+        <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
                     aria-label="Movie overlays" />
         <div v-if="showTracks" class="bm-inset">
-          <span class="bm-lbl">tail</span>
+          <span class="bm-lbl cc-muted">tail</span>
           <input type="range" min="1" max="20" step="1" v-model.number="tailWidth" />
           <span class="bm-val">{{ tailWidth }}</span>
         </div>
@@ -258,7 +258,7 @@ async function previewOpen() {
             <option value="flow">gating</option>
             <option value="clust">clusters</option>
           </select>
-          <span class="bm-lbl">size</span>
+          <span class="bm-lbl cc-muted">size</span>
           <input type="range" min="1" max="20" step="1" v-model.number="pointsSize" />
           <span class="bm-val">{{ pointsSize }}</span>
         </div>
@@ -266,7 +266,7 @@ async function previewOpen() {
 
       <!-- Colour by -->
       <section class="bm-sec">
-        <h4>Colour by <span class="bm-sub">measure used to colour tracks / labels</span></h4>
+        <h4>Colour by <span class="bm-sub cc-muted">measure used to colour tracks / labels</span></h4>
         <select v-model="colourBy">
           <option value="">— none (population / default colour) —</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
@@ -286,20 +286,20 @@ async function previewOpen() {
       <section class="bm-sec">
         <h4>Output</h4>
         <div class="bm-inset">
-          <span class="bm-lbl">fps</span>
+          <span class="bm-lbl cc-muted">fps</span>
           <input type="range" min="1" max="60" step="1" v-model.number="fps" />
           <span class="bm-val">{{ fps }}</span>
-          <span class="bm-lbl">res</span>
+          <span class="bm-lbl cc-muted">res</span>
           <input type="range" min="1" max="3" step="1" v-model.number="scale" />
           <span class="bm-val">{{ scale }}×</span>
         </div>
         <div class="bm-attrs">
-          <span class="bm-lbl">filename attrs <span class="bm-sub">click to include · drag to reorder</span></span>
+          <span class="bm-lbl cc-muted">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
                       aria-label="Filename attributes" />
-          <span v-else class="bm-hint">no attributes — files named by uid</span>
+          <span v-else class="bm-hint cc-muted">no attributes — files named by uid</span>
         </div>
-        <p class="bm-preview">→ movies/<b>{{ filenamePreview }}</b></p>
+        <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>
 
       <!-- Title card (Phase H) — auto description slide prepended to each movie -->
@@ -335,7 +335,7 @@ async function previewOpen() {
 
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
-.bm-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin: 2px 0; }
+.bm-hint { margin: 2px 0; }
 /* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
    progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
    a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */
@@ -345,7 +345,7 @@ async function previewOpen() {
 .bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
 .bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
-.bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); margin-left: 6px; }
+.bm-sub { margin-left: 6px; }
 .bm-link { float: right; font-size: var(--cc-fs-xs); color: var(--cc-accent); background: none; border: none;
   cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
 .bm-link:hover:not(:disabled) { text-decoration: underline; }
@@ -359,10 +359,10 @@ async function previewOpen() {
 /* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so two on one row
    (fps + res) overflow the sidebar. Let them flex down to share the available width. */
 .bm-inset input[type="range"] { flex: 1; min-width: 0; }
-.bm-lbl { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+
 .bm-val { font-size: var(--cc-fs-sm); min-width: 1.6rem; }
 .bm-attrs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.bm-preview { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
+.bm-preview { margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .bm-title-row { display: flex; align-items: center; gap: 0.5rem; }

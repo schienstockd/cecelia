@@ -246,12 +246,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <input v-model="fpName" class="pm-ff-name" placeholder="Population name" />
           <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
         </div>
-        <label class="pm-ff-row">Under
+        <label class="pm-ff-row cc-muted cc-fs-xs">Under
           <select v-model="fpParent" :disabled="!!fpEditPath" v-tooltip.top="fpEditPath ? 'Parent is fixed when editing — delete & recreate to move' : ''">
             <option v-for="o in parentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
           </select>
         </label>
-        <div v-for="(c, i) in fpConds" :key="i" class="pm-ff-cond">
+        <div v-for="(c, i) in fpConds" :key="i" class="pm-ff-cond cc-muted cc-fs-xs">
           <select v-model="c.measure" class="pm-ff-measure">
             <option value="" disabled>measure…</option>
             <option v-for="m in filterMeasures" :key="m" :value="m">{{ g.colLabel(m) }}</option>
@@ -339,7 +339,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
                   v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
                   @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
-          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-muted-2xs">no clusters at this suffix</span>
+          <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-fs-2xs">no clusters at this suffix</span>
         </div>
       </template>
 
@@ -369,23 +369,23 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </button>
         <div v-show="optionsOpen" class="pm-opts-body">
           <template v-if="!clusterMode">
-          <div class="pm-opt-head"><span>plot</span></div>
+          <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>plot</span></div>
           <div class="pm-opt-row">
-            <span class="pm-opt-label">Gate labels</span>
+            <span class="pm-opt-label cc-muted cc-fs-xs">Gate labels</span>
             <button class="seg-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
                     :class="{ 'cc-btn-on cc-btn-on-tint': gateLabels }"
                     v-tooltip.top="'Show population names on gates'"
                     @click="emit('update:gateLabels', !gateLabels)"><i class="pi pi-tag" /></button>
           </div>
           <div class="pm-opt-row">
-            <span class="pm-opt-label">Line width</span>
+            <span class="pm-opt-label cc-muted cc-fs-xs">Line width</span>
             <input type="range" min="0.5" max="4" step="0.5" :value="lineWidth"
                    v-tooltip.top="'Gate line thickness'"
                    @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
-            <span class="pm-opt-val">{{ lineWidth.toFixed(1) }}</span>
+            <span class="pm-opt-val cc-readout cc-fs-xs">{{ lineWidth.toFixed(1) }}</span>
           </div>
           <div class="pm-opt-row">
-            <span class="pm-opt-label">Axis</span>
+            <span class="pm-opt-label cc-muted cc-fs-xs">Axis</span>
             <ChipSelect class="pm-seg" variant="segmented" :options="AXIS_OPTIONS"
                         :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
                         @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
@@ -396,15 +396,15 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
                width is a plot-panel concern), so the group is hidden for those. -->
           <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
-            <div class="pm-opt-head"><span>viewer</span></div>
+            <div class="pm-opt-head cc-eyebrow cc-fs-2xs"><span>viewer</span></div>
             <!-- napari point size (re-renders the napari overlay on release) -->
             <div class="pm-opt-row">
-              <span class="pm-opt-label">Napari dots</span>
+              <span class="pm-opt-label cc-muted cc-fs-xs">Napari dots</span>
               <input type="range" min="1" max="20" step="1" :value="napariPointSize"
                      v-tooltip.top="'Population point size in napari (per experiment/set)'"
                      @input="napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
                      @change="g.refreshNapariPops()" />
-              <span class="pm-opt-val">{{ napariPointSize }}</span>
+              <span class="pm-opt-val cc-readout cc-fs-xs">{{ napariPointSize }}</span>
             </div>
           </template>
         </div>
@@ -456,7 +456,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-ff-name { flex: 1; font-size: var(--cc-fs-xs); padding: 3px 6px; border-radius: var(--cc-radius-xs); }
 .pm-ff-colour { width: 24px; height: 24px; padding: 0; border-radius: var(--cc-radius-xs);
   background: none; cursor: pointer; }
-.pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; }
 .pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: var(--cc-fs-xs); padding: 2px 4px;
   border-radius: var(--cc-radius-xs); }
 .pm-ff-measure { flex: 1; min-width: 0; }
@@ -482,7 +482,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-chip.ro { cursor: default; }
 .pm-chip.ro:hover { border-color: var(--cc-border); color: var(--cc-text-dim); }
 .pm-chip.ro.on:hover { color: #111; }
-.pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-muted-2xs (row/colour/10px tier) */
+.pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-fs-2xs (row/colour/10px tier) */
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { margin-left: auto; }
@@ -495,12 +495,11 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-opts-toggle { padding: 6px 8px; }
 .pm-opts-body { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 /* small section heading: ──── plot ──── */
-.pm-opt-head { display: flex; align-items: center; gap: 6px; margin-top: 2px;
-  color: var(--cc-text-dim); font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.08em; }
+.pm-opt-head { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .pm-opt-head::before, .pm-opt-head::after { content: ""; flex: 1; height: 1px; background: var(--cc-border); }
 .pm-opt-head:first-child { margin-top: 0; }
 .pm-opt-row { display: flex; align-items: center; gap: 8px; }
-.pm-opt-label { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); flex: 1; }
+.pm-opt-label { flex: 1; }
 .pm-opt-row input[type="range"] { flex: 1; max-width: 110px; }
-.pm-opt-val { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); width: 1.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+.pm-opt-val { width: 1.8rem; text-align: right; }
 </style>

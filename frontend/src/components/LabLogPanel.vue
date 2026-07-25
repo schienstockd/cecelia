@@ -256,7 +256,7 @@ async function dismissEntry(entry: LabLogEntry) {
         @keydown="onKeydown"
       />
       <div class="ll-compose-row">
-        <span class="ll-hint">Enter to save · Shift+Enter for a new line</span>
+        <span class="ll-hint cc-muted cc-fs-xs">Enter to save · Shift+Enter for a new line</span>
         <button class="ll-save" :disabled="!draft.trim() || !projectUid || busy" @click="submit">
           {{ busy ? 'Saving…' : (correcting ? 'Save correction' : 'Save') }}
         </button>
@@ -304,13 +304,13 @@ async function dismissEntry(entry: LabLogEntry) {
                   : 'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
           <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
         </button>
-        <span v-if="observerTokens" class="ll-tokens"
+        <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"
               v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
         <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
                 v-tooltip.top="'Clear the assistant session and reset the token count'">clear</button>
       </div>
 
-      <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
+      <span v-if="captureNote" class="ll-note cc-muted cc-fs-xs">{{ captureNote }}</span>
     </div>
 
     <!-- Set-up guidance: the integration needs NO config — just Claude Code installed + logged in.
@@ -348,16 +348,16 @@ async function dismissEntry(entry: LabLogEntry) {
 
     <!-- entries, newest-first -->
     <div class="ll-list">
-      <div v-if="loading" class="ll-empty">Loading…</div>
-      <div v-else-if="!projectUid" class="ll-empty">No project open.</div>
-      <div v-else-if="!visibleEntries.length" class="ll-empty">
+      <div v-if="loading" class="ll-empty cc-muted">Loading…</div>
+      <div v-else-if="!projectUid" class="ll-empty cc-muted">No project open.</div>
+      <div v-else-if="!visibleEntries.length" class="ll-empty cc-muted">
         No entries yet. The first note you save appears here.
       </div>
       <template v-else>
         <div v-for="(e, i) in visibleEntries" :key="e.raw + i" class="ll-entry" :class="'k-' + authorKind(e.author)">
           <div class="ll-entry-head">
             <span class="ll-author">{{ e.author }}</span>
-            <span class="ll-date">{{ e.date }}</span>
+            <span class="ll-date cc-muted cc-fs-xs">{{ e.date }}</span>
             <span class="ll-actions">
               <template v-if="isRatable(e.author)">
                 <button class="ll-thumb" v-tooltip.top="'Good decision — add a note'"
@@ -403,7 +403,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-input:focus { border-color: var(--cc-accent); }
 .ll-input:disabled { opacity: 0.6; }
 .ll-compose-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.35rem; }
-.ll-hint { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+
 .ll-save {
   border: 1px solid var(--cc-accent); background: var(--cc-accent); color: #fff;
   border-radius: var(--cc-radius-sm); padding: 0.22rem 0.6rem; font-size: var(--cc-fs-sm); cursor: pointer;
@@ -437,9 +437,9 @@ async function dismissEntry(entry: LabLogEntry) {
   background-color: var(--cc-surface-2); border-radius: var(--cc-radius-xs);
 }
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */
-.ll-note { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin-left: auto; }
+.ll-note { margin-left: auto; }
 /* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */
-.ll-tokens { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+
 .ll-clearctx {
   border: none; background: transparent; color: var(--cc-text-dim);
   font-size: var(--cc-fs-xs); cursor: pointer; text-decoration: underline; padding: 0;
@@ -478,7 +478,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: var(--cc-fs-sm); }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
-.ll-empty { color: var(--cc-text-dim); text-align: center; padding: 1.2rem 0.5rem; font-size: var(--cc-fs-sm); }
+.ll-empty { padding: 1.2rem 0.5rem; }
 
 .ll-entry {
   border-left: 3px solid var(--cc-border);
@@ -499,7 +499,7 @@ async function dismissEntry(entry: LabLogEntry) {
 
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: var(--cc-fs-sm); }
-.ll-date { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); }
+
 /* per-entry actions: hidden until hover (thumbs prefill a note — they carry no persisted state) */
 .ll-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 0.15rem; visibility: hidden; }
 .ll-entry:hover .ll-actions { visibility: visible; }

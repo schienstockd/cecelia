@@ -246,15 +246,15 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
       <span class="axisline axisline-x" />
       <span class="axisline axisline-y" />
       <span v-for="t in xTicks" :key="'x'+t.pos" class="xtick" :style="{ left: tickX(t.pos, viewExtents) }">
-        <span class="xtick-mark" /><span class="xtick-lbl">{{ fmtTick(t.label) }}</span>
+        <span class="xtick-mark" /><span class="xtick-lbl cc-muted">{{ fmtTick(t.label) }}</span>
       </span>
       <span v-for="t in yTicks" :key="'y'+t.pos" class="ytick" :style="{ top: tickY(t.pos, viewExtents) }">
-        <span class="ytick-lbl">{{ fmtTick(t.label) }}</span><span class="ytick-mark" />
+        <span class="ytick-lbl cc-muted">{{ fmtTick(t.label) }}</span><span class="ytick-mark" />
       </span>
       <span v-if="!hideAxisLabels" class="axis-x">{{ xLabel }}</span>
       <span v-if="!hideAxisLabels" class="axis-y">{{ yLabel }}</span>
       <PlotSpinner v-if="showSpinner && !compact" label="Loading…" />
-      <div v-else-if="loading && compact" class="panel-loading">…</div>
+      <div v-else-if="loading && compact" class="panel-loading cc-muted cc-fs-xs">…</div>
       <slot />
     </div>
   </div>
@@ -307,15 +307,15 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
 .axisline-y { left: 0; top: 0; bottom: 0; width: 1px; }
 .xtick { position: absolute; bottom: 0; transform: translate(-50%, 100%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
 .xtick-mark { width: 1px; height: 5px; background: var(--cc-text-dim); }
-.xtick-lbl { margin-top: 3px; font-size: calc(var(--gate-font, 11px) - 1px); color: var(--cc-text-dim); white-space: nowrap; }
+.xtick-lbl { margin-top: 3px; font-size: calc(var(--gate-font, 11px) - 1px); white-space: nowrap; }
 .ytick { position: absolute; left: 0; transform: translate(-100%, -50%); display: flex; align-items: center; pointer-events: none; }
 .ytick-mark { width: 5px; height: 1px; background: var(--cc-text-dim); }
-.ytick-lbl { margin-right: 3px; font-size: calc(var(--gate-font, 11px) - 1px); color: var(--cc-text-dim); white-space: nowrap; }
+.ytick-lbl { margin-right: 3px; font-size: calc(var(--gate-font, 11px) - 1px); white-space: nowrap; }
 /* nowrap so a long channel name (e.g. "Bcells-ubiTom") stays on ONE line in the axis gutter instead of
    wrapping into the plot; it sits in the .plot-capture padding, which overflows visibly if needed */
 .axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 /* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl; white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
-.panel-loading { position: absolute; top: 4px; right: 6px; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.panel-loading { position: absolute; top: 4px; right: 6px; }
 </style>

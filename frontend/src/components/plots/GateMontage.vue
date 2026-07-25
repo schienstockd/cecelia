@@ -267,15 +267,15 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 
 <template>
   <div ref="gridRef" class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
-    <div v-if="err" class="gm-msg cc-muted cc-muted-md">{{ err }}</div>
-    <div v-else-if="!defs.length" class="gm-msg cc-muted cc-muted-md"><slot name="empty">Nothing to show.</slot></div>
+    <div v-if="err" class="gm-msg cc-muted cc-fs-md">{{ err }}</div>
+    <div v-else-if="!defs.length" class="gm-msg cc-muted cc-fs-md"><slot name="empty">Nothing to show.</slot></div>
     <template v-for="d in defs" :key="d.key">
       <!-- DIAGONAL (ggpairs): the channel name — labels its whole row and column -->
       <div v-if="d.role === 'diagonal'" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
       <!-- UPPER triangle (ggpairs): the pair's correlation, reused from its mirror scatter -->
       <div v-else-if="d.role === 'corr'" class="gm-cell gm-corr"
            v-tooltip.top="`corr(${colLabel(d.xChan)}, ${colLabel(d.yChan)})`">
-        <span class="gm-corr-k cc-eyebrow cc-eyebrow-2xs">Corr</span>
+        <span class="gm-corr-k cc-eyebrow cc-fs-2xs">Corr</span>
         <span class="gm-corr-v" :style="{ fontSize: corrFont(corrFor(d)) }">{{ fmtCorr(corrFor(d)) }}</span>
       </div>
       <div v-else class="gm-cell">

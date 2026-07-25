@@ -343,11 +343,6 @@ body {
 /* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. The modifier picks the tier;
    the role (dim, secondary) is what the base class means and does not change with size. */
 .cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
-.cc-muted-lg  { font-size: var(--cc-fs-lg); }
-.cc-muted-md  { font-size: var(--cc-fs-md); }
-.cc-muted-xs  { font-size: var(--cc-fs-xs); }
-.cc-muted-2xs { font-size: var(--cc-fs-2xs); }
-.cc-muted-3xs { font-size: var(--cc-fs-3xs); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).
@@ -372,8 +367,6 @@ body {
    step for an inline readout in dense chrome. */
 .cc-readout { font-variant-numeric: tabular-nums; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 .cc-readout-strong { color: var(--cc-text); font-weight: 600; }
-.cc-readout-xs  { font-size: var(--cc-fs-xs); }
-.cc-readout-2xs { font-size: var(--cc-fs-2xs); }
 
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */
@@ -381,10 +374,6 @@ body {
   font-size: var(--cc-fs-xs); font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--cc-text-dim);
 }
-.cc-eyebrow-2xs { font-size: var(--cc-fs-2xs); }
-/* The bottom step is why the whiteboard nodes (start/scope labels, the QC footer) kept their own 9px
-   uppercase rule for so long — the axis simply stopped above them. */
-.cc-eyebrow-3xs { font-size: var(--cc-fs-3xs); }
 
 /* Surface / container chrome — a card/panel body (hairline border + md radius). Surface is the axis:
    the base is the recessed surface-1, `.cc-card-2` the raised surface-2 (a card sitting ON a
@@ -392,6 +381,30 @@ body {
    scale, so -sm/-md are the only two steps worth having. */
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .cc-card-2 { background: var(--cc-surface-2); }
+
+/* ONE density scale, composed with any text scenario: `.cc-muted .cc-fs-xs`, `.cc-eyebrow .cc-fs-2xs`,
+   `.cc-readout .cc-fs-2xs`, `.cc-empty-inline .cc-fs-3xs`.
+   Each scenario used to carry its own ladder — `.cc-muted-2xs`, `.cc-eyebrow-2xs` and
+   `.cc-readout-2xs` were three names for `font-size: var(--cc-fs-2xs)`; ten classes holding six
+   declarations. Naming them per scenario never made them scenario-specific, it only made you guess
+   which to reach for, and two sites had already guessed: `ChainQcNode` and `PopulationManager` put
+   `.cc-muted-3xs`/`-2xs` on elements that are `.cc-empty-inline`, not muted. That worked, because the
+   modifier was always just a font-size — so now it is the documented way, and `.cc-empty` gets the
+   density axis it never had without three more classes.
+   Modifiers carrying real semantics stay on their scenario: `.cc-readout-strong` is prominence,
+   `.cc-empty-inline` is layout. Only the size ladder is shared.
+
+   DECLARED LAST, AND THAT IS LOAD-BEARING. `.cc-muted`, `.cc-empty`, `.cc-readout` and `.cc-eyebrow`
+   each set a font-size of their own, and a scenario base and a size class have the SAME specificity
+   (0,1,0) — so the winner is whichever comes later in this file. The first cut of this collapse put
+   the ladder above them: markup right, class names right, and every `.cc-eyebrow .cc-fs-2xs` silently
+   rendering at the eyebrow's 11px. `cssScenarios.test.ts` asserts this ordering. */
+.cc-fs-lg  { font-size: var(--cc-fs-lg); }
+.cc-fs-md  { font-size: var(--cc-fs-md); }
+.cc-fs-sm  { font-size: var(--cc-fs-sm); }
+.cc-fs-xs  { font-size: var(--cc-fs-xs); }
+.cc-fs-2xs { font-size: var(--cc-fs-2xs); }
+.cc-fs-3xs { font-size: var(--cc-fs-3xs); }
 
 /* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
 /* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */

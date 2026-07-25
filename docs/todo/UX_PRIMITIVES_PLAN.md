@@ -27,8 +27,9 @@ read these; do not re-derive one by grep.
 
 | Detector | In | Owns | Bar |
 |---|---|---|---|
-| `findReimplementedScenarios` | `cssScenarios.ts` | scoped rules re-declaring `.cc-muted`/`.cc-empty`/`.cc-eyebrow` | per-file `BASELINE` — **may shrink, must never grow** |
+| `findReimplementedScenarios` | `cssScenarios.ts` | scoped rules re-declaring `.cc-muted`/`.cc-empty`/`.cc-eyebrow` | exact list — currently **empty** |
 | `findScopedUtilityOverride` + `utilityRules` | `cssScenarios.ts` | a scoped rule whose selector *is* a global `.cc-*` utility, re-stating a property it declares | must be empty (no allow-list — composition is legal by construction) |
+| `findShadowedUtilities` | `cssScenarios.ts` | a text utility that another class on the SAME element beats on the utility's own role properties, so it does nothing | exact list (9 deliberate overrides, each with its reason) |
 | `findHandRolledIconButtons` | `cssScenarios.ts` | an icon-only `<button>` not built from `.cc-btn` | exact list (2 full-height strip exemptions) |
 | `findRawValues` | `cssScenarios.ts` | literal `font-size` / `border-radius`, incl. inline `style=` | exact list (1 documented exception) |
 | `findRawColours` + `colourTokens` | `cssScenarios.ts` | a hex a token already holds exactly; any `var(--x, #hex)` fallback | must be empty |
@@ -51,11 +52,9 @@ are easy to break:
 
 ## Open
 
-- **The scenario backlog.** The live list is the per-file `BASELINE` in `cssScenarios.test.ts`; it may
-  shrink and must never grow. Touch a file in it → migrate its rules and lower the number. Deliberately
-  decoupled from "finish the sweep": new divergence fails immediately, the backlog drains as files get
-  touched. The ≤2-rule tail has been drained (45 files → 20), so what's left is the concentrated
-  remainder; the failure message names the offending selector and the utility it wants.
+- **Nothing.** The scenario backlog is done: ~310 → 132 → 90 → **0**, and the ratchet is an exact
+  empty list rather than a shrinking per-file count. New divergence fails immediately and there is no
+  longer a backlog to hide in.
 - **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — distinct from a section header, and
   deliberately NOT extracted. Inspected, the two sites differ on **four** axes: `TaskList` uses a
   focusable `<button>` (already `.cc-btn-bare .cc-btn-icon`) with a tooltip, the icon as click target and
@@ -130,7 +129,35 @@ The blow-by-blow is in git (`git log --oneline -- frontend/src/style.css`). What
    why `.cc-btn-icon`'s fixed square collapsed two full-height strip controls that were markup-identical
    to an icon button. A noisy check grows an allow-list, and the allow-list is where this rots. Where a
    detector can't be precise, the category gets a review-time rule in `docs/UI.md` and no number at all.
-8. **A rule stated in one place while its neighbour keeps doing the old thing is the recurring tell.**
+8. **Adopting a utility can silently cancel it.** Scoped CSS weighs (0,2,0) with `[data-v-…]`; a global
+   utility weighs (0,1,0). So a scoped class that used to win a same-specificity tie on SOURCE ORDER
+   starts winning outright the moment its neighbour becomes a utility — and the utility you just added
+   does nothing. This bit `TaskList`'s log placeholder and, one PR earlier and unnoticed,
+   `FileBrowser`'s "No files selected", which stopped being dim. `findShadowedUtilities` exists for
+   exactly this and found both. Migrating a class to a utility is a specificity *downgrade*; check what
+   else is on the element.
+
+9. **Three names for one declaration is a guess waiting to happen.** `.cc-muted-2xs`,
+   `.cc-eyebrow-2xs` and `.cc-readout-2xs` were all `font-size: var(--cc-fs-2xs)` — ten classes holding
+   six declarations. Naming them per scenario never made them scenario-specific; two sites had already
+   reached for `.cc-muted-3xs` on elements that were not muted. Collapsed to one shared `.cc-fs-*`
+   ladder. Keep a modifier on its scenario only when it carries semantics the scenario owns
+   (`-strong` = prominence, `-inline` = layout).
+
+10. **"The utility cannot apply" is usually a fact about the base rule, and the base rule is yours to
+    change.** The last un-migrated site was exempted because `.tl-rowhead` set `color` and `font-size`,
+    so no global utility could outrank it — true, and the wrong conclusion. The base had no business
+    owning either: the colour was redundant (nothing above the timeline dims) and the size belonged on
+    the cells. It took one question — "why is this one different?" — to dissolve a documented
+    exemption. Ask it before writing the exemption.
+
+11. **Source order decides between equal-specificity classes, and no test of *presence* can see it.**
+    Collapsing the density ladder put `.cc-fs-*` above the scenario bases, which each set their own
+    font-size at the same (0,1,0). Markup right, class names right, all tests green, and every
+    `.cc-eyebrow .cc-fs-2xs` silently rendering at the eyebrow's 11px. When two global classes are
+    designed to compose, their ORDER in the stylesheet is part of the contract — assert it.
+
+12. **A rule stated in one place while its neighbour keeps doing the old thing is the recurring tell.**
    The ratchet was first built with the largest category carved out of it; the "no counts" rule was added
    to one section while the table above it kept its stale counts; the size audit counted `rem` and
    ignored `px`. When you add a rule here, grep the whole file for what it forbids before claiming it

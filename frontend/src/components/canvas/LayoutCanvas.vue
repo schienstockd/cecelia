@@ -387,7 +387,7 @@ defineExpose({ capturePage, collectCsvs })
            (varied presets, wraps to two lines), then the data/compare row. -->
       <div class="lc-bar">
         <div class="lc-row">
-          <span class="lc-lbl">Layout</span>
+          <span class="lc-lbl cc-eyebrow">Layout</span>
           <ChipSelect variant="segmented" :options="uniformOptions" :model-value="uniformMatchId"
                       v-tooltip.bottom="'Uniform grids'" aria-label="Uniform grid layout"
                       @update:model-value="v => applyPreset(UNIFORM_PRESETS, v as string)" />
@@ -397,15 +397,15 @@ defineExpose({ capturePage, collectCsvs })
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
-                <label class="lc-pop-row"><span>cols</span>
+                <label class="lc-pop-row cc-muted"><span>cols</span>
                   <input type="range" min="1" max="6" :value="entry.cols"
                          @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
                   <span class="lc-val">{{ entry.cols }}</span></label>
-                <label class="lc-pop-row"><span>rows</span>
+                <label class="lc-pop-row cc-muted"><span>rows</span>
                   <input type="range" min="1" max="6" :value="entry.rows"
                          @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
                   <span class="lc-val">{{ entry.rows }}</span></label>
-                <label class="lc-pop-row"><span>height</span>
+                <label class="lc-pop-row cc-muted"><span>height</span>
                   <input type="range" min="160" max="720" step="10" :value="rowHeight"
                          @input="rowHeight = +($event.target as HTMLInputElement).value" />
                   <span class="lc-val">{{ rowHeight }}</span></label>
@@ -421,7 +421,7 @@ defineExpose({ capturePage, collectCsvs })
                              @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
           <!-- clustering run: ONE per board (drives all cluster slots + the cluster pop manager) -->
           <div v-if="hasClusterSlot" class="lc-clust" v-tooltip.bottom="'Clustering run shown by this board’s cluster plots'">
-            <span class="lc-lbl">cluster</span>
+            <span class="lc-lbl cc-eyebrow">cluster</span>
             <select v-model="clustPopType">
               <option value="clust">cells</option>
               <option value="trackclust">tracks</option>
@@ -435,7 +435,7 @@ defineExpose({ capturePage, collectCsvs })
           <div class="lc-right">
             <div v-if="canCompare" class="lc-compare"
                  v-tooltip.bottom="'Compare across the selected images'">
-              <span class="lc-lbl">compare</span>
+              <span class="lc-lbl cc-eyebrow">compare</span>
               <select v-model="compareMode">
                 <option value="image">this image</option>
                 <option value="per_image">per image</option>
@@ -458,7 +458,7 @@ defineExpose({ capturePage, collectCsvs })
           </div>
         </div>
         <div class="lc-row">
-          <span class="lc-lbl">Plates</span>
+          <span class="lc-lbl cc-eyebrow">Plates</span>
           <ChipSelect variant="pill" :options="plateOptions" :model-value="plateMatchId"
                       v-tooltip.bottom="'Comic plates — varied-size panels, matched to the sheet orientation'"
                       aria-label="Comic plate layout"
@@ -540,7 +540,7 @@ defineExpose({ capturePage, collectCsvs })
                   <option v-for="v in imageOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
                 </optgroup>
               </select>
-              <span class="lc-add-hint">empty slot</span>
+              <span class="lc-add-hint cc-muted cc-fs-xs">empty slot</span>
             </div>
             </div>
           </div>
@@ -573,7 +573,7 @@ defineExpose({ capturePage, collectCsvs })
 /* sits right after the sliders (NOT pushed to the far right) so it doesn't shift when the compare
    dropdown changes width (e.g. "by attribute" adds selects) */
 .lc-right { display: flex; align-items: center; gap: 10px; }
-.lc-lbl { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+
 .lc-sep { width: 1px; height: 1.4rem; background: var(--cc-border); }
 .lc-nm { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .lc-nm input[type="range"] { width: 5rem; }
@@ -587,7 +587,7 @@ defineExpose({ capturePage, collectCsvs })
 .lc-custom { font-size: var(--cc-fs-xs); padding: 0.22rem 0.55rem; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.lc-pop-row { display: flex; align-items: center; gap: 8px; }
 .lc-pop-row span:first-child { width: 3rem; }
 .lc-pop-row input[type="range"] { flex: 1; }
 .lc-val { min-width: 0.9rem; text-align: center; font-weight: 700; color: var(--cc-text); }
@@ -618,7 +618,7 @@ defineExpose({ capturePage, collectCsvs })
 /* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.lc-add-hint { color: var(--cc-text-dim); font-size: var(--cc-fs-xs); opacity: 0.6; }
+.lc-add-hint { opacity: 0.6; }
 /* stick to the top of the scroll viewport so the pop manager stays reachable as the (tall) board
    scrolls past — otherwise you must scroll back up to change the selection. align-self so the sticky
    box hugs the top of the flex row; its own overflow-y scrolls a manager taller than the viewport. */

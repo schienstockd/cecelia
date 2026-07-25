@@ -41,25 +41,27 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 
 | Scenario | Use | Never |
 |------|-----|-------|
-| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-lg`/`-md`/`-xs`/`-2xs`/`-3xs` — the modifier NAMES the scale step) | a scoped `color: var(--cc-text-dim); font-size: …` |
+| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
-| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; `-xs`/`-2xs` in dense chrome) | a bespoke `.*-val`/`.*-num` |
-| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + `-2xs` list/table headers, `-3xs` whiteboard-node labels) | a scoped uppercase-heading rule |
+| Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; + a `.cc-fs-*` step) | a bespoke `.*-val`/`.*-num` |
+| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + a `.cc-fs-*` step) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
-| Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
+| Small text size | the `--cc-fs-*` token in CSS, or the `.cc-fs-*` class in markup | a raw `rem`/`px` font-size (incl. inline `style=`) |
 | Compact input / select / textarea | `.cc-input-xs` (11px) / `.cc-input-2xs` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
 | A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
 
-**Each utility varies on exactly one axis, and the modifier is that axis** — density (a step on the
-`--cc-fs-*` scale), surface (`-2`), layout (`-inline`/`-overlay`/`-lg`).
+**Pick a scenario, then a size.** `.cc-muted .cc-fs-xs` · `.cc-eyebrow .cc-fs-2xs` ·
+`.cc-readout .cc-fs-2xs` · `.cc-empty-inline .cc-fs-3xs`. The size ladder is ONE shared set of classes
+(`.cc-fs-lg/-md/-sm/-xs/-2xs/-3xs`, the same steps as the `--cc-fs-*` tokens), not a per-scenario one:
+`.cc-muted-2xs`, `.cc-eyebrow-2xs` and `.cc-readout-2xs` were three names for one declaration, and
+naming them per scenario only made you guess which to reach for. Modifiers that carry real semantics
+DO stay on their scenario — `.cc-readout-strong` is prominence, `.cc-empty-inline` is layout.
 
-**Density modifiers name the scale step, not a relative amount** (`-xs`, not `-dense`). A relative name
-can only express the steps someone thought of: `.cc-muted` had no 11px step — the single largest cluster
-of hand-rolled muted text in the app — because "dense" was already spent on 10px, and there was no name
-at all for the step *above* the base. `-dense` was not even a consistent step: two tiers below
-`.cc-muted`'s base and one below `.cc-eyebrow`'s. Naming the step makes the axis complete by construction. Reach for the modifier instead of re-declaring the
+**The step is named, not relative** (`-xs`, not `-dense`). A relative name can only express the steps
+someone thought of: `.cc-muted` had no 11px step — the single largest cluster of hand-rolled muted text
+in the app — because "dense" was already spent on 10px, and nothing named the step *above* the base. Reach for the modifier instead of re-declaring the
 scenario locally: baking a value into the base is what stranded ~10 sites as "bespoke" before. Per-site
 *emphasis* (`font-style: italic`) and *geometry* (width/margin/flex/padding) still belong in scoped CSS.
 

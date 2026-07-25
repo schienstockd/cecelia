@@ -508,11 +508,11 @@ const pct = computed(() => {
     <!-- popSelection (multi / across segmentations): chip list of value_name-prefixed populations -->
     <div v-else-if="param.type === 'popSelection' && popAcross" class="channel-select-wrap"
       v-tooltip.right="param.tip ?? 'Select populations across segmentations.'">
-      <div v-if="popMultiOptions.length === 0" class="channel-empty">
+      <div v-if="popMultiOptions.length === 0" class="channel-empty cc-muted">
         No populations — select an image first.
       </div>
       <div v-for="grp in popMultiGroups" v-else :key="grp.title" class="col-group">
-        <div v-if="grp.title" class="col-group-title">{{ grp.title }}</div>
+        <div v-if="grp.title" class="col-group-title cc-eyebrow cc-fs-2xs">{{ grp.title }}</div>
         <ChipSelect multiple :options="grp.opts"
           :model-value="chipGroupSel(grp.opts.map(o => o.value))"
           @update:model-value="v => chipGroupUpdate(popAllValues, grp.opts.map(o => o.value), v as string[])" />
@@ -532,11 +532,11 @@ const pct = computed(() => {
     <!-- labelPropsColsSelection: grouped (Tracking / Object) multi-select chip lists -->
     <div v-else-if="param.type === 'labelPropsColsSelection'" class="channel-select-wrap"
       v-tooltip.right="param.tip ?? 'Select measurement columns.'">
-      <div v-if="colGroups.length === 0" class="channel-empty">
+      <div v-if="colGroups.length === 0" class="channel-empty cc-muted">
         No measures — select a population first.
       </div>
       <div v-for="g in colGroups" :key="g.title" class="col-group">
-        <div v-if="g.title" class="col-group-title">{{ g.title }}</div>
+        <div v-if="g.title" class="col-group-title cc-eyebrow cc-fs-2xs">{{ g.title }}</div>
         <ChipSelect multiple :options="g.opts"
           :model-value="chipGroupSel(g.opts.map(o => o.value))"
           @update:model-value="v => chipGroupUpdate(colAllValues, g.opts.map(o => o.value), v as string[])" />
@@ -552,8 +552,8 @@ const pct = computed(() => {
         <option value="2D">2D (in-plane)</option>
         <option value="3D">3D</option>
       </select>
-      <div v-if="motionLoading" class="md-note">checking z…</div>
-      <div v-else-if="motionDims" class="md-note"
+      <div v-if="motionLoading" class="md-note cc-muted">checking z…</div>
+      <div v-else-if="motionDims" class="md-note cc-muted"
            :class="{ warn: motionWarn }" v-tooltip.right="motionTip">
         <i :class="['pi', motionWarn ? 'pi-exclamation-triangle' : 'pi-check-circle']" />
         {{ motionMsg }}
@@ -569,7 +569,7 @@ const pct = computed(() => {
     <!-- channelSelection: togglable chip list from image context -->
     <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap"
       v-tooltip.right="param.tip ?? 'Select channels to process.'">
-      <div v-if="availableChannels.length === 0" class="channel-empty">
+      <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
         No channels — select images first.
       </div>
       <ChipSelect v-else multiple :options="channelOptions"
@@ -586,7 +586,7 @@ const pct = computed(() => {
 
   <!-- section rendered outside .param-row so it spans full width -->
   <div v-if="param.type === 'section'" class="param-section">
-    <button class="section-toggle cc-section-toggle cc-eyebrow" @click="sectionOpen = !sectionOpen"
+    <button class="section-toggle cc-section-toggle cc-eyebrow cc-fs-sm" @click="sectionOpen = !sectionOpen"
       v-tooltip.left="sectionOpen ? 'Collapse advanced parameters.' : 'Expand advanced parameters.'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
       {{ param.label }}
@@ -606,7 +606,7 @@ const pct = computed(() => {
   <!-- group: repeatable set of sub-params keyed by string index -->
   <div v-if="param.type === 'group'" class="param-group">
     <div class="group-header">
-      <span class="group-title">{{ param.label }}</span>
+      <span class="group-title cc-eyebrow cc-fs-sm">{{ param.label }}</span>
       <button v-if="param.repeatable" class="group-add-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" type="button"
         @click="addGroupEntry()"
         v-tooltip.right="'Add another entry'">
@@ -614,7 +614,7 @@ const pct = computed(() => {
       </button>
     </div>
 
-    <div v-if="groupEntries.length === 0" class="group-empty">
+    <div v-if="groupEntries.length === 0" class="group-empty cc-muted">
       No entries — click + to add one.
     </div>
 
@@ -734,7 +734,7 @@ const pct = computed(() => {
 .param-section { border-bottom: 1px solid var(--cc-border); }
 /* + cc-section-toggle (row) + cc-eyebrow (label tier). Only the padding and the one-step-larger
    size are this site's: an advanced-params header sits above body text, not inside dense chrome. */
-.section-toggle { padding: 0.45rem 0; font-size: var(--cc-fs-sm); }
+.section-toggle { padding: 0.45rem 0; }
 .section-body { padding-left: 0.5rem; border-left: 2px solid var(--cc-border); margin-left: 0.25rem; }
 
 .picker-placeholder {
@@ -751,15 +751,10 @@ const pct = computed(() => {
 
 /* channel selection */
 .channel-select-wrap { width: 100%; }
-.channel-empty {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-  padding: 0.2rem 0;
-}
+.channel-empty { font-style: italic; padding: 0.2rem 0; }
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
-.md-note { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
+.md-note { display: inline-flex; align-items: center; gap: 0.3rem; }
 .md-note .pi { font-size: var(--cc-fs-sm); }
 .md-note.warn { color: #fbbf24; }
 /* traffic-light flag: how usable is the z-axis (ok real 3D · warn borderline · fail jitter). A
@@ -768,14 +763,7 @@ const pct = computed(() => {
 
 .col-group { margin-bottom: 0.4rem; }
 .col-group:last-child { margin-bottom: 0; }
-.col-group-title {
-  font-size: var(--cc-fs-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-  margin: 0.15rem 0 0.25rem;
-}
+.col-group-title { margin: 0.15rem 0 0.25rem; }
 /* group */
 .param-group {
   border-bottom: 1px solid var(--cc-border);
@@ -787,21 +775,10 @@ const pct = computed(() => {
   justify-content: space-between;
   padding: 0.45rem 0 0.3rem;
 }
-.group-title {
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  color: var(--cc-text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
+
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
-.group-empty {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  font-style: italic;
-  padding: 0.3rem 0;
-}
+.group-empty { font-style: italic; padding: 0.3rem 0; }
 .group-entry {
   margin-bottom: 0.4rem;
   border: 1px solid var(--cc-border);

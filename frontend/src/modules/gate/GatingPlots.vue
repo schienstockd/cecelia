@@ -267,7 +267,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <span class="gp-hint cc-muted cc-muted-xs">drag plots by their title · resize from the corner</span>
+        <span class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->

@@ -791,7 +791,7 @@ onUnmounted(stopResize)
             </span>
           </span>
           <span class="uid-row">
-            <span class="img-uid">{{ img.uid }}</span>
+            <span class="img-uid cc-muted cc-fs-xs">{{ img.uid }}</span>
             <!-- last successful run — task-manager-style module tag (see run log / taskModule palette) -->
             <span v-if="lastRunTag(img)" class="run-tag" :style="lastRunTag(img)!.style"
               v-tooltip.right="lastRunTag(img)!.tip">
@@ -945,8 +945,8 @@ onUnmounted(stopResize)
        positions from the cog rect (was clipped by the following row) -->
   <TeleportPopover v-model="runLogOpen" :anchor="runLogAnchor">
     <div v-if="runLogImg" class="runlog-pop">
-      <div class="runlog-hd">Run history</div>
-      <div v-if="!runLogImg.runLog || !runLogImg.runLog.length" class="runlog-empty">No functions recorded yet.</div>
+      <div class="runlog-hd cc-eyebrow cc-fs-2xs">Run history</div>
+      <div v-if="!runLogImg.runLog || !runLogImg.runLog.length" class="runlog-empty cc-muted cc-fs-xs">No functions recorded yet.</div>
       <div v-for="(e, i) in [...(runLogImg.runLog ?? [])].reverse()" :key="i" class="runlog-row">
         <span class="runlog-fun">{{ e.fun }}</span>
         <span v-if="e.valueName" class="runlog-vn">{{ e.valueName }}</span>
@@ -1159,23 +1159,13 @@ th:hover .resize-handle::after { opacity: 1; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
 .runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; padding: 6px 8px; }
-.runlog-hd { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); margin-bottom: 4px; }
-.runlog-empty { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
+.runlog-hd { margin-bottom: 4px; }
+
 .runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: var(--cc-fs-xs); }
 .runlog-fun { font-weight: 600; color: var(--cc-text); font-family: var(--cc-mono); }
 .runlog-vn { color: var(--cc-accent); font-size: var(--cc-fs-2xs); }
 .runlog-at { margin-left: auto; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.img-uid {
-  font-family: var(--cc-mono);
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-text-dim);
-  letter-spacing: 0.03em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
+.img-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 
 /* last-successful-run tag — mirrors the task-manager module pill (colour from taskModule palette),
    pushed to the right of the UID. Module id bold/uppercase, function label alongside. */
