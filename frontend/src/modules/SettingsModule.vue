@@ -887,7 +887,7 @@ async function switchWt(path: string) {
 .svc-row { display: grid; grid-template-columns: 8rem 7rem 3.5rem 1fr; align-items: center;
   column-gap: 0.6rem; margin-bottom: 0.55rem; }
 .svc-name { font-size: var(--cc-fs-md); color: var(--cc-text); }
-.wt-select { font-size: var(--cc-fs-md); padding: 2px 6px; max-width: 18rem; }
+.wt-select { padding: 2px 6px; max-width: 18rem; }
 .svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
   white-space: nowrap; }

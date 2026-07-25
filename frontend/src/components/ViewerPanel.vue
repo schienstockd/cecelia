@@ -820,8 +820,7 @@ onUnmounted(() => {
 .movie-rec { margin-left: 0.1rem; }
 .movie-title-row { margin-top: 0.25rem; }
 .movie-title-toggle { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; text-transform: none; letter-spacing: 0; }
-.movie-note { flex: 2; min-width: 3rem; font-size: var(--cc-fs-2xs); padding: 1px 4px;
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); color: var(--cc-text); }
+.movie-note { flex: 2; min-width: 3rem; font-size: var(--cc-fs-2xs); padding: 1px 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-1); }
 
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
 .cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }

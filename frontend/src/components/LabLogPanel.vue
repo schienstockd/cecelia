@@ -397,12 +397,10 @@ async function dismissEntry(entry: LabLogEntry) {
   color: #d29922; margin-bottom: 0.3rem;
 }
 .ll-input {
-  width: 100%; resize: vertical; box-sizing: border-box;
-  background: var(--cc-surface-2); color: var(--cc-text);
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
-  padding: 0.4rem 0.5rem; font: inherit; line-height: 1.35;
+  width: 100%; resize: vertical; box-sizing: border-box; border-radius: var(--cc-radius-sm);
+  padding: 0.4rem 0.5rem; line-height: 1.35;
 }
-.ll-input:focus { outline: none; border-color: var(--cc-accent); }
+.ll-input:focus { border-color: var(--cc-accent); }
 .ll-input:disabled { opacity: 0.6; }
 .ll-compose-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.35rem; }
 .ll-hint { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
@@ -436,7 +434,7 @@ async function dismissEntry(entry: LabLogEntry) {
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
   /* background-COLOR, not the shorthand: the global `select` rule paints the custom caret via
      background-image, and a shorthand here would reset it to none (leaving an arrowless select). */
-  background-color: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs);
+  background-color: var(--cc-surface-2); border-radius: var(--cc-radius-xs);
 }
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */
 .ll-note { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin-left: auto; }

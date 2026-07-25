@@ -1646,10 +1646,7 @@ onActivated(async () => {
   flex: 1;
   min-width: 0;
   font-size: var(--cc-fs-sm);
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
-  color: var(--cc-text);
   padding: 0.25rem 0.4rem;
   cursor: pointer;
 }
@@ -1681,12 +1678,9 @@ onActivated(async () => {
   flex: 1;
   min-width: 0;
   font-size: var(--cc-fs-sm);
-  background: var(--cc-surface-2);
   border: 1px solid var(--cc-accent);
   border-radius: var(--cc-radius-sm);
-  color: var(--cc-text);
   padding: 0.2rem 0.4rem;
-  outline: none;
 }
 
 .palette-scroll {
@@ -1842,10 +1836,7 @@ onActivated(async () => {
 .config-select, .config-input {
   width: 100%;
   font-size: var(--cc-fs-sm);
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
-  color: var(--cc-text);
   padding: 0.28rem 0.5rem;
 }
 .config-select:focus, .config-input:focus { outline: 1px solid var(--cc-accent); border-color: var(--cc-accent); }

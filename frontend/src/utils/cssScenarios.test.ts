@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
-  findHandRolledIconButtons, findRawColours, colourTokens,
+  findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -81,6 +81,44 @@ describe('findRawColours', () => {
 
   it('exempts plain white/black — not a scale, and what .cc-btn-primary itself uses', () => {
     expect(find('.a { color: #fff } .b { color: #000000 }')).toEqual([])
+  })
+})
+
+describe('findRestatedInputBase', () => {
+  const base = { color: 'var(--cc-text)', border: '1px solid var(--cc-border)' }
+  const find = (text: string) =>
+    findRestatedInputBase([{ path: 'x.vue', text }], base).map(r => `${r.selector} | ${r.decl}`)
+
+  it('flags a declaration equal to the base, and leaves a different value alone', () => {
+    expect(find('<template><input class="a"></template><style>.a { color: var(--cc-text) }</style>'))
+      .toEqual(['.a | color: var(--cc-text)'])
+    expect(find('<template><input class="a"></template><style>.a { color: var(--cc-accent) }</style>'))
+      .toEqual([])
+  })
+
+  // `\b(select)\b` matches inside `.chip-select` — a hyphen is a word boundary. That swept a chip
+  // wrapper and a plain button into the first run of this check.
+  it('does not mistake an element name inside a class name for the element', () => {
+    expect(find('<style>.chip-select { color: var(--cc-text) }</style>')).toEqual([])
+    expect(find('<style>.select-flagged-btn { color: var(--cc-text) }</style>')).toEqual([])
+    expect(find('<style>select { color: var(--cc-text) }</style>')).toEqual(['select | color: var(--cc-text)'])
+  })
+
+  // The rule's SUBJECT is its last compound. A sibling/descendant of an input is not the input.
+  it('judges the subject, not any part of the selector', () => {
+    const t = '<template><input class="ci"></template><style>.ci:checked ~ .track { color: var(--cc-text) }</style>'
+    expect(find(t)).toEqual([])
+  })
+})
+
+describe('inputBase', () => {
+  it('takes the resting rule only — folding in :focus would flag every focus rule in the app', () => {
+    const css = `
+      select, input[type="text"], textarea { color: var(--cc-text); background: var(--cc-surface-2); }
+      select:focus, input[type="text"]:focus, textarea:focus { border-color: var(--cc-accent); }`
+    const b = inputBase(css)
+    expect(b['color']).toBe('var(--cc-text)')
+    expect(b['border-color']).toBeUndefined()
   })
 })
 
@@ -230,6 +268,36 @@ describe('raw colours', () => {
 
     const found = findRawColours(sources, tokens).map(r => `${r.path} | ${r.selector} | ${r.hex} → ${r.token}`)
     expect(found.sort()).toEqual([])
+  })
+})
+
+describe('form controls', () => {
+  // The input/select/textarea base is one size, and until `.cc-input-dense`/`-micro` existed there was
+  // no way to make a control smaller except to write a class — at which point sites re-typed the base's
+  // border/colour/background too. 67 such declarations across 19 files were removed; they were no-ops
+  // by the cascade, so the removal is provably neutral.
+  //
+  // An exact list, not a ratchet: a value match makes a declaration redundant with ONE real exception —
+  // re-stating the base defensively to beat a more specific rule, or because the class is shared with a
+  // non-input element. Each survivor says which.
+  const ALLOWED = [
+    // .cby-swatch is on BOTH a <span> (static swatch) and an <input type="color"> (editable one).
+    // A <span> gets nothing from the input base, so this border is load-bearing for that half.
+    'components/ViewerPanel.vue | .cby-swatch | border: 1px solid var(--cc-border)',
+  ]
+
+  it('never re-state what the global input base already gives', () => {
+    const base = inputBase(RAW['/src/style.css'] ?? '')
+    expect(base['background']).toBeTruthy()          // the base rule was found and parsed
+    expect(base['border-color']).toBeUndefined()     // ...and the :focus rule was NOT folded into it
+
+    const sources = Object.entries(RAW)
+      .filter(([path]) => path !== '/src/style.css')
+      .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+
+    const found = findRestatedInputBase(sources, base)
+      .map(r => `${r.path} | ${r.selector} | ${r.decl}`)
+    expect(found.sort()).toEqual([...ALLOWED].sort())
   })
 })
 

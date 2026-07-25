@@ -132,6 +132,97 @@ export function findHandRolledIconButtons(
   return out
 }
 
+// ── Form controls ─────────────────────────────────────────────────────────────────────────────────
+
+/** A scoped declaration on an input/select/textarea that re-states what the global base already gives. */
+export interface RestatedBase {
+  path:     string
+  selector: string
+  decl:     string
+}
+
+// The element name as a SELECTOR, not as a fragment of a class name. `\b(select)\b` alone matches
+// inside `.chip-select` and `.select-flagged-btn`, because a hyphen is a word boundary — which
+// silently swept a chip wrapper and a plain button into the first run of this check.
+const FORM_EL = /(?<![\w.#-])(input|select|textarea)\b/
+
+// The SUBJECT of a selector is its last compound — what the rule actually styles. Without this,
+// `.cc-toggle-input:checked ~ .cc-toggle-track` counts as targeting an input when it styles the track.
+const subjects = (selector: string) =>
+  selector.split(',').map(part => part.trim().split(/[\s>+~]+/).filter(Boolean).pop() ?? '')
+
+/**
+ * The global `input`/`select`/`textarea` base rule in `style.css`, as property → value.
+ * Parsed rather than hard-coded, so the check can't drift from the thing it checks against.
+ *
+ * Resting state only: the `:focus`/`:hover` rules share the same selector list, and folding them in
+ * would put `border-color: var(--cc-accent)` in the "base", flagging every legitimate focus rule in
+ * the app as redundant.
+ */
+export function inputBase(styleCss: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const rule of cssRules(styleCss)) {
+    // the base is the one rule that covers BOTH a typed text input and textarea
+    if (!/input\[type="text"\]/.test(rule.selector) || !/\btextarea\b/.test(rule.selector)) continue
+    if (/:(focus|hover|active|disabled)/.test(rule.selector)) continue
+    for (const d of rule.body.split(';')) {
+      const i = d.indexOf(':')
+      if (i < 0) continue
+      out[d.slice(0, i).trim()] = d.slice(i + 1).trim()
+    }
+  }
+  return out
+}
+
+/**
+ * Declarations on a form control that the global base already provides, identically.
+ *
+ * These are provable no-ops, and they are the *mechanism* behind the form-control divergence rather
+ * than a side effect of it: the base is one size, so making an input smaller means writing a class,
+ * and once you are writing a class you re-type everything you can see. Measured before adding the
+ * density steps — of ~112 rules touching a form control, 67 declarations across 19 files were pure
+ * re-statement (`color`, `border`, `background` dominating), while font-size used only 5 values (all
+ * already tokens) and padding's 23 spellings collapsed to two tiers once sorted, because padding
+ * TRACKS the size rather than varying independently. Hence `.cc-input-dense`/`-micro` set both.
+ *
+ * A rule counts as targeting a form control when its SUBJECT names one, or names a class this file's
+ * template puts on one — the same markup-informed test the icon-button check uses.
+ *
+ * Precision: an exact value match makes the declaration redundant by the cascade, with one real
+ * exception — re-stating the base defensively, or on a class shared with a non-input element. So this
+ * pins an exact list rather than ratcheting a count, and each survivor carries its reason.
+ */
+export function findRestatedInputBase(
+  sources: Array<{ path: string, text: string }>,
+  base: Record<string, string>,
+): RestatedBase[] {
+  const out: RestatedBase[] = []
+  for (const { path, text } of sources) {
+    const template = text.replace(/<style[^>]*>[\s\S]*?<\/style>/g, ' ')
+    const onFormEl = new Set<string>()
+    for (const m of template.matchAll(/<(input|select|textarea)\b[^>]*?\bclass="([^"]*)"/g)) {
+      for (const c of m[2].split(/\s+/)) if (c) onFormEl.add(c)
+    }
+    for (const block of styleBlocks(text)) {
+      for (const rule of cssRules(block)) {
+        const hits = subjects(rule.selector).some(s =>
+          FORM_EL.test(s) || [...s.matchAll(/\.([\w-]+)/g)].some(m => onFormEl.has(m[1])))
+        if (!hits) continue
+        for (const d of rule.body.split(';')) {
+          const i = d.indexOf(':')
+          if (i < 0) continue
+          const prop = d.slice(0, i).trim()
+          const val  = d.slice(i + 1).trim()
+          if (base[prop] && base[prop] === val) {
+            out.push({ path, selector: rule.selector.replace(/\s+/g, ' '), decl: `${prop}: ${val}` })
+          }
+        }
+      }
+    }
+  }
+  return out
+}
+
 // ── Raw values ────────────────────────────────────────────────────────────────────────────────────
 
 /** A literal `font-size` / `border-radius` where a scale token exists. */
