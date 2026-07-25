@@ -1380,11 +1380,22 @@ function _mutate_images!(f!::Function, project_uid::String, image_uids)
     end
 end
 
+# Attribute names and values are user-typed free text, and these three routes are the ONLY place they
+# enter the model — so normalise here rather than in each consumer. Untrimmed, `"a"` and `" a "` are two
+# distinct attribute values (two filter chips in the image table, two segments in a generated movie
+# name), and `" Location"` is a second column beside `Location`. `_movie_basename` already had to defend
+# against a whitespace-only value downstream; that defence belongs at the write.
+#
+# Whitespace-only collapses to `""`, which is the canonical *unset* — deliberately NOT a delete:
+# `attr/create` seeds a new column with `""` on every image, and the key's presence is the only thing
+# that makes the column exist. Deleting on blank would make a column vanish as you cleared it.
+_norm_attr(s::AbstractString) = String(strip(s))
+
 function api_images_attr_create(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = String(get(data, :projectUid, ""))
-    attr_name   = String(get(data, :attrName, ""))
+    attr_name   = _norm_attr(String(get(data, :attrName, "")))
     image_uids  = [String(u) for u in get(data, :imageUids, [])]
     isempty(attr_name) && return 400, JSON3.write((; error="attrName required"))
 
@@ -1398,7 +1409,7 @@ function api_images_attr_delete(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = String(get(data, :projectUid, ""))
-    attr_name   = String(get(data, :attrName, ""))
+    attr_name   = _norm_attr(String(get(data, :attrName, "")))
     image_uids  = [String(u) for u in get(data, :imageUids, [])]
     isempty(attr_name) && return 400, JSON3.write((; error="attrName required"))
 
@@ -1412,18 +1423,21 @@ function api_images_attr_set(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = String(get(data, :projectUid, ""))
-    attr_name   = String(get(data, :attrName, ""))
+    attr_name   = _norm_attr(String(get(data, :attrName, "")))
     values_raw  = get(data, :values, nothing)
     isempty(attr_name) && return 400, JSON3.write((; error="attrName required"))
     isnothing(values_raw) && return 400, JSON3.write((; error="values required"))
 
-    values = Dict{String,String}(String(k) => string(v) for (k, v) in values_raw)
+    values = Dict{String,String}(String(k) => _norm_attr(string(v)) for (k, v) in values_raw)
     for (image_uid, val) in values
         _mutate_images!(project_uid, [image_uid]) do img
             img.attr[attr_name] = val
         end
     end
-    200, JSON3.write((; ok=true))
+    # Echo back what was actually STORED, and the normalised name. Callers update their local store from
+    # this rather than from what they sent — otherwise the client would show the untrimmed input while
+    # the file holds the trimmed value, and trimming client-side too would mean two normalisers.
+    200, JSON3.write((; ok=true, attrName=attr_name, values=values))
 end
 
 function api_images_delete_labels(body_bytes::Vector{UInt8})

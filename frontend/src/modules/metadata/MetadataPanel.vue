@@ -65,7 +65,7 @@ async function createAttr() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, imageUids: setImages.value.map(i => i.uid), attrName: name }),
   })
-  const body = await res.json().catch(() => ({})) as { error?: string }
+  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
   project.addAttrKey(props.setUid, name)
@@ -85,7 +85,7 @@ async function deleteAttr() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, imageUids: setImages.value.map(i => i.uid), attrName: name }),
   })
-  const body = await res.json().catch(() => ({})) as { error?: string }
+  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
   project.removeAttrKey(props.setUid, name)
@@ -110,10 +110,10 @@ async function assignSingleValue() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, attrName: selectedAttr.value, values }),
   })
-  const body = await res.json().catch(() => ({})) as { error?: string }
+  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
-  project.setAttrValues(selectedAttr.value, values)
+  project.setAttrValues(selectedAttr.value, body.values ?? values)
   log.info(`Assigned "${singleValue.value}" to ${targetUids.value.length} image(s).`, { source: 'metadata' })
 }
 
@@ -186,10 +186,10 @@ async function assignRegexp() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, attrName: selectedAttr.value, values }),
   })
-  const body = await res.json().catch(() => ({})) as { error?: string }
+  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
-  project.setAttrValues(selectedAttr.value, values)
+  project.setAttrValues(selectedAttr.value, body.values ?? values)
   log.info(`Applied regex to ${Object.keys(values).length} image(s).`, { source: 'metadata' })
 }
 
@@ -231,10 +231,10 @@ async function assignGroupSequences() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, attrName: 'GroupSeq', values }),
   })
-  const body = await setRes.json().catch(() => ({})) as { error?: string }
+  const body = await setRes.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!setRes.ok) { log.error(body.error ?? `HTTP ${setRes.status}`, { source: 'metadata' }); return }
 
-  project.setAttrValues('GroupSeq', values)
+  project.setAttrValues('GroupSeq', body.values ?? values)
   log.info('Assigned group sequences.', { source: 'metadata' })
 }
 
@@ -253,7 +253,7 @@ async function assignChannelNames() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectUid, imageUids: targetUids.value, channelNames: names }),
   })
-  const body = await res.json().catch(() => ({})) as { error?: string }
+  const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
   for (const uid of targetUids.value)

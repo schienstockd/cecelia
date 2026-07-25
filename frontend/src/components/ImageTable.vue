@@ -141,7 +141,10 @@ async function saveAttr(img: CciaImage, key: string, val: string) {
       body: JSON.stringify({ projectUid, attrName: key, values: { [img.uid]: val } }),
     })
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-    project.setAttrValues(key, { [img.uid]: val })               // reflect immediately
+    // reflect what was STORED (the route trims), not the raw input — otherwise the cell would show
+    // " a " while the file holds "a"
+    const stored = await res.json().catch(() => ({})) as { values?: Record<string, string> }
+    project.setAttrValues(key, stored.values ?? { [img.uid]: val })
   } catch (e) {
     log.error(`Failed to set ${key}: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
   }
