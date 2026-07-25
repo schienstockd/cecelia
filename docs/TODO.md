@@ -97,6 +97,18 @@ path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path
 
 ---
 
+**#00086** — **Port `createBranching` (skeleton/branch analysis) from the old R version**
+Skeletonise a segmentation into a branch/path network for fibrous non-cell structures (collagen/SHG,
+nerves, FRC reticular networks). Full plan — including the ILEE_CSK vendoring decision and its patch
+ledger — is parked in `docs/todo/BRANCHING_PLAN.md`. Verified feasible: `skan 0.13.1` is maintained and
+still emits the columns the old code expects, and the vendored ILEE runs unmodified on the current
+numpy-2/scipy-1.18/skimage-0.26 env. Two things need a decision before Phase 2 — whether a `branch`
+pop type (a *third* granularity beside cell/track) is worth its cost vs. reading branches through the
+existing ungated `labels` pop type, and how `segment.measureLabels` on a branch label set should
+interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-input
+
+---
+
 ## Low priority
 
 **#00003** — **Re-enable interactive pan/zoom on gating plots**
