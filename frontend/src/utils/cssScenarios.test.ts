@@ -273,8 +273,6 @@ describe('shadowed utilities', () => {
     'modules/cluster/ClusterHeatmapPanel.vue | cc-muted shadowed by feat-empty on font-size',
     // an error line: muted layout, danger colour
     'components/canvas/SummaryPanel.vue | cc-muted shadowed by sp-err on color',
-    // deliberately CANCELS the eyebrow's caps for the one toggle that shares the label class
-    'components/ViewerPanel.vue | cc-eyebrow shadowed by movie-title-toggle on letter-spacing,text-transform',
     // tick labels size off the dynamic --gate-font, so only the colour comes from the utility
     'components/plots/GateScatterCell.vue | cc-muted shadowed by xtick-lbl on font-size',
     'components/plots/GateScatterCell.vue | cc-muted shadowed by ytick-lbl on font-size',
