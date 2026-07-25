@@ -87,7 +87,7 @@ defineProps<{
 .node-fn {
   font-size: var(--cc-fs-2xs);
   color: #d97706;
-  font-family: monospace;
+  font-family: var(--cc-mono);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -108,7 +108,7 @@ defineProps<{
 .policy-val {
   font-size: var(--cc-fs-3xs);
   color: var(--cc-warn);
-  font-family: monospace;
+  font-family: var(--cc-mono);
 }
 .node-pool {
   display: flex;

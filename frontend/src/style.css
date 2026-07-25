@@ -353,6 +353,10 @@ body {
   text-transform: uppercase; color: var(--cc-text-dim);
 }
 .cc-eyebrow-dense { font-size: var(--cc-fs-2xs); }
+/* The density axis runs one step further for eyebrows than it did — `.cc-muted` always had both
+   -dense and -micro, `.cc-eyebrow` only -dense, and the missing bottom step is exactly why the
+   whiteboard nodes (start/scope labels, the QC footer) kept their own 9px uppercase rule. */
+.cc-eyebrow-micro { font-size: var(--cc-fs-3xs); }
 
 /* Surface / container chrome — a card/panel body (hairline border + md radius). Surface is the axis:
    the base is the recessed surface-1, `.cc-card-2` the raised surface-2 (a card sitting ON a

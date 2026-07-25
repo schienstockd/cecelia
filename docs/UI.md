@@ -39,7 +39,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-dense`/`-micro` in dense chrome) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
 | Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent, `-dense` inline) | a bespoke `.*-val`/`.*-num` |
-| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (+ `-dense` for list/table headers) | a scoped uppercase-heading rule |
+| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (+ `-dense` list/table headers, `-micro` whiteboard-node labels) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
