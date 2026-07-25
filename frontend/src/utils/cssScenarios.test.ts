@@ -94,19 +94,16 @@ describe('findRawColours', () => {
 // Touching a file in this list? Migrate its rules and lower the number. Adding a file? Use the utility
 // instead. The failure message tells you which.
 //
-// THE FALLBACKS WERE HIDING SIX OF THESE. The `muted` matcher keys on `color: var(--cc-text-dim)`,
-// which never matched the `color: var(--cc-text-dim, #8b8ca7)` spelling — so stripping the dead hex
-// fallbacks (see "raw colours" below) revealed six long-standing hand-rolled rules in four chain-node
-// files that this check had been blind to. They are backlog, not new divergence: entries added below
-// at their true count. That is the third blind spot of this exact shape (the others: the detector only
-// reading <style> blocks, and the muted matcher keying on a literal size), and they share a cause —
-// a matcher pinned to ONE spelling of a value that the codebase writes more than one way.
+// The four chain-node files that briefly appeared here are gone again, and how they showed up is worth
+// remembering: the `muted` matcher keys on `color: var(--cc-text-dim)` and never matched the
+// `color: var(--cc-text-dim, #8b8ca7)` spelling, so stripping the dead hex fallbacks revealed six
+// long-standing rules this check had been blind to. That was the third blind spot of one shape — a
+// matcher pinned to ONE spelling of a value the codebase writes more than one way (the others: only
+// reading <style> blocks, so inline `style="font-size:…"` was invisible; and keying on a *literal*
+// size, so tokenising a rule silently un-flagged it). When adding a matcher, ask which other spellings
+// of the same declaration exist: token vs literal, with fallback vs without, scoped vs inline.
 const BASELINE: Record<string, number> = {
   'components/AppSidebar.vue': 2,
-  'components/ChainLiveLabel.vue': 1,
-  'components/ChainQcNode.vue': 2,
-  'components/ChainStartNode.vue': 1,
-  'components/ChainTaskNode.vue': 2,
   'components/ClaudeOverviewDialog.vue': 2,
   'components/CohortCheckButton.vue': 1,
   'components/CopyDialog.vue': 1,

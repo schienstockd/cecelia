@@ -14,7 +14,7 @@ defineProps<{ id: string; selected: boolean }>()
 <template>
   <div class="chain-start-node" :class="{ selected }" title="Start — link to the task(s) a run begins from">
     <span class="start-dot" />
-    <span class="start-label">start</span>
+    <span class="cc-eyebrow cc-eyebrow-micro">start</span>
     <!-- initial node: source only (no target handle) -->
     <Handle type="source" :position="Position.Right" class="node-handle" />
   </div>
@@ -40,13 +40,6 @@ defineProps<{ id: string; selected: boolean }>()
 }
 .chain-start-node.selected .start-dot {
   box-shadow: 0 0 0 3px var(--cc-accent);
-}
-.start-label {
-  font-size: var(--cc-fs-3xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--cc-text-dim);
 }
 .node-handle {
   width: 10px;

@@ -147,6 +147,9 @@ Remaining — incremental adoption only (no forced sweeps). **No counts here on 
   "finish the sweep": new divergence fails immediately, the backlog drains as files get touched.
 - [ ] **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — a genuinely distinct, recurring
   scenario that is *not* a section header. Worth naming if a third site appears; two is not yet a pattern.
+- [ ] **`BatchMoviesPanel`'s `.bm-busy`** paints an *in-progress* state amber, where `--cc-active` (the
+  blue "running" tone, per `lib/taskStatus.ts`) is arguably the right token. A hue change on a semantic
+  judgement, so it wants eyes rather than a sweep — the only one of these left that is a real question.
 - [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
   covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
 - [ ] **Deliberately left bespoke, with reasons** (do not "fix" these without reading why):
@@ -341,12 +344,19 @@ should come from a committed detector, not a grep.
 **A detector can have blind spots too, and they share one shape.** Stripping the dead colour fallbacks
 made the ratchet jump by six rules in four chain-node files. Not new divergence — the `muted` matcher keys
 on `color: var(--cc-text-dim)` and never matched the `color: var(--cc-text-dim, #8b8ca7)` spelling, so it
-had been blind to them all along. They are in the `BASELINE` now at their true count. That is the **third**
-blind spot of exactly this shape (the others: the detector only reading `<style>` blocks, so inline
-`style="font-size:…"` was invisible; and the `muted` matcher keying on a *literal* size, so tokenising a
-rule would have silently un-flagged it). All three have one cause: **a matcher pinned to one spelling of a
-value the codebase writes more than one way.** When adding a matcher, ask which other spellings of the
-same declaration exist — token vs literal, with fallback vs without, scoped vs inline.
+had been blind to them all along. That is the **third** blind spot of exactly this shape (the others: the
+detector only reading `<style>` blocks, so inline `style="font-size:…"` was invisible; and the `muted`
+matcher keying on a *literal* size, so tokenising a rule would have silently un-flagged it). All three have
+one cause: **a matcher pinned to one spelling of a value the codebase writes more than one way.** When
+adding a matcher, ask which other spellings of the same declaration exist — token vs literal, with
+fallback vs without, scoped vs inline.
+
+Those six are **migrated** (all four files back to zero), and doing it surfaced one more missing step on
+the density axis: `.cc-muted` always had `-dense` *and* `-micro`, `.cc-eyebrow` only `-dense`. The 9px
+uppercase labels in the whiteboard nodes (start / scope / the QC footer) therefore had nowhere to land —
+the same "utility hard-codes a value on an axis where sites differ" trap, one step further down. Added
+`.cc-eyebrow-micro`, so the two text scenarios now carry the same three density steps. Also routed the
+five raw `font-family: monospace` stacks through `--cc-mono` while in those files.
 
 ### Raw sizes and radii — done, and it was never churn
 

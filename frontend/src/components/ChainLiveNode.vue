@@ -136,7 +136,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 .live-elapsed {
   margin-left: auto;
   font-size: var(--cc-fs-3xs);
-  font-family: monospace;
+  font-family: var(--cc-mono);
   opacity: 0.8;
 }
 
