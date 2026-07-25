@@ -145,11 +145,29 @@ Remaining — incremental adoption only (no forced sweeps). **No counts here on 
   list is the per-file `BASELINE` in `utils/cssScenarios.test.ts`; it may shrink and must never grow.
   Touch a file in it → migrate its rules and lower the number. This is deliberately decoupled from
   "finish the sweep": new divergence fails immediately, the backlog drains as files get touched.
-- [ ] **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — a genuinely distinct, recurring
-  scenario that is *not* a section header. Worth naming if a third site appears; two is not yet a pattern.
-- [ ] **`BatchMoviesPanel`'s `.bm-busy`** paints an *in-progress* state amber, where `--cc-active` (the
-  blue "running" tone, per `lib/taskStatus.ts`) is arguably the right token. A hue change on a semantic
-  judgement, so it wants eyes rather than a sweep — the only one of these left that is a real question.
+- [ ] **Per-row disclosure in a list** (`TaskList`, `ErrorConsole`) — distinct from a section header, and
+  deliberately NOT extracted yet. Inspected, the two sites differ on **four** axes: `TaskList` uses a
+  focusable `<button>` (already `.cc-btn-bare .cc-btn-icon`) with a tooltip, the icon as click target and
+  multi-expand (a `Set`); `ErrorConsole` uses a non-focusable `<span>`, the whole row as click target and
+  single-expand. **Four differences from two samples** — you discover an axis by watching sites differ on
+  it, and at n=2 a real axis is indistinguishable from an accident of those two files. The cost is
+  asymmetric: extract now, both adopt, then site three differs on the un-modelled axis and hand-rolls,
+  leaving a primitive *and* divergence — strictly worse than divergence alone, and precisely the history
+  this doc records. Waiting costs two small scoped rules that no detector flags. There may also be
+  nothing to extract: one is already the canonical icon button, the other isn't a button at all, and the
+  only shared thing is "the chevron points up when open" — one line, needing no abstraction.
+- [ ] **Form controls have no density axis — the one primitive category this audit never listed.** The
+  global `input`/`select` base is a SINGLE size (`--cc-fs-md` + `0.32rem 0.6rem`), so every compact
+  control re-styles it: **52 rules across 28 files**, in which **24 of the 37 font-sizes are
+  `--cc-fs-sm`** against **18 distinct padding spellings**. That is the same signature as the icon
+  buttons ("60 spellings of 2×4") and the raw sizes ("33 spellings of 5 values") — the codebase has
+  already voted for a dense tier 24 times and has no name for it. A `.cc-input-dense`/`-micro` pair
+  (plus the `surface-1` + `--cc-radius-xs` that the three separate "note (optional)" fields each
+  arrived at independently) is the likely shape. **Get the number from a detector before sweeping** —
+  there is no input matcher in `cssScenarios.ts` yet, so this entry deliberately quotes a one-off
+  measurement rather than a maintained count, and it should be replaced by a detector, not trusted.
+  Surfaced by a real symptom: `BatchMoviesPanel`'s `.bm-note` never picked a tier at all and rendered
+  at the base 13.1px beside its `--cc-fs-sm` neighbours, hidden behind a redundant `font: inherit`.
 - [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
   covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
 - [ ] **Deliberately left bespoke, with reasons** (do not "fix" these without reading why):
