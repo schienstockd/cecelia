@@ -9,18 +9,27 @@ in another; a `.btn-sm` that renders as a raw browser button on a page that forg
 The rule for every entry: **one canonical thing; the second copy is the bug.**
 
 **How to use it.** Before adding a boolean/button/slider/empty-state/etc., check the "canonical" column
-and use it. When you unify a category, tick it here and add the rule to `docs/UI.md`. Snapshot from the
-2026-07 audit (counts are approximate and drift as files change — re-grep before starting a phase).
+and use it. When you unify a category, tick it here and add the rule to `docs/UI.md`.
+
+**Get counts from the detectors, never from a grep.** Every number in this doc that came from grepping
+class names turned out to be wrong, in both directions: "~80 remaining scenarios" (most muted text has no
+`hint`/`sub`/`val` in its class name), "~29 card blocks" (mostly *controls*, wanting `.cc-btn`/`ChipSelect`),
+"~15 chevron toggles" (six weren't sections), "48 ad-hoc spinners" (a non-issue), "~90 icon buttons, mostly
+intentional" (2 shapes × 4 sizes spelled 60 ways). The font-size audit counted only `rem` and missed 149
+`px` declarations of the same scale. Run `pixi run test-frontend` — `utils/cssScenarios.ts` and
+`utils/cssTokens.ts` are the authority, and the ratchet baseline in `cssScenarios.test.ts` is the live
+backlog.
 
 ## Canonical components/utilities (the baseline — use these)
 
 | Primitive | Canonical | Notes |
 |-----------|-----------|-------|
 | On/off toggle (option) | `components/CcToggle.vue` | `v-model`, `label` prop/slot, `disabled`. Rule: toggle = one immediate option; checkbox = selection from a list. |
-| Chips / segmented select | `components/ChipSelect.vue` | pill/segmented, single/multi, reorderable. |
+| Chips / segmented select | `components/ChipSelect.vue` | pill/segmented, single/multi, reorderable. **Gotcha:** an option with `label: ''` renders its span-less — that's how icon-only chips work, so an empty label *and* no icon gives a blank chip. Pass something visible (the attribute filter shows `—` for an unset value). |
 | Colour dropdown | `components/SwatchSelect.vue` | |
 | Confirm / delete | `components/ConfirmButton.vue`, `ConfirmDeleteButton.vue` | arm→confirm; some dialogs still inline their own confirm flow. |
-| Buttons | `.cc-btn` + `-primary`/`-ghost`/`-danger`/`-danger-ghost` (`style.css`) | never hand-roll `.btn-*` in scoped CSS. |
+| Buttons | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | never hand-roll `.btn-*` in scoped CSS. `-bare` = transparent/dim-until-hover (the commonest); `-ghost` is its boxed counterpart. |
+| Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a fixed **square**, so toolbar rows align regardless of glyph width. Guarded: `utils/cssScenarios.test.ts` fails on an icon-only `<button>` not built from `.cc-btn`. **Exception:** a button with a width and NO height *stretches* (a full-height edge strip / tab-strip cell) and is NOT this primitive — see *Icon-only buttons* below. |
 | Modal / dialog | `components/BaseModal.vue` | backdrop + panel + close; ~9 consumers. |
 | Popover / dropdown | `components/TeleportPopover.vue` | ~11 consumers. |
 | Tabs | `components/canvas/TabbedCanvas.vue` | + `ChipSelect` segmented. |
@@ -30,7 +39,7 @@ and use it. When you unify a category, tick it here and add the rule to `docs/UI
 | Severity colours | `lib/severity.ts` + `--cc-sev-*` | status colours should route through this. |
 | Task/chain status | `lib/taskStatus.ts` (`TASK_STATUS`) | the ONE 5-state status→icon/colour map. |
 | Semantic text/surface scenarios | `.cc-muted` · `.cc-empty` · `.cc-readout` · `.cc-eyebrow` · `.cc-card` (+ one modifier axis each) | full catalog in `docs/UI.md`. |
-| Design tokens | `--cc-fs-3xs…md`, `--cc-radius-sm/md`, colours in `style.css` | guarded: `utils/cssTokens.test.ts` fails on an undeclared `--cc-*`. |
+| Design tokens | `--cc-fs-3xs/2xs/xs/sm/md/lg`, `--cc-radius-xs/sm/md/lg/pill`, colours in `style.css` | **two** guards: `cssTokens.test.ts` fails on a reference to an undeclared custom property (all `--*`, not just `--cc-*`; an inline `:style` declaration counts as valid), and `cssScenarios.test.ts` fails on a literal `font-size`/`border-radius` — in scoped CSS **or** an inline `style=`. Exempt: display type (>15px), pill radii, `0`, `em`. |
 
 ## Approach — generalise by SCENARIO, not one component per widget
 
