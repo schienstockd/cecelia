@@ -16,9 +16,30 @@ class names turned out to be wrong, in both directions: "~80 remaining scenarios
 `hint`/`sub`/`val` in its class name), "~29 card blocks" (mostly *controls*, wanting `.cc-btn`/`ChipSelect`),
 "~15 chevron toggles" (six weren't sections), "48 ad-hoc spinners" (a non-issue), "~90 icon buttons, mostly
 intentional" (2 shapes × 4 sizes spelled 60 ways). The font-size audit counted only `rem` and missed 149
-`px` declarations of the same scale. Run `pixi run test-frontend` — `utils/cssScenarios.ts` and
-`utils/cssTokens.ts` are the authority, and the ratchet baseline in `cssScenarios.test.ts` is the live
-backlog.
+`px` declarations of the same scale. Run `pixi run test-frontend` — the detectors below are the
+authority.
+
+### The detectors — where every number in this area actually lives
+
+Both modules sit in **`frontend/src/utils/`**, each with a `.test.ts` beside it that runs in
+`pixi run test-frontend`. If you want a count, read these; do not re-derive one by grep.
+
+| Detector | In | Owns | Bar |
+|---|---|---|---|
+| `findReimplementedScenarios` | `cssScenarios.ts` | scoped rules re-declaring `.cc-muted`/`.cc-empty`/`.cc-eyebrow` | per-file `BASELINE` — **may shrink, must never grow** |
+| `findHandRolledIconButtons` | `cssScenarios.ts` | an icon-only `<button>` not built from `.cc-btn` | exact list (2 full-height strip exemptions) |
+| `findRawValues` | `cssScenarios.ts` | literal `font-size` / `border-radius`, incl. inline `style=` | exact list (1 documented exception) |
+| `findRawColours` + `colourTokens` | `cssScenarios.ts` | a hex a token already holds exactly; any `var(--x, #hex)` fallback | must be empty |
+| `findRestatedInputBase` + `inputBase` | `cssScenarios.ts` | form-control rules re-stating the global input base | exact list (1 survivor: a class shared with a `<span>`) |
+| `findDeadTokenRefs` | `cssTokens.ts` | a reference to a `--*` property `style.css` never declares | must be empty |
+
+Shared plumbing at the top of `cssScenarios.ts`: `styleBlocks()` and `cssRules()` (which recurses into
+`@media`). Two things that are easy to break:
+
+- **`vite.config.ts` sets `test.css: true`.** Without it Vitest stubs `style.css` to `''` and both
+  token guards pass vacuously — green, and checking nothing.
+- **The exact-list checks fail on *improvement* too, deliberately.** An un-updated allow-list silently
+  stops ratcheting, so fixing a site means lowering its number in the same change.
 
 ### Why this doc kept changing between sessions (2026-07-25) — and the rule that fixes it
 
@@ -47,6 +68,16 @@ committed detector that owns its number. Add a category → add a detector or an
 A number written in prose here is stale the moment someone touches a file, and re-deriving it by grep is
 how four sessions produced four pictures.
 
+**And the rule was immediately half-applied — caught 2026-07-25, worth keeping as the illustration.**
+It was written into the *Remaining* section and not into the **canonical table above it**, which went on
+carrying `~10 hand-rolled chevron toggles bypass it (see Remaining)` — describing work finished in the
+same PR, pointing at an entry that no longer existed — plus `~130 rules remain in 45 files` when the
+live `BASELINE` said 132. That is the third time this doc has recorded a fix applied to part of its own
+scope: the ratchet was first built with the largest category carved out of it, and the size audit
+counted only `rem` while 149 `px` declarations of the same scale sat outside the query. The tell is
+always the same — a rule stated in one place while a neighbouring place keeps doing the old thing. When
+you add a rule here, grep the whole file for what it forbids before claiming it holds.
+
 ## Canonical components/utilities (the baseline — use these)
 
 | Primitive | Canonical | Notes |
@@ -60,10 +91,11 @@ how four sessions produced four pictures.
 | Engaged/pressed button | `.cc-btn-on` (+ `-on-tint` / `-on-solid`) | the button vocabulary's **fourth axis** (tone / density / icon / state), and the one that was missing. Intensity is the axis. The `:hover` rules double the class on purpose — a scoped `.foo:hover` weighs (0,3,0) and would repaint the engaged state on mouseover. |
 | Joined button strip | `.cc-btn-group` + ordinary `.cc-btn` children | the group owns the outline and the hairline dividers, so children use the `-bare` tone. **Not** `ChipSelect` — that's a select; this is a row of independent actions. |
 | Section-toggle row | `.cc-section-toggle` | the chevron+heading ROW without `CollapsibleSection`'s panel-bar chrome, for a sub-section inside a popover or param form. `CollapsibleSection` composes it (the reference adoption). |
-| Modal / dialog | `components/BaseModal.vue` | backdrop + panel + close; ~9 consumers. |
-| Popover / dropdown | `components/TeleportPopover.vue` | ~11 consumers. |
+| Compact form control | `.cc-input-dense` / `.cc-input-micro` | sets font-size AND padding together, because padding tracks the size. The base is one size; changing it by hand is what made 19 files re-type the base's own border/colour/background. Guarded by `findRestatedInputBase`. |
+| Modal / dialog | `components/BaseModal.vue` | backdrop + panel + close. |
+| Popover / dropdown | `components/TeleportPopover.vue` | teleported, anchored, placement-aware. |
 | Tabs | `components/canvas/TabbedCanvas.vue` | + `ChipSelect` segmented. |
-| Collapsible section | `components/CollapsibleSection.vue` | ~7 consumers; **but ~10 hand-rolled chevron toggles bypass it** (see *Remaining*). |
+| Collapsible section | `components/CollapsibleSection.vue` | the full panel-rail bar (own surface, padding, scrolling body). For the bare chevron+heading ROW without that chrome, use `.cc-section-toggle` — which this component itself composes. |
 | Range (dual-thumb) | `components/RangeSlider.vue` | min+max only; no single-value wrapper (not recommended — see *Remaining*). |
 | Plot-area spinner | `components/plots/PlotSpinner.vue` | plot area only. Inline busy spinners were long listed here as "ad-hoc" — **measured, and they aren't**: of 48 `pi-spin` usages only 13 carry a styled class, all token-sized or inheriting, and the rest are the shared `<i class="pi pi-spin pi-spinner" />` idiom inline in a button. Nothing to unify. |
 | Severity colours | `lib/severity.ts` + `--cc-sev-*` | status colours should route through this. |
@@ -175,6 +207,17 @@ Remaining — incremental adoption only (no forced sweeps). **No counts here on 
   boundary; and a rule must be judged by its **subject** compound, since
   `.cc-toggle-input:checked ~ .cc-toggle-track` styles the track, not the input. The first run of the
   check reported 77 hits across 22 files; after both fixes, 68 across 19. Nine were never real.
+- [ ] **Not recommended as a sweep:** single-value range wrapper (base already accent-themed; readout now
+  covered by `.cc-readout`; sliders are layout-entangled and some commit on release). Governed by the rule.
+- [ ] **Deliberately left bespoke, with reasons** (do not "fix" these without reading why):
+  `ImageTable`'s `.runlog-cog.on`/`.actions-btn.on` are the documented **hover-reveal** pattern
+  (`opacity: 0` + a parent `:hover`), not the accent-border scenario. `GatePairsPanel`'s `.chan-btn.on` is
+  a full-width select-*trigger* built from its own rules, not a `.cc-btn` — adopting the state axis there
+  means rebuilding the control first. `ModuleLayout`'s `.filter-toggle.active` sits between the outline
+  and tint intensities (accent-soft text, accent-strong border, no fill) and would change visually either
+  way; it is a popover trigger, not a toggle.
+  (`BatchMoviesPanel`'s `.bm-busy` was on this list and is now resolved — it is a resource-contention
+  advisory, not a progress indicator, so it took `--cc-sev-warn`. See the status-vs-not split below.)
 
 Not swept, and NOT because they were forgotten: `ChainPicnicNode`'s amber and `AnimationModule`'s
 `.tl-badge` are **identity** hues (a node's colour, a keyframe badge), and the `.cc-del`/`.footer-btn
@@ -282,7 +325,7 @@ Migrated on the back of that (each visually equivalent unless noted):
   several are richer (icons, multi-line CTAs) inside the whiteboard; adopt opportunistically, not swept.
 - **Accent-coloured readouts** (`.pt-val` and friends) — a readout that is *deliberately* accent or
   `--cc-text` rather than dim. Prominence, not density; `.cc-readout-strong` covers the common case.
-- **Per-site italic and geometry.** `font-style: italic` marks provisional/advisory prose in ~20 places;
+- **Per-site italic and geometry.** `font-style: italic` marks provisional/advisory prose in a scattering of places;
   it is emphasis, not a tier, and stays a one-line scoped rule (as do width/margin/flex/padding).
 
 ### Correctness find — dead design tokens (the actually-broken thing)
@@ -337,8 +380,8 @@ The mandatory-lookup clause in `CLAUDE.md` and the catalog in `docs/UI.md` are r
 and this project's history *is* the record of that discipline failing across fresh context windows. So
 the scenarios are now machine-checked: `utils/cssScenarios.ts` + `cssScenarios.test.ts` detect a scoped
 rule that spells out a utility's defining declarations, and hold a **per-file baseline that may shrink
-and must never grow**. ~130 rules remain in 45 files; new divergence fails immediately, and the backlog
-drains as files get touched. This decouples "stop the drift" from "finish the sweep" — which is what had
+and must never grow**. The `BASELINE` map in that test IS the number — do not restate it here, it was
+already wrong once. New divergence fails immediately, and the backlog drains as files get touched. This decouples "stop the drift" from "finish the sweep" — which is what had
 stalled the whole exercise.
 
 Precision was chosen over recall, deliberately, because the allow-list a noisy check would force is
