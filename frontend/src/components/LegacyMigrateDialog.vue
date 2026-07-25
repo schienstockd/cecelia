@@ -253,7 +253,6 @@ async function confirmImport() {
 .lm-table thead th { position: sticky; top: 0; background: var(--cc-surface-1); font-weight: 600; color: var(--cc-text-dim); }
 .lm-table tr.off { opacity: 0.45; }
 .lm-name { font-weight: 500; }
-.cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 .lm-warn { color: #fbbf24; font-size: var(--cc-fs-sm); margin-top: 0.15rem; }
 .lm-tag { display: inline-block; margin: 0.1rem 0.2rem 0.1rem 0; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs); font-size: var(--cc-fs-sm); }
 .lm-tag.ok { background: #16653433; color: #4ade80; }

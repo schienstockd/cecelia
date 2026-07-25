@@ -29,6 +29,11 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
+| Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
+| Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
+| Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
+| Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
+| Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
 
@@ -37,13 +42,14 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Scenario | Use | Never |
 |------|-----|-------|
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ `-dense`/`-micro` in dense chrome) | a scoped `color: var(--cc-text-dim); font-size: …` |
+| Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
 | Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent, `-dense` inline) | a bespoke `.*-val`/`.*-num` |
 | Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (+ `-dense` list/table headers, `-micro` whiteboard-node labels) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | `--cc-fs-3xs/2xs/xs/sm/md/lg` | a raw `rem`/`px` font-size (incl. inline `style=`) |
-| Compact input / select / textarea | `.cc-input-dense` (12px) / `.cc-input-micro` (11px) — sets size AND padding | a scoped class re-typing the base's border/colour/background to change the size |
+| Compact input / select / textarea | `.cc-input-dense` (11px) / `.cc-input-micro` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
 | A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
 
 **Each utility varies on exactly one axis, and the modifier is that axis** — density (`-dense`/`-micro`),
@@ -69,6 +75,26 @@ whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssS
 > `.test.ts` beside it (`pixi run test-frontend`). Full index of what each detector owns and what its
 > bar is: [`docs/todo/UX_PRIMITIVES_PLAN.md`](todo/UX_PRIMITIVES_PLAN.md) → *The detectors*. Need a
 > count for this area? Read those — never re-derive one by grep.
+
+**Never re-declare a utility in scoped CSS — compose it.** A `<style scoped>` rule whose selector *is*
+a global utility (`.cc-muted { color: …; font-size: … }`) outranks the global one on specificity, because
+scoping adds `[data-v-…]`. The component then silently stops tracking the utility: change the global and
+this one place doesn't follow. It happens by accident during migration — rename the class in the template,
+rename the *rule* alongside it instead of deleting it — which is exactly how `LegacyMigrateDialog` ended up
+shadowing `.cc-muted` with a byte-identical copy. `utils/cssScenarios.test.ts` now fails on it, with no
+allow-list: per-site layout (`.cc-muted { margin-top: 0.3rem }`), descendants (`.panel .cc-muted`) and
+modifier compounds (`.cc-btn-bare.viewer-green`) are all legal by construction, so anything it reports is
+the bug. Add layout in scoped CSS; never re-state a property the utility itself declares.
+
+**A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
+and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was
+not another opt-in class: **33 form controls across 24 files had each hand-written
+`font-size: var(--cc-fs-sm)`**, while exactly *one* site had ever adopted `.cc-input-dense`. When two
+thirds of the population corrects the default by hand, the default is wrong. The base is `--cc-fs-sm`
+(12px) now, the density steps re-pitched below it, and those 33 declarations are gone as provable no-ops.
+The same rounding caused the tooltip regression (`0.72rem` → nearest step, which happened to be the larger
+one → now `--cc-fs-xs`). **When tokenising a value that sits between two steps, check which side the
+element belongs on** — dense chrome rounds down, not to the nearest.
 
 **Re-implementing a scenario is a test failure, not a style opinion.** `utils/cssScenarios.test.ts`
 detects a scoped rule that spells out a canonical utility's defining declarations — a dim colour plus a

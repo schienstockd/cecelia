@@ -60,5 +60,5 @@ defineExpose({ exportImage, exportSvg })
 .ip-missing { padding: 1rem; color: var(--cc-text-dim); font-size: var(--cc-fs-md); }
 /* .ip-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .ip-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.ip-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.ip-export { max-width: 7rem; }
 </style>

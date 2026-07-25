@@ -221,7 +221,7 @@ defineExpose({ exportImage, getCsv })
 .cc-sel { font-size: var(--cc-fs-sm); }
 /* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
-.hmm-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.hmm-export { max-width: 7rem; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + ClusterHeatmapPanel) */
 .hmm-empty { padding: 1rem; }
 .hmm-empty .pi { font-size: 1.4rem; opacity: 0.6; }

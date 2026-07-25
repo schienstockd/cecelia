@@ -108,7 +108,9 @@ body {
 /* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
 
 .p-tooltip .p-tooltip-text {
-  font-size: var(--cc-fs-sm);
+  /* Same rounding-up as the input base: this was 0.72rem and the sweep took it to the nearer step,
+     which happened to be the larger one. A tooltip is dense chrome, so it belongs on --cc-fs-xs. */
+  font-size: var(--cc-fs-xs);
   padding: 0.3rem 0.6rem;
   background: #21262d;
   border: 1px solid #30363d;
@@ -373,7 +375,12 @@ select,
 input[type="text"], input[type="number"], input[type="search"],
 input[type="password"], input[type="email"], textarea {
   font: inherit;
-  font-size: var(--cc-fs-md);
+  /* One step BELOW body, which is what this base has always meant to be: it started life at 0.8rem
+     and the tokenisation sweep rounded it UP to the nearest step (--cc-fs-md, = body). That read as
+     "the fields got bigger" in every dialog, and the density axis was not the answer — measured, only
+     ONE of ~25 text fields had ever opted into `.cc-input-dense`, so the tier sites actually wanted
+     was the DEFAULT, not an opt-in. The steps below are re-pitched accordingly. */
+  font-size: var(--cc-fs-sm);
   color: var(--cc-text);
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
@@ -395,13 +402,18 @@ input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
 /* Density steps for form controls — the axis the base was missing, and the reason ~112 rules re-styled
    it. To make an input smaller you had to write a class, and once you were writing a class you re-typed
    everything you could see: 67 declarations across 19 files restated the base's own border/colour/
-   background verbatim. Font-size was never the problem (50 uses, 5 values, all tokens) and padding's 23
-   spellings were not 23 choices — sorted, they collapse to two tiers below the base, because padding
-   TRACKS the size rather than varying independently. So each step sets both, exactly as `.cc-btn-icon`
-   bundles box and glyph size. Compose: `class="my-field cc-input-dense"`, and keep only real layout
-   (width / flex / margin) in scoped CSS. Guarded by `findRestatedInputBase` in cssScenarios.test.ts. */
-.cc-input-dense { font-size: var(--cc-fs-sm); padding: 0.15rem 0.4rem; }
-.cc-input-micro { font-size: var(--cc-fs-xs); padding: 0.05rem 0.25rem; }
+   background verbatim. Padding's 23 spellings were not 23 choices — sorted, they collapse to two tiers
+   below the base, because padding TRACKS the size rather than varying independently. So each step sets
+   both, exactly as `.cc-btn-icon` bundles box and glyph size. Compose:
+   `class="my-field cc-input-dense"`, and keep only real layout (width / flex / margin) in scoped CSS.
+   Guarded by `findRestatedInputBase` in cssScenarios.test.ts.
+
+   Re-pitched one step down when the base was: adding the axis was right, but it was hung off a base
+   that had itself drifted a tier too large, so the steps started at the size the base should have
+   been. Adoption proved it — one call site in the whole app, and it existed to get a field back to
+   the size a plain input should already have rendered at. */
+.cc-input-dense { font-size: var(--cc-fs-xs); padding: 0.15rem 0.4rem; }
+.cc-input-micro { font-size: var(--cc-fs-2xs); padding: 0.05rem 0.25rem; }
 
 /* native select chevron → custom caret so dropdowns match across browsers */
 select {

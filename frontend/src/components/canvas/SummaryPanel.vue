@@ -657,9 +657,9 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 </template>
 
 <style scoped>
-.sp-measure { font-size: var(--cc-fs-sm); max-width: 12rem; }
+.sp-measure { max-width: 12rem; }
 .sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
-.sp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.sp-export { max-width: 7rem; }
 
 /* compact icon buttons (options / duplicate) */
 /* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
@@ -685,8 +685,8 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
 .sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
-.sp-pop-row select { font-size: var(--cc-fs-sm); max-width: 7rem; }
-.sp-pop-row input[type="number"] { width: 3.6rem; font-size: var(--cc-fs-sm); padding: 2px 4px; }
+.sp-pop-row select { max-width: 7rem; }
+.sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); text-align: center; padding: 12px; }
 .sp-err { color: var(--cc-danger); }

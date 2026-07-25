@@ -231,5 +231,5 @@ function exportAs(kind: string) {
 .chan-item:hover { background: var(--cc-surface-2); }
 .chan-item.disabled { color: var(--cc-text-dim); cursor: default; }
 .chan-cap { padding: 5px 4px 2px; font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); }
-.gp-export { font-size: var(--cc-fs-sm); max-width: 7rem; }
+.gp-export { max-width: 7rem; }
 </style>

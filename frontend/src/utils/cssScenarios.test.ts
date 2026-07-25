@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
   findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
+  findScopedUtilityOverride, utilityRules, SCENARIO_HINT,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -55,6 +56,52 @@ describe('scenarioFor', () => {
     expect(of('.x-btn', 'color: var(--cc-text-dim); font-size: 0.7rem;')).toBeNull()
     expect(of('.x-thing', 'color: var(--cc-text-dim); font-size: 0.7rem; cursor: pointer;')).toBeNull()
     expect(of('.x-thing', 'color: var(--cc-text-dim); font-size: 0.7rem; background: #000;')).toBeNull()
+  })
+
+  // On an <i>, `font-size` is the GLYPH size, not a step on the text scale — so a dim icon is not
+  // muted text, and there is no utility to send it to.
+  it('does not flag an icon', () => {
+    expect(of('.expand-icon', 'color: var(--cc-text-dim); font-size: var(--cc-fs-2xs);')).toBeNull()
+    expect(of('.search-wrap .pi-search', 'color: var(--cc-text-dim); font-size: var(--cc-fs-sm);')).toBeNull()
+  })
+
+  // Nothing in the CSS separates a hint from a readout that never got `tabular-nums`, so the hint
+  // names both rather than talking a migrator out of the tabular figures.
+  it('offers .cc-readout alongside .cc-muted, because the matcher cannot tell them apart', () => {
+    expect(SCENARIO_HINT.muted).toContain('.cc-readout')
+  })
+})
+
+describe('findScopedUtilityOverride', () => {
+  const utils = { 'cc-muted': new Set(['color', 'font-size']) }
+  const find = (css: string) =>
+    findScopedUtilityOverride([{ path: 'x.vue', text: `<style scoped>${css}</style>` }], utils)
+      .map(r => `${r.selector} | ${r.decl}`)
+
+  it('flags a scoped rule re-declaring the global utility', () => {
+    expect(find('.cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm) }'))
+      .toEqual(['.cc-muted | color: var(--cc-text-dim)', '.cc-muted | font-size: var(--cc-fs-sm)'])
+  })
+
+  // docs/UI.md explicitly asks sites to compose the utility and add their own layout, so all three of
+  // these have to stay legal or the check would forbid the documented pattern.
+  it('allows per-site layout, descendants, and a modifier compound', () => {
+    expect(find('.cc-muted { margin-top: 0.3rem; flex: 1 }')).toEqual([])
+    expect(find('.panel .cc-muted { color: var(--cc-text-dim) }')).toEqual([])
+    expect(find('.cc-btn-bare.viewer-green { color: var(--cc-text-dim) }')).toEqual([])
+  })
+
+  it('reads each selector in a comma list on its own', () => {
+    expect(find('.lm-name, .cc-muted { font-size: var(--cc-fs-sm) }'))
+      .toEqual(['.cc-muted | font-size: var(--cc-fs-sm)'])
+  })
+})
+
+describe('utilityRules', () => {
+  it('indexes bare .cc-* rules only — a compound is not a utility declaration', () => {
+    const u = utilityRules('.cc-muted { color: red; font-size: 1px } .cc-btn.on { outline: 0 }')
+    expect([...u['cc-muted']]).toEqual(['color', 'font-size'])
+    expect(u['cc-btn']).toBeUndefined()
   })
 })
 
@@ -147,14 +194,14 @@ const BASELINE: Record<string, number> = {
   'components/CopyDialog.vue': 1,
   'components/CropDialog.vue': 1,
   'components/CropPanel.vue': 1,
-  'components/ErrorConsole.vue': 3,
-  'components/FileBrowser.vue': 3,
+  'components/ErrorConsole.vue': 2,
+  'components/FileBrowser.vue': 2,
   'components/ImageMetadataDialog.vue': 3,
   'components/ImageTable.vue': 3,
   'components/LabLogPanel.vue': 5,
-  'components/LegacyMigrateDialog.vue': 2,
+  'components/LegacyMigrateDialog.vue': 1,
   'components/ModuleLayout.vue': 5,
-  'components/PackagesDialog.vue': 5,
+  'components/PackagesDialog.vue': 4,
   'components/PhysicalSizeDialog.vue': 1,
   'components/PoolThrottle.vue': 2,
   'components/ProjectPanel.vue': 5,
@@ -201,8 +248,10 @@ describe('hand-rolled UX scenarios', () => {
     expect(sources.length).toBeGreaterThan(100)               // the glob resolved
 
     const counts: Record<string, number> = {}
+    const rules: Record<string, string[]> = {}
     for (const hit of findReimplementedScenarios(sources)) {
       counts[hit.path] = (counts[hit.path] ?? 0) + 1
+      ;(rules[hit.path] ??= []).push(`${hit.selector} → ${SCENARIO_HINT[hit.scenario]}`)
     }
 
     const regressions: string[] = []
@@ -210,13 +259,39 @@ describe('hand-rolled UX scenarios', () => {
     for (const path of new Set([...Object.keys(BASELINE), ...Object.keys(counts)])) {
       const was = BASELINE[path] ?? 0
       const now = counts[path] ?? 0
-      if (now > was) regressions.push(`${path}: ${was} → ${now} (use the utility, don't re-declare it)`)
+      // Name the rules, not just the delta: a file and a count leave you re-deriving which rule moved
+      // and which utility it wants — by grep, which is how every count in this area got wrong before.
+      if (now > was) regressions.push(`${path}: ${was} → ${now}\n    ${rules[path].join('\n    ')}`)
       if (now < was) improvements.push(`${path}: ${was} → ${now} (lower the BASELINE entry)`)
     }
 
     expect(regressions).toEqual([])
     // Improvements fail too, on purpose: an un-updated baseline silently stops ratcheting.
     expect(improvements).toEqual([])
+  })
+})
+
+describe('scoped overrides of a global utility', () => {
+  // The purest form of the thing this whole area exists to prevent, and it got past every other check:
+  // `LegacyMigrateDialog` adopted `class="cc-muted"` in its template — correctly — and then carried a
+  // byte-identical `.cc-muted { … }` in its scoped CSS, because the migration renamed the old `.lm-sub`
+  // rule alongside the class instead of deleting it. Scoping adds `[data-v-…]`, so the copy outranks the
+  // global and that one component silently stops tracking the utility.
+  //
+  // Must be EMPTY, with no allow-list: composition (`.panel .cc-muted`), per-site layout
+  // (`.cc-muted { margin-top }`) and modifier compounds (`.cc-btn-bare.viewer-green`) are all legal by
+  // construction, so anything this reports is the bug itself.
+  it('never exist — compose the utility, add only layout', () => {
+    const utils = utilityRules(RAW['/src/style.css'] ?? '')
+    expect(Object.keys(utils).length).toBeGreaterThan(10)     // style.css resolved with its utilities
+
+    const sources = Object.entries(RAW)
+      .filter(([path]) => path !== '/src/style.css')           // style.css DECLARES them
+      .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+
+    const found = findScopedUtilityOverride(sources, utils)
+      .map(r => `${r.path} | ${r.selector} | ${r.decl}`)
+    expect(found.sort()).toEqual([])
   })
 })
 
@@ -284,6 +359,10 @@ describe('form controls', () => {
     // .cby-swatch is on BOTH a <span> (static swatch) and an <input type="color"> (editable one).
     // A <span> gets nothing from the input base, so this border is load-bearing for that half.
     'components/ViewerPanel.vue | .cby-swatch | border: 1px solid var(--cc-border)',
+    // Same shape: .mono is on the REPL <input> and on plain <span>s. The span inherits body size, so
+    // dropping this would push those spans up a tier. (`.field-input.mono` needs both classes and is
+    // input-only, so that one was removed.)
+    'modules/SettingsModule.vue | .mono | font-size: var(--cc-fs-sm)',
   ]
 
   it('never re-state what the global input base already gives', () => {

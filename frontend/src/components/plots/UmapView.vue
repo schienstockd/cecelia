@@ -687,7 +687,7 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 /* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */
 .uv-opts { width: 15rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); }
-.uv-opt select { font-size: var(--cc-fs-sm); padding: 2px 4px; max-width: 8.5rem; }
+.uv-opt select { padding: 2px 4px; max-width: 8.5rem; }
 .uv-opt-sep { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
   border-top: 1px solid var(--cc-border); padding-top: 6px; margin-top: 2px; }
 /* population checklist (inside the options popover) */

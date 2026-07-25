@@ -71,8 +71,13 @@ const TRACKING     = /letter-spacing:/
 // A dim colour + a size also describes every ghost/icon BUTTON in the app — whose canonical form is
 // `.cc-btn-ghost`, not `.cc-muted`. So the text scenarios only fire on rules that are purely text:
 // nothing interactive, no box chrome, and not a control-shaped selector.
+//
+// `icon`/`pi-` are in that list for a different reason than the controls: on an `<i>`, `font-size` IS
+// the glyph size, not a step on the text scale, so a dim icon is not muted TEXT and has no utility to
+// migrate to. Three rules (`.expand-icon`, `.fb-sc-icon`, `.search-wrap .pi-search`) were being flagged
+// with no correct answer to give them.
 const INTERACTIVE  = /cursor:|background(-color)?:|border(-\w+)?:|transition:|:hover|appearance:/
-const CONTROL_NAME = /(btn|button|toggle|tab|chip|input|select|gear|caret|swatch)\b/i
+const CONTROL_NAME = /(btn|button|toggle|tab|chip|input|select|gear|caret|swatch|icon|pi-)\b/i
 
 const isTextOnly = (rule: CssRule) =>
   !INTERACTIVE.test(rule.body) && !CONTROL_NAME.test(rule.selector)
@@ -96,6 +101,99 @@ export function scenarioFor(rule: CssRule): Scenario | null {
   if (/-empty|empty-/.test(selector))              return 'empty'
   if (has(body, ANY_SIZE))                         return 'muted'
   return null
+}
+
+/**
+ * What to migrate a hit to. Surfaced in the ratchet's failure message, because a file name and a count
+ * don't tell you which rule moved or where it should go.
+ *
+ * `muted` is deliberately not stated as a single answer. `.cc-readout` is `dim + font-size` **plus**
+ * `tabular-nums`, so its defining declarations are a strict superset of the `muted` matcher's and every
+ * hand-rolled numeric readout in the app (`.row-elapsed`, `.tl-time`, `.anim-fps`, `.pm-opt-val`, …)
+ * lands here labelled `muted`. Nothing in the CSS distinguishes them — a readout that never got
+ * `tabular-nums` is byte-identical to a hint — so the check names both candidates and the migrator
+ * picks. Asserting `.cc-muted` there would silently talk people out of the tabular figures.
+ */
+export const SCENARIO_HINT: Record<Scenario, string> = {
+  muted:   '.cc-muted (or .cc-readout if it is a numeric value beside a control)',
+  empty:   '.cc-empty (+ -inline / -overlay / -lg)',
+  eyebrow: '.cc-eyebrow (+ -dense / -micro)',
+}
+
+// ── Scoped overrides of a global utility ──────────────────────────────────────────────────────────
+
+/** A scoped rule that re-declares a property the global utility of the same name already sets. */
+export interface UtilityOverride {
+  path:     string
+  selector: string
+  decl:     string
+}
+
+/**
+ * Every `.cc-*` utility `style.css` declares, as class name → the properties it sets.
+ *
+ * Only a BARE single-class rule counts as declaring the utility (`.cc-muted { … }`), because that is
+ * the shape a scoped copy shadows.
+ */
+export function utilityRules(styleCss: string): Record<string, Set<string>> {
+  const out: Record<string, Set<string>> = {}
+  for (const rule of cssRules(styleCss)) {
+    for (const part of rule.selector.split(',')) {
+      const m = /^\.(cc-[\w-]+)$/.exec(part.trim())
+      if (!m) continue
+      const props = (out[m[1]] ??= new Set<string>())
+      for (const d of rule.body.split(';')) {
+        const i = d.indexOf(':')
+        if (i > 0) props.add(d.slice(0, i).trim())
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * A component that re-declares a global utility inside its own `<style scoped>`.
+ *
+ * This is the trap of this whole area in its purest form, and it got past every existing check:
+ * `LegacyMigrateDialog` adopted `class="cc-muted"` correctly in its template and then carried
+ * `.cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm) }` in scoped CSS — the migration
+ * had *renamed* the old `.lm-sub` rule along with the class instead of deleting it. Scoping adds a
+ * `[data-v-…]` attribute, so the copy wins on specificity and the utility silently stops being the
+ * thing that renders: change the global and this one component doesn't follow.
+ *
+ * Deliberately the narrowest form that has no judgement in it — the subject must be a bare `.cc-*`
+ * class, and the property must be one the global rule for that same class already sets. So
+ * composition stays legal, which matters because `docs/UI.md` explicitly asks for it:
+ *   - `.cc-muted { margin-top: 0.3rem }`   per-site LAYOUT on a utility — allowed, margin isn't a
+ *                                          property `.cc-muted` declares
+ *   - `.panel .cc-muted { … }`             a descendant, not the utility itself
+ *   - `.cc-btn-bare.viewer-green { … }`    a documented one-off tone on a modifier compound
+ */
+export function findScopedUtilityOverride(
+  sources: Array<{ path: string, text: string }>,
+  utils: Record<string, Set<string>>,
+): UtilityOverride[] {
+  const out: UtilityOverride[] = []
+  for (const { path, text } of sources) {
+    for (const block of styleBlocks(text)) {
+      for (const rule of cssRules(block)) {
+        for (const part of rule.selector.split(',')) {
+          const m = /^\.(cc-[\w-]+)$/.exec(part.trim())
+          const props = m && utils[m[1]]
+          if (!props) continue
+          for (const d of rule.body.split(';')) {
+            const i = d.indexOf(':')
+            if (i < 0) continue
+            const prop = d.slice(0, i).trim()
+            if (props.has(prop)) {
+              out.push({ path, selector: part.trim(), decl: `${prop}: ${d.slice(i + 1).trim()}` })
+            }
+          }
+        }
+      }
+    }
+  }
+  return out
 }
 
 // ── Icon-only buttons ─────────────────────────────────────────────────────────────────────────────

@@ -809,7 +809,7 @@ onUnmounted(() => {
 }
 
 /* visual styling from the global form base (style.css) */
-.viewer-select { width: 100%; font-size: var(--cc-fs-sm); }
+.viewer-select { width: 100%; }
 /* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
 .opt-colourby { font-size: var(--cc-fs-xs); width: 100%; min-width: 0; }
 /* movie recording params — one compact row: fps slider · res slider · record button */

@@ -662,7 +662,6 @@ const visibleUids = computed<string[]>(() =>
 .proc-row .filter-key { min-width: 104px; }
 .proc-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .proc-select {
-  font-size: var(--cc-fs-sm);
   padding: 0.15rem 0.4rem;
   border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
