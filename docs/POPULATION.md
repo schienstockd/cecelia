@@ -502,3 +502,120 @@ per-image measurement + membership caching in Julia; lazy column reads in `label
 Lasso/transient selection; compensation; FCS import/export; flowWorkspace/cytolib compat;
 clustering UI; tracking UI/task. `pop_df` *reads* `live`/`clust`, but their creation UIs
 are later phases; only `flow` is wired to the gating UI now.
+
+---
+
+## Gating plot — rendering & UX hacks
+
+Deliberate shortcuts in the plot stack (`components/plots/{ScatterGL,PlotLayers,GateOverlay}.vue`).
+Know them before changing those components. Moved here from `docs/UI.md`, which kept UI *conventions*
+while these are gating-model internals.
+
+
+
+- **Pseudocolour is computed client-side, smoothed.** ScatterGL bins the transformed points into
+  a 160×160 grid, **box-blurs** it (≈ KDE), log-scales, then **bilinear-samples** the grid per
+  point → regl's `colorBy:'valueA'`. The FlowJo **blue-heat ramp** (R `.flowColorRampBlueHeat`,
+  `flowHelpers.R:775`) is interpolated to **256 stops** so the gradient is smooth (not 5 bands),
+  and the low end is lifted off pure black (`#0b1a4d`) so sparse points stay visible on the dark
+  background. No server density call for points.
+- **Contours are client-side too.** PlotLayers builds a 64×64 (lightly box-blurred ≈ KDE)
+  density grid and runs **marching squares** at normalised z = `1 − [0.95,0.90,0.75,0.5]`
+  (R `.flowContourLines`, `flowHelpers.R:46`). The `/api/gating/density` endpoint exists but
+  the canvas path doesn't use it.
+- **Population overlay reuses `plotdata`, no new endpoint.** For each highlighted pop, the panel
+  GETs `plotdata?pop=<path>` — Julia still owns membership; the client only colours the returned
+  subset (dots in `points` mode, a contour in `contour` mode). Heavy for very large/low-
+  selectivity pops (canvas2D dots) — acceptable for gated subpops.
+- **Gate editing without stealing pan/zoom.** regl (below) owns pan/zoom. In edit (off) mode the
+  overlay sets its own `pointer-events:'auto'` ONLY while the cursor is over a gate handle/body —
+  detected via a *bubbled* `mousemove` on the parent container (events bubble up from the regl
+  canvas even though the overlay is `'none'`) — and `'none'` otherwise, so empty-space clicks
+  reach regl. During a drag it shows a local `draft` gate; on release it emits `edit` and keeps
+  the draft until the authoritative tree arrives (a `gates`-prop watch clears it) → no snap-back
+  flash.
+- **Smooth cross-plot propagation via per-pop versions.** Editing pop A's gate in plot 1 must
+  update plot 2 if it shows A — *without a full reload*. `stores/gating.ts` funnels every tree
+  update through `setTree()`, which diffs gate/filter signatures vs the previous tree and bumps a
+  per-path `popVersion` for changed pops **and their descendants** (parent∩child). Each panel
+  watches the version of its displayed parent (→ refetch base points only, no `plotmeta`, so no
+  axis flicker) and of its highlighted pops (→ refetch just those layers). regl redraw is
+  instant, so it's smooth. `setTree` is the *single* tree-update entry (HTTP response **and** WS
+  broadcast both call it) — the diff is idempotent, so the duplicate doesn't double-fire.
+- **Scope governs ALL manager options.** A bottom-of-manager toggle — **icons only** (globe =
+  **global**, default; pin = **local**), no "Scope" label, sitting below the Options box — decides
+  whether every option — highlighted pops (the **eye**, not the old
+  global `show` flag), gate labels, line width, axis mode — applies to **all plots** (global, one
+  shared value) or **only the active plot** (local, the plot's own copy). `GatingPlots` keeps a
+  global value and a per-`Plot` copy of each; `panelX(p)`/`activeX` computeds pick by scope, and
+  edits route to the global value or the active plot. The manager's controls reflect the active
+  scope, so they change as you switch the active plot in local mode (cf. the old per-box
+  `popLeaves`). Each `GatePlotPanel` just consumes the resolved props (`highlight`,
+  `gateLineWidth`, `gateLabels`, `axisFromZero`).
+- **Gates show on the matching axis pair, either orientation.** A panel draws the child gates of
+  its displayed population whose two channels are the plot's two channels — in **either order**
+  (R `.flowMatchGatingParamsForPop`). `orientGate()` returns the gate as-is for the same
+  orientation, or **transposed** (swap x/y coords + channels + transforms) when the axes are
+  flipped, so changing X/Y to a combo that has a gate reveals it (reactively, via `currentGates`).
+- **Gate display options** live in `GatingPlots` (apply to all plots) and are edited in the
+  manager's collapsible **Options** box (grouped into `plot` / `viewer` sub-headings): a **gate-labels** toggle (subtle
+  population name centred above each gate — bold with a dark halo for legibility, drawn on
+  `GateOverlay`; **on by default**) and a **line-width** slider (gate stroke thickness). Passed to
+  `GateOverlay` as `showLabels` / `lineWidth`. An **Axis** toggle — **whole-dataset scale**
+  (double-diagonal icon, default) vs **autoscale-to-pop** (single-diagonal) — adds `x0/y0=1` to
+  the plot queries. With it on, `plotmeta` sets each axis to `[transformed(0), transformed(full-
+  dataset max)]` (the max comes from *all* cells, not the displayed pop) so the axis stays fixed
+  when you select a population (FlowJo behaviour); off = autoscale to the displayed pop's extent.
+- **Displayed parent is owned by `GatingPlots` (per panel), not the panel.** So the manager can
+  highlight the active plot's parent row and switch the highlight when you change active plots.
+  Clicking a population row sets it as the active plot's parent; clicking it **again resets to
+  root** (toggle). The panel's `parent` is a writable computed over the `update:parent` event.
+- **Channel-name labels in the UI.** The X/Y selects and axis titles show the resolved channel
+  name (`store.colLabel`: maps an intensity column to `channelNames[i]`, others unchanged) while
+  the API still receives the raw column name. Mirrors `pop_df`'s default resolution (POPULATION.md).
+- **Axis ticks** are abbreviated client-side (`262144` → `262.1k`, k/M/G) so labels don't crowd,
+  and rendered with real tick marks + baseline lines; the plot has generous margins so axis
+  titles don't sit on the box edge.
+- **Smoother pseudocolour**: see the density bullet above (160² grid, box-blurred, bilinear-
+  sampled, 256-stop ramp, lifted low end).
+- **Fixed camera → exact overlay alignment (pan/zoom disabled).** Getting the WebGL points to
+  line up with the canvas2D overlays under regl's camera/aspect/scale machinery proved fragile
+  (providing x/y scales made regl re-fit the camera and zoom in, drifting dots off the gates so
+  gating caught no cells). The robust fix: **no x/y scales**, `aspectRatio = w/h` (uniform fill),
+  and `cameraIsFixed: true` — the camera stays at identity, so `[-1,1]` maps straight to the
+  canvas edges and the overlays' plain extents mapping matches exactly. `viewExtents` therefore
+  always equals `extents`. Trade-off: **no interactive pan/zoom** for now; re-enabling it needs
+  the overlays to replicate regl's full `projectionLocal·cameraView·model` transform (the
+  `view`-event camera matrix), not a domain readout. (The contour grid's binning and `cellToData`
+  must still use the same `/G` bin-centre convention.)
+- **Selection is suppressed.** regl single-click selection would paint points blue, which we
+  don't want. ScatterGL subscribes to `select` and immediately `deselect()`s, and sets
+  `pointColorActive`/`pointColorHover` to the neutral colour. Pan/zoom stay enabled.
+- **Active panel + manager link.** `GatingPlots` tracks an `activePanel` index (orange border
+  via `.panel.active`); clicking a panel activates it; the active panel watches `selectedPop`
+  and sets its parent so the manager selection "shows up on the plot".
+- **PopulationManager drag is clamped** to its offset-parent (keeps a 24px grab strip on every
+  edge, never above the top) so the floating window can't be dragged off-frame and lost.
+- **Napari linked brushing.** The gating bar has a `pi-pencil` *select in napari* button
+  (`store.startCellSelection`) that adds a draw layer in napari, plus a **Z toggle** beside it
+  (`store.napariZMode` `'stack'`/`'slice'`) and, in slice mode, a **±N stepper**
+  (`store.napariZWindow`) — `slice` restricts the spatial selection to cells within ±N z-slices of
+  the live napari z, `stack` selects across the whole stack. Changing either **re-evaluates the
+  active selection live** (`store.updateSelectionScope` → `/api/napari/selection-scope`) and applies
+  to the next one. (The old gating-bar `pi-palette`
+  *show populations* button was removed — it duplicated the ViewerPanel master toggle and confused
+  users; showing pops is now the ViewerPanel toggle alone, remembered via
+  `settings.napariShowPopulations`.) Drawing a region selects those cells spatially → they arrive
+  back (via `gating:popmap`) as a **transient "Napari selection" population** (cyan `pi-map-marker`
+  row, no rename) which `GatingPlots` auto-adds to the highlight set, so the spatially-selected
+  cells light up in channel space. Its row has a **trash button** (`store.clearNapariSelection` →
+  `/api/napari/stop-selection`) that clears the selection, removes its `Cell selection` Shapes
+  layer from napari, and is then pruned from every plot's highlight set (so a plot with no other
+  selection reverts from the dimmed backdrop to normal pseudocolour/contour). It's never persisted,
+  so there's no pop to delete. The manager's per-pop `pi-images` column toggles a pop's napari visibility
+  (its `show` flag) and re-pushes via `store.refreshNapariPops` (silent); the Options box has a
+  **Napari dots** size slider (per-set `settings.get/setPointSize(setUid)`, re-pushes on release). The ViewerPanel
+  *Show populations* toggle re-pushes live on every `gating:popmap` while shown, so the napari
+  overlay tracks gate edits / pop add-remove as you gate. The transient selection pop is **not**
+  pushed back into napari (it would steal the active layer mid-draw). See `docs/NAPARI.md` and
+  `docs/POPULATION.md`.
