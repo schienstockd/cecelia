@@ -86,13 +86,16 @@ RESTART_EXIT_CODE = 42
 
 
 def main() -> int:
-    _apply_pending_update()
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
     # server's Python subprocesses use the same env. CECELIA_SUPERVISED tells the server that
     # backend restart is available (we relaunch it on RESTART_EXIT_CODE).
     env = {**os.environ, "CECELIA_SUPERVISED": "1"}
     first = True
     while True:
+        # Apply staged updates every iteration, not just at first launch — Settings → System Restart
+        # re-enters this loop with the Julia backend down, which is the one moment we can swap
+        # api/src/*.jl without a running process locking them.
+        _apply_pending_update()
         proc = subprocess.Popen(
             [_find_julia(), "--project", "src/server.jl"],
             cwd=os.path.join(ROOT, "api"),
