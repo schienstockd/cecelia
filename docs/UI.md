@@ -1,7 +1,31 @@
 # Cecelia UI Guide
 
-Frontend conventions, component catalog, and how to add new UI features.
-The language-boundary and WS protocol are in `ARCHITECTURE.md`; this document is purely Vue/CSS.
+Frontend conventions, component catalog, and how to add new UI features. Purely Vue/CSS — the
+language boundary and WS protocol are in `ARCHITECTURE.md`.
+
+**Start here:** *UX primitive catalog* and *UI copy — keep it short* are the two mandatory lookups
+before you render anything. Both are enforced by tests, so skipping them fails the build.
+
+| Looking for | Go to |
+|---|---|
+| Which component/class to use for a control | **UX primitive catalog — CHECK BEFORE BUILDING** |
+| How much text a tooltip / tip / empty state may carry | **UI copy — keep it short** |
+| Colours, radii, font sizes, fixed dimensions | **Design tokens** |
+| Buttons · inputs · toggles · chips | **Button utilities** · **Form controls** |
+| Modals · confirms · deletes · popovers | **Modals & dialogs** · **No native browser dialogs** |
+| Floating windows, legends | **Floating panels** · **View legend** |
+| Building a new module page (route, sidebar, layout) | **Adding a new module page** |
+| The image table, task runner, sidebar, viewer | **ImageTable** · **TaskRunner** · **AppSidebar** · **ViewerPanel** |
+| Adding a plot to a page or the board | **Adding a plot or visualization panel** · **Generic plot-integration interface** |
+| Floating/draggable plot panels, tile & cascade | **Shared canvas shell** |
+| Making a plot option survive navigation | **Persisting view state — the three scopes** |
+| Keeping a plot fresh after a task | **Data freshness — task-refresh** |
+| The chain whiteboard | **Chain whiteboard** |
+
+**Neighbouring docs — this one does not restate them.** `docs/PLOTS.md` (plot-spec schema, chart
+types), `docs/ANALYSIS.md` (the Analysis board: tabs, plates, export), `docs/POPULATION.md` (gating
+model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param widgets),
+`docs/NAPARI.md` (viewer process + layers), `docs/todo/UX_PRIMITIVES_PLAN.md` (unification status).
 
 ---
 
@@ -173,7 +197,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 | Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
 | Task-JSON `tip` | omit unless the param is non-obvious; then one short line |
 | QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
-| Empty state (`.cc-empty`) | one line; a following action, not a rationale |
+| Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** a first-run empty state (no projects / no images) may orient a newcomer — see *Onboarding* |
 | First-use hint (`HintCallout`) | one line, by construction |
 
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
@@ -222,21 +246,16 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
 | `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
 
-> **`--cc-warn`/`--cc-danger` vs `--cc-sev-*`.** The split is **status vs not**, and it decides which
-> of two similar reds/ambers you reach for. If the colour tells the user *the state of something*
-> (valid/invalid, fresh/stale, ok/warn/fail), it is a severity and must use `--cc-sev-*` — that is the
-> CVD-validated palette, and opting out of it silently costs colour-blind separation. If the colour is
-> a destructive **action**'s tone (a delete button) or a decorative/identity hue (a chain node), it is
-> not a severity and stays on `--cc-warn`/`--cc-danger`. Severity is never the sole cue either way:
-> pair it with the shape-distinct icon from `lib/severity.ts`.
 | `--cc-mono` | system monospace stack | Log output, code |
-| `--cc-radius-sm` / `-md` | `0.25rem` / `0.4rem` | Small controls/chips/inputs · cards/panels/dialogs |
-| `--cc-fs-3xs` … `-md` | `0.56` / `0.62` / `0.68` / `0.75` / `0.82rem` | Small-text scale (≈9/10/11/12px + 0.82). Use in place of a raw `rem` **or** `px` size |
-| `--cc-header-h` | `40px` | Fixed header height |
-| `--cc-sidebar-w` | `190px` | Fixed sidebar width |
-| `--cc-runner-w` | `280px` | TaskRunner panel width |
-| `--cc-console-bar-h` | `30px` | Collapsed console height |
-| `--cc-console-open-h` | `210px` | Expanded console height |
+
+**Scales and fixed sizes.** Never write a raw `rem`/`px` for these — `cssScenarios.test.ts` fails the build.
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--cc-radius-xs` `-sm` `-md` `-lg` `-pill` | `0.2` `0.3` `0.4` `0.5rem` `999px` | chips/swatches · buttons/inputs · cards/panels/dialogs · large dialogs · pills |
+| `--cc-fs-3xs` `-2xs` `-xs` `-sm` `-md` `-lg` | `0.56` `0.62` `0.68` `0.75` `0.82` `0.9rem` | ≈9 · 10 · 11 · 12px · body · 14px |
+| `--cc-header-h` · `--cc-sidebar-w` · `--cc-runner-w` | `40px` · `190px` · `280px` | Header · sidebar · TaskRunner panel |
+| `--cc-console-bar-h` · `--cc-console-open-h` | `30px` · `210px` | Console collapsed · expanded |
 
 ### Toast notifications (transient foreground feedback)
 
@@ -255,13 +274,15 @@ The four notification surfaces — pick the one that fits, don't invent a fifth:
 
 ### Severity (QC / traffic-light) — colour is never the only cue
 
-`--cc-sev-ok`/`--cc-sev-warn`/`--cc-sev-fail` are the ONE canonical severity palette
-(colour-blind-safe hues from the dataviz status palette). **Never render a severity as colour alone**
-— always pair the hue with a shape-distinct icon + label. The canonical mapping lives in
-`frontend/src/lib/severity.ts` (`SEVERITY`, `worstSeverity`, `severityFor`); the lab-log glyph
-counterpart is `qc.jl` `severity_symbol` (✅/⚠️/❌ — shape-distinct, never 🟢🟡🔴). Any new severity
-UI imports these; do not hand-pick a green/amber/red or a coloured dot. See
-`docs/todo/QC_OBSERVER_PLAN.md`.
+`--cc-sev-ok`/`-warn`/`-fail` are the ONE severity palette (colour-blind-safe). Import the mapping from
+`frontend/src/lib/severity.ts` (`SEVERITY`, `worstSeverity`, `severityFor`); the lab-log glyph counterpart
+is `qc.jl` `severity_symbol` (✅/⚠️/❌, never 🟢🟡🔴). **Never render a severity as colour alone** — always
+pair the hue with a shape-distinct icon + label. See `docs/todo/QC_OBSERVER_PLAN.md`.
+
+**Which amber/red? The split is status vs not.** If the colour states *the condition of something*
+(valid/invalid, fresh/stale, ok/warn/fail) it is a severity → `--cc-sev-*`; opting out silently costs
+colour-blind separation. If it is a destructive **action**'s tone (a delete button) or a decorative
+identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 
 ---
 
@@ -299,31 +320,31 @@ unit-tested `utils/serviceStatus.ts`. Backend self-restart is planned (see
 
 ## Button utilities
 
-Global classes defined in `style.css` — use these everywhere instead of scoped button styles.
+Global classes in `style.css`. `.cc-btn` is always the base, plus modifiers on **four independent
+axes** — compose them; never re-declare a button in a component's scoped `<style>`.
+
+| Axis | Modifiers |
+|---|---|
+| Tone | `-primary` · `-ghost` · `-bare` (transparent, dim-until-hover) · `-danger` · `-danger-ghost` |
+| Density | `-micro` · `-dense` · `-lg` |
+| Shape | `-icon` (fixed square, so a toolbar row aligns regardless of glyph width) |
+| State | `-on` (+ `-on-tint` washed / `-on-solid` filled) for an engaged toggle button |
+
+`.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`.
 
 ```html
-<!-- Default ghost (for secondary actions like filter Apply/Reset) -->
-<button class="cc-btn cc-btn-ghost" @click="...">Apply</button>
-
-<!-- Primary (for the main CTA like "Add images") -->
-<button class="cc-btn cc-btn-primary" @click="...">
-  <i class="pi pi-plus" /> Add images
-</button>
-
-<!-- Destructive: solid (prominent, standalone) vs ghost (subtle, inline in a table/bar) -->
-<button class="cc-btn cc-btn-danger" @click="...">Delete project</button>
-<button class="cc-btn cc-btn-danger-ghost" @click="...">Delete</button>
+<button class="cc-btn cc-btn-ghost" @click="…">Apply</button>
+<button class="cc-btn cc-btn-primary" @click="…"><i class="pi pi-plus" /> Add images</button>
+<button class="cc-btn cc-btn-danger" @click="…">Delete project</button>          <!-- standalone -->
+<button class="cc-btn cc-btn-danger-ghost" @click="…">Delete</button>            <!-- inline in a bar -->
+<button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip="'Settings'"><i class="pi pi-cog" /></button>
 ```
 
-`.cc-btn` is always the base; add exactly one colour modifier (`-primary` / `-ghost` / `-danger` /
-`-danger-ghost`). All support `:disabled` (opacity 0.35, not-allowed cursor) and `v-tooltip`.
-
-**Never hand-roll `.btn-sm` / `.btn-primary` / `.btn-danger` in a component's scoped `<style>`.** That
-was the old trap: a class that *looks* shared but is re-declared per file (and drifts — the danger
-colour was `#b91c1c` in one place and `#7f1d1d44` in three, disabled opacity varied 0.35/0.4/0.55), and
-a page that used the class without its own copy got a raw browser button (the Movies refresh bug). One
-source: these utilities. (Bespoke *icon-only* buttons — `.po-toggle`, viewer-green action icons, etc. —
-are a separate, intentional case, not this family.)
+**Never hand-roll `.btn-sm` / `.btn-primary` / `.btn-danger` in scoped CSS.** A class that *looks*
+shared but is re-declared per file drifts (the danger colour was `#b91c1c` in one place and `#7f1d1d44`
+in three; disabled opacity varied 0.35/0.4/0.55), and a page that used the class without its own copy
+rendered a raw browser button. `cssScenarios.test.ts` now fails on an icon-only `<button>` that skips
+`.cc-btn`.
 
 ## Form controls
 
@@ -350,22 +371,18 @@ drop in a label-less `<CcToggle>` (see `PlotOptions`/`SummaryPanel` `.po-row`/`.
 **When NOT to use it — keep a native `<input type="checkbox">`:** a multi-SELECT list or a value
 staged as part of a form (image / channel / feature / measure pickers, "select all", per-row
 selection). A column of sliding switches reads worse and misuses the on/off affordance. So the rule
-is: **toggle = one immediate option; checkbox = selection from a list.** This is the single canonical
-switch — the old bespoke `.toggle-track`/`.toggle-thumb` in `ParamRenderer` (the task `bool` widget)
-was folded into it; don't hand-roll another.
+is: **toggle = one immediate option; checkbox = selection from a list.** Don't hand-roll another.
 
 ### Selection chips / segmented controls — `ChipSelect`
 
 `components/ChipSelect.vue` is the ONE canonical inline selector — use it for any pill/capsule or
-segmented button-row that picks from a set. It replaced ~a dozen hand-rolled copies (pool chips, the
-byte-for-byte-duplicated `.seg` block, param/filter chips). Two variants: `variant="pill"` (wrapping
+segmented button-row that picks from a set. Two variants: `variant="pill"` (wrapping
 capsules, the default) and `variant="segmented"` (a joined control). `multiple` for multi-select
 (`modelValue` is an ordered `string[]`; single-select is a `string`); add `reorderable` (pill only)
 for drag-to-reorder. Per-option `icon` / `tip` / `disabled` / `badge` (a count) / `accent` (a
 semantic colour — rendered as a readable tint). Pure logic in `utils/chipSelect.ts` (tested).
 
-Active colour is unified to `--cc-accent` (the older bespoke `#2d1b69`/`#7c3aed` purple and the
-per-site tints were folded in). **Don't** use it for: independent-boolean toolbars that also fire
+Active colour is `--cc-accent`. **Don't** use it for: independent-boolean toolbars that also fire
 actions or open dropdowns (e.g. `ModuleLayout`'s filter-toggle bar, gate arrange/nav clusters),
 colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-assignment matrix
 (cross-population-exclusive + integral solid colour), or reorderable tab strips (`TabbedCanvas`).
@@ -375,8 +392,8 @@ colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-a
 ## Modals & dialogs — always use `BaseModal`
 
 **Every centred modal/dialog is built on `frontend/src/components/BaseModal.vue`. Never hand-roll an
-overlay (`position:fixed; inset:0`) again** — that copy-paste is how we ended up with four near-identical
-shells (`ProjectPanel`, `PhysicalSizeDialog`, `FileBrowser`, …). We do **not** use PrimeVue Dialog.
+overlay (`position:fixed; inset:0`)** — that copy-paste produced four near-identical shells before this
+existed. We do **not** use PrimeVue Dialog.
 
 `BaseModal` provides the dimmed overlay, the centred surface box, the header (icon + title + ✕), and
 close-on-✕ / click-outside / **Escape**. You provide the content via slots.
@@ -401,8 +418,8 @@ const emit = defineEmits<{ (e: 'close'): void }>()
     <div style="padding: 1rem">…body…</div>            <!-- scrolls -->
     <template #footer>
       <span style="flex:1" />                            <!-- push buttons right -->
-      <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
-      <button class="btn-primary btn-sm" @click="…">Save</button>
+      <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="emit('close')">Cancel</button>
+      <button class="cc-btn cc-btn-primary cc-btn-dense" @click="…">Save</button>
     </template>
   </BaseModal>
 </template>
@@ -434,11 +451,11 @@ if direct children of the host.
 
 ```vue
 <ConfirmButton @confirm="doDelete" v-slot="{ armed, arm, confirm, cancel }">
-  <button v-if="!armed" class="btn-danger btn-sm" :disabled="!selected" @click="arm"
+  <button v-if="!armed" class="cc-btn cc-btn-danger cc-btn-dense" :disabled="!selected" @click="arm"
           v-tooltip.bottom="'Delete…'"><i class="pi pi-trash" /></button>
   <template v-else>
-    <button class="btn-danger btn-sm" @click="confirm">Confirm</button>
-    <button class="btn-ghost btn-sm" @click="cancel">Cancel</button>
+    <button class="cc-btn cc-btn-danger cc-btn-dense" @click="confirm">Confirm</button>
+    <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="cancel">Cancel</button>
   </template>
 </ConfirmButton>
 ```
@@ -565,13 +582,13 @@ import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
-const defs = useTaskDefs('segmentImages')
+const { defs, reload } = useTaskDefs('segment')   // category = the task JSON's fun_name prefix
 </script>
 
 <template>
   <ModuleLayout module="segment" :show-attrs="true" :show-filter="true">
     <template #right="{ selectedUids, selectedNames }">
-      <TaskRunner :defs="defs" module="segment"
+      <TaskRunner :defs="defs" :on-reload-defs="reload" module="segment"
         :selected-uids="selectedUids" :selected-names="selectedNames" />
     </template>
   </ModuleLayout>
@@ -672,7 +689,7 @@ module top, so it splits into its own on-demand chunk. Precedents: `@observableh
 ### 4 — Add the task category (backend)
 
 See `CLAUDE.md` (Adding a new Python task) for the Julia + Python side.
-The frontend never maintains a copy of task definitions — they're fetched from `/api/tasks/definitions?category=segmentImages`.
+The frontend never maintains a copy of task definitions — they're fetched from `/api/tasks/definitions?category=segment`.
 
 > **Tracking page** (`frontend/src/modules/TrackingModule.vue`, route `/track`) is a plain
 > `ModuleLayout` + `TaskRunner` page in the Analysis group **after Gate**. It uses the
@@ -701,7 +718,10 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   `hint` + `hint-key` props (don't hand-roll it per page); the global "use the bottom-left Quit button,
   not the browser tab" hint is in `App.vue`.
 - **Empty states** — already exist: `ProjectPanel.vue` `.pp-empty` (no projects) and `ImageTable.vue`
-  `.empty-state` (no images). Enrich the copy there; don't add a parallel component.
+  `.empty-state` (no images). Extend the copy there; don't add a parallel component. These are the ONE
+  carve-out from *UI copy — keep it short*: that budget exists because prose on a page you use daily is
+  noise forever, which doesn't apply to a state a user sees once, before they know the app reads CZI.
+  Everywhere else the budget holds.
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
 
@@ -724,6 +744,12 @@ The filter panel renders automatically when `show-filter="true"` and the active 
 - **Right panel** — `ModuleLayout` wraps the `#right` slot (TaskRunner / MetadataPanel / custom) with a thin always-visible left-edge handle (`pi-angle-double-*`) that toggles `settings.rightPanelCollapsed`. Collapsed → only the handle remains; the function/tasks panel folds away to the right. Every module page gets this for free.
 
 Both default expanded and persist across sessions/navigation.
+
+**Left-panel collapse — two axes.** *Horizontal* (‹/›) shrinks the whole left panel to a 2.4rem strip.
+*Vertical* collapses each section inside it: the image table ("Images") and the module's `#plots` slot,
+each a `CollapsibleSection`. Both the plots wrapper (`cc-plots-open:<module>`) and any section given a
+`storageKey` persist their open/closed state in localStorage; a section without one is transient. The
+panel body scrolls when the sections together exceed the height.
 
 ---
 
@@ -923,7 +949,7 @@ Plots go either **in the left column** (below the image table, for compact summa
    - **WebSocket event** — `ws.on('myEvent', handler)` in `onMounted`, `ws.off(...)` in `onUnmounted`.
      See `ARCHITECTURE.md` (Napari → Julia event flow) for the WS event pattern.
 
-Plot libraries in use — **two engines, split by job** (Plotly was removed):
+Plot libraries in use — **two engines, split by job**:
 - **regl-scatterplot** (WebGL) — **per-cell scatter**: gating plots + UMAP. Renders 100k–1M+ points
   at 60fps with lasso/rectangle select; gate shapes are a canvas2D overlay in data coords on top
   (`ScatterGL` + `PlotLayers` + `GateOverlay`). Used wherever **every cell** is drawn and/or gates
@@ -1146,8 +1172,9 @@ This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old
 All nav group headings are collapsible buttons. Clicking a heading toggles the group open/closed;
 a chevron icon (`pi-chevron-down` / `pi-chevron-right`) reflects the current state.
 
-**ViewerPanel** is rendered at the bottom of the sidebar as its own collapsible group (also
-a chevron-toggled heading). See ViewerPanel component section below.
+The **napari viewer controls** are NOT in the sidebar — the sidebar only carries the button that
+toggles them. They live in a `FloatingPanel` mounted in `App.vue`; see *Floating panels* above and
+*ViewerPanel component* below.
 
 ### Nav item reference
 
@@ -1171,8 +1198,9 @@ Icons: browse at https://primevue.org/icons — use the `pi-*` name, prefix with
 
 `frontend/src/components/ViewerPanel.vue`
 
-Shows the current Napari image and lets the user switch between versions (value names). Rendered
-at the bottom of `AppSidebar` in its own collapsible group.
+Shows the current napari image and switches between versions (value names). Mounted in `App.vue`
+inside a `FloatingPanel` (`storage-key="viewer"`), toggled by the sidebar's "Viewer controls" button
+(`settings.viewerPanelOpen`, persisted) — it was a sidebar group once and outgrew the 190px nav.
 
 **State**: image name, `valueName` dropdown (options from `img.filepaths` keys in the project
 store). Changing `valueName` auto-opens the image in Napari via the REST `/api/napari/open`
@@ -1200,9 +1228,6 @@ visibility and the dot-size slider live in the population manager — see the ga
 (`docs/NAPARI.md` — linked brushing.) **Icon convention**: append new toggles at the end of the
 row; group unrelated toggles behind an `.opt-sep` divider.
 
-**History**: previously the viewer logic lived inline in `TaskRunner.vue`; it is now a standalone
-component so it works regardless of which module page is active.
-
 ---
 
 ## Task definition fields — resource_pool
@@ -1211,9 +1236,10 @@ The TypeScript type `TaskDef` has `resource_pool?: string` (optional string). Ev
 in `app/src/tasks/<category>/<name>.json` should include this field:
 
 ```json
-{ "resource_pool": "gpu" }    // GPU-bound tasks (cellpose_correct)
-{ "resource_pool": "io" }     // I/O-bound tasks (omezarr)
-{ "resource_pool": "default" }// everything else
+{ "resource_pool": "cpu" }     // general CPU compute — most tasks
+{ "resource_pool": "gpu" }     // the GPU — cellpose family (limit 1)
+{ "resource_pool": "io" }      // local disk — import/convert/crop
+{ "resource_pool": "network" } // remote/SMB — reserved for HPC, unused today
 ```
 
 The `tasksLimit` field and the concurrent-task slider have been removed. `TaskDef` no longer
@@ -1365,7 +1391,7 @@ A chain built in the REPL with `make_chain` / `save_chain_template!` opens on th
 ## Analysis-plot canvas (summary plots, Observable Plot)
 
 The summary-plot surface — distributions/frequencies of cell & track measures — built on the shared
-canvas shell (see the gating page's "Shared canvas shell"). **Charting library: Observable Plot
+canvas shell (see *Shared canvas shell*). **Charting library: Observable Plot
 (`@observablehq/plot`)** — chosen over Vega-Lite (jitter/resize/look walls) and Plotly (removed); see
 `docs/PLOTS.md` §0 for the rationale. All plot data is **server-aggregated** (`POST /api/plot_data`
 → histogram bins / frequency counts / box stats / downsampled raw points), so Vue never receives raw
@@ -1379,18 +1405,11 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   the host just re-renders with the new size. Exposes `toImageURL('png'|'svg')` — SVG serialises the
   node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
   clouds.
-The universal **Analysis board** (`/analysis`, `AnalysisModule.vue`) is **multipage**: `TabbedCanvas`
-wraps N independent boards, each a `SummaryCanvas` with no `module` prop (→ all plot specs). The tab
-LIST (names/order/active) lives in the `analysisTabs` store; each board's plots persist in
-`canvasPanels` under the canvas key `analysis:{projectUid}:tab:{id}` — i.e. tabs reuse the whole
-existing canvas machinery via `SummaryCanvas`'s optional `canvasKey` prop (which overrides the default
-`summary:{module|universal}` namespace and MUST be paired with a `:key` so setup re-runs on switch).
-Only the active board is mounted; switching tabs re-binds that board's stored panels. Boards are
-per-project — `TabbedCanvas` is `:key`ed by projectUid, and `analysisTabs`/`canvasPanels` are cleared
-on project open/close (`stores/project.ts`). Closing a tab calls `canvasPanels.drop(key)`. In-memory
-like the rest of the canvas state (survives navigation, not a full reload). Roadmap for the rest of the
-multipage feature (interactive plots in the universal canvas, gating-strategy plot, multipage PDF):
-`docs/todo/ANALYSIS_CANVAS_PLAN.md`.
+
+> **The Analysis board itself is documented in `docs/ANALYSIS.md`** — tabs, the three stores
+> (`analysisTabs` / `analysisLayout` / `canvasPanels`), plate layout, persistence keys, and export. A
+> stale summary lived here and had already drifted (it credited `canvasPanels` with the layout and
+> called persistence a manual Save; `analysisLayout` owns the layout and autosaves). One owner: that doc.
 
 These canvas components are **generic** (`components/canvas/`, NOT under a module) so every module
 page — and the Analysis board — reuses them unchanged:
@@ -1430,33 +1449,15 @@ page — and the Analysis board — reuses them unchanged:
   knobs live in ONE place. `PopulationManager` renders it only when the host passes a `vis` bag (the
   cluster canvas does; the gate canvas doesn't) — the "add plot styling to the pop manager" keyword.
   The universal Analysis board (`/analysis`) gets the same controls for free.
-- **`plots/export.ts`** — the **shared** plot-export plumbing (`svgToImageURL` PNG/SVG rasterise,
-  `svgOf`, `downloadDataUrl`/`downloadBlob`, `rowsToCsv`, and `elementToImageURL`). Used by
-  `PlotChart.toImageURL` AND the bespoke cluster panels, so a plot that renders its own `<svg>` exports
-  identically to the generic renderer. `elementToImageURL(el, type, bg)` captures a whole host element
-  (plot `<svg>` **plus** HTML overlay legend/title) by wrapping a style-inlined clone in an SVG
-  `<foreignObject>` — the HMM panels use it so their overlay legends appear in the exported image
-  (plain `svgToImageURL` captures only the svg). `plotHostToImageURL(host, bg)` exports **WebGL /
-  canvas2D** plots (UMAP scatter, gate plot): it composites every `<canvas>` in the host (pass 1) then
-  the HTML/SVG overlay layer on top (pass 2), because canvas pixels can't be serialised via
-  `foreignObject`. This needs the WebGL context created with `preserveDrawingBuffer` — regl-scatterplot
-  already does this, so `ScatterGL` needs no context pre-creation. **Subtlety (#00061):** the pass-2
-  overlay clone hides the `<canvas>` (`blankCanvases`) but must also **clear the canvas's ancestor
-  backgrounds**, or an opaque plot-area background (e.g. UMAP's `#0d0b1a`) paints over the pass-1
-  scatter and the point cloud vanishes from the PNG. **Crispness:** two DPR-aware scales —
-  `EXPORT_SCALE = min(4, 2×DPR)` for the SVG rasterise path (vector, crisp at any factor) and a higher
-  `RASTER_SCALE = min(8, 4×DPR)` for `plotHostToImageURL`. A WebGL canvas can't be upscaled crisply
-  from its CSS×DPR backing store, so `plotHostToImageURL(host, bg, { hiRes })` takes a resolver and
-  **every stacked canvas re-renders itself at export scale**: `ScatterGL.exportCanvas` via
-  regl-scatterplot's `export({scale})` (on a transparent ground so the cloud composites cleanly), and
-  the gate plot's canvas2D layers (`PlotLayers`, `GateOverlay`) re-paint their content onto a scale×
-  offscreen canvas. The captured host must also include any axis-label
-  margins (the gate plot exports a `.plot-capture` wrapper, not the inner `.panel-plot`, so the axis
-  names aren't clipped). Every cluster plot (UMAP, heatmap, HMM states/transitions) and the gate
-  plot carry a footer **duplicate** and/or **export** dropdown. A registered interactive view opts into
-  export by exposing `exportFormats: string[]` + `exportAs(kind)` via `defineExpose`; `InteractivePanel`
-  surfaces the dropdown generically (UMAP → PNG + CSV). `plots/plot.ts` also exports `paletteRange(vis, n)` (palette → colour list, or
-  `null` for 'standard') so bespoke panels honour the palette knob without re-deriving it.
+- **`plots/export.ts`** — the ONE plot-export module: PNG/SVG rasterise, CSV, and the true-vector SVG
+  builders. Two capture paths, because they solve different problems: `elementToImageURL` wraps a
+  style-inlined clone in an SVG `<foreignObject>` (catches an HTML overlay legend alongside the `<svg>`),
+  while `plotHostToImageURL` composites every `<canvas>` then the overlay on top — canvas pixels can't
+  go through `foreignObject`. Two DPR-aware scales: `EXPORT_SCALE` (vector) and the higher `RASTER_SCALE`,
+  where every stacked canvas **re-renders at export scale** since a WebGL backing store can't be upscaled
+  crisply. Needs `preserveDrawingBuffer` (regl-scatterplot already sets it). Full API + the two subtleties
+  that bit us (clearing ancestor backgrounds in the overlay pass; capturing the axis-margin wrapper, not
+  the inner plot box) are indexed in `INVENTORY.md` → *Plot export*; board figure export is `docs/ANALYSIS.md`.
 - **`plots/overlays.ts`** — the **shared** themed legend / title overlays (`legendOverlay`,
   `titleOverlay`). Canvas plots render a BARE `<svg>` and float the legend/title as absolute overlays
   with the theme ink — Observable Plot's inline `legend: true` wraps the chart in a `<figure>` whose
@@ -1485,11 +1486,9 @@ page — and the Analysis board — reuses them unchanged:
 `measureOptions`) and the **chart types valid for it** (`chartTypes`); the user picks the chart type
 in the panel and the data scope (single/cross-image) in the canvas. The two compose freely.
 
-**Plot specs** live in `app/src/plotDefinitions/*.json` (PACKAGE; one data source per file —
-`{id,label,module,family,chartTypes,dataSource,scopeModes,params}`), served like task defs. Adding a
-plot type = drop in a JSON, no new UI code. Current: `track_measures` (continuous track measures —
-`chartTypes:[histogram,boxplot,bar]`, `granularity:track`) and `hmm_state_frequency`
-(`live.cell.hmm.state.*`, `chartTypes:[frequency]`; mock column pending the behaviour module).
+**Plot specs** live in `app/src/plotDefinitions/*.json` (one data source per file) and are served like
+task defs, so adding a plot type is a JSON drop with no UI code. Schema + the current set:
+`docs/PLOTS.md`.
 
 ## Gating page (WebGL scatter + gate overlay)
 
@@ -1541,81 +1540,41 @@ Two plot families share the canvas shell; the distinction matters for where a ne
 
 ## Cluster pages (UMAP + heatmap on the shared canvas)
 
-`modules/ClusterCellsModule.vue` (route `/clust-cells`, popType `clust`) and
-`modules/ClusterTracksModule.vue` (`/clust-tracks`, popType `trackclust`) — one page per granularity,
-mirroring the gate/track split. Each is `ModuleLayout` (multi-select — clustering is set-scope) +
-`TaskRunner` (`clustPops` / `clustTracks`) + a `#plots`-slot **`modules/cluster/ClusterPlots.vue`**
-canvas (the cluster analogue of `GatingPlots`: `useCanvasPanels` keyed `clust:${popType}` + a "+ Plot"
-picker + Tile/Cascade). The **"+ Plot"** picker lists every interactive view (`INTERACTIVE_VIEWS`) +
-the summary **Heatmap**; each panel is routed by family — interactive → `InteractivePanel` (e.g.
-**UMAP**: `obsm['X_umap.{suffix}']` coloured by cluster via `ScatterGL` `category` mode, legend +
-toggleable cluster-number labels at each cluster centroid), summary → **`ClusterHeatmapPanel`**
-(clusters × features via the matrix aggregation + `PlotChart`).
-- **suffix is PAGE-LEVEL** — a dropdown of the discovered `clusters.{suffix}` runs (one shown at a
-  time, like a segmentation), persisted in the canvas `shared` bag. Discovered from
-  `GET /api/gating/channels` → `clusterSuffixes`.
-- **Heatmap features = exactly what the run clustered on** — persisted per run as a
-  `{props}.clustfeatures.json` sidecar (clustPops/clustTracks write it), surfaced via the channels
-  endpoint's `clusterFeatures`. Channel rows aggregate by RAW name (the matrix passes
-  `raw_channel_names`) and are relabelled to display names via the channels `nameMap`.
-- Set-scope ⇒ panels pool across the selected images (shared UMAP space + cluster numbering; heatmap
-  pools via `setUid`).
-- **Cluster population-manager** — the shared floating `PopulationManager` (pop_type-agnostic) mounted
-  in this canvas, driven by the gating store with `popType` `clust`/`trackclust`. A cluster pop has no
-  gate: it's a filter on `clusters.{suffix}`, so the manager (in cluster mode, via its `clusterIds` +
-  `suffix` props) shows an **"Add population"** button and, per pop, a row of **cluster-ID toggle
-  chips**. Ticking a chip assigns that cluster to the pop and **removes it from any other** (a cluster
-  lives in at most one pop — mirrors old R `setClusterForPop`); persisted via `pop/update`'s filter
-  patch (`{values}`).
-  - **Set-wide writes**: cluster pops apply to every selected image *in the run*. The store's
-    `mirrorUids` replays each pop mutation across them (the filter is image-independent), so no manual
-    "populate to set" step (we dropped the old `propagatePopMap` crutch). The primary image drives the
-    displayed tree/stats.
-  - **Run membership (`partOf`)**: a cluster pop only makes sense for images that were clustered
-    together. clustPops/clustTracks record the run's uIDs in the `clustfeatures` sidecar (`{suffix →
-    {features, partOf}}`), surfaced as `clusterMembers`. `ClusterPlots` writes only to the selected
-    images in `partOf` and shows a banner naming any selected images that aren't in the run (and any
-    run images not selected), with a **"Select clustered images"** button that sets the selection to
-    exactly the run's images. That button uses a `selectUids(uids)` callback `ModuleLayout` exposes on
-    both the `#plots` and `#below-table` slots — it writes the shared selection store, and `ImageTable`
-    watches the store and re-seeds its checkboxes (so plot-canvas content can drive the selection generically).
-  - **Highlight → overlays**: the manager's per-pop **eye** toggles a `highlighted` set (persisted in
-    the canvas `shared` bag). `ClusterPlots` resolves it to `shownPops` ({path, name, colour,
-    clusterIds}) and feeds it to the views:
-    - **UMAP** (`UmapView`) colours each point by the population owning its cluster (grey for the
-      rest); legend switches to the shown pops + an "other" row. Recolours from cached codes — no
-      refetch on toggle.
-    - **Heatmap** (`ClusterHeatmapPanel`) switches its columns from raw clusters to the shown
-      populations: it requests the matrix with `pops = shownPops` and `category="pop"` (the pop_df
-      `pop` column), i.e. a per-population profile. No pops shown → per-cluster as before. (Reloads
-      when a pop's cluster **assignment** changes, not just its path.)
-  - **Scope** (the manager's global/local footer) works here like gating: GLOBAL = one highlight set
-    across all panels; LOCAL = each panel keeps its own (`state.hl`), so different UMAP/heatmap panels
-    can show different pops. `ClusterPlots` mirrors `GatingPlots`' `scope`/`panelHL`/`activeHL`.
-  - Plots run on the run-member images (`validUids`), and the set-pooled aggregation **skips images
-    where a pop is absent** (`_pop_df` guards `has_pop`), so a pop defined on a subset of the pooled
-    set never errors ("pop_membership: not found").
-- **HMM behaviour plots (track clustering only)** — two extra "+ Plot" types, since HMM state/
-  transition columns are categorical behaviour, not numeric heatmap material (they're filtered OUT of
-  the heatmap's features). Both follow the highlight/scope like every cluster plot (per-panel
-  `shownPops`); no pops highlighted → an empty-state prompt.
-  - **HMM states** (`ClusterHmmStatesPanel`) — per shown population, a 100%-stacked horizontal bar of
-    the within-population `live.cell.hmm.state.<m>` frequencies (reuses the `frequency` aggregation;
-    self-rendered with Observable Plot since the layout is a transpose of the shared stacked bar).
-  - **HMM transitions** (`ClusterHmmTransitionsPanel`) — per shown population (faceted), a from→to dot
-    grid sized/coloured by transition frequency (one `crosstab` request per pop, split on `_`).
-  - Backend: `pop_df(trackclust, …, granularity=:cell)` now carries requested **cell** columns onto
-    the member cells (`_expand_tracks_to_cells(…; cell_cols)`), so the cell-level HMM obs is available
-    per member cell. Ports `behaviourDTx.Rmd`.
-- **clustTracks "Cluster on" picker**: pick BASE measures (like the old R) — whole-track motility is
-  used directly; each cell measure (channels/morphology) and behaviour column (HMM state/transitions)
-  is aggregated to ALL per-track stats by the task automatically (no `×mean/×median` in the list). The
-  `labelPropsColsSelection` widget is popType-aware (was hardcoded to flow), so track clustering shows
-  the track feature universe. Plus a `minTracklength` filter.
+`ClusterCellsModule` (`/clust-cells`, popType `clust`) and `ClusterTracksModule` (`/clust-tracks`,
+`trackclust`) — one page per granularity, mirroring the gate/track split. Each is `ModuleLayout`
+(multi-select; clustering is set-scope) + `TaskRunner` + a `#plots`-slot `modules/cluster/ClusterPlots.vue`
+canvas, the cluster analogue of `GatingPlots` (`useCanvasPanels` keyed `clust:${popType}` + "+ Plot" +
+Tile/Cascade). The picker lists every `INTERACTIVE_VIEWS` entry plus the summary **Heatmap**, routed by
+family — interactive → `InteractivePanel`, summary → `ClusterHeatmapPanel`.
 
-**Shared canvas shell (reused by the gating, track-gating, summary and universal canvases).** The
-floating-panel mechanics are factored out of the gating page so other module canvases reuse them
-unchanged:
+UI conventions specific to these pages:
+
+- **`suffix` is page-level** — a dropdown of the discovered `clusters.{suffix}` runs, one at a time like
+  a segmentation, persisted in the canvas `shared` bag.
+- **Heatmap features are exactly what the run clustered on**, read from the `{props}.clustfeatures.json`
+  sidecar via `GET /api/gating/channels`; channel rows aggregate by RAW name and relabel via `nameMap`.
+- **The population manager is the shared, pop_type-agnostic one.** A cluster pop has no gate — it is a
+  filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus per-pop
+  **cluster-ID toggle chips**, and ticking a chip moves that cluster out of any other pop (a cluster
+  lives in at most one). Writes mirror across the run's images (`mirrorUids`); a banner names selected
+  images outside the run, with a "Select clustered images" button driving `selectUids`.
+- **Highlight → overlays.** The manager's per-pop eye feeds `shownPops`: UMAP recolours from cached codes
+  (no refetch), the heatmap switches its columns from clusters to populations. Scope (global/local) works
+  as on the gating canvas.
+- **HMM behaviour plots (track clustering only)** — `ClusterHmmStatesPanel` (100%-stacked state
+  frequencies) and `ClusterHmmTransitionsPanel` (from→to dot grid). Categorical behaviour, so they are
+  filtered out of the heatmap's numeric features.
+
+The clustering model behind all of this — run membership (`partOf`), co-clustered value_names, the
+per-run sidecar, set-pooled aggregation — is `docs/POPULATION.md` and `docs/todo/CLUSTERING_PLAN.md`.
+
+
+---
+
+## Shared canvas shell
+
+Reused by the gating, track-gating, summary and universal canvases — the floating-panel mechanics are
+factored out of the gating page so every module canvas reuses them unchanged:
 - **`composables/useFloatingPanel.ts`** — drag-to-move + clamp-to-`offsetParent` + Tile/Cascade
   `arrange` handling for any floating panel (one implementation; was duplicated in the plot panel
   and the manager).
@@ -1634,7 +1593,9 @@ unchanged:
   (`if (panels.value.length === 0) add()`) — an unconditional `add()` in `onMounted` stacks duplicates
   every remount (the Gate↔Tracking 2→4→6 bug, #00044).
 
-### Persisting view state — the three scopes (important; read before adding any plot option)
+---
+
+## Persisting view state — the three scopes (important; read before adding any plot option)
 
 Every user-settable option MUST live in a persisted bag, or it silently resets on remount (a plain
 `ref()` in a canvas/panel component does NOT survive navigation). There are three scopes, all backed
@@ -1728,121 +1689,9 @@ Edit a gate by dragging its handles → `pop/set-gate` on release. The manager (
 clamped on-screen, collapsible) does recolour (`pop/update`), inline rename (`pop/rename`),
 delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
 
-### Gating plot — rendering & UX hacks (read before touching the plot stack)
+### Gating plot — rendering & UX hacks
 
-These are deliberate shortcuts; know them before changing the plot components.
-
-- **Pseudocolour is computed client-side, smoothed.** ScatterGL bins the transformed points into
-  a 160×160 grid, **box-blurs** it (≈ KDE), log-scales, then **bilinear-samples** the grid per
-  point → regl's `colorBy:'valueA'`. The FlowJo **blue-heat ramp** (R `.flowColorRampBlueHeat`,
-  `flowHelpers.R:775`) is interpolated to **256 stops** so the gradient is smooth (not 5 bands),
-  and the low end is lifted off pure black (`#0b1a4d`) so sparse points stay visible on the dark
-  background. No server density call for points.
-- **Contours are client-side too.** PlotLayers builds a 64×64 (lightly box-blurred ≈ KDE)
-  density grid and runs **marching squares** at normalised z = `1 − [0.95,0.90,0.75,0.5]`
-  (R `.flowContourLines`, `flowHelpers.R:46`). The `/api/gating/density` endpoint exists but
-  the canvas path doesn't use it.
-- **Population overlay reuses `plotdata`, no new endpoint.** For each highlighted pop, the panel
-  GETs `plotdata?pop=<path>` — Julia still owns membership; the client only colours the returned
-  subset (dots in `points` mode, a contour in `contour` mode). Heavy for very large/low-
-  selectivity pops (canvas2D dots) — acceptable for gated subpops.
-- **Gate editing without stealing pan/zoom.** regl (below) owns pan/zoom. In edit (off) mode the
-  overlay sets its own `pointer-events:'auto'` ONLY while the cursor is over a gate handle/body —
-  detected via a *bubbled* `mousemove` on the parent container (events bubble up from the regl
-  canvas even though the overlay is `'none'`) — and `'none'` otherwise, so empty-space clicks
-  reach regl. During a drag it shows a local `draft` gate; on release it emits `edit` and keeps
-  the draft until the authoritative tree arrives (a `gates`-prop watch clears it) → no snap-back
-  flash.
-- **Smooth cross-plot propagation via per-pop versions.** Editing pop A's gate in plot 1 must
-  update plot 2 if it shows A — *without a full reload*. `stores/gating.ts` funnels every tree
-  update through `setTree()`, which diffs gate/filter signatures vs the previous tree and bumps a
-  per-path `popVersion` for changed pops **and their descendants** (parent∩child). Each panel
-  watches the version of its displayed parent (→ refetch base points only, no `plotmeta`, so no
-  axis flicker) and of its highlighted pops (→ refetch just those layers). regl redraw is
-  instant, so it's smooth. `setTree` is the *single* tree-update entry (HTTP response **and** WS
-  broadcast both call it) — the diff is idempotent, so the duplicate doesn't double-fire.
-- **Scope governs ALL manager options.** A bottom-of-manager toggle — **icons only** (globe =
-  **global**, default; pin = **local**), no "Scope" label, sitting below the Options box — decides
-  whether every option — highlighted pops (the **eye**, not the old
-  global `show` flag), gate labels, line width, axis mode — applies to **all plots** (global, one
-  shared value) or **only the active plot** (local, the plot's own copy). `GatingPlots` keeps a
-  global value and a per-`Plot` copy of each; `panelX(p)`/`activeX` computeds pick by scope, and
-  edits route to the global value or the active plot. The manager's controls reflect the active
-  scope, so they change as you switch the active plot in local mode (cf. the old per-box
-  `popLeaves`). Each `GatePlotPanel` just consumes the resolved props (`highlight`,
-  `gateLineWidth`, `gateLabels`, `axisFromZero`).
-- **Gates show on the matching axis pair, either orientation.** A panel draws the child gates of
-  its displayed population whose two channels are the plot's two channels — in **either order**
-  (R `.flowMatchGatingParamsForPop`). `orientGate()` returns the gate as-is for the same
-  orientation, or **transposed** (swap x/y coords + channels + transforms) when the axes are
-  flipped, so changing X/Y to a combo that has a gate reveals it (reactively, via `currentGates`).
-- **Gate display options** live in `GatingPlots` (apply to all plots) and are edited in the
-  manager's collapsible **Options** box (grouped into `plot` / `viewer` sub-headings): a **gate-labels** toggle (subtle
-  population name centred above each gate — bold with a dark halo for legibility, drawn on
-  `GateOverlay`; **on by default**) and a **line-width** slider (gate stroke thickness). Passed to
-  `GateOverlay` as `showLabels` / `lineWidth`. An **Axis** toggle — **whole-dataset scale**
-  (double-diagonal icon, default) vs **autoscale-to-pop** (single-diagonal) — adds `x0/y0=1` to
-  the plot queries. With it on, `plotmeta` sets each axis to `[transformed(0), transformed(full-
-  dataset max)]` (the max comes from *all* cells, not the displayed pop) so the axis stays fixed
-  when you select a population (FlowJo behaviour); off = autoscale to the displayed pop's extent.
-- **Displayed parent is owned by `GatingPlots` (per panel), not the panel.** So the manager can
-  highlight the active plot's parent row and switch the highlight when you change active plots.
-  Clicking a population row sets it as the active plot's parent; clicking it **again resets to
-  root** (toggle). The panel's `parent` is a writable computed over the `update:parent` event.
-- **Channel-name labels in the UI.** The X/Y selects and axis titles show the resolved channel
-  name (`store.colLabel`: maps an intensity column to `channelNames[i]`, others unchanged) while
-  the API still receives the raw column name. Mirrors `pop_df`'s default resolution (POPULATION.md).
-- **Axis ticks** are abbreviated client-side (`262144` → `262.1k`, k/M/G) so labels don't crowd,
-  and rendered with real tick marks + baseline lines; the plot has generous margins so axis
-  titles don't sit on the box edge.
-- **Smoother pseudocolour**: see the density bullet above (160² grid, box-blurred, bilinear-
-  sampled, 256-stop ramp, lifted low end).
-- **Fixed camera → exact overlay alignment (pan/zoom disabled).** Getting the WebGL points to
-  line up with the canvas2D overlays under regl's camera/aspect/scale machinery proved fragile
-  (providing x/y scales made regl re-fit the camera and zoom in, drifting dots off the gates so
-  gating caught no cells). The robust fix: **no x/y scales**, `aspectRatio = w/h` (uniform fill),
-  and `cameraIsFixed: true` — the camera stays at identity, so `[-1,1]` maps straight to the
-  canvas edges and the overlays' plain extents mapping matches exactly. `viewExtents` therefore
-  always equals `extents`. Trade-off: **no interactive pan/zoom** for now; re-enabling it needs
-  the overlays to replicate regl's full `projectionLocal·cameraView·model` transform (the
-  `view`-event camera matrix), not a domain readout. (The contour grid's binning and `cellToData`
-  must still use the same `/G` bin-centre convention.)
-- **Selection is suppressed.** regl single-click selection would paint points blue, which we
-  don't want. ScatterGL subscribes to `select` and immediately `deselect()`s, and sets
-  `pointColorActive`/`pointColorHover` to the neutral colour. Pan/zoom stay enabled.
-- **Active panel + manager link.** `GatingPlots` tracks an `activePanel` index (orange border
-  via `.panel.active`); clicking a panel activates it; the active panel watches `selectedPop`
-  and sets its parent so the manager selection "shows up on the plot".
-- **PopulationManager drag is clamped** to its offset-parent (keeps a 24px grab strip on every
-  edge, never above the top) so the floating window can't be dragged off-frame and lost.
-- **Napari linked brushing.** The gating bar has a `pi-pencil` *select in napari* button
-  (`store.startCellSelection`) that adds a draw layer in napari, plus a **Z toggle** beside it
-  (`store.napariZMode` `'stack'`/`'slice'`) and, in slice mode, a **±N stepper**
-  (`store.napariZWindow`) — `slice` restricts the spatial selection to cells within ±N z-slices of
-  the live napari z, `stack` selects across the whole stack. Changing either **re-evaluates the
-  active selection live** (`store.updateSelectionScope` → `/api/napari/selection-scope`) and applies
-  to the next one. (The old gating-bar `pi-palette`
-  *show populations* button was removed — it duplicated the ViewerPanel master toggle and confused
-  users; showing pops is now the ViewerPanel toggle alone, remembered via
-  `settings.napariShowPopulations`.) Drawing a region selects those cells spatially → they arrive
-  back (via `gating:popmap`) as a **transient "Napari selection" population** (cyan `pi-map-marker`
-  row, no rename) which `GatingPlots` auto-adds to the highlight set, so the spatially-selected
-  cells light up in channel space. Its row has a **trash button** (`store.clearNapariSelection` →
-  `/api/napari/stop-selection`) that clears the selection, removes its `Cell selection` Shapes
-  layer from napari, and is then pruned from every plot's highlight set (so a plot with no other
-  selection reverts from the dimmed backdrop to normal pseudocolour/contour). It's never persisted,
-  so there's no pop to delete. The manager's per-pop `pi-images` column toggles a pop's napari visibility
-  (its `show` flag) and re-pushes via `store.refreshNapariPops` (silent); the Options box has a
-  **Napari dots** size slider (per-set `settings.get/setPointSize(setUid)`, re-pushes on release). The ViewerPanel
-  *Show populations* toggle re-pushes live on every `gating:popmap` while shown, so the napari
-  overlay tracks gate edits / pop add-remove as you gate. The transient selection pop is **not**
-  pushed back into napari (it would steal the active layer mid-draw). See `docs/NAPARI.md` and
-  `docs/POPULATION.md`.
-
-### ModuleLayout — left panel layout
-
-The left panel has two collapse mechanisms:
-- **Horizontal** (‹/›) — shrinks the entire left panel to a 2.4rem strip. Useful for maximizing the right panel.
-- **Vertical** — each section within the panel (image table, plots) has its own toggle header. The image table is always in a "Images" `CollapsibleSection`; the plot canvas is the module's `#plots` slot, which `ModuleLayout` wraps in one consistent collapse-persisted `CollapsibleSection` (label via `plotsLabel`). Extra `#below-table` content is wrapped by the module itself.
-
-The whole left panel body scrolls vertically if sections together exceed available height. Collapsed state is local to the component and resets on navigation.
+Moved to **`docs/POPULATION.md`** → *Gating plot — rendering & UX hacks*. Those ~30 notes are about the
+plot stack's internals (client-side pseudocolour/contours, the fixed regl camera, gate hit-testing,
+cross-plot propagation), which belong with the gating model rather than the UI conventions. **Read them
+before touching `ScatterGL` / `PlotLayers` / `GateOverlay`.**
