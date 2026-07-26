@@ -20,7 +20,7 @@ const DPR = (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
 // DPR×2 (capped 4×) is plenty and keeps file sizes sane.
 const EXPORT_SCALE = Math.min(4, 2 * DPR)
 // Raster/WebGL composites (UMAP + gate scatter) have NO vector fallback — the point cloud is a
-// bitmap. ScatterGL.exportCanvas re-renders it at this scale, so push it higher for a crisp PNG.
+// bitmap. The canvas layers re-render at this scale, so push it higher for a crisp PNG.
 const RASTER_SCALE = Math.min(8, 4 * DPR)
 
 // rasterise an SVG data URL onto a hi-DPI canvas over a white ground → PNG data URL
@@ -106,7 +106,7 @@ export function loadImg(url: string): Promise<HTMLImageElement | null> {
 //   2. draw the HTML/SVG overlay layer on top (canvases blanked so they don't cover pass 1).
 // Returns a PNG data URL (raster; SVG makes no sense for a rasterised point cloud).
 // `opts.hiRes(cv, scale)` lets a caller supply a HIGHER-RESOLUTION replacement for a specific canvas
-// (ScatterGL.exportCanvas re-renders the WebGL point cloud at `scale`× — its on-screen backing store
+// (each canvas layer re-renders its content at `scale`× — the on-screen backing store
 // is only CSS×DPR, so drawing the live canvas would upscale and pixelate). Resolver returns null →
 // composite the live canvas as-is (canvas2D overlays with no hi-res path).
 export async function plotHostToImageURL(host: HTMLElement | null, bg: string,

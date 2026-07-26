@@ -9,7 +9,7 @@
   Data: the shared `frequency` aggregation (POST /api/plot_data, popType=trackclust,
   granularity=cell → member cells carry their HMM state; scope=summarised pools images). Per-cluster
   mode adds groupBy=clusters.<suffix> + collapseSeries (one series per cluster, over root). Rendering
-  is self-contained (lazy Observable Plot, like UmapView/ScatterGL) because the layout is a transpose
+  is self-contained (lazy Observable Plot, like UmapView) because the layout is a transpose
   of the generic stacked bar (x = group, fill = state) — not worth a new shared chart type.
 -->
 <script setup lang="ts">

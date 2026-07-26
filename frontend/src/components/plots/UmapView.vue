@@ -63,9 +63,9 @@ const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'
 // like the cluster panels. It re-themes the OVERLAYS (label chips, legend ink) + the composite ground,
 // but deliberately NOT the WebGL scatter's own background (see `scatterGround`).
 const forceLight = ref(false)
-// On-screen scatter ground — the WebGL layer's background. Deliberately independent of `forceLight`:
-// changing ScatterGL's background prop fires an async re-render that races `exportCanvas` and snapshots
-// a BLANK point cloud. The export goes light via the composite `bg` arg + transparent host instead
+// On-screen scatter ground. Deliberately independent of `forceLight`: changing the base canvas's
+// background prop fires an async re-render that races `exportCanvas` and snapshots a BLANK point
+// cloud. The export goes light via the composite `bg` arg + transparent host instead
 // (exactly like the gating cell, which never re-grounds its scatter for export).
 const screenDark = computed(() => props.vis?.darkTheme !== false)
 const scatterGround = computed(() => (screenDark.value ? '#0d0b1a' : '#ffffff'))

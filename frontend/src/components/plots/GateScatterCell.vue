@@ -1,5 +1,5 @@
 <!--
-  The shared scatter+gate PLOT BODY: a WebGL scatter (ScatterGL) + contour/population layer
+  The shared scatter+gate PLOT BODY: a 2D-canvas dot/contour + population layer (PlotLayers)
   (PlotLayers) + canvas2D gate layer (GateOverlay), with axis lines/ticks/labels and PNG export. This
   is the ONE gate-scatter renderer — extracted from GatePlotPanel so the read-only gating-strategy plot
   (Analysis board) reuses it instead of forking a second one (feedback_use_existing_framework).
@@ -25,7 +25,7 @@ type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
 const props = withDefaults(defineProps<{
   points: Float32Array | null
-  extents: Ext                                   // fixed full-data range (ScatterGL)
+  extents: Ext                                   // fixed full-data range (base layer)
   viewExtents: Ext                               // live (zoom-synced) extents (PlotLayers/GateOverlay/ticks)
   xTicks: { pos: number; label: string }[]
   yTicks: { pos: number; label: string }[]
