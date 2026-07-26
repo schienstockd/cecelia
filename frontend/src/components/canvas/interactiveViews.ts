@@ -4,7 +4,7 @@ import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
-// regl ScatterGL), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
+// 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
 // server-aggregated plot-def JSONs rendered by the one generic PlotChart; interactive plots each
 // need their own renderer + data endpoint, so they live here as self-contained view components.
 //

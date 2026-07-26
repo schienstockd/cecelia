@@ -1,5 +1,5 @@
 <!--
-  canvas2D gate layer over ScatterGL. Two jobs:
+  canvas2D gate layer over the base dot canvas (PlotLayers). Two jobs:
    1. DRAW new gates (mode = rectangle | polygon) — drag a rect, or click polygon vertices
       (double-click / click-near-start to close, Esc cancels). Emits `draw` on completion.
    2. EDIT existing gates (mode = off) — move / resize rectangles (corner + edge handles),
@@ -11,9 +11,9 @@
 
   Everything is mapped data→px through the LIVE (zoom-synced) extents, so gates track pan/zoom.
 
-  Pan/zoom belong to regl below us. To not steal them, in edit (off) mode the overlay sets its
-  own pointer-events to 'auto' ONLY while the cursor is over a gate handle/body (detected via a
-  bubbled mousemove on the parent), and 'none' otherwise — so clicks in empty space reach regl.
+  We sit above the base dot canvas and must not swallow its clicks: in edit (off) mode the overlay
+  sets its own pointer-events to 'auto' ONLY while the cursor is over a gate handle/body (detected
+  via a bubbled mousemove on the parent), and 'none' otherwise, so empty-space clicks pass through.
 -->
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'

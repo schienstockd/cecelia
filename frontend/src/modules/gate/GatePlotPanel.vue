@@ -1,6 +1,6 @@
 <!--
   One modular gating plot (mirrors the old flowPlotManager "gating box"): its own X/Y column +
-  transform, parent-population select, render mode + gate-draw tools, a WebGL scatter (ScatterGL)
+  transform, parent-population select, render mode + gate-draw tools, a 2D-canvas dot plot
   with a contour/population layer (PlotLayers) and a canvas2D gate overlay (GateOverlay), plus
   inline naming to persist a drawn shape.
 

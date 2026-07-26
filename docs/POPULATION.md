@@ -467,8 +467,7 @@ client-side; the server persistence was already correct.
   `GET /api/gating/density` (2D-histogram fallback); `GET /api/gating/stats`;
   `GET /api/gating/membership` (label IDs; **binary `Int32`** for large pops).
 - **WS**: `gating:popmap` broadcast after any mutation (reuses `broadcast_ws`).
-- **Frontend**: `regl-scatterplot` (WebGL, millions of points) + a `canvas2D` overlay for
-  gate drawing; density heatmap fallback above a point threshold; **re-entrancy guard**
+- **Frontend**: a 2D-canvas dot plot + a `canvas2D` overlay for gate drawing; density heatmap fallback above a point threshold; **re-entrancy guard**
   (`listeningToGating`) so server pushes don't re-emit gate mutations; multiple
   simultaneous panels; hierarchical population tree (generic for all 3 types). **No
   Plotly** for gating.
@@ -494,7 +493,7 @@ client-side; the server persistence was already correct.
 ## Scale
 
 10⁶ cells is a real target (static large images; live ~1000 cells × 180 timepoints).
-Implications: WebGL rendering with density fallback; binary `Float32`/`Int32` transfer;
+Implications: 2D-canvas rendering with a density fallback; binary `Float32`/`Int32` transfer;
 per-image measurement + membership caching in Julia; lazy column reads in `label_props`.
 
 ## Out of scope (this phase)
@@ -507,31 +506,33 @@ are later phases; only `flow` is wired to the gating UI now.
 
 ## Gating plot — rendering & UX hacks
 
-Deliberate shortcuts in the plot stack (`components/plots/{ScatterGL,PlotLayers,GateOverlay}.vue`).
-Know them before changing those components. Moved here from `docs/UI.md`, which kept UI *conventions*
-while these are gating-model internals.
+Deliberate shortcuts in the plot stack (`components/plots/{PlotLayers,GateOverlay}.vue`, composited by
+`GateScatterCell`). Know them before changing those components. Both layers are **2D canvas** — the
+WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.md` §0.
 
 
-
-- **Pseudocolour is computed client-side, smoothed.** ScatterGL bins the transformed points into
-  a 160×160 grid, **box-blurs** it (≈ KDE), log-scales, then **bilinear-samples** the grid per
-  point → regl's `colorBy:'valueA'`. The FlowJo **blue-heat ramp** (R `.flowColorRampBlueHeat`,
-  `flowHelpers.R:775`) is interpolated to **256 stops** so the gradient is smooth (not 5 bands),
-  and the low end is lifted off pure black (`#0b1a4d`) so sparse points stay visible on the dark
-  background. No server density call for points.
-- **Contours are client-side too.** PlotLayers builds a 64×64 (lightly box-blurred ≈ KDE)
-  density grid and runs **marching squares** at normalised z = `1 − [0.95,0.90,0.75,0.5]`
-  (R `.flowContourLines`, `flowHelpers.R:46`). The `/api/gating/density` endpoint exists but
-  the canvas path doesn't use it.
+- **Pseudocolour is computed client-side, per point.** `plots/density.ts` `pointDensities` bins the
+  transformed points onto a `DOT_GRID` (160²) grid, box-blurs it (≈ KDE) and samples it back per point,
+  so **each dot is coloured by its own local density** — that per-point colouring is the FlowJo/OMIQ
+  look, and a binned raster instead showed visible rectangles. The **blue-heat ramp**
+  (`plots/flowColors.ts` `BLUE_HEAT_ANCHORS`, from R `.flowColorRampBlueHeat`, `flowHelpers.R:775`) is
+  interpolated to 256 stops so the gradient is smooth, with the low end lifted off pure black
+  (`#0b1a4d`) so sparse points stay visible on the dark theme. No server density call.
+- **Contours are client-side too, on their own grid.** `plots/contour.ts` runs **d3-contour** over a
+  separate, more heavily blurred `DENSITY_GRID` (128²) at `CONTOUR_LEVELS`
+  (`[0.05, 0.12, 0.24, 0.42, 0.65, 0.88]`) — d3-contour gives clean connected rings where the earlier
+  marching-squares pass gave broken ones. Dots and contours deliberately use different grids/blurs
+  (`DOT_*` vs `CONTOUR_*`) because the dot pass wants detail and the ring pass wants smoothness. The
+  `/api/gating/density` endpoint exists but this path doesn't use it.
 - **Population overlay reuses `plotdata`, no new endpoint.** For each highlighted pop, the panel
   GETs `plotdata?pop=<path>` — Julia still owns membership; the client only colours the returned
   subset (dots in `points` mode, a contour in `contour` mode). Heavy for very large/low-
   selectivity pops (canvas2D dots) — acceptable for gated subpops.
-- **Gate editing without stealing pan/zoom.** regl (below) owns pan/zoom. In edit (off) mode the
+- **Gate editing without swallowing clicks on the plot.** In edit (off) mode the
   overlay sets its own `pointer-events:'auto'` ONLY while the cursor is over a gate handle/body —
-  detected via a *bubbled* `mousemove` on the parent container (events bubble up from the regl
+  detected via a *bubbled* `mousemove` on the parent container (events bubble up from the base
   canvas even though the overlay is `'none'`) — and `'none'` otherwise, so empty-space clicks
-  reach regl. During a drag it shows a local `draft` gate; on release it emits `edit` and keeps
+  reach the base canvas. During a drag it shows a local `draft` gate; on release it emits `edit` and keeps
   the draft until the authoritative tree arrives (a `gates`-prop watch clears it) → no snap-back
   flash.
 - **Smooth cross-plot propagation via per-pop versions.** Editing pop A's gate in plot 1 must
@@ -539,7 +540,7 @@ while these are gating-model internals.
   update through `setTree()`, which diffs gate/filter signatures vs the previous tree and bumps a
   per-path `popVersion` for changed pops **and their descendants** (parent∩child). Each panel
   watches the version of its displayed parent (→ refetch base points only, no `plotmeta`, so no
-  axis flicker) and of its highlighted pops (→ refetch just those layers). regl redraw is
+  axis flicker) and of its highlighted pops (→ refetch just those layers). A canvas redraw is
   instant, so it's smooth. `setTree` is the *single* tree-update entry (HTTP response **and** WS
   broadcast both call it) — the diff is idempotent, so the duplicate doesn't double-fire.
 - **Scope governs ALL manager options.** A bottom-of-manager toggle — **icons only** (globe =
@@ -578,19 +579,15 @@ while these are gating-model internals.
   titles don't sit on the box edge.
 - **Smoother pseudocolour**: see the density bullet above (160² grid, box-blurred, bilinear-
   sampled, 256-stop ramp, lifted low end).
-- **Fixed camera → exact overlay alignment (pan/zoom disabled).** Getting the WebGL points to
-  line up with the canvas2D overlays under regl's camera/aspect/scale machinery proved fragile
-  (providing x/y scales made regl re-fit the camera and zoom in, drifting dots off the gates so
-  gating caught no cells). The robust fix: **no x/y scales**, `aspectRatio = w/h` (uniform fill),
-  and `cameraIsFixed: true` — the camera stays at identity, so `[-1,1]` maps straight to the
-  canvas edges and the overlays' plain extents mapping matches exactly. `viewExtents` therefore
-  always equals `extents`. Trade-off: **no interactive pan/zoom** for now; re-enabling it needs
-  the overlays to replicate regl's full `projectionLocal·cameraView·model` transform (the
-  `view`-event camera matrix), not a domain readout. (The contour grid's binning and `cellToData`
-  must still use the same `/G` bin-centre convention.)
-- **Selection is suppressed.** regl single-click selection would paint points blue, which we
-  don't want. ScatterGL subscribes to `select` and immediately `deselect()`s, and sets
-  `pointColorActive`/`pointColorHover` to the neutral colour. Pan/zoom stay enabled.
+- **Overlay alignment is by construction, not by fighting a camera.** Both the base dots and the gate
+  overlay are 2D canvases that map data→pixel through the same `viewExtents`, so they cannot drift
+  apart. This replaced a fragile WebGL arrangement where providing x/y scales made regl re-fit its
+  camera and zoom in, sliding the dots off the gates so gating caught the wrong cells; the workaround
+  was a fixed identity camera. That whole class of bug is gone with the GPU layer.
+- **Still no interactive pan/zoom.** The layers redraw on any `viewExtents` change, so the plumbing is
+  there, but no wheel/drag handler is wired to change the extents (the canvas-level zoom in
+  `useCanvasZoom` is a CSS transform over the whole panel, a different thing). `docs/TODO.md` #00003
+  tracks re-enabling it and still describes the removed regl camera — re-scope it before picking it up.
 - **Active panel + manager link.** `GatingPlots` tracks an `activePanel` index (orange border
   via `.panel.active`); clicking a panel activates it; the active panel watches `selectedPop`
   and sets its parent so the manager selection "shows up on the plot".

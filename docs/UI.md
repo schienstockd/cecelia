@@ -936,38 +936,38 @@ deduping so a multi-node chain run only sends one `chain:cancel`).
 
 ## Adding a plot or visualization panel
 
-Plots go either **in the left column** (below the image table, for compact summary visualizations) or **in the right panel** (alongside or instead of `TaskRunner`).
+**First: is it a summary plot?** If the data is server-aggregated, you do not write a component at all —
+drop a `app/src/plotDefinitions/<id>.json` and it appears in every "+ Plot" picker. See `docs/PLOTS.md`
+→ *Hosting — ONE way*. The rest of this section is for the cases that need their own component.
 
-**Left column** — put the plot canvas in the `#plots` slot (ModuleLayout wraps it in the shared collapsible section — see above); reserve `#below-table` for rare extra custom content. Best for summary/gating/cluster canvases that sit naturally next to the image list.
+**Where it goes.** Left column (`#plots` slot — `ModuleLayout` wraps it in the shared collapsible
+section) for canvases that belong beside the image list; `#right` slot for a panel alongside or instead
+of `TaskRunner`. Both slots hand you `setUid` / `selectedUids` / `selectedNames`, so a panel needs no
+refs of its own. Reserve `#below-table` for rare extra custom content. Fetch over REST in
+`onMounted`/`watch`, or subscribe with `ws.on` (see *WS events*).
 
-**Right panel** — use the `#right` slot:
-
-1. Create a panel component, e.g. `frontend/src/modules/gating/GatingPanel.vue`.
-2. Use it in the module's `#right` slot — you have access to `setUid` and `selectedUids` from slot props.
-3. Data comes from the backend via either:
-   - **REST** — `fetch('/api/...')` inside `onMounted` / `watch`.
-   - **WebSocket event** — `ws.on('myEvent', handler)` in `onMounted`, `ws.off(...)` in `onUnmounted`.
-     See `ARCHITECTURE.md` (Napari → Julia event flow) for the WS event pattern.
-
-Plot libraries in use — **two engines, split by job**:
-- **regl-scatterplot** (WebGL) — **per-cell scatter**: gating plots + UMAP. Renders 100k–1M+ points
-  at 60fps with lasso/rectangle select; gate shapes are a canvas2D overlay in data coords on top
-  (`ScatterGL` + `PlotLayers` + `GateOverlay`). Used wherever **every cell** is drawn and/or gates
-  are sketched. See "Gating page (WebGL scatter + gate overlay)" and `docs/POPULATION.md`.
+Plot libraries in use — **two renderers, split by job**:
+- **2D canvas** (no library) — **per-cell dot plots**: the gating scatter and the UMAP. Every point is
+  drawn coloured by its LOCAL density (`plots/density.ts` `pointDensities` → the blue-heat ramp in
+  `plots/flowColors.ts`) — that per-point colouring is the FlowJo/OMIQ look; contours come from
+  **d3-contour** (`plots/contour.ts`). `PlotLayers` draws dots-or-contours plus population overlays and
+  `GateScatterCell` composites it with `GateOverlay`. There is **no WebGL**: regl-scatterplot was
+  removed (it survives only as an unused `package.json` entry). A 2D canvas suffices because the cloud
+  is non-interactive, and export re-renders the same content at any scale instead of screen-grabbing a
+  GPU buffer. See *Gating page* and `docs/PLOTS.md` §0.
 - **Observable Plot** (`@observablehq/plot`, SVG) — **summary charts**: histogram, box/violin/beeswarm,
   bar, frequency/stacked, and (roadmap) heatmaps/tiled maps via `Plot.cell`/`Plot.raster`. Used
   wherever the data is **server-aggregated** (tiny payloads) and the ggplot `theme_classic` look /
   beeswarm / resize matter more than raw point throughput. See "Analysis-plot canvas (summary plots,
   Observable Plot)" and `docs/PLOTS.md` §0.
 
-Why two: WebGL is necessary to render every cell and draw gates interactively; an SVG grammar-of-
-graphics lib gives the cleaner publication look for pre-aggregated summaries. Neither does the other's
-job well, so we keep both. Never add or swap a charting library without updating this doc, `docs/PLOTS.md`,
-and the `cecelia-charting-decision` rationale.
+Why two: a per-point renderer is needed to draw every cell and sketch gates on it; an SVG
+grammar-of-graphics library gives the cleaner publication look for pre-aggregated summaries. Never add
+or swap a charting library without updating `docs/PLOTS.md` §0 (which owns the rationale) and this list.
 
 ### Plot loading state — delayed spinner
 
-Heavy plots (a slow `/api/plot_data`, a big WebGL point fetch) must show they're working — a blank
+Heavy plots (a slow `/api/plot_data`, a big point fetch) must show they're working — a blank
 panel reads as "frozen". But a spinner that flashes on every quick plot is worse noise. So the rule:
 **a delayed spinner, never an immediate one.**
 
@@ -986,22 +986,20 @@ full-size `GateScatterCell` (Gate page); `UmapView` has its own empty-state whee
 these two primitives.
 
 **Gate scatters — one renderer, three hosts.** `components/plots/GateScatterCell.vue` is the ONE
-scatter+gate body (WebGL points + contour/pop-colour layer + canvas2D gate overlay). The interactive
-Gate page (`GatePlotPanel`, `mode` = rectangle/polygon) and every read-only montage tile (`mode="off"`)
-share it. **Render modes** (`points` | `contour` | `outliers`, chosen via the shared
-`components/plots/RenderModeToggle.vue`): `points` = WebGL pseudocolour cloud; `contour` = density
-contours only, with the WebGL cloud SKIPPED (`GateScatterCell` passes `null` points to `ScatterGL`) so
-it's the fast path; `outliers` = contours + individual dots for the sparse tail (FlowJo / old-R
-"contour ± outliers"). The contour/outlier maths (density grid + low-density subset) is the pure,
-unit-tested `plots/density.ts`, shared by `PlotLayers`. Montages of tiles go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell`
-tiles that owns the per-tile fetch (`plotmeta`/`plotdata`/`stats`), transpose reuse, optional coloured
-population overlays (`highlight`), and PNG/PDF export. It has two tile producers: `GatingStrategyView`
-(tree-derived, responsive wrap) and `GatePairsPanel` (a `ggpairs` matrix, `cols` set). A tile carries a
-`role`: `scatter` (fetches + renders — the default, so tree-derived defs need no role), `diagonal` (a
-labelled name cell, no fetch), or `corr` (an upper-triangle Pearson-r cell reusing its mirror scatter's
-points, no fetch). In matrix mode `GateScatterCell` gets `hideAxisLabels` (the diagonal names each
-channel, so per-tile axis labels only clutter/clip). Add a new gate-montage view by building `PanelDef[]`
-and rendering `<GateMontage>` — never a second gate renderer.
+scatter+gate body (2D-canvas dots + contour/pop-colour layer + gate overlay). The interactive Gate page
+(`GatePlotPanel`, `mode` = rectangle/polygon) and every read-only montage tile (`mode="off"`) share it.
+**Render modes** via the shared `RenderModeToggle.vue`: `points` (per-point pseudocolour), `contour`
+(rings only — the fast path, dot pass skipped), `outliers` (rings + dots for the sparse tail, FlowJo /
+old-R "contour ± outliers"). The maths is the pure, unit-tested `plots/density.ts` + `plots/contour.ts`.
+
+Montages go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell` tiles owning the
+per-tile fetch (`plotmeta`/`plotdata`/`stats`), transpose reuse, optional coloured population overlays
+and PNG/PDF export. Two tile producers: `GatingStrategyView` (tree-derived, responsive wrap) and
+`GatePairsPanel` (a `ggpairs` matrix, `cols` set). A tile's `role` is `scatter` (fetch + render, the
+default — so tree-derived defs need no role), `diagonal` (a labelled name cell, no fetch) or `corr` (an
+upper-triangle Pearson-r cell reusing its mirror's points, no fetch). In matrix mode tiles get
+`hideAxisLabels`, since the diagonal already names each channel. **Add a new gate-montage view by
+building `PanelDef[]` and rendering `<GateMontage>` — never a second gate renderer.**
 
 The gate scatter's axis chrome is HTML (tick labels + rotated axis names), so it doesn't inherit
 Plot's `style.fontSize`. It takes an explicit **`fontSize`** prop (default 11) exposed as the
@@ -1028,31 +1026,21 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `exportFormats`/`exportAs`.)
 
 **Two registries carry the surface "checkboxes":**
-- `components/canvas/interactiveViews.ts` — WebGL/interactive VIEWS (hosted by `InteractivePanel`), flags
+- `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), flags
   `clusterPage` / `analysisBoard`.
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
-**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag, and
-renders each slot with one generic `<component :is v-bind>`. Adding a plot to a surface = write the
-component to the contract + one registry line + tick the flag. When you add the chain-whiteboard as a
-host, it consumes the *same* registries + contract — do not re-wire plots per node.
+**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
+renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
+component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`) and
+the board (`LayoutCanvas.vue`) do this identically — there is no "cluster page way" and "board way", and
+a future chain-whiteboard host consumes the same registries rather than re-wiring plots per node.
 
-**One mechanism across every surface — no per-page divergence.** The module page and the board host the
-*same* components the *same* way; there is not "the cluster page's way" and "the board's way":
-- **Cluster page** (`ClusterPlots.vue`) and **Analysis board** (`LayoutCanvas.vue`) both discover plots
-  from `INTERACTIVE_VIEWS` + `CLUSTER_PANELS` and render them with the identical generic
-  `<component :is v-bind>` (see each file's `clusterPanelProps`). Panel chrome differs only by `docked`
-  (a grid slot drops its own reload/controls/export; a floating panel keeps them).
-- **Behaviour / summary pages** (`SummaryCanvas.vue`) and the board's summary slots both render every
-  summary plot through one `SummaryPanel` driven by the server plot-spec registry
-  (`GET /api/plots/definitions`) — already a single mechanism.
-- **`docked` is the contract's chrome switch.** A panel reads `docked` to hide anything that only makes
-  sense free-floating (e.g. the per-plot Export dropdown) — the board re-fetches on context change and
-  exports via PDF/CSV, so that chrome is redundant in a slot. `SummaryPanel` and the cluster panels use
-  it; `InteractivePanel` can forward it to a view that needs it (none do today — plots stay fresh via
-  `useDataRefresh`, so there are no per-plot reload buttons to hide).
+**`docked` is the contract's chrome switch** — a panel reads it to hide what only makes sense
+free-floating (its own Export dropdown), since the board exports via PDF/CSV instead. Details:
+`docs/ANALYSIS.md` → *`docked` — the chrome switch*.
 
 **Exception — the gating page (`gate/GatingPlots.vue`) is intentionally NOT registry-hosted.** It is a
 single, *write-capable* gate-drawing workspace (`GatePlotPanel` draws/edits gates), not a multi-type
@@ -1403,8 +1391,7 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   `buildPlotOptions(Plot, data, opts)` to get a `Plot.plot()` options object, injects the panel's
   width/height, and appends the node. Resize is trivial (no Vega signal graph): a `ResizeObserver` on
   the host just re-renders with the new size. Exposes `toImageURL('png'|'svg')` — SVG serialises the
-  node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
-  clouds.
+  node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries counterpart of the 2D-canvas dot plots.
 
 > **The Analysis board itself is documented in `docs/ANALYSIS.md`** — tabs, the three stores
 > (`analysisTabs` / `analysisLayout` / `canvasPanels`), plate layout, persistence keys, and export. A
@@ -1454,8 +1441,8 @@ page — and the Analysis board — reuses them unchanged:
   style-inlined clone in an SVG `<foreignObject>` (catches an HTML overlay legend alongside the `<svg>`),
   while `plotHostToImageURL` composites every `<canvas>` then the overlay on top — canvas pixels can't
   go through `foreignObject`. Two DPR-aware scales: `EXPORT_SCALE` (vector) and the higher `RASTER_SCALE`,
-  where every stacked canvas **re-renders at export scale** since a WebGL backing store can't be upscaled
-  crisply. Needs `preserveDrawingBuffer` (regl-scatterplot already sets it). Full API + the two subtleties
+  where every stacked canvas **re-renders its content at export scale** rather than being upscaled, so a
+  dot plot exports crisp and cannot clip. Full API + the two subtleties
   that bit us (clearing ancestor backgrounds in the overlay pass; capturing the axis-margin wrapper, not
   the inner plot box) are indexed in `INVENTORY.md` → *Plot export*; board figure export is `docs/ANALYSIS.md`.
 - **`plots/overlays.ts`** — the **shared** themed legend / title overlays (`legendOverlay`,
@@ -1490,7 +1477,7 @@ in the panel and the data scope (single/cross-image) in the canvas. The two comp
 task defs, so adding a plot type is a JSON drop with no UI code. Schema + the current set:
 `docs/PLOTS.md`.
 
-## Gating page (WebGL scatter + gate overlay)
+## Gating page (2D-canvas scatter + gate overlay)
 
 `frontend/src/modules/GatingModule.vue` — route `/gate`. Pick ONE image in the table; the
 gating workspace renders **below the table** (`#plots` slot, wide left column),
@@ -1528,9 +1515,9 @@ Two plot families share the canvas shell; the distinction matters for where a ne
 - **Summary** — server-aggregated (`POST /api/plot_data`), drawn by the ONE generic `PlotChart`
   (Observable Plot). Histogram, bar, boxplot, **heatmap/matrix**, frequency. Add one = drop a
   plot-def JSON (`app/src/plotDefinitions/`); no UI code. Hosted by `SummaryPanel`.
-- **Interactive** — client/WebGL point clouds with per-point interaction (regl `ScatterGL`), each with
-  its own data endpoint + rendering. Gating scatter, **UMAP**. These can't be a single generic
-  renderer, so they live in a **registry** of self-contained view components:
+- **Interactive** — client-side 2D-canvas point clouds with per-point interaction, each with its own
+  data endpoint + rendering. Gating scatter, **UMAP**. These can't be a single generic renderer, so
+  they live in a **registry** of self-contained view components:
   **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { umap: { label, component } }`.
   A view (e.g. **`components/plots/UmapView.vue`**) fetches + renders + owns its controls; the generic
   **`components/canvas/InteractivePanel.vue`** wraps any view in `CanvasPanel` and spreads the plot
@@ -1652,25 +1639,19 @@ a hard browser reload — same as the panels); cleared on project open/close.
 
 Each **`GatePlotPanel`** is `position:absolute`, **dragged by its title** (clamped on-screen like
 the manager) and **resized from its corner** (`resize:both`; the plot area is `flex:1` and the
-WebGL/canvas2D layers re-render via `ResizeObserver`). Self-contained (own X/Y column + transform
+canvas layers re-render via `ResizeObserver`). Self-contained (own X/Y column + transform
 on **stacked rows**, parent-population select, **render mode**, gate mode) with a **"−"** in the
 header to remove it. New gates are added under that panel's selected parent population. Click a
 panel to make it **active** (orange border); the active panel follows the population you select in
 the manager (sets it as the displayed parent).
 
-Plot stack — three superimposed layers, all mapped data→pixel through the **live** view
-extents so they stay aligned through pan/zoom (`xMin`→left, `xMax`→right, `yMax`→top):
-- **`components/plots/ScatterGL.vue`** — `regl-scatterplot` (WebGL, millions of points).
-  Takes interleaved `Float32Array` `[x,y,…]` (already transformed) + fixed extents and
-  **normalises to `[-1,1]`** for `draw()` — regl positions draw points as DEVICE coords `[-1,1]`,
-  so raw data units would pin every point to the `+1,+1` corner. Sets `aspectRatio = width/height`
-  (updated on resize) so the net x-scale is 1 (regl's default square aspect would letterbox a
-  rectangular plot), and `cameraIsFixed: true` so the identity camera maps `[-1,1]` to the canvas
-  edges — matching the overlays exactly (see the alignment bullet below). Lazy-imports the lib;
-  `destroy()` + `ResizeObserver` cleanup in `onBeforeUnmount`. **First WebGL component — follow it.**
-- **`components/plots/PlotLayers.vue`** — `canvas2D`. Density **contours** (marching squares)
-  and the **population-colour overlay** (per-pop dots or per-pop contours).
-- **`components/plots/GateOverlay.vue`** — `canvas2D` (top). **Draws** new **rectangle** (drag)
+Plot stack — two superimposed 2D canvases, both mapping data→pixel through the same `viewExtents`
+so they stay aligned (`xMin`→left, `xMax`→right, `yMax`→top). There is no third (WebGL) layer any more:
+- **`components/plots/PlotLayers.vue`** — the base. In `points` mode it draws every cell coloured by
+  its local density; in `contour`/`outliers` mode it draws d3-contour rings (plus the sparse tail).
+  Also draws the **population-colour overlay** (per-pop dots or contours). Bucketing points by colour
+  keeps `fillStyle` writes to ~64 rather than one per point.
+- **`components/plots/GateOverlay.vue`** — canvas2D (top). **Draws** new **rectangle** (drag)
   and **polygon** (click vertices, double-click/click-near-start to close; Esc cancels) gates,
   and **edits** existing ones: move / resize rectangles (corner + edge handles), drag polygon
   vertices, double-click an edge to insert a vertex, right-click a vertex to delete. Live local
@@ -1691,7 +1672,7 @@ delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
 
 ### Gating plot — rendering & UX hacks
 
-Moved to **`docs/POPULATION.md`** → *Gating plot — rendering & UX hacks*. Those ~30 notes are about the
-plot stack's internals (client-side pseudocolour/contours, the fixed regl camera, gate hit-testing,
-cross-plot propagation), which belong with the gating model rather than the UI conventions. **Read them
-before touching `ScatterGL` / `PlotLayers` / `GateOverlay`.**
+Moved to **`docs/POPULATION.md`** → *Gating plot — rendering & UX hacks*: the client-side density and
+contour maths, gate hit-testing without stealing pointer events, and cross-plot propagation. Those are
+gating-model internals rather than UI conventions. **Read them before touching `PlotLayers` /
+`GateOverlay`.**
