@@ -111,14 +111,19 @@ interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-inpu
 
 ## Low priority
 
-**#00003** — **Re-enable interactive pan/zoom on gating plots**
-Gating plots currently lock the regl camera (`cameraIsFixed: true`, no x/y scales) so the WebGL
-points align exactly with the canvas2D overlays (contours, gates) — providing scales made regl
-re-fit/zoom and drift the dots off the gates. To restore pan/zoom with correct alignment, the
-overlays (`PlotLayers`, `GateOverlay`) must replicate regl's full screen transform
-(`projectionLocal · cameraView · model`, from the `view`-event camera matrix + `viewAspectRatio`)
-instead of the plain extents mapping, and invert it for gate hit-testing. See the alignment bullet
-in `docs/UI.md`.
+**#00087** — **Pan/zoom on gating plots — deliberately absent** (was a duplicate `#00003`)
+Gating plots have no pan/zoom, and shouldn't for now: this is the intended state, not a gap. Kept as
+an item only to record that **the reason it was hard has gone away.** The old blocker was the WebGL
+camera — the overlays would have had to replicate regl's `projectionLocal · cameraView · model`
+transform and invert it for gate hit-testing. That layer no longer exists: the dots and the gate
+overlay are both 2D canvases mapping data→px through the same `viewExtents`, and every layer already
+redraws when it changes. So if pan/zoom is ever wanted it is a wheel/drag handler that edits
+`viewExtents` — not a matrix-replication job. Details: `docs/POPULATION.md` → *Gating plot —
+rendering & UX hacks*.
+
+*Renumbered against the "IDs are permanent" rule, deliberately: `#00003` was duplicated by two items
+from the initial commit, and `app/src/model/project.jl` cites `#00003` for the per-image-lockfiles
+one — so that item keeps the ID and this one moved.*
 
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
