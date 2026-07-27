@@ -17,6 +17,35 @@ _json_safe(x::AbstractVector) = Any[_json_safe(v) for v in x]
 _json_safe(x::AbstractFloat) = isfinite(x) ? x : nothing
 _json_safe(x) = x
 
+# Fold a completed stats compute into the day's `[Cecelia]` digest via `record_stats_event!`
+# (docs/ai-assist/LAB-LOG.md). Best-effort: a lab-log failure never disrupts the plot response. The
+# in-file sig-dedup means re-fetches of the same comparison during a session fold into ONE bullet —
+# so this call is safe to fire on every stats-bearing response.
+function _record_stats_event(project_uid::AbstractString, result::AbstractDict)
+    haskey(result, "comparisons") || return
+    cmp = result["comparisons"]
+    cmp isa AbstractDict || return
+    groups = get(cmp, :groups, get(cmp, "groups", String[]))
+    isempty(groups) && return
+    p   = try Float64(get(cmp, :p_value, get(cmp, "p_value", NaN))) catch; NaN end
+    isfinite(p) || return
+    test = String(get(cmp, :test, get(cmp, "test", "")))
+    note = String(get(cmp, :method_note, get(cmp, "method_note", "")))
+    sig  = String(get(cmp, :significance, get(cmp, "significance", "")))
+    chart = String(get(result, "chartType", ""))
+    measure = String(get(result, "measure", ""))
+    grp_labels = String[String(g) for g in groups]
+    method = isempty(note) ? test : note
+    pfmt = p < 0.001 ? "p < 0.001" : "p = " * replace(string(round(p; sigdigits = 3)), r"0+$" => "")
+    line = "Stats: $method on $measure ($(join(grp_labels, ", "))): $pfmt $sig" |> strip
+    key  = string(chart, "|", measure, "|", test, "|", join(grp_labels, ","), "|", round(p; sigdigits = 4))
+    proj = try load_project(String(project_uid)) catch; nothing end
+    proj === nothing && return
+    try record_stats_event!(proj, key, line) catch e
+        @warn "record_stats_event! failed" exception=e
+    end
+end
+
 # ── GET /api/plots/definitions[?module=X] — the plot-type registry ────────────────
 # Flat list of plot specs (each carries its own `module`); the frontend groups by module and
 # filters the per-module vs universal canvas. Optional `module` query narrows server-side.
@@ -292,6 +321,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map,
                                   stats_enabled = stats_enabled, stats_test = stats_test)
+            stats_enabled && _record_stats_event(proj, result)
             return 200, JSON3.write(_json_safe(result))
         end
         # single image
@@ -315,6 +345,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                               stats_enabled = stats_enabled, stats_test = stats_test)
+        stats_enabled && _record_stats_event(proj, result)
         return 200, JSON3.write(_json_safe(result))
     catch e
         return _gerr(400, sprint(showerror, e))

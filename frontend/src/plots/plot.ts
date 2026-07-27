@@ -96,6 +96,12 @@ export interface VisProps {
   // heatmap (profile) look — ports the old R heat plots (behaviourDTx.Rmd / plotHeatmaps.R)
   heatmapScale?: 'minmax' | 'zscore'         // per-feature min-max→[0,1] (viridis, R default) vs z-score (diverging)
   heatmapValues?: boolean                    // print the value in each cell (default off for profile, matches R)
+  // Between-group hypothesis test — one setting shared by every plot (governed by the pop-manager
+  // scope, like the other VisProps). Only takes effect on bar/boxplot/violin/strip (see canCompareGroups).
+  statsEnabled?: boolean                     // default false — off unless the user opts in
+  statsTest?: 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'   // default 'auto'
+  statsShowNs?: boolean                      // default true — hide non-significant brackets when false
+  statsUseStars?: boolean                    // default false — swap `p = 0.003` for the star ladder when true
 }
 // Colour range for a categorical axis of `n` levels from the chosen palette (R adjustColors). Returns
 // an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
@@ -122,6 +128,7 @@ export const defaultVis = (): VisProps => ({
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
+  statsEnabled: false, statsTest: 'auto', statsShowNs: true, statsUseStars: false,
 })
 
 export interface BuildOpts extends VisProps {
@@ -134,10 +141,6 @@ export interface BuildOpts extends VisProps {
   smooth?: number                        // trend line: rolling-mean window (1 = raw)
   trend?: boolean                        // render as a geom_smooth line over an ordered X (time series)
   interval?: boolean                     // trend line: draw the ±95% confidence ribbon
-  // Stats annotation rendering flags (client-side; server always returns full comparisons).
-  // Defaults match Prism per docs/todo/STATS_ANNOTATIONS_PLAN.md → S0: numeric-p labels, `ns` shown.
-  statsShowNs?: boolean                  // default true — hide non-significant brackets when false
-  statsUseStars?: boolean                // default false — swap `p = 0.003` for `**` when true
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -622,8 +625,6 @@ function seriesIndex(r: PlotDataResponse, keyOf: (s: PlotSeries) => string, face
 // used (grp || sid || uid) and produce a stack of horizontal-rule + text marks.
 // Rotated (horizontal) charts are not yet supported — brackets skip in that mode.
 
-const STATS_STROKE = '#111'
-const STATS_TEXT_FILL = '#111'
 const STATS_TEXT_SIZE = 12
 const STATS_HEADROOM = 0.05    // first bracket sits at extent.max + 5% of extent
 const STATS_STACK_GAP = 0.05   // stacked brackets step by 5% of extent
@@ -716,18 +717,18 @@ function statsBracketMarks(
   const start = extent.max + ext * STATS_HEADROOM
   const step  = ext * STATS_STACK_GAP
   const marks: unknown[] = []
+  // Theme-aware ink — light foreground on the dark ground, dark ink on the light PDF/PNG export path.
+  const ink = o.darkTheme ? '#e6e6e6' : '#111'
   shown.forEach((p, i) => {
     const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
     const [x1, x2] = lo < hi ? [lo, hi] : [hi, lo]
     const y = start + i * step
     const label = opts.useStars ? p.significance : formatPValue(p.pAdj)
-    // horizontal bracket line
-    marks.push(Plot.ruleY([y], { x1, x2, stroke: STATS_STROKE, strokeWidth: 1 }))
-    // p-value / significance text centred above the bracket
+    marks.push(Plot.ruleY([y], { x1, x2, stroke: ink, strokeWidth: 1 }))
     marks.push(Plot.text([{ x: (x1 + x2) / 2, y, label }],
                          { x: 'x', y: 'y', text: 'label',
                            textAnchor: 'middle', dy: STATS_TEXT_DY,
-                           fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: STATS_TEXT_FILL }))
+                           fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
   })
   return marks
 }

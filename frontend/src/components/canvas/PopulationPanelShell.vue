@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<{
   scope: 'global' | 'local'
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
-  optionsSections?: ('layout' | 'points' | 'colours' | 'labels')[]
+  optionsSections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
   // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
   // floating box — no absolute positioning, no drag, full width of its container.
   docked?: boolean

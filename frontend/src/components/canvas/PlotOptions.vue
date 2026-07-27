@@ -15,11 +15,11 @@ import CcToggle from '../CcToggle.vue'
 
 const props = withDefaults(defineProps<{
   vis: VisProps
-  sections?: ('layout' | 'points' | 'colours' | 'labels')[]
+  sections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
 }>(), { sections: () => ['layout', 'points', 'colours', 'labels'] })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
-const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false })
+const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false, stats: false })
 const set = (patch: Partial<VisProps>) => emit('update:vis', patch)
 const has = (s: string) => props.sections.includes(s as 'layout')
 </script>
@@ -100,6 +100,30 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <span>Colours</span>
           <input class="po-txt wide" type="text" :value="vis.userColors" placeholder="#4477AA,#EE6677,…"
                  @change="set({ userColors: ($event.target as HTMLInputElement).value })" /></label>
+      </div>
+    </template>
+
+    <!-- Stats — between-group hypothesis test (applies to bar/boxplot/violin/strip) -->
+    <template v-if="has('stats')">
+      <button class="po-toggle cc-section-toggle" @click="open.stats = !open.stats">
+        <i :class="open.stats ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Stats</span>
+      </button>
+      <div v-show="open.stats" class="po-body">
+        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Between-group test — Mann-Whitney (2 groups) / Kruskal-Wallis (>2) by default'"><span>Compare groups</span>
+          <CcToggle :model-value="!!vis.statsEnabled" @update:model-value="set({ statsEnabled: $event })" /></div>
+        <label v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'auto = Mann-Whitney (2) / Kruskal-Wallis (>2)'"><span>Test</span>
+          <select class="po-sel" :value="vis.statsTest ?? 'auto'"
+                  @change="set({ statsTest: ($event.target as HTMLSelectElement).value as VisProps['statsTest'] })">
+            <option value="auto">auto</option>
+            <option value="mannwhitney">Mann-Whitney U</option>
+            <option value="ttest">Welch's t-test</option>
+            <option value="kruskal">Kruskal-Wallis</option>
+            <option value="anova">One-way ANOVA</option>
+          </select></label>
+        <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Show ns brackets for non-significant pairs'"><span>Show ns</span>
+          <CcToggle :model-value="vis.statsShowNs !== false" @update:model-value="set({ statsShowNs: $event })" /></div>
+        <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Swap p-values for the * / ** / *** ladder'"><span>Stars only</span>
+          <CcToggle :model-value="!!vis.statsUseStars" @update:model-value="set({ statsUseStars: $event })" /></div>
       </div>
     </template>
 

@@ -18,7 +18,6 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
-import { CECELIA_AUTHOR } from '../../utils/labLog'
 import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
@@ -39,11 +38,7 @@ const props = defineProps<{
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
         matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
-        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median';   // datapoint = each cell/track, or each image's mean/median (one dot per image)
-        statsEnabled?: boolean;             // between-group hypothesis test on bar/boxplot/points/violin/strip
-        statsTest?: 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'
-        statsShowNs?: boolean;              // default true; hide ns brackets when false
-        statsUseStars?: boolean }           // default false; swap `p = X` for the star ladder
+        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -177,13 +172,10 @@ const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => 
 
 // ── Compare groups (between-group hypothesis test) ────────────────────────────────
 // Only meaningful for chart types where between-series comparison reads (bar, boxplot, points,
-// violin, strip). Off by default. Locked defaults from S0 in STATS_ANNOTATIONS_PLAN.md.
-type StatsTest = 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'
+// violin, strip). The controls live on the shared PlotOptions panel (pop-manager rail) so a Global
+// scope applies to every plot on the canvas; here we just READ vis.stats* to shape the request body
+// and the render flags. Off by default (see defaultVis).
 const STATS_CHARTS = new Set<ChartType>(['bar', 'boxplot', 'violin', 'strip'])
-const statsEnabled  = computed<boolean>({ get: () => !!props.ui.statsEnabled,           set: v => (props.ui.statsEnabled = v) })
-const statsTest     = computed<StatsTest>({ get: () => (props.ui.statsTest ?? 'auto') as StatsTest, set: v => (props.ui.statsTest = v) })
-const statsShowNs   = computed<boolean>({ get: () => props.ui.statsShowNs !== false,    set: v => (props.ui.statsShowNs = v) })
-const statsUseStars = computed<boolean>({ get: () => !!props.ui.statsUseStars,          set: v => (props.ui.statsUseStars = v) })
 const canCompareGroups = computed(() => STATS_CHARTS.has(chartType.value))
 // drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
 // Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
@@ -372,8 +364,8 @@ async function fetchData() {
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
-        ...(statsEnabled.value && canCompareGroups.value
-              ? { stats: { enabled: true, test: statsTest.value } } : {}),
+        ...(vis.value.statsEnabled && canCompareGroups.value
+              ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
       }
       applyImageSelector(body)
       const res = await fetch('/api/plot_data', {
@@ -405,7 +397,7 @@ watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('
        statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
-       statsEnabled, statsTest],
+       () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto'],
       scheduleFetch)
 onMounted(scheduleFetch)
 
@@ -425,37 +417,9 @@ const buildOpts = computed<BuildOpts>(() => ({
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
   nonNegative: true,               // the measures plotted here are non-negative
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
-  ...vis.value,                    // logScale, legend, pointSize, pointOpacity
+  ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
-  statsShowNs: statsShowNs.value, statsUseStars: statsUseStars.value,
 }))
-
-// ── Lab-log emitter for stats computes (STATS_ANNOTATIONS_PLAN.md → S6) ────────
-//
-// One `[Cecelia] Stats: <method> on <measure> (<groups>): p = X ***` line per unique compute
-// signature per session. Dedup key = chart + measure + test + groups + p-value; a re-render
-// with the same result doesn't relog, but a genuinely new comparison (different groupBy /
-// measure / images) does. Best-effort: a failed append never disrupts the chart.
-const statsLoggedSigs = new Set<string>()
-function fmtP(p: number): string {
-  if (!Number.isFinite(p)) return ''
-  if (p < 0.001) return 'p < 0.001'
-  return `p = ${p.toPrecision(3).replace(/\.?0+$/, '')}`
-}
-function labLogStats(r: PlotDataResponse | null) {
-  if (!statsEnabled.value) return
-  const cmp = r?.comparisons
-  if (!cmp || !cmp.groups?.length || !Number.isFinite(cmp.pValue)) return
-  const sig = `${r.chartType}|${r.measure}|${cmp.test}|${cmp.groups.join(',')}|${cmp.pValue}`
-  if (statsLoggedSigs.has(sig)) return
-  statsLoggedSigs.add(sig)
-  const line = `Stats: ${cmp.methodNote || cmp.test} on ${r.measure} (${cmp.groups.join(', ')}): ${fmtP(cmp.pValue)} ${cmp.significance}`.trim()
-  fetch('/api/lablog/append', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid: props.projectUid, author: CECELIA_AUTHOR, lines: [line] }),
-  }).catch(() => { /* best-effort — never disrupt the plot on a lab-log failure */ })
-}
-watch(result, r => labLogStats(r))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
 function downloadBlob(name: string, blob: Blob) {
@@ -604,25 +568,6 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
             <select v-model="imageAgg">
               <option value="mean">mean</option>
               <option value="median">median</option>
-            </select>
-          </label>
-          <!-- Between-group hypothesis test — a p-value bracket per pair on the plot itself.
-               Only for chart types where pairwise comparison reads (bar/boxplot/points/violin/strip).
-               Defaults per STATS_ANNOTATIONS_PLAN.md → S0: numeric p, `ns` shown, no stars. -->
-          <label v-if="canCompareGroups" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'Test between series (Mann-Whitney by default; > 2 → Kruskal-Wallis)'">
-            <span>Compare groups</span>
-            <CcToggle v-model="statsEnabled" />
-          </label>
-          <label v-if="canCompareGroups && statsEnabled" class="sp-pop-row cc-muted"
-                 v-tooltip.left="'auto = Mann-Whitney (2 groups) / Kruskal-Wallis (>2)'">
-            <span>Test</span>
-            <select v-model="statsTest">
-              <option value="auto">auto</option>
-              <option value="mannwhitney">Mann-Whitney U</option>
-              <option value="ttest">Welch's t-test</option>
-              <option value="kruskal">Kruskal-Wallis</option>
-              <option value="anova">One-way ANOVA</option>
             </select>
           </label>
           <!-- heatmap (matrix) controls: mode · category · z-score (profile) / normalize (crosstab).
