@@ -406,7 +406,7 @@ async function switchWt(path: string) {
       <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
 
       <div class="field">
-        <button class="save-btn" @click="openWhatsNew"
+        <button class="save-btn" @click="openWhatsNew()"
                 v-tooltip.right="'Release notes for the latest version'">
           <i class="pi pi-sparkles" />
           What's new
