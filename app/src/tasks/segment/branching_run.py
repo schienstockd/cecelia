@@ -84,6 +84,25 @@ def _summarise_paths(skeleton_bool: np.ndarray, t_index):
     return df, np.asarray(sk)
 
 
+def _globalise_labels(df: pd.DataFrame, skeleton_arr: np.ndarray, offset: int):
+    """Shift a timepoint's per-frame skeleton labels (1..N) to globally-unique labels
+    starting at `offset + 1`, keeping the labels zarr array aligned with the h5ad `label`
+    column. Returns `(df_with_label_col, arr_shifted, new_offset)`.
+
+    Invariant tested in `test_branching_anisotropy.py`: the set of nonzero values in
+    `arr_shifted` equals the set of `df.label` values. Empty df is a no-op — the frame passes
+    through with zeros preserved.
+    """
+    if len(df) == 0:
+        return df, skeleton_arr.astype(np.uint32), offset
+    n_local = int(df["path-id"].max()) + 1
+    df["label"] = np.arange(len(df)) + 1 + offset
+    new_offset = int(df["label"].max())
+    arr = skeleton_arr.astype(np.uint32)
+    arr[arr > 0] += np.uint32(new_offset - n_local)
+    return df, arr, new_offset
+
+
 def _iterate_timepoints(labels_arr: np.ndarray, dim_utils: DimUtils):
     """Yield (t_index, 2D-or-3D-labels-slice) per timepoint. t_index is None for static images."""
     if not dim_utils.is_timeseries():
@@ -355,20 +374,11 @@ def run(params: dict):
         skeleton_bool = _skeletonise(bin_im, pre_dilation_size, post_dilation_size, is_3d)
         df, skeleton_arr = _summarise_paths(skeleton_bool, t_index)
 
+        df, arr, label_offset = _globalise_labels(df, skeleton_arr, label_offset)
         if df.empty:
-            skeleton_frames.append(skeleton_arr.astype(np.uint32))
+            skeleton_frames.append(arr)
             continue
-
-        # Uniqueify `label` across timepoints so the h5ad row key is globally unique.
-        df["label"] = np.arange(len(df)) + 1 + label_offset
-        label_offset = int(df["label"].max())
         paths_tables.append(df)
-
-        # `skeleton_arr` starts at 1 per timepoint — shift by label_offset - n_local so labels
-        # in the labels zarr match the h5ad label column.
-        n_local = int(df["path-id"].max()) + 1 if len(df) else 0
-        arr = skeleton_arr.astype(np.uint32)
-        arr[arr > 0] += np.uint32(label_offset - n_local)
         skeleton_frames.append(arr)
         n_skeletons_total += int(df["skeleton-id"].nunique())
 

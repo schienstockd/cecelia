@@ -16,6 +16,7 @@ import os
 import unittest
 
 import numpy as np
+import pandas as pd
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +93,51 @@ class Anisotropy2DTest(unittest.TestCase):
         sk = np.zeros_like(img, dtype=bool)
         _, _, _, _, box_aniso = mod._anisotropy_2d(img, sk, sigma=1.5, box=15)
         self.assertLess(float(box_aniso.mean()), 0.4)
+
+
+class GlobaliseLabelsTest(unittest.TestCase):
+    """Pin the invariant behind the labels-zarr / h5ad alignment: after `_globalise_labels`,
+    the nonzero pixel values in the shifted skeleton array match the h5ad `label` column
+    across many timepoints (a bug here silently misaligns the two, which only a real run
+    would catch). Also covers empty-frame passthrough."""
+
+    def _synthetic_frame(self, n_paths: int, start: int = 1):
+        # A per-frame skeleton array whose nonzero pixels are labelled 1..n_paths — the shape
+        # skan.Skeleton produces via np.asarray(sk).
+        arr = np.zeros((10, 10), dtype=np.uint32)
+        # place each label at a distinct pixel
+        for i in range(n_paths):
+            arr[i, 0] = start + i
+        return arr
+
+    def test_multi_timepoint_labels_align_across_frames(self):
+        mod = _load_runner()
+        offset = 0
+        assigned = []
+        for t, n in enumerate([5, 3, 4, 0, 2]):        # varied path counts + an empty frame
+            df = pd.DataFrame({"path-id": np.arange(n), "skeleton-id": np.zeros(n, dtype=np.int64)})
+            skeleton_arr = self._synthetic_frame(n)
+            df, arr, offset = mod._globalise_labels(df, skeleton_arr, offset)
+            # arr's nonzero values must equal df.label exactly — no gaps, no overlap with prior frames
+            if n == 0:
+                self.assertTrue((arr == 0).all())
+                continue
+            self.assertEqual(set(arr[arr > 0].tolist()), set(df["label"].tolist()))
+            assigned.extend(df["label"].tolist())
+        # Every assigned label is unique across timepoints (this is the whole point of the offset).
+        self.assertEqual(len(assigned), len(set(assigned)))
+        # And they're strictly increasing starting at 1 (5 + 3 + 4 + 0 + 2 = 14 total).
+        self.assertEqual(assigned, list(range(1, 15)))
+
+    def test_empty_frame_is_noop(self):
+        mod = _load_runner()
+        empty_df = pd.DataFrame({"path-id": np.array([], dtype=np.int64),
+                                 "skeleton-id": np.array([], dtype=np.int64)})
+        arr_in = np.zeros((4, 4), dtype=np.uint32)
+        df_out, arr_out, offset_out = mod._globalise_labels(empty_df, arr_in, offset=17)
+        self.assertEqual(offset_out, 17)
+        self.assertEqual(len(df_out), 0)
+        self.assertTrue((arr_out == 0).all())
 
 
 if __name__ == "__main__":
