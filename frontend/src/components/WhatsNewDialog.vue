@@ -52,7 +52,7 @@ const canInstall = computed(() =>
     </div>
 
     <template #footer>
-      <a href="https://github.com/schienstockd/cecelia/releases" target="_blank" rel="noopener" class="wn-foot-link cc-muted cc-fs-sm">
+      <a href="https://github.com/schienstockd/cecelia/releases" target="_blank" rel="noopener" class="wn-foot-link cc-muted">
         All releases <i class="pi pi-external-link" />
       </a>
       <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>

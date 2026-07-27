@@ -431,7 +431,11 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-help:hover { color: var(--cc-accent); }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {
-  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
+  font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer;
+  /* Longhand padding, NOT the shorthand: the global `select` rule sets padding-right: 1.6rem
+     to reserve room for the caret, and a `padding:` shorthand here would clobber it — leaving
+     the chevron painted on top of the model name. Same reasoning as background-color below. */
+  padding-top: 0.05rem; padding-bottom: 0.05rem; padding-left: 0.2rem;
   /* background-COLOR, not the shorthand: the global `select` rule paints the custom caret via
      background-image, and a shorthand here would reset it to none (leaving an arrowless select). */
   background-color: var(--cc-surface-2); border-radius: var(--cc-radius-xs);

@@ -43,7 +43,7 @@ const statusTip: Record<string, string> = {
           @click="openUpdate"
           v-tooltip.bottom="appCtl.updateScope === 'system'
             ? 'Update available — a shared installation must be updated by an administrator'
-            : `Update ${appCtl.updateLatest} available — click to see what's new`">
+            : `Update ${appCtl.updateLatest} — see what's new`">
       <i class="pi pi-arrow-circle-up" />
       Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
       <button class="update-x cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click.stop="appCtl.dismissUpdate()"

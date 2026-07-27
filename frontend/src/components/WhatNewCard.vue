@@ -54,18 +54,18 @@ const tipsOptOut = computed({
     <div v-if="bodyHtml" class="wn-body" v-html="bodyHtml" />
 
     <div v-if="card.steps?.length" class="wn-steps">
-      <div class="cc-muted cc-fs-xs">Try it</div>
+      <div class="wn-steps-label cc-muted cc-fs-xs">Try it</div>
       <ol>
         <li v-for="(step, i) in card.steps" :key="i">{{ step }}</li>
       </ol>
     </div>
 
     <footer class="wn-foot">
-      <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link cc-muted cc-fs-sm">
+      <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link cc-muted">
         View on GitHub <i class="pi pi-external-link" />
       </a>
-      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="cc-muted cc-fs-xs" />
-      <a :href="issueUrl" target="_blank" rel="noopener" class="wn-link wn-link-right cc-muted cc-fs-sm">
+      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="wn-optout cc-muted cc-fs-xs" />
+      <a :href="issueUrl" target="_blank" rel="noopener" class="wn-link wn-link-right cc-muted">
         Report a problem <i class="pi pi-external-link" />
       </a>
     </footer>
@@ -133,7 +133,7 @@ const tipsOptOut = computed({
   font-size: 0.9em;
   background: var(--cc-surface-2);
   padding: 0 4px;
-  border-radius: var(--cc-radius-sm);
+  border-radius: var(--cc-radius-xs);
 }
 .wn-body :deep(pre) {
   background: var(--cc-surface-2);
@@ -143,6 +143,7 @@ const tipsOptOut = computed({
 }
 
 .wn-steps { margin-top: 10px; }
+.wn-steps-label { margin-bottom: 2px; }
 .wn-steps ol { margin: 0; padding-left: 20px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
 .wn-foot {
