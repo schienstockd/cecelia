@@ -3,21 +3,24 @@
   tips. Content is driven by `frontend/src/lib/whatsNew.ts`; layout follows the ClaudeOverviewDialog
   card pattern.
 
-  Slots left in the schema for later plans:
-   - sketchAnimation → SKETCH_ENGINE_PLAN.md (renders a grey placeholder box until then)
-   - statsAnnotation → STATS_ANNOTATIONS_PLAN.md (typed but unused for now)
+  `sketchAnimation.id` resolves against feijoa's `sketches` catalogue; unknown ids fall through to
+  the grey "coming soon" placeholder. `statsAnnotation` is a typed slot still awaiting content
+  (STATS_ANNOTATIONS_PLAN.md).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
+import { SketchCanvas, sketches, type SketchDefinition } from 'feijoa'
 import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_ISSUES_URL } from '../lib/whatsNew'
 import { useSettingsStore } from '../stores/settings'
 import CcToggle from './CcToggle.vue'
 
-const props = defineProps<{ card: WhatNewCard }>()
+const props = defineProps<{ card: WhatNewCard; navigable?: boolean }>()
+const emit = defineEmits<{ 'nav-prev': []; 'nav-next': [] }>()
 
 const kindLabel = computed(() => (
   props.card.kind === 'update' ? 'NEW' :
   props.card.kind === 'fix'    ? 'FIX' :
+  props.card.kind === 'about'  ? 'ABOUT' :
                                  'TIP'
 ))
 const kindTone = computed(() => 'wn-kind-' + props.card.kind)
@@ -25,6 +28,13 @@ const dateLabel = computed(() => formatCardDate(props.card.publishedAt))
 const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_ISSUES_URL)
 const bodyHtml = computed(() => renderMarkdown(props.card.bodyMd))
 const isTip = computed(() => props.card.kind === 'tip')
+
+// Resolve `sketchAnimation.id` → feijoa's catalogue; unknown id (or none) → null → placeholder.
+const sketch = computed<SketchDefinition | null>(() => {
+  const id = props.card.sketchAnimation?.id
+  if (!id) return null
+  return sketches[id] ?? null
+})
 
 // The "show tips on launch" opt-out is a store toggle bound to a checkbox on every tip card.
 // Bound as `!tipsOnLaunch` so the checkbox reads "Don't show tips on launch" (opt-out language).
@@ -45,8 +55,21 @@ const tipsOptOut = computed({
 
     <div v-if="dateLabel" class="wn-date cc-muted cc-fs-2xs">{{ dateLabel }}</div>
 
-    <!-- sketchAnimation slot — placeholder box until SKETCH_ENGINE_PLAN.md content lands. -->
-    <div v-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
+    <!-- sketchAnimation — feijoa SketchCanvas when the id resolves; grey box otherwise. -->
+    <div v-if="sketch" class="wn-sketch wn-sketch-render">
+      <!-- Explicit 100% h/w — SketchCanvas defaults to `height: auto` (inline), which would win
+           over the container's aspect-ratio and overflow the card. -->
+      <SketchCanvas :definition="sketch" width="100%" height="100%" />
+      <template v-if="navigable">
+        <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" @click.stop="emit('nav-prev')">
+          <i class="pi pi-chevron-left" />
+        </button>
+        <button type="button" class="wn-nav wn-nav-next" aria-label="Next tip" @click.stop="emit('nav-next')">
+          <i class="pi pi-chevron-right" />
+        </button>
+      </template>
+    </div>
+    <div v-else-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
 
     <p v-if="card.description" class="wn-description">{{ card.description }}</p>
 
@@ -87,6 +110,7 @@ const tipsOptOut = computed({
 .wn-kind-update { background: var(--cc-accent); }
 .wn-kind-tip    { background: var(--cc-sev-warn); color: #1a1a1a; }
 .wn-kind-fix    { background: var(--cc-sev-ok);   color: #ffffff; }
+.wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
 .wn-title { flex: 1; margin: 0; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text); }
 .wn-version {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
@@ -111,6 +135,43 @@ const tipsOptOut = computed({
   color: var(--cc-text-dim);
   font-size: var(--cc-fs-sm);
 }
+/* Real sketch — fix the container aspect ratio so the card height stays STABLE when the user
+   cycles tips (sketches otherwise vary in native aspect — logo is ~3.8:1, gating is 1:1). The
+   SVG's own preserveAspectRatio="xMidYMid meet" letterboxes narrower sketches; nav zones stretch
+   the full container so clicks in the letterbox still page. Container background matches
+   feijoa's own SVG paper (#fafaf7) so a letterboxed square sketch reads as a single canvas
+   rather than sitting on the dark card. */
+.wn-sketch.wn-sketch-render {
+  aspect-ratio: 2 / 1;
+  height: auto;
+  border: none;
+  background: #fafaf7;
+  border-radius: var(--cc-radius-md);
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+.wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: 100%; display: block; }
+
+/* Edge-click nav — invisible zones on the sketch's left/right edges; chevron fades in on hover. */
+.wn-nav {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 15%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: transparent;
+  transition: color 150ms ease, background 150ms ease;
+}
+.wn-nav .pi { font-size: 1.5rem; }
+.wn-nav-prev { left: 0; justify-content: flex-start; }
+.wn-nav-next { right: 0; justify-content: flex-end; }
+.wn-nav-prev:hover { color: var(--cc-text-dim); background: linear-gradient(to right, rgba(0,0,0,0.06), transparent); }
+.wn-nav-next:hover { color: var(--cc-text-dim); background: linear-gradient(to left,  rgba(0,0,0,0.06), transparent); }
 
 .wn-description { margin: 10px 0 6px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
 
