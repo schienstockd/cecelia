@@ -147,26 +147,31 @@ end
 # Compose one label per series by joining ONLY the dims that vary across the series set — same
 # convention as frontend's `keyFor` (dimsOf → parts joined with " · "). Ensures a bracket can be
 # matched back to the correct chart position by label. See `serverStatsLabels` in frontend/plot.ts.
-_path_of(vn::AbstractString, pop::AbstractString) =
-    (!isempty(vn) && startswith(pop, vn * "/")) ? pop[length(vn)+2:end] : pop
-
-function _series_pop(g)
-    (nrow(g.sub) > 0 && :pop in propertynames(g.sub)) ? String(g.sub[1, :pop]) : ""
+#
+# CRITICAL: derive the path from the SAME string the frontend receives, which is `g.sid` (== `vn *
+# pop` when the raw pop starts with "/", per `_series_groups` line 113) — NOT the raw pop column in
+# the subframe. The frontend runs `pathOf` on the received pop (i.e. sid), stripping the `vn/`
+# prefix; we mirror that here or the two label sets desync and no bracket ever maps to a chart
+# position (was the population-summary "stats does nothing" bug).
+function _path_from_sid(vn::AbstractString, sid::AbstractString)::String
+    if !isempty(vn) && startswith(sid, vn * "/")
+        return String(sid[length(vn)+2:end])
+    end
+    return String(sid)
 end
 
 function _stats_labels(groups)
     isempty(groups) && return String[]
-    pops = String[_series_pop(g) for g in groups]
     d_uid  = length(unique(String[g.uid for g in groups])) > 1
     d_seg  = length(unique(String[g.vn  for g in groups])) > 1
-    d_path = length(unique(String[_path_of(g.vn, pops[i]) for (i, g) in enumerate(groups)])) > 1
+    d_path = length(unique(String[_path_from_sid(g.vn, g.sid) for g in groups])) > 1
     d_grp  = length(unique(String[g.grp for g in groups])) > 1
     labels = String[]
-    for (i, g) in enumerate(groups)
+    for g in groups
         parts = String[]
         d_uid  && push!(parts, g.uid)
         d_seg  && push!(parts, g.vn)
-        d_path && push!(parts, _path_of(g.vn, pops[i]))
+        d_path && push!(parts, _path_from_sid(g.vn, g.sid))
         d_grp  && push!(parts, g.grp)
         push!(labels, isempty(parts) ? (isempty(g.sid) ? g.uid : g.sid) : join(parts, " · "))
     end
