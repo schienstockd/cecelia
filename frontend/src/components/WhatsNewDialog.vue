@@ -57,7 +57,8 @@ const canInstall = computed(() =>
   <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
     <div v-if="hasAnyCard" class="wn-list">
       <template v-if="tipCard">
-        <WhatNewCard :card="tipCard" />
+        <!-- Dots ABOVE the card so they don't move vertically when swapping tips (sketch aspect
+             ratios differ). -->
         <nav v-if="showTipDots" class="wn-dots" aria-label="Browse tips">
           <button
             v-for="(t, i) in TIPS" :key="t.id"
@@ -69,6 +70,7 @@ const canInstall = computed(() =>
             @click="goToTip(i)"
           />
         </nav>
+        <WhatNewCard :card="tipCard" />
       </template>
       <WhatNewCard v-for="c in otherCards" :key="c.id" :card="c" />
     </div>
