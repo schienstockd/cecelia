@@ -152,6 +152,33 @@ if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
   Say 'Installed bioformats2raw.'
 }
 
+# ── Custom cellpose models (segmentation) ───────────────────────────────────────
+# Mirrors the bioformats2raw pattern: ~26 MB (schienstockd/ceceliaModels — `ccia.fluo` for
+# fluorescence today; more later), too large for the bundle. Only cellposeModels/ is installed —
+# the pineapple btrack config is vendored beside its runner.
+if (Test-Path (Join-Path $InstallDir 'models/cellposeModels/ccia.fluo')) {
+  Say 'Using cecelia models already installed.'
+} else {
+  $ModelsRef = if ($env:CECELIA_MODELS_REF) { $env:CECELIA_MODELS_REF } else { 'master' }
+  $ModelsUrl = "https://github.com/schienstockd/ceceliaModels/archive/refs/heads/$ModelsRef.zip"
+  Say "Fetching cecelia models ($ModelsRef; ~26 MB)..."
+  $mZip = Join-Path $Tmp 'ceceliaModels.zip'
+  $mTmp = Join-Path $Tmp 'ceceliaModels'
+  Invoke-WebRequest -Uri $ModelsUrl -OutFile $mZip
+  Expand-Archive -Path $mZip -DestinationPath $mTmp -Force
+  $mSrc = Get-ChildItem -Path $mTmp -Directory |
+          Where-Object { $_.Name -like 'ceceliaModels-*' } | Select-Object -First 1
+  New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'models') | Out-Null
+  $mDst = Join-Path $InstallDir 'models/cellposeModels'
+  if (Test-Path $mDst) { Remove-Item -Recurse -Force $mDst }
+  Move-Item -Path (Join-Path $mSrc.FullName 'cellposeModels') -Destination $mDst
+  Remove-Item $mZip; Remove-Item -Recurse -Force $mTmp
+  if (-not (Test-Path (Join-Path $mDst 'ccia.fluo'))) {
+    Fail 'cellpose models missing after unpack (ccia.fluo not found).'
+  }
+  Say 'Installed cecelia models.'
+}
+
 # ── Provision ───────────────────────────────────────────────────────────────────
 Push-Location $InstallDir
 Say 'Installing the Python environment (downloads a few GB on first run)...'

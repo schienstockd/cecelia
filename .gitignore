@@ -25,6 +25,11 @@ Thumbs.db
 
 # Manifest.toml is intentionally committed — this is an application, so deps are pinned.
 
+# Bundled DL checkpoints fetched by install.sh / `pixi run models-fetch` (~26 MB;
+# schienstockd/ceceliaModels). Matches the bioformats2raw pattern — never in git.
+/models/
+/bioformats2raw/
+
 # Notebook Playground sysimage — a ~1.4 GB build artifact (rebuild with `pixi run notebooks-sysimage`).
 pluto/deps.so
 pluto/deps.so.stamp

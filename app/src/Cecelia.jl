@@ -2,6 +2,7 @@ module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, config_dir, custom_toml_path
+export cellpose_models_dir, cellpose_model_path
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 

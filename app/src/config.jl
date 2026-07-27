@@ -70,6 +70,45 @@ wizard writes and `init_cecelia!` reads.
 custom_toml_path(dev_dir::Union{String,Nothing} = nothing)::String =
     joinpath(config_dir(dev_dir), "custom.toml")
 
+# ── User-supplied model checkpoints ────────────────────────────────────────────
+# Custom DL checkpoints live under `<config_dir>/models/{family}/{name}` (mirroring the old R
+# version's `cciaModels()` layout). Cellpose's `cellposeModels/` subfolder holds `.pt` / no-ext
+# files that cellpose's `CellposeModel(pretrained_model=path)` can load — e.g. `ccia.fluo`, the
+# custom fluorescence model that segments dendritic / SHG stroma (upstream of the branching task).
+# The Julia handler resolves a user-selected model NAME to its FILE PATH before calling the
+# Python runner, so cellpose's own `os.path.isfile(model_type)` branch (`cellpose_utils.py`) picks
+# the custom path up automatically. See TODO #00087.
+
+"""Absolute directory for user cellpose checkpoints. Just a path — no I/O, no side-effects."""
+cellpose_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(config_dir(dev_dir), "models", "cellposeModels")
+
+"""
+    cellpose_model_path(name) -> String | Nothing
+
+Absolute path to a custom cellpose checkpoint by filename, or `nothing` if the file doesn't
+exist. Empty/whitespace name → `nothing` (no false positive on directory-only entries).
+
+Two locations are checked, in order — mirrors the bioformats2raw resolver's bundled/override
+pattern:
+  1. `<install root>/models/cellposeModels/{name}` — where `install.sh` / `install.ps1`
+     unpacks the `schienstockd/ceceliaModels` release (like bioformats2raw at
+     `<install>/bioformats2raw/`; in dev, resolved to `<repo>/models/` after
+     `pixi run models-fetch`).
+  2. `<config_dir>/models/cellposeModels/{name}` — user override slot (drop-in checkpoints
+     that aren't in the shipped set).
+"""
+function cellpose_model_path(name::AbstractString,
+                             dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
+    s = strip(String(name))
+    isempty(s) && return nothing
+    # `@__DIR__` = `<repo>/app/src` → `..`/`..` = repo (install) root.
+    bundled = joinpath(@__DIR__, "..", "..", "models", "cellposeModels", s)
+    isfile(bundled) && return bundled
+    p = joinpath(cellpose_models_dir(dev_dir), s)
+    isfile(p) ? p : nothing
+end
+
 """
 Initialise Cecelia configuration. Merges the bundled `config.toml` with the user `custom.toml`
 found at [`custom_toml_path`](@ref) (see [`config_dir`](@ref) for how the location is resolved).

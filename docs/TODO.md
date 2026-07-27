@@ -115,6 +115,7 @@ pop type (a *third* granularity beside cell/track) is worth its cost vs. reading
 existing ungated `labels` pop type, and how `segment.measureLabels` on a branch label set should
 interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-input
 
+
 ---
 
 ## Backlog
