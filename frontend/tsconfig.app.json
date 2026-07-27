@@ -8,12 +8,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-
-    /* Mirrors the Vite alias in vite.config.ts — see docs/todo/SKETCH_ENGINE_PLAN.md */
-    "paths": {
-      "feijoa": ["../../feijoa/src/lib/index.ts"]
-    }
+    "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "../../feijoa/src/**/*.ts", "../../feijoa/src/**/*.vue"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
 }
