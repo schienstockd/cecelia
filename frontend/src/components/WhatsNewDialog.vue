@@ -35,13 +35,15 @@ const tipCard = computed<WhatNewCardT | null>(() => {
 const showTipDots = computed(() => openWithTip.value && TIPS.length > 1)
 function goToTip(i: number) { viewedTipIndex.value = i }
 
-const cards = computed<WhatNewCardT[]>(() => {
+// Non-tip cards render after the tip block (card + dots pagination) so the pagination stays
+// visually tied to the tip it pages, not stranded at the bottom of the modal.
+const otherCards = computed<WhatNewCardT[]>(() => {
   const list: WhatNewCardT[] = []
-  if (tipCard.value)    list.push(tipCard.value)
   if (updateCard.value) list.push(updateCard.value)
   list.push(...props.extraCards)
   return list
 })
+const hasAnyCard = computed(() => !!tipCard.value || otherCards.value.length > 0)
 
 // Show an inline "Install {version}" in the dialog footer when the user can self-apply. Uses the
 // same appControl.applyUpdate action as the Settings panel — no divergent update path. The dev
@@ -53,19 +55,22 @@ const canInstall = computed(() =>
 
 <template>
   <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
-    <div v-if="cards.length" class="wn-list">
-      <WhatNewCard v-for="c in cards" :key="c.id" :card="c" />
-      <nav v-if="showTipDots" class="wn-dots" aria-label="Browse tips">
-        <button
-          v-for="(t, i) in TIPS" :key="t.id"
-          class="wn-dot"
-          :class="{ 'wn-dot-current': i === currentIndex, 'wn-dot-today': i === dailyIndex }"
-          :aria-label="t.title"
-          :aria-current="i === currentIndex ? 'true' : undefined"
-          v-tooltip.bottom="i === dailyIndex ? `${t.title} · today's tip` : t.title"
-          @click="goToTip(i)"
-        />
-      </nav>
+    <div v-if="hasAnyCard" class="wn-list">
+      <template v-if="tipCard">
+        <WhatNewCard :card="tipCard" />
+        <nav v-if="showTipDots" class="wn-dots" aria-label="Browse tips">
+          <button
+            v-for="(t, i) in TIPS" :key="t.id"
+            class="wn-dot"
+            :class="{ 'wn-dot-current': i === currentIndex, 'wn-dot-today': i === dailyIndex }"
+            :aria-label="t.title"
+            :aria-current="i === currentIndex ? 'true' : undefined"
+            v-tooltip.bottom="i === dailyIndex ? `${t.title} · today's tip` : t.title"
+            @click="goToTip(i)"
+          />
+        </nav>
+      </template>
+      <WhatNewCard v-for="c in otherCards" :key="c.id" :card="c" />
     </div>
     <div v-else class="wn-empty cc-muted cc-fs-md">
       Nothing new right now — you're up to date.
