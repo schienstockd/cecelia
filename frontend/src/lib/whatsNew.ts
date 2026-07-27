@@ -8,8 +8,9 @@
 // any caller (header badge, Settings button, launch tip in W4) calls `openWhatsNew()`. One
 // modal, one state.
 //
-// The `sketchAnimation` / `statsAnnotation` slots are typed but rendered as placeholders until
-// SKETCH_ENGINE_PLAN.md / STATS_ANNOTATIONS_PLAN.md land content.
+// `sketchAnimation` points at a feijoa sketch by id (rendered inline by WhatNewCard). Unknown ids
+// fall through to the "coming soon" placeholder. `statsAnnotation` is a typed slot but rendered as
+// a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
 import { useAppControlStore } from '../stores/appControl'
@@ -27,8 +28,8 @@ export interface WhatNewCard {
   releaseVersion?: string   // shown as a chip on update cards
   releaseUrl?: string       // "View on GitHub" link on update cards
   publishedAt?: string      // ISO date on update cards
-  sketchAnimation?: unknown // slot for SKETCH_ENGINE_PLAN
-  statsAnnotation?: unknown // slot for STATS_ANNOTATIONS_PLAN
+  sketchAnimation?: { id: string }   // feijoa sketch id; WhatNewCard resolves via `sketches[id]`
+  statsAnnotation?: unknown           // slot for STATS_ANNOTATIONS_PLAN
 }
 
 export const CECELIA_ISSUES_URL = 'https://github.com/schienstockd/cecelia/issues/new'

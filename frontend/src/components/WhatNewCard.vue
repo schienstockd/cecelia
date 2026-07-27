@@ -3,12 +3,13 @@
   tips. Content is driven by `frontend/src/lib/whatsNew.ts`; layout follows the ClaudeOverviewDialog
   card pattern.
 
-  Slots left in the schema for later plans:
-   - sketchAnimation → SKETCH_ENGINE_PLAN.md (renders a grey placeholder box until then)
-   - statsAnnotation → STATS_ANNOTATIONS_PLAN.md (typed but unused for now)
+  `sketchAnimation.id` resolves against feijoa's `sketches` catalogue; unknown ids fall through to
+  the grey "coming soon" placeholder. `statsAnnotation` is a typed slot still awaiting content
+  (STATS_ANNOTATIONS_PLAN.md).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
+import { SketchCanvas, sketches, type SketchDefinition } from 'feijoa'
 import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_ISSUES_URL } from '../lib/whatsNew'
 import { useSettingsStore } from '../stores/settings'
 import CcToggle from './CcToggle.vue'
@@ -25,6 +26,13 @@ const dateLabel = computed(() => formatCardDate(props.card.publishedAt))
 const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_ISSUES_URL)
 const bodyHtml = computed(() => renderMarkdown(props.card.bodyMd))
 const isTip = computed(() => props.card.kind === 'tip')
+
+// Resolve `sketchAnimation.id` → feijoa's catalogue; unknown id (or none) → null → placeholder.
+const sketch = computed<SketchDefinition | null>(() => {
+  const id = props.card.sketchAnimation?.id
+  if (!id) return null
+  return sketches[id] ?? null
+})
 
 // The "show tips on launch" opt-out is a store toggle bound to a checkbox on every tip card.
 // Bound as `!tipsOnLaunch` so the checkbox reads "Don't show tips on launch" (opt-out language).
@@ -45,8 +53,11 @@ const tipsOptOut = computed({
 
     <div v-if="dateLabel" class="wn-date cc-muted cc-fs-2xs">{{ dateLabel }}</div>
 
-    <!-- sketchAnimation slot — placeholder box until SKETCH_ENGINE_PLAN.md content lands. -->
-    <div v-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
+    <!-- sketchAnimation — feijoa SketchCanvas when the id resolves; grey box otherwise. -->
+    <div v-if="sketch" class="wn-sketch wn-sketch-render">
+      <SketchCanvas :definition="sketch" />
+    </div>
+    <div v-else-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
 
     <p v-if="card.description" class="wn-description">{{ card.description }}</p>
 
@@ -111,6 +122,14 @@ const tipsOptOut = computed({
   color: var(--cc-text-dim);
   font-size: var(--cc-fs-sm);
 }
+/* Real sketch — drop the placeholder border/height, let SketchCanvas scale to the card width. */
+.wn-sketch.wn-sketch-render {
+  height: auto;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+.wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: auto; }
 
 .wn-description { margin: 10px 0 6px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
 

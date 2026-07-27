@@ -5,8 +5,8 @@
 // hasn't opted out. The opt-out lives on the card itself as a checkbox.
 //
 // Tips should read like a one-paragraph hint — brief description, optional 2-4 steps, no walls of
-// text. The `sketchAnimation` slot is prepped for future SketchDefinition content (feijoa) but
-// renders a grey placeholder for now.
+// text. `sketchAnimation.id` points at a feijoa sketch (rendered inline by WhatNewCard); an id
+// that isn't in feijoa's catalogue falls back to the "coming soon" placeholder.
 import type { WhatNewCard } from './whatsNew'
 
 export const TIPS: WhatNewCard[] = [
@@ -20,7 +20,7 @@ export const TIPS: WhatNewCard[] = [
       'Run Behaviour → HMM to fit states.',
       'Colour tracks by the new state column in napari to see them.',
     ],
-    sketchAnimation: { pending: 'hmm' },
+    sketchAnimation: { id: 'hmm' },
   },
   {
     id: 'tip-cluster-to-pop',
@@ -32,7 +32,7 @@ export const TIPS: WhatNewCard[] = [
       'Open the Cluster panel, pick clusters that share a phenotype.',
       'Save as population — the new pop appears in the manager.',
     ],
-    sketchAnimation: { pending: 'clusters' },
+    sketchAnimation: { id: 'clusters' },
   },
   {
     id: 'tip-gate-then-napari',
@@ -44,7 +44,7 @@ export const TIPS: WhatNewCard[] = [
       'Open the image in napari.',
       'Toggle the population\'s "Show" in the Viewer panel.',
     ],
-    sketchAnimation: { pending: 'gating' },
+    sketchAnimation: { id: 'gating' },
   },
 ]
 
