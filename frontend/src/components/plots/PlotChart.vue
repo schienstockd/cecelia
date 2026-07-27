@@ -31,6 +31,7 @@ let titleNode: HTMLElement | null = null
 // listing the group's ns neighbours. Populated in render() from base._cld + node.scale(…).
 interface CldPlaced { label: string; letter: string; left: number; top: number; ns: string[] }
 const cldItems = ref<CldPlaced[]>([])
+const cldInk = ref<string>('#111')                    // theme ink for the overlays (see render())
 const cldLetterRefs = ref<HTMLElement[]>([])
 const hoverIdx = ref<number>(-1)                      // which letter is hovered (drives popover)
 const hoverAnchor = computed<HTMLElement | null>(() => hoverIdx.value >= 0 ? cldLetterRefs.value[hoverIdx.value] ?? null : null)
@@ -92,10 +93,33 @@ async function render() {
       const top  = cld.rotate ? posPx  : measPx
       return { label: it.label, letter: it.letter, left, top, ns: it.ns }
     })
+    cldInk.value = ink
   } else {
     cldItems.value = []
   }
   hoverIdx.value = -1
+}
+
+// Inject the CLD letters as SVG text marks on the export path — the on-screen chart keeps HTML
+// overlays (needed so each letter can anchor a TeleportPopover), but a rasterised export needs the
+// letters IN the SVG or they vanish. Called from toImageURL before Plot.plot().
+function _injectCldMarks(Plot: any, base: any, ink: string): void {   // eslint-disable-line @typescript-eslint/no-explicit-any
+  const cld = base._cld as CldOverlay | null
+  if (!cld || !cld.items.length) return
+  const ext = Math.max(1e-9, cld.measExtent.max - cld.measExtent.min)
+  const measVal = cld.measExtent.max + ext * 0.05
+  const marks = base.marks as unknown[]
+  for (const it of cld.items) {
+    if (cld.rotate) {
+      marks.push(Plot.text([{ x: measVal, y: it.pos, label: it.letter }],
+                           { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: 8,
+                             fontSize: 12, fontWeight: 700, fill: ink }))
+    } else {
+      marks.push(Plot.text([{ x: it.pos, y: measVal, label: it.letter }],
+                           { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', dy: -6,
+                             fontSize: 12, fontWeight: 700, fill: ink }))
+    }
+  }
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
@@ -104,14 +128,20 @@ const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
 // expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
 // serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
 // `light` = build a one-off LIGHT-theme node (dark ink on white) for PDF export, without disturbing the
-// on-screen (dark-theme) chart — dark theme is only for webpage display. Legend/title overlays are HTML
-// (not in the SVG), so — as with the existing per-plot PNG export — they're omitted from the image.
+// on-screen (dark-theme) chart — dark theme is only for webpage display.
+//
+// CLD letters live as HTML overlays on-screen (so they can anchor TeleportPopover on hover), which
+// means they'd vanish on an SVG-only export. Rebuild the plot for BOTH export paths and inject the
+// letters as SVG text marks first, using the ink for the target theme. Legend/title overlays are
+// separately HTML too and still omitted — parity with the earlier behaviour.
 async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | null> {
-  if (!light) return svgToImageURL(svgOf(node as Element | null), type)
-  if (!host.value) return null
+  if (!host.value || !props.data) return null
   if (!Plot) Plot = await import('@observablehq/plot')
-  const base = props.data ? buildPlotOptions(Plot, props.data, { ...props.opts, darkTheme: false }) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
+  const targetOpts = light ? { ...props.opts, darkTheme: false } : props.opts
+  const base = buildPlotOptions(Plot, props.data, targetOpts) as any   // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!base) return null
+  const ink = targetOpts.darkTheme ? '#e6e6e6' : '#111'
+  _injectCldMarks(Plot, base, ink)
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
   const off = Plot.plot({ ...base, width: w, height: h }) as SVGElement
@@ -140,7 +170,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null
       :key="c.label"
       :ref="el => { if (el) cldLetterRefs[i] = el as HTMLElement }"
       class="cld-letter"
-      :style="{ left: c.left + 'px', top: c.top + 'px' }"
+      :style="{ left: c.left + 'px', top: c.top + 'px', color: cldInk }"
       @mouseenter="hoverIdx = i"
       @mouseleave="hoverIdx === i && (hoverIdx = -1)"
     >{{ c.letter }}</span>
