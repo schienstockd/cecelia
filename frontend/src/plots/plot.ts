@@ -688,23 +688,17 @@ function pairsFor(cmp: ComparisonsResult): StatsComparisonPair[] {
  * unreadable past ~4 groups. Returns [] when no marks would render or when server labels don't
  * map to chart positions.
  */
-// One entry per CLD group. `pos` is the position-axis coordinate (integer index in our linear
-// scale; PlotChart resolves it to px via `node.scale('x' | 'y').apply(pos)`). `ns` is the list of
-// other group labels this one is NOT significantly different from (they share ≥1 letter).
-export interface CldOverlayItem { label: string; letter: string; pos: number; ns: string[] }
-export interface CldOverlay { items: CldOverlayItem[]; rotate: boolean; measExtent: { min: number; max: number } }
-
 function statsBracketMarks(
   Plot: PlotModule,
   r: PlotDataResponse,
   keyOf: (s: PlotSeries) => string,
   o: BuildOpts,
   opts: { showNs: boolean; useStars: boolean; useLetters: boolean },
-): { marks: unknown[]; cld: CldOverlay | null } {
+): unknown[] {
   const cmp = r.comparisons
-  if (!cmp) return { marks: [], cld: null }
+  if (!cmp) return []
   const extent = measureExtent(r)
-  if (!extent) return { marks: [], cld: null }
+  if (!extent) return []
   const { idx } = seriesIndex(r, keyOf, o.facet)
   const labelBySeries = serverStatsLabels(r.series)
   const posByLabel = new Map<string, number>()
@@ -717,27 +711,28 @@ function statsBracketMarks(
   const ink = o.darkTheme ? '#e6e6e6' : '#111'
 
   // ── Compact Letter Display branch ───────────────────────────────────────────
-  // Return NO SVG marks — instead package a `CldOverlay` for PlotChart to render as HTML letters
-  // (each an anchor for a TeleportPopover on hover, listing this group's ns neighbours). HTML
-  // overlays give us per-letter DOM elements the popover can attach to; SVG text couldn't. A
-  // 2-group test has empty `letters` (the omnibus IS the answer), so falls through to brackets.
+  // One letter (or letter cluster) per group at the measure-axis edge. Group N's letters come from
+  // `cmp.letters[N]` — a set of 2-group brackets simply drops through to the bracket branch below
+  // when letters are empty (the omnibus already IS the answer for 2 groups).
   if (opts.useLetters && cmp.letters && cmp.letters.some(l => l.length > 0)) {
-    const items: CldOverlayItem[] = []
-    for (let i = 0; i < cmp.groups.length; i++) {
-      const label = cmp.groups[i]
-      const letter = cmp.letters[i] ?? ''
+    const ext = Math.max(1e-9, extent.max - extent.min)
+    const m = extent.max + ext * STATS_HEADROOM
+    const marks: unknown[] = []
+    cmp.groups.forEach((label, k) => {
       const pos = posByLabel.get(label)
-      if (letter === '' || pos === undefined) continue
-      const ownSet = new Set(letter.split(''))
-      const ns: string[] = []
-      for (let j = 0; j < cmp.groups.length; j++) {
-        if (j === i) continue
-        const other = cmp.letters[j] ?? ''
-        if (other.split('').some(c => ownSet.has(c))) ns.push(cmp.groups[j])
+      const letter = cmp.letters![k] ?? ''
+      if (pos === undefined || letter === '') return
+      if (o.rotate) {
+        marks.push(Plot.text([{ x: m, y: pos, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: 8,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+      } else {
+        marks.push(Plot.text([{ x: pos, y: m, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', dy: STATS_TEXT_DY,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
       }
-      items.push({ label, letter, pos, ns })
-    }
-    return { marks: [], cld: { items, rotate: !!o.rotate, measExtent: extent } }
+    })
+    return marks
   }
 
   const shown = pairsFor(cmp)
@@ -747,7 +742,7 @@ function statsBracketMarks(
     .sort((a, b) =>
       Math.abs(posByLabel.get(a.a)! - posByLabel.get(a.b)!) -
       Math.abs(posByLabel.get(b.a)! - posByLabel.get(b.b)!))
-  if (shown.length === 0) return { marks: [], cld: null }
+  if (shown.length === 0) return []
 
   const ext = Math.max(1e-9, extent.max - extent.min)
   const start = extent.max + ext * STATS_HEADROOM
@@ -773,7 +768,7 @@ function statsBracketMarks(
                              fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
     }
   })
-  return { marks, cld: null }
+  return marks
 }
 
 // shared x-axis config for distribution charts: a linear scale with one tick per series, labelled by
@@ -878,7 +873,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const f = fxCh(o), a = axM(o)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // spans the position axis (caps, baseline)
-  const { marks: statsMarks, cld: statsCld } = statsBracketMarks(Plot, r, keyOf, o,
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
@@ -892,7 +887,6 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       RulePos([0], { stroke: 'currentColor' }),
       ...statsMarks,
     ],
-    _cld: statsCld,
   }
 }
 
@@ -920,7 +914,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const ptFill = o.colorData ? 'series' : 'currentColor'
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
-  const { marks: statsMarks, cld: statsCld } = statsBracketMarks(Plot, r, keyOf, o,
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
@@ -939,7 +933,6 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
       ...statsMarks,
     ],
-    _cld: statsCld,
   }
 }
 
@@ -959,7 +952,7 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // density ribbon runs ACROSS the position axis at each measure value; rotate swaps area/line family.
   const Area = o.rotate ? Plot.areaY : Plot.areaX
   const Line = o.rotate ? Plot.lineY : Plot.lineX
-  const { marks: statsMarks, cld: statsCld } = statsBracketMarks(Plot, r, keyOf, o,
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
@@ -972,7 +965,6 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       Line(rows, { [a.meas]: 'value', [a.pos]: 'xhi', z: 'series', stroke: 'currentColor', strokeWidth: 0.6, curve: 'basis', ...f }),
       ...statsMarks,
     ],
-    _cld: statsCld,
   }
 }
 
@@ -989,7 +981,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   if (!rows.length) return null
   const a = axM(o)
-  const { marks: statsMarks, cld: statsCld } = statsBracketMarks(Plot, r, keyOf, o,
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
     { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
@@ -1002,7 +994,6 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                        fillOpacity: o.pointOpacity, ...fxCh(o) }),
       ...statsMarks,
     ],
-    _cld: statsCld,
   }
 }
 
