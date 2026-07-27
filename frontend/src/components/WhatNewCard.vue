@@ -43,7 +43,7 @@ const tipsOptOut = computed({
       <span v-if="card.releaseVersion" class="wn-version">{{ card.releaseVersion }}</span>
     </header>
 
-    <div v-if="dateLabel" class="wn-date cc-muted">{{ dateLabel }}</div>
+    <div v-if="dateLabel" class="wn-date cc-muted cc-fs-2xs">{{ dateLabel }}</div>
 
     <!-- sketchAnimation slot — placeholder box until SKETCH_ENGINE_PLAN.md content lands. -->
     <div v-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
@@ -54,18 +54,18 @@ const tipsOptOut = computed({
     <div v-if="bodyHtml" class="wn-body" v-html="bodyHtml" />
 
     <div v-if="card.steps?.length" class="wn-steps">
-      <div class="wn-steps-label cc-muted">Try it</div>
+      <div class="wn-steps-label cc-muted cc-fs-xs">Try it</div>
       <ol>
         <li v-for="(step, i) in card.steps" :key="i">{{ step }}</li>
       </ol>
     </div>
 
     <footer class="wn-foot">
-      <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link">
+      <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link cc-muted">
         View on GitHub <i class="pi pi-external-link" />
       </a>
-      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="wn-optout" />
-      <a :href="issueUrl" target="_blank" rel="noopener" class="wn-link wn-link-right">
+      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="wn-optout cc-muted cc-fs-xs" />
+      <a :href="issueUrl" target="_blank" rel="noopener" class="wn-link wn-link-right cc-muted">
         Report a problem <i class="pi pi-external-link" />
       </a>
     </footer>
@@ -97,7 +97,7 @@ const tipsOptOut = computed({
   border-radius: var(--cc-radius-sm);
 }
 
-.wn-date { margin-top: 2px; font-size: var(--cc-fs-2xs); }
+.wn-date { margin-top: 2px; }
 
 .wn-sketch {
   margin-top: 10px;
@@ -133,7 +133,7 @@ const tipsOptOut = computed({
   font-size: 0.9em;
   background: var(--cc-surface-2);
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--cc-radius-xs);
 }
 .wn-body :deep(pre) {
   background: var(--cc-surface-2);
@@ -143,7 +143,7 @@ const tipsOptOut = computed({
 }
 
 .wn-steps { margin-top: 10px; }
-.wn-steps-label { font-size: var(--cc-fs-xs); margin-bottom: 2px; }
+.wn-steps-label { margin-bottom: 2px; }
 .wn-steps ol { margin: 0; padding-left: 20px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
 .wn-foot {
@@ -154,8 +154,6 @@ const tipsOptOut = computed({
   border-top: 1px solid var(--cc-border);
 }
 .wn-link {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -164,5 +162,4 @@ const tipsOptOut = computed({
 .wn-link:hover { color: var(--cc-accent); }
 .wn-link .pi { font-size: 0.85em; }
 .wn-link-right { margin-left: auto; }
-.wn-optout { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); }
 </style>
