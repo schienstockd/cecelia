@@ -64,6 +64,8 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   reused by `WHATS_NEW_PLAN.md` and `SKETCH_ENGINE_PLAN.md`. Supersedes
   `docs/prompts/stats-on-plots-prompt.md`.
 - `SKETCH_ENGINE_PLAN.md` — the **feijoa** play repo
-  (`github.com/schienstockd/feijoa`, `~/cc-workspace/feijoa`) wired into cecelia's
-  `/sketchbook` route via a Vite alias. Rough.js + animejs; sketches are JSON. Ports the R
-  Cecelia logo as the first seed. Supersedes `docs/prompts/sketch-engine-prompt.md`.
+  (`github.com/schienstockd/feijoa`, `~/cc-workspace/feijoa`) where sketches are authored for
+  cecelia's tip cards. Not yet wired into cecelia — the plan documents the git-dep + conditional
+  Vite alias to add at the first commit that swaps a WhatNewCard's grey placeholder for
+  `<SketchCanvas>`. Rough.js + animejs; sketches are JSON; R Cecelia logo is the smoke-test port.
+  Supersedes `docs/prompts/sketch-engine-prompt.md`.
