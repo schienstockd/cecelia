@@ -5777,4 +5777,87 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(two_sentence)
     end
 
+    # ── Stats module (docs/todo/STATS_ANNOTATIONS_PLAN.md) ─────────────────────
+    #
+    # Pins the glue between `run_stats` and HypothesisTests.jl. We don't test the underlying
+    # test math (that's HypothesisTests' own suite) — we test that the API is wired correctly:
+    # test dispatch, insertion order preserved (via Vector{Pair}), pairwise Bonferroni-adjusted,
+    # ns/star ladder, error handling for empty and too-few groups.
+    @testset "run_stats" begin
+        # Two clearly-different groups → mannwhitney by default; p is very small; significance
+        # ladder is at least ** (matches STATS_ANNOTATIONS_PLAN.md → S0-1).
+        @testset "2 groups auto → mannwhitney" begin
+            r = Cecelia.run_stats(["WT" => [1.0,2,3,4,5], "KO" => [10.0,11,12,13,14]])
+            @test r.test == :mannwhitney
+            @test r.groups == ["WT", "KO"]
+            @test r.n == [5, 5]
+            @test r.means[1] ≈ 3.0 && r.means[2] ≈ 12.0
+            @test r.medians[1] ≈ 3.0 && r.medians[2] ≈ 12.0
+            @test r.p_value < 0.05
+            @test r.significance in ("*", "**", "***", "****")
+            @test occursin("Mann-Whitney", r.method_note)
+            @test isempty(r.comparison_pairs)   # omnibus IS the pair for 2 groups
+        end
+
+        # Two identical groups → p ≈ 1, "ns".
+        @testset "identical groups → ns" begin
+            r = Cecelia.run_stats(["A" => [1.0,2,3,4,5], "B" => [1.0,2,3,4,5]])
+            @test r.p_value > 0.9
+            @test r.significance == "ns"
+        end
+
+        # Welch's t-test opt-in — different method note, still small p on separated data.
+        @testset "ttest opt-in" begin
+            r = Cecelia.run_stats(["A" => [1.0,2,3,4], "B" => [10.0,11,12,13]]; test=:ttest)
+            @test r.test == :ttest
+            @test occursin("t-test", r.method_note)
+            @test r.p_value < 0.05
+        end
+
+        # Three groups → kruskal by default, pairs are populated with Bonferroni-adjusted values.
+        @testset "3 groups → kruskal + pairwise" begin
+            r = Cecelia.run_stats([
+                "A" => [1.0,2,3,4,5], "B" => [10.0,11,12,13,14], "C" => [20.0,21,22,23,24]])
+            @test r.test == :kruskal
+            @test r.groups == ["A", "B", "C"]
+            @test occursin("Kruskal-Wallis", r.method_note)
+            @test length(r.comparison_pairs) == 3   # (A,B), (A,C), (B,C)
+            for (a, b, p_adj, sig) in r.comparison_pairs
+                @test p_adj >= 0.0 && p_adj <= 1.0
+                @test sig in ("ns", "*", "**", "***", "****")
+            end
+            # A vs C is the widest gap → definitely significant post-Bonferroni.
+            ac = only(p for (a, b, p, _) in r.comparison_pairs if a == "A" && b == "C")
+            @test ac < 0.05
+        end
+
+        # ANOVA opt-in with 3 groups.
+        @testset "anova opt-in (3 groups)" begin
+            r = Cecelia.run_stats([
+                "A" => [1.0,2,3,4,5], "B" => [5.0,6,7,8,9], "C" => [10.0,11,12,13,14]];
+                test=:anova)
+            @test r.test == :anova
+            @test occursin("ANOVA", r.method_note)
+            @test r.p_value < 0.05
+        end
+
+        # Insertion order preserved (Vector of Pairs guarantees it — this asserts we don't sort).
+        @testset "group order preserved" begin
+            r = Cecelia.run_stats(["Z" => [1.0,2,3], "A" => [4.0,5,6], "M" => [7.0,8,9]])
+            @test r.groups == ["Z", "A", "M"]
+        end
+
+        # Error paths.
+        @testset "errors" begin
+            @test_throws ArgumentError Cecelia.run_stats(["only" => [1.0,2,3]])
+            @test_throws ArgumentError Cecelia.run_stats(["A" => Float64[], "B" => [1.0,2]])
+            # 2-group tests refuse when given ≠2 groups.
+            three = ["A" => [1.0,2], "B" => [3.0,4], "C" => [5.0,6]]
+            @test_throws ArgumentError Cecelia.run_stats(three; test=:ttest)
+            @test_throws ArgumentError Cecelia.run_stats(three; test=:mannwhitney)
+            @test_throws ArgumentError Cecelia.run_stats(["A"=>[1.0,2], "B"=>[3.0,4]];
+                                                        test=:notarealtest)
+        end
+    end
+
 end

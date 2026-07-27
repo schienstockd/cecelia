@@ -119,6 +119,49 @@ end
 # finite Float64 values of a measure column
 _finite(vals) = Float64[Float64(v) for v in vals if v isa Real && isfinite(v)]
 
+# ── Between-series stats (STATS_ANNOTATIONS_PLAN.md) ─────────────────────────────
+#
+# Called from the applicable `_summary_agg` branches (bar / boxplot / points) when the caller
+# opts in via `stats_enabled=true`. Groups the raw values by whatever `_series_groups` yielded
+# for THIS chart (so the stats operate on exactly what the user sees), then delegates to
+# `run_stats` and packages the result as a JSON-serialisable Dict.
+#
+# Label choice: prefer `grp` (the groupBy level) when set, else `sid` (segmentation+pop), else
+# `uid`. Matches the chart's own series labelling.
+function _stats_result_dict(r)
+    Dict{String,Any}(
+        "test"            => String(r.test),
+        "groups"          => r.groups,
+        "n"               => r.n,
+        "means"           => r.means,
+        "medians"         => r.medians,
+        "statistic"       => r.statistic,
+        "pValue"          => r.p_value,
+        "significance"    => r.significance,
+        "methodNote"      => r.method_note,
+        "comparisonPairs" => [Dict("a" => a, "b" => b, "pAdj" => p, "significance" => s)
+                              for (a, b, p, s) in r.comparison_pairs],
+    )
+end
+
+function _stats_from_series(groups, measure::AbstractString, test::Symbol)
+    isempty(measure) && return nothing
+    pairs = Pair{String,Vector{Float64}}[]
+    for s in groups
+        (Symbol(measure) in propertynames(s.sub)) || continue
+        vals = _finite(s.sub[!, measure])
+        length(vals) < 2 && continue
+        label = !isempty(s.grp) ? s.grp : !isempty(s.sid) ? s.sid : s.uid
+        push!(pairs, label => vals)
+    end
+    length(pairs) < 2 && return nothing
+    try
+        _stats_result_dict(run_stats(pairs; test=test))
+    catch e
+        Dict{String,Any}("error" => sprint(showerror, e))
+    end
+end
+
 # Evenly-strided downsample to ≤ cap values (keeps the distribution shape; deterministic, so it is
 # test-stable and resume-safe — no RNG). Used for raw-point overlays (boxplot/violin) + strip charts,
 # so payloads stay bounded regardless of N (docs/PLOTS.md §6.2).
@@ -245,7 +288,8 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       category::Union{AbstractString,Nothing}=nothing,
                       separator::AbstractString="_", zscore::Bool=false,
                       matrix_normalize::Symbol=:none,
-                      attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
+                      attr_map::Union{Nothing,AbstractDict}=nothing,
+                      stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     # matrix/heatmap pools the whole frame into one grid — handled before the per-series charts below.
     if chart_type == "matrix"
         matrix_mode === nothing && error("plot_summary_data: matrix needs a `matrix_mode` (profile | crosstab)")
@@ -338,8 +382,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         m = String(measure); groups = sgroups(df)
         series = [merge(base(g),
                         Dict("points" => _downsample(_finite(g.sub[!, m]), max_points))) for g in groups]
-        return withgb(Dict{String,Any}("chartType" => "points", "measure" => m, "measureType" => mtype,
+        result = withgb(Dict{String,Any}("chartType" => "points", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
+        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        return result
 
     elseif chart_type == "histogram"
         measure === nothing && error("plot_summary_data: histogram needs a `measure`")
@@ -394,8 +440,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                   Dict("value" => isempty(vals) ? NaN : mean(vals),
                        "sd" => sd, "sem" => sem, "ci95" => n < 2 ? NaN : 1.96 * sem, "n" => n))
         end
-        return withgb(Dict{String,Any}("chartType" => "bar", "measure" => m, "measureType" => mtype,
+        result = withgb(Dict{String,Any}("chartType" => "bar", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
+        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        return result
 
     elseif chart_type == "count"
         # # objects per series (row count) — the segmentation-integrity headline. Needs NO measure.
@@ -446,8 +494,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                            "mean"=>mean(vals), "n"=>length(vals), "points"=>pts))
             end
         end
-        return withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
+        result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
+        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        return result
     else
         error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | count | boxplot)")
     end
@@ -667,7 +717,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
-                           cluster_suffix::Union{AbstractString,Nothing}=nothing)::Dict{String,Any}
+                           cluster_suffix::Union{AbstractString,Nothing}=nothing,
+                           stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pops = String.(collect(pops))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
@@ -683,7 +734,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                  var_cols=_var_measure_set(img, eff_vn),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
-                 separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
+                 separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
+                 stats_enabled=stats_enabled, stats_test=stats_test)
 end
 
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
@@ -700,7 +752,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
                            attr_map::Union{Nothing,AbstractDict}=nothing,
-                           cluster_suffix::Union{AbstractString,Nothing}=nothing)::Dict{String,Any}
+                           cluster_suffix::Union{AbstractString,Nothing}=nothing,
+                           stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pops = String.(collect(pops))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
@@ -724,7 +777,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                          attr_map=attr_map)
+                          attr_map=attr_map,
+                          stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     result
 end
@@ -764,7 +818,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
-                           matrix_normalize::Symbol=:none)::Dict{String,Any}
+                           matrix_normalize::Symbol=:none,
+                           stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
@@ -774,7 +829,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
-                 separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
+                 separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
+                 stats_enabled=stats_enabled, stats_test=stats_test)
 end
 
 # multiple images AND multiple segmentations. `scope=:per_image` → one series per image per
@@ -791,7 +847,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
-                           attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
+                           attr_map::Union{Nothing,AbstractDict}=nothing,
+                           stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
@@ -804,7 +861,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                          attr_map=attr_map)
+                          attr_map=attr_map,
+                          stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     result
 end
