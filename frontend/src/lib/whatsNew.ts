@@ -42,6 +42,10 @@ export const isWhatsNewOpen = ref(false)
 // Used by the once-per-day launch trigger in App.vue; the header/Settings entry points open
 // without a tip (release notes only).
 export const openWithTip = ref(false)
+// User-visible tip cycler — when null (the default) the dialog shows today's tip; setting an
+// index via the dots pagination lets the user browse the rest of the catalogue in-session. Cleared
+// on close so re-opening always lands back on today's tip.
+export const viewedTipIndex = ref<number | null>(null)
 
 export function openWhatsNew(opts?: { withTip?: boolean }) {
   openWithTip.value = !!opts?.withTip
@@ -50,6 +54,7 @@ export function openWhatsNew(opts?: { withTip?: boolean }) {
 export function closeWhatsNew() {
   isWhatsNewOpen.value = false
   openWithTip.value = false
+  viewedTipIndex.value = null
 }
 
 // Dev knob (Settings → Developer): force the Install button visible in the What's New footer

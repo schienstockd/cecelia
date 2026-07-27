@@ -11,8 +11,8 @@ import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import WhatNewCard from './WhatNewCard.vue'
 import { useAppControlStore } from '../stores/appControl'
-import { useUpdateCard, openWithTip, debugForceInstallable, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
-import { pickDailyTip } from '../lib/tips'
+import { useUpdateCard, openWithTip, viewedTipIndex, debugForceInstallable, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
+import { TIPS, todayTipIndex } from '../lib/tips'
 
 const props = withDefaults(defineProps<{
   extraCards?: WhatNewCardT[]   // any additional cards a caller wants to prepend
@@ -23,8 +23,17 @@ defineEmits<{ (e: 'close'): void }>()
 const app = useAppControlStore()
 const updateCard = useUpdateCard()
 
-// Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true}))
-const tipCard = computed<WhatNewCardT | null>(() => openWithTip.value ? pickDailyTip() : null)
+// Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true})).
+// A pagination dot row lets the user browse the rest of the catalogue in-session; today's index is
+// the anchor (highlighted), viewedTipIndex tracks the user's current pick.
+const dailyIndex = computed(() => todayTipIndex())
+const currentIndex = computed(() => viewedTipIndex.value ?? dailyIndex.value)
+const tipCard = computed<WhatNewCardT | null>(() => {
+  if (!openWithTip.value) return null
+  return TIPS[currentIndex.value] ?? null
+})
+const showTipDots = computed(() => openWithTip.value && TIPS.length > 1)
+function goToTip(i: number) { viewedTipIndex.value = i }
 
 const cards = computed<WhatNewCardT[]>(() => {
   const list: WhatNewCardT[] = []
@@ -46,6 +55,17 @@ const canInstall = computed(() =>
   <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
     <div v-if="cards.length" class="wn-list">
       <WhatNewCard v-for="c in cards" :key="c.id" :card="c" />
+      <nav v-if="showTipDots" class="wn-dots" aria-label="Browse tips">
+        <button
+          v-for="(t, i) in TIPS" :key="t.id"
+          class="wn-dot"
+          :class="{ 'wn-dot-current': i === currentIndex, 'wn-dot-today': i === dailyIndex }"
+          :aria-label="t.title"
+          :aria-current="i === currentIndex ? 'true' : undefined"
+          v-tooltip.bottom="i === dailyIndex ? `${t.title} · today's tip` : t.title"
+          @click="goToTip(i)"
+        />
+      </nav>
     </div>
     <div v-else class="wn-empty cc-muted cc-fs-md">
       Nothing new right now — you're up to date.
@@ -69,6 +89,22 @@ const canInstall = computed(() =>
 <style scoped>
 .wn-list { display: flex; flex-direction: column; gap: 14px; }
 .wn-empty { padding: 24px 0; text-align: center; }
+
+/* Tip pagination — one dot per TIPS entry; today's tip has the anchor ring, the currently-viewed
+   dot is filled. Not the same primitive as ChipSelect (this is an indicator + jump, not a picker
+   of parallel choices). */
+.wn-dots { display: flex; gap: 8px; justify-content: center; padding: 2px 0 0; }
+.wn-dot {
+  width: 9px; height: 9px; padding: 0;
+  border-radius: 50%;
+  background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border);
+  cursor: pointer;
+  transition: transform 100ms ease, background 100ms ease, border-color 100ms ease;
+}
+.wn-dot:hover { transform: scale(1.15); border-color: var(--cc-text-dim); }
+.wn-dot-today { border-color: var(--cc-accent); }
+.wn-dot-current { background: var(--cc-accent); border-color: var(--cc-accent); }
 
 .wn-foot-link {
   text-decoration: none;
