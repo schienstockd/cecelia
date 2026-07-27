@@ -47,15 +47,15 @@ const canInstall = computed(() =>
     <div v-if="cards.length" class="wn-list">
       <WhatNewCard v-for="c in cards" :key="c.id" :card="c" />
     </div>
-    <div v-else class="wn-empty cc-muted">
+    <div v-else class="wn-empty cc-muted cc-fs-md">
       Nothing new right now — you're up to date.
     </div>
 
     <template #footer>
-      <a href="https://github.com/schienstockd/cecelia/releases" target="_blank" rel="noopener" class="wn-foot-link">
+      <a href="https://github.com/schienstockd/cecelia/releases" target="_blank" rel="noopener" class="wn-foot-link cc-muted">
         All releases <i class="pi pi-external-link" />
       </a>
-      <span v-if="app.updateMsg" class="wn-foot-msg cc-muted">{{ app.updateMsg }}</span>
+      <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>
       <button v-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
               :disabled="app.updateBusy || !app.updateLatest" @click="app.applyUpdate">
         <i :class="['pi', app.updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
@@ -68,11 +68,9 @@ const canInstall = computed(() =>
 
 <style scoped>
 .wn-list { display: flex; flex-direction: column; gap: 14px; }
-.wn-empty { padding: 24px 0; text-align: center; font-size: var(--cc-fs-md); }
+.wn-empty { padding: 24px 0; text-align: center; }
 
 .wn-foot-link {
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -80,7 +78,7 @@ const canInstall = computed(() =>
 }
 .wn-foot-link:hover { color: var(--cc-accent); }
 .wn-foot-link .pi { font-size: 0.85em; }
-.wn-foot-msg { margin-left: 12px; font-size: var(--cc-fs-xs); }
+.wn-foot-msg { margin-left: 12px; }
 .wn-install-btn { margin-left: auto; }
 .wn-close-btn { margin-left: auto; }
 </style>
