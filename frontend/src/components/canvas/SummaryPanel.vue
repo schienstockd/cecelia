@@ -18,6 +18,7 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import { CECELIA_AUTHOR } from '../../utils/labLog'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import CcToggle from '../CcToggle.vue'
@@ -427,6 +428,33 @@ const buildOpts = computed<BuildOpts>(() => ({
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
   statsShowNs: statsShowNs.value, statsUseStars: statsUseStars.value,
 }))
+
+// ── Lab-log emitter for stats computes (STATS_ANNOTATIONS_PLAN.md → S6) ────────
+//
+// One `[Cecelia] Stats: <method> on <measure> (<groups>): p = X ***` line per unique compute
+// signature per session. Dedup key = chart + measure + test + groups + p-value; a re-render
+// with the same result doesn't relog, but a genuinely new comparison (different groupBy /
+// measure / images) does. Best-effort: a failed append never disrupts the chart.
+const statsLoggedSigs = new Set<string>()
+function fmtP(p: number): string {
+  if (!Number.isFinite(p)) return ''
+  if (p < 0.001) return 'p < 0.001'
+  return `p = ${p.toPrecision(3).replace(/\.?0+$/, '')}`
+}
+function labLogStats(r: PlotDataResponse | null) {
+  if (!statsEnabled.value) return
+  const cmp = r?.comparisons
+  if (!cmp || !cmp.groups?.length || !Number.isFinite(cmp.pValue)) return
+  const sig = `${r.chartType}|${r.measure}|${cmp.test}|${cmp.groups.join(',')}|${cmp.pValue}`
+  if (statsLoggedSigs.has(sig)) return
+  statsLoggedSigs.add(sig)
+  const line = `Stats: ${cmp.methodNote || cmp.test} on ${r.measure} (${cmp.groups.join(', ')}): ${fmtP(cmp.pValue)} ${cmp.significance}`.trim()
+  fetch('/api/lablog/append', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectUid: props.projectUid, author: CECELIA_AUTHOR, lines: [line] }),
+  }).catch(() => { /* best-effort — never disrupt the plot on a lab-log failure */ })
+}
+watch(result, r => labLogStats(r))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
 function downloadBlob(name: string, blob: Blob) {
