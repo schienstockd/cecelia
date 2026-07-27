@@ -15,7 +15,7 @@ import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
 import { useAppControlStore } from '../stores/appControl'
 
-export type WhatNewKind = 'update' | 'tip' | 'fix'
+export type WhatNewKind = 'update' | 'tip' | 'fix' | 'about'
 
 export interface WhatNewCard {
   id: string

@@ -9,9 +9,16 @@
 // that isn't in feijoa's catalogue falls back to the "coming soon" placeholder.
 import type { WhatNewCard } from './whatsNew'
 
-// Tip order roughly follows the pipeline arc — segmentation is the entry point; the analysis
-// features (gating / clustering / behaviour) read from it. Add new tips in the stage they belong.
+// First entry is the welcome card (kind 'about') — brief intro to cecelia; the rest are tips in
+// pipeline-arc order (segmentation is the entry point; analysis features read from it).
 export const TIPS: WhatNewCard[] = [
+  {
+    id: 'about-cecelia',
+    kind: 'about',
+    title: 'Cecelia',
+    description: 'Immunological image analysis: segment cells, track them, gate populations, cluster phenotypes, and measure fibrous networks — all from a single project. Cycle through the sketches to see what it does.',
+    sketchAnimation: { id: 'logo' },
+  },
   {
     id: 'tip-segmentation',
     kind: 'tip',
@@ -83,6 +90,18 @@ export const TIPS: WhatNewCard[] = [
       'Save as population — the new pop appears in the manager.',
     ],
     sketchAnimation: { id: 'clusters' },
+  },
+  {
+    id: 'tip-region-clustering',
+    kind: 'tip',
+    title: 'Region clustering',
+    description: 'Cluster cells by their SPATIAL NEIGHBOURHOOD rather than by their own phenotype. Each region shares a local cell-mix; cells keep their own type but pick up a region label — great for CytoMAP-style tissue-architecture summaries.',
+    steps: [
+      'Segment + phenotype your cells (gate or cluster them).',
+      'Run Spatial → Region clustering.',
+      'Regions appear as a new categorical measure per cell.',
+    ],
+    sketchAnimation: { id: 'region_clustering' },
   },
   {
     id: 'tip-branching',

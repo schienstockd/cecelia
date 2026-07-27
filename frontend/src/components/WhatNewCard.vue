@@ -20,6 +20,7 @@ const emit = defineEmits<{ 'nav-prev': []; 'nav-next': [] }>()
 const kindLabel = computed(() => (
   props.card.kind === 'update' ? 'NEW' :
   props.card.kind === 'fix'    ? 'FIX' :
+  props.card.kind === 'about'  ? 'ABOUT' :
                                  'TIP'
 ))
 const kindTone = computed(() => 'wn-kind-' + props.card.kind)
@@ -56,7 +57,9 @@ const tipsOptOut = computed({
 
     <!-- sketchAnimation — feijoa SketchCanvas when the id resolves; grey box otherwise. -->
     <div v-if="sketch" class="wn-sketch wn-sketch-render">
-      <SketchCanvas :definition="sketch" />
+      <!-- Explicit 100% h/w — SketchCanvas defaults to `height: auto` (inline), which would win
+           over the container's aspect-ratio and overflow the card. -->
+      <SketchCanvas :definition="sketch" width="100%" height="100%" />
       <template v-if="navigable">
         <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" @click.stop="emit('nav-prev')">
           <i class="pi pi-chevron-left" />
@@ -107,6 +110,7 @@ const tipsOptOut = computed({
 .wn-kind-update { background: var(--cc-accent); }
 .wn-kind-tip    { background: var(--cc-sev-warn); color: #1a1a1a; }
 .wn-kind-fix    { background: var(--cc-sev-ok);   color: #ffffff; }
+.wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
 .wn-title { flex: 1; margin: 0; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text); }
 .wn-version {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
@@ -134,12 +138,15 @@ const tipsOptOut = computed({
 /* Real sketch — fix the container aspect ratio so the card height stays STABLE when the user
    cycles tips (sketches otherwise vary in native aspect — logo is ~3.8:1, gating is 1:1). The
    SVG's own preserveAspectRatio="xMidYMid meet" letterboxes narrower sketches; nav zones stretch
-   the full container so clicks in the letterbox still page. */
+   the full container so clicks in the letterbox still page. Container background matches
+   feijoa's own SVG paper (#fafaf7) so a letterboxed square sketch reads as a single canvas
+   rather than sitting on the dark card. */
 .wn-sketch.wn-sketch-render {
   aspect-ratio: 2 / 1;
   height: auto;
   border: none;
-  background: transparent;
+  background: #fafaf7;
+  border-radius: var(--cc-radius-md);
   padding: 0;
   position: relative;
   overflow: hidden;
