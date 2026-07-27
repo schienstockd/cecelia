@@ -14,7 +14,8 @@ import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_ISSUES_URL } 
 import { useSettingsStore } from '../stores/settings'
 import CcToggle from './CcToggle.vue'
 
-const props = defineProps<{ card: WhatNewCard }>()
+const props = defineProps<{ card: WhatNewCard; navigable?: boolean }>()
+const emit = defineEmits<{ 'nav-prev': []; 'nav-next': [] }>()
 
 const kindLabel = computed(() => (
   props.card.kind === 'update' ? 'NEW' :
@@ -56,6 +57,14 @@ const tipsOptOut = computed({
     <!-- sketchAnimation — feijoa SketchCanvas when the id resolves; grey box otherwise. -->
     <div v-if="sketch" class="wn-sketch wn-sketch-render">
       <SketchCanvas :definition="sketch" />
+      <template v-if="navigable">
+        <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" @click.stop="emit('nav-prev')">
+          <i class="pi pi-chevron-left" />
+        </button>
+        <button type="button" class="wn-nav wn-nav-next" aria-label="Next tip" @click.stop="emit('nav-next')">
+          <i class="pi pi-chevron-right" />
+        </button>
+      </template>
     </div>
     <div v-else-if="card.sketchAnimation" class="wn-sketch">Animation coming soon</div>
 
@@ -128,8 +137,29 @@ const tipsOptOut = computed({
   border: none;
   background: transparent;
   padding: 0;
+  position: relative;
 }
 .wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: auto; }
+
+/* Edge-click nav — invisible zones on the sketch's left/right edges; chevron fades in on hover. */
+.wn-nav {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 15%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: transparent;
+  transition: color 150ms ease, background 150ms ease;
+}
+.wn-nav .pi { font-size: 1.5rem; }
+.wn-nav-prev { left: 0; justify-content: flex-start; }
+.wn-nav-next { right: 0; justify-content: flex-end; }
+.wn-nav-prev:hover { color: var(--cc-text-dim); background: linear-gradient(to right, rgba(0,0,0,0.06), transparent); }
+.wn-nav-next:hover { color: var(--cc-text-dim); background: linear-gradient(to left,  rgba(0,0,0,0.06), transparent); }
 
 .wn-description { margin: 10px 0 6px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
 

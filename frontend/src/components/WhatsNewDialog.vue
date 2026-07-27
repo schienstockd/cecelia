@@ -32,11 +32,22 @@ const tipCard = computed<WhatNewCardT | null>(() => {
   if (!openWithTip.value) return null
   return TIPS[currentIndex.value] ?? null
 })
-const showTipDots = computed(() => openWithTip.value && TIPS.length > 1)
-function goToTip(i: number) { viewedTipIndex.value = i }
+const canCycle = computed(() => openWithTip.value && TIPS.length > 1)
+const tipCounter = computed(() => {
+  if (!openWithTip.value || TIPS.length < 1) return ''
+  const label = `${currentIndex.value + 1} / ${TIPS.length}`
+  return currentIndex.value === dailyIndex.value ? `${label} · today` : label
+})
+function goToTip(i: number) {
+  const n = TIPS.length
+  if (n < 1) return
+  viewedTipIndex.value = ((i % n) + n) % n
+}
+function prevTip() { goToTip(currentIndex.value - 1) }
+function nextTip() { goToTip(currentIndex.value + 1) }
 
-// Non-tip cards render after the tip block (card + dots pagination) so the pagination stays
-// visually tied to the tip it pages, not stranded at the bottom of the modal.
+// Non-tip cards render after the tip block (counter + card + edge-click nav) so the counter
+// stays visually tied to the tip it pages, not stranded at the bottom of the modal.
 const otherCards = computed<WhatNewCardT[]>(() => {
   const list: WhatNewCardT[] = []
   if (updateCard.value) list.push(updateCard.value)
@@ -57,20 +68,13 @@ const canInstall = computed(() =>
   <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
     <div v-if="hasAnyCard" class="wn-list">
       <template v-if="tipCard">
-        <!-- Dots ABOVE the card so they don't move vertically when swapping tips (sketch aspect
-             ratios differ). -->
-        <nav v-if="showTipDots" class="wn-dots" aria-label="Browse tips">
-          <button
-            v-for="(t, i) in TIPS" :key="t.id"
-            class="wn-dot"
-            :class="{ 'wn-dot-current': i === currentIndex, 'wn-dot-today': i === dailyIndex }"
-            :aria-label="t.title"
-            :aria-current="i === currentIndex ? 'true' : undefined"
-            v-tooltip.bottom="i === dailyIndex ? `${t.title} · today's tip` : t.title"
-            @click="goToTip(i)"
-          />
-        </nav>
-        <WhatNewCard :card="tipCard" />
+        <!-- Position counter ABOVE the card so it doesn't move vertically when sketch aspect
+             ratios differ. Nav happens by clicking the sketch's left/right edges. -->
+        <div v-if="canCycle" class="wn-counter cc-muted cc-fs-2xs"
+             :class="{ 'wn-counter-today': currentIndex === dailyIndex }">
+          {{ tipCounter }}
+        </div>
+        <WhatNewCard :card="tipCard" :navigable="canCycle" @nav-prev="prevTip" @nav-next="nextTip" />
       </template>
       <WhatNewCard v-for="c in otherCards" :key="c.id" :card="c" />
     </div>
@@ -97,21 +101,10 @@ const canInstall = computed(() =>
 .wn-list { display: flex; flex-direction: column; gap: 14px; }
 .wn-empty { padding: 24px 0; text-align: center; }
 
-/* Tip pagination — one dot per TIPS entry; today's tip has the anchor ring, the currently-viewed
-   dot is filled. Not the same primitive as ChipSelect (this is an indicator + jump, not a picker
-   of parallel choices). */
-.wn-dots { display: flex; gap: 8px; justify-content: center; padding: 2px 0 0; }
-.wn-dot {
-  width: 9px; height: 9px; padding: 0;
-  border-radius: 50%;
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
-  cursor: pointer;
-  transition: transform 100ms ease, background 100ms ease, border-color 100ms ease;
-}
-.wn-dot:hover { transform: scale(1.15); border-color: var(--cc-text-dim); }
-.wn-dot-today { border-color: var(--cc-accent); }
-.wn-dot-current { background: var(--cc-accent); border-color: var(--cc-accent); }
+/* Tip position counter — static above the card so it doesn't jump when sketch heights differ.
+   The "· today" suffix flips the label to accent when the user is viewing today's tip. */
+.wn-counter { text-align: center; letter-spacing: 0.06em; text-transform: uppercase; }
+.wn-counter-today { color: var(--cc-accent); }
 
 .wn-foot-link {
   text-decoration: none;
