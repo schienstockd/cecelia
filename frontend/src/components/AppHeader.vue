@@ -14,6 +14,11 @@ const appCtl = useAppControlStore()
 // badge for this session only ("remind me later"). See docs/todo/WHATS_NEW_PLAN.md.
 function openUpdate() { openWhatsNew() }
 
+// 🍍 Cecelia logo → opens the What's New modal WITH the tip catalogue. Gives users who opted out
+// of the daily launch tip a way to browse them again, and makes the header brand mark do useful
+// double-duty as the "what can this thing do?" entry point.
+function openTips() { openWhatsNew({ withTip: true }) }
+
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
   connecting:   'Connecting…',
@@ -35,7 +40,12 @@ const statusTip: Record<string, string> = {
       :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
       <i class="pi pi-bars" />
     </button>
-    <span class="logo">🍍 Cecelia</span>
+    <button type="button" class="logo cc-btn cc-btn-bare cc-btn-dense"
+            v-tooltip.bottom="'What\'s new + browse tips'"
+            aria-label="Open What's New with tips"
+            @click="openTips">
+      🍍 Cecelia
+    </button>
 
     <span class="spacer" />
 
@@ -79,6 +89,7 @@ const statusTip: Record<string, string> = {
 .nav-toggle { margin-left: -0.3rem; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .nav-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
+/* + cc-btn cc-btn-bare cc-btn-dense — the brand mark doubles as the "browse tips" entry point. */
 .logo {
   font-weight: 700;
   font-size: 0.95rem;
@@ -86,6 +97,7 @@ const statusTip: Record<string, string> = {
   color: var(--cc-accent);
   white-space: nowrap;
 }
+.logo:hover { color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
 
 .spacer { flex: 1; }
 

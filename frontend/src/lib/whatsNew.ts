@@ -57,11 +57,6 @@ export function closeWhatsNew() {
   viewedTipIndex.value = null
 }
 
-// Dev knob (Settings → Developer): force the Install button visible in the What's New footer
-// regardless of `updateAvailable` / `canApplyUpdate` — for previewing the install-flow UI on a
-// dev checkout, where those flags are always false. Not persisted (session-only).
-export const debugForceInstallable = ref(false)
-
 marked.setOptions({ gfm: true, breaks: false })
 
 /** Render markdown → HTML for `v-html` in `WhatNewCard`. Sync helper (marked has a sync API). */

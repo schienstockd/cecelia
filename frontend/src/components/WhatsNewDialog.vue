@@ -11,7 +11,7 @@ import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import WhatNewCard from './WhatNewCard.vue'
 import { useAppControlStore } from '../stores/appControl'
-import { useUpdateCard, openWithTip, viewedTipIndex, debugForceInstallable, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
+import { useUpdateCard, openWithTip, viewedTipIndex, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
 import { TIPS, todayTipIndex } from '../lib/tips'
 
 const props = withDefaults(defineProps<{
@@ -57,10 +57,9 @@ const otherCards = computed<WhatNewCardT[]>(() => {
 const hasAnyCard = computed(() => !!tipCard.value || otherCards.value.length > 0)
 
 // Show an inline "Install {version}" in the dialog footer when the user can self-apply. Uses the
-// same appControl.applyUpdate action as the Settings panel — no divergent update path. The dev
-// override (`debugForceInstallable`) lets dev checkouts preview the button.
+// same appControl.applyUpdate action as the Settings panel — no divergent update path.
 const canInstall = computed(() =>
-  debugForceInstallable.value || (app.updateAvailable && app.canApplyUpdate && !!app.updateLatest)
+  app.updateAvailable && app.canApplyUpdate && !!app.updateLatest
 )
 </script>
 
