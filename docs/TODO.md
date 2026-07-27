@@ -107,13 +107,23 @@ path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path
 
 **#00086** — **Port `createBranching` (skeleton/branch analysis) from the old R version**
 Skeletonise a segmentation into a branch/path network for fibrous non-cell structures (collagen/SHG,
-nerves, FRC reticular networks). Full plan — including the ILEE_CSK vendoring decision and its patch
-ledger — is parked in `docs/todo/BRANCHING_PLAN.md`. Verified feasible: `skan 0.13.1` is maintained and
-still emits the columns the old code expects, and the vendored ILEE runs unmodified on the current
-numpy-2/scipy-1.18/skimage-0.26 env. Two things need a decision before Phase 2 — whether a `branch`
-pop type (a *third* granularity beside cell/track) is worth its cost vs. reading branches through the
-existing ungated `labels` pop type, and how `segment.measureLabels` on a branch label set should
-interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-input
+nerves, FRC reticular networks). Full plan is parked in `docs/todo/BRANCHING_PLAN.md` (audited
+2026-07-27: ILEE_CSK vendoring dropped in favour of `skimage.feature.structure_tensor`; Decision 6
+resolved via a dedicated `branch_labels` field; Decision 2 cost re-measured against the current
+`ACCEPT_TOKENS`/`POP_MAP_SUFFIX` dispatch as ~10 code sites + ~10 test assertions). In progress on
+`feat/branching-port`.
+
+**#00087** — **Ship custom Cellpose models (starting with `ccia.fluo`)**
+The old R version bundled a custom Cellpose model `ccia.fluo` (~26 MiB, trained for fluorescence —
+the model that actually segments dendritic and SHG branches in `mxIBEX.Rmd`, upstream of
+`createBranching`). The current `segment/cellpose.json` hardcodes cellpose's four built-in models
+(`cyto3`/`cyto2`/`cyto`/`nuclei`) in a `select` — no path for custom checkpoints. Needs (a) a
+custom-model slot in the cellpose task JSON + Julia handler + Python runner (accept a model name
+or file path, resolve to a Cellpose checkpoint), (b) a delivery mechanism for the packaged
+`ccia.fluo` + other custom checkpoints (equivalent of the old `cciaModels()` downloader from
+`github.com/schienstockd/ceceliaModels`, or bundled in the release). Load-bearing for branching's
+real-world use case (fibrous / SHG segmentation), so schedule before v0.1.0 or note the branching
+port is incomplete without it. 🔹 needs-input
 
 ---
 
