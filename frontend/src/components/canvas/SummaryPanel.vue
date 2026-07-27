@@ -17,7 +17,7 @@ import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import CcToggle from '../CcToggle.vue'
@@ -443,6 +443,11 @@ function exportAs(kind: string) {
     exporting.value = true
     fetchRawCsv().then(csv => {
       if (csv) downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
+      // When stats were computed for this plot, ship a SIBLING `{stem}.stats.csv` — a small
+      // summary CSV of the test outcome + pairwise pairs, so the raw-points CSV stays Prism-
+      // clean while the stats are still exported. See STATS_ANNOTATIONS_PLAN.md → D7.
+      const statsCsv = result.value ? plotStatsToCsv(result.value) : ''
+      if (statsCsv) downloadBlob(`${stem}.stats.csv`, new Blob([statsCsv], { type: 'text/csv' }))
     }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
     exporting.value = true
@@ -487,6 +492,10 @@ async function fetchRawCsv(): Promise<string | null> {
 }
 // raw per-datapoint CSV string — for the board zip export and the PDF attachment (data → Prism)
 function getCsv(): Promise<string | null> { return fetchRawCsv() }
+// stats CSV string (or null/empty when no `comparisons` on the current result). Used by the board
+// zip export to add a sibling `{plot}.stats.csv` alongside `{plot}.csv`. See STATS_ANNOTATIONS_PLAN
+// D7. Sync — reads what's already in memory, no extra request needed.
+function getStatsCsv(): string { return result.value ? plotStatsToCsv(result.value) : '' }
 // a filename hint describing which measure(s)/axes this plot shows — appended to the board CSV export
 // filename so two same-type plots (e.g. two "Track measures" boxplots) are distinguishable by their
 // axis, not just "Board_1_Track_measures". Mirrors the single-panel export stem (`spec.id_measure`):
@@ -508,7 +517,7 @@ async function exportSvg(): Promise<string | null> {
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
-defineExpose({ getCsv, csvName, exportImage, exportSvg })
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
 </script>
 
 <template>

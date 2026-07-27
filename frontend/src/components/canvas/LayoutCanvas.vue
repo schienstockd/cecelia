@@ -315,7 +315,7 @@ function labelFor(c: SlotContent): string {
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
-type SummaryRef = { getCsv(): string | null | Promise<string | null>; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
+type SummaryRef = { getCsv(): string | null | Promise<string | null>; getStatsCsv?(): string; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
 type ExportRef = { exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
 const summaryRefs = new Map<number, SummaryRef>()
 const interactiveRefs = new Map<number, ExportRef>()
@@ -370,8 +370,13 @@ async function collectCsvs(): Promise<{ name: string; csv: string | null }[]> {
     const c = entry.value.contents[i]
     if (c && (c.kind === 'summary' || isClusterPanel(c.ref))) {
       const axis = summaryRefs.get(i)?.csvName?.() ?? ''
-      out.push({ name: axis ? `${labelFor(c)}_${axis}` : labelFor(c),
-                 csv: await summaryRefs.get(i)?.getCsv?.() ?? null })
+      const base = axis ? `${labelFor(c)}_${axis}` : labelFor(c)
+      out.push({ name: base, csv: await summaryRefs.get(i)?.getCsv?.() ?? null })
+      // Stats sidecar: `{base}.stats.csv`. Emit only when the panel actually has a `comparisons`
+      // result to serialise; skipped entries would just be empty files in the zip. See
+      // STATS_ANNOTATIONS_PLAN.md → D7.
+      const statsCsv = summaryRefs.get(i)?.getStatsCsv?.() ?? ''
+      if (statsCsv) out.push({ name: `${base}.stats`, csv: statsCsv })
     }
   }
   return out

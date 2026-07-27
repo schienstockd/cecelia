@@ -432,7 +432,7 @@ async function switchWt(path: string) {
       <div class="field">
         <CcToggle class="toggle-row" v-model="debugForceInstallable"
           label="Force-show Install button in What's New"
-          v-tooltip.right="'Dev checkouts never satisfy the install gate — this reveals the button so the flow can be previewed.'" />
+          v-tooltip.right="'Preview the install flow on a dev checkout'" />
       </div>
 
       <div class="field">

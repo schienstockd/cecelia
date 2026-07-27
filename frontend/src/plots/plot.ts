@@ -1014,3 +1014,48 @@ export function plotDataToCsv(r: PlotDataResponse): string {
     default: return ''
   }
 }
+
+// ── stats CSV: separate sidecar per plot (docs/todo/STATS_ANNOTATIONS_PLAN.md → S7) ─────
+//
+// A companion to `plotDataToCsv`, NOT a replacement — the raw-datapoint CSV stays Prism-clean.
+// This one carries what you'd write into a figure legend / methods section: the test, the per-
+// group summary, the omnibus outcome, and the Bonferroni-adjusted pairwise pairs.
+//
+// Structure: three CSV blocks with self-contained headers, separated by blank lines and
+// `# <block name>` comments. Any spreadsheet opens it; any CSV parser with `comment='#'`
+// (pandas.read_csv, R's read.csv skip=…) reads each block cleanly.
+export function plotStatsToCsv(r: PlotDataResponse): string {
+  const cmp = r.comparisons
+  if (!cmp) return ''
+  const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+  const num = (n: number | undefined | null): string =>
+    (n == null || !Number.isFinite(n)) ? '' : String(n)
+  const row = (cols: unknown[]) => cols.map(esc).join(',')
+  const lines: string[] = []
+  lines.push('# Cecelia — between-group hypothesis test')
+  lines.push(`# Chart: ${r.chartType}${r.measure ? ` / ${r.measure}` : ''}`)
+  lines.push(`# Test: ${cmp.methodNote || cmp.test}`)
+  lines.push(`# Groups: ${cmp.groups?.length ?? 0}`)
+  lines.push('')
+  // block 1 — per-group summary
+  lines.push('# Group summary')
+  lines.push('name,n,mean,median')
+  for (let i = 0; i < cmp.groups.length; i++) {
+    lines.push(row([cmp.groups[i], cmp.n?.[i] ?? '', num(cmp.means?.[i]), num(cmp.medians?.[i])]))
+  }
+  lines.push('')
+  // block 2 — omnibus outcome (statistic, p, significance ladder)
+  lines.push('# Omnibus')
+  lines.push('statistic,p_value,significance')
+  lines.push(row([num(cmp.statistic), num(cmp.pValue), cmp.significance ?? '']))
+  // block 3 — pairwise (only when the omnibus split into pairs; 2-group tests skip this block)
+  if (cmp.comparisonPairs && cmp.comparisonPairs.length > 0) {
+    lines.push('')
+    lines.push('# Pairwise (Bonferroni-adjusted)')
+    lines.push('a,b,p_adj,significance')
+    for (const p of cmp.comparisonPairs) {
+      lines.push(row([p.a, p.b, num(p.pAdj), p.significance ?? '']))
+    }
+  }
+  return lines.join('\n')
+}

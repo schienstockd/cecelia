@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { plotDataToCsv } from './plot'
-import type { PlotDataResponse } from './types'
+import { plotDataToCsv, plotStatsToCsv } from './plot'
+import type { PlotDataResponse, ComparisonsResult } from './types'
 
 describe('plotDataToCsv — raw datapoint export', () => {
   it('emits one tidy row per datapoint with identity + the measure column', () => {
@@ -67,5 +67,79 @@ describe('plotDataToCsv — raw datapoint export', () => {
   it('falls back to just the value column when there are no rows', () => {
     const r: PlotDataResponse = { chartType: 'raw', measure: '', granularity: 'cell', series: [], rows: [] }
     expect(plotDataToCsv(r)).toBe('value')
+  })
+})
+
+describe('plotStatsToCsv — between-group hypothesis test sidecar', () => {
+  const twoGroupCmp: ComparisonsResult = {
+    test: 'mannwhitney', groups: ['WT', 'KO'], n: [8, 7],
+    means: [4.2, 6.1], medians: [4.0, 6.3],
+    statistic: 12.0, pValue: 0.003, significance: '**',
+    methodNote: 'Mann-Whitney U (two-sided)',
+    comparisonPairs: [],
+  }
+  const threeGroupCmp: ComparisonsResult = {
+    test: 'kruskal', groups: ['A', 'B', 'C'], n: [10, 12, 11],
+    means: [1.0, 3.0, 5.0], medians: [1.0, 3.0, 5.0],
+    statistic: 15.5, pValue: 0.0004, significance: '***',
+    methodNote: 'Kruskal-Wallis',
+    comparisonPairs: [
+      { a: 'A', b: 'B', pAdj: 0.02, significance: '*' },
+      { a: 'A', b: 'C', pAdj: 0.0001, significance: '***' },
+      { a: 'B', b: 'C', pAdj: 0.03, significance: '*' },
+    ],
+  }
+
+  it('emits nothing when the response carries no comparisons', () => {
+    const r: PlotDataResponse = { chartType: 'boxplot', measure: 'live.cell.speed', granularity: 'cell', series: [] }
+    expect(plotStatsToCsv(r)).toBe('')
+  })
+
+  it('two-group test: header block + summary + omnibus, no pairwise section', () => {
+    const r: PlotDataResponse = { chartType: 'boxplot', measure: 'live.cell.speed', granularity: 'cell', series: [], comparisons: twoGroupCmp }
+    const csv = plotStatsToCsv(r)
+    // header comment block (metadata)
+    expect(csv).toMatch(/^# Cecelia — between-group hypothesis test/)
+    expect(csv).toContain('# Chart: boxplot / live.cell.speed')
+    expect(csv).toContain('# Test: Mann-Whitney U (two-sided)')
+    expect(csv).toContain('# Groups: 2')
+    // group summary block
+    expect(csv).toContain('# Group summary\nname,n,mean,median\nWT,8,4.2,4\nKO,7,6.1,6.3')
+    // omnibus block
+    expect(csv).toContain('# Omnibus\nstatistic,p_value,significance\n12,0.003,**')
+    // no pairwise (2-group case)
+    expect(csv).not.toContain('# Pairwise')
+  })
+
+  it('multi-group test: pairwise block appears with Bonferroni-adjusted rows', () => {
+    const r: PlotDataResponse = { chartType: 'boxplot', measure: 'm', granularity: 'cell', series: [], comparisons: threeGroupCmp }
+    const csv = plotStatsToCsv(r)
+    expect(csv).toContain('# Group summary\nname,n,mean,median\nA,10,1,1\nB,12,3,3\nC,11,5,5')
+    expect(csv).toContain('# Pairwise (Bonferroni-adjusted)\na,b,p_adj,significance\nA,B,0.02,*\nA,C,0.0001,***\nB,C,0.03,*')
+  })
+
+  it('escapes labels that contain commas / quotes / newlines', () => {
+    const cmp: ComparisonsResult = {
+      test: 'mannwhitney', groups: ['a,b', 'c "d"'], n: [3, 3],
+      means: [1, 2], medians: [1, 2], statistic: 1, pValue: 0.5, significance: 'ns',
+      methodNote: 'Mann-Whitney U (two-sided)',
+      comparisonPairs: [],
+    }
+    const r: PlotDataResponse = { chartType: 'boxplot', measure: 'm', granularity: 'cell', series: [], comparisons: cmp }
+    const csv = plotStatsToCsv(r)
+    expect(csv).toContain('"a,b",3,1,1')
+    expect(csv).toContain('"c ""d""",3,2,2')
+  })
+
+  it('leaves numeric fields blank rather than emitting NaN when missing', () => {
+    const cmp: ComparisonsResult = {
+      test: 'ttest', groups: ['x', 'y'], n: [5, 5],
+      means: [1, 2], medians: [1, 2], statistic: NaN, pValue: 0.5, significance: 'ns',
+      methodNote: "Welch's t-test (two-sided)", comparisonPairs: [],
+    }
+    const r: PlotDataResponse = { chartType: 'boxplot', measure: 'm', granularity: 'cell', series: [], comparisons: cmp }
+    const csv = plotStatsToCsv(r)
+    // statistic missing → blank column, still comma-separated
+    expect(csv).toContain('# Omnibus\nstatistic,p_value,significance\n,0.5,ns')
   })
 })
