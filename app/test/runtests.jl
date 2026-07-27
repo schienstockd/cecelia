@@ -103,25 +103,66 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test cellpose_models_dir(td) == joinpath(td, "models", "cellposeModels")
     end
 
-    # ccia.fluo must be selectable in the cellpose task spec (a wrong entry in the select would
-    # get rejected by param validation).
-    @testset "cellpose.json lists ccia.fluo as a model option" begin
-        @test begin
-            validate_params(CellposeSegment(),
-                Dict{String,Any}("models" => Dict{String,Any}(
-                    "0" => Dict{String,Any}(
-                        "model" => "ccia.fluo", "matchAs" => "base",
-                        "cellChannels" => [], "nucChannels" => [],
-                        "cellDiameter" => 10, "normalise" => 99.9,
-                        "stitchThreshold" => 0.0, "threshold" => 0,
-                        "medianFilter" => 0, "gaussianFilter" => 0.0))))
-            true
-        end
-        # a genuinely-unknown model still gets rejected
+    # ── Runtime-enumerated cellpose model picker (drop-in convention) ────────────
+    # `list_cellpose_models` returns builtins + bundled + user drop-ins; the ordering + dedup
+    # rules are what the picker AND `validate_params` both see (see `_inject_dynamic_options!`
+    # in cellpose.jl + `_task_spec`'s dynamic hook in task.jl). Guards: builtins always present,
+    # dedup shadows a bundled file by the same-name user file, a user file that isn't a known
+    # built-in becomes selectable, and validate_params accepts it.
+    @testset "list_cellpose_models enumeration" begin
+        # NOTE: only the USER dir is td-scoped here; the BUNDLED dir is `<repo>/models/
+        # cellposeModels/` (hardcoded via @__DIR__ so it matches the resolver + install layout).
+        # A dev running `pixi run models-fetch` populates the bundled dir with real checkpoints,
+        # so tests can't assume it's empty — check invariants that hold either way.
+        td = mktempdir()
+
+        # Built-ins are always first, in a stable order.
+        names = [m.name for m in list_cellpose_models(td)]
+        @test names[1:4] == ["cyto3", "cyto2", "cyto", "nuclei"]
+
+        # No user drop-in → nothing tagged "user" for THIS td.
+        base = list_cellpose_models(td)
+        @test all(m.source != "user" for m in base)
+
+        # Place a user drop-in checkpoint → appears with source="user"
+        mkpath(joinpath(td, "models", "cellposeModels"))
+        f = joinpath(td, "models", "cellposeModels", "myFluo.pt")
+        open(io -> write(io, "stub"), f, "w")
+        with_user = list_cellpose_models(td)
+        idx = findfirst(m -> m.name == "myFluo.pt", with_user)
+        @test !isnothing(idx)
+        @test with_user[idx].source == "user"
+        @test occursin("user", with_user[idx].label)
+
+        # Dotfiles / subdirectories are skipped when scanning.
+        open(io -> write(io, "hidden"), joinpath(td, "models", "cellposeModels", ".DS_Store"), "w")
+        mkpath(joinpath(td, "models", "cellposeModels", "subdir"))
+        clean = list_cellpose_models(td)
+        @test all(m.name != ".DS_Store" for m in clean)
+        @test all(m.name != "subdir"    for m in clean)
+    end
+
+    # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a
+    # dropped-in checkpoint under `<repo>/models/cellposeModels/` (this worktree has ccia.fluo
+    # from `pixi run models-fetch`) appears in the Model select's options — that's what makes
+    # validate_params accept the name. If the bundled dir is empty (no models-fetch), the picker
+    # still returns builtins; the test guards both regimes.
+    @testset "CellposeSegment spec dynamic Model options" begin
+        spec = Cecelia._task_spec(CellposeSegment())
+        @test !isnothing(spec)
+        models_group = only(p for p in spec["params"]
+                            if get(p, "key", "") == "models")
+        model_sel    = only(p for p in models_group["params"]
+                            if get(p, "key", "") == "model")
+        values = [string(o["value"]) for o in model_sel["options"]]
+        # Built-ins are always there
+        @test issubset(["cyto3", "cyto2", "cyto", "nuclei"], values)
+
+        # A genuinely-unknown checkpoint name is still rejected — the enumeration is real
         @test_throws ParamValidationError validate_params(CellposeSegment(),
             Dict{String,Any}("models" => Dict{String,Any}(
                 "0" => Dict{String,Any}(
-                    "model" => "not-a-real-model", "matchAs" => "base",
+                    "model" => "__no_such_file__.pt", "matchAs" => "base",
                     "cellChannels" => [], "nucChannels" => [],
                     "cellDiameter" => 10, "normalise" => 99.9,
                     "stitchThreshold" => 0.0, "threshold" => 0,
