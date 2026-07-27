@@ -21,6 +21,7 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
+export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
@@ -76,6 +77,7 @@ export hmm_fit_states, hmm_transitions, DiagGaussEmission
 export CciaTask
 export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
+export task_requires_axes, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name

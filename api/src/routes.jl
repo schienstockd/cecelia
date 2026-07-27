@@ -252,6 +252,17 @@ function api_task_definitions(req::HTTP.Request)
             if !isnothing(composite) && !isempty(composite)
                 merged = Any[]
                 seen   = Set{String}()
+                # Union `requires.axes` across sub-tasks so the frontend gate sees the composite's
+                # true axis needs without walking steps (mirrors Cecelia.task_requires_axes on the
+                # backend). A composite with its own explicit `requires.axes` still contributes.
+                req_axes = Set{String}()
+                own_req  = get(spec, "requires", nothing)
+                if own_req isa AbstractDict
+                    for a in get(own_req, "axes", String[])
+                        s = uppercase(string(a))
+                        isempty(s) || push!(req_axes, s)
+                    end
+                end
                 for fn_ref in composite
                     sub = get(by_fun, string(fn_ref), nothing)
                     isnothing(sub) && continue
@@ -264,8 +275,17 @@ function api_task_definitions(req::HTTP.Request)
                         push!(seen, k)
                         push!(merged, p)
                     end
+                    sub_req = get(sub, "requires", nothing)
+                    sub_req isa AbstractDict || continue
+                    for a in get(sub_req, "axes", String[])
+                        s = uppercase(string(a))
+                        isempty(s) || push!(req_axes, s)
+                    end
                 end
                 spec["params"] = merged
+                if !isempty(req_axes)
+                    spec["requires"] = Dict{String,Any}("axes" => sort!(collect(req_axes)))
+                end
                 push!(out, spec)
             else
                 push!(out, spec)
@@ -509,20 +529,20 @@ function api_projects_create(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
     name = String(strip(String(get(body, :name, ""))))
-    type = String(get(body, :type, "static"))
     isempty(name) && return 400, JSON3.write((; error="Project name is required"))
-    type ∉ ("static", "live", "flow") && return 400, JSON3.write((; error="Invalid project type: $type"))
 
     existing = _scan_projects_raw()
     any(p -> get(p, "name", "") == name, existing) &&
         return 400, JSON3.write((; error="A project named \"$name\" already exists"))
 
-    proj = create_project!(name=name, kind=type)
-    meta = Dict{String,Any}("uid"=>proj.uid, "name"=>proj.name, "kind"=>proj.kind,
-                             "type"=>proj.kind, "path"=>proj.root,
+    # Project-wide static/live/flow distinction was dropped — applicability is per-image, derived
+    # from axes (see Cecelia.img_axes / task_applies). `kind` is retained on the struct as a
+    # vestigial no-op so pre-existing project.json files still round-trip.
+    proj = create_project!(name=name)
+    meta = Dict{String,Any}("uid"=>proj.uid, "name"=>proj.name, "path"=>proj.root,
                              "meta"=>proj.meta, "set_uids"=>proj.set_uids,
                              "createdAt"=>string(now()), "lastOpenedAt"=>string(now()))
-    @info "Created project" name type uid=proj.uid
+    @info "Created project" name uid=proj.uid
     200, JSON3.write((; project=meta))
 end
 
@@ -852,7 +872,6 @@ function api_images_register(body_bytes::Vector{UInt8})
     project_uid = String(get(body, :projectUid, ""))
     set_uid     = String(get(body, :setUid, ""))
     filepaths   = [String(p) for p in get(body, :filepaths, [])]
-    kind        = String(get(body, :kind, "static"))
 
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
@@ -874,7 +893,7 @@ function api_images_register(body_bytes::Vector{UInt8})
         isfile(abs_path) || begin; @warn "Skipping missing file" path=abs_path; continue; end
 
         task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
-        img = add_image!(s; name=splitext(basename(abs_path))[1], kind=kind,
+        img = add_image!(s; name=splitext(basename(abs_path))[1],
                          meta=Dict{String,Any}("ori_path" => abs_path))
         for subdir in values(task_dirs)
             mkpath(joinpath(proj_dir, "1", img.uid, string(subdir)))
@@ -883,7 +902,6 @@ function api_images_register(body_bytes::Vector{UInt8})
         push!(registered, Dict{String,Any}(
             "uid"       => img.uid,
             "name"      => img.name,
-            "kind"      => img.kind,
             "status"    => "pending",
             "filepath"  => abs_path,            # SOURCE path, for display only (not the converted zarr)
             # No versioned `filepaths` yet — the OME-ZARR doesn't exist until the import task converts it.
@@ -961,15 +979,16 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
         uid  = String(get(im, :uid, ""))
         isempty(uid) && continue
         name = String(get(im, :name, uid))
-        kind = String(get(im, :kind, "static"))
+        # Legacy `kind` on the R side (static/live/flow) is intentionally dropped — the new app
+        # gates per-image on axes (Cecelia.task_applies), not project-wide.
         meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
         isempty(rsc) || (meta["legacyRscript"] = rsc)
-        img = add_image!(s; name=name, kind=kind, uid=uid, meta=meta)
+        img = add_image!(s; name=name, uid=uid, meta=meta)
         for subdir in values(task_dirs)
             mkpath(joinpath(proj_dir, "1", img.uid, string(subdir)))
         end
         push!(registered, Dict{String,Any}(
-            "uid" => img.uid, "name" => img.name, "kind" => img.kind, "status" => "pending"))
+            "uid" => img.uid, "name" => img.name, "status" => "pending"))
     end
     @info "Registered legacy images" count=length(registered) set=set_uid
     200, JSON3.write((; images=registered))
@@ -1011,7 +1030,7 @@ function api_images_list(req::HTTP.Request)
         push!(imgs, (; uid=img.uid, name=img.name, status=img.status,
                        included=image_included(img), setUid=s.uid, setName=s.name))
     end
-    200, JSON3.write((; projectUid=project_uid, name=proj.name, kind=proj.kind,
+    200, JSON3.write((; projectUid=project_uid, name=proj.name,
                         count=length(imgs), sets, images=imgs))
 end
 
@@ -1721,7 +1740,9 @@ function _scan_projects_raw()::Vector{Dict{String,Any}}
             raw  = JSON3.read(read(meta_file, String))
             proj = Dict{String,Any}(String(k) => v for (k, v) in raw)
             proj["path"] = entry
-            haskey(proj, "type") || (proj["type"] = get(proj, "kind", "static"))
+            # `type` and `kind` are legacy — project-wide static/live/flow distinction was dropped
+            # in favour of per-image axis gating (Cecelia.task_applies). Fields kept for on-disk
+            # round-trip only; not surfaced by the frontend.
             push!(projects, proj)
         catch e
             @warn "Skipping malformed project" dir=entry exception=e
@@ -1790,7 +1811,6 @@ function _image_payload(img::CciaImage)
     (;
         uid             = img.uid,
         name            = img.name,
-        kind            = img.kind,
         status          = img.status,
         sizeC           = _meta_int(img.meta, "SizeC"),
         sizeT           = _meta_int(img.meta, "SizeT"),

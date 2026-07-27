@@ -49,7 +49,8 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
 
     f = JSON3.read(read(result_file, String))
     img.name        = String(get(f, :name, img.name))
-    img.kind        = String(get(f, :kind, img.kind))
+    # Legacy R had static/live/flow per-project — dropped in favour of per-image axis gating
+    # (Cecelia.task_applies). Any `kind` in the R result is ignored.
     img.status      = String(get(f, :status, "done"))
     img.filepath    = _to_str_str(f.filepath)
     img.labels      = _to_labels(f.labels)

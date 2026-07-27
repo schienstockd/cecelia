@@ -47,7 +47,6 @@ def get_project_info(project_uid: str) -> dict:
     return {
         "projectUid": project_uid,
         "name": data.get("name"),
-        "kind": data.get("kind"),
         "imageCount": data.get("count"),
         "sets": data.get("sets"),
         "statusBreakdown": statuses,

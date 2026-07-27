@@ -5,11 +5,10 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
-import ChipSelect from './ChipSelect.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
-import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
+import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
 
@@ -24,14 +23,7 @@ const tab = ref<Tab>('recent')
 
 // ── New project form ────────────────────────────────────────────────────────
 const newName = ref('')
-const newType = ref<ProjectType>('static')
 const nameError = ref('')
-
-const typeOptions: { value: ProjectType; label: string; tip: string }[] = [
-  { value: 'static',  label: 'Static',   tip: 'Fixed tissue — confocal, slide scanner, etc.' },
-  { value: 'live',    label: 'Live',      tip: 'Time-lapse imaging with cell tracking.' },
-  { value: 'flow',    label: 'Flow',      tip: 'Flow or mass cytometry (no image data).' },
-]
 
 async function createProject() {
   nameError.value = ''
@@ -39,7 +31,7 @@ async function createProject() {
   // still require an explicit name. See docs/todo/ONBOARDING_PLAN.md (P3).
   const name = newName.value.trim() || (projectMeta.recent.length === 0 ? 'My first project' : '')
   if (!name) { nameError.value = 'Name is required.'; return }
-  const ok = await projectMeta.createProject(name, newType.value)
+  const ok = await projectMeta.createProject(name)
   if (ok) emit('close')
 }
 
@@ -194,11 +186,6 @@ function formatDate(iso: string | null): string {
   catch { return iso }
 }
 
-const typeColour: Record<ProjectType, string> = {
-  static: '#a78bfa',
-  live:   '#34d399',
-  flow:   '#60a5fa',
-}
 </script>
 
 <template>
@@ -242,7 +229,6 @@ const typeColour: Record<ProjectType, string> = {
             <tr>
               <th class="col-sel" />
               <th class="col-name">Name</th>
-              <th class="col-type">Type</th>
               <th class="col-path">Location</th>
               <th class="col-date">Last opened</th>
               <th class="col-actions" />
@@ -270,11 +256,6 @@ const typeColour: Record<ProjectType, string> = {
                 <span class="proj-name">{{ p.name }}</span>
                 <span v-if="projectMeta.current?.uid === p.uid" class="open-badge"
                   v-tooltip.right="'Currently open project.'">open</span>
-              </td>
-              <td class="col-type">
-                <span class="type-badge" :style="{ color: typeColour[p.type] }">
-                  {{ p.type }}
-                </span>
               </td>
               <td class="col-path dim cc-muted" v-tooltip.bottom="p.path">
                 {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
@@ -314,19 +295,6 @@ const typeColour: Record<ProjectType, string> = {
             v-tooltip.right="'Give the project a unique, descriptive name.'"
           />
           <span class="field-error" v-if="nameError">{{ nameError }}</span>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label"
-            v-tooltip.right="'Static (fixed tissue), Live (time-lapse + tracking), Flow (no images)'">
-            Project type
-          </label>
-          <ChipSelect
-            :options="typeOptions"
-            :model-value="newType"
-            aria-label="Project type"
-            @update:model-value="v => newType = v as ProjectType"
-          />
         </div>
 
         <div class="form-row">
@@ -529,7 +497,6 @@ const typeColour: Record<ProjectType, string> = {
 }
 .col-sel  { width: 32px; }
 .col-name { min-width: 150px; }
-.col-type { width: 80px; }
 .col-path { flex: 1; }
 .col-date { width: 120px; }
 .col-actions { width: 72px; white-space: nowrap; text-align: right; }
@@ -594,8 +561,6 @@ const typeColour: Record<ProjectType, string> = {
   background: #a78bfa22; color: var(--cc-accent);
   border: 1px solid #a78bfa44;
 }
-.type-badge { font-size: var(--cc-fs-sm); font-weight: 600; text-transform: uppercase; }
-
 /* form */
 .pp-form { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
 

@@ -6,6 +6,7 @@
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",
+  "requires": { "axes": ["T"] },
   "params": [
     {
       "key": "pops",

@@ -29,6 +29,7 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
+import { taskRequiresAxes } from '../utils/taskGating'
 import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
 
@@ -776,6 +777,18 @@ async function loadAllTaskDefs() {
   }
 }
 
+// Passive axis-requirement badge on palette items — a chain template can be built without a
+// current image selection, so palette items aren't hard-gated; the runtime per-image skip in
+// tasks/chain.jl is the real gate. This just tells the user which nodes need T (or later Z).
+function requiredAxesFor(def: TaskDef): string[] {
+  return [...taskRequiresAxes(def)].sort()
+}
+function paletteTooltip(def: TaskDef): string {
+  const axes = requiredAxesFor(def)
+  const base = `Drag to canvas to add a ${def.label} node.`
+  return axes.length ? `${base}\nRequires ${axes.join(', ')}` : base
+}
+
 const paletteCategories = computed(() => {
   const byCategory: Record<string, TaskDef[]> = {}
   for (const def of allTaskDefs.value) {
@@ -1270,10 +1283,15 @@ onActivated(async () => {
                 class="palette-item"
                 draggable="true"
                 @dragstart="onPaletteDragStart($event, def)"
-                v-tooltip.right="`Drag to canvas to add a ${def.label} node.`"
+                v-tooltip.right="paletteTooltip(def)"
               >
                 <i class="pi pi-grip-vertical drag-grip" />
                 <span class="palette-item-label">{{ def.label }}</span>
+                <span
+                  v-for="ax in requiredAxesFor(def)"
+                  :key="ax"
+                  class="palette-axis-badge"
+                >{{ ax }}</span>
               </div>
             </div>
 
@@ -1699,6 +1717,16 @@ onActivated(async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+}
+.palette-axis-badge {
+  font-size: var(--cc-fs-2xs);
+  color: var(--cc-text-dim);
+  padding: 0 0.3rem;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs);
+  flex-shrink: 0;
+  line-height: 1.4;
 }
 
 .palette-hint { font-style: italic; padding: 0.75rem 0.65rem; }

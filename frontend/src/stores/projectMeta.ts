@@ -7,12 +7,9 @@ import { useAnalysisLayoutStore } from './analysisLayout'
 import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnimationStore } from './animation'
 
-export type ProjectType = 'static' | 'live' | 'flow'
-
 export interface ProjectRecord {
   uid: string
   name: string
-  type: ProjectType
   path: string
   createdAt: string
   lastOpenedAt: string | null
@@ -39,14 +36,14 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  async function createProject(name: string, type: ProjectType): Promise<boolean> {
+  async function createProject(name: string): Promise<boolean> {
     loading.value = true
     let newUid = ''
     try {
       const res = await fetch('/api/projects/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type }),
+        body: JSON.stringify({ name }),
       })
       const body = await res.json().catch(() => ({})) as { project?: ProjectRecord; error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)

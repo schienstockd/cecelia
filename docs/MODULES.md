@@ -313,6 +313,42 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 Limits are starting defaults only — each is adjustable live in Settings, so throttle whenever you
 need (e.g. drop `io` to 1 when importing over a slow network share).
 
+### Requires-axes — axis-shape gating
+
+A task that only makes sense on a particular image shape (a timelapse for tracking, a Z-stack for
+future 3D-only work) declares it once in its JSON:
+
+```json
+"requires": { "axes": ["T"] }
+```
+
+The absent-field default is *"applies to any image"*, so most specs leave it out — annotate only when
+the task genuinely fails on a wrong-shape image. One predicate, three enforcement points:
+
+- **Frontend picker** — `frontend/src/utils/taskGating.ts` (`taskApplies`/`taskGatingReason`) greys the
+  option and blocks Run when the current selection doesn't carry the required axes; the ChainModule
+  palette shows a passive axis badge (`T`, `Z`, …) on each requiring node.
+- **Scheduler** — `run_task` in `app/src/tasks/scheduler.jl` raises `TaskApplicabilityError` before
+  claiming a pool slot. Covers the REPL, custom modules, direct API callers.
+- **Chain executor** — `app/src/tasks/chain.jl` calls `task_applies(task, img)` per-image; a
+  non-applying step is marked `:skipped` (log line `SKIP [uid/node] …`) so mixed-image chains still
+  run on the applicable subset. `:skipped` propagates as fault-isolation, matching upstream-failure
+  behaviour.
+
+Composite tasks **inherit** their steps' requirements: `task_requires_axes(::CompositeTask)` unions
+across the composite's steps (Julia), and the definitions endpoint mirrors that union into the served
+spec (`api/src/routes.jl → api_task_definitions`) so the frontend gate sees the composite's true
+needs without walking steps. So an HMM composite (`states + transitions`) inherits `:T` from its
+leaves — don't repeat the annotation.
+
+The image side of the predicate is `img_axes(img)::Set{Symbol}` in `app/src/model/image.jl`, derived
+from `img.meta`'s `SizeT`/`SizeZ`/`SizeC` (persisted at import from OME-XML). `TimeIncrement` is a
+fallback signal for `:T` on pre-SizeT projects. `img_has_time(img)` = `:T ∈ img_axes(img)`.
+
+**Do not** hand-roll `img.meta["SizeT"] > 1` inside a task — reach for `task_applies` (or `img_axes`
+if you truly need the axis set). Tests: `app/test/runtests.jl` → *Axis gating — img_axes +
+task_applies*.
+
 ### Param types
 
 Full reference (see CLAUDE.md for the concise table):
