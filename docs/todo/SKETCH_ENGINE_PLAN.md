@@ -47,7 +47,8 @@ the local source. This works for both `install.sh` channels:
 import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
-const feijoaSibling = fileURLToPath(new URL('../../feijoa/src/lib/index.ts', import.meta.url))
+// Four hops up: frontend → cecelia-pineapple → cecelia → cc-workspace → feijoa
+const feijoaSibling = fileURLToPath(new URL('../../../feijoa/src/lib/index.ts', import.meta.url))
 const feijoaAlias = existsSync(feijoaSibling) ? { feijoa: feijoaSibling } : {}
 
 export default defineConfig({
