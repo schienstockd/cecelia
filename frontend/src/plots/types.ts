@@ -114,6 +114,7 @@ export interface ComparisonsResult {
   significance: string
   methodNote: string     // e.g. "Mann-Whitney U (two-sided)"
   comparisonPairs: StatsComparisonPair[]   // Bonferroni-adjusted; empty for 2-group tests (the omnibus IS the pair)
+  letters?: string[]      // Compact Letter Display, per group (parallel to `groups`); groups sharing a letter don't differ
 }
 
 export interface PlotDataResponse {

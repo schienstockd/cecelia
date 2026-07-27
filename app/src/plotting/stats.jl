@@ -27,6 +27,7 @@ struct StatsResult
     significance::String               # ns / * / ** / *** / ****   (GP-style ladder)
     method_note::String                # human-readable, e.g. "Mann-Whitney U (two-sided)"
     comparison_pairs::Vector{Tuple{String,String,Float64,String}}  # (a, b, p_adj, significance)
+    letters::Vector{String}            # compact letter display, per group (parallel to `groups`)
 end
 
 # GP-style star ladder — STATS_ANNOTATIONS_PLAN.md → S0-1.
@@ -87,8 +88,9 @@ function run_stats(groups; test::Symbol=:auto)::StatsResult
 
     stat, p, note = _run_omnibus(test, values)
     pairs        = _pairwise(values, labels, test)
+    letters      = _cld_letters(labels, pairs)
 
-    StatsResult(test, labels, ns, means, medians, stat, p, _significance(p), note, pairs)
+    StatsResult(test, labels, ns, means, medians, stat, p, _significance(p), note, pairs, letters)
 end
 
 function _run_omnibus(test::Symbol, vals::Vector{Vector{Float64}})
@@ -112,6 +114,85 @@ function _run_omnibus(test::Symbol, vals::Vector{Vector{Float64}})
     else
         throw(ArgumentError("unknown test: $(test)"))
     end
+end
+
+# Compact Letter Display (Piepho 2004 insert-and-absorb). Given the pairwise-significance verdicts,
+# assign each group a set of letters such that two groups SHARE a letter iff their pairwise test was
+# NOT significant. Groups that share no letter are significantly different. Standard post-hoc
+# reporting convention in biology journals; scales to N groups without the pairwise-bracket stack.
+# Empty input (2-group tests carry no `pairs`) → one letter per group (all "a") is meaningless, so
+# return `""` per group and let the caller decide whether to render.
+#
+# Piepho, H.-P. (2004). "An algorithm for a letter-based representation of all-pairwise comparisons."
+# Journal of Computational and Graphical Statistics, 13(2): 456-466.
+function _cld_letters(labels::Vector{String},
+                     pairs::Vector{Tuple{String,String,Float64,String}};
+                     alpha::Float64 = 0.05)::Vector{String}
+    n = length(labels)
+    (n == 0 || isempty(pairs)) && return fill("", n)
+    idx = Dict(l => i for (i, l) in enumerate(labels))
+    # Insert-and-absorb: start with one column (all groups share letter "a"); for each SIGNIFICANT
+    # pair (i,j), split every column that contains both i and j into two — one with j removed, one
+    # with i removed — then absorb subset-dominated columns. What's left are the maximal cliques of
+    # the "not-significantly-different" graph.
+    cols = BitVector[trues(n)]
+    for (a, b, p_adj, _sig) in pairs
+        (p_adj <= alpha) || continue
+        (haskey(idx, a) && haskey(idx, b)) || continue
+        i = idx[a]; j = idx[b]
+        new_cols = BitVector[]
+        for c in cols
+            if c[i] && c[j]
+                c1 = copy(c); c1[j] = false; any(c1) && push!(new_cols, c1)
+                c2 = copy(c); c2[i] = false; any(c2) && push!(new_cols, c2)
+            else
+                push!(new_cols, c)
+            end
+        end
+        cols = _cld_absorb(new_cols)
+    end
+    # Stable letter order: column with the earliest (lowest-index) member gets 'a', next 'b', …
+    sort!(cols; by = c -> findfirst(identity, c) === nothing ? typemax(Int) : findfirst(identity, c))
+    out = fill("", n)
+    for (k, c) in enumerate(cols), i in 1:n
+        c[i] && (out[i] *= _cld_letter(k))
+    end
+    out
+end
+
+# 1 → "a", 2 → "b", …, 26 → "z", 27 → "aa", 28 → "ab", … (base-26, lowercase; sufficient for any
+# real group count — 15 groups worst case with 15 pairwise-distinct clusters = "o").
+function _cld_letter(k::Int)::String
+    k = k - 1
+    s = ""
+    while k >= 0
+        s = string(Char('a' + k % 26)) * s
+        k = div(k, 26) - 1
+    end
+    s
+end
+
+# Absorb: drop any column that is a PROPER subset of another (its clique is not maximal). Also
+# dedup exact duplicates (keep the first). O(K^2) columns; K ≤ number of pairwise-distinct maximal
+# cliques ≤ N, so this is safely small for our group counts.
+function _cld_absorb(cols::Vector{BitVector})::Vector{BitVector}
+    keep = trues(length(cols))
+    for i in eachindex(cols), j in eachindex(cols)
+        (i == j || !keep[i]) && continue
+        # cols[i] ⊆ cols[j]?
+        subset = true
+        for k in eachindex(cols[i])
+            if cols[i][k] && !cols[j][k]; subset = false; break; end
+        end
+        if subset
+            # equal? keep the earlier index only
+            equal = cols[i] == cols[j]
+            if equal && i > j; keep[i] = false
+            elseif !equal;      keep[i] = false
+            end
+        end
+    end
+    cols[keep]
 end
 
 # Pairwise post-hoc between every pair of groups, Bonferroni-corrected. For a 2-group test the

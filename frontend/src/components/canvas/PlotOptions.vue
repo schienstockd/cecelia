@@ -120,9 +120,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
             <option value="kruskal">Kruskal-Wallis</option>
             <option value="anova">One-way ANOVA</option>
           </select></label>
-        <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Show ns brackets for non-significant pairs'"><span>Show ns</span>
-          <CcToggle :model-value="vis.statsShowNs !== false" @update:model-value="set({ statsShowNs: $event })" /></div>
-        <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Swap p-values for the * / ** / *** ladder'"><span>Stars only</span>
+        <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One letter per group; shared letter = no difference'"><span>Compact letters</span>
+          <CcToggle :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
+        <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Also show non-significant brackets'"><span>Show ns</span>
+          <CcToggle :model-value="!!vis.statsShowNs" @update:model-value="set({ statsShowNs: $event })" /></div>
+        <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Swap p-values for the * / ** / *** ladder'"><span>Stars only</span>
           <CcToggle :model-value="!!vis.statsUseStars" @update:model-value="set({ statsUseStars: $event })" /></div>
       </div>
     </template>

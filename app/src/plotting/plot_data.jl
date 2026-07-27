@@ -141,6 +141,7 @@ function _stats_result_dict(r)
         "methodNote"      => r.method_note,
         "comparisonPairs" => [Dict("a" => a, "b" => b, "pAdj" => p, "significance" => s)
                               for (a, b, p, s) in r.comparison_pairs],
+        "letters"         => r.letters,
     )
 end
 

@@ -100,8 +100,9 @@ export interface VisProps {
   // scope, like the other VisProps). Only takes effect on bar/boxplot/violin/strip (see canCompareGroups).
   statsEnabled?: boolean                     // default false — off unless the user opts in
   statsTest?: 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'   // default 'auto'
-  statsShowNs?: boolean                      // default true — hide non-significant brackets when false
+  statsShowNs?: boolean                      // default false — non-significant brackets are noise; opt in to show them
   statsUseStars?: boolean                    // default false — swap `p = 0.003` for the star ladder when true
+  statsUseLetters?: boolean                  // default false — render Compact Letter Display (one letter per group) INSTEAD of pairwise brackets
 }
 // Colour range for a categorical axis of `n` levels from the chosen palette (R adjustColors). Returns
 // an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
@@ -128,7 +129,7 @@ export const defaultVis = (): VisProps => ({
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
-  statsEnabled: false, statsTest: 'auto', statsShowNs: true, statsUseStars: false,
+  statsEnabled: false, statsTest: 'auto', statsShowNs: false, statsUseStars: false, statsUseLetters: false,
 })
 
 export interface BuildOpts extends VisProps {
@@ -681,15 +682,18 @@ function pairsFor(cmp: ComparisonsResult): StatsComparisonPair[] {
 
 /**
  * Build Plot marks for the statistical brackets. Renders horizontally (bracket over the measure-Y
- * axis) by default and vertically (bracket over the measure-X axis) when `o.rotate` is on. Returns
- * [] when no pairs would render or when server labels don't map to chart positions.
+ * axis) by default and vertically (bracket over the measure-X axis) when `o.rotate` is on. When
+ * `opts.useLetters` is set, renders a Compact Letter Display (ONE letter per group, near the
+ * measure-axis edge) INSTEAD of the pairwise-bracket stack — replaces the O(N²) stack that gets
+ * unreadable past ~4 groups. Returns [] when no marks would render or when server labels don't
+ * map to chart positions.
  */
 function statsBracketMarks(
   Plot: PlotModule,
   r: PlotDataResponse,
   keyOf: (s: PlotSeries) => string,
   o: BuildOpts,
-  opts: { showNs: boolean; useStars: boolean },
+  opts: { showNs: boolean; useStars: boolean; useLetters: boolean },
 ): unknown[] {
   const cmp = r.comparisons
   if (!cmp) return []
@@ -704,6 +708,33 @@ function statsBracketMarks(
     const p = idx.get(keyOf(s))
     if (p !== undefined) posByLabel.set(label, p)
   }
+  const ink = o.darkTheme ? '#e6e6e6' : '#111'
+
+  // ── Compact Letter Display branch ───────────────────────────────────────────
+  // One letter (or letter cluster) per group at the measure-axis edge. Group N's letters come from
+  // `cmp.letters[N]` — a set of 2-group brackets simply drops through to the bracket branch below
+  // when letters are empty (the omnibus already IS the answer for 2 groups).
+  if (opts.useLetters && cmp.letters && cmp.letters.some(l => l.length > 0)) {
+    const ext = Math.max(1e-9, extent.max - extent.min)
+    const m = extent.max + ext * STATS_HEADROOM
+    const marks: unknown[] = []
+    cmp.groups.forEach((label, k) => {
+      const pos = posByLabel.get(label)
+      const letter = cmp.letters![k] ?? ''
+      if (pos === undefined || letter === '') return
+      if (o.rotate) {
+        marks.push(Plot.text([{ x: m, y: pos, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: 8,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+      } else {
+        marks.push(Plot.text([{ x: pos, y: m, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', dy: STATS_TEXT_DY,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+      }
+    })
+    return marks
+  }
+
   const shown = pairsFor(cmp)
     .filter(p => posByLabel.has(p.a) && posByLabel.has(p.b))
     .filter(p => opts.showNs || p.significance !== 'ns')
@@ -717,7 +748,6 @@ function statsBracketMarks(
   const start = extent.max + ext * STATS_HEADROOM
   const step  = ext * STATS_STACK_GAP
   const marks: unknown[] = []
-  const ink = o.darkTheme ? '#e6e6e6' : '#111'
   shown.forEach((p, i) => {
     const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
     const [p1, p2] = lo < hi ? [lo, hi] : [hi, lo]
@@ -844,7 +874,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // spans the position axis (caps, baseline)
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -885,7 +915,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -923,7 +953,7 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const Area = o.rotate ? Plot.areaY : Plot.areaX
   const Line = o.rotate ? Plot.lineY : Plot.lineX
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -952,7 +982,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   if (!rows.length) return null
   const a = axM(o)
   const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
-    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -1046,11 +1076,14 @@ export function plotStatsToCsv(r: PlotDataResponse): string {
   lines.push(`# Test: ${cmp.methodNote || cmp.test}`)
   lines.push(`# Groups: ${cmp.groups?.length ?? 0}`)
   lines.push('')
-  // block 1 — per-group summary
+  // block 1 — per-group summary (+ CLD letter when the server produced one)
+  const hasLetters = !!cmp.letters && cmp.letters.some(l => (l ?? '').length > 0)
   lines.push('# Group summary')
-  lines.push('name,n,mean,median')
+  lines.push(hasLetters ? 'name,n,mean,median,letter' : 'name,n,mean,median')
   for (let i = 0; i < cmp.groups.length; i++) {
-    lines.push(row([cmp.groups[i], cmp.n?.[i] ?? '', num(cmp.means?.[i]), num(cmp.medians?.[i])]))
+    const cols: unknown[] = [cmp.groups[i], cmp.n?.[i] ?? '', num(cmp.means?.[i]), num(cmp.medians?.[i])]
+    if (hasLetters) cols.push(cmp.letters?.[i] ?? '')
+    lines.push(row(cols))
   }
   lines.push('')
   // block 2 — omnibus outcome (statistic, p, significance ladder)
