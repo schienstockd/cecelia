@@ -261,6 +261,47 @@ The `imageTiling` param section in all task JSONs under `segment/` is shared via
 
 ---
 
+## Branching (skeleton analysis)
+
+`segment.branching` skeletonises an existing segmentation into a **branch/path network** for fibrous
+non-cell structures (SHG collagen, FRC networks, dendritic stroma, nerves). Task files:
+`app/src/tasks/segment/branching.{jl,json,_run.py}`.
+
+Pipeline:
+1. Load the input labels zarr (from `img.labels[value_name]`).
+2. **Optional** `refPops` mask: Julia resolves the selected population to a label-ID list via
+   `resolve_pop_type` + `cells_in_pop` (Decision 7) and hands it to Python — no gate evaluation
+   crosses the language boundary.
+3. **Optional** Z-MIP (`flattenBranching`) and/or label-boundary conversion (`useBorders`).
+4. Per timepoint: binary closing (`preDilationSize`) → `skimage.morphology.skeletonize` → optional
+   dilation (`postDilationSize`) → `skan.Skeleton` + `skan.summarize(separator='-')`.
+5. Write a skeleton labels zarr at `{proj}/1/{uid}/branchLabels/{value_name}.zarr` (a **separate**
+   registry from `labels/` — see below).
+6. Write a per-branch labelProps sidecar at `labelProps/{value_name}__branch.h5ad`: one row per
+   skeleton path, `X` = skan's measurements (`branch-distance`, `branch-type`, endpoint indices,
+   Euclidean distance, etc.), `obsm['spatial']` = median of the branch's two endpoint coordinates
+   (Decision 8), `obsm['temporal']` = `centroid_t` on timeseries.
+7. **Optional** anisotropy (`calcAnisotropy` + `fibreChannels`): local structure tensor on the
+   fibre channel via `skimage.feature.structure_tensor(sigma=structureTensorSigma)`, mean-pooled
+   over `anisotropyBoxSize × anisotropyBoxSize` boxes, eigendecomposed. Outputs
+   `ilee_coor_list` / `ilee_eigval` / `ilee_eigvec` / `ilee_box_total_length` /
+   `ilee_box_anisotropy` / `ilee_summary` into `uns` (see Decision 4 in
+   `docs/todo/BRANCHING_PLAN.md` for algorithmic ancestry — Li et al. 2023).
+8. QC: `nBranches` / `nSkeletons` / `meanBranchLength` banked; `branching.no_branches` warn for
+   empty output. Cohort metrics: `nBranches`, `meanBranchLength`.
+9. Auto-create one filter pop per unique `branch-type` (`ensure_filter_pop!` under the branch pop
+   map's root) — semantic names (`endpoint-to-endpoint`, `endpoint-to-junction`,
+   `junction-to-junction`, `isolated-cycle`) so pickers show meaningful populations, not integer codes.
+
+**Skeleton labels are NOT registered in `img.labels`.** They live in a dedicated
+`img.branch_labels` field (parallel shape: `Dict{String,Vector{String}}`) with
+`img_branch_labels_dir` / `img_branch_labels_path` accessors, so the generic labels picker
+(measure / track / segment dropdowns) never lists branch label sets. This is deliberate: skeleton
+paths are a different granularity from cell regions (see `docs/POPULATION.md` → *Branch pop type*).
+
+**The `__branch` suffix is reserved** — `is_reserved_value_name(name)` rejects user-created
+segmentations ending in `__branch` (same rule as `__tracks`).
+
 ## Future: tracking and gating
 
 **Gating** (FlowJo-style)

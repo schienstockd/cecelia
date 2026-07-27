@@ -17,6 +17,8 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 | `track` | gates on **per-track** properties (one point per track) | `track_props` (motility + on-read aggregates) | `gating/{vn}__tracks.json` |
 | `clust` | a filter on the **cell** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | cell H5AD `.obs` column (clustPops) | `gating/{vn}__clust.json` |
 | `trackclust` | a filter on the **track** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | per-track table `.obs` column (clustTracks) | `gating/{vn}__trackclust.json` |
+| `region` | a filter on the **spatial region** column (`filter_fun="in"` over `regions.{suffix}`) | cell H5AD `.obs` column (clustRegions) | `gating/{vn}__region.json` |
+| `branch` | filters on **per-branch** properties (typically `branch-type`) | branch sidecar `labelProps/{vn}__branch.h5ad` | `gating/{vn}__branch.json` |
 
 All types share: a population tree (name, colour, path, parent, show), a `pop_df`
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
@@ -237,6 +239,14 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   (replaces the old R `config.yml` `labelStats`). `categorical`/`numeric` are escape-hatch overrides
   on `track_props` when the heuristic misreads a column. The cache key folds the `{vn}__tracks.json`
   + track-table mtimes.
+- **`branch` pop_type — a THIRD granularity for skeleton paths.** Distinct from cell / track:
+  branches are the paths in a skeletonised segmentation (`segment.branching`, see
+  `docs/SEGMENTATION.md`). `pop_df(img, "branch", pops)` reads the sidecar
+  `labelProps/{vn}__branch.h5ad` (one row per skeleton path) via the same `_pop_df` core, and
+  membership resolves through filter pops in `gating/{vn}__branch.json` (typically an
+  auto-created `ensure_filter_pop!` per unique `branch-type`). `granularity` is ignored (a
+  branch has no cell/track duality). `popSelection accepts: ["branch"]` surfaces these under a
+  *"Branches · Gated"* header. The cache key folds the branch sidecar mtime.
 - **Completion join**: membership + label-props columns per value_name; `include_x`
   pulls the intensity matrix, `include_obs` pulls obs columns (read via `label_props`).
 - **Membership source by type**: `flow` → gate eval (recompute); `clust` → `.obs`
