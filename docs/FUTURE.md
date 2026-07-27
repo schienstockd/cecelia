@@ -1,13 +1,15 @@
-# Future Optimisations
+# Deliberately Deferred
 
-This document tracks known optimisation opportunities that are deliberately deferred — not
-forgotten, not ruled out, just not worth the complexity at the current scale or ecosystem
-maturity. Each entry states what it is, why it was deferred, and the concrete condition under
-which it becomes worth revisiting.
+Things that are **not forgotten and not ruled out — just consciously set aside**: an optimisation not
+worth the complexity at the current scale, a library the ecosystem hasn't caught up with, a product
+non-goal, or work gated on a trigger that may never fire. Each entry states what it is, why it was
+deferred, and the concrete condition under which it becomes worth revisiting.
 
-This is distinct from `docs/TODO.md`: TODO is the working backlog of things we intend to do;
-FUTURE is the set of known-better alternatives we have consciously *set aside*. Do not implement
-anything listed here without explicit instruction — this is a reference document, not a backlog.
+This is distinct from `docs/TODO.md`: TODO is the working backlog of things we intend to do; FUTURE is
+what we have consciously **set aside** — a known-better alternative, a deliberate non-goal, or work
+gated on a trigger that may never fire. If nobody should act on it, it belongs here rather than in the
+backlog. Do not implement anything listed here without explicit instruction — this is a reference
+document, not a backlog.
 
 When generating or updating documentation, include a pointer to this file for any decision that
 involved a known-better alternative being deliberately set aside.
@@ -119,10 +121,54 @@ not hold.
 
 ---
 
+## Interactive pan/zoom on the gating plots
+
+**What:** Let the user pan/zoom the gating scatter, changing the visible data range rather than just
+scaling the whole panel (which is what the canvas-level `useCanvasZoom` CSS transform does today).
+
+**Why deferred:** Deliberate product decision — the gating plots should not have zoom for now
+(Dominik, 2026-07-27), and they don't. Recorded here because the *reason it was hard has gone away*
+and that is worth not re-deriving: the old blocker was the WebGL layer, where the overlays would have
+had to replicate regl's `projectionLocal · cameraView · model` transform and invert it for gate
+hit-testing. That layer was removed. The dots and the gate overlay are now both 2D canvases mapping
+data→px through the same `viewExtents`, and every layer already redraws when it changes.
+
+**Revisit when:** someone actually wants it. The work is then a wheel/drag handler that edits
+`viewExtents` — not a matrix-replication job. Hit-testing needs no change (`GateOverlay` already maps
+through the same extents).
+
+**Reference:** `docs/POPULATION.md` → *Gating plot — rendering & UX hacks*. (Was `docs/TODO.md`
+`#00087`, and before that a duplicate `#00003`; moved here because a deliberate non-goal is not open
+work.)
+
+---
+
+## Observer summary set roll-up mode
+
+**What:** An optional set-scope roll-up for the observer's summary tools (`get_measure_summary`,
+`get_cluster_summary`): per-population median-across-images + range, instead of per-image detail.
+
+**Why deferred:** Set-scoped calls return per-image detail × many measures — large enough that the
+observer offloads them to a subagent (~80k tokens). But the first-pass payload trim (dedupe cluster
+`features` → `featuresByRun`, drop `mean`, round to 4 significant figures) is expected to shrink that
+a lot on its own, so the roll-up may never be needed. It is also **not obviously correct**: behaviour
+and phenotype vary *within* an image per population, so a median-per-image roll-up flattens real
+structure the observer needs in order to spot outliers (Dominik).
+
+**Revisit when:** the payload trim proves insufficient in practice. Then add it as an explicit opt-in
+for the "compare T vs B across the set" question only — per-image stays the default.
+
+**Reference:** `docs/ai-assist/OBSERVER.md`. (Was `docs/TODO.md` `#00084`; moved here because it is
+conditional on something that may never happen.)
+
+---
+
 ## Adding entries
 
-When deferring a known-better approach during implementation, add an entry here with:
-- What the approach is
-- Why it was deferred (complexity, ecosystem maturity, not needed at current scale)
-- The concrete condition under which it becomes worth adopting
-- A reference to the relevant doc or external resource
+Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a
+trigger. Each one carries:
+- **What** it is
+- **Why deferred** — complexity, ecosystem maturity, not needed at this scale, or an explicit decision
+- **Revisit when** — the concrete condition that would change the answer (for a non-goal: "someone
+  wants it", plus what the work actually is now, so the next reader doesn't re-derive it)
+- A **reference** to the relevant doc or external resource

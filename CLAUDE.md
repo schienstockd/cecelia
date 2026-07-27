@@ -22,7 +22,7 @@ See also:
 - [`docs/PLOTS.md`](docs/PLOTS.md) — summary-plot design: chart types × data source (one/multi/pooled) × measure type (numeric/categorical), encoding model, the agreed renderer spec
 - [`docs/ANALYSIS.md`](docs/ANALYSIS.md) — the Analysis board (`/analysis`): tabs + comic-plate layout + persistence keys, the registry-driven plot families (summary/interactive/cluster/image), the read-only cluster manager, the gating-strategy plot, and PDF/CSV export (light theme, shared hi-res raster path)
 - [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) — the Notebooks Playground (`/notebooks`): pure-Julia Pluto downstream analysis; the `pluto/` engine env, `CeceliaNb` helpers, per-project registry + snapshot/restore versioning, the deps/full sysimage, and the `/api/notebooks/*` routes
-- [`docs/FUTURE.md`](docs/FUTURE.md) — deliberately deferred optimisations (known-better alternatives set aside): what, why deferred, when to revisit
+- [`docs/FUTURE.md`](docs/FUTURE.md) — **deliberately deferred**: known-better alternatives, product non-goals, and work gated on a trigger that may never fire. What, why deferred, when to revisit. If nobody should act on it, it goes here, not in `docs/TODO.md`
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — temporary forward goals: phases (behaviour/HMM → clustering → freeze v1.0 → packaging/distribution → self-update) + post-v1 backlog. Consult before starting a new phase.
 - [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
 - [`docs/SHIPPING.md`](docs/SHIPPING.md) — distribution architecture & rationale: Pixi/constructor + browser stack (Julia serves the built frontend; no Tauri/Electron), packaging/update model, and non-obvious env decisions (cellpose-v3 pin, dropped coastal, GPU/RAPIDS parked, run-via-`pixi run`). The *why*, paired with INSTALL.md's *how*.
@@ -49,7 +49,7 @@ See also:
 | AnnData, cell-level data storage and access | `docs/DATAMODEL.md` |
 | Population manager, gating engine, pop_df, gate↔track | `docs/POPULATION.md` |
 | HTTP/WS routes, request/response shapes, binary responses | `docs/API.md` |
-| Deferring a known-better approach (ecosystem/scale not ready) | `docs/FUTURE.md` |
+| Deferring a known-better approach, or recording a non-goal | `docs/FUTURE.md` |
 | Packaging, distribution, env rationale (Pixi/constructor, why) | `docs/SHIPPING.md` |
 | Branching, commits, PRs, release tagging (dev workflow) | `docs/DEV.md` |
 | Release cadence/policy — when to tag, versioning, rc-vs-release | `docs/RELEASING.md` |
@@ -99,11 +99,16 @@ Completed prompt files are kept in a `previous-prompts/` folder in the **workspa
 
 ## TODO.md
 
-`docs/TODO.md` tracks **open work only**.
+`docs/TODO.md` tracks **open work only** — things someone intends to do.
 - When an item is done, **delete it** — don't keep a "Fixed" log. What changed is recorded in git
   history, merged PRs, and the GitHub Releases notes (auto-generated from PRs at each tag). Keeping a
   hand-maintained fixed list duplicated that and caused recurring merge conflicts.
-- IDs are permanent — never renumber; add new items by incrementing the highest existing ID.
+- **A fact worth recording that nobody should act on is not a TODO item.** This is the tracker with
+  the loosest edges, so orphans drift into it: a deliberate non-goal, or something conditional on a
+  trigger that may never fire, belongs in `docs/FUTURE.md`. There's a routing table at the top of
+  `docs/TODO.md` — check it before adding an entry.
+- IDs are stable so code comments can cite them (`# see TODO #00020`) — increment the highest. They
+  are not sacred: renumber to resolve a collision, and note it in the item.
 
 ## Parked plans (`docs/todo/`)
 
