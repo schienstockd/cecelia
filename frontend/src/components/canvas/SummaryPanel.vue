@@ -19,6 +19,7 @@ import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
 import { CECELIA_AUTHOR } from '../../utils/labLog'
+import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import CcToggle from '../CcToggle.vue'
@@ -470,12 +471,20 @@ function exportAs(kind: string) {
   if (kind === 'csv') {
     exporting.value = true
     fetchRawCsv().then(csv => {
-      if (csv) downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
-      // When stats were computed for this plot, ship a SIBLING `{stem}.stats.csv` — a small
-      // summary CSV of the test outcome + pairwise pairs, so the raw-points CSV stays Prism-
-      // clean while the stats are still exported. See STATS_ANNOTATIONS_PLAN.md → D7.
+      // When stats are also computed for this plot, deliver BOTH files as one `{stem}.zip`
+      // (raw + `.stats.csv` sibling) — a single download, cleanly named. When there's no
+      // stats sidecar, deliver a plain `.csv`. See STATS_ANNOTATIONS_PLAN.md → D7.
       const statsCsv = result.value ? plotStatsToCsv(result.value) : ''
-      if (statsCsv) downloadBlob(`${stem}.stats.csv`, new Blob([statsCsv], { type: 'text/csv' }))
+      if (csv && statsCsv) {
+        downloadBlob(`${stem}.zip`, zipTextFiles([
+          { name: `${stem}.csv`, text: csv },
+          { name: `${stem}.stats.csv`, text: statsCsv },
+        ]))
+      } else if (csv) {
+        downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
+      } else if (statsCsv) {
+        downloadBlob(`${stem}.stats.csv`, new Blob([statsCsv], { type: 'text/csv' }))
+      }
     }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
     exporting.value = true
