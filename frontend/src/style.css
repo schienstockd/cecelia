@@ -509,6 +509,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
 }
 .panel:hover .cc-panel-controls,
 .panel.controls-pinned .cc-panel-controls { opacity: 1; pointer-events: auto; }
+/* 3rd state (docs: CanvasPanel `chromeMode = 'hidden'` from CcCycleButton) — controls never show,
+   hover doesn't reveal them either. Same shape as the .capturing rule below, scoped to the panel. */
+.panel.controls-hidden .cc-panel-controls { opacity: 0 !important; pointer-events: none !important; }
 /* during a PDF / board capture a revealed strip (and the header drag handle) must never land in a
    snapshot (the `.capturing` ancestor is set on the board grid while exporting) */
 .capturing .cc-panel-controls { opacity: 0 !important; pointer-events: none !important; }
