@@ -3596,6 +3596,53 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test_throws ErrorException population_accept_groups([:img1], names_for, load, String[])
     end
 
+    # ── branch pop_type (BRANCHING_PLAN.md Decision 2) ────────────────────────────
+    # Adding "branch" to the framework must extend POP_MAP_SUFFIX/ACCEPT_TOKENS/pop_category and
+    # route via population_accept_groups with granularity="branch". The framework was designed to
+    # take a third pop_type; this guards the wiring.
+    @testset "branch pop_type wiring" begin
+        # POP_MAP_SUFFIX resolves the gating file suffix.
+        @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
+        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"), "gating/stroma__branch.json")
+
+        # ACCEPT_TOKENS + validators.
+        @test "branch" in Cecelia.ACCEPT_TOKENS
+
+        # pop_category: branch pops are gated (the ensure_filter_pop! per-branch-type case).
+        @test pop_category("branch", "/endpoint-to-endpoint") == "gated"
+
+        # population_accept_groups tags branch pops with granularity="branch" and only surfaces
+        # them when "branch" is in accepts. A mixed request keeps cells + branches.
+        bm = PopulationMap(pop_type="branch", value_name="C")
+        add_pop!(bm, "endpoint-to-endpoint"; filter_measure="branch-type",
+                 filter_fun="eq", filter_values=0)
+        add_pop!(bm, "junction-to-junction"; filter_measure="branch-type",
+                 filter_fun="eq", filter_values=2)
+        fm = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1))
+        names_for = _ -> ["C"]
+        load = (_, vn, pt) -> vn != "C" ? nothing :
+            pt == "live"   ? fm :
+            pt == "branch" ? bm : nothing
+
+        # accepts=["branch"] → only branch pops, no cell root
+        br = population_accept_groups([:img1], names_for, load, ["branch"])[1].populations
+        @test Set(p.path for p in br) == Set(["/endpoint-to-endpoint", "/junction-to-junction"])
+        @test all(p.granularity == "branch" for p in br)
+        @test all(p.category    == "gated"  for p in br)
+        @test all(p.pop_type    == "branch" for p in br)
+
+        # accepts=["live","branch"] → all-cells root + cell gate + branches
+        mix = population_accept_groups([:img1], names_for, load, ["live", "branch"])[1].populations
+        gcats = Set((p.granularity, p.category) for p in mix)
+        @test ("cell", "gated") in gcats
+        @test ("branch", "gated") in gcats
+
+        # accepts=["live"] must NOT include branches.
+        only_cells = population_accept_groups([:img1], names_for, load, ["live"])[1].populations
+        @test all(p.granularity == "cell" for p in only_cells)
+    end
+
     # ── ensure_filter_pop! — a cutoff materialised as a reusable filter pop (Decision 14) ────────
     @testset "ensure_filter_pop! auto-created population" begin
         td = mktempdir()

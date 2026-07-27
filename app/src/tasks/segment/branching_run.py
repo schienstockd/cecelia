@@ -239,11 +239,17 @@ def run(params: dict):
         float(paths_df["branch-distance"].mean()) if "branch-distance" in paths_df.columns and len(paths_df)
         else 0.0
     )
+    # Unique branch-type codes present in the output → Julia auto-creates one filter pop per code
+    # via ensure_filter_pop! (BRANCHING_PLAN Decision 3). Sort so pop-map order is stable across runs.
+    branch_types = sorted({int(v) for v in paths_df["branch-type"].unique()}) \
+        if "branch-type" in paths_df.columns and len(paths_df) else []
+
     with open(qc_out_path, "w") as f:
         json.dump({
             "nBranches": int(len(paths_df)),
             "nSkeletons": int(n_skeletons_total),
             "meanBranchLength": mean_branch_length,
+            "branchTypes": branch_types,
         }, f)
 
 

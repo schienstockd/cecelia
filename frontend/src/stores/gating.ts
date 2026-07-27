@@ -197,7 +197,7 @@ export const useGatingStore = defineStore('gating', () => {
   async function selectImage(uid: string, vn?: string, pt?: string) {
     imageUid.value = uid
     if (vn) valueName.value = vn
-    if (pt) popType.value = pt           // 'flow' | 'track' | 'clust' | 'trackclust'
+    if (pt) popType.value = pt           // 'flow' | 'track' | 'clust' | 'trackclust' | 'region' | 'branch'
     mirrorUids.value = []                // single-image by default; the cluster page re-sets it after
     await fetchChannels()
     await fetchPopmap()

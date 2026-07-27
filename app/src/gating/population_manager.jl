@@ -276,6 +276,7 @@ const POP_MAP_SUFFIX = Dict{String,String}(
     "clust"      => "__clust",
     "trackclust" => "__trackclust",
     "region"     => "__region",           # spatial region pops — a filter on `regions.{suffix}`
+    "branch"     => BRANCH_PROPS_SUFFIX,  # "__branch" — skeleton branch pops (docs/todo/BRANCHING_PLAN.md)
 )
 
 # The pop types that are hand-drawn *gating* (a gate geometry per pop), as opposed to the
@@ -994,6 +995,8 @@ function pop_category(pop_type::AbstractString, path::AbstractString)::String
     pt = String(pop_type)
     pt == "region" && return "region"
     pt in ("clust", "trackclust") && return "clustered"
+    # branch pops: hand-drawn / ensure_filter_pop!-created filters on the branch table (typically
+    # `branch-type`) — same category as flow gates. Granularity = "branch" is what distinguishes them.
     "gated"
 end
 
@@ -1063,7 +1066,7 @@ end
 #    "flow" is an alias for "live" (both read the same flow gate map). Each surviving population is
 #    tagged (granularity, category) via `is_track_pop`/`pop_category` so the picker groups it. ──────
 
-const ACCEPT_TOKENS = ("live", "flow", "clust", "trackclust", "region", "track")
+const ACCEPT_TOKENS = ("live", "flow", "clust", "trackclust", "region", "track", "branch")
 
 # canonicalise: fold "flow"→"live", dedup, preserve order.
 _normalise_accepts(accepts) = unique(String[String(a) == "flow" ? "live" : String(a) for a in accepts])
@@ -1084,6 +1087,8 @@ function _accept_permits(accepts::Vector{String}, granularity::AbstractString, c
             (g == "track" && c in ("gated", "tracked", "aggregated")) && return true
         elseif a == "trackclust"
             (g == "track" && c == "clustered")             && return true
+        elseif a == "branch"
+            (g == "branch" && c == "gated") && return true
         end
     end
     false
@@ -1098,6 +1103,7 @@ function _accept_pop_types(accepts::Vector{String})::Vector{String}
     ("clust" in accepts)      && push!(pts, "clust")
     ("trackclust" in accepts) && push!(pts, "trackclust")
     ("region" in accepts)     && push!(pts, "region")
+    ("branch" in accepts)     && push!(pts, "branch")
     unique(pts)
 end
 
@@ -1121,9 +1127,9 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
                                   root_derived_ok::Function = (_v, _pt, _dpath) -> true)
     acc = _normalise_accepts(accepts)
     isempty(acc) && error("accepts is empty — a popSelection must declare at least one pop_type")
-    bad = setdiff(acc, ("live", "clust", "trackclust", "region", "track"))
+    bad = setdiff(acc, ("live", "clust", "trackclust", "region", "track", "branch"))
     isempty(bad) || error("unknown accepts token(s): $(join(bad, ", ")) " *
-                          "(expected any of live/flow, clust, trackclust, region, track)")
+                          "(expected any of live/flow, clust, trackclust, region, track, branch)")
     groups = plot_population_groups(imgs, value_names_for, load_map, _accept_pop_types(acc);
                                     root_derived_ok = root_derived_ok)
     want_all_cells = include_all_cells && ("live" in acc)
@@ -1133,7 +1139,10 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
           want_all_cells && push!(kept, (path = "/", name = "all", colour = "#7c93b8",
                                          pop_type = "live", granularity = "cell", category = "gated"))
           for p in g.populations
-              gran = is_track_pop(p.pop_type, p.path) ? "track" : "cell"
+              # branch is a THIRD granularity distinct from cell/track (BRANCHING_PLAN Decision 2);
+              # detect it explicitly before falling back to the cell/track binary.
+              gran = String(p.pop_type) == "branch" ? "branch" :
+                     is_track_pop(p.pop_type, p.path) ? "track" : "cell"
               cat  = pop_category(p.pop_type, p.path)
               _accept_permits(acc, gran, cat) || continue
               push!(kept, (path = p.path, name = p.name, colour = p.colour,
@@ -1203,17 +1212,22 @@ _pop_df_mtime(p::AbstractString) = isfile(p) ? string(mtime(p)) : "∅"
 function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols, include_x,
                            include_obs, unique_labels, drop_na, raw_channel_names,
                            granularity, cell_measures, categorical)::String
-    is_track = String(pop_type) == "track"
+    is_track  = String(pop_type) == "track"
+    is_branch = String(pop_type) == "branch"
     stamps = String[]
     for vn in sort(collect(keys(_group_pops_by_value_name(pops, value_name))))
-        # track gating reads the per-track gate map `{vn}__tracks.json`; cell-level pop_types read
-        # the flow map. Always fold the cell h5ad (track_props derives from it).
-        gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=is_track ? "track" : "flow"))
+        # track gating reads `{vn}__tracks.json`; branch gating reads `{vn}__branch.json`;
+        # cell-level pop_types read the flow map. Always fold the cell h5ad (track_props derives
+        # from it; branch_props does not, but folding it costs one stat and disambiguates keys).
+        gt = is_track ? "track" : (is_branch ? "branch" : "flow")
+        gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=gt))
         s = string(vn, "@", gmtime, "/", _pop_df_mtime(img_label_props_path(img, vn)))
         # :track granularity and track-gating both read the companion track table — fold its mtime
         # so a re-run (or a saved track gate) auto-invalidates.
         (granularity === :track || is_track) &&
             (s *= "/" * _pop_df_mtime(img_track_props_path(img, vn)))
+        # branch pop_type reads the per-branch sidecar; fold its mtime for cache invalidation.
+        is_branch && (s *= "/" * _pop_df_mtime(img_branch_props_path(img, vn)))
         push!(stamps, s)
     end
     parts = (pop_type, value_name, join(sort(String.(collect(pops))), "&"),
@@ -1354,6 +1368,26 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         return copy(df)
     end
 
+    # `branch` pop_type: gates on per-branch measurements (branch-type, length, tortuosity, …) in
+    # the skeleton sidecar `{vn}__branch.h5ad`. `_pop_df` is generic over table location, so the
+    # only branch-specific pieces are the pop map (`gating/{vn}__branch.json`) and the fetch that
+    # reads the branch table. Membership is one row per skeleton path; there is no cell/track
+    # duality within branches, so `granularity` is ignored (always one row per branch). See
+    # docs/todo/BRANCHING_PLAN.md Decisions 1–3.
+    if String(pop_type) == "branch"
+        branch_load = vn -> load_pop_map(img; value_name=vn, pop_type="branch")
+        branch_fetch = function (vn, cols)
+            lp = label_props(img_branch_props_path(img, vn); value_name=vn)
+            isempty(cols) || select_cols(lp, cols)
+            as_df(lp; include_x=(isempty(cols) ? include_x : true), include_obs=include_obs)
+        end
+        df = _pop_df(branch_load, branch_fetch, "branch", pops;
+                     default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
+                     drop_na=drop_na, membership_fetch=branch_fetch)
+        img._pop_df_cache[ckey] = df
+        return copy(df)
+    end
+
     # `labels` pop_type: ALL cells of the segmentation's labelProps, UNGATED — no gating map, no
     # membership eval. Mirrors the old R popType "labels" (`labelsPopUtils`). This is the raw
     # segmentation-output data source (e.g. the segmentation-integrity QC canvas): every measured
@@ -1471,7 +1505,7 @@ end
 # derived) leaf resolves to its registered pop_type (`live`) up front; otherwise the first stored map
 # that CONTAINS the path wins (name collisions across types are pathological). `flow` is probed first so
 # a plain gate resolves to cells, not to a like-named cluster/region pop.
-const _POP_TYPE_PROBE_ORDER = ("flow", "clust", "region", "track", "trackclust")
+const _POP_TYPE_PROBE_ORDER = ("flow", "clust", "region", "track", "trackclust", "branch")
 
 """
     resolve_pop_type(img, value_name, path) -> String
@@ -1624,7 +1658,7 @@ end
 
 # Pop types that hold user-named populations (the name-guard scans all of them). `live` is not stored
 # (it reads the flow gates), so `flow` covers it.
-const _NAME_GUARD_POP_TYPES = ("flow", "track", "clust", "trackclust", "region")
+const _NAME_GUARD_POP_TYPES = ("flow", "track", "clust", "trackclust", "region", "branch")
 
 """
     pop_name_conflict(img, value_name, path; pop_type) -> Union{String,Nothing}

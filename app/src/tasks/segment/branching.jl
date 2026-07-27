@@ -1,5 +1,15 @@
 struct Branching <: CciaTask end
 
+# skan branch-type codes → semantic pop names (BRANCHING_PLAN Decision 3). Stable + documented
+# in skan (see https://skeleton-analysis.org/stable/getting_started/quickstart.html): 0 = a lone
+# segment with two termini, 1 = one junction + one endpoint, 2 = two junctions, 3 = a closed loop.
+const _BRANCH_TYPE_POP_NAME = Dict{Int,String}(
+    0 => "endpoint-to-endpoint",
+    1 => "endpoint-to-junction",
+    2 => "junction-to-junction",
+    3 => "isolated-cycle",
+)
+
 # Pure QC helper: objective branch count → advisory finding for the empty-skeleton case
 # (unambiguous failure mode: over-eroded input or an empty ref population).
 function _branching_qc_findings(n_branches::Integer)
@@ -102,12 +112,14 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
 
     # QC (advisory): objective branch count + zero-branches warning
     n_branches = 0
+    branch_types = Int[]
     if isfile(qc_out_path)
         try
             qmeta = JSON3.read(read(qc_out_path, String))
             n_branches = Int(get(qmeta, :nBranches, 0))
             n_skeletons = Int(get(qmeta, :nSkeletons, 0))
             mean_branch_length = Float64(get(qmeta, :meanBranchLength, 0.0))
+            branch_types = Int[Int(x) for x in get(qmeta, :branchTypes, Int[])]
             findings = _branching_qc_findings(n_branches)
             write_qc(img, "segment.branching", out_value_name, findings;
                      metrics = Dict{String,Any}("nBranches"        => n_branches,
@@ -119,8 +131,19 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         end
     end
 
+    # Decision 3: auto-create one filter pop per unique branch-type at the branch pop map's root.
+    # Idempotent (ensure_filter_pop! replaces an existing name), so re-runs stay clean.
+    for bt in branch_types
+        name = get(_BRANCH_TYPE_POP_NAME, bt, "branch-type-$(bt)")
+        ensure_filter_pop!(img, "branch", out_value_name, ["/"], name;
+                           filter_measure = "branch-type",
+                           filter_fun = "eq", filter_values = bt)
+    end
+    isempty(branch_types) || on_log("[INFO] Auto-created $(length(branch_types)) branch-type filter pop(s).")
+
     Dict{String,Any}("outputValueName" => out_value_name,
                      "branchLabelFile" => branch_zarr,
                      "branchPropsFile" => "$(out_value_name)$(BRANCH_PROPS_SUFFIX).h5ad",
-                     "nBranches"       => n_branches)
+                     "nBranches"       => n_branches,
+                     "branchTypes"     => branch_types)
 end
