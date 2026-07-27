@@ -15,7 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell } from './types'
+import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -134,6 +134,10 @@ export interface BuildOpts extends VisProps {
   smooth?: number                        // trend line: rolling-mean window (1 = raw)
   trend?: boolean                        // render as a geom_smooth line over an ordered X (time series)
   interval?: boolean                     // trend line: draw the ±95% confidence ribbon
+  // Stats annotation rendering flags (client-side; server always returns full comparisons).
+  // Defaults match Prism per docs/todo/STATS_ANNOTATIONS_PLAN.md → S0: numeric-p labels, `ns` shown.
+  statsShowNs?: boolean                  // default true — hide non-significant brackets when false
+  statsUseStars?: boolean                // default false — swap `p = 0.003` for `**` when true
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -611,6 +615,123 @@ function seriesIndex(r: PlotDataResponse, keyOf: (s: PlotSeries) => string, face
   return { labels, idx }
 }
 
+// ── Stats annotations (docs/todo/STATS_ANNOTATIONS_PLAN.md → S0) ─────────────────
+//
+// Prism-parity brackets + `p = 0.003` labels above data. Server ships `r.comparisons`; we
+// map each server label → chart X position via the same series → key derivation the server
+// used (grp || sid || uid) and produce a stack of horizontal-rule + text marks.
+// Rotated (horizontal) charts are not yet supported — brackets skip in that mode.
+
+const STATS_STROKE = '#111'
+const STATS_TEXT_FILL = '#111'
+const STATS_TEXT_SIZE = 12
+const STATS_HEADROOM = 0.05    // first bracket sits at extent.max + 5% of extent
+const STATS_STACK_GAP = 0.05   // stacked brackets step by 5% of extent
+const STATS_TEXT_DY   = -6     // text just above the bracket line
+
+/**
+ * Server-side stats labels for a full series set — mirrors `_stats_labels` in plot_data.jl.
+ * Joins only the dims that vary (uid / seg / path / grp) with " · ", matching frontend keyFor.
+ * Must be computed over the whole series set (not per-series in isolation) because "which dims
+ * vary" is a set-level property.
+ */
+function serverStatsLabels(series: PlotSeries[]): Map<PlotSeries, string> {
+  const out = new Map<PlotSeries, string>()
+  if (series.length === 0) return out
+  const uids  = new Set(series.map(s => String(s.uID ?? '')))
+  const vns   = new Set(series.map(s => String(s.value_name ?? '')))
+  const paths = new Set(series.map(s => pathOf(s)))
+  const grps  = new Set(series.map(s => String(s.group ?? '')))
+  const dUid  = uids.size > 1
+  const dSeg  = vns.size > 1
+  const dPath = paths.size > 1
+  const dGrp  = grps.size > 1
+  for (const s of series) {
+    const parts: string[] = []
+    if (dUid)  parts.push(String(s.uID ?? ''))
+    if (dSeg)  parts.push(String(s.value_name ?? ''))
+    if (dPath) parts.push(pathOf(s))
+    if (dGrp)  parts.push(String(s.group ?? ''))
+    if (parts.length > 0) { out.set(s, parts.join(' · ')); continue }
+    // No dims varied: fall back to server's sid convention (`vn * pop` when pop starts with '/').
+    const pop = String(s.pop ?? '')
+    const sid = (s.value_name && pop.startsWith('/')) ? `${s.value_name}${pop}` : pop
+    out.set(s, sid || String(s.uID ?? ''))
+  }
+  return out
+}
+
+/** Format a p-value for the bracket label. GP-style, three sig figs; `p < 0.001` when smaller. */
+function formatPValue(p: number): string {
+  if (!Number.isFinite(p)) return ''
+  if (p < 0.001) return 'p < 0.001'
+  const s = p.toPrecision(3).replace(/\.?0+$/, '')
+  return `p = ${s}`
+}
+
+/** Pairs to show — expand a 2-group omnibus into a single implicit pair when the server didn't. */
+function pairsFor(cmp: ComparisonsResult): StatsComparisonPair[] {
+  if (cmp.comparisonPairs && cmp.comparisonPairs.length > 0) return cmp.comparisonPairs
+  if (cmp.groups && cmp.groups.length === 2) {
+    return [{ a: cmp.groups[0], b: cmp.groups[1], pAdj: cmp.pValue, significance: cmp.significance }]
+  }
+  return []
+}
+
+/**
+ * Build Plot marks for the statistical brackets. Returns [] on rotated charts (unsupported
+ * for now), when no pairs would render, or when server labels don't map to chart positions.
+ */
+function statsBracketMarks(
+  Plot: PlotModule,
+  r: PlotDataResponse,
+  keyOf: (s: PlotSeries) => string,
+  o: BuildOpts,
+  opts: { showNs: boolean; useStars: boolean },
+): unknown[] {
+  const cmp = r.comparisons
+  if (!cmp || o.rotate) return []
+  const extent = measureExtent(r)
+  if (!extent) return []
+  const { idx } = seriesIndex(r, keyOf, o.facet)
+  // server label → chart X position (integer index into the linear scale)
+  const labelBySeries = serverStatsLabels(r.series)
+  const posByLabel = new Map<string, number>()
+  for (const label of cmp.groups) {
+    const s = r.series.find(ss => labelBySeries.get(ss) === label)
+    if (!s) continue
+    const p = idx.get(keyOf(s))
+    if (p !== undefined) posByLabel.set(label, p)
+  }
+  const shown = pairsFor(cmp)
+    .filter(p => posByLabel.has(p.a) && posByLabel.has(p.b))
+    .filter(p => opts.showNs || p.significance !== 'ns')
+    // closest pairs at the bottom of the stack; wider spans stack above
+    .sort((a, b) =>
+      Math.abs(posByLabel.get(a.a)! - posByLabel.get(a.b)!) -
+      Math.abs(posByLabel.get(b.a)! - posByLabel.get(b.b)!))
+  if (shown.length === 0) return []
+
+  const ext = Math.max(1e-9, extent.max - extent.min)
+  const start = extent.max + ext * STATS_HEADROOM
+  const step  = ext * STATS_STACK_GAP
+  const marks: unknown[] = []
+  shown.forEach((p, i) => {
+    const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
+    const [x1, x2] = lo < hi ? [lo, hi] : [hi, lo]
+    const y = start + i * step
+    const label = opts.useStars ? p.significance : formatPValue(p.pAdj)
+    // horizontal bracket line
+    marks.push(Plot.ruleY([y], { x1, x2, stroke: STATS_STROKE, strokeWidth: 1 }))
+    // p-value / significance text centred above the bracket
+    marks.push(Plot.text([{ x: (x1 + x2) / 2, y, label }],
+                         { x: 'x', y: 'y', text: 'label',
+                           textAnchor: 'middle', dy: STATS_TEXT_DY,
+                           fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: STATS_TEXT_FILL }))
+  })
+  return marks
+}
+
 // shared x-axis config for distribution charts: a linear scale with one tick per series, labelled by
 // the series key (horizontal labels — no diagonal text). In FACET mode x is hidden + centred (the
 // series label becomes the facet (`fx`) header instead).
@@ -713,6 +834,8 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const f = fxCh(o), a = axM(o)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // spans the position axis (caps, baseline)
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -723,6 +846,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       RulePos(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'lo', stroke: 'currentColor', ...f }),   // lower cap
       RulePos(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'hi', stroke: 'currentColor', ...f }),   // upper cap
       RulePos([0], { stroke: 'currentColor' }),
+      ...statsMarks,
     ],
   }
 }
@@ -751,6 +875,8 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const ptFill = o.colorData ? 'series' : 'currentColor'
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -766,6 +892,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                                         stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                                         fillOpacity: o.pointOpacity, ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
+      ...statsMarks,
     ],
   }
 }
@@ -786,6 +913,8 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // density ribbon runs ACROSS the position axis at each measure value; rotate swaps area/line family.
   const Area = o.rotate ? Plot.areaY : Plot.areaX
   const Line = o.rotate ? Plot.lineY : Plot.lineX
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -795,6 +924,7 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                    z: 'series', curve: 'basis', ...f }),
       Line(rows, { [a.meas]: 'value', [a.pos]: 'xlo', z: 'series', stroke: 'currentColor', strokeWidth: 0.6, curve: 'basis', ...f }),
       Line(rows, { [a.meas]: 'value', [a.pos]: 'xhi', z: 'series', stroke: 'currentColor', strokeWidth: 0.6, curve: 'basis', ...f }),
+      ...statsMarks,
     ],
   }
 }
@@ -812,6 +942,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   if (!rows.length) return null
   const a = axM(o)
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: o.statsShowNs !== false, useStars: !!o.statsUseStars })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -821,6 +953,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                        // themed outline so whitish series colours read on the white PDF / light ground
                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                        fillOpacity: o.pointOpacity, ...fxCh(o) }),
+      ...statsMarks,
     ],
   }
 }

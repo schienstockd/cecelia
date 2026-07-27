@@ -144,15 +144,44 @@ function _stats_result_dict(r)
     )
 end
 
+# Compose one label per series by joining ONLY the dims that vary across the series set — same
+# convention as frontend's `keyFor` (dimsOf → parts joined with " · "). Ensures a bracket can be
+# matched back to the correct chart position by label. See `serverStatsLabels` in frontend/plot.ts.
+_path_of(vn::AbstractString, pop::AbstractString) =
+    (!isempty(vn) && startswith(pop, vn * "/")) ? pop[length(vn)+2:end] : pop
+
+function _series_pop(g)
+    (nrow(g.sub) > 0 && :pop in propertynames(g.sub)) ? String(g.sub[1, :pop]) : ""
+end
+
+function _stats_labels(groups)
+    isempty(groups) && return String[]
+    pops = String[_series_pop(g) for g in groups]
+    d_uid  = length(unique(String[g.uid for g in groups])) > 1
+    d_seg  = length(unique(String[g.vn  for g in groups])) > 1
+    d_path = length(unique(String[_path_of(g.vn, pops[i]) for (i, g) in enumerate(groups)])) > 1
+    d_grp  = length(unique(String[g.grp for g in groups])) > 1
+    labels = String[]
+    for (i, g) in enumerate(groups)
+        parts = String[]
+        d_uid  && push!(parts, g.uid)
+        d_seg  && push!(parts, g.vn)
+        d_path && push!(parts, _path_of(g.vn, pops[i]))
+        d_grp  && push!(parts, g.grp)
+        push!(labels, isempty(parts) ? (isempty(g.sid) ? g.uid : g.sid) : join(parts, " · "))
+    end
+    labels
+end
+
 function _stats_from_series(groups, measure::AbstractString, test::Symbol)
     isempty(measure) && return nothing
+    labels = _stats_labels(groups)
     pairs = Pair{String,Vector{Float64}}[]
-    for s in groups
+    for (i, s) in enumerate(groups)
         (Symbol(measure) in propertynames(s.sub)) || continue
         vals = _finite(s.sub[!, measure])
         length(vals) < 2 && continue
-        label = !isempty(s.grp) ? s.grp : !isempty(s.sid) ? s.sid : s.uid
-        push!(pairs, label => vals)
+        push!(pairs, labels[i] => vals)
     end
     length(pairs) < 2 && return nothing
     try
