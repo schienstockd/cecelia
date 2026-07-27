@@ -54,19 +54,28 @@ end
 function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
     key = string(typeof(task))
     lock(_SPEC_CACHE_LOCK) do
-        haskey(_SPEC_CACHE, key) && return _SPEC_CACHE[key]
-
-        # Map type name → relative spec path inside app/src/tasks/
-        spec_file = _spec_path(task)
-        isnothing(spec_file) && return nothing
-        isfile(spec_file) || return nothing
-
-        spec = JSON3.read(read(spec_file, String), Dict{String,Any})
-        spec = _resolve_spec_includes(spec, _FRAGMENTS_DIR)
-        _SPEC_CACHE[key] = spec
-        spec
+        cached = get(_SPEC_CACHE, key, nothing)
+        if isnothing(cached)
+            spec_file = _spec_path(task)
+            (isnothing(spec_file) || !isfile(spec_file)) && return nothing
+            cached = JSON3.read(read(spec_file, String), Dict{String,Any})
+            cached = _resolve_spec_includes(cached, _FRAGMENTS_DIR)
+            _SPEC_CACHE[key] = cached
+        end
+        # Tasks that overload `_needs_dynamic_options` (e.g. CellposeSegment: enumerated model
+        # picker over the filesystem) get a fresh, mutated deepcopy on every call — a user's
+        # newly-dropped checkpoint reflects in `validate_params` and the definitions API without
+        # a server restart or a manual invalidate. Everything else returns the cached spec as-is.
+        _needs_dynamic_options(task) ? _inject_dynamic_options!(deepcopy(cached), task) : cached
     end
 end
+
+# Dispatch hooks for tasks whose spec has runtime-enumerated options (e.g. a select whose
+# `options` list is built from files on disk rather than fixed in the JSON). Base methods are
+# no-ops; a concrete task defines an overload beside its struct. Kept in this file (before any
+# task struct is included) so the module load order works.
+_needs_dynamic_options(::CciaTask) = false
+_inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
 
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a

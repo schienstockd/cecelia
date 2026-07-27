@@ -5,6 +5,10 @@ edit, no rebuild. This restores the old R-version capability (`source()`ing a `m
 the Julia rewrite. A dropped task appears in the GUI like any built-in and runs through the normal
 scheduler/chain machinery.
 
+> **See also — same "drop-in" idea, one directory over.** [Custom cellpose checkpoints](SEGMENTATION.md#custom-cellpose-checkpoints)
+> live at `<config_dir>/models/cellposeModels/` (parallel to `<config_dir>/modules/` here). Drop a
+> file, refresh the Segment page, it appears in the Model dropdown — no restart, no code.
+
 > **Trust model.** A custom module is arbitrary Julia (and optionally Python) with **full access to
 > your machine** — exactly like the old R `source()`. There is no sandbox. Only run modules you
 > wrote or trust; only you can drop files into your own config dir. This is a power-user feature.

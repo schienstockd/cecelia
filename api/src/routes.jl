@@ -234,6 +234,18 @@ function api_task_definitions(req::HTTP.Request)
         end
     end
 
+    # Runtime-enumerated options (e.g. CellposeSegment's Model picker: built-ins + files under
+    # <install>/models/cellposeModels/ + <config_dir>/models/cellposeModels/) — mutate specs in
+    # place via the same dispatch hook `validate_params` uses (`_inject_dynamic_options!`), so
+    # picker and validation stay in sync. See docs/SEGMENTATION.md → Custom cellpose checkpoints.
+    fun_map = Cecelia._fun_name_map()
+    for specs in values(raw), spec in specs
+        fn = string(get(spec, "fun_name", ""))
+        (isempty(fn) || !haskey(fun_map, fn)) && continue
+        Cecelia._needs_dynamic_options(fun_map[fn]) || continue
+        Cecelia._inject_dynamic_options!(spec, fun_map[fn])
+    end
+
     # Build fun_name → spec lookup so composite tasks can pull params from their steps.
     by_fun = Dict{String, Any}()
     for specs in values(raw)
