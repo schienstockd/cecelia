@@ -37,7 +37,11 @@ const props = defineProps<{
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
         matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
-        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
+        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median';   // datapoint = each cell/track, or each image's mean/median (one dot per image)
+        statsEnabled?: boolean;             // between-group hypothesis test on bar/boxplot/points/violin/strip
+        statsTest?: 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'
+        statsShowNs?: boolean;              // default true; hide ns brackets when false
+        statsUseStars?: boolean }           // default false; swap `p = X` for the star ladder
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -168,6 +172,17 @@ const groupByOpts = computed<string[]>(() => {
   return [...new Set([...hints, ...discovered])]
 })
 const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => (props.ui.groupBy = v) })
+
+// ── Compare groups (between-group hypothesis test) ────────────────────────────────
+// Only meaningful for chart types where between-series comparison reads (bar, boxplot, points,
+// violin, strip). Off by default. Locked defaults from S0 in STATS_ANNOTATIONS_PLAN.md.
+type StatsTest = 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'
+const STATS_CHARTS = new Set<ChartType>(['bar', 'boxplot', 'violin', 'strip'])
+const statsEnabled  = computed<boolean>({ get: () => !!props.ui.statsEnabled,           set: v => (props.ui.statsEnabled = v) })
+const statsTest     = computed<StatsTest>({ get: () => (props.ui.statsTest ?? 'auto') as StatsTest, set: v => (props.ui.statsTest = v) })
+const statsShowNs   = computed<boolean>({ get: () => props.ui.statsShowNs !== false,    set: v => (props.ui.statsShowNs = v) })
+const statsUseStars = computed<boolean>({ get: () => !!props.ui.statsUseStars,          set: v => (props.ui.statsUseStars = v) })
+const canCompareGroups = computed(() => STATS_CHARTS.has(chartType.value))
 // drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
 // Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
 // list during an async reload would wipe a valid selection (e.g. per-timepoint `t`) and it'd "cycle".
@@ -355,6 +370,8 @@ async function fetchData() {
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+        ...(statsEnabled.value && canCompareGroups.value
+              ? { stats: { enabled: true, test: statsTest.value } } : {}),
       }
       applyImageSelector(body)
       const res = await fetch('/api/plot_data', {
@@ -385,7 +402,8 @@ watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
-       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken],
+       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
+       statsEnabled, statsTest],
       scheduleFetch)
 onMounted(scheduleFetch)
 
@@ -407,6 +425,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
+  statsShowNs: statsShowNs.value, statsUseStars: statsUseStars.value,
 }))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
@@ -539,6 +558,25 @@ defineExpose({ getCsv, csvName, exportImage, exportSvg })
             <select v-model="imageAgg">
               <option value="mean">mean</option>
               <option value="median">median</option>
+            </select>
+          </label>
+          <!-- Between-group hypothesis test — a p-value bracket per pair on the plot itself.
+               Only for chart types where pairwise comparison reads (bar/boxplot/points/violin/strip).
+               Defaults per STATS_ANNOTATIONS_PLAN.md → S0: numeric p, `ns` shown, no stars. -->
+          <label v-if="canCompareGroups" class="sp-pop-row cc-muted"
+                 v-tooltip.left="'Test between series (Mann-Whitney by default; > 2 → Kruskal-Wallis)'">
+            <span>Compare groups</span>
+            <CcToggle v-model="statsEnabled" />
+          </label>
+          <label v-if="canCompareGroups && statsEnabled" class="sp-pop-row cc-muted"
+                 v-tooltip.left="'auto = Mann-Whitney (2 groups) / Kruskal-Wallis (>2)'">
+            <span>Test</span>
+            <select v-model="statsTest">
+              <option value="auto">auto</option>
+              <option value="mannwhitney">Mann-Whitney U</option>
+              <option value="ttest">Welch's t-test</option>
+              <option value="kruskal">Kruskal-Wallis</option>
+              <option value="anova">One-way ANOVA</option>
             </select>
           </label>
           <!-- heatmap (matrix) controls: mode · category · z-score (profile) / normalize (crosstab).
