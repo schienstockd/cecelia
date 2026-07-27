@@ -51,6 +51,11 @@ export const useAppControlStore = defineStore('appControl', () => {
   const updateBusy      = ref(false)
   const updateMsg       = ref('')
   const updateDismissed = ref(false)                               // header badge "remind me later" (session)
+  // Release-notes surfacing (What's New modal — WHATS_NEW_PLAN.md). The older header badge +
+  // Settings panel don't read these; they're only for the modal.
+  const updateUrl       = ref('')
+  const updateNotes     = ref('')                                  // GitHub release `body` (markdown)
+  const updatePublished = ref('')                                  // ISO timestamp; empty if unknown
   // in-app apply is only offered for a per-user install (not a shared system install or dev checkout)
   const canApplyUpdate  = computed(() => updateScope.value === 'user')
 
@@ -62,6 +67,9 @@ export const useAppControlStore = defineStore('appControl', () => {
       updateLatest.value    = d.latest ?? null
       updateAvailable.value = !!d.updateAvailable
       updateScope.value     = d.scope ?? ''
+      updateUrl.value       = d.url ?? ''
+      updateNotes.value     = d.releaseNotes ?? ''
+      updatePublished.value = d.publishedAt ?? ''
       if (d.error) updateMsg.value = d.error
     } catch { updateMsg.value = 'Could not reach the update server.' }
     finally { updateChecking.value = false }
@@ -148,6 +156,7 @@ export const useAppControlStore = defineStore('appControl', () => {
 
   return { dev, busy, message, setupRequired, worktrees, canSwitch,
            updateCurrent, updateLatest, updateAvailable, updateScope, updateChecking, updateBusy,
-           updateMsg, updateDismissed, canApplyUpdate, checkUpdate, applyUpdate, dismissUpdate,
+           updateMsg, updateDismissed, updateUrl, updateNotes, updatePublished, canApplyUpdate,
+           checkUpdate, applyUpdate, dismissUpdate,
            refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
 })

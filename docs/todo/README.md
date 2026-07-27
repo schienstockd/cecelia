@@ -54,3 +54,16 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   `pyproject.toml` + extras, editable pixi install) so external consumers (`coastal`) can
   `import cecelia.utils.*` without a `sys.path` hack. Touches `app/src/py_runner.jl` (1 line),
   19 Python imports, `pixi.toml`.
+- `WHATS_NEW_PLAN.md` — surface release notes + tips inside the app; reuses the existing
+  `/api/update/check` plumbing (only the release-notes `body` field is new). No new notification
+  surface, no in-app feedback capture (GitHub issue link instead). Supersedes
+  `docs/prompts/update-modal-prompt.md`.
+- `STATS_ANNOTATIONS_PLAN.md` — server-side hypothesis tests (Mann-Whitney / Kruskal-Wallis
+  defaults, t/ANOVA opt-in) rendered as marks inside existing Observable Plot summary charts;
+  extends `PlotDataResponse` with `comparisons?` — no new route. Sets the `StatsResult` contract
+  reused by `WHATS_NEW_PLAN.md` and `SKETCH_ENGINE_PLAN.md`. Supersedes
+  `docs/prompts/stats-on-plots-prompt.md`.
+- `SKETCH_ENGINE_PLAN.md` — the **feijoa** play repo
+  (`github.com/schienstockd/feijoa`, `~/cc-workspace/feijoa`) wired into cecelia's
+  `/sketchbook` route via a Vite alias. Rough.js + animejs; sketches are JSON. Ports the R
+  Cecelia logo as the first seed. Supersedes `docs/prompts/sketch-engine-prompt.md`.

@@ -78,6 +78,13 @@ export const useSettingsStore = defineStore('settings', () => {
   // the observer's work; Haiku is the cheap option. Sent per feedback call; the backend allow-lists it.
   // See app/src/ai/agent_runner.jl OBSERVER_MODELS.
   const labLogObserverModel = ref(localStorage.getItem('cc.labLogObserverModel') || 'sonnet')
+  // Tip of the day (WHATS_NEW_PLAN.md → W4). On app launch, if these say "show + last shown was
+  // not today", the What's New modal opens with today's tip prepended. Opt-out from a checkbox on
+  // the tip card. Default ON — biologists opening the app benefit from a nudge; power users can
+  // switch it off from the card and never see one again.
+  const tipsOnLaunch = ref(localStorage.getItem('cc.tipsOnLaunch') !== 'false')  // default true
+  const tipsLastShown = ref(localStorage.getItem('cc.tipsLastShown') ?? '')      // YYYY-MM-DD
+
   // transient (not persisted): a one-line preview of an unseen lab-log addition — set when Claude
   // (observer) or Cecelia (auto-digest) appends while the panel is closed; drives the sidebar badge,
   // cleared when opened. `kind` picks the badge icon (Claude sparkles vs Cecelia bell); `level` its
@@ -241,9 +248,11 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
   watch(labLogObserverModel,      v => localStorage.setItem('cc.labLogObserverModel',      v))
+  watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
+  watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
   watch(labLogPanelOpen, open => { if (open) {          // opening clears the badge (all facets)
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

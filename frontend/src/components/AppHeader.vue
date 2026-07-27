@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
+import { openWhatsNew } from '../lib/whatsNew'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
-const router = useRouter()
 
-// Update-available badge: surfaces the shared appControl update check app-wide (Settings owns the
-// actual control). Click → Settings → Software updates. The × dismisses for this session only
-// ("remind me later"). See docs/todo/ONBOARDING_PLAN.md (D5).
-function openUpdate() { router.push('/settings') }
+// Update-available badge → opens the What's New modal (release notes + inline Install button).
+// The modal itself is mounted ONCE in App.vue; we just flip the shared open flag. Settings still
+// hosts the Software updates panel as the durable home for the control. The × dismisses the
+// badge for this session only ("remind me later"). See docs/todo/WHATS_NEW_PLAN.md.
+function openUpdate() { openWhatsNew() }
 
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
@@ -43,7 +43,7 @@ const statusTip: Record<string, string> = {
           @click="openUpdate"
           v-tooltip.bottom="appCtl.updateScope === 'system'
             ? 'Update available — a shared installation must be updated by an administrator'
-            : `Update available — ${appCtl.updateLatest}. Open Settings to install.`">
+            : `Update available — ${appCtl.updateLatest}. See what's new.`">
       <i class="pi pi-arrow-circle-up" />
       Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
       <button class="update-x cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click.stop="appCtl.dismissUpdate()"

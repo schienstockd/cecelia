@@ -17,6 +17,9 @@ import LabLogPanel from './components/LabLogPanel.vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
+import WhatsNewDialog from './components/WhatsNewDialog.vue'
+import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
+import { todayKey } from './lib/tips'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -44,6 +47,15 @@ useLabCaptureStore().installAutoCapture()
 onMounted(async () => {
   ws.connect()
   appCtl.checkUpdate()   // surfaces the header update badge app-wide (fire-and-forget)
+
+  // Tip of the day (WHATS_NEW_PLAN.md W4). Opens the What's New modal once per day with today's
+  // tip on top. The `Don't show tips on launch` checkbox on any tip card sets tipsOnLaunch=false
+  // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
+  const today = todayKey()
+  if (settings.tipsOnLaunch && settings.tipsLastShown !== today) {
+    settings.tipsLastShown = today
+    openWhatsNew({ withTip: true })
+  }
   // Reconcile the discrete-GPU flag with the backend once at startup. The flag is a launch-time
   // decision (the bridge starts lazily on first open), so it must be right before then.
   //  - explicit user choice saved → push it, so the backend uses it even after a backend restart
@@ -107,6 +119,9 @@ const bare = computed(() => route.meta.bare === true)
     </FloatingPanel>
     <ErrorConsole />
     <Toast position="bottom-right" />
+    <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
+         State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
+    <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />
   </div>
 </template>
 
