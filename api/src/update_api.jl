@@ -5,12 +5,19 @@
 # next restart, when nothing is using the files. Apply is refused in a dev/git checkout so it can
 # never clobber source. See docs/SHIPPING.md.
 #
-# Testing knobs (env): CECELIA_VERSION overrides the reported running version;
-# CECELIA_UPDATE_INCLUDE_PRERELEASE=1 makes the check also consider prereleases.
+# Testing knobs (env): CECELIA_VERSION overrides the reported running version.
+#
+# Prereleases are treated as releases: Cecelia ships RC tags as its actual releases (the install
+# script defaults to the newest RC — see docs/SHIPPING.md), and major/stable releases are rare.
+# So the check considers ALL non-draft releases; there's no separate "stable-only" track.
 
 using Downloads
 
 const _UPDATE_REPO = "schienstockd/cecelia"
+
+# GitHub release notes come as markdown. The `releaseNotes` field is passed through raw; the
+# frontend renders it with `marked` for full GitHub-flavoured markdown parity (task lists,
+# strikethrough, tables). Julia's Markdown stdlib is incomplete for GFM so we don't use it.
 const _APP_ROOT    = abspath(joinpath(@__DIR__, "..", ".."))   # api/src → repo / install root
 
 # Running version: env override (testing) → VERSION file (written into release bundles) → "dev".
@@ -50,10 +57,9 @@ function api_version(::HTTP.Request)
 end
 
 # GET /api/update/check — compare the running version to the newest GitHub release.
-# Stable releases only, unless CECELIA_UPDATE_INCLUDE_PRERELEASE=1.
+# All non-draft releases considered (RCs are shipped as releases — see header comment).
 function api_update_check(::HTTP.Request)
     current = _running_version()
-    include_pre = lowercase(get(ENV, "CECELIA_UPDATE_INCLUDE_PRERELEASE", "")) in ("1", "true", "yes")
     releases = try
         resp = HTTP.get("https://api.github.com/repos/$_UPDATE_REPO/releases?per_page=20";
                         headers = ["Accept" => "application/vnd.github+json", "User-Agent" => "cecelia"],
@@ -63,21 +69,27 @@ function api_update_check(::HTTP.Request)
         return 200, JSON3.write((; current, latest = nothing, updateAvailable = false,
                                    error = "could not reach GitHub: $(sprint(showerror, e))"))
     end
-    best_tag = nothing; best_ver = nothing; best_url = ""
+    best_tag = nothing; best_ver = nothing; best_url = ""; best_body = ""; best_at = ""
     for r in releases
         get(r, :draft, false) === true && continue
-        (get(r, :prerelease, false) === true && !include_pre) && continue
         v = _parse_ver(String(get(r, :tag_name, "")))
         v === nothing && continue
         if best_ver === nothing || v > best_ver
-            best_ver = v; best_tag = String(r.tag_name); best_url = String(get(r, :html_url, ""))
+            best_ver  = v
+            best_tag  = String(r.tag_name)
+            best_url  = String(get(r, :html_url,      ""))
+            best_body = String(get(r, :body,          ""))
+            best_at   = String(get(r, :published_at,  ""))
         end
     end
     cur = _parse_ver(current)
     avail = best_ver !== nothing && cur !== nothing && best_ver > cur
     # scope tells the UI whether the user can apply in-app: only "user" installs self-update; a
     # "system" install shows an admin note, a "dev" checkout hides the control entirely.
+    # releaseNotes/publishedAt are shown in the What's New modal (WHATS_NEW_PLAN.md) — the older
+    # header badge/Settings surfaces ignore them.
     200, JSON3.write((; current, latest = best_tag, updateAvailable = avail, url = best_url,
+                        releaseNotes = best_body, publishedAt = best_at,
                         scope = _install_scope()))
 end
 
