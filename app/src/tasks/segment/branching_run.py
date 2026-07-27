@@ -29,6 +29,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import skan
+import skimage.feature
 import skimage.morphology
 import skimage.segmentation
 
@@ -108,9 +109,159 @@ def _spatial_from_endpoints(df: pd.DataFrame, n_spatial: int) -> np.ndarray:
     return np.median(np.stack([src, dst], axis=0), axis=0)
 
 
-def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_path: str):
+def _extract_fibre_image(im_data, dim_utils: DimUtils, fibre_channels, t_index):
+    """Max-merge the selected fibre channels for one timepoint, return as a 2D (or 3D) array.
+    `im_data` is the full multiscale level-0 array; `fibre_channels` are 0-based channel indices.
+    Mirrors the old create_branching per-timepoint channel merge (`np.maximum` accumulation)."""
+    c_idx = dim_utils.dim_idx("C")
+    # Assemble a slice tuple that (a) picks a single T if timeseries, (b) keeps Z/Y/X, and (c) will
+    # be indexed per-channel below.
+    sl = [slice(None)] * im_data.ndim
+    if dim_utils.is_timeseries() and t_index is not None:
+        sl[dim_utils.dim_idx("T")] = int(t_index)
+    merged = None
+    for c in fibre_channels:
+        sl[c_idx] = int(c)
+        band = np.squeeze(np.asarray(im_data[tuple(sl)]))
+        merged = band if merged is None else np.maximum(merged, band)
+    return merged.astype(np.float32) if merged is not None else None
+
+
+# ── Anisotropy (BRANCHING_PLAN Decision 4) ────────────────────────────────────
+# Algorithmic ancestry: Li et al., *Plant Cell* 35, 371 (2023), doi:10.1093/plcell/koac290
+# (ILEE_CSK — the local structure-tensor formulation for cytoskeleton anisotropy). This
+# reimplementation replaces the vendored ILEE_CSK with skimage.feature.structure_tensor +
+# numpy.linalg.eigh, dropping ~2000 LOC of unmaintained code (upstream last commit 2024-04-22,
+# `imp` unimportable on py3.12, live /3 bug in the 2D path).
+#
+# The output shape is deliberately compatible with the old `uns` layout so R notebooks that
+# indexed `x$ilee_coor_list[1,,,1]` etc. still read post-port outputs.
+#
+# Per timepoint (2D):
+#   coor_list        (H_boxes, W_boxes, 2)     — box centre (y, x)
+#   eigval           (H_boxes, W_boxes, 2)     — sorted ascending [λ₁, λ₂]
+#   eigvec           (H_boxes, W_boxes, 2, 2)  — eigenvectors as ROWS: eigvec[..., i, :] ↔ eigval[..., i]
+#   box_total_length (H_boxes, W_boxes)        — skeleton pixel count per box
+#   box_anisotropy   (H_boxes, W_boxes)        — (λ₂ - λ₁) / (λ₁ + λ₂), 0 if degenerate
+# 3D is the same shape family with an extra axis.
+
+def _pool_by_box(x: np.ndarray, box: int) -> np.ndarray:
+    """Mean-pool a (H, W[, D]) array into a box-grid by trimming trailing pixels and averaging
+    over box × box[× box] windows. Vectorised (reshape + mean); no numba, no loops."""
+    shp = np.asarray(x.shape)
+    trimmed = tuple(int((s // box) * box) for s in shp)
+    sl = tuple(slice(0, t) for t in trimmed)
+    y = x[sl]
+    new_shape = []
+    for s in y.shape:
+        new_shape.extend([s // box, box])
+    y = y.reshape(new_shape)
+    axes_to_mean = tuple(range(1, y.ndim, 2))
+    return y.mean(axis=axes_to_mean)
+
+
+def _box_centres(shape: tuple, box: int) -> np.ndarray:
+    """Grid of box-centre coordinates in image pixel units. shape=(H,W) → (H_boxes,W_boxes,2)."""
+    ns = tuple(s // box for s in shape)
+    axes = [np.arange(n) * box + box / 2 for n in ns]
+    grids = np.meshgrid(*axes, indexing="ij")
+    return np.stack(grids, axis=-1).astype(np.float32)
+
+
+def _anisotropy_from_tensor(box_tensor: np.ndarray):
+    """`eigh` per box on a symmetric N×N tensor field.
+    box_tensor shape (H_boxes, W_boxes[, D_boxes], N, N) → (eigval, eigvec, anisotropy)."""
+    eigval, eigvec = np.linalg.eigh(box_tensor)         # eigval sorted ascending
+    # Move numpy's eigvec layout (columns) to rows so eigvec[..., i, :] ↔ eigval[..., i] —
+    # matches the old ILEE convention the R vignettes index into.
+    eigvec = np.swapaxes(eigvec, -1, -2)
+    tr = eigval.sum(axis=-1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        aniso = np.where(tr > 0, (eigval[..., -1] - eigval[..., 0]) / tr, 0.0)
+    return eigval.astype(np.float32), eigvec.astype(np.float32), aniso.astype(np.float32)
+
+
+def _anisotropy_2d(fibre_im: np.ndarray, skeleton_bool: np.ndarray, sigma: float, box: int):
+    """Local structure tensor at scale `sigma`, mean-pooled over `box × box` windows, then
+    eigendecomposed per box. Returns the 5-tuple that mirrors ILEE_CSK's `return_box_data`."""
+    Arr, Arc, Acc = skimage.feature.structure_tensor(
+        fibre_im.astype(np.float32), sigma=sigma, mode="reflect"
+    )
+    Trr = _pool_by_box(Arr, box)
+    Trc = _pool_by_box(Arc, box)
+    Tcc = _pool_by_box(Acc, box)
+    box_tensor = np.stack(
+        [np.stack([Trr, Trc], axis=-1),
+         np.stack([Trc, Tcc], axis=-1)], axis=-2
+    )   # shape (H_b, W_b, 2, 2)
+    eigval, eigvec, aniso = _anisotropy_from_tensor(box_tensor)
+    coor_list = _box_centres(fibre_im.shape, box)
+    box_len = _pool_by_box(skeleton_bool.astype(np.float32), box) * (box * box)
+    return coor_list, eigval, eigvec, box_len.astype(np.float32), aniso
+
+
+def _anisotropy_3d(fibre_im: np.ndarray, skeleton_bool: np.ndarray, sigma: float, box: int):
+    """3D counterpart. skimage returns 6 upper-triangular elements ordered
+    `[Azz, Azy, Azx, Ayy, Ayx, Axx]`."""
+    A = skimage.feature.structure_tensor(
+        fibre_im.astype(np.float32), sigma=sigma, mode="reflect"
+    )
+    Azz, Azy, Azx, Ayy, Ayx, Axx = [_pool_by_box(a, box) for a in A]
+    box_tensor = np.stack([
+        np.stack([Azz, Azy, Azx], axis=-1),
+        np.stack([Azy, Ayy, Ayx], axis=-1),
+        np.stack([Azx, Ayx, Axx], axis=-1),
+    ], axis=-2)   # (D_b, H_b, W_b, 3, 3)
+    eigval, eigvec, aniso = _anisotropy_from_tensor(box_tensor)
+    coor_list = _box_centres(fibre_im.shape, box)
+    box_len = _pool_by_box(skeleton_bool.astype(np.float32), box) * (box ** 3)
+    return coor_list, eigval, eigvec, box_len.astype(np.float32), aniso
+
+
+def _scalar_summary(fibre_im: np.ndarray, skeleton_bool: np.ndarray,
+                    pixel_size: float, aniso_scalar: float) -> pd.DataFrame:
+    """The scalar per-image summary that used to come from `analyze_actin_{2d,3d}_standard`'s
+    first return: occupancy, cv, skewness, MF_full_length, linear_density, branching_act, aniso.
+    No `/3` bug (nothing is oversampled 3×). `Diameter_tdt`/`Diameter_sdt` are dropped; they
+    aren't consumed by any surviving vignette."""
+    binary = skeleton_bool.astype(bool)
+    on = fibre_im[binary]
+    occupancy = float(binary.mean())
+    if on.size > 1 and on.std() > 0:
+        mean_on = float(on.mean()); std_on = float(on.std())
+        cv = std_on / max(mean_on, 1e-12)
+        skewness = float(np.mean(((on - mean_on) / std_on) ** 3))
+    else:
+        cv = 0.0
+        skewness = 0.0
+    mf_full_length = float(binary.sum()) * pixel_size
+    area_or_volume = float(np.prod(fibre_im.shape)) * pixel_size ** fibre_im.ndim
+    linear_density = mf_full_length / area_or_volume if area_or_volume > 0 else 0.0
+    # branching_act: nodes with degree > 2 per unit skeleton length. Same idea as the old code.
+    if binary.any():
+        sk_obj = skan.Skeleton(binary)
+        nodes = np.concatenate([sk_obj.paths.indices, np.array([], dtype=np.int64)])
+        _, counts = np.unique(nodes, return_counts=True)
+        branching = float(np.sum(counts[counts > 2] - 2)) / mf_full_length if mf_full_length else 0.0
+    else:
+        branching = 0.0
+    return pd.DataFrame([{
+        "occupancy": occupancy,
+        "linear_density": linear_density,
+        "skewness": skewness,
+        "cv": cv,
+        "MF_full_length": mf_full_length,
+        "branching_act": branching,
+        "anisotropy": float(aniso_scalar),
+    }])
+
+
+def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_path: str,
+                       aniso_uns: dict = None):
     """Create the {vn}__branch.h5ad sidecar. Producing-task exception — direct anndata write,
-    same shape as `measure_utils._to_anndata` (docs/DATAMODEL.md 'Reading .h5ad' + CLAUDE.md)."""
+    same shape as `measure_utils._to_anndata` (docs/DATAMODEL.md 'Reading .h5ad' + CLAUDE.md).
+    Optional `aniso_uns` merges the anisotropy outputs into `uns` under the ilee_* keys the old
+    R vignettes still index into (Decision 4)."""
     n_spatial = 3 if is_3d else 2
     obsm_spatial = _spatial_from_endpoints(paths_df, n_spatial)
     obsm_temporal = (
@@ -136,6 +287,9 @@ def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_
     if obsm_temporal is not None:
         adata.obsm["temporal"] = obsm_temporal
         adata.uns["temporal_cols"] = ["centroid_t"]
+    if aniso_uns:
+        for k, v in aniso_uns.items():
+            adata.uns[k] = v
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     adata.write_h5ad(out_path)
@@ -154,6 +308,11 @@ def run(params: dict):
     post_dilation_size   = int(script_utils.get_param(params, "postDilationSize", default=2))
     use_borders          = bool(script_utils.get_param(params, "useBorders", default=False))
     flatten_branching    = bool(script_utils.get_param(params, "flattenBranching", default=False))
+    calc_anisotropy      = bool(script_utils.get_param(params, "calcAnisotropy", default=False))
+    calc_flattened       = bool(script_utils.get_param(params, "calcFlattened", default=False))
+    fibre_channels       = script_utils.get_param(params, "fibreChannels", default=[]) or []
+    st_sigma             = float(script_utils.get_param(params, "structureTensorSigma", default=2.0))
+    aniso_box_size       = int(script_utils.get_param(params, "anisotropyBoxSize", default=45))
 
     log.log(f">> open labels {labels_path}")
 
@@ -175,10 +334,20 @@ def run(params: dict):
         is_3d = False
         log.log(f"> flattened Z → shape {labels_data.shape}")
 
+    # Anisotropy needs the source image; only open it if the user asked. Merged fibre-channel image
+    # is materialised per timepoint below (max-projection over the selected channels, following the
+    # old create_branching convention).
+    im_list = None
+    if calc_anisotropy and fibre_channels:
+        im_list, _ = zarr_utils.open_as_zarr(im_path)
+        im_data = im_list[0]     # highest-res level
+
     paths_tables = []
     skeleton_frames = []      # one np.ndarray per timepoint (or one for a static image)
     n_skeletons_total = 0
     label_offset = 0
+    aniso_coor, aniso_eigval, aniso_eigvec = [], [], []
+    aniso_box_len, aniso_box_aniso, aniso_summary = [], [], []
 
     for t_index, labels_slice in _iterate_timepoints(labels_data, dim_utils):
         log.log(f"> skeletonise{'' if t_index is None else f' T={t_index}'}")
@@ -202,6 +371,25 @@ def run(params: dict):
         arr[arr > 0] += np.uint32(label_offset - n_local)
         skeleton_frames.append(arr)
         n_skeletons_total += int(df["skeleton-id"].nunique())
+
+        if calc_anisotropy and im_list is not None:
+            fibre_im = _extract_fibre_image(im_data, dim_utils, fibre_channels, t_index)
+            fibre_2d = fibre_im
+            sk_bool = skeleton_bool
+            if calc_flattened and fibre_im.ndim == 3:
+                z_axis = 0     # after squeeze/extract the leading axis is the remaining Z (see _extract)
+                fibre_2d = np.max(fibre_im, axis=z_axis)
+                sk_bool = np.max(sk_bool, axis=z_axis) if sk_bool.ndim == 3 else sk_bool
+            do_3d = fibre_2d.ndim == 3
+            coor, ev, evec, blen, ban = (
+                _anisotropy_3d(fibre_2d, sk_bool, st_sigma, aniso_box_size) if do_3d else
+                _anisotropy_2d(fibre_2d, sk_bool, st_sigma, aniso_box_size)
+            )
+            aniso_coor.append(coor); aniso_eigval.append(ev); aniso_eigvec.append(evec)
+            aniso_box_len.append(blen); aniso_box_aniso.append(ban)
+            aniso_scalar = float(ban.mean()) if ban.size else 0.0
+            pxsz = float(dim_utils.im_physical_size("x")) if hasattr(dim_utils, "im_physical_size") else 1.0
+            aniso_summary.append(_scalar_summary(fibre_2d, sk_bool, pxsz, aniso_scalar))
 
     if paths_tables:
         paths_df = pd.concat(paths_tables, axis=0, ignore_index=True)
@@ -232,8 +420,23 @@ def run(params: dict):
         squeeze=False,
     )
 
+    aniso_uns = None
+    if calc_anisotropy and aniso_coor:
+        # Stack per-timepoint arrays along a leading T axis so the R vignettes' [T, ...]
+        # indexing works whether the image was a timeseries or a single frame.
+        aniso_uns = {
+            "ilee_coor_list":        np.stack(aniso_coor, axis=0),
+            "ilee_eigval":           np.stack(aniso_eigval, axis=0),
+            "ilee_eigvec":           np.stack(aniso_eigvec, axis=0),
+            "ilee_box_total_length": np.stack(aniso_box_len, axis=0),
+            "ilee_box_anisotropy":   np.stack(aniso_box_aniso, axis=0),
+            "ilee_summary":          pd.concat(aniso_summary, axis=0, ignore_index=True)
+                                          .astype(np.float32),
+        }
+
     log.log(f"> write branch props {branch_props_out}")
-    _write_branch_h5ad(paths_df, is_3d, has_time and not flatten_branching, branch_props_out)
+    _write_branch_h5ad(paths_df, is_3d, has_time and not flatten_branching, branch_props_out,
+                       aniso_uns=aniso_uns)
 
     mean_branch_length = (
         float(paths_df["branch-distance"].mean()) if "branch-distance" in paths_df.columns and len(paths_df)

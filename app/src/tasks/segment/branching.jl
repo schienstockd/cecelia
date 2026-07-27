@@ -28,9 +28,24 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     value_name     = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
     ref_pops       = string(get(params, "refPops", "NONE"))
+    calc_anisotropy = Bool(get(params, "calcAnisotropy", false))
 
     ccid = joinpath(img._dir, "ccid.json")
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+
+    # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input).
+    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
+    ch_names = channel_names_raw isa AbstractVector ?
+               collect(String, channel_names_raw) : String[]
+    fibre_channels_raw = get(params, "fibreChannels", [])
+    fibre_indices = Int[]
+    for ch in fibre_channels_raw
+        idx = findfirst(==(String(ch)), ch_names)
+        isnothing(idx) || push!(fibre_indices, idx - 1)
+    end
+    if calc_anisotropy && isempty(fibre_indices)
+        on_log("[WARN] calcAnisotropy=true but fibreChannels resolved to []; anisotropy will not be computed.")
+    end
 
     # Resolve input image path (for physical scale — not read; scale flows via ome_xml_utils)
     filename = versioned_get_field(raw, "filepath", value_name)
@@ -95,7 +110,12 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
            preDilationSize      = Int(get(params, "preDilationSize", 2)),
            postDilationSize     = Int(get(params, "postDilationSize", 2)),
            useBorders           = Bool(get(params, "useBorders", false)),
-           flattenBranching     = Bool(get(params, "flattenBranching", false))),
+           flattenBranching     = Bool(get(params, "flattenBranching", false)),
+           calcAnisotropy       = calc_anisotropy && !isempty(fibre_indices),
+           calcFlattened        = Bool(get(params, "calcFlattened", false)),
+           fibreChannels        = fibre_indices,
+           structureTensorSigma = Float64(get(params, "structureTensorSigma", 2.0)),
+           anisotropyBoxSize    = Int(get(params, "anisotropyBoxSize", 45))),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
