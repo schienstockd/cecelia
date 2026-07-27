@@ -25,6 +25,10 @@ function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
 
+function _spec_path(::Branching)
+    joinpath(@__DIR__, "segment", "branching.json")
+end
+
 function _spec_path(::BayesianTracking)
     joinpath(@__DIR__, "tracking", "bayesian_tracking.json")
 end
@@ -125,6 +129,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.cellposeCorrect"     => CellposeCorrect(),
         "segment.cellpose"                  => CellposeSegment(),
         "segment.measureLabels"             => MeasureLabels(),
+        "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),
         "tracking.track_measures"           => TrackMeasures(),
         "tracking.bayesian_track_measures"  => CompositeTask("tracking.bayesian_track_measures"),

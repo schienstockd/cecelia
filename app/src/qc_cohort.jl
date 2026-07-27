@@ -29,6 +29,9 @@ const _COHORT_MAD0_REL = 0.5
 const COHORT_METRICS = Dict{String,Vector{String}}(
     "segment.cellpose"           => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
+    # skeleton branching per image (docs/todo/BRANCHING_PLAN.md): nBranches is the primary count;
+    # meanBranchLength flags an image whose skeleton is far more/less fragmented than its peers.
+    "segment.branching"          => ["nBranches", "meanBranchLength"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
     "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
     # clustering is set-scope (one run over all images); per-image QC records how each image's points

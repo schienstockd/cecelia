@@ -747,6 +747,30 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # so there is nothing for validate_params to reject — no test is meaningful there.
     end
 
+    # ── Dispatch + param validation — Branching (segment.branching) ──────────────
+    # docs/todo/BRANCHING_PLAN.md Phase 1. New task registers via _task_from_fun_name and
+    # validate_params rejects out-of-range dilation sizes + wrong-typed booleans.
+    @testset "Param validation — Branching" begin
+        @test _task_from_fun_name("segment.branching") isa Branching
+
+        # preDilationSize/postDilationSize: int min=0, max=10
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("preDilationSize" => 99))
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("postDilationSize" => -1))
+        # useBorders: bool — a string must be rejected
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("useBorders" => "yes"))
+
+        # Sensible defaults validate cleanly
+        @test begin
+            validate_params(Branching(), Dict{String,Any}(
+                "valueName" => "default", "outputValueName" => "stroma",
+                "preDilationSize" => 2, "postDilationSize" => 2))
+            true
+        end
+    end
+
     # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
     @testset "Param validation — ClustPops" begin
         @test _task_from_fun_name("clustPops.cluster") isa ClustPops
@@ -1104,6 +1128,45 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test r.status == "done"
         @test get(r.attr, "condition", "") == "treated"
         rm(proj.root; recursive=true)
+    end
+
+    # ── Branch labels round-trip (BRANCHING_PLAN.md Decision 6) ──────────────────
+    # Skeleton (branch) label sets live in a dedicated `branch_labels` field, NOT in the generic
+    # `labels` dict, so the labels/measure/tracking pickers never see branch labels. Guards: the
+    # field survives save!/init_object, its accessor resolves the disk path from branchLabels/,
+    # and a legacy ccid.json without the key still loads (defaults to empty).
+    @testset "Branch labels round-trip" begin
+        proj = create_project!(name="branch-rt-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        @test isempty(img.branch_labels)
+        img.branch_labels["stroma"] = ["stroma.zarr"]
+        save!(img)
+        r = init_object(proj.uid, img.uid)
+        @test r isa CciaImage
+        @test r.branch_labels["stroma"] == ["stroma.zarr"]
+        @test img_branch_labels_dir(r) == joinpath(r._dir, "branchLabels")
+        @test img_branch_labels_path(r, "stroma") == joinpath(r._dir, "branchLabels", "stroma.zarr")
+        # unregistered value_name falls back to {value_name}.zarr (write path)
+        @test img_branch_labels_path(r, "shg") == joinpath(r._dir, "branchLabels", "shg.zarr")
+
+        # legacy ccid.json (no branch_labels key) → empty
+        ccid = joinpath(r._dir, "ccid.json")
+        raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+        delete!(raw, "branch_labels")
+        open(ccid, "w") do io; JSON3.write(io, raw); end
+        legacy = init_object(proj.uid, img.uid)
+        @test isempty(legacy.branch_labels)
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Reserved value_name suffixes ─────────────────────────────────────────────
+    # __tracks and __branch are companion-table markers, not legal user segmentation names.
+    @testset "Reserved value_name suffixes" begin
+        @test  is_reserved_value_name("stroma__tracks")
+        @test  is_reserved_value_name("stroma__branch")
+        @test !is_reserved_value_name("stroma")
+        @test !is_reserved_value_name("stroma.branch")   # dot-suffix is the old R convention; not reserved
     end
 
     # ── Include/exclude (+ note) round-trip ──────────────────────────────────────
