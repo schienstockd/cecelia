@@ -17,7 +17,8 @@ import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import CcToggle from '../CcToggle.vue'
@@ -168,6 +169,14 @@ const groupByOpts = computed<string[]>(() => {
   return [...new Set([...hints, ...discovered])]
 })
 const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => (props.ui.groupBy = v) })
+
+// ── Compare groups (between-group hypothesis test) ────────────────────────────────
+// Only meaningful for chart types where between-series comparison reads (bar, boxplot, points,
+// violin, strip). The controls live on the shared PlotOptions panel (pop-manager rail) so a Global
+// scope applies to every plot on the canvas; here we just READ vis.stats* to shape the request body
+// and the render flags. Off by default (see defaultVis).
+const STATS_CHARTS = new Set<ChartType>(['bar', 'boxplot', 'violin', 'strip'])
+const canCompareGroups = computed(() => STATS_CHARTS.has(chartType.value))
 // drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
 // Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
 // list during an async reload would wipe a valid selection (e.g. per-timepoint `t`) and it'd "cycle".
@@ -355,6 +364,8 @@ async function fetchData() {
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+        ...(vis.value.statsEnabled && canCompareGroups.value
+              ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
       }
       applyImageSelector(body)
       const res = await fetch('/api/plot_data', {
@@ -385,7 +396,8 @@ watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
-       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken],
+       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
+       () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto'],
       scheduleFetch)
 onMounted(scheduleFetch)
 
@@ -405,7 +417,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
   nonNegative: true,               // the measures plotted here are non-negative
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
-  ...vis.value,                    // logScale, legend, pointSize, pointOpacity
+  ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
 }))
 
@@ -423,7 +435,20 @@ function exportAs(kind: string) {
   if (kind === 'csv') {
     exporting.value = true
     fetchRawCsv().then(csv => {
-      if (csv) downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
+      // When stats are also computed for this plot, deliver BOTH files as one `{stem}.zip`
+      // (raw + `.stats.csv` sibling) — a single download, cleanly named. When there's no
+      // stats sidecar, deliver a plain `.csv`. See STATS_ANNOTATIONS_PLAN.md → D7.
+      const statsCsv = result.value ? plotStatsToCsv(result.value) : ''
+      if (csv && statsCsv) {
+        downloadBlob(`${stem}.zip`, zipTextFiles([
+          { name: `${stem}.csv`, text: csv },
+          { name: `${stem}.stats.csv`, text: statsCsv },
+        ]))
+      } else if (csv) {
+        downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
+      } else if (statsCsv) {
+        downloadBlob(`${stem}.stats.csv`, new Blob([statsCsv], { type: 'text/csv' }))
+      }
     }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
     exporting.value = true
@@ -468,6 +493,10 @@ async function fetchRawCsv(): Promise<string | null> {
 }
 // raw per-datapoint CSV string — for the board zip export and the PDF attachment (data → Prism)
 function getCsv(): Promise<string | null> { return fetchRawCsv() }
+// stats CSV string (or null/empty when no `comparisons` on the current result). Used by the board
+// zip export to add a sibling `{plot}.stats.csv` alongside `{plot}.csv`. See STATS_ANNOTATIONS_PLAN
+// D7. Sync — reads what's already in memory, no extra request needed.
+function getStatsCsv(): string { return result.value ? plotStatsToCsv(result.value) : '' }
 // a filename hint describing which measure(s)/axes this plot shows — appended to the board CSV export
 // filename so two same-type plots (e.g. two "Track measures" boxplots) are distinguishable by their
 // axis, not just "Board_1_Track_measures". Mirrors the single-panel export stem (`spec.id_measure`):
@@ -489,7 +518,7 @@ async function exportSvg(): Promise<string | null> {
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
-defineExpose({ getCsv, csvName, exportImage, exportSvg })
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
 </script>
 
 <template>

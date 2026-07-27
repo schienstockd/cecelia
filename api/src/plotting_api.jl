@@ -17,6 +17,35 @@ _json_safe(x::AbstractVector) = Any[_json_safe(v) for v in x]
 _json_safe(x::AbstractFloat) = isfinite(x) ? x : nothing
 _json_safe(x) = x
 
+# Fold a completed stats compute into the day's `[Cecelia]` digest via `record_stats_event!`
+# (docs/ai-assist/LAB-LOG.md). Best-effort: a lab-log failure never disrupts the plot response. The
+# in-file sig-dedup means re-fetches of the same comparison during a session fold into ONE bullet —
+# so this call is safe to fire on every stats-bearing response.
+function _record_stats_event(project_uid::AbstractString, result::AbstractDict)
+    haskey(result, "comparisons") || return
+    cmp = result["comparisons"]
+    cmp isa AbstractDict || return
+    groups = get(cmp, :groups, get(cmp, "groups", String[]))
+    isempty(groups) && return
+    p   = try Float64(get(cmp, :p_value, get(cmp, "p_value", NaN))) catch; NaN end
+    isfinite(p) || return
+    test = String(get(cmp, :test, get(cmp, "test", "")))
+    note = String(get(cmp, :method_note, get(cmp, "method_note", "")))
+    sig  = String(get(cmp, :significance, get(cmp, "significance", "")))
+    chart = String(get(result, "chartType", ""))
+    measure = String(get(result, "measure", ""))
+    grp_labels = String[String(g) for g in groups]
+    method = isempty(note) ? test : note
+    pfmt = p < 0.001 ? "p < 0.001" : "p = " * replace(string(round(p; sigdigits = 3)), r"0+$" => "")
+    line = "Stats: $method on $measure ($(join(grp_labels, ", "))): $pfmt $sig" |> strip
+    key  = string(chart, "|", measure, "|", test, "|", join(grp_labels, ","), "|", round(p; sigdigits = 4))
+    proj = try load_project(String(project_uid)) catch; nothing end
+    proj === nothing && return
+    try record_stats_event!(proj, key, line) catch e
+        @warn "record_stats_event! failed" exception=e
+    end
+end
+
 # ── GET /api/plots/definitions[?module=X] — the plot-type registry ────────────────
 # Flat list of plot specs (each carries its own `module`); the frontend groups by module and
 # filters the per-module vs universal canvas. Optional `module` query narrows server-side.
@@ -224,6 +253,16 @@ function api_plot_data(body_bytes::Vector{UInt8})
                   ga_v isa AbstractVector ? String[string(a) for a in ga_v if !isempty(string(a))] :
                   String[]
 
+    # Between-group hypothesis tests (STATS_ANNOTATIONS_PLAN.md). When enabled, `plot_summary_data`
+    # attaches a `comparisons` field to the response with the StatsResult. `test="auto"` picks
+    # Mann-Whitney (2 groups) or Kruskal-Wallis (>2); other values must match the allow-list below.
+    stats_v         = get(body, "stats", nothing)
+    stats_enabled   = stats_v isa AbstractDict && Bool(get(stats_v, "enabled", false))
+    stats_test_str  = stats_v isa AbstractDict ? string(get(stats_v, "test", "auto")) : "auto"
+    stats_test_str in ("auto","ttest","mannwhitney","anova","kruskal") ||
+        return _gerr(400, "stats.test must be one of auto|ttest|mannwhitney|anova|kruskal")
+    stats_test      = Symbol(stats_test_str)
+
     gran in (:cell, :track) || return _gerr(400, "granularity must be cell or track")
     scope in (:per_image, :summarised) || return _gerr(400, "scope must be per_image or summarised")
     stat_unit in (:individual, :image) || return _gerr(400, "statUnit must be individual or image")
@@ -272,14 +311,17 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                                  attr_map = attr_map, cluster_suffix = cluster_suffix) :
+                                  attr_map = attr_map, cluster_suffix = cluster_suffix,
+                                  stats_enabled = stats_enabled, stats_test = stats_test) :
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
                                   nbins = nbins, normalize = normalize, group_by = group_by,
                                   collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                                  attr_map = attr_map)
+                                  attr_map = attr_map,
+                                  stats_enabled = stats_enabled, stats_test = stats_test)
+            stats_enabled && _record_stats_event(proj, result)
             return 200, JSON3.write(_json_safe(result))
         end
         # single image
@@ -295,12 +337,15 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                              cluster_suffix = cluster_suffix) :
+                              cluster_suffix = cluster_suffix,
+                              stats_enabled = stats_enabled, stats_test = stats_test) :
             plot_summary_data(img, pop_type, targets, chart;
                               granularity = gran, measure = measure, nbins = nbins,
                               normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
-                              separator = separator, zscore = zscore, matrix_normalize = matrix_normalize)
+                              separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
+                              stats_enabled = stats_enabled, stats_test = stats_test)
+        stats_enabled && _record_stats_event(proj, result)
         return 200, JSON3.write(_json_safe(result))
     catch e
         return _gerr(400, sprint(showerror, e))

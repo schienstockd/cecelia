@@ -31,7 +31,7 @@ export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
-export capture_context!, CONTEXT_AUTHOR
+export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
@@ -140,6 +140,7 @@ include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
 include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("plotting/plot_data.jl")
+include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
 include("model/set.jl")

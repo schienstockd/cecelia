@@ -15,7 +15,7 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell } from './types'
+import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -96,6 +96,13 @@ export interface VisProps {
   // heatmap (profile) look — ports the old R heat plots (behaviourDTx.Rmd / plotHeatmaps.R)
   heatmapScale?: 'minmax' | 'zscore'         // per-feature min-max→[0,1] (viridis, R default) vs z-score (diverging)
   heatmapValues?: boolean                    // print the value in each cell (default off for profile, matches R)
+  // Between-group hypothesis test — one setting shared by every plot (governed by the pop-manager
+  // scope, like the other VisProps). Only takes effect on bar/boxplot/violin/strip (see canCompareGroups).
+  statsEnabled?: boolean                     // default false — off unless the user opts in
+  statsTest?: 'auto' | 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'   // default 'auto'
+  statsShowNs?: boolean                      // default false — non-significant brackets are noise; opt in to show them
+  statsUseStars?: boolean                    // default false — swap `p = 0.003` for the star ladder when true
+  statsUseLetters?: boolean                  // default false — render Compact Letter Display (one letter per group) INSTEAD of pairwise brackets
 }
 // Colour range for a categorical axis of `n` levels from the chosen palette (R adjustColors). Returns
 // an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
@@ -122,6 +129,7 @@ export const defaultVis = (): VisProps => ({
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
+  statsEnabled: false, statsTest: 'auto', statsShowNs: false, statsUseStars: false, statsUseLetters: false,
 })
 
 export interface BuildOpts extends VisProps {
@@ -611,6 +619,158 @@ function seriesIndex(r: PlotDataResponse, keyOf: (s: PlotSeries) => string, face
   return { labels, idx }
 }
 
+// ── Stats annotations (docs/todo/STATS_ANNOTATIONS_PLAN.md → S0) ─────────────────
+//
+// Prism-parity brackets + `p = 0.003` labels above data. Server ships `r.comparisons`; we
+// map each server label → chart X position via the same series → key derivation the server
+// used (grp || sid || uid) and produce a stack of horizontal-rule + text marks.
+// Rotated (horizontal) charts are not yet supported — brackets skip in that mode.
+
+const STATS_TEXT_SIZE = 12
+const STATS_HEADROOM = 0.05    // first bracket sits at extent.max + 5% of extent
+const STATS_STACK_GAP = 0.05   // stacked brackets step by 5% of extent
+const STATS_TEXT_DY   = -6     // text just above the bracket line
+
+/**
+ * Server-side stats labels for a full series set — mirrors `_stats_labels` in plot_data.jl.
+ * Joins only the dims that vary (uid / seg / path / grp) with " · ", matching frontend keyFor.
+ * Must be computed over the whole series set (not per-series in isolation) because "which dims
+ * vary" is a set-level property.
+ */
+function serverStatsLabels(series: PlotSeries[]): Map<PlotSeries, string> {
+  const out = new Map<PlotSeries, string>()
+  if (series.length === 0) return out
+  const uids  = new Set(series.map(s => String(s.uID ?? '')))
+  const vns   = new Set(series.map(s => String(s.value_name ?? '')))
+  const paths = new Set(series.map(s => pathOf(s)))
+  const grps  = new Set(series.map(s => String(s.group ?? '')))
+  const dUid  = uids.size > 1
+  const dSeg  = vns.size > 1
+  const dPath = paths.size > 1
+  const dGrp  = grps.size > 1
+  for (const s of series) {
+    const parts: string[] = []
+    if (dUid)  parts.push(String(s.uID ?? ''))
+    if (dSeg)  parts.push(String(s.value_name ?? ''))
+    if (dPath) parts.push(pathOf(s))
+    if (dGrp)  parts.push(String(s.group ?? ''))
+    if (parts.length > 0) { out.set(s, parts.join(' · ')); continue }
+    // No dims varied: fall back to server's sid convention (`vn * pop` when pop starts with '/').
+    const pop = String(s.pop ?? '')
+    const sid = (s.value_name && pop.startsWith('/')) ? `${s.value_name}${pop}` : pop
+    out.set(s, sid || String(s.uID ?? ''))
+  }
+  return out
+}
+
+/** Format a p-value for the bracket label. GP-style, three sig figs; `p < 0.001` when smaller. */
+function formatPValue(p: number): string {
+  if (!Number.isFinite(p)) return ''
+  if (p < 0.001) return 'p < 0.001'
+  const s = p.toPrecision(3).replace(/\.?0+$/, '')
+  return `p = ${s}`
+}
+
+/** Pairs to show — expand a 2-group omnibus into a single implicit pair when the server didn't. */
+function pairsFor(cmp: ComparisonsResult): StatsComparisonPair[] {
+  if (cmp.comparisonPairs && cmp.comparisonPairs.length > 0) return cmp.comparisonPairs
+  if (cmp.groups && cmp.groups.length === 2) {
+    return [{ a: cmp.groups[0], b: cmp.groups[1], pAdj: cmp.pValue, significance: cmp.significance }]
+  }
+  return []
+}
+
+/**
+ * Build Plot marks for the statistical brackets. Renders horizontally (bracket over the measure-Y
+ * axis) by default and vertically (bracket over the measure-X axis) when `o.rotate` is on. When
+ * `opts.useLetters` is set, renders a Compact Letter Display (ONE letter per group, near the
+ * measure-axis edge) INSTEAD of the pairwise-bracket stack — replaces the O(N²) stack that gets
+ * unreadable past ~4 groups. Returns [] when no marks would render or when server labels don't
+ * map to chart positions.
+ */
+function statsBracketMarks(
+  Plot: PlotModule,
+  r: PlotDataResponse,
+  keyOf: (s: PlotSeries) => string,
+  o: BuildOpts,
+  opts: { showNs: boolean; useStars: boolean; useLetters: boolean },
+): unknown[] {
+  const cmp = r.comparisons
+  if (!cmp) return []
+  const extent = measureExtent(r)
+  if (!extent) return []
+  const { idx } = seriesIndex(r, keyOf, o.facet)
+  const labelBySeries = serverStatsLabels(r.series)
+  const posByLabel = new Map<string, number>()
+  for (const label of cmp.groups) {
+    const s = r.series.find(ss => labelBySeries.get(ss) === label)
+    if (!s) continue
+    const p = idx.get(keyOf(s))
+    if (p !== undefined) posByLabel.set(label, p)
+  }
+  const ink = o.darkTheme ? '#e6e6e6' : '#111'
+
+  // ── Compact Letter Display branch ───────────────────────────────────────────
+  // One letter (or letter cluster) per group at the measure-axis edge. Group N's letters come from
+  // `cmp.letters[N]` — a set of 2-group brackets simply drops through to the bracket branch below
+  // when letters are empty (the omnibus already IS the answer for 2 groups).
+  if (opts.useLetters && cmp.letters && cmp.letters.some(l => l.length > 0)) {
+    const ext = Math.max(1e-9, extent.max - extent.min)
+    const m = extent.max + ext * STATS_HEADROOM
+    const marks: unknown[] = []
+    cmp.groups.forEach((label, k) => {
+      const pos = posByLabel.get(label)
+      const letter = cmp.letters![k] ?? ''
+      if (pos === undefined || letter === '') return
+      if (o.rotate) {
+        marks.push(Plot.text([{ x: m, y: pos, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: 8,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+      } else {
+        marks.push(Plot.text([{ x: pos, y: m, label: letter }],
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', dy: STATS_TEXT_DY,
+                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+      }
+    })
+    return marks
+  }
+
+  const shown = pairsFor(cmp)
+    .filter(p => posByLabel.has(p.a) && posByLabel.has(p.b))
+    .filter(p => opts.showNs || p.significance !== 'ns')
+    // closest pairs at the bottom of the stack; wider spans stack above
+    .sort((a, b) =>
+      Math.abs(posByLabel.get(a.a)! - posByLabel.get(a.b)!) -
+      Math.abs(posByLabel.get(b.a)! - posByLabel.get(b.b)!))
+  if (shown.length === 0) return []
+
+  const ext = Math.max(1e-9, extent.max - extent.min)
+  const start = extent.max + ext * STATS_HEADROOM
+  const step  = ext * STATS_STACK_GAP
+  const marks: unknown[] = []
+  shown.forEach((p, i) => {
+    const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
+    const [p1, p2] = lo < hi ? [lo, hi] : [hi, lo]
+    const m = start + i * step        // measure-axis coordinate for this row of the stack
+    const label = opts.useStars ? p.significance : formatPValue(p.pAdj)
+    if (o.rotate) {
+      // rotated (horizontal chart): pos=Y, meas=X → bracket is a VERTICAL rule at x=m spanning y=[p1,p2]
+      marks.push(Plot.ruleX([m], { y1: p1, y2: p2, stroke: ink, strokeWidth: 1 }))
+      marks.push(Plot.text([{ x: m, y: (p1 + p2) / 2, label }],
+                           { x: 'x', y: 'y', text: 'label',
+                             textAnchor: 'middle', dx: 6, dy: 0,
+                             fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink, rotate: -90 }))
+    } else {
+      marks.push(Plot.ruleY([m], { x1: p1, x2: p2, stroke: ink, strokeWidth: 1 }))
+      marks.push(Plot.text([{ x: (p1 + p2) / 2, y: m, label }],
+                           { x: 'x', y: 'y', text: 'label',
+                             textAnchor: 'middle', dy: STATS_TEXT_DY,
+                             fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+    }
+  })
+  return marks
+}
+
 // shared x-axis config for distribution charts: a linear scale with one tick per series, labelled by
 // the series key (horizontal labels — no diagonal text). In FACET mode x is hidden + centred (the
 // series label becomes the facet (`fx`) header instead).
@@ -713,6 +873,8 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const f = fxCh(o), a = axM(o)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // spans the position axis (caps, baseline)
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -723,6 +885,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       RulePos(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'lo', stroke: 'currentColor', ...f }),   // lower cap
       RulePos(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'hi', stroke: 'currentColor', ...f }),   // upper cap
       RulePos([0], { stroke: 'currentColor' }),
+      ...statsMarks,
     ],
   }
 }
@@ -751,6 +914,8 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   const ptFill = o.colorData ? 'series' : 'currentColor'
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // whisker spans the measure axis
   const RulePos = o.rotate ? Plot.ruleX : Plot.ruleY    // median tick spans the position axis
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -766,6 +931,7 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                                         stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                                         fillOpacity: o.pointOpacity, ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
+      ...statsMarks,
     ],
   }
 }
@@ -786,6 +952,8 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   // density ribbon runs ACROSS the position axis at each measure value; rotate swaps area/line family.
   const Area = o.rotate ? Plot.areaY : Plot.areaX
   const Line = o.rotate ? Plot.lineY : Plot.lineX
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -795,6 +963,7 @@ function violin(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                    z: 'series', curve: 'basis', ...f }),
       Line(rows, { [a.meas]: 'value', [a.pos]: 'xlo', z: 'series', stroke: 'currentColor', strokeWidth: 0.6, curve: 'basis', ...f }),
       Line(rows, { [a.meas]: 'value', [a.pos]: 'xhi', z: 'series', stroke: 'currentColor', strokeWidth: 0.6, curve: 'basis', ...f }),
+      ...statsMarks,
     ],
   }
 }
@@ -812,6 +981,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   if (!rows.length) return null
   const a = axM(o)
+  const statsMarks = statsBracketMarks(Plot, r, keyOf, o,
+    { showNs: !!o.statsShowNs, useStars: !!o.statsUseStars, useLetters: !!o.statsUseLetters })
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
@@ -821,6 +992,7 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                        // themed outline so whitish series colours read on the white PDF / light ground
                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                        fillOpacity: o.pointOpacity, ...fxCh(o) }),
+      ...statsMarks,
     ],
   }
 }
@@ -880,4 +1052,52 @@ export function plotDataToCsv(r: PlotDataResponse): string {
     }
     default: return ''
   }
+}
+
+// ── stats CSV: separate sidecar per plot (docs/todo/STATS_ANNOTATIONS_PLAN.md → S7) ─────
+//
+// A companion to `plotDataToCsv`, NOT a replacement — the raw-datapoint CSV stays Prism-clean.
+// This one carries what you'd write into a figure legend / methods section: the test, the per-
+// group summary, the omnibus outcome, and the Bonferroni-adjusted pairwise pairs.
+//
+// Structure: three CSV blocks with self-contained headers, separated by blank lines and
+// `# <block name>` comments. Any spreadsheet opens it; any CSV parser with `comment='#'`
+// (pandas.read_csv, R's read.csv skip=…) reads each block cleanly.
+export function plotStatsToCsv(r: PlotDataResponse): string {
+  const cmp = r.comparisons
+  if (!cmp) return ''
+  const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+  const num = (n: number | undefined | null): string =>
+    (n == null || !Number.isFinite(n)) ? '' : String(n)
+  const row = (cols: unknown[]) => cols.map(esc).join(',')
+  const lines: string[] = []
+  lines.push('# Cecelia — between-group hypothesis test')
+  lines.push(`# Chart: ${r.chartType}${r.measure ? ` / ${r.measure}` : ''}`)
+  lines.push(`# Test: ${cmp.methodNote || cmp.test}`)
+  lines.push(`# Groups: ${cmp.groups?.length ?? 0}`)
+  lines.push('')
+  // block 1 — per-group summary (+ CLD letter when the server produced one)
+  const hasLetters = !!cmp.letters && cmp.letters.some(l => (l ?? '').length > 0)
+  lines.push('# Group summary')
+  lines.push(hasLetters ? 'name,n,mean,median,letter' : 'name,n,mean,median')
+  for (let i = 0; i < cmp.groups.length; i++) {
+    const cols: unknown[] = [cmp.groups[i], cmp.n?.[i] ?? '', num(cmp.means?.[i]), num(cmp.medians?.[i])]
+    if (hasLetters) cols.push(cmp.letters?.[i] ?? '')
+    lines.push(row(cols))
+  }
+  lines.push('')
+  // block 2 — omnibus outcome (statistic, p, significance ladder)
+  lines.push('# Omnibus')
+  lines.push('statistic,p_value,significance')
+  lines.push(row([num(cmp.statistic), num(cmp.pValue), cmp.significance ?? '']))
+  // block 3 — pairwise (only when the omnibus split into pairs; 2-group tests skip this block)
+  if (cmp.comparisonPairs && cmp.comparisonPairs.length > 0) {
+    lines.push('')
+    lines.push('# Pairwise (Bonferroni-adjusted)')
+    lines.push('a,b,p_adj,significance')
+    for (const p of cmp.comparisonPairs) {
+      lines.push(row([p.a, p.b, num(p.pAdj), p.significance ?? '']))
+    }
+  }
+  return lines.join('\n')
 }

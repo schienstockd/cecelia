@@ -37,6 +37,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 
 <template>
   <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked"
+                        :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <div v-if="!total" class="pm-empty cc-muted">No populations in the selected segmentations.</div>
     <template v-for="grp in groups" :key="grp.valueName">

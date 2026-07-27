@@ -11,6 +11,7 @@ import { ref, computed, onMounted, onBeforeUnmount, useTemplateRef, watch, useSl
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
+import CcCycleButton, { type CycleOption } from '../CcCycleButton.vue'
 
 const props = withDefaults(defineProps<{
   index: number
@@ -39,9 +40,21 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: [] }>()
 
 const collapsed = ref(false)
-// pin the auto-hide controls open (local like `collapsed` — a transient chrome preference, not a
-// persisted plot option). Only meaningful when autoHide is on and there are controls to reveal.
-const pinned = ref(false)
+// 3-state chrome-visibility toggle for the auto-hide controls (local like `collapsed` — a
+// transient chrome preference, not a persisted plot option). Only meaningful when autoHide is on
+// and there are controls to reveal.
+//   auto    — default; controls hidden, revealed on panel hover
+//   visible — pinned open; controls always shown
+//   hidden  — controls never shown, hover doesn't reveal them either (screenshot mode)
+// Rendered as a `CcCycleButton` — a generic N-state icon-button primitive; the two extremes
+// suppress the hover reveal via distinct classes on the root (see style.css →
+// `.controls-pinned` / `.controls-hidden`).
+const chromeMode = ref<'auto' | 'visible' | 'hidden'>('auto')
+const CHROME_OPTIONS: CycleOption[] = [
+  { value: 'auto',    icon: 'pi pi-thumbtack', tip: 'Controls: auto (hover to show)' },
+  { value: 'visible', icon: 'pi pi-thumbtack', tip: 'Controls: always visible', on: true },
+  { value: 'hidden',  icon: 'pi pi-eye-slash', tip: 'Controls: always hidden' },
+]
 const slots = useSlots()
 const hasControls = computed(() => !!slots.actions || !!slots.footer)
 const root = useTemplateRef<HTMLElement>('root')
@@ -88,7 +101,9 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 </script>
 
 <template>
-  <div ref="root" class="panel" :class="{ active, collapsed, docked, 'controls-pinned': pinned }"
+  <div ref="root" class="panel" :class="{ active, collapsed, docked,
+                                          'controls-pinned': chromeMode === 'visible',
+                                          'controls-hidden': chromeMode === 'hidden' }"
        :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">
     <!-- title row: the WHOLE row drags (like PopulationManager); buttons stop the drag -->
     <div class="panel-head" @mousedown.prevent="docked || startDrag($event)"
@@ -98,13 +113,11 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
              v-tooltip.bottom="'Drag to move / swap'" @mousedown.stop @click.stop /><!--
         --><span class="panel-title-txt">{{ title }}</span></span>
       <span class="panel-spacer" />
-      <!-- pin the auto-hiding controls open (next to the drag icon). Only when there ARE controls
-           to reveal and auto-hide is active. -->
-      <button v-if="autoHide && hasControls && !collapsed" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on': pinned }"
-              v-tooltip.bottom="pinned ? 'Auto-hide controls (show on hover)' : 'Keep controls visible'"
-              @mousedown.stop @click.stop="pinned = !pinned">
-        <i class="pi pi-thumbtack" />
-      </button>
+      <!-- 3-state cycle: auto (default, hover to show) → always visible → always hidden. Only
+           renders when there ARE controls to reveal and auto-hide is active. -->
+      <CcCycleButton v-if="autoHide && hasControls && !collapsed"
+                     class="panel-btn" v-model="chromeMode" :options="CHROME_OPTIONS"
+                     @mousedown.stop />
       <button v-if="!docked" class="panel-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
               @mousedown.stop @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />

@@ -45,8 +45,10 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
      Dunn / Tukey deferred until requested.
    - Significance display: `ns / * / ** / *** / ****` from the adjusted p.
 2. **Where compute lives**: `app/src/plotting/stats.jl` — small pure module,
-   `run_stats(groups::Dict{String,Vector{Float64}}; test::Symbol=:auto) → StatsResult`. Imported
-   from `plot_data.jl` only when the request opts in.
+   `run_stats(groups; test::Symbol=:auto) → StatsResult`, where `groups` is any iterable of
+   `label => values` pairs (Vector, tuple, or `AbstractDict`). Plain `Dict` iteration order is
+   implementation-defined, so callers that need a stable order pass a `Vector{<:Pair}` or an
+   `OrderedDict`. Imported from `plot_data.jl` only when the request opts in.
 3. **Contract — `StatsResult` JSON** (locked; consumed by Plans 1 & 3):
    ```jsonc
    {
@@ -63,31 +65,67 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
    }
    ```
 4. **Extend `POST /api/plot_data`, don't add a route.** Request adds an optional
-   `stats: { enabled: bool, test: "auto"|"ttest"|"mannwhitney"|"anova"|"kruskal", showNs?: bool }`;
-   response adds an optional `comparisons: StatsResult`.
+   `stats: { enabled: bool, test?: "auto"|"ttest"|"mannwhitney"|"anova"|"kruskal" }`; response
+   adds an optional `comparisons: StatsResult`. `showNs` and `useStars` are purely client-side
+   rendering flags (not server input) — the server always returns the full result and the
+   frontend decides what to draw.
 5. **Rendering = Plot marks, not SVG overlay.** Extend `buildPlotOptions` in `plot.ts` to append
    bracket rules + text marks when `r.comparisons` is present. The existing PlotChart SVG export
    picks them up automatically (no changes to `PlotChart.vue`).
 6. **UI**: a "Compare groups" collapsible in `SummaryPanel.vue` — test dropdown + on/off toggle +
    "show `ns`" toggle. State via `useViewState` in the panel's bag; NOT in the pop manager.
-7. **CSV**: extend `plotDataToCsv` with a leading `# Stats: …` block when `comparisons` present.
-   Cover in `plotCsv.test.ts`.
+7. **CSV**: keep the existing points CSV pristine (per-datapoint, Prism-loadable). Ship the
+   stats as a **separate** `{name}.stats.csv` sibling — one row per pairwise comparison, with a
+   short header block (test, method note, n per group). New helper
+   `plotStatsToCsv(r: PlotDataResponse)` in `frontend/src/plots/plot.ts`; board export writes one
+   `.stats.csv` per plot that has `comparisons` (nothing when a plot has no stats). Cover in
+   `plotCsv.test.ts`.
 8. **Lab log** on compute: one `[Cecelia]` line via `lab_log.jl` (mirrors the cohort-check
    pattern in `CohortCheckButton.vue`). Not per-image QC.
-9. **Clutter control**: hide non-significant brackets by default; the `showNs` toggle reveals them.
+9. **Clutter control**: `ns` brackets **shown by default** (matches Prism, per S0 audit). Users
+   can toggle `showNs=false` to hide them; when many groups clutter the chart, Compact Letter
+   Display would help but is deferred (see S0-6).
 10. **QC exemption comment** in `stats.jl`: "no `write_qc` — cross-series, ephemeral, no value_name".
 
 ## Phases (independently shippable)
 
-- **S0 — Prism-parity audit (do this first).** Biologists know Prism. Before writing test code,
-  screenshot / list what Prism does for the four plot kinds we render (bar + SEM, box, violin,
-  scatter): bracket placement, star vs `p =` text, offset from top of highest bar/whisker, "ns"
-  behaviour, colour, multi-comparison layout (stacked brackets vs sloped). Pick the closest
-  Prism-alike as our default for each. Deliverable: a short list of decisions ("brackets black,
-  1px, `p = 0.003 **` centred, positioned at 1.05× tallest whisker per pair") that S3's marks
-  builder implements verbatim. Also cross-check: does the current bar/box/violin/scatter cover
-  everything Prism does that biologists reach for, or is there a chart type we don't render yet
-  that we'd need? If yes, note it — but stats annotation still lands only on what we render.
+- **S0 — Prism-parity audit (done; decisions locked).** Sources: GraphPad Prism 10/11 docs
+  (Pairwise Comparisons, Decimal formatting of P values, FAQ 978, Compact Letter Display, How to
+  report P values in journals) and the `ggprism` R theme that mirrors Prism's defaults.
+  Findings — Prism's annotation layer is chart-type-agnostic (same brackets on bar+SEM / box /
+  violin / column-scatter), so ONE renderer covers all four. Locked defaults for cecelia's marks
+  builder:
+
+  1. **Star ladder** (GP-style, default): `ns` / `*` / `**` / `***` / `****` at
+     p > 0.05 / ≤ 0.05 / ≤ 0.01 / ≤ 0.001 / ≤ 0.0001. NEJM/APA styles cap at three stars —
+     expose as a future toggle if asked; default GP.
+  2. **Bracket geometry**: squared bracket (horizontal line with short vertical drops), **1 pt
+     black** stroke, anchored on each group's **X-centre** (bar centre / box centre / violin
+     centre / column centre — NOT whisker tip).
+  3. **Placement**: first bracket sits ~5 % of plot height above the tallest data element
+     (bar+error, whisker top, violin extreme, or point) in the compared pair. Stacked brackets
+     use a vertical gap of ~4 % of plot height (≈ 1.5 × the annotation text height).
+  4. **Text**: sans-serif **bold ~14 pt**, black, centred above the bracket on a single line.
+     **Numeric-p default** (`p = 0.003`) — GP style, three-significant-figure format;
+     `p < 0.001` when the value rounds below that. Journals want p-values; stars without a legend
+     are confusing. Asterisks (`**`) are opt-in via the stats config (`useStars=true`). Prism
+     itself doesn't ship the `p = 0.003 **` combo — either numeric OR stars, not both.
+  5. **`ns` visibility**: shown by default. Provide a "hide non-significant" toggle in the stats
+     config with a p-cutoff field (`hideNsAbove: 0.05` by convention).
+  6. **Multi-group layout**: stack brackets vertically — no sloped / tree / nested lines. No
+     auto-optimiser: order pairs by ascending span (closest pairs first, widest at the top). For
+     "many groups" (n ≥ 5) the clutter gets brutal — Prism's own recommendation is Compact Letter
+     Display (letters `a`/`b`/`ab` above each group). CLD is **deferred** to a later phase
+     (STATS_ANNOTATIONS_PLAN doesn't include CLD in v1).
+  7. **Test-name annotation on the chart**: **NO**. Prism omits it and pushes the test identity
+     into the figure legend / methods section. Match that. Method note reaches the user via the
+     CSV comment lines (S5) and the `[Cecelia]` lab-log entry (S6), not the plot itself.
+  8. **Colour**: black lines, black text. Do NOT tint by `--cc-*` tokens — Prism's convention is
+     black-on-white for the annotation layer regardless of theme. On the dark theme, keep the
+     annotation black on the plot's own light background (cecelia plots are light-themed for
+     export anyway).
+
+  Everything above is what S3's marks builder implements verbatim.
 - **S1** — Julia: add `HypothesisTests` to `app/Project.toml`; triple-instantiate (`app/`, `api/`,
   `pluto/`) and commit all three manifests. `app/src/plotting/stats.jl` + `run_stats` +
   golden-value tests in `app/test/runtests.jl` (Mann-Whitney vs a known reference, Kruskal-Wallis,
