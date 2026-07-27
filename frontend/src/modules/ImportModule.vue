@@ -59,7 +59,6 @@ async function onFilesSelected(paths: string[]) {
         projectUid: projectMeta.current.uid,
         setUid:     set.uid,
         filepaths:  paths,
-        kind:       projectMeta.current.type,
       }),
     })
     const body = await res.json().catch(() => ({})) as { images?: any[]; error?: string }

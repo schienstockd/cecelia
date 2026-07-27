@@ -71,9 +71,10 @@ end
 # Digest order follows these categories; extras (custom modules) are appended alphabetically.
 const CATEGORY_GATING = "Gating"
 const CATEGORY_IMAGES = "Manage images"
+const CATEGORY_ANALYSIS = "Analysis"
 # preferred display/mute order; categories not listed are appended alphabetically (stays general).
 const _CATEGORY_ORDER = ("import", "Manage images", "Cleanup", "Edit", "Segment",
-                         CATEGORY_GATING, "Tracking", "Clustering", "Behaviour")
+                         CATEGORY_GATING, "Tracking", "Clustering", "Behaviour", CATEGORY_ANALYSIS)
 
 # a task's category, straight from its spec (the task-manager tag). Falls back to the fun's namespace.
 function _category_of_fun(fun::AbstractString)::String
@@ -336,13 +337,48 @@ function _exclusion_items(prev::Vector{String}, cur::Vector{String})::Vector{Str
 end
 
 """
+Record a between-group stats compute for the day's `[Cecelia]` digest. `sig` is a stable key that
+identifies the comparison (chart · measure · test · groups · p-value); the caller must guarantee that
+identical (project, day, sig) triples DON'T re-record — we dedup in-file too so re-fetches during the
+same day fold into ONE bullet, matching how tasks aggregate. `line` is the rendered bullet
+("Mann-Whitney U on live.track.speed (T, B): p < 0.001 ****"). No side effect on the lab log itself —
+`capture_context!` picks it up on its next run.
+"""
+function record_stats_event!(proj::CciaProject, sig::AbstractString, line::AbstractString;
+                             date::Dates.Date = Dates.today())::Nothing
+    with_transaction(proj) do
+        state    = _read_context_state(proj)
+        day_str  = Dates.format(date, "yyyy-mm-dd")
+        # Reset the stats bucket on day-rollover — same rule as gating/exclusion (see capture_context!).
+        same_day = String(get(state, "dayDate", "")) == day_str
+        events   = same_day ? get(state, "dayStats", Any[]) : Any[]
+        seen     = Set(String(get(e, "sig", "")) for e in events)
+        if !(String(sig) in seen)
+            push!(events, Dict{String,Any}("sig" => String(sig), "line" => String(line)))
+            state["dayStats"] = events
+            same_day || (state["dayDate"] = day_str)   # seed the day when this is the first same-day event
+            _write_context_state!(proj, state)
+        end
+    end
+    nothing
+end
+
+# unique stats events for `day` from the persisted state; resets across day rollover.
+function _stats_items(state::AbstractDict, day_str::AbstractString)::Vector{String}
+    String(get(state, "dayDate", "")) == day_str || return String[]
+    String[String(get(e, "line", "")) for e in get(state, "dayStats", Any[]) if !isempty(String(get(e, "line", "")))]
+end
+
+"""
 Upsert the ROLLING DAILY `[Cecelia]` digest for `date` — the day's activity grouped by module category
 (the task-manager tags), collapsed across images. Regenerated from source each call and rewritten in
 place (see `upsert_daily_context_block!`): tasks come from the run logs dated that day (so long tasks
 finishing hours apart aggregate into the one block), gating/exclusion changes are the NET change since
-the START of the day (a baseline that resets when the day rolls over). Returns the block on a real
-change, or `nothing` when there's no (unmuted) activity or the block is unchanged from disk. The first
-capture of a day seeds the gating/exclusion baseline silently (no retro dump).
+the START of the day (a baseline that resets when the day rolls over). Stats compute events (recorded
+by `record_stats_event!` as they happen — sig-deduped in-file so re-fetches don't multiply) land in the
+`Analysis` category. Returns the block on a real change, or `nothing` when there's no (unmuted)
+activity or the block is unchanged from disk. The first capture of a day seeds the gating/exclusion
+baseline silently (no retro dump).
 """
 function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::Union{String,Nothing}
     state    = _read_context_state(proj)
@@ -361,19 +397,24 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     day_gating = same_day ? get(state, "dayGating", Dict{String,Any}()) : cur_gating
     day_excl   = same_day ? String[String(u) for u in get(state, "dayExcluded", String[])] : cur_excl
 
-    pop_items  = _pop_items_by_module(day_gating, cur_gating)
-    excl_items = _exclusion_items(day_excl, cur_excl)
+    pop_items   = _pop_items_by_module(day_gating, cur_gating)
+    excl_items  = _exclusion_items(day_excl, cur_excl)
+    stats_items = _stats_items(state, day_str)
 
     # merge every source into per-category item lists
     by_cat = Dict{String,Vector{String}}()
     for (cat, its) in task_items; append!(get!(by_cat, cat, String[]), its); end
     for (cat, its) in pop_items;  append!(get!(by_cat, cat, String[]), its); end
-    isempty(excl_items) || append!(get!(by_cat, CATEGORY_IMAGES, String[]), excl_items)
+    isempty(excl_items)  || append!(get!(by_cat, CATEGORY_IMAGES,   String[]), excl_items)
+    isempty(stats_items) || append!(get!(by_cat, CATEGORY_ANALYSIS, String[]), stats_items)
 
-    # persist the (possibly reset) day baseline — held across same-day captures, reset on rollover
+    # persist the (possibly reset) day baseline — held across same-day captures, reset on rollover.
+    # dayStats resets alongside dayGating/dayExcluded when the day rolls over (record_stats_event!
+    # respects this by writing under the new day; nothing to preserve here on rollover).
     state["dayDate"]     = day_str
     state["dayGating"]   = day_gating
     state["dayExcluded"] = day_excl
+    same_day || (state["dayStats"] = Any[])
     _write_context_state!(proj, state)
 
     # one bullet per category, in task-manager order. Each line leads with a traffic-light symbol

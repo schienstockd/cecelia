@@ -3,15 +3,14 @@ using JSON3
 mutable struct CciaSet
     uid::String
     name::String
-    kind::String
     image_uids::Vector{String}
     meta::Dict{String,Any}
     _dir::String               # {proj}/1/{uid}/ — runtime only
     _images::Vector{CciaImage} # runtime only — not persisted
 end
 
-function CciaSet(; uid=gen_uid(), name="", kind="static", dir="")
-    CciaSet(uid, name, kind, String[], Dict{String,Any}(), dir, CciaImage[])
+function CciaSet(; uid=gen_uid(), name="", dir="")
+    CciaSet(uid, name, String[], Dict{String,Any}(), dir, CciaImage[])
 end
 
 function save!(s::CciaSet)
@@ -19,7 +18,6 @@ function save!(s::CciaSet)
         "class"      => "CciaSet",
         "uid"        => s.uid,
         "name"       => s.name,
-        "kind"       => s.kind,
         "image_uids" => s.image_uids,
         "meta"       => s.meta,
     )
@@ -32,11 +30,13 @@ function save!(s::CciaSet)
 end
 
 # proj_dir = {projects_dir}/{proj_uid}/
+# Legacy ccid.jsons may still carry a `kind` key — silently ignored (project-wide static/live/flow
+# distinction was dropped in favour of per-image axis gating; see Cecelia.task_applies).
 function _load_set(proj_dir::String, set_uid::String)::CciaSet
     dir = joinpath(proj_dir, "1", set_uid)
     d = JSON3.read(read(joinpath(dir, "ccid.json"), String), Dict{String,Any})
     uids = String.(collect(d["image_uids"]))
-    s = CciaSet(d["uid"], d["name"], get(d, "kind", "static"),
+    s = CciaSet(d["uid"], d["name"],
                 uids, Dict{String,Any}(get(d, "meta", Dict{String,Any}())),
                 dir, CciaImage[])
     for uid in uids
@@ -62,11 +62,10 @@ end
 
 function add_image!(s::CciaSet;
     name::String,
-    kind::String           = s.kind,
     meta::Dict{String,Any} = Dict{String,Any}(),
     uid::String            = gen_uid()   # override to preserve a UID (e.g. legacy migration)
 )::CciaImage
-    img      = CciaImage(uid=uid, name=name, kind=kind)
+    img      = CciaImage(uid=uid, name=name)
     # s._dir = {proj}/1/{set_uid}  →  dirname×2 = {proj}
     proj_dir = dirname(dirname(s._dir))
     meta_dir = joinpath(proj_dir, "1", img.uid)

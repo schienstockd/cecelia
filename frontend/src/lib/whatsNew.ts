@@ -8,13 +8,14 @@
 // any caller (header badge, Settings button, launch tip in W4) calls `openWhatsNew()`. One
 // modal, one state.
 //
-// The `sketchAnimation` / `statsAnnotation` slots are typed but rendered as placeholders until
-// SKETCH_ENGINE_PLAN.md / STATS_ANNOTATIONS_PLAN.md land content.
+// `sketchAnimation` points at a feijoa sketch by id (rendered inline by WhatNewCard). Unknown ids
+// fall through to the "coming soon" placeholder. `statsAnnotation` is a typed slot but rendered as
+// a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
 import { useAppControlStore } from '../stores/appControl'
 
-export type WhatNewKind = 'update' | 'tip' | 'fix'
+export type WhatNewKind = 'update' | 'tip' | 'fix' | 'about'
 
 export interface WhatNewCard {
   id: string
@@ -27,8 +28,8 @@ export interface WhatNewCard {
   releaseVersion?: string   // shown as a chip on update cards
   releaseUrl?: string       // "View on GitHub" link on update cards
   publishedAt?: string      // ISO date on update cards
-  sketchAnimation?: unknown // slot for SKETCH_ENGINE_PLAN
-  statsAnnotation?: unknown // slot for STATS_ANNOTATIONS_PLAN
+  sketchAnimation?: { id: string }   // feijoa sketch id; WhatNewCard resolves via `sketches[id]`
+  statsAnnotation?: unknown           // slot for STATS_ANNOTATIONS_PLAN
 }
 
 export const CECELIA_ISSUES_URL = 'https://github.com/schienstockd/cecelia/issues/new'
@@ -41,6 +42,10 @@ export const isWhatsNewOpen = ref(false)
 // Used by the once-per-day launch trigger in App.vue; the header/Settings entry points open
 // without a tip (release notes only).
 export const openWithTip = ref(false)
+// User-visible tip cycler — when null (the default) the dialog shows today's tip; setting an
+// index via the dots pagination lets the user browse the rest of the catalogue in-session. Cleared
+// on close so re-opening always lands back on today's tip.
+export const viewedTipIndex = ref<number | null>(null)
 
 export function openWhatsNew(opts?: { withTip?: boolean }) {
   openWithTip.value = !!opts?.withTip
@@ -49,12 +54,8 @@ export function openWhatsNew(opts?: { withTip?: boolean }) {
 export function closeWhatsNew() {
   isWhatsNewOpen.value = false
   openWithTip.value = false
+  viewedTipIndex.value = null
 }
-
-// Dev knob (Settings → Developer): force the Install button visible in the What's New footer
-// regardless of `updateAvailable` / `canApplyUpdate` — for previewing the install-flow UI on a
-// dev checkout, where those flags are always false. Not persisted (session-only).
-export const debugForceInstallable = ref(false)
 
 marked.setOptions({ gfm: true, breaks: false })
 

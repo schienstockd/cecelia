@@ -471,6 +471,29 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             end
         end
 
+        # Resolve the task struct BEFORE announcing :queued so we can also check axis
+        # applicability up-front (task requires T but this image is static → skip cleanly, don't
+        # occupy a pool slot). Independent branches stay independent — :skipped is a fault-isolation
+        # trigger, so downstream nodes on the same branch skip too (which is what we want: a
+        # tracking-dependent branch shouldn't run on a static image).
+        task_struct = try
+            _task_from_fun_name(node.fn)
+        catch e
+            @warn "Unknown task fn in chain" fn=node.fn exception=e
+            Base.invokelatest(on_log, "ERROR [$image_uid/$(node.id)] Unknown function: $(node.fn) — $(sprint(showerror, e))")
+            _update_node_state!(run, image_uid, node.id;
+                                status=:failed, fn=node.fn, node_params=effective_params)
+            continue
+        end
+
+        if !task_applies(task_struct, img)
+            reason = task_applicability_reason(task_struct, img)
+            Base.invokelatest(on_log, "SKIP [$image_uid/$(node.id)] $reason")
+            _update_node_state!(run, image_uid, node.id;
+                                status=:skipped, fn=node.fn, node_params=effective_params)
+            continue
+        end
+
         tid = gen_uid()
         # Mark :queued, not :running. Concurrency is enforced by the global scheduler
         # pool (run_task → _pool, sized from config [pools]); a node whose resource_pool
@@ -481,16 +504,6 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         _update_node_state!(run, image_uid, node.id;
                             status=:queued, task_id=tid,
                             fn=node.fn, node_params=effective_params)
-
-        task_struct = try
-            _task_from_fun_name(node.fn)
-        catch e
-            @warn "Unknown task fn in chain" fn=node.fn exception=e
-            Base.invokelatest(on_log, "ERROR [$image_uid/$(node.id)] Unknown function: $(node.fn) — $(sprint(showerror, e))")
-            _update_node_state!(run, image_uid, node.id;
-                                status=:failed, fn=node.fn)
-            continue
-        end
 
         result = try
             run_task(task_struct, img, effective_params;
@@ -619,6 +632,30 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         end
         _barrier_signal_done!(run, node.id)
         return
+    end
+
+    # Axis gating (set-scope): drop images that don't satisfy the task's `requires.axes` and mark
+    # them :skipped. Set-scope tasks fit jointly across the vector, so a static image inside a
+    # T-requiring HMM would break the fit — better to run it on the applicable subset.
+    if !isempty(task_requires_axes(task_struct))
+        keep_imgs = CciaImage[]
+        keep_uids = String[]
+        for (uid, img) in zip(participating_uids, imgs)
+            if task_applies(task_struct, img)
+                push!(keep_imgs, img); push!(keep_uids, uid)
+            else
+                Base.invokelatest(on_log, "SKIP [set/$(node.id)] $(task_applicability_reason(task_struct, img))")
+                _update_node_state!(run, uid, node.id; status=:skipped, fn=node.fn, node_params=effective_params)
+            end
+        end
+        if isempty(keep_imgs)
+            axs = join(sort!(collect(task_requires_axes(task_struct))), ", ")
+            Base.invokelatest(on_log, "SKIP [set/$(node.id)] no images satisfy required axes: $axs")
+            _barrier_signal_done!(run, node.id)
+            return
+        end
+        imgs               = keep_imgs
+        participating_uids = keep_uids
     end
 
     result = try

@@ -316,6 +316,8 @@ describe('icon-only buttons', () => {
   const SEG_BUTTONS = [
     'components/ModuleLayout.vue | right-handle',       // full-height right-panel collapse strip
     'components/canvas/TabbedCanvas.vue | tab-add',     // full-height "+" cell in the tab strip
+    'components/WhatNewCard.vue | wn-nav wn-nav-prev',  // full-height left-edge tip-nav overlay
+    'components/WhatNewCard.vue | wn-nav wn-nav-next',  // full-height right-edge tip-nav overlay
   ]
 
   it('are built from .cc-btn', () => {

@@ -231,6 +231,75 @@ function validate_params(task::CciaTask, params::Dict{String,Any})
     _validate_params_against_spec(params, spec_params)
 end
 
+# ── Applicability (axis gating) ───────────────────────────────────────────────
+# One declarative field, one predicate. The task JSON declares what image shape it needs:
+#
+#     "requires": { "axes": ["T"] }
+#
+# Absent field = applies to any image. Only tasks that genuinely need a dimension declare it
+# — most (segment, gating, spatial, clustering, import, edit, cleanup-non-drift) leave it
+# empty. See docs/MODULES.md → *Requires-axes*. The frontend picker, the scheduler, and the
+# chain executor all consult this same predicate; don't hand-roll a `SizeT > 1` check anywhere.
+
+struct TaskApplicabilityError <: Exception
+    msg::String
+end
+Base.showerror(io::IO, e::TaskApplicabilityError) = print(io, "TaskApplicabilityError: ", e.msg)
+
+"""
+    task_requires_axes(task) -> Set{Symbol}
+
+The set of axes the task needs the image to carry, from its spec's `requires.axes` (default
+empty). Composite tasks return the union across their steps — if any step needs T, the
+composite does. Symbols use `:T`/`:Z`/`:C`, matching `img_axes`.
+"""
+function task_requires_axes(task::CciaTask)::Set{Symbol}
+    spec = _task_spec(task)
+    isnothing(spec) && return Set{Symbol}()
+    _axes_from_requires(get(spec, "requires", nothing))
+end
+# The CompositeTask overload (union across steps) lives further down, after the type is defined.
+
+function _axes_from_requires(req)::Set{Symbol}
+    req isa AbstractDict || return Set{Symbol}()
+    axes = get(req, "axes", nothing)
+    axes isa AbstractVector || return Set{Symbol}()
+    Set{Symbol}(Symbol(uppercase(string(a))) for a in axes if !isempty(string(a)))
+end
+
+"""
+    task_applies(task, img) -> Bool
+    task_applies(task, imgs::Vector) -> Bool
+
+`true` iff every axis the task requires is present on the image (or every image). The chain
+executor uses the per-image form to skip a step; the frontend uses the same predicate to grey
+the picker; `run_task` raises `TaskApplicabilityError` when it's false.
+"""
+function task_applies(task::CciaTask, img::CciaImage)::Bool
+    isempty(task_requires_axes(task)) && return true
+    issubset(task_requires_axes(task), img_axes(img))
+end
+task_applies(task::CciaTask, imgs::AbstractVector{CciaImage})::Bool =
+    all(img -> task_applies(task, img), imgs)
+
+"""
+    task_applicability_reason(task, img) -> String
+
+Human-readable message for the failure case (empty when `task_applies` is true). Used both in
+`TaskApplicabilityError` and in the chain-executor skip log line.
+"""
+function task_applicability_reason(task::CciaTask, img::CciaImage)::String
+    need    = task_requires_axes(task)
+    isempty(need) && return ""
+    have    = img_axes(img)
+    missing = sort!(collect(setdiff(need, have)))
+    isempty(missing) && return ""
+    fn = try _fun_name_from_task(task) catch; string(typeof(task)) end
+    have_s    = join(sort!(collect(have)), ", ")
+    missing_s = join(missing, ", ")
+    "$(fn) requires axis $(missing_s) — image $(img.uid) has $(have_s)"
+end
+
 # ── Internal dispatch ─────────────────────────────────────────────────────────
 # run_task / run_tasks live in scheduler.jl (included after task_registry.jl).
 # All task execution — REPL and API — goes through the scheduler's pool machinery.
@@ -273,6 +342,19 @@ const _COMPOSITE_SPEC_PATHS = Dict{String, String}()
 
 function _spec_path(task::CompositeTask)::Union{String, Nothing}
     get(_COMPOSITE_SPEC_PATHS, task.fun_name, nothing)
+end
+
+# Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
+# composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.
+function task_requires_axes(task::CompositeTask)::Set{Symbol}
+    spec = _task_spec(task)
+    isnothing(spec) && return Set{Symbol}()
+    axes = _axes_from_requires(get(spec, "requires", nothing))
+    for step in get(spec, "composite", String[])
+        sub = try _task_from_fun_name(string(step)) catch; nothing end
+        isnothing(sub) || union!(axes, task_requires_axes(sub))
+    end
+    axes
 end
 
 # Override spec caching: CompositeTask type alone is not unique — include fun_name.

@@ -78,7 +78,6 @@ async function copy(key: string, value: string) {
         <h4 class="md-h cc-eyebrow">Identity</h4>
         <div class="md-grid">
           <span class="md-k">UID</span><span class="md-v md-mono">{{ img.uid }}</span>
-          <span class="md-k">Kind</span><span class="md-v">{{ img.kind || '—' }}</span>
           <span class="md-k">Status</span><span class="md-v">{{ img.status }}</span>
         </div>
       </section>

@@ -79,6 +79,55 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
     end
 
+    # ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
+    # A user-placed checkpoint under `<config_dir>/models/cellposeModels/{name}` is picked up
+    # by the cellpose Julia handler and passed to Python as an absolute file path (which
+    # `cellpose_utils.py::_get_model` loads via `pretrained_model=…`). No shell-outs, no
+    # network — pure filesystem resolution.
+    @testset "cellpose_model_path resolver" begin
+        # user-override slot (config_dir): missing file → nothing; empty/blank name → nothing.
+        td = mktempdir()
+        @test cellpose_model_path("__no_such_model__.pt", td) === nothing
+        @test cellpose_model_path("", td) === nothing
+        @test cellpose_model_path("   ", td) === nothing
+
+        # place a file in the config-dir override slot, resolver returns its absolute path (the
+        # bundled slot at <repo>/models/cellposeModels/ takes precedence when both exist — that
+        # path is real in this repo and can't be safely mocked here).
+        mkpath(joinpath(td, "models", "cellposeModels"))
+        f = joinpath(td, "models", "cellposeModels", "__unique_test_model__.pt")
+        open(io -> write(io, "stub"), f, "w")
+        @test cellpose_model_path("__unique_test_model__.pt", td) == f
+
+        # cellpose_models_dir is a pure path — no I/O, no side-effects
+        @test cellpose_models_dir(td) == joinpath(td, "models", "cellposeModels")
+    end
+
+    # ccia.fluo must be selectable in the cellpose task spec (a wrong entry in the select would
+    # get rejected by param validation).
+    @testset "cellpose.json lists ccia.fluo as a model option" begin
+        @test begin
+            validate_params(CellposeSegment(),
+                Dict{String,Any}("models" => Dict{String,Any}(
+                    "0" => Dict{String,Any}(
+                        "model" => "ccia.fluo", "matchAs" => "base",
+                        "cellChannels" => [], "nucChannels" => [],
+                        "cellDiameter" => 10, "normalise" => 99.9,
+                        "stitchThreshold" => 0.0, "threshold" => 0,
+                        "medianFilter" => 0, "gaussianFilter" => 0.0))))
+            true
+        end
+        # a genuinely-unknown model still gets rejected
+        @test_throws ParamValidationError validate_params(CellposeSegment(),
+            Dict{String,Any}("models" => Dict{String,Any}(
+                "0" => Dict{String,Any}(
+                    "model" => "not-a-real-model", "matchAs" => "base",
+                    "cellChannels" => [], "nucChannels" => [],
+                    "cellDiameter" => 10, "normalise" => 99.9,
+                    "stitchThreshold" => 0.0, "threshold" => 0,
+                    "medianFilter" => 0, "gaussianFilter" => 0.0))))
+    end
+
     @testset "run_py custom-modules PYTHONPATH (config_dir not shadowed)" begin
         # Regression: run_py's task-dir parameter was named `config_dir`, which shadowed the
         # config_dir() function, so the custom-modules PYTHONPATH line `joinpath(config_dir(), …)`
@@ -213,7 +262,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "AI observer session sidecar (tokens + clear)" begin
-        proj = create_project!(name = "obs-sess-$(rand(1000:9999))", kind = "static")
+        proj = create_project!(name = "obs-sess-$(rand(1000:9999))")
         # fresh project → zeroed session
         s0 = read_observer_session(proj)
         @test s0["sessionId"] == "" && s0["inputTokens"] == 0 && s0["turns"] == 0
@@ -251,7 +300,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Model: create project and image ───────────────────────────────────────
     @testset "Model round-trip" begin
-        proj = create_project!(name="smoke-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="smoke-test-$(rand(1000:9999))")
         @test isdir(proj.root)
         @test isfile(joinpath(proj.root, "project.json"))
 
@@ -279,7 +328,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "move_image! (manifest-only, no data moved)" begin
-        proj = create_project!(name="move-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="move-test-$(rand(1000:9999))")
         a = add_set!(proj; name="set-A")
         b = add_set!(proj; name="set-B")
         img1 = add_image!(a; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
@@ -345,7 +394,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Run log (automatic per-image provenance) ─────────────────────────────────
     @testset "Run log" begin
-        proj = create_project!(name="runlog-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="runlog-test-$(rand(1000:9999))")
         s = add_set!(proj; name="set-A")
         img = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
 
@@ -393,7 +442,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Session briefing + all_qc_docs (Observer Phase 2 §2) ─────────────────────
     @testset "Session briefing + all_qc_docs" begin
-        proj = create_project!(name="brief-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="brief-$(rand(1000:9999))")
         s = add_set!(proj; name="set-A")
         img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
@@ -425,7 +474,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Lockfile (naive guard) ──────────────────────────────────────────────────
     @testset "with_transaction" begin
-        proj     = create_project!(name="lock-test-$(rand(1000:9999))", kind="static")
+        proj     = create_project!(name="lock-test-$(rand(1000:9999))")
         lockfile = joinpath(proj.root, ".cecelia.lock")
 
         # happy path: returns the body value and releases the lock
@@ -441,7 +490,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Lab log (per-project append-only markdown) ──────────────────────────────
     @testset "Lab log" begin
-        proj = create_project!(name="lablog-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="lablog-test-$(rand(1000:9999))")
 
         @test read_lab_log(proj) == ""                     # empty before any entry
         @test parse_lab_log("") == Dict{String,Any}[]
@@ -498,7 +547,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # as activity accrues (append-only preserved for human entries). Dates are pinned so day rollover is
     # deterministic; run-log `at` is stamped explicitly (the `at` kwarg) so a task lands on a given day.
     @testset "Lab log context — rolling daily block" begin
-        proj = create_project!(name="labctx-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="labctx-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="set-A")
         img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
@@ -550,7 +599,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # severity symbols + the COLLAPSED QC-detail lines (per-image and per-channel repetition folded away)
     @testset "Lab log context — severity + collapsed QC details" begin
-        projS = create_project!(name="labctx-sev-$(rand(1000:9999))", kind="static")
+        projS = create_project!(name="labctx-sev-$(rand(1000:9999))")
         sS    = add_set!(projS; name="set-S")
         iS1   = add_image!(sS; name="s-1", meta=Dict{String,Any}("ori_path"=>"/tmp/s1.tif"))
         iS2   = add_image!(sS; name="s-2", meta=Dict{String,Any}("ori_path"=>"/tmp/s2.tif"))
@@ -593,7 +642,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # gating + exclusion deltas: NET over the day, diffed against a start-of-day baseline
     @testset "Lab log context — gating & exclusions (daily net)" begin
-        proj = create_project!(name="labctx-gate-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="labctx-gate-$(rand(1000:9999))")
         s    = add_set!(proj; name="set-A")
         img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
@@ -640,7 +689,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "Lab log context — first capture seeds silently" begin
-        proj = create_project!(name="labctx-seed-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="labctx-seed-$(rand(1000:9999))")
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="imgB", meta=Dict{String,Any}("ori_path"=>"/tmp/c.tif"))
         m    = PopulationMap(; pop_type="flow", value_name="default")
@@ -663,7 +712,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Lab log dismiss (hide a single entry — config sidecar, log stays append-only) ──
     @testset "Lab log dismiss" begin
-        proj = create_project!(name="dismiss-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="dismiss-test-$(rand(1000:9999))")
         @test read_dismissed(proj) == String[]
         set_dismissed!(proj, "e1a2", true)
         set_dismissed!(proj, "b3c4", true)
@@ -683,7 +732,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Lab log capture: the daily [Cecelia] digest groups activity by task category ──
     @testset "Lab log capture — category digest" begin
-        proj = create_project!(name="capture-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="capture-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         d    = Date(2026, 7, 25)
@@ -723,7 +772,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # Validation enforced by run_task itself — not just validate_params.
         # Use TestImageTask to confirm _run_task dispatch works.
         # Then confirm ImportOmezarr's run_task rejects bad params before reaching _run_task.
-        proj2 = create_project!(name="val-test-$(rand(1000:9999))", kind="static")
+        proj2 = create_project!(name="val-test-$(rand(1000:9999))")
         s2 = add_set!(proj2; name="s")
         img2 = add_image!(s2; name="img", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
         @test_throws ParamValidationError run_task(
@@ -745,6 +794,50 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         # NOTE: RemoveImage has only valueNameSelection params (no scalar constraints),
         # so there is nothing for validate_params to reject — no test is meaningful there.
+    end
+
+    # ── Axis gating (task_applies + img_axes) ────────────────────────────────
+    @testset "Axis gating — img_axes + task_applies" begin
+        # img_axes: SizeT > 1 → :T; TimeIncrement present as fallback for pre-SizeT projects.
+        img_static = CciaImage(; uid="a1", name="static", dir="")
+        img_static.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
+        @test Cecelia.img_axes(img_static) == Set([:X, :Y, :Z, :C])
+        @test !Cecelia.img_has_time(img_static)
+
+        img_live = CciaImage(; uid="a2", name="live", dir="")
+        img_live.meta = Dict{String,Any}("SizeC"=>4, "SizeT"=>10, "SizeZ"=>1)
+        @test Cecelia.img_axes(img_live) == Set([:X, :Y, :T, :C])
+        @test Cecelia.img_has_time(img_live)
+
+        # TimeIncrement fallback for pre-SizeT imports (present + parseable → :T)
+        img_legacy = CciaImage(; uid="a3", name="legacy", dir="")
+        img_legacy.meta = Dict{String,Any}("TimeIncrement"=>"30")
+        @test :T ∈ Cecelia.img_axes(img_legacy)
+        @test Cecelia.img_has_time(img_legacy)
+
+        # task_requires_axes: reads spec's requires.axes (BayesianTracking → {:T})
+        @test Cecelia.task_requires_axes(BayesianTracking()) == Set([:T])
+        @test isempty(Cecelia.task_requires_axes(ImportOmezarr()))
+
+        # task_applies: T-requiring task rejects a static image, accepts a live one
+        @test !task_applies(BayesianTracking(), img_static)
+        @test  task_applies(BayesianTracking(), img_live)
+        @test  task_applies(ImportOmezarr(), img_static)   # no requirement → always applies
+
+        # Composite recursion: HMM (states + transitions) inherits T from its steps
+        hmm = Cecelia._task_from_fun_name("behaviour.hmm")
+        @test :T ∈ Cecelia.task_requires_axes(hmm)
+        @test !task_applies(hmm, img_static)
+        @test  task_applies(hmm, img_live)
+
+        # run_task raises TaskApplicabilityError before scheduling on a static image
+        proj = create_project!(name="axis-gate-$(rand(1000:9999))")
+        s   = add_set!(proj; name="s")
+        img = add_image!(s; name="static-img",
+                         meta=Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>1))
+        @test_throws Cecelia.TaskApplicabilityError run_task(
+            BayesianTracking(), img, Dict{String,Any}(); pool_name="cpu")
+        rm(proj.root; recursive=true)
     end
 
     # ── Dispatch + param validation — Branching (segment.branching) ──────────────
@@ -1114,10 +1207,46 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             ClustTracks(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    # ── Legacy `kind` on disk is silently ignored ────────────────────────────────
+    # Guards the on-disk contract: a pre-existing ccid.json/project.json with a `kind` key must load
+    # cleanly (no field on the struct) and the next save! must strip it. Project-wide static/live/flow
+    # distinction was dropped in favour of per-image axis gating (Cecelia.task_applies).
+    @testset "Legacy `kind` on disk — ignored + stripped" begin
+        proj = create_project!(name="legacy-kind-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+
+        # Inject legacy `kind` back into every ccid.json / project.json on disk
+        for f in (joinpath(proj.root, "project.json"),
+                  joinpath(s._dir, "ccid.json"),
+                  joinpath(img._dir, "ccid.json"))
+            raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(f, String)))
+            raw["kind"] = "live"
+            open(f, "w") do io; JSON3.pretty(io, raw); end
+        end
+
+        # Load — must not error, must not surface `kind` as a struct field
+        loaded = load_project(proj.uid)
+        @test !hasfield(typeof(loaded), :kind)
+        r_img = init_object(proj.uid, img.uid)
+        @test r_img isa CciaImage
+        @test !hasfield(typeof(r_img), :kind)
+
+        # save! strips `kind` from disk
+        save!(loaded)
+        for f in (joinpath(proj.root, "project.json"),
+                  joinpath(s._dir, "ccid.json"),
+                  joinpath(img._dir, "ccid.json"))
+            raw = JSON3.read(read(f, String))
+            @test !haskey(raw, :kind)
+        end
+        rm(proj.root; recursive=true)
+    end
+
     # ── Image round-trip (status + attr) ────────────────────────────────────────
     # Regression guard: save!(img) must persist status and attr, not silently drop them.
     @testset "Image status/attr round-trip" begin
-        proj = create_project!(name="rt-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="rt-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
         img.status = "done"
@@ -1136,7 +1265,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # field survives save!/init_object, its accessor resolves the disk path from branchLabels/,
     # and a legacy ccid.json without the key still loads (defaults to empty).
     @testset "Branch labels round-trip" begin
-        proj = create_project!(name="branch-rt-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="branch-rt-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
         @test isempty(img.branch_labels)
@@ -1173,7 +1302,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # Guards: new images default to included; excluded flag + note survive save!/init_object; and a
     # legacy ccid.json with neither field loads as included (the accessor never sees a missing field).
     @testset "Image included/note round-trip" begin
-        proj = create_project!(name="incl-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="incl-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
         @test image_included(img)                 # default: included
@@ -1202,7 +1331,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # Last-used params are remembered in ccid.json under meta["funParams"][fun], per image and per
     # set. Guards: round-trips through save!/init_object, per-fun keys don't clobber, set-level too.
     @testset "funParams per-object memory" begin
-        proj = create_project!(name="fp-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="fp-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
         save!(img)
@@ -1243,7 +1372,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # Regression guard: channel names were stored unversioned under meta, where the
     # task/API readers (which use top-level versioned imChannelNames) never saw them.
     @testset "Channel names versioned round-trip" begin
-        proj = create_project!(name="cn-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="cn-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -1287,7 +1416,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Destructive ops ──────────────────────────────────────────────────────────
     @testset "delete_image! / delete_set!" begin
-        proj = create_project!(name="del-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="del-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         a    = add_image!(s; name="a")
         b    = add_image!(s; name="b")
@@ -1313,7 +1442,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # an actual task (RemoveImage — real ccid.json + disk work, no external binary) to
     # completion through the public `run_task` entrypoint. Catches coupling creeping back.
     @testset "Boundary contract — real module fn end-to-end" begin
-        proj = create_project!(name="bc-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="bc-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -1357,7 +1486,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         _mk_ver!(img, fn) = (d = joinpath(img_zero_dir(img), fn); mkpath(d);
                              write(joinpath(d, "chunk"), rand(UInt8, 2048)); fn)
 
-        proj = create_project!(name="stor-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="stor-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
 
         # imgA: original + af + cp, cp active → reclaim frees default AND af, keeps cp
@@ -1405,7 +1534,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # it never reached {img._dir}/logs/{fun}.log, so a crashed task looked like it just stopped
     # mid-run with no error (invisible to get_task_log + on-disk debugging).
     @testset "Task crash is teed into the per-image log" begin
-        proj = create_project!(name="crash-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="crash-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -1429,7 +1558,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "Run log records status (done + failed)" begin
-        proj = create_project!(name="rl-status-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="rl-status-$(rand(1000:9999))")
         img  = add_image!(add_set!(proj; name="s"); name="img")
         append_run_log!(img, "segment.cellpose", "default")              # default status = done
         append_run_log!(img, "behaviour.hmm", "", "failed")
@@ -1442,7 +1571,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # ── Set expansion — a set resolves to its correct member UIDs ───────────────
     # run_tasks and the batch accessors depend on this everywhere.
     @testset "Set expansion" begin
-        proj = create_project!(name="se-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="se-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         a = add_image!(s; name="a"); b = add_image!(s; name="b"); c = add_image!(s; name="c")
         expected = Set([a.uid, b.uid, c.uid])
@@ -1492,7 +1621,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "Chain template round-trip" begin
-        proj = create_project!(name="chain-tpl-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-tpl-$(rand(1000:9999))")
 
         tpl = ChainTemplate(
             "test-chain",
@@ -1522,7 +1651,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain run — template frozen, per-image state, pipelining ─────────────
     @testset "Chain run — end-to-end with RemoveImage" begin
-        proj = create_project!(name="chain-run-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-run-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
 
         # Two images, each with a registered filepath for RemoveImage to remove
@@ -1600,7 +1729,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(Cecelia._descendants(tpl, "n3"))
 
         # force-restart from n2 on a run whose nodes are all :done → n2,n3 reset to :pending; n1 kept
-        proj = create_project!(name="chain-restart-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-restart-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
         img.status = "done"; save!(img)
@@ -1654,7 +1783,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain run — set-scope (picnic) node ──────────────────────────────────
     @testset "Chain run — picnic node" begin
-        proj = create_project!(name="chain-picnic-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-picnic-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b", "img-c")) do nm
             add_image!(s; name=nm)
@@ -1700,7 +1829,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # it — and the barrier still fires once across all images. Also covers the save/load round-trip of
     # `startTargets` and that pruned-out nodes never enter the run.
     @testset "Chain start dot — run prunes to subgraph (set-scope)" begin
-        proj = create_project!(name="chain-startrun-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-startrun-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm); end
 
@@ -1736,7 +1865,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # (e.g. afDriftCorrect → two independent segmentations). Regression guard for the
     # over-broad "any node failed → skip" check that skipped independent branches.
     @testset "Chain fault isolation — independent fan-out" begin
-        proj = create_project!(name="chain-fanout-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-fanout-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -1780,7 +1909,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Picnic node — require_all aborts if any image failed upstream ────────
     @testset "Picnic node — require_all policy" begin
-        proj = create_project!(name="picnic-req-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="picnic-req-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -1806,7 +1935,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Picnic node — successful_only aborts when no images eligible ─────────
     @testset "Picnic node — successful_only policy" begin
-        proj = create_project!(name="picnic-ok-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="picnic-ok-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -1833,7 +1962,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Picnic node — successful_only runs with eligible subset ──────────────
     @testset "Picnic node — successful_only with all passing" begin
-        proj = create_project!(name="picnic-pass-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="picnic-pass-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -1859,7 +1988,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain run — overrides applied, bad fn isolated ────────────────────────
     @testset "Chain run — overrides + fault isolation" begin
-        proj = create_project!(name="chain-iso-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-iso-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
 
         imgs = map(("img-a", "img-b")) do nm
@@ -1896,7 +2025,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain resume — load_chain_run round-trips state ──────────────────────
     @testset "Chain resume — load_chain_run round-trip" begin
-        proj = create_project!(name="chain-resume-rt-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-resume-rt-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -1931,7 +2060,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain resume — already-done nodes are skipped ────────────────────────
     @testset "Chain resume — skip unchanged done nodes" begin
-        proj = create_project!(name="chain-resume-skip-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-resume-skip-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -1965,7 +2094,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Chain resume — params change triggers re-run ──────────────────────────
     @testset "Chain resume — params change re-runs node" begin
-        proj = create_project!(name="chain-resume-rerun-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="chain-resume-rerun-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a",)) do nm; add_image!(s; name=nm) end
 
@@ -1995,7 +2124,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 5: Resume from mid-chain failure — only failed/downstream nodes rerun ─
     @testset "Resume — failure at node 3 does not redo nodes 1-2" begin
-        proj = create_project!(name="resume-fail-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="resume-fail-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a",)) do nm; add_image!(s; name=nm) end
 
@@ -2045,7 +2174,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 5: Params change on node 4 — only n4 and downstream rerun ──────
     @testset "Resume — params change on n4 reruns only n4 and downstream" begin
-        proj = create_project!(name="resume-p4-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="resume-p4-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a",)) do nm; add_image!(s; name=nm) end
 
@@ -2089,7 +2218,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 5: Picnic node restarts when per-image upstream input changes ───
     @testset "Resume — picnic node restarts when upstream stale" begin
-        proj = create_project!(name="resume-picnic-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="resume-picnic-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -2137,7 +2266,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 6: Incremental plot node fires as images complete ───────────────
     @testset "Incremental plot node — fires and sets :done state" begin
-        proj = create_project!(name="incr-plot-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="incr-plot-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b", "img-c")) do nm; add_image!(s; name=nm) end
 
@@ -2176,7 +2305,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 6: Incremental node does not block per-image progression ────────
     @testset "Incremental plot node — image threads not blocked" begin
-        proj = create_project!(name="incr-nob-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="incr-nob-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -2208,7 +2337,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 6: Event bus subscribe/unsubscribe ───────────────────────────────
     @testset "Event bus — subscribe and receive node:done events" begin
-        proj = create_project!(name="evbus-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="evbus-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -2247,7 +2376,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # node:done from the image thread, so a size-1 pool has a benign running/done
     # handoff overlap — execution is still serial, which the timing assertion proves.)
     @testset "Resource pool — concurrency limit respected" begin
-        proj = create_project!(name="pool-limit-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="pool-limit-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b", "img-c")) do nm; add_image!(s; name=nm) end
 
@@ -2282,7 +2411,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── Step 7: Resource pool — higher limit allows parallel execution ────────
     @testset "Resource pool — limit=3 allows all concurrent" begin
-        proj = create_project!(name="pool-par-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="pool-par-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b", "img-c")) do nm; add_image!(s; name=nm) end
 
@@ -2328,7 +2457,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # Start at limit 1 (1 running, 3 queued), throttle to 4 mid-run → the 3 queued fan out, so the
     # observed concurrency rises above 1. A queue-swap (the old bug) would leave them serial at 1.
     @testset "Pool throttle-up parallelises the backlog" begin
-        proj = create_project!(name="pool-grow-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="pool-grow-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("a", "b", "c", "d")) do nm; add_image!(s; name=nm) end
         tpl = ChainTemplate("pool-grow-chain",
@@ -2369,7 +2498,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # (per the existing pool tests) — the slot gate is checked at execution time, so the tail
     # serialises even though the first 4 were admitted while the limit was still 4.
     @testset "Pool throttle-down settles to the new limit" begin
-        proj = create_project!(name="pool-shrink-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="pool-shrink-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(i -> add_image!(s; name="img-$i"), 1:8)
         tpl = ChainTemplate("pool-shrink-chain",
@@ -2396,7 +2525,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # and immediately enters n2 (instant). B and C are still queuing for n1.
     # Verify: A's n2 completion timestamp < B's n1 completion timestamp.
     @testset "Pipelining — n2 of first image before n1 of second image" begin
-        proj = create_project!(name="pipeline-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="pipeline-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b", "img-c")) do nm; add_image!(s; name=nm) end
 
@@ -2444,7 +2573,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # n2 = testTasks.imageTask (always succeeds).
     # Expected: img_a fails n1, skips n2. img_b and img_c succeed both nodes.
     @testset "Cross-image fault isolation" begin
-        proj = create_project!(name="xiso-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="xiso-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img_a = add_image!(s; name="img-a")   # no zarr → RemoveImage will fail
         img_b = add_image!(s; name="img-b")
@@ -2490,7 +2619,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # contract explicit: run_chain on a picnic chain produces correct results
     # with nothing but `using Cecelia`.
     @testset "run_chain headless (no api/ dependency)" begin
-        proj = create_project!(name="headless-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="headless-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
 
@@ -2572,7 +2701,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # Regression guard: the `labels` Dict written by cellposeSegment must survive
     # save!/init_object and land at the agreed location in ccid.json.
     @testset "Labels field round-trip" begin
-        proj = create_project!(name="labels-rt-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="labels-rt-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -2634,7 +2763,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
     # ── label_props field round-trip ──────────────────────────────────────────
     @testset "label_props field round-trip" begin
-        proj = create_project!(name="lp-rt-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="lp-rt-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="img")
 
@@ -3164,7 +3293,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # generic value_name presence check on an image (drives copy-to-images target filtering).
     # `_active` is a bookkeeping key, not a value_name → excluded by versioned_keys.
     @testset "img_has_value_name" begin
-        proj = create_project!(name="vn-test-$(rand(1000:9999))", kind="static")
+        proj = create_project!(name="vn-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")
         img  = add_image!(s; name="i")
         img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad", "_active" => "A")
@@ -5080,7 +5209,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         # ── _merge_zarr_meta_into_ccid!: overwrite=true is authoritative; false is fill-only ──
         @testset "merge fill-only vs overwrite" begin
-            proj = create_project!(name = "meta-merge-$(rand(1000:9999))", kind = "static")
+            proj = create_project!(name = "meta-merge-$(rand(1000:9999))")
             s    = add_set!(proj; name = "set")
             # Simulate an ImageJ-corrected image: PhysicalSizeZ + the ccid-only PhysicalSizeZ_raw marker
             img  = add_image!(s; name = "img", meta = Dict{String,Any}(
@@ -5105,7 +5234,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         # ── resync_ome_meta! end-to-end: fill-only backfill never reverts a correction ──
         @testset "resync_ome_meta! fill-only" begin
-            proj = create_project!(name = "meta-resync-$(rand(1000:9999))", kind = "static")
+            proj = create_project!(name = "meta-resync-$(rand(1000:9999))")
             s    = add_set!(proj; name = "set")
             img  = add_image!(s; name = "img", meta = Dict{String,Any}(
                 "PhysicalSizeZ" => 3.0, "PhysicalSizeZ_raw" => 0.6))   # ImageJ-corrected, ccid-only
@@ -5760,7 +5889,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 projroot = joinpath(tmp, "projects"); mkpath(projroot)
                 set_projects_dir!(projroot)
 
-                proj = create_project!(name = "io-test", kind = "static")
+                proj = create_project!(name = "io-test")
                 uid  = proj.uid
                 # fake stores + metadata mirroring the 0/ (data) + 1/ (metadata) layout
                 d = joinpath(proj.root, "0", "img1", "data.ome.zarr", "0"); mkpath(d)
@@ -5885,6 +6014,89 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         two_sentence = ["$f: $t" for (f, t) in tips if multi_sentence(t) && !(t in ALLOWED)]
         @test isempty(two_sentence)
+    end
+
+    # ── Stats module (docs/todo/STATS_ANNOTATIONS_PLAN.md) ─────────────────────
+    #
+    # Pins the glue between `run_stats` and HypothesisTests.jl. We don't test the underlying
+    # test math (that's HypothesisTests' own suite) — we test that the API is wired correctly:
+    # test dispatch, insertion order preserved (via Vector{Pair}), pairwise Bonferroni-adjusted,
+    # ns/star ladder, error handling for empty and too-few groups.
+    @testset "run_stats" begin
+        # Two clearly-different groups → mannwhitney by default; p is very small; significance
+        # ladder is at least ** (matches STATS_ANNOTATIONS_PLAN.md → S0-1).
+        @testset "2 groups auto → mannwhitney" begin
+            r = Cecelia.run_stats(["WT" => [1.0,2,3,4,5], "KO" => [10.0,11,12,13,14]])
+            @test r.test == :mannwhitney
+            @test r.groups == ["WT", "KO"]
+            @test r.n == [5, 5]
+            @test r.means[1] ≈ 3.0 && r.means[2] ≈ 12.0
+            @test r.medians[1] ≈ 3.0 && r.medians[2] ≈ 12.0
+            @test r.p_value < 0.05
+            @test r.significance in ("*", "**", "***", "****")
+            @test occursin("Mann-Whitney", r.method_note)
+            @test isempty(r.comparison_pairs)   # omnibus IS the pair for 2 groups
+        end
+
+        # Two identical groups → p ≈ 1, "ns".
+        @testset "identical groups → ns" begin
+            r = Cecelia.run_stats(["A" => [1.0,2,3,4,5], "B" => [1.0,2,3,4,5]])
+            @test r.p_value > 0.9
+            @test r.significance == "ns"
+        end
+
+        # Welch's t-test opt-in — different method note, still small p on separated data.
+        @testset "ttest opt-in" begin
+            r = Cecelia.run_stats(["A" => [1.0,2,3,4], "B" => [10.0,11,12,13]]; test=:ttest)
+            @test r.test == :ttest
+            @test occursin("t-test", r.method_note)
+            @test r.p_value < 0.05
+        end
+
+        # Three groups → kruskal by default, pairs are populated with Bonferroni-adjusted values.
+        @testset "3 groups → kruskal + pairwise" begin
+            r = Cecelia.run_stats([
+                "A" => [1.0,2,3,4,5], "B" => [10.0,11,12,13,14], "C" => [20.0,21,22,23,24]])
+            @test r.test == :kruskal
+            @test r.groups == ["A", "B", "C"]
+            @test occursin("Kruskal-Wallis", r.method_note)
+            @test length(r.comparison_pairs) == 3   # (A,B), (A,C), (B,C)
+            for (a, b, p_adj, sig) in r.comparison_pairs
+                @test p_adj >= 0.0 && p_adj <= 1.0
+                @test sig in ("ns", "*", "**", "***", "****")
+            end
+            # A vs C is the widest gap → definitely significant post-Bonferroni.
+            ac = only(p for (a, b, p, _) in r.comparison_pairs if a == "A" && b == "C")
+            @test ac < 0.05
+        end
+
+        # ANOVA opt-in with 3 groups.
+        @testset "anova opt-in (3 groups)" begin
+            r = Cecelia.run_stats([
+                "A" => [1.0,2,3,4,5], "B" => [5.0,6,7,8,9], "C" => [10.0,11,12,13,14]];
+                test=:anova)
+            @test r.test == :anova
+            @test occursin("ANOVA", r.method_note)
+            @test r.p_value < 0.05
+        end
+
+        # Insertion order preserved (Vector of Pairs guarantees it — this asserts we don't sort).
+        @testset "group order preserved" begin
+            r = Cecelia.run_stats(["Z" => [1.0,2,3], "A" => [4.0,5,6], "M" => [7.0,8,9]])
+            @test r.groups == ["Z", "A", "M"]
+        end
+
+        # Error paths.
+        @testset "errors" begin
+            @test_throws ArgumentError Cecelia.run_stats(["only" => [1.0,2,3]])
+            @test_throws ArgumentError Cecelia.run_stats(["A" => Float64[], "B" => [1.0,2]])
+            # 2-group tests refuse when given ≠2 groups.
+            three = ["A" => [1.0,2], "B" => [3.0,4], "C" => [5.0,6]]
+            @test_throws ArgumentError Cecelia.run_stats(three; test=:ttest)
+            @test_throws ArgumentError Cecelia.run_stats(three; test=:mannwhitney)
+            @test_throws ArgumentError Cecelia.run_stats(["A"=>[1.0,2], "B"=>[3.0,4]];
+                                                        test=:notarealtest)
+        end
     end
 
 end

@@ -1,6 +1,6 @@
 # Sketchbook (feijoa) — authoring tool for cecelia explainers
 
-Status: seeded, blue-sky · repo `github.com/schienstockd/feijoa` · not yet wired into cecelia
+Status: wired · repo `github.com/schienstockd/feijoa` · git-dep + conditional sibling Vite alias
 
 ## What this is today
 
@@ -8,9 +8,12 @@ A sibling play repo where sketches are authored for cecelia's tip-of-the-day and
 modals. Whether the engine holds together at all is still an open question — this is exploration,
 not a commitment.
 
-Cecelia has NO dep on feijoa yet. Tip cards render a grey `Animation coming soon` placeholder
-where a sketch would go. The moment we swap that for a real `<SketchCanvas>` import, feijoa
-becomes a real dep — see *Wiring* below.
+Cecelia now consumes feijoa as a git dependency (`"feijoa": "github:schienstockd/feijoa#main"` in
+`frontend/package.json`). `WhatNewCard.vue` imports `SketchCanvas` + `sketches` from `feijoa` and
+resolves `card.sketchAnimation.id` against the catalogue; unknown ids fall through to the grey
+"coming soon" placeholder. The three seeded tips (hmm / clusters / gating) all resolve now that
+`clusters.ts` shipped. The wiring pattern (git dep + conditional sibling alias) is captured below
+for reference and for anyone touching either config file.
 
 ## What it could become (blue sky, later)
 
@@ -44,7 +47,8 @@ the local source. This works for both `install.sh` channels:
 import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
-const feijoaSibling = fileURLToPath(new URL('../../feijoa/src/lib/index.ts', import.meta.url))
+// Four hops up: frontend → cecelia-pineapple → cecelia → cc-workspace → feijoa
+const feijoaSibling = fileURLToPath(new URL('../../../feijoa/src/lib/index.ts', import.meta.url))
 const feijoaAlias = existsSync(feijoaSibling) ? { feijoa: feijoaSibling } : {}
 
 export default defineConfig({
@@ -59,7 +63,7 @@ export default defineConfig({
 **No tsconfig `paths` needed** — `feijoa`'s `package.json` `exports` point at `src/lib/index.ts`,
 so `vue-tsc` resolves it via `node_modules/feijoa/…` in the standard way.
 
-**Do this at the same commit that first imports `from 'feijoa'`** — earlier is unused scaffolding.
+Landed in the same commit as `WhatNewCard.vue`'s first `from 'feijoa'` import — earlier would have been unused scaffolding.
 
 ## Sketch format (in feijoa)
 
@@ -79,7 +83,8 @@ JSON-serialisable. Sketches live in `~/cc-workspace/feijoa/src/sketches/*.ts`.
 ## Seeded sketches
 
 - `logo` — R Cecelia logo ported (smoke test, splash/setup wizard target).
-- `hmm`, `gating`, `tracking` — first-cut concept sketches for tip cards to reference.
+- `hmm`, `gating`, `tracking`, `clusters` — first-cut concept sketches wired into the three
+  seeded tip cards (`clusters` covers the "cluster labels → populations" tip).
 
 ## References
 

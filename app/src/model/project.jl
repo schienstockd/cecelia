@@ -3,22 +3,20 @@ using JSON3
 mutable struct CciaProject
     uid::String
     name::String
-    kind::String
     set_uids::Vector{String}
     meta::Dict{String,Any}
     root::String            # runtime only — not persisted
     _sets::Vector{CciaSet}  # runtime only — not persisted
 end
 
-function CciaProject(; uid=gen_uid(), name="", kind="static")
-    CciaProject(uid, name, kind, String[], Dict{String,Any}(), "", CciaSet[])
+function CciaProject(; uid=gen_uid(), name="")
+    CciaProject(uid, name, String[], Dict{String,Any}(), "", CciaSet[])
 end
 
 function save!(proj::CciaProject)
     d = Dict{String,Any}(
         "uid"      => proj.uid,
         "name"     => proj.name,
-        "kind"     => proj.kind,
         "set_uids" => proj.set_uids,
         "meta"     => proj.meta,
     )
@@ -30,10 +28,13 @@ function save!(proj::CciaProject)
     end
 end
 
+# Legacy project.jsons may still carry `kind` (or `type`) — silently ignored (project-wide
+# static/live/flow distinction was dropped in favour of per-image axis gating via
+# Cecelia.task_applies). Next save! strips them from disk.
 function _load_project(root::String)::CciaProject
     d = JSON3.read(read(joinpath(root, "project.json"), String), Dict{String,Any})
     uids = String.(collect(d["set_uids"]))
-    proj = CciaProject(d["uid"], d["name"], get(d, "kind", "static"),
+    proj = CciaProject(d["uid"], d["name"],
                        uids, Dict{String,Any}(get(d, "meta", Dict())), root, CciaSet[])
     for uid in uids
         push!(proj._sets, _load_set(root, uid))
@@ -47,9 +48,9 @@ function load_project(proj_uid::String)::CciaProject
 end
 
 """Create a new project in the configured projects directory."""
-function create_project!(; name::String, kind::String="static",
+function create_project!(; name::String,
                            meta::Dict{String,Any}=Dict{String,Any}())::CciaProject
-    proj = CciaProject(name=name, kind=kind)
+    proj = CciaProject(name=name)
     proj.root = joinpath(projects_dir(), proj.uid)
     mkpath(joinpath(proj.root, "0"))
     mkpath(joinpath(proj.root, "1"))
@@ -60,10 +61,9 @@ end
 
 function add_set!(proj::CciaProject;
     name::String,
-    kind::String           = proj.kind,
     meta::Dict{String,Any} = Dict{String,Any}()
 )::CciaSet
-    s       = CciaSet(name=name, kind=kind)
+    s       = CciaSet(name=name)
     set_dir = joinpath(proj.root, "1", s.uid)
     mkpath(set_dir)
     s._dir  = set_dir

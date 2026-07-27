@@ -43,6 +43,12 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     ch_names = channel_names_raw isa AbstractVector ?
                collect(String, channel_names_raw) : String[]
 
+    # Cellpose's built-in model names. Anything outside this set is treated as a *custom*
+    # checkpoint name and resolved via `cellpose_model_path` into a file path the Python runner
+    # loads with `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model`
+    # (its `os.path.isfile(model_type)` branch is the pickup point). See TODO #00087.
+    BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
+
     models_json      = get(params, "models", nothing)
     models_converted = Dict{String,Any}()
     if !isnothing(models_json)
@@ -57,6 +63,21 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
                     isnothing(idx) || push!(idx_chs, idx - 1)
                 end
                 m[field] = idx_chs
+            end
+            # Custom-model resolution: only intercept names that AREN'T built-ins. Missing file
+            # → clear error before dispatch (cellpose would otherwise fail deep inside the runner
+            # with a less useful message). Built-in names pass through unchanged.
+            model_name = String(get(m, "model", ""))
+            if !isempty(model_name) && !(model_name in BUILTIN_CELLPOSE_MODELS)
+                path = cellpose_model_path(model_name)
+                if isnothing(path)
+                    on_log("[ERROR] Custom cellpose model '$model_name' not found at " *
+                           "$(joinpath(cellpose_models_dir(), model_name)). Place the checkpoint " *
+                           "there or select a built-in model.")
+                    return nothing
+                end
+                on_log("[INFO] Custom model: $model_name → $path")
+                m["model"] = path
             end
             models_converted[String(k)] = m
         end

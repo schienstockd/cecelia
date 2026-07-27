@@ -141,10 +141,9 @@ function isNavDisabled(item: NavItem): boolean {
         <div class="proj-info">
           <i class="pi pi-folder proj-icon" />
           <div class="proj-text">
-            <span class="proj-name" v-tooltip.right="`Project: ${projectMeta.current.name} (${projectMeta.current.type})`">
+            <span class="proj-name" v-tooltip.right="`Project: ${projectMeta.current.name}`">
               {{ projectMeta.current.name }}
             </span>
-            <span class="proj-type cc-eyebrow cc-fs-2xs">{{ projectMeta.current.type }}</span>
           </div>
           <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
           <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"

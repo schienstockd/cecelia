@@ -4,7 +4,6 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
-import { openWhatsNew, debugForceInstallable } from '../lib/whatsNew'
 import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, napariApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
@@ -404,47 +403,8 @@ async function switchWt(path: string) {
       </span>
 
       <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
-
-      <div class="field">
-        <button class="save-btn" @click="openWhatsNew()"
-                v-tooltip.right="'Release notes for the latest version'">
-          <i class="pi pi-sparkles" />
-          What's new
-        </button>
-      </div>
     </section>
 
-    <!-- ── Developer (dev only) ────────────────────────────────────────── -->
-    <!-- Only rendered under `pixi run dev`. Levers here bypass conditions the dev checkout
-         normally can't satisfy (update apply, once-per-day tip trigger) so the UI can be tested
-         without shipping a real release. See docs/todo/WHATS_NEW_PLAN.md. -->
-    <section v-if="appCtl.dev" class="settings-section">
-      <h2 class="section-title">Developer</h2>
-
-      <div class="field">
-        <button class="save-btn" @click="openWhatsNew({ withTip: true })"
-                v-tooltip.right="'Open the modal as if it were the daily launch trigger'">
-          <i class="pi pi-sparkles" />
-          What's new with today's tip
-        </button>
-      </div>
-
-      <div class="field">
-        <CcToggle class="toggle-row" v-model="debugForceInstallable"
-          label="Force-show Install button in What's New"
-          v-tooltip.right="'Preview the install button in dev checkouts'" />
-      </div>
-
-      <div class="field">
-        <button class="save-btn" @click="settings.tipsLastShown = ''"
-                v-tooltip.right="'Clear the daily-tip stamp so the tip triggers again on next launch'">
-          <i class="pi pi-refresh" />
-          Reset tip-of-the-day
-        </button>
-      </div>
-    </section>
-
-    <!-- ── Custom modules ──────────────────────────────────────────────── -->
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
     <section class="settings-section">
       <h2 class="section-title">Storage</h2>

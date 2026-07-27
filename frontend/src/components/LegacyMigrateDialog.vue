@@ -12,7 +12,9 @@ const props = defineProps<{ projectUid: string; setUid: string }>()
 const emit = defineEmits<{ (e: 'imported', images: unknown[]): void; (e: 'close'): void }>()
 
 interface LegacyImage {
-  uid: string; name: string; kind: string
+  uid: string; name: string
+  // Legacy R had a per-image kind (static/live/flow) — dropped in favour of per-image axis gating
+  // (Cecelia.task_applies). The scan-legacy manifest may still surface it; simply ignored on this side.
   size: Record<string, number>
   image_variant: string | null
   segmentation: string[]
@@ -97,7 +99,7 @@ async function confirmImport() {
   error.value = ''
   try {
     const images = m.images.filter(i => selected.value.has(i.uid))
-      .map(i => ({ uid: i.uid, name: i.name, kind: i.kind }))
+      .map(i => ({ uid: i.uid, name: i.name }))
     const res = await fetch('/api/import/register-legacy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -190,7 +192,7 @@ async function confirmImport() {
                 <td><input type="checkbox" :checked="selected.has(im.uid)" @change="toggle(im.uid)" /></td>
                 <td>
                   <div class="lm-name">{{ im.name }}</div>
-                  <div class="cc-muted">{{ im.uid }} · {{ im.kind }}</div>
+                  <div class="cc-muted">{{ im.uid }}</div>
                   <div v-for="w in im.warnings" :key="w" class="lm-warn"><i class="pi pi-info-circle" /> {{ w }}</div>
                 </td>
                 <td class="cc-muted">

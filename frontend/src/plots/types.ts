@@ -94,6 +94,29 @@ export interface RawRow {
   value: number | string
 }
 
+// Server-side between-group hypothesis test result — see docs/todo/STATS_ANNOTATIONS_PLAN.md.
+// Present on the response only when the request carried `stats: { enabled: true }` AND the
+// chart type is bar/boxplot/points/violin/strip AND at least two series had ≥2 finite values.
+export interface StatsComparisonPair {
+  a: string
+  b: string
+  pAdj: number
+  significance: string   // 'ns' | '*' | '**' | '***' | '****'
+}
+export interface ComparisonsResult {
+  test: string           // 'ttest' | 'mannwhitney' | 'anova' | 'kruskal'
+  groups: string[]       // server labels — match the `grp || sid || uid` derivation of each series
+  n: number[]
+  means: number[]
+  medians: number[]
+  statistic: number      // NaN if the test type didn't expose a statistic field
+  pValue: number
+  significance: string
+  methodNote: string     // e.g. "Mann-Whitney U (two-sided)"
+  comparisonPairs: StatsComparisonPair[]   // Bonferroni-adjusted; empty for 2-group tests (the omnibus IS the pair)
+  letters?: string[]      // Compact Letter Display, per group (parallel to `groups`); groups sharing a letter don't differ
+}
+
 export interface PlotDataResponse {
   chartType: ChartType | 'points' | 'matrix' | 'raw'
   measure: string
@@ -114,4 +137,5 @@ export interface PlotDataResponse {
   zscore?: boolean         // profile: rows standardised → diverging colour scale
   normalize?: string       // crosstab normalisation (none|row|col|total)
   category?: string        // the categorical column the matrix was built from
+  comparisons?: ComparisonsResult   // between-group stats, present only when requested + applicable
 }

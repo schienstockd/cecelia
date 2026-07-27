@@ -178,6 +178,41 @@ Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice +
 
 The Julia handler converts channel names → 0-based indices before writing params JSON.
 
+### Custom cellpose checkpoints
+
+Cellpose ships four built-in models (`cyto3` / `cyto2` / `cyto` / `nuclei`). Custom checkpoints —
+e.g. **`ccia.fluo`**, the fluorescence model that segments dendritic / SHG stroma (upstream of
+`segment.branching`) — are fetched from
+[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into the install
+root, matching the **bioformats2raw pattern**: too large (~26 MB) to ship in the bundle, so
+`install.sh` / `install.ps1` fetch them at install time.
+
+**Fetch (dev / on-demand):**
+
+```bash
+pixi run models-fetch     # downloads schienstockd/ceceliaModels master → <repo>/models/
+```
+
+Override the branch/tag with `--ref v1.2` or the destination with `--dest /some/path`. The
+installers pin the branch via `CECELIA_MODELS_REF`.
+
+**Where the app looks (`cellpose_model_path(name)` in `app/src/config.jl`):**
+
+1. `<install root>/models/cellposeModels/<name>` — the bundle (what `install.sh` /
+   `pixi run models-fetch` populate). In dev, this is `<repo>/models/cellposeModels/`.
+2. `<config_dir>/models/cellposeModels/<name>` — user override slot for drop-in checkpoints
+   that aren't in the shipped set.
+
+Select the model from the **Model** dropdown in the cellpose task form; the Julia handler
+substitutes an absolute file path before dispatch, and `cellpose_utils.py::_get_model` picks
+it up through cellpose's `pretrained_model=<path>` branch. If the file is missing at both
+locations, the task errors out before dispatch with a message telling you where it should live.
+Built-in names (`cyto3` etc.) always pass through unchanged.
+
+**btrack models are NOT fetched.** The btrack task uses a vendored config beside its runner
+(`app/src/tasks/tracking/cell_config.json`); the upstream `ceceliaModels/btrackModels/` set
+isn't needed and is skipped by both the installer and `pixi run models-fetch`.
+
 ---
 
 ## Napari integration

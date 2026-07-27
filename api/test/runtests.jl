@@ -441,7 +441,7 @@ end
         uid = "TESTCANVAS"
         mkpath(joinpath(tmp, uid, "1", "IMG1"))   # the object (image) dir must exist
         write(joinpath(tmp, uid, "project.json"),
-              JSON3.write((; uid = uid, name = "T", kind = "static", set_uids = String[])))
+              JSON3.write((; uid = uid, name = "T", set_uids = String[])))
         entry = Dict("panels" => [], "activeId" => 0, "nextId" => 0, "arrangeSeq" => 0, "shared" => Dict())
         payload = Dict("projectUid" => uid, "objects" => Dict(
             "IMG1" => Dict("entries" => Dict("summary:behaviour:IMG1" => entry), "geom" => Dict())))
@@ -495,7 +495,7 @@ end
     tmp  = mktempdir()
     dirs["projects"] = tmp
     try
-        proj = create_project!(name="api-lablog", kind="static")
+        proj = create_project!(name="api-lablog")
         uid  = proj.uid
         read_ll() = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2])
 
@@ -571,7 +571,7 @@ end
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
     tmp  = mktempdir(); dirs["projects"] = tmp
     try
-        proj = create_project!(name="api-del", kind="static")
+        proj = create_project!(name="api-del")
         uid  = proj.uid
         @test isdir(proj.root)
 
@@ -594,7 +594,7 @@ end
     tmp  = mktempdir()
     dirs["projects"] = tmp
     try
-        proj = create_project!(name="api-tasklog", kind="static")
+        proj = create_project!(name="api-tasklog")
         uid  = proj.uid
         s    = add_set!(proj; name="set-A")
         img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
@@ -764,7 +764,7 @@ end
     tmp  = mktempdir()
     dirs["projects"] = tmp
     try
-        proj = create_project!(name="api-observer", kind="static")
+        proj = create_project!(name="api-observer")
         uid  = proj.uid
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
@@ -839,7 +839,7 @@ end
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
     tmp  = mktempdir(); dirs["projects"] = tmp
     try
-        proj = create_project!(name="api-taskfail", kind="static")
+        proj = create_project!(name="api-taskfail")
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
 
@@ -916,7 +916,7 @@ end
     _qc(t) = api_qc_cohort(HTTP.Request("GET", "/api/qc/cohort" * t))
     _check(b) = api_qc_cohort_check(Vector{UInt8}(JSON3.write(b)))
     try
-        proj = create_project!(name = "api-cohort", kind = "static")
+        proj = create_project!(name = "api-cohort")
         s    = add_set!(proj; name = "set-A")
         for (nm, n) in [("i1", 800), ("i2", 810), ("i3", 790), ("i4", 805)]
             img = add_image!(s; name = nm, meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
@@ -979,7 +979,7 @@ end
     _runs(t)  = api_qc_cohort_runs(HTTP.Request("GET", "/api/qc/cohort/runs" * t))
     _check(b) = api_qc_cohort_check(Vector{UInt8}(JSON3.write(b)))
     try
-        proj = create_project!(name = "api-cohort-runs", kind = "static")
+        proj = create_project!(name = "api-cohort-runs")
         s    = add_set!(proj; name = "set-A")
         imgs = [add_image!(s; name = "i$i", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif")) for i in 1:3]
         # two clustering RUNS (movement, test) over label sets T & B, banked via write_cluster_qc! so the
@@ -1021,7 +1021,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     _lin(t) = api_analysis_lineage(HTTP.Request("GET", "/api/analysis/lineage" * t))
     try
-        proj = create_project!(name = "api-lineage", kind = "live")
+        proj = create_project!(name = "api-lineage")
         s    = add_set!(proj; name = "set-A")
         img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         append_run_log!(img, "importImages.omezarr", "default", "done")
@@ -1051,7 +1051,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     _pops(t) = api_analysis_populations(HTTP.Request("GET", "/api/analysis/populations" * t))
     try
-        proj = create_project!(name = "api-pops", kind = "live")
+        proj = create_project!(name = "api-pops")
         s    = add_set!(proj; name = "set-A")
         img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         img.label_props = Dict("A" => "A.h5ad"); save!(img)
@@ -1079,7 +1079,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     _meas(t) = api_analysis_measures(HTTP.Request("GET", "/api/analysis/measures" * t))
     try
-        proj = create_project!(name = "api-measures", kind = "live")
+        proj = create_project!(name = "api-measures")
         s    = add_set!(proj; name = "set-A")
         add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         @test _meas("")[1] == 400                                            # missing projectUid
@@ -1103,7 +1103,7 @@ end
     _beh(t) = api_analysis_behaviour(HTTP.Request("GET", "/api/analysis/behaviour" * t))
     _clu(t) = api_analysis_clusters(HTTP.Request("GET", "/api/analysis/clusters" * t))
     try
-        proj = create_project!(name = "api-behclust", kind = "live")
+        proj = create_project!(name = "api-behclust")
         s    = add_set!(proj; name = "set-A")
         add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         @test _beh("")[1] == 400 && _clu("")[1] == 400                        # missing projectUid
@@ -1125,7 +1125,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     _ch(t) = api_analysis_chains(HTTP.Request("GET", "/api/analysis/chains" * t))
     try
-        proj = create_project!(name = "api-chains", kind = "live")
+        proj = create_project!(name = "api-chains")
         Cecelia.save_chain_template!(proj, Cecelia.ChainTemplate("pipe",
             [Cecelia.ChainNode(; id = "n1", fn = "segment.cellpose")], Cecelia.ChainEdge[]))
         @test _ch("")[1] == 400                                              # missing projectUid
@@ -1147,7 +1147,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     _b(t) = api_observer_briefing(HTTP.Request("GET", "/api/observer/briefing" * t))
     try
-        proj = create_project!(name = "api-brief", kind = "static")
+        proj = create_project!(name = "api-brief")
         s    = add_set!(proj; name = "set-A")
         img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
         write_qc(img, "importImages.omezarr", "default", Dict{String,Any}[])   # suppress calibration fallback

@@ -2,6 +2,7 @@ module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, config_dir, custom_toml_path
+export cellpose_models_dir, cellpose_model_path
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 
@@ -21,6 +22,7 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
+export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export img_branch_props_path, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
@@ -32,7 +34,7 @@ export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
-export capture_context!, CONTEXT_AUTHOR
+export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
@@ -77,6 +79,7 @@ export hmm_fit_states, hmm_transitions, DiagGaussEmission
 export CciaTask
 export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
+export task_requires_axes, task_applies, task_applicability_reason, TaskApplicabilityError
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
@@ -142,6 +145,7 @@ include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
 include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("plotting/plot_data.jl")
+include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
 include("model/set.jl")

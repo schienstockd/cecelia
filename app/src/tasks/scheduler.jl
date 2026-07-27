@@ -412,6 +412,10 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   on_status_change::Function = _ -> nothing)
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     validate_params(task, params)
+    # Axis gating — raises TaskApplicabilityError before we occupy a pool slot. Chain executor
+    # calls task_applies directly and skips (rather than raising) so mixed-image chains work.
+    task_applies(task, img) ||
+        throw(TaskApplicabilityError(task_applicability_reason(task, img)))
     fun_name  = _fun_name_from_task(task)
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
     pool      = _pool(pool_name)
@@ -447,6 +451,12 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     isempty(imgs) && error("run_task (set-scope): no images")
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     validate_params(task, params)
+    # Set-scope tasks (behaviour/hmm) fit jointly across the whole vector — a static image inside
+    # the set would break the fit, so gate on ALL images satisfying the requirement.
+    for img in imgs
+        task_applies(task, img) ||
+            throw(TaskApplicabilityError(task_applicability_reason(task, img)))
+    end
     fun_name  = _fun_name_from_task(task)
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
     pool      = _pool(pool_name)

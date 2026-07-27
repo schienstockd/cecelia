@@ -10,7 +10,6 @@ export interface ImageSort { key: string; dir: 'asc' | 'desc' }
 export interface CciaImage {
   uid: string
   name: string
-  kind: string
   status: 'pending' | 'converting' | 'done' | 'failed'
   sizeC?: number | null
   sizeT?: number | null
@@ -146,7 +145,6 @@ export const useProjectStore = defineStore('project', () => {
       set.images.push({
         uid: crypto.randomUUID(),
         name: p.split('/').pop() ?? p,
-        kind: 'static',
         status: 'pending',
         filepath: p,
       })

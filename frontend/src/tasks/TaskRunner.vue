@@ -13,6 +13,7 @@ import { usePanelResize } from '../composables/usePanelResize'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
+import { taskGatingReason } from '../utils/taskGating'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -185,9 +186,18 @@ watch(() => props.defs, (defs) => {
   selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved : defs[0].task
 }, { immediate: true })
 
+// Axis gating — the frontend twin of the Julia gate. A task with `requires.axes` (e.g. tracking
+// on ["T"]) is disabled in the picker + Run button unless every selected image carries those axes.
+// The backend refuses to run anyway (TaskApplicabilityError); this removes the surprise.
+const selectedImages = computed(() => paramContext.value.images)
+const gatingReasonFor = (def: TaskDef) => taskGatingReason(def, selectedImages.value)
+const activeTaskGatingReason = computed(() =>
+  taskDef.value ? gatingReasonFor(taskDef.value) : ''
+)
+
 // run
 const canRun = computed(() =>
-  props.selectedUids.length > 0 && !!taskDef.value
+  props.selectedUids.length > 0 && !!taskDef.value && !activeTaskGatingReason.value
 )
 
 function run() {
@@ -262,6 +272,7 @@ function run() {
 const runLabel = computed(() => {
   const n = props.selectedUids.length
   if (n === 0) return 'Select images to run'
+  if (activeTaskGatingReason.value) return activeTaskGatingReason.value
   return `Run on ${n} image${n > 1 ? 's' : ''}`
 })
 
@@ -317,8 +328,14 @@ const { width: sidebarWidth, onResizeStart } =
         v-model="selectedTask"
         v-tooltip.left="'Select which analysis function to run on the selected images.'"
       >
-        <option v-for="d in defs" :key="d.task" :value="d.task">
-          {{ d.label }}
+        <option
+          v-for="d in defs"
+          :key="d.task"
+          :value="d.task"
+          :disabled="!!gatingReasonFor(d)"
+          :title="gatingReasonFor(d) || undefined"
+        >
+          {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
         </option>
       </select>
 
@@ -329,6 +346,11 @@ const { width: sidebarWidth, onResizeStart } =
           v-tooltip.right="`Runs in the ${env} environment.`">
           {{ env }}
         </span>
+        <span
+          v-if="activeTaskGatingReason"
+          class="env-badge"
+          v-tooltip.right="'Selected images do not carry the axes this task needs.'"
+        >{{ activeTaskGatingReason }}</span>
       </div>
     </section>
 
@@ -355,7 +377,7 @@ const { width: sidebarWidth, onResizeStart } =
         @click="run"
         v-tooltip.left="canRun
           ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s).`
-          : 'Select at least one image from the list to enable run.'"
+          : (activeTaskGatingReason || 'Select at least one image from the list to enable run.')"
       >
         <i class="pi pi-play" />
         {{ runLabel }}

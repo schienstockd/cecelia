@@ -11,8 +11,8 @@ import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import WhatNewCard from './WhatNewCard.vue'
 import { useAppControlStore } from '../stores/appControl'
-import { useUpdateCard, openWithTip, debugForceInstallable, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
-import { pickDailyTip } from '../lib/tips'
+import { useUpdateCard, openWithTip, viewedTipIndex, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
+import { TIPS, todayTipIndex } from '../lib/tips'
 
 const props = withDefaults(defineProps<{
   extraCards?: WhatNewCardT[]   // any additional cards a caller wants to prepend
@@ -23,29 +23,59 @@ defineEmits<{ (e: 'close'): void }>()
 const app = useAppControlStore()
 const updateCard = useUpdateCard()
 
-// Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true}))
-const tipCard = computed<WhatNewCardT | null>(() => openWithTip.value ? pickDailyTip() : null)
+// Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true})).
+// A pagination dot row lets the user browse the rest of the catalogue in-session; today's index is
+// the anchor (highlighted), viewedTipIndex tracks the user's current pick.
+const dailyIndex = computed(() => todayTipIndex())
+const currentIndex = computed(() => viewedTipIndex.value ?? dailyIndex.value)
+const tipCard = computed<WhatNewCardT | null>(() => {
+  if (!openWithTip.value) return null
+  return TIPS[currentIndex.value] ?? null
+})
+const canCycle = computed(() => openWithTip.value && TIPS.length > 1)
+const tipCounter = computed(() => {
+  if (!openWithTip.value || TIPS.length < 1) return ''
+  const label = `${currentIndex.value + 1} / ${TIPS.length}`
+  return currentIndex.value === dailyIndex.value ? `${label} · today` : label
+})
+function goToTip(i: number) {
+  const n = TIPS.length
+  if (n < 1) return
+  viewedTipIndex.value = ((i % n) + n) % n
+}
+function prevTip() { goToTip(currentIndex.value - 1) }
+function nextTip() { goToTip(currentIndex.value + 1) }
 
-const cards = computed<WhatNewCardT[]>(() => {
+// Non-tip cards render after the tip block (counter + card + edge-click nav) so the counter
+// stays visually tied to the tip it pages, not stranded at the bottom of the modal.
+const otherCards = computed<WhatNewCardT[]>(() => {
   const list: WhatNewCardT[] = []
-  if (tipCard.value)    list.push(tipCard.value)
   if (updateCard.value) list.push(updateCard.value)
   list.push(...props.extraCards)
   return list
 })
+const hasAnyCard = computed(() => !!tipCard.value || otherCards.value.length > 0)
 
 // Show an inline "Install {version}" in the dialog footer when the user can self-apply. Uses the
-// same appControl.applyUpdate action as the Settings panel — no divergent update path. The dev
-// override (`debugForceInstallable`) lets dev checkouts preview the button.
+// same appControl.applyUpdate action as the Settings panel — no divergent update path.
 const canInstall = computed(() =>
-  debugForceInstallable.value || (app.updateAvailable && app.canApplyUpdate && !!app.updateLatest)
+  app.updateAvailable && app.canApplyUpdate && !!app.updateLatest
 )
 </script>
 
 <template>
   <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
-    <div v-if="cards.length" class="wn-list">
-      <WhatNewCard v-for="c in cards" :key="c.id" :card="c" />
+    <div v-if="hasAnyCard" class="wn-list">
+      <template v-if="tipCard">
+        <!-- Position counter ABOVE the card so it doesn't move vertically when sketch aspect
+             ratios differ. Nav happens by clicking the sketch's left/right edges. -->
+        <div v-if="canCycle" class="wn-counter cc-muted cc-fs-2xs"
+             :class="{ 'wn-counter-today': currentIndex === dailyIndex }">
+          {{ tipCounter }}
+        </div>
+        <WhatNewCard :card="tipCard" :navigable="canCycle" @nav-prev="prevTip" @nav-next="nextTip" />
+      </template>
+      <WhatNewCard v-for="c in otherCards" :key="c.id" :card="c" />
     </div>
     <div v-else class="wn-empty cc-muted cc-fs-md">
       Nothing new right now — you're up to date.
@@ -69,6 +99,11 @@ const canInstall = computed(() =>
 <style scoped>
 .wn-list { display: flex; flex-direction: column; gap: 14px; }
 .wn-empty { padding: 24px 0; text-align: center; }
+
+/* Tip position counter — static above the card so it doesn't jump when sketch heights differ.
+   The "· today" suffix flips the label to accent when the user is viewing today's tip. */
+.wn-counter { text-align: center; letter-spacing: 0.06em; text-transform: uppercase; }
+.wn-counter-today { color: var(--cc-accent); }
 
 .wn-foot-link {
   text-decoration: none;
