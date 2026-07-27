@@ -9,10 +9,11 @@
   regl-scatterplot; this is server-aggregated summaries only, so re-rendering on resize is cheap.
 -->
 <script setup lang="ts">
-import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
-import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
+import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { buildPlotOptions, type BuildOpts, type CldOverlay } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
+import TeleportPopover from '../TeleportPopover.vue'
 import type { PlotDataResponse } from '../../plots/types'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
@@ -24,6 +25,16 @@ let ro: ResizeObserver | null = null
 
 let legendNode: HTMLElement | null = null
 let titleNode: HTMLElement | null = null
+
+// Compact-Letter-Display overlay (docs/todo/STATS_ANNOTATIONS_PLAN.md). One letter per group,
+// positioned in-container over the plot SVG; each letter is a hover-anchor for a TeleportPopover
+// listing the group's ns neighbours. Populated in render() from base._cld + node.scale(…).
+interface CldPlaced { label: string; letter: string; left: number; top: number; ns: string[] }
+const cldItems = ref<CldPlaced[]>([])
+const cldLetterRefs = ref<HTMLElement[]>([])
+const hoverIdx = ref<number>(-1)                      // which letter is hovered (drives popover)
+const hoverAnchor = computed<HTMLElement | null>(() => hoverIdx.value >= 0 ? cldLetterRefs.value[hoverIdx.value] ?? null : null)
+const hoverItem = computed<CldPlaced | null>(() => hoverIdx.value >= 0 ? cldItems.value[hoverIdx.value] ?? null : null)
 
 async function render() {
   if (!host.value) return
@@ -63,6 +74,28 @@ async function render() {
   }
   // title as an overlay (top-left) with the theme ink — see plot.ts note on why not opts.title
   if (props.opts.title) { titleNode = titleOverlay(props.opts.title, ink); host.value.append(titleNode) }
+
+  // CLD letters as HTML overlays — each letter is a hover anchor for TeleportPopover (below).
+  // Resolve position-axis integer index → pixels via the plot's scale (Observable Plot exposes
+  // scale.apply(v)); same for the measure axis at extent.max + headroom. Falls back to nothing when
+  // useLetters is off (base._cld = null).
+  const cld = (base as unknown as { _cld?: CldOverlay | null })._cld ?? null
+  if (cld && cld.items.length && node) {
+    const posScale = (node as any).scale(cld.rotate ? 'y' : 'x') as { apply?(v: number): number } | undefined   // eslint-disable-line @typescript-eslint/no-explicit-any
+    const measScale = (node as any).scale(cld.rotate ? 'x' : 'y') as { apply?(v: number): number } | undefined  // eslint-disable-line @typescript-eslint/no-explicit-any
+    const ext = Math.max(1e-9, cld.measExtent.max - cld.measExtent.min)
+    const measVal = cld.measExtent.max + ext * 0.05                       // 5% headroom, matches STATS_HEADROOM
+    const measPx = measScale?.apply?.(measVal) ?? 0
+    cldItems.value = cld.items.map(it => {
+      const posPx = posScale?.apply?.(it.pos) ?? 0
+      const left = cld.rotate ? measPx : posPx
+      const top  = cld.rotate ? posPx  : measPx
+      return { label: it.label, letter: it.letter, left, top, ns: it.ns }
+    })
+  } else {
+    cldItems.value = []
+  }
+  hoverIdx.value = -1
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
@@ -97,7 +130,40 @@ onMounted(() => {
 onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
 </script>
 
-<template><div ref="host" class="plot-host" :style="{ background: hostBg }" /></template>
+<template>
+  <div ref="host" class="plot-host" :style="{ background: hostBg }">
+    <!-- CLD letters (docs/todo/STATS_ANNOTATIONS_PLAN.md). Positioned in the plot's own coord space via
+         node.scale(…).apply(…) — see render() above. Each letter opens a TeleportPopover on hover
+         (canonical popover primitive; no SVG-native tooltip). -->
+    <span
+      v-for="(c, i) in cldItems"
+      :key="c.label"
+      :ref="el => { if (el) cldLetterRefs[i] = el as HTMLElement }"
+      class="cld-letter"
+      :style="{ left: c.left + 'px', top: c.top + 'px' }"
+      @mouseenter="hoverIdx = i"
+      @mouseleave="hoverIdx === i && (hoverIdx = -1)"
+    >{{ c.letter }}</span>
+    <TeleportPopover :model-value="hoverIdx >= 0 && !!hoverAnchor" :anchor="hoverAnchor" placement="bottom-start"
+                     @update:model-value="v => { if (!v) hoverIdx = -1 }">
+      <div class="cld-pop">
+        <div class="cld-pop-head">
+          <span class="cld-letter-mini">{{ hoverItem?.letter }}</span>
+          <span class="cld-pop-title">{{ hoverItem?.label }}</span>
+        </div>
+        <div v-if="(hoverItem?.ns.length ?? 0) === 0" class="cld-pop-empty cc-muted cc-fs-xs">
+          Significantly different from every other group.
+        </div>
+        <div v-else class="cld-pop-body">
+          <div class="cc-muted cc-fs-xs">Not different from:</div>
+          <ul class="cld-pop-list">
+            <li v-for="n in hoverItem?.ns" :key="n">{{ n }}</li>
+          </ul>
+        </div>
+      </div>
+    </TeleportPopover>
+  </div>
+</template>
 
 <style scoped>
 /* white plot ground (theme_classic) — fills the panel body. position:relative anchors the legend
@@ -117,4 +183,29 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null
   position: absolute; top: 4px; left: 8px; max-width: 60%; font-weight: 600; font-size: var(--cc-fs-sm);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Compact-Letter-Display letters — one per group, absolutely positioned over the plot at the
+   coordinate `render()` computed from the plot's own scales. Centred on (left, top); hover shows
+   a TeleportPopover with the ns-neighbour list. */
+.cld-letter {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-weight: 700; font-size: var(--cc-fs-md);
+  padding: 1px 5px;
+  border-radius: var(--cc-radius-xs);
+  cursor: help;
+  user-select: none;
+  color: inherit;                  /* theme ink, matches axis text */
+}
+.cld-letter:hover { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
+.cld-pop { padding: 8px 10px; max-width: 260px; }
+.cld-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cld-letter-mini {
+  font-weight: 700; font-size: var(--cc-fs-sm);
+  padding: 0 5px; border-radius: var(--cc-radius-xs);
+  background: color-mix(in srgb, var(--cc-accent) 22%, transparent);
+}
+.cld-pop-title { font-size: var(--cc-fs-sm); font-weight: 500; }
+.cld-pop-list { margin: 2px 0 0; padding-left: 16px; font-size: var(--cc-fs-xs); }
+.cld-pop-list li { margin: 1px 0; }
 </style>
