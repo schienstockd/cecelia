@@ -95,6 +95,47 @@ class Anisotropy2DTest(unittest.TestCase):
         self.assertLess(float(box_aniso.mean()), 0.4)
 
 
+class _FakeDimUtils:
+    """Duck-typed DimUtils covering the bits `_extract_fibre_image` reaches for. Keeps this
+    test off the real DimUtils constructor's need for an OME-XML."""
+    def __init__(self, axes: str, shape):
+        self._axes = axes
+        self._shape = shape
+    def dim_idx(self, name, ignore_channel=False, ignore_time=False):
+        return self._axes.index(name)
+    def is_timeseries(self):
+        return "T" in self._axes
+
+
+class ExtractFibreImageTest(unittest.TestCase):
+    """`_extract_fibre_image` must max-merge the selected fibre channels for the current
+    timepoint (or the whole static image), regardless of where C/T sit in the axis order.
+    Getting this wrong silently produces the wrong anisotropy input on non-canonical layouts."""
+
+    def test_4d_TCYX_selects_timepoint_and_merges_channels(self):
+        mod = _load_runner()
+        # (T=3, C=4, Y=6, X=6). Channel 0: constant 5. Channel 1: constant 10. Others zero.
+        im = np.zeros((3, 4, 6, 6), dtype=np.float32)
+        im[:, 0] = 5.0
+        im[:, 1] = 10.0
+        du = _FakeDimUtils("TCYX", im.shape)
+        out = mod._extract_fibre_image(im, du, fibre_channels=[0, 1], t_index=2)
+        # max-merge of channels 0 (=5) and 1 (=10) at timepoint 2 → all-10 (Y, X)
+        self.assertEqual(out.shape, (6, 6))
+        np.testing.assert_allclose(out, 10.0)
+
+    def test_3d_static_CYX(self):
+        mod = _load_runner()
+        # No time axis: (C=2, Y=5, X=5). channel 0 = 3, channel 1 = 7.
+        im = np.zeros((2, 5, 5), dtype=np.float32)
+        im[0] = 3.0
+        im[1] = 7.0
+        du = _FakeDimUtils("CYX", im.shape)
+        out = mod._extract_fibre_image(im, du, fibre_channels=[1], t_index=None)
+        self.assertEqual(out.shape, (5, 5))
+        np.testing.assert_allclose(out, 7.0)
+
+
 class GlobaliseLabelsTest(unittest.TestCase):
     """Pin the invariant behind the labels-zarr / h5ad alignment: after `_globalise_labels`,
     the nonzero pixel values in the shifted skeleton array match the h5ad `label` column
