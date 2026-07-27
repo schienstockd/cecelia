@@ -58,7 +58,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## Julia app (`app/src/`)
 
-- **Object model**: `model/image.jl` (`CciaImage` + path accessors `img_filepath`/`img_label_props_path`/`img_physical_sizes`), `model/set.jl` (`CciaSet`, `init_object`), `model/project.jl` (`CciaProject`, `with_transaction`).
+- **Object model**: `model/image.jl` (`CciaImage` + path accessors `img_filepath`/`img_label_props_path`/`img_track_props_path`/`img_branch_props_path`/`img_branch_labels_dir`/`img_branch_labels_path`/`img_physical_sizes`), `model/set.jl` (`CciaSet`, `init_object`), `model/project.jl` (`CciaProject`, `with_transaction`).
 - **Versioned fields**: `helpers.jl` — `versioned_get`/`versioned_set!`/`versioned_keys`/`versioned_active` (the `{value_name => …, "_active" => …}` convention; the one family for both `Dict{String,String}` path dicts and `Any`/JSON3 raw dicts), plus `read_ccid_raw(path)` (the one ccid.json read+Symbol-key normalize).
 - **H5AD chain**: `label_props.jl` (see Data access) + `tracking/track_props.jl` (compute-on-read per-track table, auto categorical/numeric detection).
 - **Python launcher**: `py_runner.jl` — `run_py`, the single Python spawn point (`PYTHONPATH=python/`, `[PROGRESS]` streaming, exit+signal check).

@@ -1,6 +1,6 @@
 # Branching (skeleton) analysis — port plan
 
-**Status:** planning (2026-07-25). No branch yet, no code written.
+**Status:** audited 2026-07-27, ready to implement. No branch yet, no code written.
 **Ports:** `old-R-shiny-version/inst/modules/sources/segment/createBranching.R` (+ its
 `py/create_branching.py` and `inst/app/modules/inputDefinitions/segment/createBranching.json`).
 
@@ -14,36 +14,55 @@ Scientific target: fibrous / reticular structures that are *not* cells — colla
 stromal networks, FRC/CCL19 reticular networks. The old version used it for exactly this
 (`mxIBEX` stroma, `behaviourTumour` SHG, `mxCCL19`, `stomics_10x_breast_cancer`).
 
-Intent is **full parity**, including the ILEE extended cytoskeleton measures — see Decision 4.
+Anisotropy (the quiver-plot inputs the old `calcExtended` produced) is in scope — but via
+`skimage.feature.structure_tensor`, not the vendored ILEE_CSK. See Decision 4.
 
 ---
 
-## Why this is a port, not a rewrite
+## What's being ported vs rebuilt
 
 Verified 2026-07-25 against the current pixi env (Python 3.12.13, numpy 2.0.2, scipy 1.18.0,
-scikit-image 0.26.0, numba 0.65.1):
+scikit-image 0.26.0, numba 0.65.1). Audited 2026-07-27 for cohesion.
 
-- **`skan` is healthy.** conda-forge `skan 0.13.1`, published 2026-02-06, BSD-3. Ran it against the
-  old code's expectations: `skan.Skeleton` + `skan.summarize` still emit exactly the columns
-  `create_branching.py` consumes — `skeleton-id`, `node-id-src`, `node-id-dst`, `branch-distance`,
-  `branch-type`, `image-coord-src-N`, `image-coord-dst-N`, `euclidean-distance`. Only change needed:
-  pass `separator='-'` explicitly (the default flips to `_` in a future release; a
-  `VisibleDeprecationWarning` fires today).
-- **The old Python maps almost 1:1 onto current helpers.** `DimUtils`, `slice_utils.create_slices`,
-  `zarr_utils.open_as_zarr` / `create_multiscales` / `fortify` and `ome_xml_utils` have effectively the
-  same API as the versions the old script was written against. Steps "open → slice → skeletonise →
-  summarise → write pyramid" port near-literally.
-- **ILEE runs unmodified in the current env.** Both `analyze_actin_2d_standard` and
-  `analyze_actin_3d_standard` were executed on synthetic 2D/3D fibre images and returned the summary
-  frame + the 5-tuple of anisotropy box arrays. No numpy-2 / scipy-1.18 / skimage-0.26 breakage on
-  the code paths branching uses.
+**Ported (near-literally):**
+- The skeletonisation shape: mask → optional Z-MIP → optional borders → binary_closing →
+  `skimage.morphology.skeletonize` → `skan.Skeleton` + `skan.summarize` → per-timepoint labels
+  zarr. **`skan` is healthy** — conda-forge 0.13.1 (2026-02-06, BSD-3), still emits the columns
+  the old code consumed (`branch-type`, `node-id-src/dst`, `branch-distance`, `image-coord-*`).
+  Only change: pass `separator='-'` explicitly to defuse a scheduled default flip.
+- The per-branch-type filter-pop pattern (`ensure_filter_pop!` per unique `branch-type`).
 
-The parts that genuinely need work are the framework-contract changes (pop model, h5ad creation,
-centroid naming, QC) and the ILEE vendoring hygiene — not the algorithm.
+**Rebuilt (the old Python is genuinely ad-hoc):**
+- The runner (`create_branching.py`, 433 LOC) is a rewrite, not a copy. It has debug-log spam left
+  in prod (`logfile_utils.log(ref_pops)` × 6), a `# TODO this will propagate the 2D image into 3D`
+  hack that replicates a 2D result into every Z slice to preserve dimensions, half-commented mesh
+  code, and a Python-side population lookup we're moving to Julia (Decision 7). Half the old
+  params are dropped or moved (Decisions 5, 7, 8).
+- **Anisotropy** — dropped from ILEE_CSK vendoring, rebuilt on `skimage.feature.structure_tensor`
+  (Decision 4). Of ~2314 LOC in ILEE_CSK, cecelia only ever reached ~300 LOC (the anisotropy
+  internals + a scalar summary threaded through scipy/skan). skimage's maintained structure-tensor
+  primitive plus ~50 LOC of aggregation replaces it. See Decision 4.
+
+**Out of scope (deliberately):**
+- The downstream spatial-analysis tasks `spatialAnalysis/networkWeights.R` (99 LOC) and
+  `spatialAnalysis/cellsToStructuresWO.R` (531 LOC) consume branch outputs and are what the mxIBEX
+  workflow actually finishes with. They are **not** part of this port — port them when someone asks.
+- The separate `segment.ilee` task (`ilee.R` + `ilee_wrapper.py` + `ilee_utils.py`, ~260 LOC) is a
+  filament *thresholding* task that uses `ILEE_CSK.ILEE_2d` directly. Not touched here; if
+  someone needs it, port against the actual ILEE algorithm at that point.
+
+**Upstream dependency (NOT in this PR, but load-bearing for real use):** the segmentation input to
+branching, on real fibrous images (dendritic cells, SHG collagen, FRC networks), was produced by
+the custom Cellpose model **`ccia.fluo`** in the old R version (`inst/models/cellposeModels/ccia.fluo`,
+~26 MiB). The current `segment/cellpose.json` hardcodes cellpose's four built-in models; no path for
+custom checkpoints. Tracked as **TODO #00087** — needs a custom-model slot in the cellpose task and a
+delivery mechanism for `ccia.fluo` (and any other bundled checkpoints). Branching is technically
+usable without it (any binary label set skeletonises fine), but the real workflow — "segment SHG →
+branch it" — is blocked on #00087. Schedule before advertising branching for its intended use case.
 
 ---
 
-## Locked decisions (2026-07-25)
+## Locked decisions (2026-07-27)
 
 ### Decision 1 — Branch tables are a **sidecar of the segmentation**, not a new label_props value_name
 
@@ -67,32 +86,26 @@ proved.
 Add `POP_MAP_SUFFIX["branch"] = "__branch"` so branch populations persist to
 `gating/{vn}__branch.json`, exactly parallel to `track` → `gating/{vn}__tracks.json`.
 
-This was initially argued against in favour of reusing the `flow` map over a `.branch` value_name.
-That was wrong, for two reasons found on closer reading:
+**Cost, measured against the current code (audit 2026-07-27):** The framework was deliberately
+generalised for third pop_types (`ACCEPT_TOKENS` is a tuple, `POP_MAP_SUFFIX` a Dict,
+`pop_category`/`_accept_permits`/`_accept_pop_types` are switch/dispatch). Adding "branch":
 
-1. Decision 1 removes the branch table from the `label_props` dict, so there is no value_name for a
-   `flow` map to hang off. The pop map must be keyed the way the data is — by suffix.
-2. Reusing `flow` would invite the gating UI to offer channel-intensity gates on branch objects as
-   if they were cells. Branches are a distinct granularity; conflating them is the semantic muddle,
-   not the cure for it.
+| File | Sites | LOC |
+|---|---|---|
+| `population_manager.jl` | `POP_MAP_SUFFIX` (+1), `ACCEPT_TOKENS` (+1), `_accept_permits` (+1 arm), `_accept_pop_types` (+1 arm), `pop_category` (+1 arm), `pop_df` routing to `img_branch_props_path` + cache-key mtime (+1 real edit), `plot_pop_types`/`scope_pop_types` (+1-2 arms) | ~10 |
+| `image.jl` | `BRANCH_PROPS_SUFFIX`, `img_branch_props_path`, `is_reserved_value_name` | 3 |
+| `frontend/src/utils/popGroups.ts` | `GRAN_LABEL['branch']`, ORDER | 2 |
+| `frontend/src/stores/gating.ts` | popType union (comment + any `'track'` special-case that should read "non-cell") | 1-2 |
+| `app/test/runtests.jl` | round-trip + accepts + dispatch + `pop_df` shape | ~10 assertions |
 
-**Cost, stated honestly.** `granularity` is today `"cell" | "track"` and `pop_category` returns
-`gated | clustered | region | tracked | aggregated`. Branches are a **third granularity**. Sites to
-extend (measured, not guessed):
+Total ~10 code sites + ~10 test assertions. Region (the closest precedent) cost 16+23 because it
+also added the pooled `regions.{suffix}` column + cluster-sibling auto-share machinery; branch
+needs none of that. The one load-bearing edit is `pop_df` learning to route by pop_type to the
+branch sidecar; everything else is one-line dispatch.
 
-| File | What |
-|---|---|
-| `app/src/gating/population_manager.jl` | `POP_MAP_SUFFIX`, `ACCEPT_TOKENS`, `_POP_TYPE_PROBE_ORDER`, `_NAME_GUARD_POP_TYPES`, `scope_pop_types`, `population_accept_groups`, `pop_category`, `is_track_pop`'s granularity peer |
-| `app/src/model/image.jl` | `BRANCH_PROPS_SUFFIX`, `img_branch_props_path`, `is_reserved_value_name` |
-| `frontend/src/utils/popGroups.ts` | `GRAN_LABEL`, `ORDER` (add `branch:*` rows) |
-| `frontend/src/stores/gating.ts` | popType union comment + any `'track'` special-casing that should read "non-cell" |
-| `app/test/runtests.jl` | pop-map round-trip + accept-token + dispatch tests |
-
-For scale: `region` touched 16 sites in `population_manager.jl` and 23 assertions in
-`runtests.jl`. Branching should be lighter than that (it needs none of `region`'s
-co-clustered-sibling auto-share machinery — `branch-type` is one fixed categorical column, not a
-per-run `{prefix}{suffix}` column family), but it is the one part of this plan whose cost I would not
-call precisely in advance. **This is the decision most worth challenging at review.**
+The one subtlety: `is_track_pop` currently returns `Bool` and its ~5 in-file callers use
+`!is_track ⇒ cell`. Branch is a third granularity, so those callers must learn it explicitly.
+All 5 sites are inside `population_manager.jl` and are counted above.
 
 ### Decision 3 — Per-branch-type pops via `ensure_filter_pop!`, not bespoke code
 
@@ -104,47 +117,77 @@ new machinery. Name the pops by branch-type semantics (`endpoint-to-junction`,
 `junction-to-junction`, `endpoint-to-endpoint`, `isolated-cycle`) rather than the old
 `xfun::numbers_to_words` integers — the skan codes are stable and documented.
 
-### Decision 4 — Ship ILEE extended measures, vendored under `python/cecelia/vendor/`
+### Decision 4 — Anisotropy via `skimage.feature.structure_tensor`, NOT vendored ILEE_CSK
 
-`calcExtended` is not optional dead weight: it is used in real analyses
-(`behaviourTumour.Rmd:132` SHG collagen; `behaviourTcells3P.Rmd:793-836` consumes
-`ilee_coor_list` / `ilee_eigval` / `ilee_eigvec` for anisotropy quiver plots), and the box-data
-return that produces those arrays is a **local addition that does not exist upstream**.
+The old `calcExtended` path called `ILEE_CSK.analyze_actin_{2d,3d}_standard` and returned
+`ilee_summary` + a 5-tuple of anisotropy arrays (`coor_list`, `eigval`, `eigvec`,
+`box_total_length`, `box_anisotropy`) into the h5ad `uns`. The 7 vignettes that consume this only
+ever use the anisotropy 5-tuple (quiver plots) — none of them consume the `Diameter_tdt`/
+`Diameter_sdt` fields where the `/3` bug lives.
 
-Vendor to **`python/cecelia/vendor/ILEE_CSK/`** (`functions.py`, `fast_interp.py`, `LICENSE.txt`).
-`python/pyproject.toml` ships only `include = ["cecelia", "cecelia.utils"]`, so the vendored package
-is importable in-repo (via the `PYTHONPATH=python/` that `run_py` sets) but is **not** pulled by an
-external `pip install cecelia` — coastal never inherits it. No `sys.path` hack needed.
+**Replace with a fresh implementation on `skimage.feature.structure_tensor`:**
 
-Also required: a `THIRD_PARTY.md` entry (MIT, Copyright 2021 Pai Li) and a
-`python/cecelia/vendor/ILEE_CSK/PATCHES.md` carrying the ledger below, so the next person does not
-have to re-derive it by diffing against a dead repo.
+```python
+# ~50 LOC in branching_run.py — no vendoring
+Sxx, Sxy, Syy = skimage.feature.structure_tensor(img_channel, sigma=sigma)
+# aggregate to a box grid, eigh per box → coor_list, eigval, eigvec, box_length, box_anisotropy
+```
+
+- Algorithm: local structure tensor of the fibre channel over a box grid → per-box eigendecomposition
+  → eigenvectors give the principal direction (quiver arrows), eigenvalues give the anisotropy
+  magnitude. This is what ILEE's `analyze_anisotropy_2d/3d` computes, at ~300 LOC of unmaintained
+  code with numba disabled; skimage's `structure_tensor` primitive is maintained, in-env, and 2D+3D.
+- Cite Li et al. *Plant Cell* 2023 (DOI + upstream URL) as the algorithmic ancestor at the
+  function's docstring, per the "cite sources" rule. `THIRD_PARTY.md` gets a **skan** entry, not an
+  ILEE one.
+- Output shape kept compatible with the old `uns` layout (`ilee_coor_list`, `ilee_eigval`,
+  `ilee_eigvec`, `ilee_box_total_length`, `ilee_box_anisotropy`) so existing R notebooks read
+  post-port outputs unchanged. The `ilee_summary` scalar table (occupancy, cv, skewness,
+  MF_full_length, branching_act, anisotropy) is recomputed inline from skan + scipy — ~30 LOC.
+- Language: **Python**, inside `branching_run.py`. The skeleton and channel image already live in
+  that process; a Julia handoff for a per-image compute would be pure overhead and no dep gets
+  liberated (see coastal-denoise rationale: Julia moves are for hard lock-in, not code relocation).
+- New param `structureTensorSigma` (float, default 2.0 px) replaces `anisoRadius`. Old task's
+  `aniso_box_size = floor(radius/2)` becomes the aggregation box side.
+
+**Rejected alternatives:** vendoring ILEE_CSK (Decision-4-original) — inherits 6 patches, one live
+`/3` bug, upstream dead since 2024-04-22, `imp` unimportable on py3.12, `multichannel` removed in
+skimage 0.26, `scipy.ndimage.morphology` removed in scipy 2.0, numba-disabled anisotropy path
+"unmeasured on real image sizes". We own that code forever if we vendor. Skipped.
 
 ### Decision 5 — Drop `saveProps` / `saveMeshes`
 
 The old script called `measure_utils.measure_from_zarr(...)` with `slices=`, `integrate_time=`,
 `save_meshes=`, `calc_intensities=`. That function was **rewritten** — it is now
 `MeasureUtils(params, dim_utils).measure_from_zarr(label_zarrs, im_dat, log)` and has none of those
-arguments. Rather than teaching the rewrite about per-slice measurement again, the branch labels zarr
-is registered in the `labels` dict (Decision 6) so the user runs the existing
-**`segment.measureLabels`** on it. That is the framework's canonical measure/segment split — cellpose
-does the same.
+arguments. Per-branch intensity measurement is **not part of this port**. If a user needs per-branch
+channel means, that's a follow-up (see Decision 6 for why we can't just re-route `measureLabels`).
 
-### Decision 6 — Branch **labels** ARE registered in the `labels` dict as `{vn}.branch`
+### Decision 6 — Branch labels live on a DEDICATED image field, NOT in the generic `labels` dict
 
-Asymmetric with Decision 1 on purpose. The skeleton needs its own zarr for napari display, and
-`labels` is a separate ccid dict from `label_props`, enumerated by a different picker
-(`valueNameSelection` with `"field": "labels"`). Registering there is what makes Decision 5 work —
-`segment.measureLabels` can target the branch label set.
+The skeleton needs its own zarr on disk for napari display, but registering it as another entry in
+`img.labels` reintroduces exactly the picker pollution Decision 1 avoids — every
+`valueNameSelection` with `"field": "labels"` (measure, segment, tracking) would then offer
+`{vn}.branch` alongside real cell segmentations. It would also mean a user could point
+`segment.measureLabels` at branch labels, writing a **second** `labelProps/{vn}.branch.h5ad`
+alongside the sidecar `{vn}__branch.h5ad` this plan defines — the picker-pollution + double-table
+problem the previous draft flagged as an "open sub-question."
 
-> **Open sub-question for review.** If a user then runs `segment.measureLabels` on `{vn}.branch`, it
-> writes `labelProps/{vn}.branch.h5ad` and registers that value_name — i.e. it reintroduces exactly
-> the picker pollution Decision 1 avoids, and creates a *second* branch table alongside
-> `{vn}__branch.h5ad`. Options: (a) accept it (the user opted in explicitly), (b) have branching also
-> accept an `intensityValueName` and fold per-branch intensities into `{vn}__branch.h5ad` itself,
-> making `measureLabels` unnecessary, (c) teach `measureLabels` to write to the sidecar when its
-> target is a branch label set. **(b) is the cleanest and probably the right answer, but it partly
-> un-does Decision 5 — resolve before Phase 2.**
+**Resolution:** add a dedicated field `img.branch_labels` (versioned, same shape as `img.labels`)
++ accessor `img_branch_labels_path(img, vn)`, and a napari-bridge branch that renders it as a
+labels layer. Callers that need to display branch labels (napari overlay, future branch summary
+plots) resolve through the dedicated field; the generic `labels` picker never sees branch labels.
+`is_reserved_value_name` blocks `{vn}.branch` from being registered as a plain label set (defence
+in depth).
+
+**Cost:** roughly parallel to how `track_props` sits beside `label_props` — one accessor + one
+versioned field on `CciaImage` + one napari-bridge dispatch site. Cheap, and it locks Decisions 1
++ 5 + 6 into a mutually consistent set (no more "resolve before Phase 2").
+
+**Deferred capability:** per-branch channel intensities. Doable later by teaching
+`branching_run.py` to accept `intensityChannels` and fold means into `{vn}__branch.h5ad` directly
+(the old `saveProps` behaviour, but inside the sidecar contract). Note it in `docs/FUTURE.md`
+when the plan ships.
 
 ### Decision 7 — `refPops` membership resolves in Julia, never in Python
 
@@ -166,85 +209,32 @@ as `measure_utils._to_anndata` does (`measure_utils.py:359-392`). See
 
 ---
 
-## ILEE_CSK patch ledger
-
-Upstream `github.com/phylars/ILEE_CSK` — **last substantive commit 2024-04-22**, README-only edits
-before that back to 2023-07, **no tags, no PyPI/conda release**. Treat as unmaintained; we own this
-copy. Diff of the old-cecelia vendored `functions.py` against upstream `main` = 69 added / 41 removed
-lines, in six changes:
-
-| # | Change | Why it exists | Keep? |
-|---|---|---|---|
-| 1 | MATLAB-engine block commented out | Upstream does `from imp import find_module` **at module scope**; `imp` was removed in **Python 3.12**, so upstream is literally unimportable on our interpreter (3.12.13). This is the breakage that forced the fork. | **Keep** — and replace with an explicit comment saying why, not a commented-out block |
-| 2 | `NE_peak`: `mark = -1` guard + `if mark >= 0` | Upstream raises `UnboundLocalError` when the first scan loop never breaks | **Keep** |
-| 3 | `@nb.njit` disabled on `anisotropy_2d_internal` | numba cannot compile it (takes skan's `nbgraph`) | **Keep** — but note it, this is the slow path |
-| 4 | `@nb.njit` disabled on `anisotropy_3d_internal` | same | **Keep** |
-| 5 | `analyze_actin_2d_standard` / `_3d_standard` gained `aniso_radius`, `aniso_box_size`, `aniso_weighting_method`, `return_box_data` | Local **feature**: upstream hardcodes radius/box (150/75 in 2D, 50/25 in 3D) and returns no box data at all. The `coor_list`/`eigval`/`eigvec`/`box_total_length`/`box_anisotropy` arrays the quiver plots consume exist only because of this patch. | **Keep** — this is ours |
-| 6 | 2D path: 3× oversampling `resize` commented out, marked `# TODO why is this here?` | ⚠️ **Bug.** The three downstream `/3` divisions were left in place | **FIX** — see below |
-
-### The `/3` bug (patch 6)
-
-In `analyze_actin_2d_standard`, upstream oversamples 3× before skeletonising:
-
-```python
-img_dif_ovsp = resize(img_dif, (img_dif.shape[0]*3, img_dif.shape[1]*3), order=3)
-img_binary   = img_dif_ovsp > 0
-```
-
-The vendored copy replaces this with `img_binary = img_dif > 0` but keeps all three compensating
-divisions:
-
-```python
-diameter_tdt   = 4*(mean_DT-0.5)*pixel_size/3
-diameter_sdt   = 2*(mean_DT_sk-0.5)*pixel_size/3
-MF_full_length = total_length(img_sk.astype('float'))*pixel_size/3   # /3 because interpolated 3 fold
-```
-
-So `Diameter_tdt`, `Diameter_sdt`, `MF_full_length` — and `linear_density`, which divides by
-`MF_full_length` — come out **3× too small** in the 2D path. Either restore the oversampling (slower,
-upstream-faithful) or drop the `/3`s (fast, but the `-0.5` border correction was tuned for the
-oversampled grid, so it is not a pure algebraic swap). **Restoring the oversampling is the safer
-default; make it a param if the cost matters.** Any `calcExtended` 2D numbers already in existing
-projects carry this error — they are not comparable with post-fix output.
-
-### Two more fixes to apply while vendoring
-
-- **`gaussian_scaled` (line 289)** calls `gaussian(..., multichannel=False)`; `multichannel` was
-  **removed in scikit-image 0.26** → `TypeError`. Dormant for branching (only reachable via
-  `ILEE_3d`, the *thresholding* entry point, which branching never calls) but a live landmine for a
-  future `segment.ilee` port, whose `ilee_utils.py` calls `ILEE_CSK.ILEE_2d`/`ILEE_3d` directly. Fix
-  now: drop the kwarg (the kernel is single-channel).
-- **`from scipy.ndimage.morphology import distance_transform_edt`** — deprecated namespace, removed
-  in SciPy 2.0. Change to `from scipy.ndimage import distance_transform_edt`.
-
-### Deps
-
-Only **`skan`** is genuinely new (`pixi add skan`, conda-forge, noarch, ~1.5 MiB; pulls
-`imageio`/`matplotlib-base`/`networkx`, all already present). `numba 0.65.1` is already in the env
-transitively and `cvxopt` is already pinned as a btrack dep — ILEE adds no new heavy dependency.
-
----
-
 ## Files
 
 ```
 app/src/tasks/segment/branching.jl            NEW  struct + _run_task
 app/src/tasks/segment/branching.json          NEW  param spec
-app/src/tasks/segment/branching_run.py        NEW  skeletonise + skan + (opt) ILEE
+app/src/tasks/segment/branching_run.py        NEW  skeletonise + skan + structure_tensor
 app/src/tasks/task_registry.jl                EDIT _spec_path + "segment.branching" => Branching()
-app/src/model/image.jl                        EDIT BRANCH_PROPS_SUFFIX, img_branch_props_path, is_reserved_value_name
+app/src/model/image.jl                        EDIT BRANCH_PROPS_SUFFIX, img_branch_props_path,
+                                                   img_branch_labels_path, versioned branch_labels
+                                                   field, is_reserved_value_name
 app/src/gating/population_manager.jl          EDIT `branch` pop type (Decision 2 table)
 app/src/qc_cohort.jl                          EDIT COHORT_METRICS["segment.branching"]
 app/src/Cecelia.jl                            EDIT exports
-python/cecelia/vendor/ILEE_CSK/               NEW  vendored lib + LICENSE.txt + PATCHES.md
+api/src/napari_api.jl                         EDIT branch-labels display path (if needed)
 pixi.toml / pixi.lock                         EDIT skan
-THIRD_PARTY.md                                EDIT ILEE_CSK entry
+THIRD_PARTY.md                                EDIT skan entry (BSD-3, Nunez-Iglesias 2018)
 frontend/src/utils/popGroups.ts               EDIT branch granularity label + order
-app/test/runtests.jl                          EDIT pop-map round-trip, accepts, dispatch, param validation
+app/test/runtests.jl                          EDIT pop-map round-trip, accepts, dispatch,
+                                                   param validation, branch_labels round-trip
 docs/SEGMENTATION.md                          EDIT branching section
 docs/POPULATION.md                            EDIT branch pop type
-INVENTORY.md                                  EDIT vendor dir + branch props accessor
+docs/FUTURE.md                                EDIT deferred per-branch intensities note
+INVENTORY.md                                  EDIT branch props + branch labels accessors
 ```
+
+**No vendor directory**, no `PATCHES.md`, no ILEE THIRD_PARTY entry — Decision 4 kills all of that.
 
 No new frontend module page: `SegmentModule.vue` is generic (`useTaskDefs('segment')` → `TaskRunner`),
 so the task appears from its JSON alone.
@@ -259,15 +249,18 @@ so the task appears from its JSON alone.
 | `postDilationSize` | int 0–10, default 2 | dilation of the skeleton (visibility) |
 | `useBorders` | bool | skeletonise label *boundaries* instead of interiors |
 | `flattenBranching` | bool | Z-MIP the labels before skeletonising |
-| `calcExtended` | bool | ILEE cytoskeleton indices → `uns` |
-| `calcFlattened` | bool | run ILEE on a Z-MIP (2D mode) for a 3D image |
-| `anisoRadius` | int 0–250, default 50 | ILEE anisotropy window; box size = `floor(radius/2)` |
+| `calcAnisotropy` | bool | run structure-tensor anisotropy → `uns` (Decision 4) |
+| `calcFlattened` | bool | run anisotropy on a Z-MIP (2D mode) for a 3D image |
+| `structureTensorSigma` | float 0.5–20, default 2.0 | Gaussian window for structure tensor (Decision 4) |
+| `anisotropyBoxSize` | int 5–200, default 45 | aggregation box side for eigendecomp grid (Decision 4) |
+| ~~`calcExtended`~~ | — | renamed to `calcAnisotropy` (Decision 4) |
+| ~~`anisoRadius`~~ | — | replaced by `structureTensorSigma` + `anisotropyBoxSize` (Decision 4) |
 | ~~`saveProps`~~ | — | dropped (Decision 5) |
 | ~~`saveMeshes`~~ | — | dropped (Decision 5) |
 | ~~`popType`~~ | — | subsumed by `popSelection`'s value-prefixed refs |
 
-`resource_pool: "cpu"`. Skeletonisation is single-threaded CPU; the non-jitted ILEE anisotropy loops
-are the slow part (patches 3/4).
+`resource_pool: "cpu"`. Skeletonisation is single-threaded CPU; structure_tensor is
+convolution-based and fast (no numba-disabled loop like the old ILEE anisotropy).
 
 ## QC (mandatory — `docs/MODULES.md`)
 
@@ -282,7 +275,7 @@ short `"No branches found"`, long `"Lower the pre-dilation or check the segmenta
 ## UI compliance
 
 This port adds **no new chrome** — that is the point of Decision 2's cost table. Still, three current
-rules bind the frontend edits in Phase 2:
+rules bind the frontend edits:
 
 - **UX-primitive catalog is mandatory *and* test-enforced** (`docs/UI.md` → *CHECK BEFORE BUILDING*).
   `utils/cssScenarios.test.ts` holds a per-file baseline that **may shrink and must never grow**, and
@@ -301,56 +294,75 @@ rules bind the frontend edits in Phase 2:
 
 ## Phases
 
-**Phase 0 — deps + vendoring.** `pixi add skan`; vendor ILEE_CSK with patches 1–5 preserved, patch 6
-fixed, plus the `multichannel` and `scipy.ndimage.morphology` fixes; `PATCHES.md` + `THIRD_PARTY.md`.
-Checkpoint: `pixi run test-py` green; a Python unit test imports the vendor package and asserts
-`analyze_actin_2d_standard` returns 9 summary columns + a 5-tuple on a synthetic fibre image.
+**Phase 0 — dep + smoke test.** `pixi add --pypi skan` (**not** `pixi add skan` — conda-forge
+`skan` resolves numpy to 2.4.6, which violates cellpose 3's `numpy<2.1` ceiling, making the conda
+solve unsatisfiable. PyPI-side skan respects the existing numpy pin, so it lands in
+`[pypi-dependencies]` next to cellpose/anndata/scanpy). Pixi picked `>=0.13.1, <0.14`. No
+vendoring. Checkpoint: `pixi run test-py` green; a Python unit test imports skan, runs
+`Skeleton` + `summarize` on a synthetic image with `separator='-'`, asserts the expected column
+set is present.
 
-**Phase 1 — core branching, no pops.** `branching.jl` / `.json` / `_run.py`: mask → optional flatten →
-optional borders → per-timepoint close/skeletonise/dilate → labels zarr + pyramid → `skan.summarize`
-paths table → `{vn}__branch.h5ad` (Decision 8) → register labels (Decision 6) → QC. Registry entry.
-Checkpoint: runs end-to-end on a real fibrous image; `pixi run test-pkg` green (dispatch + param
-validation + a bad-param `ParamValidationError`).
+**Phase 1 — core branching (skeleton only, no pops, no anisotropy).**
+`branching.jl` / `.json` / `_run.py`: mask → optional flatten → optional borders → per-timepoint
+close/skeletonise/dilate → labels zarr + pyramid → `skan.summarize` paths table →
+`{vn}__branch.h5ad` (Decision 8) → dedicated `branch_labels` field on the image (Decision 6) →
+QC. Registry entry. Checkpoint: runs end-to-end on a real fibrous image; `pixi run test-pkg` green
+(dispatch + param validation + a bad-param `ParamValidationError`); `pixi run test-py` green.
 
 **Phase 2 — the `branch` pop type.** Decision 2's table + `ensure_filter_pop!` per branch type
-(Decision 3). **Resolve Decision 6's open sub-question first.** Checkpoint: branch pops appear under a
-"Branches · Gated" header in a `popSelection`; pop-map round-trips; `pop_df` returns branch rows.
+(Decision 3). Checkpoint: branch pops appear under a "Branches · Gated" header in a
+`popSelection`; pop-map round-trips; `pop_df` returns branch rows.
 
-**Phase 3 — ILEE extended measures.** Wire `calcExtended` / `calcFlattened` / `anisoRadius` through to
-the vendored entry points; `ilee_summary` + the four anisotropy arrays into `uns`. Cite the paper +
-upstream URL at the call site per the "cite sources" rule. Checkpoint: `calcExtended=true` on a 2D and
-a 3D image; `uns` shapes match what `behaviourTcells3P.Rmd` expected.
+**Phase 3 — anisotropy via structure tensor.** Wire `calcAnisotropy` / `calcFlattened` /
+`structureTensorSigma` / `anisotropyBoxSize` into `branching_run.py`; ~50 LOC that computes
+`skimage.feature.structure_tensor` → box-aggregate → `eigh` → the 5 arrays
+(`coor_list`/`eigval`/`eigvec`/`box_total_length`/`box_anisotropy`) + a scalar `ilee_summary` from
+skan/scipy; write into `uns`. Cite Li et al. 2023 in the docstring. Checkpoint:
+`calcAnisotropy=true` on a 2D and a 3D image; `uns` shapes match what
+`behaviourTcells3P.Rmd`/`behaviourTumour.Rmd` expected; per-image runtime measured and reported
+(with numba out of the picture this should be materially faster than the old ILEE path).
 
 **Phase 4 — napari + plots (follow-up).** Old version colour-mapped the branch labels layer by
 `branch-{property}` with a viridis LUT (`inst/py/napari_utils.py:673-700`); the current bridge has
 colour-by helpers but no branch path. Also: a branch-length/tortuosity summary plot spec. Both
 optional, both after the core lands.
 
+Ship all four as one PR per the "finish feature before opening PR" rule.
+
 ---
 
 ## Risks
 
-1. **Decision 2's third granularity is the real unknown.** Everything else is bounded. If review
-   pushes back, the fallback is Decision 1's sidecar + reading branches through the existing `labels`
-   pop_type (ungated, no filter pops) — less capable, much cheaper, and reversible later.
-2. **The `/3` fix changes numbers.** Existing 2D `calcExtended` output is not comparable with
-   post-fix output. Needs saying in the release notes, not just here.
-3. **ILEE anisotropy is slow** (patches 3/4 disable numba). Unmeasured on real image sizes — measure
-   in Phase 3 before advertising `calcExtended` as routine.
-4. **ILEE is unmaintained upstream.** We own this code from now on. No upstream will fix the next
-   numpy/skimage break; the `PATCHES.md` ledger is what makes that survivable.
-5. **`skan.summarize` separator flip** is a scheduled upstream change. Pinning `separator='-'`
+1. **Decision 2's third granularity.** Now bounded — ~10 code sites + ~10 test assertions, all
+   inside pre-generalised dispatch (`ACCEPT_TOKENS`, `POP_MAP_SUFFIX`, switch-per-pop_type). Not
+   the biggest risk anymore. Fallback: sidecar + read via existing `labels` pop_type (ungated, no
+   filter pops) — much cheaper, reversible later. But note that fallback kills Decision 3
+   (`ensure_filter_pop!` per branch-type) which is the killer app of the whole task.
+2. **Structure-tensor output shape parity.** The old `ilee_coor_list[t, y, x, axis]` layout is
+   what R notebooks index into (`x$ilee_coor_list[1,,,1]`). Reproducing that shape from skimage's
+   output is straightforward but must be tested against a fixture with known geometry (a
+   synthetic parallel-line-field → anisotropy ≈ 1 in that direction).
+3. **`skan.summarize` separator flip** is a scheduled upstream change. Pinning `separator='-'`
    defuses it, but the obs column names (`branch-type`, …) are then ours to maintain against a
    library that has moved on.
+4. **No parity of numbers with old projects.** Existing `calcExtended` outputs (`ilee_summary`,
+   the anisotropy 5-tuple) were computed by ILEE's specific box-tensor formulation with the `/3`
+   bug in the 2D path. The new structure-tensor path will produce different numbers — better
+   (bug-free), but not comparable pre/post. Say so in release notes.
+5. **Sigma/box tuning.** ILEE hardcoded radius/box (150/75 in 2D, 50/25 in 3D). Structure-tensor
+   sigma controls a Gaussian window rather than a hard box; sensible defaults need to be picked
+   against the fibrous-image examples the vignettes used (SHG collagen, stroma). Do this in
+   Phase 3 before advertising the param.
 
 ## References
 
 - Old implementation: `old-R-shiny-version/inst/modules/sources/segment/{createBranching.R,py/create_branching.py}`
 - Old input spec: `old-R-shiny-version/inst/app/modules/inputDefinitions/segment/createBranching.json`
-- Old branch pop plumbing: `R/cciaImage.R:1311, 2371-2393, 3008, 3040`; consumers
-  `inst/modules/sources/spatialAnalysis/{networkWeights.R,cellsToStructuresWO.R}`
-- skan: <https://skeleton-analysis.org/stable/> (BSD-3)
-- ILEE_CSK: <https://github.com/phylars/ILEE_CSK> (MIT; Li et al., *Plant Cell* 2023) — unmaintained
+- Old branch pop plumbing: `R/cciaImage.R:1311, 2371-2393, 3008, 3040`
+- Old downstream consumers (NOT in scope): `inst/modules/sources/spatialAnalysis/{networkWeights.R,cellsToStructuresWO.R}`
+- skan: <https://skeleton-analysis.org/stable/> (BSD-3, Nunez-Iglesias 2018)
+- `skimage.feature.structure_tensor`: <https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.structure_tensor>
+- Anisotropy algorithmic ancestry: Li et al. *Plant Cell* 2023 (ILEE_CSK — no longer vendored, cited)
 - Patterns to follow: `app/src/tasks/tracking/bayesian_tracking.jl` (pop membership → Python),
   `app/src/tasks/segment/cellpose.jl` (labels registration + QC),
   `python/cecelia/utils/measure_utils.py:359-392` (h5ad creation contract)

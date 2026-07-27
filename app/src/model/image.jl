@@ -13,6 +13,11 @@ mutable struct CciaImage
     filepath::Dict{String,String}     # versioned filenames (relative to zero dir)
     labels::Dict{String,Vector{String}}  # valueName → [filename, ...] (e.g. labels.zarr, labels_cyto.zarr)
     label_props::Dict{String,String}
+    # Skeleton (branch) label sets — a separate registry from `labels`. Branch labels are a different
+    # granularity (paths/edges, not cell regions), so they get their own field to keep the generic
+    # `labels` picker (measure/track/segment dropdowns) unpolluted. See docs/todo/BRANCHING_PLAN.md
+    # Decision 6. Files live at `{proj}/1/{uid}/branchLabels/{filename}.zarr` (mirrors `labels/`).
+    branch_labels::Dict{String,Vector{String}}
     im_channel_names::Dict{String,Any} # versioned: {value_name => [names], _active => value_name}
     attr::Dict{String,String}         # user-defined metadata attributes
     meta::Dict{String,Any}
@@ -33,6 +38,7 @@ end
 function CciaImage(; uid=gen_uid(), name="", status="pending", dir="")
     CciaImage(uid, name, status,
               Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
+              Dict{String,Vector{String}}(),      # branch_labels (Decision 6)
               Dict{String,Any}(),                 # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
               true, "",                           # included (default), note
@@ -101,10 +107,43 @@ Absolute path to the per-track labelProps `.h5ad` for a value_name:
 img_track_props_path(img::CciaImage, value_name::AbstractString="default")::String =
     joinpath(img_label_props_dir(img), "$(value_name)$(TRACK_PROPS_SUFFIX).h5ad")
 
-"""True if a value_name uses the reserved per-track suffix (`__tracks`) — not allowed for a
-user-created segmentation (it names the companion track table for `{base}`)."""
+# Per-branch (skeleton) table suffix. A skeletonised segmentation gets a companion `.h5ad` holding
+# ONE row per branch path (branch measures in X/var — length, tortuosity, branch-type; endpoints
+# in obs). Lives beside the per-cell labelProps. Same double-underscore convention as tracks; the
+# name `{x}__branch` is reserved. See docs/todo/BRANCHING_PLAN.md Decision 1.
+const BRANCH_PROPS_SUFFIX = "__branch"
+
+"""
+Absolute path to the per-branch labelProps `.h5ad` for a value_name:
+`labelProps/{value_name}__branch.h5ad`. Written by `segment.branching` (one row per skeleton
+path). Distinct from the per-cell `img_label_props_path` so the cell table stays normalised (no
+branch columns leak into cell tables), and from `img_track_props_path` so the branch pop type
+routes to its own sidecar (docs/POPULATION.md).
+"""
+img_branch_props_path(img::CciaImage, value_name::AbstractString="default")::String =
+    joinpath(img_label_props_dir(img), "$(value_name)$(BRANCH_PROPS_SUFFIX).h5ad")
+
+"""The image's branch-labels directory — `{proj}/1/{uid}/branchLabels`. Skeleton label zarrs live
+here (mirrors the `labels/` directory for cell segmentations). Separate on-disk directory so the
+generic `labels` scan never picks up branch label sets. See BRANCHING_PLAN.md Decision 6."""
+img_branch_labels_dir(img::CciaImage)::String = joinpath(img._dir, "branchLabels")
+
+"""
+Absolute path to a branch labels zarr for a value_name — resolves the registered filename from
+`img.branch_labels` (mirrors `img_labels_path`/`img_label_props_path`). Falls back to
+`{value_name}.zarr` if the value_name isn't registered yet (write path).
+"""
+function img_branch_labels_path(img::CciaImage, value_name::AbstractString="default")::String
+    filenames = get(img.branch_labels, String(value_name), String[])
+    filename = isempty(filenames) ? "$(value_name).zarr" : first(filenames)
+    joinpath(img_branch_labels_dir(img), filename)
+end
+
+"""True if a value_name uses one of the reserved suffixes (`__tracks`, `__branch`) — not allowed
+for a user-created segmentation (each names a companion sidecar for `{base}`)."""
 is_reserved_value_name(value_name::AbstractString) =
-    endswith(String(value_name), TRACK_PROPS_SUFFIX)
+    endswith(String(value_name), TRACK_PROPS_SUFFIX) ||
+    endswith(String(value_name), BRANCH_PROPS_SUFFIX)
 
 # ── Channel names ──────────────────────────────────────────────────────────────
 
@@ -147,6 +186,7 @@ function save!(img::CciaImage)
         "status"         => img.status,
         "filepath"       => img.filepath,
         "labels"         => img.labels,
+        "branch_labels"  => img.branch_labels,
         "label_props"    => img.label_props,
         "imChannelNames" => img.im_channel_names,
         "attr"           => img.attr,
@@ -298,16 +338,17 @@ function _load_image(dir::String)::CciaImage
     to_spaths(key) = Dict{String,String}(
         string(k) => string(v) for (k, v) in get(d, key, Dict{String,Any}()))
     # labels: Dict{String, Vector{String}} — value can be a list or a bare string (legacy)
-    to_labels() = Dict{String,Vector{String}}(
+    to_labels(key) = Dict{String,Vector{String}}(
         string(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-        for (k, v) in get(d, "labels", Dict{String,Any}()))
+        for (k, v) in get(d, key, Dict{String,Any}()))
     icn = Dict{String,Any}(string(k) => v for (k, v) in get(d, "imChannelNames", Dict{String,Any}()))
     # Legacy `kind` field silently ignored — project-wide static/live/flow distinction was dropped
     # in favour of per-image axis gating (see Cecelia.task_applies). Legacy ccid.jsons round-trip
     # into memory without kind; next save! strips it from disk.
     CciaImage(
         d["uid"], d["name"], get(d, "status", "pending"),
-        to_spaths("filepath"), to_labels(), to_spaths("label_props"),
+        to_spaths("filepath"), to_labels("labels"), to_spaths("label_props"),
+        to_labels("branch_labels"),                              # legacy images: absent → empty
         icn,
         to_spaths("attr"),
         Dict{String,Any}(get(d, "meta", Dict{String,Any}())),

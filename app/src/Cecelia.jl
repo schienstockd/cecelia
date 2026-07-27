@@ -24,8 +24,9 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
+export img_branch_props_path, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
-export TRACK_PROPS_SUFFIX, is_reserved_value_name
+export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
@@ -87,6 +88,7 @@ export RemoveImage
 export CellposeCorrect
 export CellposeSegment
 export MeasureLabels
+export Branching
 export BayesianTracking, TrackMeasures
 export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
@@ -165,6 +167,7 @@ include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/segment/measure_labels.jl")
+include("tasks/segment/branching.jl")
 include("tasks/tracking/bayesian_tracking.jl")
 include("tasks/tracking/track_measures.jl")
 include("tasks/behaviour/hmm_states.jl")

@@ -53,4 +53,22 @@ describe('groupPopulations', () => {
     expect(g).toHaveLength(1)
     expect(g[0].title).toBe('Cells · Clustered')
   })
+
+  it('surfaces branch pops under Branches · Gated, after cells and tracks', () => {
+    const g = groupPopulations([{
+      valueName: 'stroma',
+      populations: [
+        { path: '/qc', name: 'qc', granularity: 'cell', category: 'gated' },
+        { path: '/endpoint-to-endpoint', name: 'endpoint-to-endpoint',
+          granularity: 'branch', category: 'gated' },
+        { path: '/junction-to-junction', name: 'junction-to-junction',
+          granularity: 'branch', category: 'gated' },
+      ],
+    }])
+    expect(g.map(x => x.title)).toEqual(['Cells · Gated', 'Branches · Gated'])
+    const branches = g.find(x => x.title === 'Branches · Gated')!
+    expect(branches.opts.map(o => o.value)).toEqual([
+      'stroma/endpoint-to-endpoint', 'stroma/junction-to-junction',
+    ])
+  })
 })

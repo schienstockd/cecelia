@@ -1,9 +1,10 @@
-// Grouped population picker (SPATIAL_REGIONS_PLAN.md Decision 14). The backend `/api/plots/populations`
-// tags every population with `granularity` ("cell" | "track") and `category` ("gated" | "clustered" |
-// "region" | "tracked" | "aggregated") — derived once, server-side, from (popType, path). This helper
-// turns the per-segmentation groups into ordered, labelled chip groups (*"Cells · Gated"*, …) so the
-// user sees WHAT they are choosing (cells vs tracks; gated vs clustered vs region) instead of one flat
-// undifferentiated strip. Pure/presentational — selection stays keyed on the `value` string.
+// Grouped population picker (SPATIAL_REGIONS_PLAN.md Decision 14, BRANCHING_PLAN.md Decision 2).
+// The backend `/api/plots/populations` tags every population with `granularity`
+// ("cell" | "track" | "branch") and `category` ("gated" | "clustered" | "region" | "tracked" |
+// "aggregated") — derived once, server-side, from (popType, path). This helper turns the
+// per-segmentation groups into ordered, labelled chip groups (*"Cells · Gated"*, …) so the user
+// sees WHAT they are choosing (cells vs tracks vs branches; gated vs clustered vs region) instead
+// of one flat undifferentiated strip. Pure/presentational — selection stays keyed on `value`.
 
 export interface PopOption { label: string; value: string; colour?: string }
 export interface PopGroupDef { title: string; opts: PopOption[] }
@@ -14,14 +15,15 @@ export interface RawPop {
 }
 export interface RawGroup { valueName: string; populations: RawPop[] }
 
-const GRAN_LABEL: Record<string, string> = { cell: 'Cells', track: 'Tracks' }
+const GRAN_LABEL: Record<string, string> = { cell: 'Cells', track: 'Tracks', branch: 'Branches' }
 const CAT_LABEL: Record<string, string> = {
   gated: 'Gated', clustered: 'Clustered', region: 'Regions', tracked: 'Tracked', aggregated: 'Aggregated',
 }
-// header order: cells before tracks; within each, gated → clustered → region → tracked → aggregated
+// header order: cells before tracks before branches; within each, gated → clustered → region → tracked → aggregated
 const ORDER = [
   'cell:gated', 'cell:clustered', 'cell:region', 'cell:aggregated',
   'track:gated', 'track:tracked', 'track:clustered', 'track:aggregated',
+  'branch:gated',
 ]
 
 function optOf(g: RawGroup, p: RawPop): PopOption {

@@ -840,6 +840,30 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    # ── Dispatch + param validation — Branching (segment.branching) ──────────────
+    # docs/todo/BRANCHING_PLAN.md Phase 1. New task registers via _task_from_fun_name and
+    # validate_params rejects out-of-range dilation sizes + wrong-typed booleans.
+    @testset "Param validation — Branching" begin
+        @test _task_from_fun_name("segment.branching") isa Branching
+
+        # preDilationSize/postDilationSize: int min=0, max=10
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("preDilationSize" => 99))
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("postDilationSize" => -1))
+        # useBorders: bool — a string must be rejected
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("useBorders" => "yes"))
+
+        # Sensible defaults validate cleanly
+        @test begin
+            validate_params(Branching(), Dict{String,Any}(
+                "valueName" => "default", "outputValueName" => "stroma",
+                "preDilationSize" => 2, "postDilationSize" => 2))
+            true
+        end
+    end
+
     # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
     @testset "Param validation — ClustPops" begin
         @test _task_from_fun_name("clustPops.cluster") isa ClustPops
@@ -1233,6 +1257,45 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test r.status == "done"
         @test get(r.attr, "condition", "") == "treated"
         rm(proj.root; recursive=true)
+    end
+
+    # ── Branch labels round-trip (BRANCHING_PLAN.md Decision 6) ──────────────────
+    # Skeleton (branch) label sets live in a dedicated `branch_labels` field, NOT in the generic
+    # `labels` dict, so the labels/measure/tracking pickers never see branch labels. Guards: the
+    # field survives save!/init_object, its accessor resolves the disk path from branchLabels/,
+    # and a legacy ccid.json without the key still loads (defaults to empty).
+    @testset "Branch labels round-trip" begin
+        proj = create_project!(name="branch-rt-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        @test isempty(img.branch_labels)
+        img.branch_labels["stroma"] = ["stroma.zarr"]
+        save!(img)
+        r = init_object(proj.uid, img.uid)
+        @test r isa CciaImage
+        @test r.branch_labels["stroma"] == ["stroma.zarr"]
+        @test img_branch_labels_dir(r) == joinpath(r._dir, "branchLabels")
+        @test img_branch_labels_path(r, "stroma") == joinpath(r._dir, "branchLabels", "stroma.zarr")
+        # unregistered value_name falls back to {value_name}.zarr (write path)
+        @test img_branch_labels_path(r, "shg") == joinpath(r._dir, "branchLabels", "shg.zarr")
+
+        # legacy ccid.json (no branch_labels key) → empty
+        ccid = joinpath(r._dir, "ccid.json")
+        raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+        delete!(raw, "branch_labels")
+        open(ccid, "w") do io; JSON3.write(io, raw); end
+        legacy = init_object(proj.uid, img.uid)
+        @test isempty(legacy.branch_labels)
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Reserved value_name suffixes ─────────────────────────────────────────────
+    # __tracks and __branch are companion-table markers, not legal user segmentation names.
+    @testset "Reserved value_name suffixes" begin
+        @test  is_reserved_value_name("stroma__tracks")
+        @test  is_reserved_value_name("stroma__branch")
+        @test !is_reserved_value_name("stroma")
+        @test !is_reserved_value_name("stroma.branch")   # dot-suffix is the old R convention; not reserved
     end
 
     # ── Include/exclude (+ note) round-trip ──────────────────────────────────────
@@ -3660,6 +3723,53 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # unknown token / empty list throw loudly.
         @test_throws ErrorException population_accept_groups([:img1], names_for, load, ["bogus"])
         @test_throws ErrorException population_accept_groups([:img1], names_for, load, String[])
+    end
+
+    # ── branch pop_type (BRANCHING_PLAN.md Decision 2) ────────────────────────────
+    # Adding "branch" to the framework must extend POP_MAP_SUFFIX/ACCEPT_TOKENS/pop_category and
+    # route via population_accept_groups with granularity="branch". The framework was designed to
+    # take a third pop_type; this guards the wiring.
+    @testset "branch pop_type wiring" begin
+        # POP_MAP_SUFFIX resolves the gating file suffix.
+        @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
+        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"), "gating/stroma__branch.json")
+
+        # ACCEPT_TOKENS + validators.
+        @test "branch" in Cecelia.ACCEPT_TOKENS
+
+        # pop_category: branch pops are gated (the ensure_filter_pop! per-branch-type case).
+        @test pop_category("branch", "/endpoint-to-endpoint") == "gated"
+
+        # population_accept_groups tags branch pops with granularity="branch" and only surfaces
+        # them when "branch" is in accepts. A mixed request keeps cells + branches.
+        bm = PopulationMap(pop_type="branch", value_name="C")
+        add_pop!(bm, "endpoint-to-endpoint"; filter_measure="branch-type",
+                 filter_fun="eq", filter_values=0)
+        add_pop!(bm, "junction-to-junction"; filter_measure="branch-type",
+                 filter_fun="eq", filter_values=2)
+        fm = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1))
+        names_for = _ -> ["C"]
+        load = (_, vn, pt) -> vn != "C" ? nothing :
+            pt == "live"   ? fm :
+            pt == "branch" ? bm : nothing
+
+        # accepts=["branch"] → only branch pops, no cell root
+        br = population_accept_groups([:img1], names_for, load, ["branch"])[1].populations
+        @test Set(p.path for p in br) == Set(["/endpoint-to-endpoint", "/junction-to-junction"])
+        @test all(p.granularity == "branch" for p in br)
+        @test all(p.category    == "gated"  for p in br)
+        @test all(p.pop_type    == "branch" for p in br)
+
+        # accepts=["live","branch"] → all-cells root + cell gate + branches
+        mix = population_accept_groups([:img1], names_for, load, ["live", "branch"])[1].populations
+        gcats = Set((p.granularity, p.category) for p in mix)
+        @test ("cell", "gated") in gcats
+        @test ("branch", "gated") in gcats
+
+        # accepts=["live"] must NOT include branches.
+        only_cells = population_accept_groups([:img1], names_for, load, ["live"])[1].populations
+        @test all(p.granularity == "cell" for p in only_cells)
     end
 
     # ── ensure_filter_pop! — a cutoff materialised as a reusable filter pop (Decision 14) ────────

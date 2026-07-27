@@ -13,6 +13,7 @@ license.
 | **celltrackR** (`ingewortel/celltrackR`, R) — Wortel et al. | GPL-2.0 | `app/src/tasks/tracking/track_measures.jl` is a from-scratch reimplementation of celltrackR's track-measure functions (path length, displacement, straightness, turning/overall angle, asphericity, …), cited inline against the reference. Credit and notice carried here. |
 | **CytoMAP** (`DrStoltzfus/CytoMAP`, MATLAB) — Stoltzfus et al., *Cell Reports* 31(3):107523 (2020), [DOI 10.1016/j.celrep.2020.107523](https://doi.org/10.1016/j.celrep.2020.107523) | MIT | The spatial region-clustering / neighbourhood-composition readouts in `app/src/tasks/spatialAnalysis/` and `app/src/tasks/clustRegions/` are informed by CytoMAP's analytical outputs (raster-window composition, region SOM, density co-localization, region adjacency). Functions derived from a CytoMAP method are cited inline. Statistical tests use squidpy rather than porting CytoMAP's MATLAB code. |
 | **CODEX i-niches** — Goltsev et al., *Cell* 174(4):968-981 (2018), [DOI 10.1016/j.cell.2018.07.010](https://doi.org/10.1016/j.cell.2018.07.010) | method (no code reused) | The pairwise cell-type contact **log-odds ratio** statistic (`spatial_utils.pairwise_contact_logodds`, `spatialAnalysis.neighbourStats`) is a from-scratch implementation of the CODEX observed-vs-expected Delaunay-contact metric; the neighbourhood-composition "i-niche" concept behind region clustering is theirs. Cited inline. |
+| **ILEE_CSK** — Li et al., *Plant Cell* 35(2):371-397 (2023), [DOI 10.1093/plcell/koac290](https://doi.org/10.1093/plcell/koac290) | method (no code vendored) | The anisotropy path in `app/src/tasks/segment/branching_run.py` (`_anisotropy_2d/3d`) — local structure tensor at scale σ, mean-pooled over `box × box` windows, eigendecomposed per box → the same 5-array output ILEE_CSK produced for cytoskeleton anisotropy — is a from-scratch reimplementation against `skimage.feature.structure_tensor`. The upstream `ILEE_CSK` Python package is unmaintained (last commit 2024-04-22, `imp` unimportable on py3.12); no code from it is bundled. Cited inline. |
 
 ## Bundled / dependencies
 
@@ -28,6 +29,7 @@ license.
 | leidenalg | GPL-3.0-or-later |
 | squidpy | BSD-3-Clause |
 | scikit-image | BSD-3-Clause |
+| skan | BSD-3-Clause |
 | NumPy / SciPy | BSD-3-Clause |
 | pandas | BSD-3-Clause |
 | zarr | MIT |

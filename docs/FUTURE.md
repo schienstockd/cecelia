@@ -163,6 +163,32 @@ conditional on something that may never happen.)
 
 ---
 
+## Per-branch channel intensities
+
+**What.** `segment.branching` writes one row per skeleton path with skan's geometric measures
+(length, tortuosity, branch-type, endpoint coordinates, anisotropy). It does **not** fold in
+per-branch channel intensities (the old R version's `saveProps=TRUE` path).
+
+**Why deferred.** The old approach was: register the skeleton labels zarr as a normal label set
+under `{vn}.branch` and let the user run `segment.measureLabels` on it. That would work
+mechanically in the current framework too — but it puts the skeleton value_name into the generic
+`labels` picker (measure/track/segment dropdowns), which was the exact picker-pollution
+`BRANCHING_PLAN.md` Decision 6 dodges by giving branch labels a dedicated `img.branch_labels`
+field. It also creates a *second* branch table (`labelProps/{vn}.branch.h5ad`) alongside the
+sidecar (`labelProps/{vn}__branch.h5ad`), which pop_df can't cleanly reconcile.
+
+The clean fix is a `intensityChannels` param on `segment.branching` itself: extract each branch's
+channel means per timepoint inside the runner and fold them into the sidecar's `X`/`var`. That
+keeps the sidecar contract but is a small self-contained addition — deferred until someone asks.
+
+**Revisit when.** A user needs per-branch channel intensities (e.g. co-localisation of a marker
+with branch objects). Implementation is small — a mean-per-branch pass in `branching_run.py`
+using the skeleton labels + the raw image, plus a new task param.
+
+**Reference:** `docs/todo/BRANCHING_PLAN.md` Decisions 5 + 6.
+
+---
+
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a
