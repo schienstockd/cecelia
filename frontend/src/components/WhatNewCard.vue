@@ -131,15 +131,20 @@ const tipsOptOut = computed({
   color: var(--cc-text-dim);
   font-size: var(--cc-fs-sm);
 }
-/* Real sketch — drop the placeholder border/height, let SketchCanvas scale to the card width. */
+/* Real sketch — fix the container aspect ratio so the card height stays STABLE when the user
+   cycles tips (sketches otherwise vary in native aspect — logo is ~3.8:1, gating is 1:1). The
+   SVG's own preserveAspectRatio="xMidYMid meet" letterboxes narrower sketches; nav zones stretch
+   the full container so clicks in the letterbox still page. */
 .wn-sketch.wn-sketch-render {
+  aspect-ratio: 2 / 1;
   height: auto;
   border: none;
   background: transparent;
   padding: 0;
   position: relative;
+  overflow: hidden;
 }
-.wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: auto; }
+.wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: 100%; display: block; }
 
 /* Edge-click nav — invisible zones on the sketch's left/right edges; chevron fades in on hover. */
 .wn-nav {

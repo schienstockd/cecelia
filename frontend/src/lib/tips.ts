@@ -108,6 +108,42 @@ export const TIPS: WhatNewCard[] = [
     ],
     sketchAnimation: { id: 'stats' },
   },
+  {
+    id: 'tip-analysis-board',
+    kind: 'tip',
+    title: 'Analysis boards',
+    description: 'The Analysis board arranges plots into A4 "comic plates" — cross-image summary, gating strategy, cluster heatmaps, image tiles. Publish-ready. Export the whole board as PDF or SVG, individual plots as CSV.',
+    steps: [
+      'Open Analysis; add plots into a plate.',
+      'Drag to lay them out; each plate is one A4 page.',
+      'Export the tab as PDF (raster) or SVG (vector).',
+    ],
+    sketchAnimation: { id: 'analysis_board' },
+  },
+  {
+    id: 'tip-notebooks',
+    kind: 'tip',
+    title: 'Notebooks Playground',
+    description: 'Every project gets its own Pluto notebook workspace for pure-Julia downstream analysis. Use CeceliaNb helpers to load pop_df / clusters, then DataFrames + Plots or AlgebraOfGraphics — versioned per project.',
+    steps: [
+      'Open the Notebooks module; create a notebook.',
+      'Load populations with CeceliaNb.load_pop_df("root/…").',
+      'Snapshot when the analysis is worth pinning.',
+    ],
+    sketchAnimation: { id: 'notebooks' },
+  },
+  {
+    id: 'tip-tracks-in-napari',
+    kind: 'tip',
+    title: 'Track stats + tracks in napari',
+    description: 'Summary stats live in the app (behaviour state proportions, speed distributions); the tracks themselves are best viewed as coloured polylines over the raw image in napari — the two views work together.',
+    steps: [
+      'Run Behaviour → HMM on tracked images.',
+      'Open the summary plots for the stats.',
+      'Open the image in napari; tracks show as polylines coloured by state.',
+    ],
+    sketchAnimation: { id: 'napari_tracks' },
+  },
 ]
 
 /** Deterministic daily index — same tip everywhere on the same date. Returns -1 on empty catalogue. */
