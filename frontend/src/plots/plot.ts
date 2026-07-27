@@ -680,8 +680,9 @@ function pairsFor(cmp: ComparisonsResult): StatsComparisonPair[] {
 }
 
 /**
- * Build Plot marks for the statistical brackets. Returns [] on rotated charts (unsupported
- * for now), when no pairs would render, or when server labels don't map to chart positions.
+ * Build Plot marks for the statistical brackets. Renders horizontally (bracket over the measure-Y
+ * axis) by default and vertically (bracket over the measure-X axis) when `o.rotate` is on. Returns
+ * [] when no pairs would render or when server labels don't map to chart positions.
  */
 function statsBracketMarks(
   Plot: PlotModule,
@@ -691,11 +692,10 @@ function statsBracketMarks(
   opts: { showNs: boolean; useStars: boolean },
 ): unknown[] {
   const cmp = r.comparisons
-  if (!cmp || o.rotate) return []
+  if (!cmp) return []
   const extent = measureExtent(r)
   if (!extent) return []
   const { idx } = seriesIndex(r, keyOf, o.facet)
-  // server label → chart X position (integer index into the linear scale)
   const labelBySeries = serverStatsLabels(r.series)
   const posByLabel = new Map<string, number>()
   for (const label of cmp.groups) {
@@ -717,18 +717,26 @@ function statsBracketMarks(
   const start = extent.max + ext * STATS_HEADROOM
   const step  = ext * STATS_STACK_GAP
   const marks: unknown[] = []
-  // Theme-aware ink — light foreground on the dark ground, dark ink on the light PDF/PNG export path.
   const ink = o.darkTheme ? '#e6e6e6' : '#111'
   shown.forEach((p, i) => {
     const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
-    const [x1, x2] = lo < hi ? [lo, hi] : [hi, lo]
-    const y = start + i * step
+    const [p1, p2] = lo < hi ? [lo, hi] : [hi, lo]
+    const m = start + i * step        // measure-axis coordinate for this row of the stack
     const label = opts.useStars ? p.significance : formatPValue(p.pAdj)
-    marks.push(Plot.ruleY([y], { x1, x2, stroke: ink, strokeWidth: 1 }))
-    marks.push(Plot.text([{ x: (x1 + x2) / 2, y, label }],
-                         { x: 'x', y: 'y', text: 'label',
-                           textAnchor: 'middle', dy: STATS_TEXT_DY,
-                           fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+    if (o.rotate) {
+      // rotated (horizontal chart): pos=Y, meas=X → bracket is a VERTICAL rule at x=m spanning y=[p1,p2]
+      marks.push(Plot.ruleX([m], { y1: p1, y2: p2, stroke: ink, strokeWidth: 1 }))
+      marks.push(Plot.text([{ x: m, y: (p1 + p2) / 2, label }],
+                           { x: 'x', y: 'y', text: 'label',
+                             textAnchor: 'middle', dx: 6, dy: 0,
+                             fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink, rotate: -90 }))
+    } else {
+      marks.push(Plot.ruleY([m], { x1: p1, x2: p2, stroke: ink, strokeWidth: 1 }))
+      marks.push(Plot.text([{ x: (p1 + p2) / 2, y: m, label }],
+                           { x: 'x', y: 'y', text: 'label',
+                             textAnchor: 'middle', dy: STATS_TEXT_DY,
+                             fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+    }
   })
   return marks
 }
