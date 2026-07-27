@@ -178,6 +178,40 @@ Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice +
 
 The Julia handler converts channel names → 0-based indices before writing params JSON.
 
+### Custom cellpose checkpoints
+
+Cellpose ships four built-in models (`cyto3` / `cyto2` / `cyto` / `nuclei`). Custom checkpoints —
+e.g. **`ccia.fluo`**, the fluorescence model that segments dendritic / SHG stroma (upstream of
+`segment.branching`) — live at:
+
+```
+<config_dir>/models/cellposeModels/<name>
+```
+
+`config_dir` is `~/.cecelia` for an installed app; in dev, it's whatever `.env`'s
+`CECELIA_DEV_DIR` points at. Drop the checkpoint file there (any filename cellpose can load;
+`.pt` or no extension both work), then select it from the **Model** dropdown in the cellpose
+task form. The Julia handler resolves the name via `cellpose_model_path(name)` in
+`app/src/config.jl` and hands Python an absolute path, which
+`cellpose_utils.py::_get_model` picks up through cellpose's `pretrained_model=<path>` branch.
+
+If a custom model name is selected but the file is missing at that path, the task errors out
+before dispatch with a message telling you where the file should live. Built-in names always
+pass through unchanged.
+
+**Getting `ccia.fluo` for testing.** Copy from an old-cecelia checkout, or download from
+[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) (mirrors the old
+R `cciaModels()` distribution point):
+
+```bash
+mkdir -p "$CECELIA_DEV_DIR/models/cellposeModels"
+cp path/to/old-R-shiny-version/inst/models/cellposeModels/ccia.fluo \
+   "$CECELIA_DEV_DIR/models/cellposeModels/"
+```
+
+An automated fetcher (`pixi run models-fetch`, equivalent to the old `cciaModels()`) is planned —
+see TODO #00087.
+
 ---
 
 ## Napari integration

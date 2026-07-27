@@ -79,6 +79,53 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
     end
 
+    # ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
+    # A user-placed checkpoint under `<config_dir>/models/cellposeModels/{name}` is picked up
+    # by the cellpose Julia handler and passed to Python as an absolute file path (which
+    # `cellpose_utils.py::_get_model` loads via `pretrained_model=…`). No shell-outs, no
+    # network — pure filesystem resolution.
+    @testset "cellpose_model_path resolver" begin
+        td = mktempdir()
+        # missing file → nothing
+        @test cellpose_model_path("ccia.fluo", td) === nothing
+        @test cellpose_model_path("", td) === nothing
+        @test cellpose_model_path("   ", td) === nothing
+
+        # place a file, resolver returns its absolute path
+        mkpath(joinpath(td, "models", "cellposeModels"))
+        f = joinpath(td, "models", "cellposeModels", "ccia.fluo")
+        open(io -> write(io, "stub"), f, "w")
+        @test cellpose_model_path("ccia.fluo", td) == f
+
+        # cellpose_models_dir is a pure path — no I/O, no side-effects
+        @test cellpose_models_dir(td) == joinpath(td, "models", "cellposeModels")
+    end
+
+    # ccia.fluo must be selectable in the cellpose task spec (a wrong entry in the select would
+    # get rejected by param validation).
+    @testset "cellpose.json lists ccia.fluo as a model option" begin
+        @test begin
+            validate_params(CellposeSegment(),
+                Dict{String,Any}("models" => Dict{String,Any}(
+                    "0" => Dict{String,Any}(
+                        "model" => "ccia.fluo", "matchAs" => "base",
+                        "cellChannels" => [], "nucChannels" => [],
+                        "cellDiameter" => 10, "normalise" => 99.9,
+                        "stitchThreshold" => 0.0, "threshold" => 0,
+                        "medianFilter" => 0, "gaussianFilter" => 0.0))))
+            true
+        end
+        # a genuinely-unknown model still gets rejected
+        @test_throws ParamValidationError validate_params(CellposeSegment(),
+            Dict{String,Any}("models" => Dict{String,Any}(
+                "0" => Dict{String,Any}(
+                    "model" => "not-a-real-model", "matchAs" => "base",
+                    "cellChannels" => [], "nucChannels" => [],
+                    "cellDiameter" => 10, "normalise" => 99.9,
+                    "stitchThreshold" => 0.0, "threshold" => 0,
+                    "medianFilter" => 0, "gaussianFilter" => 0.0))))
+    end
+
     @testset "run_py custom-modules PYTHONPATH (config_dir not shadowed)" begin
         # Regression: run_py's task-dir parameter was named `config_dir`, which shadowed the
         # config_dir() function, so the custom-modules PYTHONPATH line `joinpath(config_dir(), …)`
