@@ -85,7 +85,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     haskey(src_meta, "ori_path") && (crop_meta["ori_path"] = src_meta["ori_path"])
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
-    new_img = add_image!(s; name = "$(img.name) (cropped)", kind = img.kind, meta = crop_meta)
+    new_img = add_image!(s; name = "$(img.name) (cropped)", meta = crop_meta)
 
     # per-task run subdirs (mirrors the import route) so downstream tasks have their homes on the new image
     task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())

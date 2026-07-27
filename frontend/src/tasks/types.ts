@@ -46,6 +46,8 @@ export interface TaskDef {
   outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'
   qcPlot?: string         // plotDefinitions id of this task's default QC plot (e.g. "segmentation_qc"); if set,
                           // the whiteboard Live view auto-shows a QC thumbnail linked to this node
+  requires?: { axes?: string[] }  // task-applicability gate: axis codes the image must carry (e.g. ["T"]);
+                                  // absent = applies to any image. See utils/taskGating.ts + docs/MODULES.md.
 }
 
 export type ParamValues = Record<string, unknown>

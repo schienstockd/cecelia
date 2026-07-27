@@ -9,7 +9,6 @@ using JSON3
 mutable struct CciaImage
     uid::String
     name::String
-    kind::String
     status::String                    # pending | converting | done | failed
     filepath::Dict{String,String}     # versioned filenames (relative to zero dir)
     labels::Dict{String,Vector{String}}  # valueName → [filename, ...] (e.g. labels.zarr, labels_cyto.zarr)
@@ -31,8 +30,8 @@ mutable struct CciaImage
     _pop_df_cache::Dict{String,Any}
 end
 
-function CciaImage(; uid=gen_uid(), name="", kind="static", status="pending", dir="")
-    CciaImage(uid, name, kind, status,
+function CciaImage(; uid=gen_uid(), name="", status="pending", dir="")
+    CciaImage(uid, name, status,
               Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
               Dict{String,Any}(),                 # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
@@ -145,7 +144,6 @@ function save!(img::CciaImage)
         "class"          => "CciaImage",
         "uid"            => img.uid,
         "name"           => img.name,
-        "kind"           => img.kind,
         "status"         => img.status,
         "filepath"       => img.filepath,
         "labels"         => img.labels,
@@ -254,6 +252,43 @@ end
 physical_size_for_axis(img::CciaImage, axis::Symbol)::Float64 =
     physical_size_for_axis(first(img_physical_sizes(img)), axis)
 
+"""
+    img_axes(img) -> Set{Symbol}
+
+The set of non-trivial axes the image carries — a subset of `{:T, :Z, :C, :Y, :X}`. Read from
+`img.meta` (persisted at import from OME-XML via `Size*`), so no zarr/XML I/O. `:X`/`:Y` are always
+present; `:T`/`:Z`/`:C` present iff the corresponding size is > 1.
+
+Canonical predicate for task-level applicability gates (`requires.axes` in the task JSON,
+`task_applies` in `tasks/task.jl`) — don't hand-roll `SizeT > 1` in a task. `TimeIncrement` is
+honoured as a fallback signal for T on projects imported before `SizeT` was persisted.
+"""
+function img_axes(img::CciaImage)::Set{Symbol}
+    m = img.meta
+    axes = Set{Symbol}((:X, :Y))
+    geti(key) = begin
+        v = get(m, key, nothing)
+        (isnothing(v) || v == "") ? 1 : something(tryparse_i(v), 1)
+    end
+    geti("SizeT") > 1 && push!(axes, :T)
+    geti("SizeZ") > 1 && push!(axes, :Z)
+    geti("SizeC") > 1 && push!(axes, :C)
+    # Fallback: pre-SizeT imports still carry TimeIncrement when the source was a timelapse.
+    if :T ∉ axes
+        tiv = get(m, "TimeIncrement", nothing)
+        (!isnothing(tiv) && tiv != "" && !isnothing(tryparse_f64(tiv))) && push!(axes, :T)
+    end
+    axes
+end
+
+"""Does the image have a T (time) axis? See `img_axes`."""
+img_has_time(img::CciaImage)::Bool = :T ∈ img_axes(img)
+
+tryparse_i(v::Integer) = Int(v)
+tryparse_i(v::Real) = isfinite(v) ? Int(round(v)) : nothing
+tryparse_i(v::AbstractString) = tryparse(Int, v)
+tryparse_i(::Any) = nothing
+
 tryparse_f64(v::Real) = Float64(v)
 tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing
@@ -267,8 +302,11 @@ function _load_image(dir::String)::CciaImage
         string(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
         for (k, v) in get(d, "labels", Dict{String,Any}()))
     icn = Dict{String,Any}(string(k) => v for (k, v) in get(d, "imChannelNames", Dict{String,Any}()))
+    # Legacy `kind` field silently ignored — project-wide static/live/flow distinction was dropped
+    # in favour of per-image axis gating (see Cecelia.task_applies). Legacy ccid.jsons round-trip
+    # into memory without kind; next save! strips it from disk.
     CciaImage(
-        d["uid"], d["name"], get(d, "kind", "static"), get(d, "status", "pending"),
+        d["uid"], d["name"], get(d, "status", "pending"),
         to_spaths("filepath"), to_labels(), to_spaths("label_props"),
         icn,
         to_spaths("attr"),

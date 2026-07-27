@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { timelapseDuration, imageTableCsvRows, sortImages, imageSortValue } from './imageTable'
 import type { CciaImage } from '../stores/project'
 
-const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'u', name: 'n', kind: 'live', status: 'done', ...o } as CciaImage)
+const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'u', name: 'n', status: 'done', ...o } as CciaImage)
 
 describe('timelapseDuration', () => {
   it('is empty when not a timelapse or the interval is unknown', () => {
