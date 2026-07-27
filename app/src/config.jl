@@ -87,13 +87,24 @@ cellpose_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
     cellpose_model_path(name) -> String | Nothing
 
 Absolute path to a custom cellpose checkpoint by filename, or `nothing` if the file doesn't
-exist. Empty/whitespace name → `nothing` (no false positive on directory-only entries). This is
-the ONE place the Julia task handler looks — no other resolver.
+exist. Empty/whitespace name → `nothing` (no false positive on directory-only entries).
+
+Two locations are checked, in order — mirrors the bioformats2raw resolver's bundled/override
+pattern:
+  1. `<install root>/models/cellposeModels/{name}` — where `install.sh` / `install.ps1`
+     unpacks the `schienstockd/ceceliaModels` release (like bioformats2raw at
+     `<install>/bioformats2raw/`; in dev, resolved to `<repo>/models/` after
+     `pixi run models-fetch`).
+  2. `<config_dir>/models/cellposeModels/{name}` — user override slot (drop-in checkpoints
+     that aren't in the shipped set).
 """
 function cellpose_model_path(name::AbstractString,
                              dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
     s = strip(String(name))
     isempty(s) && return nothing
+    # `@__DIR__` = `<repo>/app/src` → `..`/`..` = repo (install) root.
+    bundled = joinpath(@__DIR__, "..", "..", "models", "cellposeModels", s)
+    isfile(bundled) && return bundled
     p = joinpath(cellpose_models_dir(dev_dir), s)
     isfile(p) ? p : nothing
 end

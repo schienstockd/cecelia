@@ -133,6 +133,17 @@ comes from the Pixi env, so only the JARs are downloaded. This also means the **
 gets bioformats2raw too** — the branch tarball never contained it (it's not in git), so before this
 the dev channel had no working image import.
 
+**Custom cellpose checkpoints are NOT in the bundle either.** Same reason: the fluorescence
+model `ccia.fluo` alone is ~26 MB, larger than the entire app tarball, and more checkpoints will
+follow. `install.sh` / `install.ps1` fetch them from
+[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into
+`<install>/models/cellposeModels/` (only `cellposeModels/`; the upstream `btrackModels/` isn't
+needed here — pineapple's btrack config is vendored beside its runner). The Julia
+resolver`cellpose_model_path(name)` (config.jl) mirrors bioformats2raw's bundled/override pattern:
+`<install>/models/cellposeModels/` first, `<config_dir>/models/cellposeModels/` as a user override
+slot. Dev shortcut: `pixi run models-fetch` — same fetch, driven by `scripts/models_fetch.py`.
+Override the ref with `CECELIA_MODELS_REF=v1.2` (install) or `--ref v1.2` (pixi task).
+
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
 `releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a
 *non-prerelease* release, so while we're on release candidates (all `v*-rcN` marked prerelease) it

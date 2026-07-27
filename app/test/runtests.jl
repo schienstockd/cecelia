@@ -85,17 +85,19 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # `cellpose_utils.py::_get_model` loads via `pretrained_model=…`). No shell-outs, no
     # network — pure filesystem resolution.
     @testset "cellpose_model_path resolver" begin
+        # user-override slot (config_dir): missing file → nothing; empty/blank name → nothing.
         td = mktempdir()
-        # missing file → nothing
-        @test cellpose_model_path("ccia.fluo", td) === nothing
+        @test cellpose_model_path("__no_such_model__.pt", td) === nothing
         @test cellpose_model_path("", td) === nothing
         @test cellpose_model_path("   ", td) === nothing
 
-        # place a file, resolver returns its absolute path
+        # place a file in the config-dir override slot, resolver returns its absolute path (the
+        # bundled slot at <repo>/models/cellposeModels/ takes precedence when both exist — that
+        # path is real in this repo and can't be safely mocked here).
         mkpath(joinpath(td, "models", "cellposeModels"))
-        f = joinpath(td, "models", "cellposeModels", "ccia.fluo")
+        f = joinpath(td, "models", "cellposeModels", "__unique_test_model__.pt")
         open(io -> write(io, "stub"), f, "w")
-        @test cellpose_model_path("ccia.fluo", td) == f
+        @test cellpose_model_path("__unique_test_model__.pt", td) == f
 
         # cellpose_models_dir is a pure path — no I/O, no side-effects
         @test cellpose_models_dir(td) == joinpath(td, "models", "cellposeModels")

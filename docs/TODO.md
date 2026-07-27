@@ -115,14 +115,6 @@ pop type (a *third* granularity beside cell/track) is worth its cost vs. reading
 existing ungated `labels` pop type, and how `segment.measureLabels` on a branch label set should
 interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-input
 
-**#00087** — **Automated fetch for custom cellpose models (`pixi run models-fetch`)**
-The custom-model plumbing has landed on `feat/custom-cellpose-models`: `cellpose_model_path(name)`
-in `app/src/config.jl` + substitution in the cellpose task handler + `ccia.fluo` in the model
-select. What's still missing is the one-command install: mirror the old R `cciaModels()` — a
-`pixi run models-fetch` that downloads `schienstockd/ceceliaModels` (zip from GitHub master) and
-unpacks `cellposeModels/` into `<config_dir>/models/`. Manual copy works today (see
-`docs/SEGMENTATION.md` → *Custom cellpose checkpoints*); the fetcher is the ergonomic finish
-for distribution.
 
 ---
 

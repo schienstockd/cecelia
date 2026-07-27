@@ -182,35 +182,36 @@ The Julia handler converts channel names → 0-based indices before writing para
 
 Cellpose ships four built-in models (`cyto3` / `cyto2` / `cyto` / `nuclei`). Custom checkpoints —
 e.g. **`ccia.fluo`**, the fluorescence model that segments dendritic / SHG stroma (upstream of
-`segment.branching`) — live at:
+`segment.branching`) — are fetched from
+[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into the install
+root, matching the **bioformats2raw pattern**: too large (~26 MB) to ship in the bundle, so
+`install.sh` / `install.ps1` fetch them at install time.
 
-```
-<config_dir>/models/cellposeModels/<name>
-```
-
-`config_dir` is `~/.cecelia` for an installed app; in dev, it's whatever `.env`'s
-`CECELIA_DEV_DIR` points at. Drop the checkpoint file there (any filename cellpose can load;
-`.pt` or no extension both work), then select it from the **Model** dropdown in the cellpose
-task form. The Julia handler resolves the name via `cellpose_model_path(name)` in
-`app/src/config.jl` and hands Python an absolute path, which
-`cellpose_utils.py::_get_model` picks up through cellpose's `pretrained_model=<path>` branch.
-
-If a custom model name is selected but the file is missing at that path, the task errors out
-before dispatch with a message telling you where the file should live. Built-in names always
-pass through unchanged.
-
-**Getting `ccia.fluo` for testing.** Copy from an old-cecelia checkout, or download from
-[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) (mirrors the old
-R `cciaModels()` distribution point):
+**Fetch (dev / on-demand):**
 
 ```bash
-mkdir -p "$CECELIA_DEV_DIR/models/cellposeModels"
-cp path/to/old-R-shiny-version/inst/models/cellposeModels/ccia.fluo \
-   "$CECELIA_DEV_DIR/models/cellposeModels/"
+pixi run models-fetch     # downloads schienstockd/ceceliaModels master → <repo>/models/
 ```
 
-An automated fetcher (`pixi run models-fetch`, equivalent to the old `cciaModels()`) is planned —
-see TODO #00087.
+Override the branch/tag with `--ref v1.2` or the destination with `--dest /some/path`. The
+installers pin the branch via `CECELIA_MODELS_REF`.
+
+**Where the app looks (`cellpose_model_path(name)` in `app/src/config.jl`):**
+
+1. `<install root>/models/cellposeModels/<name>` — the bundle (what `install.sh` /
+   `pixi run models-fetch` populate). In dev, this is `<repo>/models/cellposeModels/`.
+2. `<config_dir>/models/cellposeModels/<name>` — user override slot for drop-in checkpoints
+   that aren't in the shipped set.
+
+Select the model from the **Model** dropdown in the cellpose task form; the Julia handler
+substitutes an absolute file path before dispatch, and `cellpose_utils.py::_get_model` picks
+it up through cellpose's `pretrained_model=<path>` branch. If the file is missing at both
+locations, the task errors out before dispatch with a message telling you where it should live.
+Built-in names (`cyto3` etc.) always pass through unchanged.
+
+**btrack models are NOT fetched.** The btrack task uses a vendored config beside its runner
+(`app/src/tasks/tracking/cell_config.json`); the upstream `ceceliaModels/btrackModels/` set
+isn't needed and is skipped by both the installer and `pixi run models-fetch`.
 
 ---
 
