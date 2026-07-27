@@ -11,7 +11,7 @@ thinking survives a context break and anyone (human or agent) can pick it up col
 |-----|-------|-------|
 | `docs/TODO.md` | the backlog | numbered items, one line → one paragraph each |
 | `docs/todo/*_PLAN.md` | **parked plans** | full design doc: decisions + phases + architecture |
-| `docs/FUTURE.md` | deferred *known-better* alternatives (ecosystem/scale not ready) | what/why-deferred/when-to-revisit |
+| `docs/FUTURE.md` | anything **set aside**: known-better alternatives, non-goals, trigger-gated work | what/why-deferred/when-to-revisit |
 | `docs/ROADMAP.md` / `docs/MILESTONES.md` | forward phase goals / shipped ledger | high-level |
 | `docs/<AREA>.md` | how a **built** subsystem works | permanent reference |
 

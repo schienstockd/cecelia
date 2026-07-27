@@ -1,16 +1,32 @@
 # TODO
 
-IDs are permanent — never renumber. Add new items by incrementing the highest existing ID.
-This file tracks **open work only**. When an item is done, **delete it** — the record of what changed
-lives in git history / merged PRs / the GitHub Releases notes (auto-generated at each tag), not here.
+**Open work only — things someone intends to do.** When an item is done, **delete it**; what changed
+is recorded in git history, merged PRs and the release notes, not here.
 
-Items marked **🔹 needs-input** can't be finished without something only you (D) can provide — a
-test asset, a domain-specific expected value, or a decision an agent shouldn't make alone.
-Grep `needs-input` to list them.
+**Does it belong here?** This is the tracker with the loosest edges, so it collects orphans. Before
+adding, check the others:
+
+| If the item is… | It goes in |
+|---|---|
+| a deliberate **non-goal**, or conditional on something that may never happen | `docs/FUTURE.md` |
+| a **known-better approach set aside** (scale/ecosystem not ready) | `docs/FUTURE.md` |
+| big enough to need **locked decisions + phases** before building | a `docs/todo/<FEATURE>_PLAN.md` |
+| a **phase goal** for the current arc | `docs/ROADMAP.md` |
+| something that **already shipped** | `docs/MILESTONES.md` (or nowhere — git has it) |
+| **how a built subsystem works** | the relevant `docs/<AREA>.md` |
+
+A fact you want recorded but that nobody should act on is **not** a TODO item. That is the drift this
+table exists to stop: something worth knowing turns up, has no obvious home, and lands in the backlog.
+
+**IDs** are stable so code comments can cite them (`# see TODO #00020`); increment the highest. They
+are not sacred — renumber to resolve a collision, and say so in the item.
+
+Items marked **🔹 needs-input** need something only Dominik can provide — a test asset, a
+domain-specific expected value, or a decision an agent shouldn't make alone. Grep `needs-input`.
 
 ---
 
-## High priority
+## Next up
 
 **#00003** — **Per-image lockfiles wired into task commit sites**
 Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
@@ -38,10 +54,6 @@ Recommended approach (better than the original on two counts):
 
 Deferred: with only per-image tasks today, this collision does not occur in practice — implement
 when a set-level mutating task lands.
-
----
-
-## Medium priority
 
 **#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
 Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
@@ -84,8 +96,6 @@ select; (b) a resampling step that emits overlapping sub-tracks as first-class r
 per-image frame-interval normalisation so cross-rate comparison needs no manual skip. Settle the
 storage/UX before building. Not urgent.
 
----
-
 **#00020** — **Set-scope / incremental node subprocesses not killed on chain cancel**
 The per-image cancel path (#00016) kills running subprocesses. Set-scope (`_run_set_scope_node!`)
 and incremental (`_run_incremental_node!`) runners call the multi-image `_run_task` directly with
@@ -94,8 +104,6 @@ reach their subprocesses mid-run (the between-node flag still stops not-yet-star
 set-scope subprocess task exists yet (only mock/plot tasks), so impact is currently nil. When the
 first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
 path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
-
----
 
 **#00086** — **Port `createBranching` (skeleton/branch analysis) from the old R version**
 Skeletonise a segmentation into a branch/path network for fibrous non-cell structures (collagen/SHG,
@@ -109,21 +117,7 @@ interact with the `{vn}__branch.h5ad` sidecar (plan Decision 6). 🔹 needs-inpu
 
 ---
 
-## Low priority
-
-**#00087** — **Pan/zoom on gating plots — deliberately absent** (was a duplicate `#00003`)
-Gating plots have no pan/zoom, and shouldn't for now: this is the intended state, not a gap. Kept as
-an item only to record that **the reason it was hard has gone away.** The old blocker was the WebGL
-camera — the overlays would have had to replicate regl's `projectionLocal · cameraView · model`
-transform and invert it for gate hit-testing. That layer no longer exists: the dots and the gate
-overlay are both 2D canvases mapping data→px through the same `viewExtents`, and every layer already
-redraws when it changes. So if pan/zoom is ever wanted it is a wheel/drag handler that edits
-`viewExtents` — not a matrix-replication job. Details: `docs/POPULATION.md` → *Gating plot —
-rendering & UX hacks*.
-
-*Renumbered against the "IDs are permanent" rule, deliberately: `#00003` was duplicated by two items
-from the initial commit, and `app/src/model/project.jl` cites `#00003` for the per-image-lockfiles
-one — so that item keeps the ID and this one moved.*
+## Backlog
 
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
@@ -140,15 +134,3 @@ The test tasks `testTasks.imageTask`/`testTasks.setTask`/`testTasks.incrementalP
 `_fun_name_map` in `task_registry.jl`, the `Cecelia.jl` includes, and any test references. Not
 important (test-only scaffolding, no user-facing impact) but should be fixed for consistency;
 batch it rather than churn standalone.
-
-**#00084** — **Observer summary set roll-up mode (only if payload trim is insufficient)**
-Set-scoped observer calls (`get_measure_summary`, `get_cluster_summary`) return per-image detail ×
-many measures, big enough the observer offloads them to a subagent (~80k tokens). The first-pass trim
-(dedupe cluster `features` → `featuresByRun`, drop `mean`, round to 4 sig figs, `docs/ai-assist/`
-tools) should shrink this a lot. IF that's still too large, consider an OPTIONAL set roll-up mode:
-per-pop median-across-images + range instead of per-image. **Caveat (Dominik):** behaviour/phenotype
-vary *within* an image per population, so a median-per-image roll-up flattens real structure the
-observer needs to catch outliers — so this is a fallback, not obviously correct. Keep per-image as the
-default; a roll-up would be an explicit opt-in for the "compare T vs B across the set" question only.
-
----
