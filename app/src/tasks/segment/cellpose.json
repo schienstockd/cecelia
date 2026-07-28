@@ -262,13 +262,6 @@
           "type": "bool",
           "default": true,
           "tip": "Take intensity percentiles from the lowest-resolution level."
-        },
-        {
-          "key": "useDask",
-          "label": "Use Dask",
-          "type": "bool",
-          "default": false,
-          "tip": "Load as a Dask array; lowers peak RAM on very large images."
         }
       ]
     }

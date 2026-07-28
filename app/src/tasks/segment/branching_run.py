@@ -57,16 +57,23 @@ def _binary_mask(labels: np.ndarray, label_ids, use_borders: bool) -> np.ndarray
     return labels > 0
 
 
-def _skeletonise(bin_im: np.ndarray, pre: int, post: int, is_3d: bool) -> np.ndarray:
-    """Optional pre-closing → skeletonise → optional post-dilation for visibility."""
+def _skeletonise(bin_im: np.ndarray, pre: int, is_3d: bool) -> np.ndarray:
+    """Optional pre-closing → skeletonise. Returns the THIN (1px-wide) boolean skeleton.
+
+    Deliberately does NOT dilate here. `skan.Skeleton` (built on this next, in
+    `_summarise_paths`) walks pixel adjacency to construct the topological graph — degree-2
+    pixels are a path, degree>=3 pixels are junctions. Feeding it an already-dilated (multi-pixel-
+    wide) mask makes every pixel along the width have several neighbours, so skan reads a thick
+    line as riddled with spurious junctions/short paths instead of one clean edge. Post-dilation is
+    for napari visibility only and must happen AFTER skan has analysed the thin skeleton — see
+    `_dilate_label_image`, applied to the labelled output, mirroring the old
+    `create_branching.py` order (dilate `np.asarray(skeleton)`, never the mask skan consumes)."""
     if pre > 0:
         selem = skimage.morphology.ball(pre) if is_3d else skimage.morphology.disk(pre)
-        bin_im = skimage.morphology.binary_closing(bin_im.astype(np.uint8), selem)
-    sk = skimage.morphology.skeletonize(bin_im)
-    if post > 0:
-        selem = skimage.morphology.ball(post) if is_3d else skimage.morphology.disk(post)
-        sk = skimage.morphology.dilation(sk.astype(np.uint8), selem).astype(bool)
-    return sk
+        # `closing` on a boolean input is the deprecation-safe successor to `binary_closing`
+        # (skimage 0.26+ deprecates the binary_* helpers). Same operation.
+        bin_im = skimage.morphology.closing(bin_im.astype(bool), selem)
+    return skimage.morphology.skeletonize(bin_im)
 
 
 def _summarise_paths(skeleton_bool: np.ndarray, t_index):
@@ -75,6 +82,7 @@ def _summarise_paths(skeleton_bool: np.ndarray, t_index):
     Adds `label` (1..N, unique across timepoints via caller-tracked offset), `path-id`, and
     (when `t_index` is not None) `centroid_t`. Returns (df, skeleton_array). The skeleton array
     (`np.asarray(skeleton)`) is the per-pixel path label — write it into the labels zarr.
+    `skeleton_bool` MUST be the thin, unmodified skeletonize() output (see `_skeletonise`).
     """
     sk = skan.Skeleton(skeleton_bool)
     df = skan.summarize(sk, separator=SKAN_SEPARATOR)
@@ -82,6 +90,17 @@ def _summarise_paths(skeleton_bool: np.ndarray, t_index):
     if t_index is not None:
         df["centroid_t"] = int(t_index)
     return df, np.asarray(sk)
+
+
+def _dilate_label_image(label_arr: np.ndarray, post: int, is_3d: bool) -> np.ndarray:
+    """Post-dilation of the already-PATH-LABELLED array, for napari visibility only — grows each
+    path's footprint outward without touching skan's (already-finished) topology/branch-type
+    read. Never apply this to the boolean mask before `skan.Skeleton` sees it (see
+    `_skeletonise`)."""
+    if post <= 0:
+        return label_arr
+    selem = skimage.morphology.ball(post) if is_3d else skimage.morphology.disk(post)
+    return skimage.morphology.dilation(label_arr, selem)
 
 
 def _globalise_labels(df: pd.DataFrame, skeleton_arr: np.ndarray, offset: int):
@@ -339,9 +358,15 @@ def run(params: dict):
     labels_list, _ = zarr_utils.open_as_zarr(labels_path)
     labels_data = zarr_utils.fortify(labels_list[0])
 
+    # DimUtils is built against the FULL IMAGE shape (with channel), matching every other task
+    # in the codebase (measure_labels, cellpose, drift_correct, …). Labels have no C axis but
+    # DimUtils' `ignore_channel=True` on dim_idx handles that at the label-slicing sites below
+    # (_iterate_timepoints, flatten Z). Passing labels_data.shape here previously mismatched the
+    # OME-XML dim count (C=4 vs labels' rank) and threw `ValueError: 4 is not in list`.
     omexml = ome_xml_utils.parse_meta(im_path)
-    dim_utils = DimUtils(omexml)
-    dim_utils.calc_image_dimensions(labels_data.shape)
+    dim_utils = DimUtils(omexml, use_channel_axis=True)
+    im_list, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)   # metadata-only, cheap
+    dim_utils.calc_image_dimensions(im_list[0].shape)
 
     is_3d = dim_utils.is_3D()
     has_time = dim_utils.is_timeseries()
@@ -353,13 +378,8 @@ def run(params: dict):
         is_3d = False
         log.log(f"> flattened Z → shape {labels_data.shape}")
 
-    # Anisotropy needs the source image; only open it if the user asked. Merged fibre-channel image
-    # is materialised per timepoint below (max-projection over the selected channels, following the
-    # old create_branching convention).
-    im_list = None
-    if calc_anisotropy and fibre_channels:
-        im_list, _ = zarr_utils.open_as_zarr(im_path)
-        im_data = im_list[0]     # highest-res level
+    # Anisotropy pass gets the raw pixels off the SAME im_list (single open above); no extra read.
+    im_data = im_list[0] if (calc_anisotropy and fibre_channels) else None
 
     paths_tables = []
     skeleton_frames = []      # one np.ndarray per timepoint (or one for a static image)
@@ -368,21 +388,30 @@ def run(params: dict):
     aniso_coor, aniso_eigval, aniso_eigvec = [], [], []
     aniso_box_len, aniso_box_aniso, aniso_summary = [], [], []
 
+    # Progress ticks per timepoint — the dominant cost is skeletonise + skan.summarize per frame
+    # (139k branches over 7T on real data), so per-T is the right unit. Static images = 1 tick.
+    # Prime the meter at 0/total before the loop so the UI shows a bar before the first frame lands.
+    total_ticks = labels_data.shape[dim_utils.dim_idx("T", ignore_channel=True)] \
+                  if dim_utils.is_timeseries() else 1
+    log.progress(0, total_ticks)
+
     for t_index, labels_slice in _iterate_timepoints(labels_data, dim_utils):
         log.log(f"> skeletonise{'' if t_index is None else f' T={t_index}'}")
         bin_im = _binary_mask(labels_slice, label_ids, use_borders)
-        skeleton_bool = _skeletonise(bin_im, pre_dilation_size, post_dilation_size, is_3d)
+        skeleton_bool = _skeletonise(bin_im, pre_dilation_size, is_3d)
         df, skeleton_arr = _summarise_paths(skeleton_bool, t_index)
+        skeleton_arr = _dilate_label_image(skeleton_arr, post_dilation_size, is_3d)
 
         df, arr, label_offset = _globalise_labels(df, skeleton_arr, label_offset)
         if df.empty:
             skeleton_frames.append(arr)
+            log.progress((t_index if t_index is not None else 0) + 1, total_ticks)
             continue
         paths_tables.append(df)
         skeleton_frames.append(arr)
         n_skeletons_total += int(df["skeleton-id"].nunique())
 
-        if calc_anisotropy and im_list is not None:
+        if calc_anisotropy and im_data is not None:
             fibre_im = _extract_fibre_image(im_data, dim_utils, fibre_channels, t_index)
             fibre_2d = fibre_im
             sk_bool = skeleton_bool
@@ -400,6 +429,10 @@ def run(params: dict):
             aniso_scalar = float(ban.mean()) if ban.size else 0.0
             pxsz = float(dim_utils.im_physical_size("x")) if hasattr(dim_utils, "im_physical_size") else 1.0
             aniso_summary.append(_scalar_summary(fibre_2d, sk_bool, pxsz, aniso_scalar))
+
+        # tick at the END of the timepoint so anisotropy's cost (when on) rolls into this frame's
+        # tick, not the next one. For a static image t_index is None → single 1/1 tick.
+        log.progress((t_index if t_index is not None else 0) + 1, total_ticks)
 
     if paths_tables:
         paths_df = pd.concat(paths_tables, axis=0, ignore_index=True)
@@ -421,11 +454,18 @@ def run(params: dict):
 
     log.log(f"> write labels zarr {branch_labels_out}")
     os.makedirs(os.path.dirname(branch_labels_out), exist_ok=True)
+    # `create_multiscales`' numpy branch needs `im_chunks` — otherwise `create_zarr_from_ndarray`
+    # calls `chunks(None)` and TypeErrors. Chunk against the IMAGE shape (with C) because
+    # `ignore_channel=True` pops the C entry INSIDE create_zarr_from_ndarray — passing label-sized
+    # chunks would then pop the wrong axis. plane_chunks: 1 along non-spatial, 512-capped on Y/X.
+    im_plane_chunks = zarr_utils.plane_chunks(im_list[0].shape, dim_utils)
     zarr_utils.create_multiscales(
         stacked, branch_labels_out,
         dim_utils=dim_utils,
+        im_chunks=im_plane_chunks,
         nscales=1,
-        keyword="labels",
+        # `datasets` (the default) is what `zarr_data_to_list` reads. `keyword='labels'` was for a
+        # legacy R store layout only; using it here writes a store no cecelia reader can open.
         ignore_channel=True,
         squeeze=False,
     )

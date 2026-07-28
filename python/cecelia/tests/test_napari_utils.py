@@ -120,6 +120,11 @@ class AddHelpersTest(unittest.TestCase):
         self.assertEqual(kw['opacity'], 0.7)
         self.assertEqual(kw['name'], 'seg')
         self.assertEqual(kw['scale'], (1, 2, 3))
+        # napari's global dask cache (`resize_dask_cache` via `configure_dask(data, cache=True)`)
+        # keys results by dask task name, and `da.from_zarr(same_path)` gives the SAME task name
+        # across separate opens — so with `cache=True` a re-run of segmentation to the same
+        # output name is served STALE bytes from the cache. Pin that we always opt out.
+        self.assertIs(kw['cache'], False)
 
     def test_add_tracks_categorical_wins_over_named(self):
         v = FakeViewer()

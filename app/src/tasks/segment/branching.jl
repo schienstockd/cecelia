@@ -33,8 +33,10 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     ccid = joinpath(img._dir, "ccid.json")
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
-    # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input).
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
+    # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
+    # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a
+    # corrected image with extra/renamed channels resolves correctly.
+    channel_names_raw = versioned_get_field(raw, "imChannelNames", nothing)
     ch_names = channel_names_raw isa AbstractVector ?
                collect(String, channel_names_raw) : String[]
     fibre_channels_raw = get(params, "fibreChannels", [])
@@ -47,10 +49,15 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         on_log("[WARN] calcAnisotropy=true but fibreChannels resolved to []; anisotropy will not be computed.")
     end
 
-    # Resolve input image path (for physical scale — not read; scale flows via ome_xml_utils)
-    filename = versioned_get_field(raw, "filepath", value_name)
+    # Resolve input image path. Note: `value_name` here is the SEGMENTATION name (e.g. "SHG"),
+    # which lives in `img.labels`. Image versions (`default`, drift-corrected, af-corrected, …)
+    # are a DIFFERENT namespace — keyed under `filepath` — and there is no correspondence between
+    # a segmentation's value_name and any image version. So resolve the raw image via the ACTIVE
+    # image version (`nothing` → `_active` → falls back to `default`); anisotropy reads the raw
+    # pixels off that store, and OME-XML for physical scale comes from the same file.
+    filename = versioned_get_field(raw, "filepath", nothing)
     if isnothing(filename)
-        on_log("[ERROR] No filepath for valueName='$value_name'")
+        on_log("[ERROR] No image filepath registered on this image — nothing to skeletonise against.")
         return nothing
     end
     im_path = joinpath(dirname(dirname(img._dir)), "0", img.uid, string(filename))

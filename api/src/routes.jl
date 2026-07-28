@@ -1838,6 +1838,10 @@ function _image_payload(img::CciaImage)
         activeValueName = active_vn,
         filepaths       = fps,
         labels          = img.labels,
+        # Skeleton labels written by segment.branching — kept separate from `labels` on purpose
+        # so the generic labels picker (measure / segment / tracking) never lists them
+        # (BRANCHING_PLAN Decision 6). The Viewer surfaces them as a separate toggle.
+        branchLabels    = img.branch_labels,
         attr            = img.attr,
         # Include/exclude in further processing (default true). Excluded images are greyed in the
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.

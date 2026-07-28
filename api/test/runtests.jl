@@ -1239,3 +1239,31 @@ end
     @test !_valid_movie_name("note.txt")
     @test !_valid_movie_name("has space.mp4")
 end
+
+# ── Napari: branch-labels payload parsing ─────────────────────────────────────
+# The napari open + show-labels handlers accept an `allBranchLabels` dict in parallel to `allLabels`
+# so skeleton labels from segment.branching are shown as a distinct layer type (`({vn}) Branches`),
+# without leaking into the generic labels picker (BRANCHING_PLAN Decision 6). The full round-trip
+# needs a live napari process, but the request parsing is pure and worth pinning: missing key →
+# empty dict (legacy image / no branching run), well-formed dict → the same shape as _parse_all_labels.
+@testset "API: napari branch-labels payload" begin
+    # missing → empty (legacy image / no branching run)
+    empty_data = JSON3.read(JSON3.write(Dict{String,Any}()))
+    @test _parse_all_branch_labels(empty_data) == Dict{String,Vector{String}}()
+
+    # well-formed
+    data = JSON3.read(JSON3.write(Dict("allBranchLabels" =>
+        Dict("default" => ["default.zarr"], "shg" => ["shg.zarr"]))))
+    parsed = _parse_all_branch_labels(data)
+    @test parsed["default"] == ["default.zarr"]
+    @test parsed["shg"]     == ["shg.zarr"]
+
+    # a scalar (non-array) filename is coerced to a single-element list — same
+    # forgiving contract as _parse_all_labels
+    scalar_data = JSON3.read(JSON3.write(Dict("allBranchLabels" => Dict("default" => "default.zarr"))))
+    @test _parse_all_branch_labels(scalar_data)["default"] == ["default.zarr"]
+
+    # non-dict payload → empty
+    bad = JSON3.read(JSON3.write(Dict("allBranchLabels" => "nope")))
+    @test _parse_all_branch_labels(bad) == Dict{String,Vector{String}}()
+end

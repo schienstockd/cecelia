@@ -53,10 +53,10 @@ def run(params: dict):
     label_dir  = params['labelDir']
     label_files = params['labelFiles']
     out_vn     = params.get('outputValueName', 'default')
-    use_dask   = bool(params.get('useDask', False))
 
     log.log(f'>> open image: {im_path}')
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=use_dask)
+    # `as_dask=True` — metadata-only; MeasureUtils iterates per-frame.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
@@ -75,7 +75,7 @@ def run(params: dict):
         try:
             # open labels through the shared reader (same as the image above) — a list of
             # multiscale levels; measure_from_zarr takes level 0 (full-res). NOT hand-rolled zarr.
-            label_zarrs[ltype], _ = zarr_utils.open_as_zarr(fpath, as_dask=use_dask)
+            label_zarrs[ltype], _ = zarr_utils.open_as_zarr(fpath, as_dask=True)
             log.log(f'>> opened label "{ltype}": {fpath}')
         except Exception as e:
             log.log(f'[WARN] Could not open {fpath}: {e}')

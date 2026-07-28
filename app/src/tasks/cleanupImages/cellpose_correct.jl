@@ -52,8 +52,7 @@ function _run_task(task::CellposeCorrect, img::CciaImage, params::Dict{String,An
     ok = run_py("tasks/cleanupImages/cellpose_correct_run.py",
         (; imPath           = im_path,
            imCorrectionPath = im_correction_path,
-           models           = models_converted,
-           useDask          = Bool(get(params, "useDask", false))),
+           models           = models_converted),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

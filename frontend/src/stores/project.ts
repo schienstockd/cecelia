@@ -28,6 +28,9 @@ export interface CciaImage {
   activeValueName?: string                // active value name (the _active key from versioned dict)
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)
   labels?: Record<string, string[]>        // valueName → [filename, …] (segmentation outputs)
+  // Skeleton-labels from segment.branching — kept separate from `labels` so the generic labels
+  // picker never lists them (see BRANCHING_PLAN Decision 6). Napari surfaces them as a distinct toggle.
+  branchLabels?: Record<string, string[]>
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)

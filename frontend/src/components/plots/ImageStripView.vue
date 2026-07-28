@@ -205,7 +205,8 @@ async function zoomToSource(i: number) {
   try {
     const res = await fetch('/api/napari/open', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid }),
+      body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid,
+                             labelsCache: settings.napariLabelsCache }),
     })
     if (!res.ok && res.status !== 202) {
       pendingApply.value = null
