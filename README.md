@@ -1,4 +1,4 @@
-# Cecelia Feijoa
+# <img src="frontend/public/feijoa.svg" alt="" width="30" align="top"> Cecelia Feijoa
 
 [![CI](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml)
 [![Release](https://github.com/schienstockd/cecelia/actions/workflows/release.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/release.yml)
