@@ -10,8 +10,7 @@
 import type { WhatNewCard } from './whatsNew'
 
 // First entry is the welcome card (kind 'about') — brief intro to cecelia; the rest are tips in
-// pipeline-arc order (segmentation is the entry point; analysis features read from it), with the
-// assist surfaces (Claude/MCP) last.
+// pipeline-arc order (segmentation is the entry point; analysis features read from it).
 export const TIPS: WhatNewCard[] = [
   {
     id: 'about-cecelia',
@@ -163,18 +162,6 @@ export const TIPS: WhatNewCard[] = [
       'Open the image in napari; tracks show as polylines coloured by state.',
     ],
     sketchAnimation: { id: 'napari_tracks' },
-  },
-  {
-    id: 'tip-claude-mcp',
-    kind: 'tip',
-    title: 'Claude Code can read your project',
-    description: 'The cecelia-observer MCP server gives a Claude Code session read-only access to this project — images, QC, cohort outliers, lineage, populations, behaviour, clusters. It can suggest a parameter change but never makes it, and never runs a task; the only things it writes, when you ask, are a lab-log note or a Pluto notebook you then own.',
-    steps: [
-      'Register cecelia-observer in Claude Code once (mcp/README.md).',
-      'Click Chat to Claude in the lab log — it copies a starter prompt.',
-      'Paste it into Claude Code and ask away.',
-    ],
-    sketchAnimation: { id: 'claude_mcp' },
   },
 ]
 

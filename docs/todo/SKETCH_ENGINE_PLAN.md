@@ -85,8 +85,6 @@ JSON-serialisable. Sketches live in `~/cc-workspace/feijoa/src/sketches/*.ts`.
 - `logo` — R Cecelia logo ported (smoke test, splash/setup wizard target).
 - `hmm`, `gating`, `tracking`, `clusters` — first-cut concept sketches wired into the three
   seeded tip cards (`clusters` covers the "cluster labels → populations" tip).
-- `claude_mcp` — Claude Code reading a project through the cecelia-observer MCP (project pane →
-  "reads" arrow → terminal, pink "writes" arrow back). Wired into the Claude/MCP tip.
 
 ## References
 
