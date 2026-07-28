@@ -27,10 +27,11 @@ const props = withDefaults(defineProps<{
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
   optionsSections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
+  statsNote?: string               // active plot's resolved test, echoed under the Stats → Test select
   // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
   // floating box — no absolute positioning, no drag, full width of its container.
   docked?: boolean
-}>(), { title: 'Populations', count: undefined, vis: undefined, optionsSections: undefined, docked: false })
+}>(), { title: 'Populations', count: undefined, vis: undefined, optionsSections: undefined, statsNote: '', docked: false })
 const emit = defineEmits<{
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
@@ -69,7 +70,8 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 
     <!-- shared plot-styling block (only when the host passes a `vis` bag), obeys the scope below -->
     <div v-show="!collapsed" v-if="vis" class="pm-opts">
-      <PlotOptions :vis="vis" :sections="optionsSections" @update:vis="emit('update:vis', $event)" />
+      <PlotOptions :vis="vis" :sections="optionsSections" :stats-note="statsNote"
+                   @update:vis="emit('update:vis', $event)" />
     </div>
 
     <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->

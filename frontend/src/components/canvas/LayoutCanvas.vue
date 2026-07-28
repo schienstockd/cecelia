@@ -239,6 +239,12 @@ function setVis(patch: Partial<VisProps>) {
 }
 const panelSeries = (c: SlotContent): SeriesTarget[] => panelSel(c).map(parseTkey)
 
+// the stats test each summary slot's last result actually ran (`auto` resolves it server-side from the
+// group count) — the rail shows the ACTIVE slot's, so the user can see what `auto` chose. Keyed by slot
+// index; a readout of the current result, not a persisted setting.
+const statsNotes = ref<Record<number, string>>({})
+const activeStatsNote = computed(() => statsNotes.value[entry.value.activeIndex] ?? '')
+
 // ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
 // the singleton gating store is driven unambiguously; only active when a cluster slot exists. ─────────
 const hasClusterSlot = computed(() => entry.value.contents.some(isClusterSlot))
@@ -513,7 +519,8 @@ defineExpose({ capturePage, collectCsvs })
                           :group-attr="panelGroupAttr" :series="panelSeries(entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
-                          @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
+                          @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
+                          @stats-note="statsNotes[i] = $event" />
             <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry
                  (docked, board's single cluster run); no per-plot branch -->
             <component v-else-if="entry.contents[i] && isClusterPanel(entry.contents[i]!.ref)"
@@ -563,6 +570,7 @@ defineExpose({ capturePage, collectCsvs })
                              :suffix="clustSuffix" :vis="activeVis"
                              @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
           <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
+                        :stats-note="activeStatsNote"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
         </div>
       </div>
