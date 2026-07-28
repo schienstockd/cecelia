@@ -120,6 +120,10 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
   7. **Test-name annotation on the chart**: **NO**. Prism omits it and pushes the test identity
      into the figure legend / methods section. Match that. Method note reaches the user via the
      CSV comment lines (S5) and the `[Cecelia]` lab-log entry (S6), not the plot itself.
+     *(Follow-up: with `auto` the test is resolved server-side from the group count, so the
+     picker also can't show it. `SummaryPanel` reports the result's `methodNote` up via a
+     `stats-note` emit and the shared `PlotOptions` → Stats block echoes it under the Test select
+     for the ACTIVE plot — a control-panel readout, still nothing on the chart.)*
   8. **Colour**: black lines, black text. Do NOT tint by `--cc-*` tokens — Prism's convention is
      black-on-white for the annotation layer regardless of theme. On the dark theme, keep the
      annotation black on the plot's own light background (cecelia plots are light-themed for

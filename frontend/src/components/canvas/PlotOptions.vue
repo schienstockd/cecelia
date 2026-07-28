@@ -16,7 +16,10 @@ import CcToggle from '../CcToggle.vue'
 const props = withDefaults(defineProps<{
   vis: VisProps
   sections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
-}>(), { sections: () => ['layout', 'points', 'colours', 'labels'] })
+  // `auto` resolves the test server-side from the group count, so the user can't tell which one ran.
+  // The active plot's last result reports it back here (methodNote) and we echo it under the Test select.
+  statsNote?: string
+}>(), { sections: () => ['layout', 'points', 'colours', 'labels'], statsNote: '' })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
 const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false, stats: false })
@@ -120,6 +123,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
             <option value="kruskal">Kruskal-Wallis</option>
             <option value="anova">One-way ANOVA</option>
           </select></label>
+        <div v-if="vis.statsEnabled && (vis.statsTest ?? 'auto') === 'auto' && statsNote"
+             class="po-note cc-muted cc-fs-2xs" v-tooltip.left="'Test the active plot ran'">{{ statsNote }}</div>
         <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One letter per group; shared letter = no difference'"><span>Compact letters</span>
           <CcToggle :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Also show non-significant brackets'"><span>Show ns</span>
@@ -162,6 +167,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 .po-sel { font-size: var(--cc-fs-xs); max-width: 7rem; }
 .po-txt { font-size: var(--cc-fs-xs); width: 4rem; padding: 1px 4px; }
 .po-txt.wide { width: 100%; }
+/* readout under the Test select — the test `auto` actually resolved to (right-aligned to the select) */
+.po-note { margin-top: -5px; text-align: right; }
 .po-col { flex-direction: column; align-items: stretch; gap: 3px; }
 .po-col > span:first-child { flex: none; }
 </style>

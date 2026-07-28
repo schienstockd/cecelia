@@ -14,7 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
-import { computed, watch, provide, useTemplateRef } from 'vue'
+import { computed, ref, watch, provide, useTemplateRef } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
@@ -82,6 +82,12 @@ const activeSel = computed(() => scope.value === 'global' ? gSel.value : (active
 const panelVis = (s: PanelState) => scope.value === 'global' ? gVis.value : s.vis
 const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? defaultVis()))
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
+// the stats test each panel's last result actually ran (`auto` resolves it server-side from the group
+// count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
+// it's a readout of the current result, not a setting.
+const statsNotes = ref<Record<number, string>>({})
+const activeStatsNote = computed(() => statsNotes.value[activeId.value] ?? '')
+function removePanel(id: number) { remove(id); delete statsNotes.value[id] }
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
   if (scope.value === 'global') gSel.value = toggle(gSel.value, k)
@@ -189,11 +195,13 @@ watch(segPops, () => {
                         :series="panelSeries(p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="reloadToken" :persist-key="`${ckey}:${p.id}`"
-                        @activate="activeId = p.id" @remove="remove(p.id)"
-                        @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)" />
+                        @activate="activeId = p.id" @remove="removePanel(p.id)"
+                        @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
+                        @stats-note="statsNotes[p.id] = $event" />
         </template>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
+                      :stats-note="activeStatsNote"
                       @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
       </div>
     </template>

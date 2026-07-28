@@ -21,6 +21,7 @@ const props = defineProps<{
   selected: string[]                  // selected target keys (tkey), in the current scope
   scope: 'global' | 'local'
   vis: VisProps                       // visual properties for the current scope
+  statsNote?: string                  // active plot's resolved stats test (methodNote), shown in Stats
   docked?: boolean                    // render in a fixed rail (Analysis board) instead of floating
 }>()
 const emit = defineEmits<{
@@ -36,7 +37,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 </script>
 
 <template>
-  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked"
+  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked" :stats-note="statsNote"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <div v-if="!total" class="pm-empty cc-muted">No populations in the selected segmentations.</div>
