@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  COPY_MAX, normalise, isMultiSentence, isTooLong, tooltipStrings, hintStrings,
+  COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
+  tooltipStrings, hintStrings, attrStrings, textStrings,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -87,6 +88,74 @@ describe('hintStrings', () => {
   })
 })
 
+describe('attrStrings', () => {
+  it('reads static copy attributes', () => {
+    expect(attrStrings('<Button label="Crop image" />')).toEqual(['Crop image'])
+    expect(attrStrings('<Input placeholder="New set name" aria-label="Set name" />'))
+      .toEqual(['New set name', 'Set name'])
+  })
+
+  it('reads the literals inside a bound attribute, not the expression', () => {
+    expect(attrStrings(`<Dialog :header="editing ? 'Edit gate' : 'New gate'" />`))
+      .toEqual(['Edit gate', 'New gate'])
+  })
+
+  it('does not match an attribute that merely ends in a copy-attr name', () => {
+    expect(attrStrings('<X hint-label="x" data-title="y" />')).toEqual([])
+  })
+})
+
+describe('textStrings', () => {
+  it('reads bare text nodes', () => {
+    expect(textStrings('<template><h2>Projects</h2><p>No images yet</p></template>'))
+      .toEqual(['Projects', 'No images yet'])
+  })
+
+  it('does not leak attributes out of a tag containing an arrow function', () => {
+    // The bug this guard exists for: `/<[^>]*>/` ends the tag at the `>` of `v =>`, spilling the
+    // rest of the attribute list into the output as if a user could read it.
+    const src = `<template><input @blur="commit(img.uid, v => save(img, v))" />Channel name</template>`
+    expect(textStrings(src)).toEqual(['Channel name'])
+  })
+
+  it('drops interpolation but keeps the words around it', () => {
+    expect(textStrings('<template><span>{{ count }} selected</span></template>')).toEqual(['selected'])
+  })
+
+  it('drops snake_case identifiers but keeps plain lowercase copy', () => {
+    // A blanket all-lowercase guard looks reasonable and is wrong: measured over the real SFCs it
+    // threw away 79 strings, ~74 of them genuine copy ("cancel", "clear", "median", "reset").
+    expect(textStrings('<template><i>require_all</i><i>cancel</i></template>')).toEqual(['cancel'])
+  })
+})
+
+describe('isTitleCase', () => {
+  it('flags a label that Title Cases an ordinary word', () => {
+    expect(isTitleCase('Bayesian Tracking')).toBe(true)
+    expect(isTitleCase('Drift Correction')).toBe(true)
+  })
+
+  it('does not flag acronyms, proper nouns or single letters', () => {
+    // These read as violations without the allowance, and drown the real hits.
+    expect(isTitleCase('Calculate UMAP')).toBe(false)
+    expect(isTitleCase('Use Dask')).toBe(false)
+    expect(isTitleCase('Flatten Z')).toBe(false)
+    expect(isTitleCase('Segmentation QC')).toBe(false)
+  })
+
+  it('treats a word after a separator as a new phrase, not Title Case', () => {
+    expect(isTitleCase('Spatial / Time')).toBe(false)
+    // ...but the word before the separator is still judged: "Correction" is the violation here.
+    expect(isTitleCase('AF + Drift Correction')).toBe(true)
+  })
+
+  it('does not flag sentence case or a single word', () => {
+    expect(isTitleCase('Crop image')).toBe(false)
+    expect(isTitleCase('Source image version')).toBe(false)
+    expect(isTitleCase('Tracking')).toBe(false)
+  })
+})
+
 // ── The ratchet: every rendered string in the app is inside budget ────────────────────────────────
 //
 // An exact allow-list, not a count — the `cssScenarios` lesson. A count-based baseline silently
@@ -135,5 +204,62 @@ describe('UI copy stays short (docs/UI.md → UI copy — keep it short)', () =>
       }
     }
     expect(multi).toEqual([])
+  })
+})
+
+// ── The ratchet: it is written the house way (docs/UI.md → House style) ──────────────────────────
+//
+// Length was enforced; consistency was not, and it drifted where nothing could see the whole corpus
+// at once — the frontend stayed sentence case while task specs went Title Case, and 100 of 482
+// tooltips grew a trailing period nobody had decided on. `pixi run ui-copy` is the review tool; these
+// two are the build-failing subset. Same exact-allow-list rule as above. The task-spec half of both
+// checks lives in `app/test/runtests.jl`, for the same reason the `tip` budget does.
+
+// A label whose Title Case is a real proper name rather than a style slip.
+const ALLOWED_TITLE_CASE: string[] = []
+
+// A tooltip that ends in a period because it is genuinely a sentence, not a fragment.
+const ALLOWED_TRAILING_PERIOD: string[] = []
+
+describe('UI copy is written the house way (docs/UI.md → House style)', () => {
+  const sfcs = Object.entries(SFC)
+
+  it('labels are sentence case, not Title Case', () => {
+    const titled: string[] = []
+    for (const [path, src] of sfcs) {
+      for (const s of attrStrings(src)) {
+        if (isTitleCase(s) && !ALLOWED_TITLE_CASE.includes(s)) titled.push(`${path}: ${s}`)
+      }
+    }
+    expect(titled).toEqual([])
+  })
+
+  it('no tooltip ends in a trailing period', () => {
+    // `…` and `...` are continuations, not sentence ends, so they are not periods for this purpose.
+    const dotted: string[] = []
+    for (const [path, src] of sfcs) {
+      for (const s of tooltipStrings(src)) {
+        if (/[^.]\.$/.test(s) && !ALLOWED_TRAILING_PERIOD.includes(s)) dotted.push(`${path}: ${s}`)
+      }
+    }
+    expect(dotted).toEqual([])
+  })
+
+  it('uses one verb per action', () => {
+    // Only the words with a decided winner. Create/Add, Delete/Remove and Run/Start are NOT
+    // synonyms (see the vocabulary table) and are deliberately absent.
+    const BANNED: Record<string, string> = {
+      Choose: 'Select', Pick: 'Select', Display: 'Show', Execute: 'Run', Modify: 'Edit',
+      Discard: 'Remove',
+    }
+    const found: string[] = []
+    for (const [path, src] of sfcs) {
+      for (const s of [...tooltipStrings(src), ...hintStrings(src), ...attrStrings(src)]) {
+        for (const [bad, good] of Object.entries(BANNED)) {
+          if (new RegExp(`\\b${bad}\\b`, 'i').test(s)) found.push(`${path}: "${s}" — use ${good}`)
+        }
+      }
+    }
+    expect(found).toEqual([])
   })
 })

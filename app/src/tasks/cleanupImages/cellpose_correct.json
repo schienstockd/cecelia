@@ -1,7 +1,7 @@
 {
   "task": "cellposeCorrect",
   "fun_name": "cleanupImages.cellposeCorrect",
-  "label": "Cellpose Correction",
+  "label": "Cellpose correction",
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "gpu",
@@ -12,7 +12,7 @@
       "label": "Image to correct",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Select which image version to correct."
+      "tip": "Select which image version to correct"
     },
     {
       "key": "models",
@@ -26,14 +26,14 @@
           "modelDiameter": 10
         }
       },
-      "tip": "One entry per set of channels to denoise.",
+      "tip": "One entry per set of channels to denoise",
       "params": [
         {
           "key": "model",
           "label": "Denoise model",
           "type": "select",
           "default": "denoise_cyto3",
-          "tip": "Cellpose DenoiseModel variant to apply.",
+          "tip": "Cellpose DenoiseModel variant to apply",
           "options": [
             { "label": "Denoise cyto3",   "value": "denoise_cyto3" },
             { "label": "Deblur cyto3",    "value": "deblur_cyto3" },
@@ -50,7 +50,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels this model denoises, each processed independently."
+          "tip": "Channels this model denoises, each processed independently"
         },
         {
           "key": "modelDiameter",
@@ -60,7 +60,7 @@
           "max": 100,
           "step": 1,
           "default": 10,
-          "tip": "Expected cell diameter in µm."
+          "tip": "Expected cell diameter in µm"
         }
       ]
     }

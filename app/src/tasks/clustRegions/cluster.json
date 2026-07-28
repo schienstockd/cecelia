@@ -12,7 +12,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output suffix → regions.<suffix>."
+      "tip": "Output suffix → regions.<suffix>"
     },
     {
       "key": "basisPops",
@@ -22,7 +22,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Populations defining neighbourhood composition; at least two."
+      "tip": "Populations defining neighbourhood composition; at least two"
     },
     {
       "key": "neighbourMethod",
@@ -34,7 +34,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "How the neighbourhood graph is built."
+      "tip": "How the neighbourhood graph is built"
     },
     {
       "key": "neighbourRadius",
@@ -44,7 +44,7 @@
       "max": 1000,
       "step": 1,
       "default": 30,
-      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)."
+      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)"
     },
     {
       "key": "nNeighbours",
@@ -54,7 +54,7 @@
       "max": 100,
       "step": 1,
       "default": 6,
-      "tip": "Number of nearest neighbours for the kNN graph."
+      "tip": "Number of nearest neighbours for the kNN graph"
     },
     {
       "key": "clusterMethod",
@@ -65,7 +65,7 @@
         { "value": "leiden", "label": "Leiden (resolution)" },
         { "value": "kmeans", "label": "k-means (fixed k)" }
       ],
-      "tip": "Leiden (resolution-driven) or k-means (fixed count)."
+      "tip": "Leiden (resolution-driven) or k-means (fixed count)"
     },
     {
       "key": "resolution",
@@ -75,7 +75,7 @@
       "max": 5,
       "step": 0.05,
       "default": 1,
-      "tip": "Leiden resolution — higher gives more, smaller regions."
+      "tip": "Leiden resolution — higher gives more, smaller regions"
     },
     {
       "key": "numClusters",
@@ -85,21 +85,21 @@
       "max": 50,
       "step": 1,
       "default": 5,
-      "tip": "Number of regions for k-means."
+      "tip": "Number of regions for k-means"
     },
     {
       "key": "perTimepoint",
       "label": "Per timepoint (live)",
       "type": "bool",
       "default": false,
-      "tip": "Build the graph per frame, so regions can change over time."
+      "tip": "Build the graph per frame, so regions can change over time"
     },
     {
       "key": "mergeUmap",
       "label": "Calculate UMAP",
       "type": "bool",
       "default": true,
-      "tip": "Also compute a UMAP of the composition vectors (obsm['X_umap.<suffix>']) for plotting."
+      "tip": "Also compute a UMAP of the composition vectors (obsm['X_umap.<suffix>']) for plotting"
     }
   ]
 }

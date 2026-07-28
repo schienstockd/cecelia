@@ -7,7 +7,7 @@
     "max": 4096,
     "step": 64,
     "default": 512,
-    "tip": "XY tile size in pixels. Larger tiles use more RAM but reduce seam effects."
+    "tip": "XY tile size in pixels. Larger tiles use more RAM but reduce seam effects"
   },
   {
     "key": "overlap",
@@ -17,7 +17,7 @@
     "max": 256,
     "step": 8,
     "default": 64,
-    "tip": "XY overlap between tiles."
+    "tip": "XY overlap between tiles"
   },
   {
     "key": "blockSizeZ",
@@ -27,7 +27,7 @@
     "max": 500,
     "step": 1,
     "default": 0,
-    "tip": "Number of Z slices per tile (0 = whole stack)."
+    "tip": "Number of Z slices per tile (0 = whole stack)"
   },
   {
     "key": "overlapZ",
@@ -37,6 +37,6 @@
     "max": 50,
     "step": 1,
     "default": 0,
-    "tip": "Z overlap between tiles (future use)."
+    "tip": "Z overlap between tiles (future use)"
   }
 ]

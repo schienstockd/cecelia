@@ -144,10 +144,9 @@ function _cohort_finding(metric::AbstractString, entry::AbstractDict, med)
     detail = Dict{String,Any}("metric" => string(metric), "value" => val, "median" => med)
     haskey(entry, "z")      && (detail["z"] = entry["z"])
     haskey(entry, "relDev") && (detail["relDev"] = entry["relDev"])
-    qc_finding("warn", "cohort." * string(metric),
-        "$(metric) is a cohort outlier",
-        "This image's $(metric) ($(val)) is far $(dir) the set median ($(med)) — check this image before trusting the run.";
-        detail = detail)
+    # One catalog entry serves every metric; the emitted code stays per-metric.
+    qc_finding("warn", "cohort." * string(metric); key = "cohort.outlier",
+        metric = metric, value = val, dir = dir, median = med, detail = detail)
 end
 
 # Compute the cohort summary + per-image findings WITHOUT writing anything. Returns

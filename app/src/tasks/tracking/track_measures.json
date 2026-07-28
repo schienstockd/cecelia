@@ -1,7 +1,7 @@
 {
   "task": "trackMeasures",
   "fun_name": "tracking.track_measures",
-  "label": "Track Measures",
+  "label": "Track measures",
   "category": "Tracking",
   "env": ["local"],
   "resource_pool": "cpu",
@@ -18,7 +18,7 @@
       "label": "Motion dimensions",
       "type": "motionDimsSelection",
       "default": "auto",
-      "tip": "Compute measures in 2D or 3D; auto detects and recommends."
+      "tip": "Compute measures in 2D or 3D; auto detects and recommends"
     },
     {
       "key": "forceRecompute",

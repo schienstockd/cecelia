@@ -1,7 +1,7 @@
 {
   "fun_name": "testTasks.setTask",
   "task": "setTask",
-  "label": "Test Set Task",
+  "label": "Test set task",
   "resource_pool": "cpu",
   "params": [
     {

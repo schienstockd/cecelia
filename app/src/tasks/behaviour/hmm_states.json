@@ -1,7 +1,7 @@
 {
   "task": "hmmStates",
   "fun_name": "behaviour.hmm_states",
-  "label": "HMM States",
+  "label": "HMM states",
   "category": "Behaviour",
   "env": ["local"],
   "resource_pool": "cpu",
@@ -16,14 +16,14 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Track populations to model; one HMM is fitted jointly."
+      "tip": "Track populations to model; one HMM is fitted jointly"
     },
     {
       "key": "colName",
       "label": "Name",
       "type": "text",
       "default": "default",
-      "tip": "Suffix for the output column: live.cell.hmm.state.<name>."
+      "tip": "Suffix for the output column: live.cell.hmm.state.<name>"
     },
     {
       "key": "modelMeasurements",
@@ -31,7 +31,7 @@
       "type": "labelPropsColsSelection",
       "multiple": true,
       "default": ["live.cell.speed", "live.cell.angle"],
-      "tip": "Per-cell measures to model, one Gaussian emission each."
+      "tip": "Per-cell measures to model, one Gaussian emission each"
     },
     {
       "key": "numStates",
@@ -41,7 +41,7 @@
       "max": 10,
       "step": 1,
       "default": 2,
-      "tip": "Number of discrete behavioural (hidden) states to fit."
+      "tip": "Number of discrete behavioural (hidden) states to fit"
     },
     {
       "key": "filtering",
@@ -49,9 +49,9 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        { "key": "noiseFilterMeasurements", "label": "Noise filter window", "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Per-track running-mean window applied to measurements before fitting (0 = off)." },
-        { "key": "postFiltering",           "label": "Post-filter window",  "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Smooth decoded states with a per-track windowed mode (0 = off)." },
-        { "key": "postIterations",          "label": "Post-filter passes",  "type": "int", "min": 1, "max": 5,  "step": 1, "default": 1, "tip": "Number of smoothing passes." }
+        { "key": "noiseFilterMeasurements", "label": "Noise filter window", "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Per-track running-mean window applied to measurements before fitting (0 = off)" },
+        { "key": "postFiltering",           "label": "Post-filter window",  "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Smooth decoded states with a per-track windowed mode (0 = off)" },
+        { "key": "postIterations",          "label": "Post-filter passes",  "type": "int", "min": 1, "max": 5,  "step": 1, "default": 1, "tip": "Number of smoothing passes" }
       ]
     },
     {
@@ -60,7 +60,7 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        { "key": "normaliseMeasurements", "label": "Normalise", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Measurements to divide by a global summary statistic." },
+        { "key": "normaliseMeasurements", "label": "Normalise", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Measurements to divide by a global summary statistic" },
         { "key": "normaliseTo", "label": "Normalise to", "type": "select", "default": "none",
           "options": [
             { "value": "none",   "label": "none" },
@@ -69,8 +69,8 @@
             { "value": "median", "label": "median" },
             { "value": "mean",   "label": "mean" }
           ],
-          "tip": "Statistic the normalised measurements are divided by." },
-        { "key": "scaleMeasurements", "label": "Scale (÷ sd)", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Divide by standard deviation, without centring." }
+          "tip": "Statistic the normalised measurements are divided by" },
+        { "key": "scaleMeasurements", "label": "Scale (÷ sd)", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Divide by standard deviation, without centring" }
       ]
     }
   ]

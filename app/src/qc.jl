@@ -34,6 +34,130 @@ function qc_finding(level::AbstractString, code::AbstractString,
     f
 end
 
+# ── QC copy catalog ───────────────────────────────────────────────────────────────────────────────
+#
+# Every user-facing QC string, in one table. This is the worst-placed copy in the app — prose buried
+# inside analysis functions, where nobody reviews it and `pixi run ui-copy` was the first thing that
+# could even see it. Keeping it here means the wording can be read and revised as a set, and the
+# analysis code below reads as logic rather than as logic-plus-writing.
+#
+# Text rules (`docs/UI.md` → *UI copy*, `docs/MODULES.md` → *QC*): `short` = the problem, terse and
+# with no trailing period; `long` = what to DO about it, one imperative sentence. Numbers belong in
+# the finding's `detail`, not in the prose — the two `{}` placeholders that remain are the cases
+# where the number IS the message.
+#
+# KEYED SEPARATELY FROM `code`. Usually the key is the code, but they are deliberately not the same
+# field: `metadata.pixel_size_no_unit` is emitted for the x, y AND z axes with different wording for
+# z, and `output.canvas_expansion` is emitted by the drift task under `drift.canvas_expansion`. Codes
+# are a stored contract — they sit in every banked `qc/*.json` on disk and the frontend filters on
+# them (`isMetadataCode`) — so the catalog bends around them rather than the other way round.
+const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
+    # calibration (metadata_qc_findings)
+    "metadata.z_spacing_unknown" => (
+        short = "Z spacing unknown",
+        long  = "No Z step found — set the voxel depth (acquisition software, or Fiji ▸ Image ▸ Properties)."),
+    "metadata.z_spacing_corrected" => (
+        short = "Z spacing auto-corrected",
+        long  = "Auto-corrected from the source ImageJ tag — confirm it in Fiji ▸ Image ▸ Properties before trusting it."),
+    "metadata.z_spacing_unusual" => (
+        short = "Z spacing looks unusual",
+        long  = "Z step is far from the XY pixel size — likely a wrong calibration unit; check the original in Fiji and correct it."),
+    "metadata.frame_interval_unknown" => (
+        short = "Frame interval unknown",
+        long  = "No frame interval found — enter it from your acquisition settings."),
+    "metadata.frame_interval_no_unit" => (
+        short = "Frame interval has no unit",
+        long  = "A frame interval is recorded without a unit — re-enter it with seconds/minutes."),
+    "metadata.pixel_size_no_unit" => (
+        short = "Pixel size has no unit",
+        long  = "A pixel size is recorded without a unit — re-enter it with a unit."),
+    "metadata.voxel_depth_no_unit" => (      # emitted under code `metadata.pixel_size_no_unit`
+        short = "Voxel depth has no unit",
+        long  = "A Z step is recorded without a unit — re-enter it with a unit."),
+
+    # 16→8-bit rescale (rescale_qc_findings)
+    "rescale.channel_flat" => (
+        short = "Channel {channel} is flat",
+        long  = "This channel has no intensity range — its 8-bit output is blank; check the acquisition."),
+    "rescale.channel_clipped" => (
+        short = "Channel {channel} clips bright signal",
+        long  = "Raise the 8-bit high percentile (or 100 = true max) and re-import."),
+    "rescale.hot_pixel" => (
+        short = "Channel {channel} may have a hot pixel",
+        long  = "The max is far above the 99.9th percentile, squashing the signal — lower the 8-bit high percentile (e.g. 99.9) and re-import."),
+
+    # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)
+    "hmm.no_states_decoded" => (
+        short = "No cells decoded into a state",
+        long  = "Tracks may be too short or measurements incomplete — check segmentation/tracking and re-run."),
+    "hmm.single_state" => (
+        short = "All cells sat in one state",
+        long  = "This image didn't switch states — check it's the same acquisition and measurements, or reduce the state count."),
+    "hmm.dominant_state" => (
+        short = "One state holds {pct}% of cells",
+        long  = "Check the behaviour is really this uniform, or the model may have too many states."),
+    "hmm.no_transitions" => (
+        short = "No state transitions found",
+        long  = "Tracks may be too short or the model produced one state — check HMM states and track lengths."),
+
+    # tracking (track_measures_qc_findings)
+    "tracking.motion_dims_uncertain" => (
+        short = "Motion dimensionality uncertain ({dims}D)",
+        long  = "z couldn't be classified as migration vs jitter — review whether tracking should be 2D or 3D and re-run with dims set."),
+
+    # clustering (cluster_qc_findings)
+    "clustering.single_cluster" => (
+        short = "Only one cluster found",
+        long  = "Resolution too low or features don't separate populations — raise resolution or add features and re-run."),
+    "clustering.image_one_cluster" => (
+        short = "All {unit} fell into one cluster",
+        long  = "This image separated from the cohort — check it's the same acquisition and normalisation, then re-run."),
+    "clustering.dominant_cluster" => (
+        short = "One cluster holds {pct}% of {unit}",
+        long  = "Check the population is really this uniform, or raise resolution to split it."),
+
+    # output geometry (qc_canvas_expansion)
+    "output.canvas_expansion" => (
+        short = "Output canvas grew +{pct}% in XY",
+        long  = "Larger than a clean correction — check the output and re-run this step if it looks wrong."),
+
+    # cohort comparison (qc_cohort.jl `_cohort_finding`)
+    "cohort.outlier" => (
+        short = "{metric} is a cohort outlier",
+        long  = "This image's {metric} ({value}) is far {dir} the set median ({median}) — check this image before trusting the run."),
+)
+
+"""
+    qc_text(key; subs...) -> (short, long)
+
+The catalog entry for `key`, with every `{name}` placeholder replaced by the matching keyword.
+
+Throws on an unknown key, and on a placeholder with no substitution — a QC finding that renders
+`"Channel {channel} is flat"` to a user is worse than one that fails loudly in the task's test.
+"""
+function qc_text(key::AbstractString; subs...)
+    haskey(QC_TEXT, key) || error("Unknown QC text key: \"$key\". Add it to QC_TEXT in app/src/qc.jl.")
+    entry = QC_TEXT[key]
+    fill(s) = replace(s, r"\{(\w+)\}" => m -> begin
+        name = Symbol(match(r"\{(\w+)\}", m)[1])
+        haskey(subs, name) || error("QC text \"$key\" needs a `$name` substitution.")
+        string(subs[name])
+    end)
+    (short = fill(entry.short), long = fill(entry.long))
+end
+
+"""
+    qc_finding(level, code; key = code, detail = nothing, subs...) -> Dict
+
+A finding whose text comes from [`QC_TEXT`](@ref) rather than the call site. `key` defaults to
+`code` and is only passed separately where one code carries more than one wording (see the note on
+the catalog). This is the form new code should use; the four-argument method above stays for
+custom modules, which have no entry in the catalog.
+"""
+qc_finding(level::AbstractString, code::AbstractString; key::AbstractString = code,
+           detail = nothing, subs...) =
+    (t = qc_text(key; subs...); qc_finding(level, code, t.short, t.long; detail = detail))
+
 # Write (or clear) an image's QC for one (task, output). `findings` empty ⇒ still writes the file with
 # an empty list, so a clean re-run overwrites a previous warning rather than leaving it stale.
 function write_qc(img::CciaImage, fun_name::AbstractString, value_name::AbstractString,
@@ -125,43 +249,33 @@ function metadata_qc_findings(meta::AbstractDict)
     z_corr    = haskey(meta, "PhysicalSizeZ_raw")
 
     fs = Dict{String,Any}[]
-    mf(code, field, short, long) =
-        push!(fs, qc_finding("warn", code, short, long; detail = Dict{String,Any}("field" => field)))
+    # `key` defaults to the code; the z-axis unit case is the one place they differ.
+    mf(code, field; key = code) =
+        push!(fs, qc_finding("warn", code; key = key, detail = Dict{String,Any}("field" => field)))
 
     # Z spacing — the first applicable case only (mirrors the frontend if/elseif chain)
     if size_z > 1 && phys_z === nothing
-        mf("metadata.z_spacing_unknown", "z", "Z spacing unknown",
-           "No Z step found — set the voxel depth (acquisition software, or Fiji ▸ Image ▸ Properties).")
+        mf("metadata.z_spacing_unknown", "z")
     elseif z_corr
-        mf("metadata.z_spacing_corrected", "z", "Z spacing auto-corrected",
-           "Auto-corrected from the source ImageJ tag — confirm it in Fiji ▸ Image ▸ Properties before trusting it.")
+        mf("metadata.z_spacing_corrected", "z")
     elseif phys_z !== nothing && phys_x !== nothing && phys_x > 0
         ratio = phys_z / phys_x
-        (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) &&
-            mf("metadata.z_spacing_unusual", "z", "Z spacing looks unusual",
-               "Z step is far from the XY pixel size — likely a wrong calibration unit; check the original in Fiji and correct it.")
+        (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) && mf("metadata.z_spacing_unusual", "z")
     end
 
     # frame interval
     if size_t > 1 && t_incr === nothing
-        mf("metadata.frame_interval_unknown", "t", "Frame interval unknown",
-           "No frame interval found — enter it from your acquisition settings.")
+        mf("metadata.frame_interval_unknown", "t")
     elseif t_incr !== nothing && t_unit === nothing
-        mf("metadata.frame_interval_no_unit", "t", "Frame interval has no unit",
-           "A frame interval is recorded without a unit — re-enter it with seconds/minutes.")
+        mf("metadata.frame_interval_no_unit", "t")
     end
 
     # spatial unit — one PhysicalSizeUnit covers x/y/z; flag whichever axes carry a value
     if phys_unit === nothing
-        phys_x !== nothing &&
-            mf("metadata.pixel_size_no_unit", "x", "Pixel size has no unit",
-               "A pixel size is recorded without a unit — re-enter it with a unit.")
-        phys_y !== nothing &&
-            mf("metadata.pixel_size_no_unit", "y", "Pixel size has no unit",
-               "A pixel size is recorded without a unit — re-enter it with a unit.")
+        phys_x !== nothing && mf("metadata.pixel_size_no_unit", "x")
+        phys_y !== nothing && mf("metadata.pixel_size_no_unit", "y")
         (phys_z !== nothing && !any(f -> f["detail"]["field"] == "z", fs)) &&
-            mf("metadata.pixel_size_no_unit", "z", "Voxel depth has no unit",
-               "A Z step is recorded without a unit — re-enter it with a unit.")
+            mf("metadata.pixel_size_no_unit", "z"; key = "metadata.voxel_depth_no_unit")
     end
     fs
 end
@@ -191,21 +305,15 @@ function rescale_qc_findings(meta::AbstractDict)
         true_max  = _cal_num(get(ch, "trueMax", nothing))
         p999      = _cal_num(get(ch, "p999", nothing))
         if span !== nothing && span <= 0
-            push!(fs, qc_finding("warn", "rescale.channel_flat",
-                "Channel $i is flat",
-                "This channel has no intensity range — its 8-bit output is blank; check the acquisition.";
+            push!(fs, qc_finding("warn", "rescale.channel_flat"; channel = i,
                 detail = Dict{String,Any}("channel" => i)))
         elseif clip_high !== nothing && clip_high > _RESCALE_CLIP_WARN
-            push!(fs, qc_finding("warn", "rescale.channel_clipped",
-                "Channel $i clips bright signal",
-                "Raise the 8-bit high percentile (or 100 = true max) and re-import.";
+            push!(fs, qc_finding("warn", "rescale.channel_clipped"; channel = i,
                 detail = Dict{String,Any}("channel" => i,
                                           "clipPct" => round(clip_high * 100, digits = 2))))
         elseif true_max !== nothing && p999 !== nothing && p999 > 0 &&
                true_max > _RESCALE_HOTPIXEL_RATIO * p999
-            push!(fs, qc_finding("warn", "rescale.hot_pixel",
-                "Channel $i may have a hot pixel",
-                "The max is far above the 99.9th percentile, squashing the signal — lower the 8-bit high percentile (e.g. 99.9) and re-import.";
+            push!(fs, qc_finding("warn", "rescale.hot_pixel"; channel = i,
                 detail = Dict{String,Any}("channel" => i, "trueMax" => true_max, "p999" => p999)))
         end
     end
@@ -344,17 +452,12 @@ Advisory findings for one image's HMM state assignment, from `category_dist_metr
 function hmm_states_qc_findings(m)
     findings = Dict{String,Any}[]
     if m.n == 0
-        push!(findings, qc_finding("warn", "hmm.no_states_decoded",
-            "No cells decoded into a state",
-            "Tracks may be too short or measurements incomplete — check segmentation/tracking and re-run."))
+        push!(findings, qc_finding("warn", "hmm.no_states_decoded"))
     elseif m.n_distinct <= 1
-        push!(findings, qc_finding("warn", "hmm.single_state",
-            "All cells sat in one state",
-            "This image didn't switch states — check it's the same acquisition and measurements, or reduce the state count."))
+        push!(findings, qc_finding("warn", "hmm.single_state"))
     elseif m.dominant_frac >= _DOMINANT_FRAC
-        push!(findings, qc_finding("info", "hmm.dominant_state",
-            "One state holds $(round(Int, 100 * m.dominant_frac))% of cells",
-            "Check the behaviour is really this uniform, or the model may have too many states.";
+        push!(findings, qc_finding("info", "hmm.dominant_state";
+            pct = round(Int, 100 * m.dominant_frac),
             detail = Dict{String,Any}("dominantStateFrac" => round(m.dominant_frac; digits = 3))))
     end
     findings
@@ -367,11 +470,7 @@ Advisory finding for one image's HMM transitions, from `category_dist_metrics` `
 unambiguous "no transitions" case flags (warn) — transition dominance isn't clearly actionable.
 """
 function hmm_transitions_qc_findings(m)
-    m.n == 0 ?
-        [qc_finding("warn", "hmm.no_transitions",
-            "No state transitions found",
-            "Tracks may be too short or the model produced one state — check HMM states and track lengths.")] :
-        Dict{String,Any}[]
+    m.n == 0 ? [qc_finding("warn", "hmm.no_transitions")] : Dict{String,Any}[]
 end
 
 """
@@ -387,9 +486,7 @@ function track_measures_qc_findings(n_tracks::Integer, dims_param::AbstractStrin
                                     resolved_dims::Integer, auto_dims::Integer,
                                     confidence::AbstractString, reason::AbstractString = "")
     (lowercase(strip(String(dims_param))) == "auto" && String(confidence) == "low") ?
-        [qc_finding("warn", "tracking.motion_dims_uncertain",
-            "Motion dimensionality uncertain ($(resolved_dims)D)",
-            "z couldn't be classified as migration vs jitter — review whether tracking should be 2D or 3D and re-run with dims set.";
+        [qc_finding("warn", "tracking.motion_dims_uncertain"; dims = resolved_dims,
             detail = Dict{String,Any}("resolvedDims" => Int(resolved_dims),
                                       "autoDims" => Int(auto_dims), "reason" => String(reason)))] :
         Dict{String,Any}[]
@@ -418,17 +515,12 @@ function cluster_qc_findings(n_clusters_total::Integer, n_here::Integer, n_clust
                              largest_frac::Real; unit::AbstractString = "cells")
     findings = Dict{String,Any}[]
     if n_clusters_total <= 1
-        push!(findings, qc_finding("warn", "clustering.single_cluster",
-            "Only one cluster found",
-            "Resolution too low or features don't separate populations — raise resolution or add features and re-run."))
+        push!(findings, qc_finding("warn", "clustering.single_cluster"))
     elseif n_here > 0 && n_clusters_here <= 1
-        push!(findings, qc_finding("warn", "clustering.image_one_cluster",
-            "All $unit fell into one cluster",
-            "This image separated from the cohort — check it's the same acquisition and normalisation, then re-run."))
+        push!(findings, qc_finding("warn", "clustering.image_one_cluster"; unit = unit))
     elseif n_here > 0 && largest_frac >= _CLUSTER_DOMINANT_FRAC
-        push!(findings, qc_finding("info", "clustering.dominant_cluster",
-            "One cluster holds $(round(Int, 100 * largest_frac))% of $unit",
-            "Check the population is really this uniform, or raise resolution to split it.";
+        push!(findings, qc_finding("info", "clustering.dominant_cluster";
+            pct = round(Int, 100 * largest_frac), unit = unit,
             detail = Dict{String,Any}("largestClusterFrac" => round(largest_frac; digits = 3))))
     end
     findings
@@ -486,11 +578,8 @@ function qc_canvas_expansion(source_shape, output_shape, dim_order::AbstractStri
     pct(i) = source_shape[i] > 0 ? 100 * (output_shape[i] - source_shape[i]) / source_shape[i] : 0.0
     ye, xe = pct(yi), pct(xi); m = max(ye, xe)
     m > threshold_pct || return nothing
-    # Finding text: `short` = the problem (terse); `long` = what to DO (one imperative line). Numbers
-    # live in `detail`, not the prose. See docs/todo/QC_PLAN.md → "Finding text".
-    qc_finding("warn", code,
-        "Output canvas grew +$(round(Int, m))% in XY",
-        "Larger than a clean correction — check the output and re-run this step if it looks wrong.";
+    # The `code` varies by caller (drift.canvas_expansion), so the catalog key is pinned.
+    qc_finding("warn", code; key = "output.canvas_expansion", pct = round(Int, m),
         detail = Dict{String,Any}("yExpansionPct" => round(ye, digits = 1),
                                   "xExpansionPct" => round(xe, digits = 1)))
 end

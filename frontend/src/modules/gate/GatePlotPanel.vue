@@ -369,7 +369,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
           <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
-          <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
+          <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
           <span v-if="mode !== 'off' && !pending" class="gate-hint cc-muted cc-fs-2xs">hold <kbd>Shift</kbd> to adjust gates</span></label>
       </div>

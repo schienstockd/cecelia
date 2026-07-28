@@ -1,7 +1,7 @@
 {
   "task": "driftCorrect",
   "fun_name": "cleanupImages.driftCorrect",
-  "label": "Drift Correction",
+  "label": "Drift correction",
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "cpu",
@@ -14,7 +14,7 @@
       "type": "valueNameSelection",
       "default": "default",
       "field": "imFilepath",
-      "tip": "Select which image version to apply drift correction to."
+      "tip": "Select which image version to apply drift correction to"
     },
     {
       "key": "driftChannel",
@@ -22,7 +22,7 @@
       "type": "channelSelection",
       "multiple": false,
       "default": [],
-      "tip": "Channel used for phase cross-correlation to estimate per-timepoint drift."
+      "tip": "Channel used for phase cross-correlation to estimate per-timepoint drift"
     },
     {
       "key": "driftNormalisation",
@@ -33,7 +33,7 @@
         { "label": "None",  "value": "none" },
         { "label": "Phase", "value": "phase" }
       ],
-      "tip": "Normalisation of the phase cross-correlation."
+      "tip": "Normalisation of the phase cross-correlation"
     }
   ]
 }

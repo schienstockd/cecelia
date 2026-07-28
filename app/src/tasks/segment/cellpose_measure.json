@@ -1,7 +1,7 @@
 {
   "task": "cellposeMeasure",
   "fun_name": "segment.cellposeMeasure",
-  "label": "Cellpose Segment + Measure",
+  "label": "Cellpose segment + measure",
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",

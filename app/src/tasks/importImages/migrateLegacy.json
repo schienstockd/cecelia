@@ -15,14 +15,14 @@
         { "value": "copy", "label": "Copy (self-contained)" },
         { "value": "symlink", "label": "Link (keep on source drive)" }
       ],
-      "tip": "Copy the zarr (self-contained) or symlink it (smaller)."
+      "tip": "Copy the zarr (self-contained) or symlink it (smaller)"
     },
     {
       "key": "rscript",
       "label": "Rscript path (optional)",
       "type": "string",
       "default": "",
-      "tip": "Rscript that reads the legacy ccid.rds; blank = the import default."
+      "tip": "Rscript that reads the legacy ccid.rds; blank = the import default"
     }
   ]
 }

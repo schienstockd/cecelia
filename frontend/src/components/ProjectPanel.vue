@@ -189,7 +189,7 @@ function formatDate(iso: string | null): string {
 </script>
 
 <template>
-  <BaseModal title="Project Manager" icon="pi-folder-open" width="700px" @close="$emit('close')">
+  <BaseModal title="Project manager" icon="pi-folder-open" width="700px" @close="$emit('close')">
 
     <!-- tabs -->
     <template #toolbar>
@@ -198,7 +198,7 @@ function formatDate(iso: string | null): string {
           class="pp-tab"
           :class="{ active: tab === 'recent' }"
           @click="tab = 'recent'"
-          v-tooltip.bottom="'Browse recently opened and created projects.'"
+          v-tooltip.bottom="'Browse recently opened and created projects'"
         >
           <i class="pi pi-history" /> Recent
         </button>
@@ -206,7 +206,7 @@ function formatDate(iso: string | null): string {
           class="pp-tab"
           :class="{ active: tab === 'new' }"
           @click="tab = 'new'"
-          v-tooltip.bottom="'Create a new Cecelia project in a local folder.'"
+          v-tooltip.bottom="'Create a new Cecelia project in a local folder'"
         >
           <i class="pi pi-plus" /> New project
         </button>
@@ -243,7 +243,7 @@ function formatDate(iso: string | null): string {
               @click="selectedUid = p.uid"
               @dblclick="openSelected"
               v-tooltip.right="p.uid === projectMeta.current?.uid
-                ? 'This project is already open.'
+                ? 'This project is already open'
                 : `Double-click to open ${p.name}`"
             >
               <td class="col-sel">
@@ -255,7 +255,7 @@ function formatDate(iso: string | null): string {
               <td class="col-name">
                 <span class="proj-name">{{ p.name }}</span>
                 <span v-if="projectMeta.current?.uid === p.uid" class="open-badge"
-                  v-tooltip.right="'Currently open project.'">open</span>
+                  v-tooltip.right="'Currently open project'">open</span>
               </td>
               <td class="col-path dim cc-muted" v-tooltip.bottom="p.path">
                 {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
@@ -292,7 +292,7 @@ function formatDate(iso: string | null): string {
             v-model="newName"
             placeholder="e.g. Tumour microenvironment 2025"
             @keyup.enter="createProject"
-            v-tooltip.right="'Give the project a unique, descriptive name.'"
+            v-tooltip.right="'Give the project a unique, descriptive name'"
           />
           <span class="field-error" v-if="nameError">{{ nameError }}</span>
         </div>
@@ -316,7 +316,7 @@ function formatDate(iso: string | null): string {
       <!-- footer -->
       <div class="pp-footer">
         <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
-          v-tooltip.top="'Close without changes.'">
+          v-tooltip.top="'Close without changes'">
           Cancel
         </button>
 
@@ -326,8 +326,8 @@ function formatDate(iso: string | null): string {
             :disabled="!selectedUid || projectMeta.loading || selectedUid === projectMeta.current?.uid"
             @click="openSelected"
             v-tooltip.top="selectedUid && selectedUid !== projectMeta.current?.uid
-              ? 'Open the selected project.'
-              : 'Select a project from the list above.'">
+              ? 'Open the selected project'
+              : 'Select a project from the list above'">
             <i class="pi pi-folder-open" />
             Open project
           </button>
@@ -338,7 +338,7 @@ function formatDate(iso: string | null): string {
             class="cc-btn cc-btn-primary"
             :disabled="projectMeta.loading"
             @click="createProject"
-            v-tooltip.top="'Create the project and open it.'">
+            v-tooltip.top="'Create the project and open it'">
             <i class="pi pi-plus" v-if="!projectMeta.loading" />
             <i class="pi pi-spin pi-cog" v-else />
             Create project
@@ -372,7 +372,7 @@ function formatDate(iso: string | null): string {
               <span class="dim cc-muted">Exports to</span>
               <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
               <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'export'"
-                      v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
+                      v-tooltip.top="'Select where exported bundles are written (any folder, incl. mounted servers/drives)'">
                 <i class="pi pi-folder-open" /> Change
               </button>
             </div>
@@ -381,8 +381,8 @@ function formatDate(iso: string | null): string {
             <div class="pp-io-import">
               <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
                       @change="pickBundle(($event.target as HTMLSelectElement).value)"
-                      v-tooltip.top="'Pick a bundle from the export folder.'">
-                <option value="">Choose an exported bundle…</option>
+                      v-tooltip.top="'Select a bundle from the export folder'">
+                <option value="">Select an exported bundle…</option>
                 <option v-for="b in bundles" :key="b.path" :value="b.path">
                   {{ b.name || b.uid }} — {{ b.stores }} store{{ b.stores === 1 ? '' : 's' }}
                 </option>
@@ -390,13 +390,13 @@ function formatDate(iso: string | null): string {
               <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
                      :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
                      @keyup.enter="importBundle"
-                     v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
+                     v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export'" />
               <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'import'"
-                      v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
+                      v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives)'">
                 <i class="pi pi-folder-open" /> Browse
               </button>
               <button class="cc-btn cc-btn-ghost" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
-                      v-tooltip.top="'Import a project from a .ccbundle folder.'">
+                      v-tooltip.top="'Import a project from a .ccbundle folder'">
                 <i class="pi pi-upload" /> Import
               </button>
             </div>
@@ -426,16 +426,16 @@ function formatDate(iso: string | null): string {
     </div>
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="conflict = null"
-              v-tooltip.top="'Do nothing — keep the existing project.'">Cancel</button>
+              v-tooltip.top="'Do nothing — keep the existing project'">Cancel</button>
       <button class="cc-btn cc-btn-danger" :disabled="projectMeta.current?.uid === conflict.uid"
               @click="doImport(conflict!.path, 'replace')"
               v-tooltip.top="projectMeta.current?.uid === conflict.uid
-                ? 'Close the project first — can\'t replace the one that\'s open.'
-                : 'Overwrite the existing project — destructive, cannot be undone.'">
+                ? 'Close the project first — can\'t replace the one that\'s open'
+                : 'Overwrite the existing project — destructive, cannot be undone'">
         <i class="pi pi-exclamation-triangle" /> Replace (at your own risk)
       </button>
       <button class="cc-btn cc-btn-primary" @click="doImport(conflict!.path, 'copy')"
-              v-tooltip.top="'Import as a new project (new id) — keeps both.'">
+              v-tooltip.top="'Import as a new project (new id) — keeps both'">
         <i class="pi pi-copy" /> Import as copy
       </button>
     </template>
@@ -451,9 +451,9 @@ function formatDate(iso: string | null): string {
     </div>
     <template #footer>
       <button class="cc-btn cc-btn-primary" @click="exportWarn = null"
-              v-tooltip.top="'Wait for the running tasks to finish.'">Wait</button>
+              v-tooltip.top="'Wait for the running tasks to finish'">Wait</button>
       <button class="cc-btn cc-btn-ghost" @click="doExport(exportWarn!.p)"
-              v-tooltip.top="'Export now despite the running tasks.'">Export anyway</button>
+              v-tooltip.top="'Export now despite the running tasks'">Export anyway</button>
     </template>
   </BaseModal>
 </template>

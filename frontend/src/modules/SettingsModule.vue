@@ -333,7 +333,7 @@ async function switchWt(path: string) {
             <label class="field-label">Project ID</label>
             <div class="field-row">
               <input class="field-input mono" :value="projectMeta.current.uid" readonly
-                     v-tooltip.bottom="'Read-only unique identifier used internally.'" />
+                     v-tooltip.bottom="'Read-only unique identifier used internally'" />
               <button class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="copyUid" v-tooltip.left="'Copy project ID'">
                 <i class="pi pi-copy" />
               </button>
@@ -351,7 +351,7 @@ async function switchWt(path: string) {
 
       <div class="field">
         <CcToggle class="toggle-row" v-model="settings.taskListAutoFollow" label="Auto-follow running tasks in task manager"
-          v-tooltip.right="'When a task starts running, automatically select it in the task manager log panel.'" />
+          v-tooltip.right="'When a task starts running, automatically select it in the task manager log panel'" />
       </div>
 
       <div class="field">
@@ -389,7 +389,7 @@ async function switchWt(path: string) {
           class="save-btn"
           :disabled="appCtl.updateBusy"
           @click="appCtl.applyUpdate"
-          v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish.`"
+          v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish`"
         >
           <i :class="['pi', appCtl.updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
           {{ appCtl.updateBusy ? 'Updating…' : `Update to ${appCtl.updateLatest}` }}
@@ -418,7 +418,7 @@ async function switchWt(path: string) {
           </button>
         </div>
         <span v-if="!storage && !storageScan" class="field-hint cc-muted cc-fs-xs">
-          Scan to see disk usage and superseded image versions that can be freed (everything except the active one).
+          Scan for disk usage and superseded image versions that can be freed.
         </span>
         <span v-if="storageError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ storageError }}</span>
       </div>
@@ -498,7 +498,7 @@ async function switchWt(path: string) {
     <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
     <section class="settings-section">
       <h2 class="section-title">Data patches</h2>
-      <p class="field-hint cc-muted cc-fs-xs">One-off fixes applied to the currently open project's data. Dry-run first to see what would change.</p>
+      <p class="field-hint cc-muted cc-fs-xs">One-off fixes to the open project's data. Dry-run first to see what would change.</p>
       <div v-if="!projectMeta.current" class="field-hint cc-muted cc-fs-xs">Open a project to run patches.</div>
       <div v-for="p in patches" :key="p.id" class="patch-row">
         <div class="patch-head">
@@ -612,7 +612,7 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <button v-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
-                  v-tooltip.top="projectUid ? 'Launch the Pluto notebook server' : 'Open a project first'">
+                  v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
             <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-cog' : 'pi-play']" /> Start
           </button>
           <template v-else>
@@ -657,7 +657,7 @@ async function switchWt(path: string) {
           <template v-if="napariSt === 'running'">up {{ formatUptime(napariRaw?.bridgeUptimeSeconds) }}</template>
           <template v-else>{{ stateInfo(napariSt).label }}</template>
           <span v-if="napariRaw?.bridgeStale" class="diag-stale-note"
-                v-tooltip.bottom="'Napari is running old code — restart it (System panel above) and reopen the image.'">
+                v-tooltip.bottom="'Napari is running old code — restart it (System panel above) and reopen the image'">
             <i class="pi pi-exclamation-triangle" /> stale
           </span>
         </span>
