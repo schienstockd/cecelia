@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Architecture Reference
+# Cecelia Feijoa — Architecture Reference
 
 ---
 
@@ -7,7 +7,7 @@
 The hard rule: **Cecelia.jl must be usable headless from the Julia REPL with zero knowledge of HTTP, WebSockets, or Vue.**
 
 ```
-cecelia-pineapple/
+cecelia-feijoa/
   app/          Julia package — Cecelia.jl + each task's co-located Python runner
                 (app/src/tasks/<cat>/<name>_run.py, run by path via run_py)
   api/          Julia API server — depends on Cecelia.jl as Pkg dependency

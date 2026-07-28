@@ -44,7 +44,8 @@ const props = defineProps<{
   persistKey?: string                  // CanvasPanel geometry persistence key
   docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
-const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]] }>()
+const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
+                           'stats-note': [string] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
@@ -400,6 +401,12 @@ watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto'],
       scheduleFetch)
 onMounted(scheduleFetch)
+
+// Which test the server ACTUALLY ran. With `auto` that's resolved from the group count (Mann-Whitney
+// for 2, Kruskal-Wallis for >2), so the picker can't show it — report it up and the shared Stats
+// options echo it under the Test select for whichever plot is active.
+const statsNote = computed(() => result.value?.comparisons?.methodNote ?? '')
+watch(statsNote, n => emit('stats-note', n), { immediate: true })
 
 const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
 

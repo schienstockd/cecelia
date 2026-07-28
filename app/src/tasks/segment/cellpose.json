@@ -51,8 +51,7 @@
             { "label": "Cyto3",   "value": "cyto3" },
             { "label": "Cyto2",   "value": "cyto2" },
             { "label": "Cyto",    "value": "cyto" },
-            { "label": "Nuclei",  "value": "nuclei" },
-            { "label": "ccia.fluo (custom)",  "value": "ccia.fluo" }
+            { "label": "Nuclei",  "value": "nuclei" }
           ]
         },
         {

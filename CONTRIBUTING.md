@@ -1,6 +1,6 @@
-# Contributing to Cecelia Pineapple
+# Contributing to Cecelia Feijoa
 
-Thanks for your interest. Cecelia Pineapple is early software and is primarily
+Thanks for your interest. Cecelia Feijoa is early software and is primarily
 maintained by its author, [Dominik Schienstock](https://orcid.org/0000-0001-8440-0009).
 Contributions — bug reports, fixes, and ideas — are welcome. Please read this
 first.

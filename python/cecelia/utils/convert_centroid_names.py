@@ -39,7 +39,7 @@ def convert_file(path, apply=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Convert label-props h5ad centroids to explicit axis names.")
-    ap.add_argument("root", help="projects directory to scan (e.g. ~/cecelia-pineapple/projects)")
+    ap.add_argument("root", help="projects directory to scan (e.g. ~/cecelia-feijoa/projects)")
     ap.add_argument("--apply", action="store_true", help="write changes (default: dry-run, no writes)")
     args = ap.parse_args(argv)
 

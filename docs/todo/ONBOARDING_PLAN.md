@@ -31,7 +31,7 @@ change only the final fallback and factor the path out:
 config_dir() resolution (first wins):
   1. explicit arg to init_cecelia!(...)          — tests / REPL
   2. CECELIA_DEV_DIR env var                      — dev, CI
-  3. CECELIA_DEV_DIR in cecelia-pineapple/.env    — dev checkout (gitignored)
+  3. CECELIA_DEV_DIR in cecelia-feijoa/.env    — dev checkout (gitignored)
   4. ~/.cecelia            ← CHANGED (was ~/cecelia)   — the installed-app default
 ```
 
@@ -53,7 +53,7 @@ the `setup_required` check, and `/api/setup/init` all call it. Do not re-derive 
 places (that is the divergent-re-implementation trap CLAUDE.md warns about).
 
 Also fix the one stale hardcoded pointer: `app/src/tasks/importImages/omezarr.jl:464` still tells
-users to edit `~/cecelia-pineapple/dev/custom.toml` — update it to reference the resolved path.
+users to edit `~/cecelia-feijoa/dev/custom.toml` — update it to reference the resolved path.
 
 ### D2 — One config path on all platforms: `~/.cecelia/custom.toml`
 
@@ -125,7 +125,7 @@ text + validate. The mockup must not imply an OS file dialog.
 - **The setup page** — one screen, no tabs:
 
   ```
-  Welcome to Cecelia 🍍
+  Welcome to Cecelia
 
   Where would you like to store your projects?
 

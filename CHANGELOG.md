@@ -1,12 +1,12 @@
 # Changelog
 
-All notable changes to Cecelia Pineapple are documented here.
+All notable changes to Cecelia Feijoa are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the project is pre-1.0, minor versions may contain breaking changes.
 
-Cecelia Pineapple is a ground-up reimplementation of the original R/Shiny
+Cecelia Feijoa is a ground-up reimplementation of the original R/Shiny
 [Cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue
 stack. Per-tag notes are also on the
 [GitHub releases](https://github.com/schienstockd/cecelia/releases) page.

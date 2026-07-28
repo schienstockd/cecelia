@@ -178,7 +178,7 @@ fi
 # ── Custom cellpose models (segmentation) ─────────────────────────────────────
 # ~26 MB (schienstockd/ceceliaModels — `ccia.fluo` for fluorescence today; more later), fetched
 # here for the same reason as bioformats2raw: too large to ship in the bundle. Only
-# `cellposeModels/` is installed — the pineapple btrack config is vendored beside its runner
+# `cellposeModels/` is installed — the feijoa btrack config is vendored beside its runner
 # (`app/src/tasks/tracking/cell_config.json`), so `btrackModels/` from the upstream repo is
 # skipped. The app resolves them at <install>/models/cellposeModels/ (cellpose_model_path() in
 # config.jl). Skipped if already present (re-fetch by removing the directory).

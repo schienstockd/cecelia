@@ -6,7 +6,7 @@ so a developer can `pixi run models-fetch` after cloning (or re-fetch when the u
 changes). Cross-platform (stdlib only: urllib + zipfile).
 
 Only `cellposeModels/` is installed; `btrackModels/` is deliberately skipped because the
-pineapple btrack config is vendored beside its runner (`app/src/tasks/tracking/cell_config.json`).
+feijoa btrack config is vendored beside its runner (`app/src/tasks/tracking/cell_config.json`).
 
 The resolver on the app side is `cellpose_model_path(name)` in `app/src/config.jl` — it checks
 `<repo>/models/cellposeModels/` first (this bundle) and `<config_dir>/models/cellposeModels/`

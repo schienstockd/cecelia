@@ -1,6 +1,6 @@
 # Data Model
 
-AnnData conventions and cell-level data storage for cecelia-pineapple.
+AnnData conventions and cell-level data storage for cecelia-feijoa.
 
 ---
 

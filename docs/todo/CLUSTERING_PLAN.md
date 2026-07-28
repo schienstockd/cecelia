@@ -4,7 +4,7 @@
 > shipped, `napari/.venv` deleted, `python_bin_path()` config-driven, browser launch (no Tauri),
 > and `leidenalg`/`scanpy`/`anndata` are already in `pixi.toml`. The old *Env cleanup* section
 > below is therefore satisfied. This file is the living plan; the **Decisions** section is current.
-> Repo: `~/cc-workspace/cecelia/cecelia-pineapple`. Test data: project NRUBxU / set jFWePN
+> Repo: `~/cc-workspace/cecelia/cecelia-feijoa`. Test data: project NRUBxU / set jFWePN
 > (KDIeEm/CHWgkH/hVNx8o tracked live images; A/B/C segs with `track_id`).
 >
 > **Re-derivation pass 2026-06-30 (D's answers locked):** set-level clustering; drop refPops;

@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Milestones
+# Cecelia Feijoa — Milestones
 
 The durable ledger of what actually landed and how it was packaged. **Append-only** — never edit or
 delete a past milestone; add a new one. This is the counterpart to the temporary

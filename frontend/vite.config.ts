@@ -7,8 +7,8 @@ import vue from '@vitejs/plugin-vue'
 
 // Sibling checkout of `~/cc-workspace/feijoa` gets hot-reload from the local source; otherwise
 // Vite resolves `feijoa` via node_modules (github:schienstockd/feijoa#main). Note the FOUR levels:
-// frontend → cecelia-pineapple → cecelia → cc-workspace → feijoa (the cecelia repo has an inner
-// cecelia-pineapple/ dir, so feijoa is three "../" hops away, not two).
+// frontend → cecelia-feijoa → cecelia → cc-workspace → feijoa (the cecelia repo has an inner
+// cecelia-feijoa/ dir, so feijoa is three "../" hops away, not two).
 // See docs/todo/SKETCH_ENGINE_PLAN.md.
 const feijoaSibling = fileURLToPath(new URL('../../../feijoa/src/lib/index.ts', import.meta.url))
 const feijoaAlias: Record<string, string> = existsSync(feijoaSibling) ? { feijoa: feijoaSibling } : {}

@@ -1,5 +1,31 @@
 struct CellposeSegment <: CciaTask end
 
+# Cellpose model options are enumerated at runtime — the four built-ins plus any file dropped
+# into `<install>/models/cellposeModels/` (bundled, populated by install.sh / `pixi run
+# models-fetch`) or `<config_dir>/models/cellposeModels/` (user drop-in slot, mirrors the
+# custom-modules convention). A newly-added checkpoint appears in the picker AND passes
+# `validate_params` without a server restart. See docs/SEGMENTATION.md → *Custom cellpose
+# checkpoints*, and `list_cellpose_models` in `app/src/config.jl`.
+_needs_dynamic_options(::CellposeSegment) = true
+
+function _inject_dynamic_options!(spec::Dict{String,Any}, ::CellposeSegment)::Dict{String,Any}
+    params = get(spec, "params", nothing)
+    params isa AbstractVector || return spec
+    for p in params
+        p isa AbstractDict && string(get(p, "key", "")) == "models" || continue
+        sub_params = get(p, "params", nothing)
+        sub_params isa AbstractVector || continue
+        for sub in sub_params
+            sub isa AbstractDict || continue
+            (string(get(sub, "key", "")) == "model" &&
+             string(get(sub, "type", "")) == "select") || continue
+            sub["options"] = [Dict{String,Any}("label" => m.label, "value" => m.name)
+                              for m in list_cellpose_models()]
+        end
+    end
+    spec
+end
+
 # Pure QC helper (drift pattern): objective segment counts → findings + the primary (base) count.
 # Only the "0 cells" case is an advisory finding; the counts themselves are banked as metrics.
 function _segment_qc_findings(counts::AbstractDict)

@@ -1,4 +1,4 @@
-# Legacy (R/Shiny cecelia) → Pineapple data migration — PLAN
+# Legacy (R/Shiny cecelia) → Feijoa data migration — PLAN
 
 **Status:** parked plan / in progress. Goal: bring an *old R-version* cecelia project into the new
 Julia stack **without recomputing** the expensive steps.

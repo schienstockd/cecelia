@@ -182,36 +182,58 @@ The Julia handler converts channel names → 0-based indices before writing para
 
 Cellpose ships four built-in models (`cyto3` / `cyto2` / `cyto` / `nuclei`). Custom checkpoints —
 e.g. **`ccia.fluo`**, the fluorescence model that segments dendritic / SHG stroma (upstream of
-`segment.branching`) — are fetched from
-[`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into the install
-root, matching the **bioformats2raw pattern**: too large (~26 MB) to ship in the bundle, so
-`install.sh` / `install.ps1` fetch them at install time.
+`segment.branching`) — live outside the code. There are two slots, in **override → bundled**
+precedence (matches `bioformats2raw_bin()`):
 
-**Fetch (dev / on-demand):**
+| Slot | Path | Populated by | Purpose |
+|---|---|---|---|
+| User drop-in | `<config_dir>/models/cellposeModels/<name>` | You | Drop your own checkpoint here (same convention as [custom modules](CUSTOM_MODULES.md)) |
+| Bundled | `<install root>/models/cellposeModels/<name>` | `install.sh` / `install.ps1` / `pixi run models-fetch` | The shared set fetched from [`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) |
+
+A user-drop of the same filename **wins** over the bundled copy — so you can fine-tune
+`ccia.fluo` and replace it locally without touching the repo/install.
+
+#### Drop-in convention (no rebuild)
+
+1. Copy the file into either slot. `<config_dir>` is `~/.cecelia` on an installed app; in dev
+   it's whatever `.env`'s `CECELIA_DEV_DIR` points at.
+2. Open the Segment page's Cellpose form. The **Model** dropdown enumerates the built-ins plus
+   every file it finds in both slots — no restart, no code, no register call.
+3. Select the model, hit Run. The task passes.
+
+Under the hood: `list_cellpose_models()` (in `app/src/config.jl`) enumerates every option;
+`_inject_dynamic_options!(::CellposeSegment)` (in `app/src/tasks/segment/cellpose.jl`)
+rewrites `cellpose.json`'s Model select's `options` list at spec-load time (via a `_task_spec`
+dispatch hook in `app/src/tasks/task.jl`). Because `validate_params` reads through the same
+`_task_spec`, and `/api/tasks/definitions` re-runs the same hook on each request, **the picker
+and the validator agree** — a dropped-in file is selectable AND accepted.
+
+At run time the Julia handler resolves the selected name to an absolute path via
+`cellpose_model_path(name)`, and `cellpose_utils.py::_get_model` picks it up through cellpose's
+`pretrained_model=<path>` branch. Missing file → clear `[ERROR]` before dispatch.
+
+#### Fetching the shared set
 
 ```bash
-pixi run models-fetch     # downloads schienstockd/ceceliaModels master → <repo>/models/
+pixi run models-fetch     # schienstockd/ceceliaModels master → <repo>/models/cellposeModels/
 ```
 
-Override the branch/tag with `--ref v1.2` or the destination with `--dest /some/path`. The
-installers pin the branch via `CECELIA_MODELS_REF`.
+Override the ref with `--ref v1.2` or the destination with `--dest /some/path`. The installers
+do the same fetch at install time (`CECELIA_MODELS_REF` env var to pin a ref there). Only
+`cellposeModels/` is installed — the feijoa btrack task uses a vendored config beside its
+runner, so `btrackModels/` from upstream is skipped.
 
-**Where the app looks (`cellpose_model_path(name)` in `app/src/config.jl`):**
+#### Design notes
 
-1. `<install root>/models/cellposeModels/<name>` — the bundle (what `install.sh` /
-   `pixi run models-fetch` populate). In dev, this is `<repo>/models/cellposeModels/`.
-2. `<config_dir>/models/cellposeModels/<name>` — user override slot for drop-in checkpoints
-   that aren't in the shipped set.
-
-Select the model from the **Model** dropdown in the cellpose task form; the Julia handler
-substitutes an absolute file path before dispatch, and `cellpose_utils.py::_get_model` picks
-it up through cellpose's `pretrained_model=<path>` branch. If the file is missing at both
-locations, the task errors out before dispatch with a message telling you where it should live.
-Built-in names (`cyto3` etc.) always pass through unchanged.
-
-**btrack models are NOT fetched.** The btrack task uses a vendored config beside its runner
-(`app/src/tasks/tracking/cell_config.json`); the upstream `ceceliaModels/btrackModels/` set
-isn't needed and is skipped by both the installer and `pixi run models-fetch`.
+- **~26 MB per checkpoint** is too large for the app tarball (which is ~6 MB), so we borrow
+  bioformats2raw's install-time-fetch shape. See `docs/SHIPPING.md`.
+- The dropdown is **enumerated live** — adding a checkpoint after the server is running only
+  takes a page reload of the Segment page; no restart needed. If you swap the file (same name,
+  different bytes), the task picks up the new file on the next Run (cellpose caches per model
+  path within a task-runner process, but that process is short-lived).
+- Names are the **filename verbatim** — no `.pt` implied. Whatever cellpose can load
+  (`.pt` weights, no-extension checkpoints, etc.) works.
+- Dotfiles (`.DS_Store`) and subdirectories are ignored during enumeration.
 
 ---
 

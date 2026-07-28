@@ -43,9 +43,9 @@ end
 
 The per-user directory that holds `custom.toml`. Resolution order (first wins):
 
-  1. Explicit argument: `config_dir("~/cecelia-pineapple/dev")`  — tests / REPL
+  1. Explicit argument: `config_dir("~/cecelia-feijoa/dev")`     — tests / REPL
   2. `CECELIA_DEV_DIR` environment variable                       — dev, CI
-  3. `CECELIA_DEV_DIR` in `cecelia-pineapple/.env` (gitignored)   — dev checkout
+  3. `CECELIA_DEV_DIR` in `cecelia-feijoa/.env` (gitignored)      — dev checkout
   4. Default: `~/.cecelia`                                        — the installed app
 
 The presence of `.env` / `CECELIA_DEV_DIR` **is** the dev signal: an installed app has neither
@@ -89,24 +89,67 @@ cellpose_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
 Absolute path to a custom cellpose checkpoint by filename, or `nothing` if the file doesn't
 exist. Empty/whitespace name → `nothing` (no false positive on directory-only entries).
 
-Two locations are checked, in order — mirrors the bioformats2raw resolver's bundled/override
-pattern:
-  1. `<install root>/models/cellposeModels/{name}` — where `install.sh` / `install.ps1`
-     unpacks the `schienstockd/ceceliaModels` release (like bioformats2raw at
-     `<install>/bioformats2raw/`; in dev, resolved to `<repo>/models/` after
-     `pixi run models-fetch`).
-  2. `<config_dir>/models/cellposeModels/{name}` — user override slot (drop-in checkpoints
-     that aren't in the shipped set).
+Two locations are checked, in order — mirrors `bioformats2raw_bin()`'s **explicit override →
+bundled** shape: a user's config-dir drop-in takes precedence over the bundled copy of the same
+filename. That's what lets someone replace `ccia.fluo` with a fine-tuned version without
+touching the repo/install.
+
+  1. `<config_dir>/models/cellposeModels/{name}` — user drop-in slot. Same convention as
+     custom modules under `<config_dir>/modules/` (see `docs/CUSTOM_MODULES.md`): the file
+     appears in the cellpose task's Model picker without a rebuild.
+  2. `<install root>/models/cellposeModels/{name}` — the bundled set, populated by
+     `install.sh` / `install.ps1` / `pixi run models-fetch` from
+     `schienstockd/ceceliaModels`.
 """
 function cellpose_model_path(name::AbstractString,
                              dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
     s = strip(String(name))
     isempty(s) && return nothing
+    user = joinpath(cellpose_models_dir(dev_dir), s)
+    isfile(user) && return user
     # `@__DIR__` = `<repo>/app/src` → `..`/`..` = repo (install) root.
     bundled = joinpath(@__DIR__, "..", "..", "models", "cellposeModels", s)
-    isfile(bundled) && return bundled
-    p = joinpath(cellpose_models_dir(dev_dir), s)
-    isfile(p) ? p : nothing
+    isfile(bundled) ? bundled : nothing
+end
+
+# Cellpose's built-in model names (documented in the cellpose 3 CLI + Python API). Enumerated
+# separately from filesystem checkpoints so the picker always offers them even before any
+# checkpoint file is installed.
+const _BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
+
+"""
+    list_cellpose_models() -> Vector{NamedTuple}
+
+Every cellpose model the picker should offer: the four built-ins, then any filenames present
+in the bundled `<install>/models/cellposeModels/` and the user drop-in
+`<config_dir>/models/cellposeModels/`. Deduped by name; a user drop-in shadows a bundled file
+of the same name (matches the resolver's precedence). Each entry is `(name, label, source)`,
+where `source ∈ {"builtin", "bundled", "user"}` and `label` is what the picker displays.
+
+This is the enumeration the `/api/tasks/definitions` route uses to REPLACE the static options
+list in `cellpose.json`'s Model select, so a user's newly-dropped checkpoint appears without a
+rebuild. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
+"""
+function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
+    out = NamedTuple[]
+    for m in _BUILTIN_CELLPOSE_MODELS
+        push!(out, (name = m, label = uppercasefirst(m), source = "builtin"))
+    end
+    seen = Set{String}(String(m.name) for m in out)
+    # user drop-ins first so they shadow bundled files of the same name (matches resolver order)
+    user_dir    = cellpose_models_dir(dev_dir)
+    bundled_dir = joinpath(@__DIR__, "..", "..", "models", "cellposeModels")
+    for (dir, tag) in ((user_dir, "user"), (bundled_dir, "bundled"))
+        isdir(dir) || continue
+        for name in sort!(readdir(dir))
+            startswith(name, ".") && continue
+            isfile(joinpath(dir, name)) || continue
+            name in seen && continue
+            push!(out, (name = name, label = "$(name) ($(tag))", source = tag))
+            push!(seen, name)
+        end
+    end
+    out
 end
 
 """
