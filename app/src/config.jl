@@ -43,9 +43,9 @@ end
 
 The per-user directory that holds `custom.toml`. Resolution order (first wins):
 
-  1. Explicit argument: `config_dir("~/cecelia-pineapple/dev")`  — tests / REPL
+  1. Explicit argument: `config_dir("~/cecelia-feijoa/dev")`     — tests / REPL
   2. `CECELIA_DEV_DIR` environment variable                       — dev, CI
-  3. `CECELIA_DEV_DIR` in `cecelia-pineapple/.env` (gitignored)   — dev checkout
+  3. `CECELIA_DEV_DIR` in `cecelia-feijoa/.env` (gitignored)      — dev checkout
   4. Default: `~/.cecelia`                                        — the installed app
 
 The presence of `.env` / `CECELIA_DEV_DIR` **is** the dev signal: an installed app has neither

@@ -1,6 +1,6 @@
 # FAQ — why is Cecelia built the way it is?
 
-Short answers to the questions people actually ask about Cecelia Pineapple — why it's built the way
+Short answers to the questions people actually ask about Cecelia Feijoa — why it's built the way
 it is, and how the pieces fit. Deeper reasoning lives in [`docs/`](docs/); this is the quick version.
 
 ## Languages & architecture

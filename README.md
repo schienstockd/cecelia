@@ -1,4 +1,4 @@
-# 🍍 Cecelia Pineapple
+# Cecelia Feijoa
 
 [![CI](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml)
 [![Release](https://github.com/schienstockd/cecelia/actions/workflows/release.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/release.yml)
@@ -244,7 +244,7 @@ contract.
 
 ## License
 
-Cecelia Pineapple is licensed under **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). This is
+Cecelia Feijoa is licensed under **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). This is
 inherited from the original `cecelia` R package (`GPL (>= 3)`) that this project ports.
 
 Third-party software it derives from, bundles, or depends on — including **celltrackR** (GPL-2.0),

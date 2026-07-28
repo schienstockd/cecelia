@@ -16,7 +16,7 @@ from cecelia.utils.label_props_utils import (
 
 
 def _legacy_obsm(n_spatial=3, temporal=True):
-    """A Pineapple file with skimage positional labels in uns (the pre-migration shape)."""
+    """A Feijoa file with skimage positional labels in uns (the pre-migration shape)."""
     a = ad.AnnData(X=np.random.rand(4, 2).astype(np.float32),
                    obs=pd.DataFrame(index=[str(i) for i in range(4)]),
                    var=pd.DataFrame(index=["area", "vol"]))

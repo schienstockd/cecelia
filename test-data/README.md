@@ -1,6 +1,6 @@
 # Cecelia test data
 
-Version-controlled fixtures for the headless test suite (`cecelia-pineapple/app/test/runtests.jl`)
+Version-controlled fixtures for the headless test suite (`cecelia-feijoa/app/test/runtests.jl`)
 and for opening a minimal project in the GUI. Kept at the workspace root so tests do **not**
 depend on the deletable dev projects directory (`projects_dir()`).
 

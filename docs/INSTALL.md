@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Installation Guide
+# Cecelia Feijoa — Installation Guide
 
 Supports: Linux, macOS, Windows. Designed to run natively on all three — no Docker.
 
@@ -106,7 +106,7 @@ build is selected per platform automatically (CUDA cu124 on Linux/Windows, MPS/C
 macOS); no `--index-url` juggling.
 
 ```bash
-# from the cecelia-pineapple project root:
+# from the cecelia-feijoa project root:
 pixi install
 ```
 
@@ -153,7 +153,7 @@ npm install
 You do **not** hand-edit `custom.toml`. On first launch, if no config exists, Cecelia opens a
 one-screen setup wizard in the browser that asks where to store your projects and writes it for you.
 Config is per-user at `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.toml` on Windows). In a
-dev checkout, `cecelia-pineapple/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
+dev checkout, `cecelia-feijoa/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
 and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOARDING_PLAN.md`.
 
 ## Shared / lab machines (system-wide install)

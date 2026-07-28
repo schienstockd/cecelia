@@ -59,7 +59,7 @@ The fix everyone already expects (Claude, the R version, intuition): name the co
    behaviour: when both axes are `centroid_x`/`centroid_y`, **fixed aspect ratio + reversed Y**;
    default transform **linear** (not logicle) for spatial/temporal axes.
 6. **Generic h5ad converter** (idempotent, dry-runnable) over `projects_dir()/**/labelProps/*.h5ad`.
-   Handles *any* prior format so it also covers anyone who used the old R version: (a) Pineapple
+   Handles *any* prior format so it also covers anyone who used the old R version: (a) Feijoa
    `centroid-N` labels in `uns/spatial_cols` + `t` → explicit names (via `skimage_centroid_axis_names`);
    (b) old-R flat `centroid_x/_y/_z/_t` var columns → lifted into `obsm` with explicit `uns` (generalise
    `legacy_migrate`). This is the remedy the read-time guard points at. Dominik runs it; we don't touch

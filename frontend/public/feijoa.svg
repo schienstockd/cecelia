@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Feijoa">
+  <!-- The Cecelia Feijoa brand mark: a halved feijoa, drawn in the same idiom as the feijoa
+       sketch library (bold ink outline, soft pastel fills from the "vibrant" scheme, pale
+       flesh disc). Shown cut rather than whole because a whole feijoa is just a green egg —
+       the cut face is what makes it recognisable, and the ring/pale-centre contrast is what
+       survives at 16px. Outlines are deliberately irregular (drawn through jittered anchors,
+       not perfect ellipses) so it reads hand-drawn, matching the sketches.
+       Palette: lime #b8d63f/#c5de66, ink #2a2a2a, pale #f0f0ee — see feijoa's primitives.ts. -->
+  <!-- skin -->
+  <path d="M 52.78 25.62 Q 55.58 33.00, 53.11 40.65 Q 50.63 48.30, 44.84 52.91 Q 39.05 57.51, 32.02 57.46 Q 24.99 57.40, 18.87 53.10 Q 12.76 48.80, 11.17 40.90 Q 9.58 33.00, 11.50 25.37 Q 13.41 17.74, 19.12 12.90 Q 24.83 8.06, 32.02 8.00 Q 39.20 7.95, 44.59 13.09 Q 49.97 18.24, 52.78 25.62 Z" fill="#c5de66" stroke="#2a2a2a" stroke-width="3" stroke-linejoin="round"/>
+  <!-- flesh -->
+  <path d="M 48.03 26.86 Q 49.65 33.00, 47.86 38.99 Q 46.08 44.98, 41.68 48.51 Q 37.28 52.05, 31.83 52.64 Q 26.39 53.24, 22.24 49.03 Q 18.10 44.83, 16.38 38.91 Q 14.65 33.00, 16.21 26.94 Q 17.76 20.88, 22.12 16.97 Q 26.47 13.05, 31.83 13.65 Q 37.20 14.24, 41.81 17.49 Q 46.42 20.73, 48.03 26.86 Z" fill="#f0f0ee" stroke="#2a2a2a" stroke-width="1.6"/>
+  <!-- translucent gel centre -->
+  <path d="M 40.56 29.30 Q 41.38 33.00, 40.44 36.58 Q 39.49 40.16, 37.29 42.84 Q 35.09 45.51, 32.13 45.01 Q 29.16 44.50, 26.77 42.40 Q 24.37 40.29, 23.38 36.65 Q 22.38 33.00, 23.25 29.24 Q 24.12 25.47, 26.67 23.60 Q 29.22 21.74, 32.13 21.23 Q 35.03 20.72, 37.39 23.16 Q 39.75 25.60, 40.56 29.30 Z" fill="#b8d63f" opacity="0.55" stroke="#6f841f" stroke-width="1.2"/>
+  <!-- seeds -->
+  <g fill="#6d5326">
+    <ellipse cx="32.00" cy="26.40" rx="2.00" ry="2.70"/>
+    <ellipse cx="27.58" cy="32.01" rx="2.00" ry="2.70"/>
+    <ellipse cx="36.42" cy="32.01" rx="2.00" ry="2.70"/>
+    <ellipse cx="29.14" cy="38.61" rx="2.00" ry="2.70"/>
+    <ellipse cx="34.86" cy="38.61" rx="2.00" ry="2.70"/>
+  </g>
+  <!-- calyx nub at the blossom end -->
+  <path d="M32 4.5c2.2 1.7 3.3 3.8 3.3 6.2 0 1.5-1.5 2.4-3.3 2.4s-3.3-.9-3.3-2.4c0-2.4 1.1-4.5 3.3-6.2z" fill="#6f841f" stroke="#2a2a2a" stroke-width="1.6" stroke-linejoin="round"/>
+</svg>

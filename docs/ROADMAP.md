@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Roadmap
+# Cecelia Feijoa — Roadmap
 
 **Status: temporary goal-setting.** This is a lightweight direction sketch, not a contract — it
 gets rewritten as priorities shift. The *durable* record of what actually landed (and was packaged)

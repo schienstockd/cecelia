@@ -115,7 +115,7 @@ The workflow maps ~1:1 to Julia, and the foundation already exists:
   project.json        ← + "notebooks": [{ file, description, version, … }]  (registry)
   notebooks/          ← user notebooks (.jl, Pluto), versioned WITH the project
   ...
-cecelia-pineapple/
+cecelia-feijoa/
   notebooks/          ← shipped example notebooks (UID-free, track the API), versioned with code
   pixi.toml           ← + `notebooks` task (Pluto on :7660) + stop-by-port entry
   frontend/src/       ← Playground link + NotebookTable.vue (mirrors ImageTable.vue)
