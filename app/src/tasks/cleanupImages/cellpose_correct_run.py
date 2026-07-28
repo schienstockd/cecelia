@@ -13,7 +13,6 @@ Parameter contract (JSON written by Julia):
       modelChannels   - list of 0-based integer channel indices
       modelDiameter   - expected cell diameter in pixels (at native resolution)
   useGPU            - bool; use MPS (Apple Silicon) if available
-  useDask           - bool; load image as Dask array (reduces peak RAM)
 """
 
 import sys
@@ -33,11 +32,11 @@ def run(params):
 
     im_path            = script_utils.get_param(params, 'imPath',           default=None)
     models             = script_utils.get_param(params, 'models',           default=dict())
-    use_dask           = script_utils.get_param(params, 'useDask',          default=False)
     im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default=None)
 
     log.log(f'>> open image: {im_path}')
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=use_dask)
+    # `as_dask=True` — zarr open is metadata-only; `copy_stream` fortifies per-frame.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
 
     omexml     = ome_xml_utils.parse_meta(im_path)
     dim_utils  = DimUtils(omexml, use_channel_axis=True)

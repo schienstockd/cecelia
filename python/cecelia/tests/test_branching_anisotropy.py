@@ -181,5 +181,51 @@ class GlobaliseLabelsTest(unittest.TestCase):
         self.assertTrue((arr_out == 0).all())
 
 
+class SkeletoniseDilationOrderTest(unittest.TestCase):
+    """Pins the fix for a real regression: `postDilationSize` must be applied to the already
+    PATH-LABELLED array (after `skan.Skeleton`/`summarize` has read the topology), never to the
+    boolean mask before skan sees it. Dilating the mask first turns a thin 1px-wide skeleton into
+    a multi-pixel-wide blob; skan then reads spurious junctions along the width of every line,
+    exploding a handful of real branches into hundreds of bogus ones with a meaningless
+    branch-type mix. Caught via real project data: a run with `postDilationSize>0` produced
+    170,215 paths (only types 1/2, zero type-0 — an implausible distribution for real fibre
+    data) where the true topology has a small handful of edges."""
+
+    def _t_junction(self):
+        # One real junction, three real termini: a horizontal bar crossed by a vertical stub.
+        # Correct analysis: exactly 3 paths, all "endpoint-to-junction" (branch-type 1).
+        im = np.zeros((21, 41), dtype=bool)
+        im[10, 2:39] = True
+        im[2:11, 20] = True
+        return im
+
+    def test_skeletonise_does_not_dilate_before_skan_sees_it(self):
+        mod = _load_runner()
+        thin = mod._skeletonise(self._t_junction(), pre=0, is_3d=False)
+        df, arr = mod._summarise_paths(thin, t_index=None)
+        # The real topology: 3 paths, all endpoint-to-junction. If `_skeletonise` dilated the
+        # mask before this point (the bug), skan would read dozens of spurious paths instead.
+        self.assertEqual(len(df), 3)
+        self.assertEqual(set(df["branch-type"].tolist()), {1})
+        self.assertEqual(len(np.unique(arr[arr > 0])), 3)
+
+    def test_post_dilation_grows_footprint_without_changing_topology(self):
+        mod = _load_runner()
+        thin = mod._skeletonise(self._t_junction(), pre=0, is_3d=False)
+        df, arr = mod._summarise_paths(thin, t_index=None)
+        dilated = mod._dilate_label_image(arr, post=2, is_3d=False)
+        # More pixels lit up (visibility), but the SET of distinct path labels is unchanged —
+        # dilation must never re-derive or corrupt the topology skan already read.
+        self.assertGreater(int((dilated > 0).sum()), int((arr > 0).sum()))
+        self.assertEqual(set(np.unique(dilated[dilated > 0]).tolist()),
+                         set(np.unique(arr[arr > 0]).tolist()))
+
+    def test_post_dilation_zero_is_a_noop(self):
+        mod = _load_runner()
+        arr = np.array([[0, 1], [2, 0]], dtype=np.uint32)
+        out = mod._dilate_label_image(arr, post=0, is_3d=False)
+        np.testing.assert_array_equal(out, arr)
+
+
 if __name__ == "__main__":
     unittest.main()

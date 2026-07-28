@@ -134,8 +134,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
            labelErosion        = Int(get(params, "labelErosion", 0)),
            clearTouchingBorder = Bool(get(params, "clearTouchingBorder", false)),
            clearDepth          = Bool(get(params, "clearDepth", false)),
-           normaliseToWhole    = Bool(get(params, "normaliseToWhole", true)),
-           useDask             = Bool(get(params, "useDask", false))),
+           normaliseToWhole    = Bool(get(params, "normaliseToWhole", true))),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

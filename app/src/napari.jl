@@ -142,13 +142,32 @@ function show_labels!(v::NapariViewer;
                       value_name::String="default",
                       label_files::Vector{String}=["labels.zarr"],
                       show_labels::Bool=true,
-                      show_points::Bool=false)
+                      show_points::Bool=false,
+                      cache::Bool=false)
     send(v, Dict{String,Any}(
         "type"         => "show_labels",
         "value_name"   => value_name,
         "label_files"  => label_files,
         "show_labels"  => show_labels,
         "show_points"  => show_points,
+        "cache"        => cache,
+    ))
+    v
+end
+
+# Skeleton labels written by `segment.branching` — stored under `branchLabels/` and namespaced
+# `({vn}) Branches` so the generic labels picker never sees them (BRANCHING_PLAN Decision 6).
+function show_branch_labels!(v::NapariViewer;
+                             value_name::String="default",
+                             label_files::Vector{String}=["$(value_name).zarr"],
+                             show_labels::Bool=true,
+                             cache::Bool=false)
+    send(v, Dict{String,Any}(
+        "type"         => "show_branch_labels",
+        "value_name"   => value_name,
+        "label_files"  => label_files,
+        "show_labels"  => show_labels,
+        "cache"        => cache,
     ))
     v
 end

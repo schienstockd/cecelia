@@ -31,6 +31,7 @@ export function useNapariOpen() {
           autoLoadProps: autoProps,
           show3D:        settings.getShow3D(setUid),   // per-set (only applied where a z-axis exists)
           asDask:        settings.napariAsDask,
+          labelsCache:   settings.napariLabelsCache,
         }),
       })
       const body = await res.json().catch(() => ({})) as

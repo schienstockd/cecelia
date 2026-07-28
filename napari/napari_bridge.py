@@ -274,13 +274,27 @@ class NapariState:
 
     # ── Labels ────────────────────────────────────────────────────────────────
 
+    def _invalidate_colcol_cache(self, value_name: str):
+        """Drop cached colour-by reads (`_colcol_cache`) for `value_name`'s cell AND branch
+        sidecars. `_colcol_cache` is keyed by `(value_name, column)` with no mtime check, so
+        re-running a task (segmentation, branching, measure) against the SAME value_name while
+        the image stays open in napari would otherwise keep colouring the freshly (re)loaded
+        layer with values read from the OLD h5ad, before the re-run overwrote it — e.g. a branch
+        layer re-shown after a `preDilationSize` change rendering with the previous run's
+        branch-type distribution. Must be called whenever a Labels/Branches layer is (re)loaded."""
+        branch_key = "__branch::" + value_name
+        self._colcol_cache = {k: v for k, v in self._colcol_cache.items()
+                              if k[0] not in (value_name, branch_key)}
+
     def show_labels(self, value_name: str = "default",
                     label_files: list = None,
-                    show_labels: bool = True, show_points: bool = False):
+                    show_labels: bool = True, show_points: bool = False,
+                    cache: bool = False):
         if self._task_dir is None:
             raise RuntimeError("call set_task_dir before show_labels")
         if label_files is None:
             label_files = [f"{value_name}.zarr"]
+        self._invalidate_colcol_cache(value_name)
 
         for label_filename in label_files:
             # name by the value_name (drop the ".zarr") → "(C) Labels", not "(C.zarr) Labels"
@@ -307,9 +321,59 @@ class NapariState:
                 layer = napari_utils.add_labels(
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
+                    cache=cache,
                 )
                 print(f"[show_labels] added {layer_name}: shape={layer.data.shape} "
-                      f"scale={self._im_scale}", flush=True)
+                      f"scale={self._im_scale} cache={cache}", flush=True)
+            else:
+                _remove_layer(self._viewer, layer_name)
+
+    def show_branch_labels(self, value_name: str = "default",
+                           label_files: list = None, show_labels: bool = True,
+                           cache: bool = False):
+        """Add or remove the skeleton labels layer written by `segment.branching`. Parallel to
+        `show_labels` but the store lives in `branchLabels/`, not `labels/`, and the layer is
+        namespaced `({vn}) Branches` so it doesn't collide with regular Labels. The generic labels
+        picker never lists branch labels (docs/todo/BRANCHING_PLAN.md Decision 6)."""
+        if self._task_dir is None:
+            raise RuntimeError("call set_task_dir before show_branch_labels")
+        if label_files is None:
+            label_files = [f"{value_name}.zarr"]
+        self._invalidate_colcol_cache(value_name)
+
+        for label_filename in label_files:
+            stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
+            layer_name = f"({stem}) Branches"
+            if show_labels:
+                labels_path = os.path.join(self._task_dir, "branchLabels", label_filename)
+                if not os.path.exists(labels_path):
+                    print(f"[show_branch_labels] skip: not on disk: {labels_path}", flush=True)
+                    continue
+                n_levels = len(self._im_data) if self._im_data else None
+                arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=n_levels, as_dask=True)
+                if not arrays:
+                    raise RuntimeError(f"no branch label arrays loaded from {labels_path}")
+                _remove_layer(self._viewer, layer_name)
+                layer = napari_utils.add_labels(
+                    self._viewer, arrays if len(arrays) > 1 else arrays[0],
+                    name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
+                    cache=cache,
+                )
+                print(f"[show_branch_labels] added {layer_name}: shape={layer.data.shape} "
+                      f"scale={self._im_scale} cache={cache}", flush=True)
+                # Default colour-by branch-type (ports the old R `show_branching` behaviour).
+                # Now routed through `_classify_column` (see `_read_branch_column`), so — unlike
+                # before — branch-type ∈ {0,1,2,3} is correctly detected as CATEGORICAL and gets
+                # 4 distinct Okabe-Ito colours (one per skan type), not a continuous viridis ramp.
+                # Bridge-side so every show hits the same default. Best-effort — a missing column
+                # / broken sidecar shouldn't fail the layer add; the user still sees the layer,
+                # just in the raw label colours.
+                try:
+                    self.colour_branch_labels(value_name=value_name, column="branch-type",
+                                              percentile=100.0)
+                except Exception as e:
+                    print(f"[show_branch_labels] default colour-by branch-type skipped: {e}",
+                          flush=True)
             else:
                 _remove_layer(self._viewer, layer_name)
 
@@ -376,6 +440,63 @@ class NapariState:
             self._labels_orig_cmap.setdefault(l.name, l.colormap)   # remember the original once
             l.colormap = cmap
         return legend                                    # {value(str) -> '#hex'} for the UI legend
+
+    def _read_branch_column(self, value_name: str, column: str):
+        """Read a per-branch obs column from `labelProps/{value_name}__branch.h5ad`. Returns
+        `(labels, values, is_categorical)` in the same shape as `_read_label_column`. Ports the
+        old `show_branching` (napari_utils.py, .branch labels + DirectLabelColormap by
+        `branch-{property}`) to the current bridge; the h5ad is read through the canonical
+        LabelPropsView, never raw HDF5 (see CLAUDE.md → H5AD access). Categorical/continuous is
+        decided by the SAME `_classify_column` cell columns use — `branch-type` (skan's 4 codes)
+        and `skeleton-id` (connected-component id) are both small integer level sets and must come
+        out categorical here exactly like `hmm.state` does for cells, not hardcoded continuous."""
+        key = ("__branch::" + value_name, column)
+        if key in self._colcol_cache:
+            return self._colcol_cache[key]
+        import pandas as pd
+        from cecelia.utils.label_props_utils import LabelPropsView
+        path = os.path.join(self._task_dir, "labelProps", f"{value_name}__branch.h5ad")
+        view = LabelPropsView(path)
+        df = view.view_cols([column]).as_df()
+        view.close()
+        labels = df["label"].to_numpy().astype(int)
+        if column not in df.columns:
+            res = (labels, np.full(len(labels), np.nan), False)
+            self._colcol_cache[key] = res
+            return res
+        raw = pd.Series(np.asarray(df[column])).reset_index(drop=True)
+        vals, is_cat = self._classify_column(column, raw)
+        res = (labels, vals, is_cat)
+        self._colcol_cache[key] = res
+        return res
+
+    def colour_branch_labels(self, value_name: str = "default", column: str = "",
+                             percentile: float = 99.5, overrides=None):
+        """Recolour `value_name`'s Branches layer by a per-branch obs column via a
+        DirectLabelColormap (continuous → viridis, categorical → palette per level). `column=""`
+        restores the layer's original colormap. Reads `labelProps/{vn}__branch.h5ad` via
+        `_read_branch_column`."""
+        if self._task_dir is None:
+            raise RuntimeError("call set_task_dir before colour_branch_labels")
+        targets = [l for l in self._viewer.layers
+                   if getattr(l, "name", "").endswith(") Branches") and f"({value_name})" in l.name]
+        if not targets:
+            targets = [l for l in self._viewer.layers if getattr(l, "name", "").endswith(") Branches")]
+        if not targets:
+            return {}
+        if not column:
+            for l in targets:
+                orig = self._labels_orig_cmap.pop(l.name, None)
+                if orig is not None:
+                    l.colormap = orig
+            return {}
+        lab, vals, is_cat = self._read_branch_column(value_name, column)
+        color_dict, legend = self._labels_color_dict(lab, vals, is_cat, percentile, overrides)
+        cmap = napari.utils.DirectLabelColormap(color_dict=color_dict)
+        for l in targets:
+            self._labels_orig_cmap.setdefault(l.name, l.colormap)
+            l.colormap = cmap
+        return legend
 
     # ── Populations (linked brushing with the flow plots) ─────────────────────
 
@@ -549,10 +670,32 @@ class NapariState:
         self._tracks_cache[value_name] = res
         return res
 
+    @staticmethod
+    def _classify_column(column: str, raw) -> tuple:
+        """(values:float[], is_categorical) for a raw obs Series. Non-numeric values factorise to
+        integer codes (categorical); a numeric column with few integer-like levels is also
+        categorical (e.g. an HMM state, or skan's `branch-type`/`skeleton-id`). NaN stays NaN.
+        The ONE classifier — every colour-by read (cell columns, branch columns) must go through
+        this, not a bespoke variant, so a column means the same thing everywhere it's coloured."""
+        import pandas as pd
+        vals = pd.to_numeric(raw, errors="coerce").to_numpy(dtype=float)
+        if np.count_nonzero(~np.isnan(vals)) == 0:   # non-numeric → factorise (categorical)
+            # factorise only the non-null values so NaN stays NaN (astype(str) would turn NaN into a
+            # spurious "nan" category — common now that broadcast track columns leave untracked cells NaN)
+            mask = raw.notna().to_numpy()
+            codes = np.full(len(raw), -1)
+            if mask.any():
+                c, _ = pd.factorize(raw[mask].astype(str))
+                codes[mask] = c
+            vals = np.where(codes < 0, np.nan, codes.astype(float))
+            is_cat = True
+        else:
+            uniq = np.unique(vals[~np.isnan(vals)])
+            is_cat = napari_utils.is_categorical_column(column, uniq)   # clusters.* name-rule + ≤20 cap
+        return vals, is_cat
+
     def _read_label_column(self, value_name: str, column: str):
         """Read an obs column aligned to cell labels → (labels:int[], values:float[], is_categorical).
-        Non-numeric columns are factorised to integer codes (and treated as categorical); a numeric
-        column with few integer-like levels is also categorical (e.g. an HMM state). NaN stays NaN.
         Cached per (value_name, column). Mirrors the old `show_channel_intensity` value read.
 
         A column absent from the CELL table but present in the TRACK table (`{value_name}__tracks.h5ad`,
@@ -579,20 +722,7 @@ class NapariState:
                 self._colcol_cache[key] = res
                 return res
         raw = pd.Series(np.asarray(raw)).reset_index(drop=True)
-        vals = pd.to_numeric(raw, errors="coerce").to_numpy(dtype=float)
-        if np.count_nonzero(~np.isnan(vals)) == 0:   # non-numeric → factorise (categorical)
-            # factorise only the non-null values so NaN stays NaN (astype(str) would turn NaN into a
-            # spurious "nan" category — common now that broadcast track columns leave untracked cells NaN)
-            mask = raw.notna().to_numpy()
-            codes = np.full(len(raw), -1)
-            if mask.any():
-                c, _ = pd.factorize(raw[mask].astype(str))
-                codes[mask] = c
-            vals = np.where(codes < 0, np.nan, codes.astype(float))
-            is_cat = True
-        else:
-            uniq = np.unique(vals[~np.isnan(vals)])
-            is_cat = napari_utils.is_categorical_column(column, uniq)   # clusters.* name-rule + ≤20 cap
+        vals, is_cat = self._classify_column(column, raw)
         res = (labels, vals, is_cat)
         self._colcol_cache[key] = res
         return res
@@ -1222,10 +1352,28 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 label_files=cmd.get("label_files", None),
                 show_labels=cmd.get("show_labels", True),
                 show_points=cmd.get("show_points", False),
+                cache=bool(cmd.get("cache", False)),
             )
 
         elif t == "colour_labels":
             legend = state.colour_labels(
+                value_name=cmd.get("value_name", "default"),
+                column=cmd.get("column", ""),
+                percentile=cmd.get("percentile", 99.5),
+                overrides=cmd.get("colour_overrides"),
+            )
+            return {"type": "ok", "cmd": t, "legend": legend or {}}
+
+        elif t == "show_branch_labels":
+            state.show_branch_labels(
+                value_name=cmd.get("value_name", "default"),
+                label_files=cmd.get("label_files", None),
+                show_labels=cmd.get("show_labels", True),
+                cache=bool(cmd.get("cache", False)),
+            )
+
+        elif t == "colour_branch_labels":
+            legend = state.colour_branch_labels(
                 value_name=cmd.get("value_name", "default"),
                 column=cmd.get("column", ""),
                 percentile=cmd.get("percentile", 99.5),

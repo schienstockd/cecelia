@@ -32,6 +32,16 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariResetOnReload') === 'true'  // default false
   )
 
+  // Dask opportunistic cache for label layers (napari's `resize_dask_cache`). Default ON — the
+  // common case is browsing, where cache-on gives noticeably smoother slice scrubbing. The
+  // dangerous case is running segmentation to the same output name: `da.from_zarr(same_path)`
+  // produces the same dask task name across opens, so cached results serve STALE bytes after
+  // a re-run (see `python/cecelia/utils/napari_utils.add_labels` docstring). The Viewer panel
+  // surfaces a hint recommending the user flip it off when a segment task is running.
+  const napariLabelsCache = ref(
+    localStorage.getItem('cc.napariLabelsCache') !== 'false'  // default true
+  )
+
   const napariAutoSaveLayerProps = ref(
     localStorage.getItem('cc.napariAutoSaveLayerProps') === 'true'  // default false
   )
@@ -123,6 +133,23 @@ export const useSettingsStore = defineStore('settings', () => {
   function setTrackVisibility(imageUid: string, vis: Record<string, boolean>) {
     _trackVisStore.value = { ..._trackVisStore.value, [imageUid]: { ...vis } }
     localStorage.setItem('cc.napariTrackVisibility', JSON.stringify(_trackVisStore.value))
+  }
+
+  // per-image branch-overlay visibility (skeleton labels from segment.branching). Default ON —
+  // if a user has branch labels registered, they almost always want to see them (running the
+  // task is the opt-in; hiding the layer is the exception, not the rule — mirrors cell labels).
+  const _branchVisStore = ref<Record<string, Record<string, boolean>>>(
+    JSON.parse(localStorage.getItem('cc.napariBranchVisibility') ?? '{}')
+  )
+  function getBranchVisibility(imageUid: string, valueNames: string[]): Record<string, boolean> {
+    const stored = _branchVisStore.value[imageUid] ?? {}
+    const out: Record<string, boolean> = {}
+    for (const vn of valueNames) out[vn] = stored[vn] ?? true    // default visible
+    return out
+  }
+  function setBranchVisibility(imageUid: string, vis: Record<string, boolean>) {
+    _branchVisStore.value = { ..._branchVisStore.value, [imageUid]: { ...vis } }
+    localStorage.setItem('cc.napariBranchVisibility', JSON.stringify(_branchVisStore.value))
   }
 
   // ── Per-SET napari viewer preferences, keyed by set uid: { [setUid]: {...} } ──────────────────
@@ -234,6 +261,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
+  watch(napariLabelsCache,        v => localStorage.setItem('cc.napariLabelsCache',        String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
@@ -254,5 +282,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

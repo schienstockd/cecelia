@@ -34,7 +34,6 @@ Parameter contract (JSON written by Julia):
   clearTouchingBorder - remove cells touching image XY border
   clearDepth        - remove cells touching first/last Z slice (3D only)
   normaliseToWhole  - use lowest-res level for global percentile (default true)
-  useDask           - load image as dask (reduces peak RAM)
 """
 
 import sys
@@ -52,10 +51,12 @@ def run(params):
     log = script_utils.get_logfile_utils(params)
 
     im_path  = params['imPath']
-    use_dask = bool(params.get('useDask', False))
 
     log.log(f'>> open image: {im_path}')
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=use_dask)
+    # `as_dask=True` is metadata-only — `predict_from_zarr` fortifies one frame at a time via
+    # `read_timepoint`, so peak RAM is bounded regardless. (The old user `useDask` toggle was
+    # inert once per-timepoint streaming landed; removed.)
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)

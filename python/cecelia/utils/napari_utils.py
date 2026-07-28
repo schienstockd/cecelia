@@ -116,10 +116,23 @@ def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_nam
   return result
 
 
-def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels', visible=True):
-  """Add an instance/label layer (0 = background) at ``opacity`` (0.7 by default). Returns the layer."""
+def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels', visible=True,
+               cache=False):
+  """Add an instance/label layer (0 = background) at ``opacity`` (0.7 by default). Returns the layer.
+
+  ``cache=False`` by default (napari's own default is True). napari's Labels layer, with a
+  dask-backed input, wires ``configure_dask(data, cache=True)`` — which enables the napari-global
+  ``resize_dask_cache()`` (a ``cachey.Cache`` in ``napari.utils._dask_utils``). Dask task names
+  from ``da.from_zarr(path)`` are DETERMINISTIC per path/shape/dtype (empirically same across
+  separate opens; probe: ``scratchpad/reopen_probe.py``). So after a user re-runs segmentation
+  to the same output name, a fresh ``show_labels`` → ``_remove_layer`` → new
+  ``da.from_zarr(labels_path)`` → new Labels layer → napari slices → cachey ``HIT`` on the OLD
+  task name → the STALE label bytes render. cache-off forces every slice to re-read from disk
+  (cheap: uint32 masks, high compression, OS page cache still helps); the correctness cost of
+  cache-on is catastrophic in the primary segmentation-iteration workflow. Callers can flip
+  ``cache=True`` when they know labels won't be regenerated (e.g. static viewing sessions)."""
   require_napari()
-  kw = dict(name=name, scale=scale, opacity=opacity, visible=visible)
+  kw = dict(name=name, scale=scale, opacity=opacity, visible=visible, cache=bool(cache))
   if units is not None:
     kw['units'] = units
   return viewer.add_labels(labels, **kw)

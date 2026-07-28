@@ -453,6 +453,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_show_tracks(body_bytes)
         elseif path == "/api/napari/colour-labels"
             api_napari_colour_labels(body_bytes)
+        elseif path == "/api/napari/colour-branch-labels"
+            api_napari_colour_branch_labels(body_bytes)
         elseif path == "/api/napari/start-selection"
             api_napari_start_selection(body_bytes)
         elseif path == "/api/napari/selection-scope"

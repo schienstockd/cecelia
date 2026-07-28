@@ -166,13 +166,19 @@ function _execute_pending_open()
         p_as_dask       = hasproperty(pending, :as_dask)          ? pending.as_dask          : true
         p_show_labels = hasproperty(pending, :show_labels) ? pending.show_labels : false
         p_all_labels  = hasproperty(pending, :all_labels)  ? pending.all_labels  : Dict{String,Vector{String}}()
+        p_show_branch_labels = hasproperty(pending, :show_branch_labels) ? pending.show_branch_labels : false
+        p_all_branch_labels  = hasproperty(pending, :all_branch_labels)  ? pending.all_branch_labels  : Dict{String,Vector{String}}()
+        p_labels_cache = hasproperty(pending, :labels_cache) ? pending.labels_cache : false
         _do_open!(v, zarr_path, task_dir, ch_names; show_3d = p_show_3d, as_dask = p_as_dask)
         _current_zarr_path[] = zarr_path
         _current_task_dir[]  = task_dir
         _current_image_uid[] = pending.image_uid
 
         if p_show_labels && !isempty(p_all_labels)
-            _show_all_labels!(v, p_all_labels, true)
+            _show_all_labels!(v, p_all_labels, true; cache = p_labels_cache)
+        end
+        if p_show_branch_labels && !isempty(p_all_branch_labels)
+            _show_all_branch_labels!(v, p_all_branch_labels, true; cache = p_labels_cache)
         end
 
         if hasproperty(pending, :auto_load_props) && pending.auto_load_props
@@ -211,22 +217,52 @@ function _parse_all_labels(data)::Dict{String,Vector{String}}
     )
 end
 
+# Skeleton-labels equivalent (branchLabels/ store, `({vn}) Branches` layer). Parallel to
+# _parse_all_labels; kept separate so the branch payload never mixes into the generic labels
+# picker (BRANCHING_PLAN Decision 6).
+function _parse_all_branch_labels(data)::Dict{String,Vector{String}}
+    raw = get(data, :allBranchLabels, nothing)
+    raw isa AbstractDict || return Dict{String,Vector{String}}()
+    Dict{String,Vector{String}}(
+        String(k) => (v isa AbstractVector ? collect(String, v) : String[string(v)])
+        for (k, v) in raw
+    )
+end
+
 # Show or hide all label sets in napari. A failure on one set is logged and collected so it
 # doesn't prevent the others from loading, but errors are NOT swallowed: any failures are
 # re-raised as an aggregate so the caller surfaces them (→ 500 + server log) instead of the
 # toggle silently doing nothing. (A genuinely missing zarr is skipped bridge-side without
 # raising — see napari_bridge.show_labels — so this only fires on real load errors.)
-function _show_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}}, show::Bool)
+function _show_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}}, show::Bool;
+                           cache::Bool=false)
     errs = String[]
     for (vn, files) in all_labels
         try
-            show_labels!(v; value_name = vn, label_files = files, show_labels = show)
+            show_labels!(v; value_name = vn, label_files = files, show_labels = show, cache = cache)
         catch e
             @warn "show_labels failed" value_name=vn files=files exception=(e, catch_backtrace())
             push!(errs, "$vn: $(sprint(showerror, e))")
         end
     end
     isempty(errs) || error("show_labels failed for: " * join(errs, "; "))
+end
+
+# Skeleton-labels equivalent — same fail-open-then-aggregate contract as _show_all_labels!.
+function _show_all_branch_labels!(v::NapariViewer,
+                                  all_branch_labels::Dict{String,Vector{String}}, show::Bool;
+                                  cache::Bool=false)
+    errs = String[]
+    for (vn, files) in all_branch_labels
+        try
+            show_branch_labels!(v; value_name = vn, label_files = files, show_labels = show,
+                                cache = cache)
+        catch e
+            @warn "show_branch_labels failed" value_name=vn files=files exception=(e, catch_backtrace())
+            push!(errs, "$vn: $(sprint(showerror, e))")
+        end
+    end
+    isempty(errs) || error("show_branch_labels failed for: " * join(errs, "; "))
 end
 
 # ── REST: POST /api/napari/open ───────────────────────────────────────────────
@@ -243,6 +279,13 @@ function api_napari_open(body_bytes::Vector{UInt8})
     as_dask         = Bool(get(data, :asDask,          true))
     show_labels_req = Bool(get(data, :showLabels, false))
     all_labels      = _parse_all_labels(data)
+    show_branch_labels_req = Bool(get(data, :showBranchLabels, false))
+    all_branch_labels      = _parse_all_branch_labels(data)
+    # Opt-in cache: napari's global dask cache serves stale bytes across seg re-runs because
+    # da.from_zarr gives the same task name for the same path (napari_utils.add_labels docstring).
+    # Default false (correct); users can flip on for faster slice-scrubbing when they're not
+    # iterating on the segmentation.
+    labels_cache    = Bool(get(data, :labelsCache, false))
 
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error = "imageUid required"))
@@ -279,7 +322,10 @@ function api_napari_open(body_bytes::Vector{UInt8})
                                  auto_save_props = auto_save,
                                  show_3d, as_dask,
                                  show_labels     = show_labels_req,
-                                 all_labels)
+                                 all_labels,
+                                 show_branch_labels = show_branch_labels_req,
+                                 all_branch_labels,
+                                 labels_cache)
         end
         return 202, JSON3.write((; starting = true,
             message = "Napari is starting — the image will open automatically."))
@@ -300,7 +346,10 @@ function api_napari_open(body_bytes::Vector{UInt8})
         _current_image_uid[] = image_uid
 
         if show_labels_req && !isempty(all_labels)
-            _show_all_labels!(v, all_labels, true)
+            _show_all_labels!(v, all_labels, true; cache = labels_cache)
+        end
+        if show_branch_labels_req && !isempty(all_branch_labels)
+            _show_all_branch_labels!(v, all_branch_labels, true; cache = labels_cache)
         end
 
         # Auto-load layer props for the newly opened image
@@ -854,13 +903,18 @@ function api_napari_show_labels(body_bytes::Vector{UInt8})
     data       = JSON3.read(String(body_bytes))
     show       = Bool(get(data, :showLabels, true))
     all_labels = _parse_all_labels(data)
+    # A single request can carry cell labels + branch (skeleton) labels. `showLabels` governs both;
+    # the two payloads are independent and either may be empty.
+    all_branch_labels = _parse_all_branch_labels(data)
+    labels_cache = Bool(get(data, :labelsCache, false))
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
     _with_viewer() do
         try
-            _show_all_labels!(v, all_labels, show)
+            _show_all_labels!(v, all_labels, show; cache = labels_cache)
+            _show_all_branch_labels!(v, all_branch_labels, show; cache = labels_cache)
             200, JSON3.write((; ok = true))
         catch e
             500, JSON3.write((; error = sprint(showerror, e)))
@@ -1161,6 +1215,44 @@ function api_napari_colour_labels(body_bytes::Vector{UInt8})
                 legendLabels = _pop_labels_for(img, column, ("clust", "flow", "trackclust", "track"))))
         catch e
             @warn "colour_labels failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/colour-branch-labels ───────────────────────────────
+# Recolour the open image's Branches layer by a per-branch obs column read from
+# `labelProps/{valueName}__branch.h5ad` (`branch-type` → categorical palette; `branch-distance`,
+# `tortuosity`, etc. → continuous viridis). `column=""` resets. Parallel to colour-labels, but
+# scoped to the branch sidecar; branch pops (from `ensure_filter_pop!` per branch-type) can supply
+# colour overrides so the colouring matches what the gating plots show. See BRANCHING_PLAN.md
+# Decisions 1–3 and the old `napari_utils.show_branching` (viridis DirectLabelColormap).
+function api_napari_colour_branch_labels(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    column      = String(get(data, :column, ""))
+    vn_req      = String(get(data, :valueName, "default"))
+
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = isempty(vn_req) ? "default" : vn_req
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    # Branch pops filtering on `column` supply their own colour (typical: the four ensure_filter_pop!
+    # branch-types) — same rule as colour-labels, restricted to the branch pop_type.
+    overrides = _merge_user_overrides!(
+        _colour_overrides_for(img, column, ("branch",)), data)
+    _with_viewer() do
+        try
+            resp = send(v, Dict{String,Any}("type" => "colour_branch_labels", "value_name" => vn,
+                "column" => column, "colour_overrides" => overrides))
+            200, JSON3.write((; ok = true,
+                legend = get(resp, "legend", Dict{String,Any}()),
+                legendLabels = _pop_labels_for(img, column, ("branch",))))
+        catch e
+            @warn "colour_branch_labels failed" exception = e
             500, JSON3.write((; error = sprint(showerror, e)))
         end
     end

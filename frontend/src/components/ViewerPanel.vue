@@ -5,6 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
+import { useTaskStore } from '../stores/tasks'
 import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
@@ -16,6 +17,19 @@ const projectMeta  = useProjectMetaStore()
 const settings     = useSettingsStore()
 const ws           = useWsStore()
 const log          = useLogStore()
+const taskStore    = useTaskStore()
+
+// Hint gate: cache-on serves stale labels when the user re-runs seg to the same output name
+// (see settings.napariLabelsCache docstring). Fire only when the cache IS on AND a segment
+// task is queued/running on the currently-open image — otherwise the hint is noise.
+const segCacheWarn = computed(() => {
+  if (!settings.napariLabelsCache) return false
+  const uid = projectStore.napariImageUid
+  if (!uid) return false
+  return taskStore.tasks.some(t =>
+    t.module === 'segment' && t.imageUid === uid && (t.status === 'queued' || t.status === 'running')
+  )
+})
 
 // Pull the error message out of a non-ok response (the API sends { error: "..." }).
 async function _resError(res: Response): Promise<string> {
@@ -42,6 +56,7 @@ const POP_TYPES: { key: string; icon: string; label: string }[] = [
   { key: 'region', icon: 'pi-map',           label: 'spatial-region populations' },
 ]
 const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
+const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation branch-overlay visibility
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
 const colourLegend      = ref<Record<string, string>>({})   // {category value → hex} for the colour-by legend
 const colourLegendLabels = ref<Record<string, string>>({})  // {category value → population name} where a pop defines it
@@ -100,8 +115,9 @@ watch(napariImage, (img) => {
   // are (re)pushed by onNapariOpened / onGatingChange once the image + centroids are ready.
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
-  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; obsCols.value = []; return }
+  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
   trackVns.value = settings.getTrackVisibility(img.uid, Object.keys(img.labels ?? {}))
+  branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
   const names = Object.keys(img.filepaths ?? {})
   // Default to the active version (the `_active` key from the versioned filepath dict) — this is
   // what the server opens when no valueName is passed, so the dropdown must agree. Fall back to
@@ -139,6 +155,17 @@ async function openInNapari(valueName: string) {
       body.allLabels  = toShow
     }
   }
+  // Skeleton (branching) labels — a separate registry so the labels picker doesn't list them
+  // (BRANCHING_PLAN Decision 6). Send only the segmentations whose per-vn branch toggle is on
+  // (mirror of visibleLabels/trackVns above).
+  const bl = Object.fromEntries(
+    Object.entries(napariImage.value?.branchLabels ?? {}).filter(([vn]) => branchVns.value[vn])
+  )
+  if (Object.keys(bl).length) {
+    body.showBranchLabels = true
+    body.allBranchLabels  = bl
+  }
+  body.labelsCache = settings.napariLabelsCache
   try {
     const res = await fetch('/api/napari/open', {
       method:  'POST',
@@ -259,6 +286,36 @@ async function toggleTrack(vn: string) {
   trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
   if (uid) settings.setTrackVisibility(uid, trackVns.value)
   await pushTracks()
+}
+
+// Per-segmentation toggle: flip this segmentation's branch (skeleton) label overlay. Uses
+// `allBranchLabels` on show-labels so the bridge routes to `branchLabels/` + names the layer
+// `({vn}) Branches` (kept out of the generic labels picker — BRANCHING_PLAN Decision 6).
+async function toggleBranch(vn: string) {
+  const uid   = projectStore.napariImageUid
+  const files = napariImage.value?.branchLabels?.[vn] ?? []
+  if (!files.length) {
+    log.error(`No branch label files registered for "${vn}"`, { source: 'napari' })
+    return
+  }
+  const wasVisible = branchVns.value[vn] ?? true
+  try {
+    const res = await fetch('/api/napari/show-labels', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ allBranchLabels: { [vn]: files }, showLabels: !wasVisible,
+                                labelsCache: settings.napariLabelsCache }),
+    })
+    if (res.ok) {
+      branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
+      if (uid) settings.setBranchVisibility(uid, branchVns.value)
+    } else {
+      log.error(`Show branches "${vn}" failed: ${await _resError(res)}`, { source: 'napari' })
+    }
+  } catch (e) {
+    log.error(`Show branches "${vn}" failed: ${e instanceof Error ? e.message : String(e)}`,
+              { source: 'napari' })
+  }
 }
 
 // Master toggle for the gated track populations (TEST/SDGF), like the Show populations toggle.
@@ -406,7 +463,8 @@ async function toggleLabel(valueName: string) {
     const res = await fetch('/api/napari/show-labels', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: !wasVisible }),
+      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: !wasVisible,
+                                labelsCache: settings.napariLabelsCache }),
     })
     if (res.ok) {
       visibleLabels.value = { ...visibleLabels.value, [valueName]: !wasVisible }
@@ -432,7 +490,8 @@ async function deleteLabel(valueName: string) {
     await fetch('/api/napari/show-labels', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: false }),
+      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: false,
+                                labelsCache: settings.napariLabelsCache }),
     }).catch(() => {})
   }
 
@@ -465,10 +524,23 @@ function onTaskStatus(data: Record<string, unknown>) {
 // each re-read from disk by its endpoint (show-labels/show-populations/show-tracks all replace their
 // layer in place). This is the "reload data" path — it touches NO image pyramid. Shared by the open
 // handler (after a full reopen) and reloadViewer's data-only branch.
+// RULE — read this before adding a 4th overlay kind: `visibleLabels`/`trackVns`/`branchVns` are
+// plain refs populated by the `watch(napariImage, ...)` above (~line 113). This function runs off
+// the `napari:opened` WS subscriber, a SEPARATE listener from that watcher — `nextTick()` only
+// waits for Vue's render flush, it gives no guarantee the watcher fired first. Trusting the refs
+// here is exactly what silently broke branches (no push at all) and labels (pushed against a
+// stale/empty visibility map) — the toggle looked right, nothing actually got asked for until the
+// user flipped it off/on. Fix: never trust the refs in this function — always re-derive straight
+// from `settings` (the durable, timing-independent source) first, for every overlay kind alike.
 function pushAllOverlays() {
-  // run in nextTick so the napariImage-derived state (labelNames, visibleLabels) has settled before we
-  // push overlays — the labels early-return must NOT skip the pop/track overlays.
   nextTick(() => {
+    const uid = projectStore.napariImageUid
+    if (!uid) return
+    visibleLabels.value   = settings.getLabelVisibility(uid, Object.keys(napariImage.value?.labels ?? {}))
+    trackVns.value        = settings.getTrackVisibility(uid, labelNames.value)
+    branchVns.value       = settings.getBranchVisibility(uid, Object.keys(napariImage.value?.branchLabels ?? {}))
+    gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
+
     if (hasLabels.value) {
       const toShow = Object.fromEntries(
         Object.entries(napariImage.value?.labels ?? {}).filter(([vn]) => visibleLabels.value[vn])
@@ -477,7 +549,8 @@ function pushAllOverlays() {
         fetch('/api/napari/show-labels', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ allLabels: toShow, showLabels: true }),
+          body:    JSON.stringify({ allLabels: toShow, showLabels: true,
+                                    labelsCache: settings.napariLabelsCache }),
         }).then(async res => {
           if (!res.ok) { log.error(`Show labels on open failed: ${await _resError(res)}`, { source: 'napari' }); return }
           // apply the remembered colour-by ONLY if this segmentation actually has that column —
@@ -488,16 +561,26 @@ function pushAllOverlays() {
                     { source: 'napari' }))
       }
     }
+
+    // Branches (skeleton labels) — mirrors the Labels block above; same `/api/napari/show-labels`
+    // request `toggleBranch` already uses, just fired automatically on open instead of only on toggle.
+    const bl = Object.fromEntries(
+      Object.entries(napariImage.value?.branchLabels ?? {}).filter(([vn]) => branchVns.value[vn])
+    )
+    if (Object.keys(bl).length) {
+      fetch('/api/napari/show-labels', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ allBranchLabels: bl, showLabels: true,
+                                  labelsCache: settings.napariLabelsCache }),
+      }).catch(e =>
+        log.error(`Show branches on open failed: ${e instanceof Error ? e.message : String(e)}`,
+                  { source: 'napari' }))
+    }
+
     // auto-show each pop type's point overlay that the user last had on (remembered preference)
     for (const { key } of POP_TYPES) if (popVisible(key)) pushPopulations(key, true)
-    // re-show the track overlays from the REMEMBERED state, read straight from settings (the trackVns
-    // ref is restored by the napariImage watch, which may not have run yet when this open event fires).
-    const uid = projectStore.napariImageUid
-    if (uid) {
-      trackVns.value = settings.getTrackVisibility(uid, labelNames.value)   // keep the ref in sync (per-image)
-      gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
-      if (onTrackVns.value.length || gatedTracksShown.value || popVisible('trackclust')) pushTracks()
-    }
+    if (onTrackVns.value.length || gatedTracksShown.value || popVisible('trackclust')) pushTracks()
   })
 }
 
@@ -533,7 +616,8 @@ function onTaskResult(data: Record<string, unknown>) {
         fetch('/api/napari/show-labels', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ allLabels: { [labelValueName]: files }, showLabels: true }),
+          body:    JSON.stringify({ allLabels: { [labelValueName]: files }, showLabels: true,
+                                    labelsCache: settings.napariLabelsCache }),
         }).catch(() => {})
       }
     })
@@ -611,6 +695,12 @@ onUnmounted(() => {
         ><i class="pi pi-image" /></button>
 
         <button
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariLabelsCache }"
+          @click="settings.napariLabelsCache = !settings.napariLabelsCache"
+          v-tooltip.bottom="'Cache label chunks — faster scrubbing, but stale after seg re-runs'"
+        ><i class="pi pi-bolt" /></button>
+
+        <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariAutoSaveLayerProps }"
           @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
           v-tooltip.bottom="'Save contrast, colormap and T/Z as you change them'"
@@ -627,6 +717,16 @@ onUnmounted(() => {
           @click="settings.napariAsDask = !settings.napariAsDask"
           v-tooltip.bottom="'Fast open, slices on demand; untick for smoother viewing'"
         ><i class="pi pi-database" /></button>
+      </div>
+
+      <!-- Segment-running warning: cache-on serves stale label bytes on re-run (dask task-name
+           collision → napari's opportunistic cache HIT). Only surface when the cache IS on and
+           a segment task is actually queued/running on the open image; one-click fix. Reuses
+           the .viewer-stale amber strip so the two warnings share the same visual language. -->
+      <div v-if="segCacheWarn" class="viewer-stale">
+        <i class="pi pi-exclamation-triangle" />
+        <span class="viewer-stale-txt">Segmentation running — cache may hide new labels</span>
+        <button class="viewer-stale-btn" @click="settings.napariLabelsCache = false">Cache off</button>
       </div>
     </div>
 
@@ -666,6 +766,12 @@ onUnmounted(() => {
               @click="toggleTrack(vn)"
               v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
             ><i class="pi pi-share-alt" /></button>
+            <button
+              v-if="(napariImage?.branchLabels?.[vn]?.length ?? 0) > 0"
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[vn] }"
+              @click="toggleBranch(vn)"
+              v-tooltip.right="branchVns[vn] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
+            ><i class="pi pi-wave-pulse" /></button>
             <ConfirmDeleteButton class="row-act"
               title="Delete label set from disk"
               armed-title="Click again to permanently delete this label set"
