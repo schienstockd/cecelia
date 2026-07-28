@@ -154,9 +154,58 @@ A finding whose text comes from [`QC_TEXT`](@ref) rather than the call site. `ke
 the catalog). This is the form new code should use; the four-argument method above stays for
 custom modules, which have no entry in the catalog.
 """
-qc_finding(level::AbstractString, code::AbstractString; key::AbstractString = code,
-           detail = nothing, subs...) =
-    (t = qc_text(key; subs...); qc_finding(level, code, t.short, t.long; detail = detail))
+function qc_finding(level::AbstractString, code::AbstractString; key::AbstractString = code,
+                    detail = nothing, subs...)
+    t = qc_text(key; subs...)
+    f = qc_finding(level, code, t.short, t.long; detail = detail)
+    # Carry the INPUTS, not just the output. `short`/`long` are still written — as a snapshot, so a
+    # sidecar stays readable and survives a catalog entry being renamed away — but `key` + `subs` are
+    # what the read path re-renders from. See `_qc_hydrate`.
+    f["key"] = String(key)
+    isempty(subs) || (f["subs"] = Dict{String,Any}(String(k) => v for (k, v) in pairs(subs)))
+    f
+end
+
+# ── Read-time rendering ───────────────────────────────────────────────────────────────────────────
+#
+# QC findings are PERSISTED, so text rendered at emit time is frozen: fixing a clumsy warning used to
+# mean re-running the analysis that produced it, and a language switch could never reach anything
+# already banked. So the catalog is applied on the way OUT instead — `key` + `subs` are the stored
+# truth and the prose is rebuilt per read.
+#
+# Constraints this has to respect:
+#  - NEVER throw. This is a data path; a bad or missing catalog entry must degrade to the stored
+#    snapshot, not break the image payload for every image in the set.
+#  - Preserve JSON3 access semantics. Callers read these docs with Symbol keys (`get(f, :short)` in
+#    lab_log_context/qc_cohort) AND String keys (`doc["findings"]` in the tests). A plain Dict
+#    supports only one, so the rebuild is re-parsed back into a JSON3 object.
+#  - Cost nothing for old data. A pre-catalog sidecar carries no `key`, so it short-circuits before
+#    any allocation — which is also why this is safe to leave in the per-image payload path.
+function _qc_hydrate_finding(f)
+    f isa AbstractDict || return f
+    k = get(f, :key, nothing)
+    (k isa AbstractString && haskey(QC_TEXT, String(k))) || return f
+    subs = get(f, :subs, nothing)
+    kw = subs isa AbstractDict ? [Symbol(sk) => sv for (sk, sv) in pairs(subs)] : Pair{Symbol,Any}[]
+    t = try
+        qc_text(String(k); kw...)
+    catch
+        return f          # entry changed shape / a sub is missing → keep the snapshot
+    end
+    d = Dict{String,Any}(String(kk) => vv for (kk, vv) in pairs(f))
+    d["short"] = t.short; d["long"] = t.long
+    d
+end
+
+function _qc_hydrate(doc)
+    doc === nothing && return nothing
+    fs = get(doc, :findings, nothing)
+    fs isa AbstractVector || return doc
+    any(f -> f isa AbstractDict && haskey(f, :key), fs) || return doc   # old sidecar → untouched
+    d = Dict{String,Any}(String(k) => v for (k, v) in pairs(doc))
+    d["findings"] = [_qc_hydrate_finding(f) for f in fs]
+    JSON3.read(JSON3.write(d))                                          # keep Symbol+String access
+end
 
 # Write (or clear) an image's QC for one (task, output). `findings` empty ⇒ still writes the file with
 # an empty list, so a clean re-run overwrites a previous warning rather than leaving it stale.
@@ -173,8 +222,12 @@ function write_qc(img::CciaImage, fun_name::AbstractString, value_name::Abstract
     path
 end
 
+# The one QC file read — parse + apply the catalog (`_qc_hydrate`). Both readers below go through it
+# so finding text can never be stale on one path and current on another.
+_read_qc_file(path::AbstractString) = _qc_hydrate(JSON3.read(read(path, String)))
+
 read_qc(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
-    (p = qc_path(img, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)
+    (p = qc_path(img, fun_name, value_name); isfile(p) ? _read_qc_file(p) : nothing)
 
 # All QC docs for an image, keyed "funName/valueName" → parsed doc. Powers the API image payload.
 function read_all_qc(img::CciaImage)
@@ -184,7 +237,7 @@ function read_all_qc(img::CciaImage)
         fdir = joinpath(root, fun); isdir(fdir) || continue
         for f in readdir(fdir)
             endswith(f, ".json") || continue
-            out[string(fun, "/", f[1:end-5])] = JSON3.read(read(joinpath(fdir, f), String))
+            out[string(fun, "/", f[1:end-5])] = _read_qc_file(joinpath(fdir, f))
         end
     end
     out

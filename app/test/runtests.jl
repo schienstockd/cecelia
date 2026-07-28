@@ -5332,6 +5332,59 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                        for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                        if !(m.captures[1] in KNOWN)]
             @test isempty(unknown)
+
+            # The inputs are persisted, not just the output — that's what read-time rendering needs.
+            g = Cecelia.qc_finding("info", "hmm.dominant_state"; pct = 91)
+            @test g["key"] == "hmm.dominant_state" && g["subs"]["pct"] == 91
+        end
+
+        # ── Read-time rendering ───────────────────────────────────────────────────────────────────
+        #
+        # The point of the catalog: fixing a wording should reach QC that is ALREADY on disk, without
+        # re-running the analysis that produced it. (And, later, a locale switch does the same.)
+        @testset "findings re-render on read" begin
+            img = CciaImage(; dir = mktempdir())
+            write_qc(img, "behaviour.hmmStates", "default",
+                     [Cecelia.qc_finding("info", "hmm.dominant_state"; pct = 91)])
+
+            @test read_qc(img, "behaviour.hmmStates", "default")["findings"][1]["short"] ==
+                  "One state holds 91% of cells"
+
+            # Edit the catalog; the banked file on disk is NOT rewritten.
+            orig = Cecelia.QC_TEXT["hmm.dominant_state"]
+            try
+                Cecelia.QC_TEXT["hmm.dominant_state"] =
+                    (short = "{pct}% of cells in one state", long = orig.long)
+                doc = read_qc(img, "behaviour.hmmStates", "default")
+                @test doc["findings"][1]["short"] == "91% of cells in one state"
+                # Symbol access is what lab_log_context/qc_cohort use — must survive the rebuild.
+                @test String(get(doc["findings"][1], :short, "")) == "91% of cells in one state"
+                @test get(doc, :funName, "") == "behaviour.hmmStates"
+            finally
+                Cecelia.QC_TEXT["hmm.dominant_state"] = orig
+            end
+
+            # A catalog entry that disappears must fall back to the stored snapshot, not blow up the
+            # read — this is a data path shared by every image in the payload.
+            saved = Cecelia.QC_TEXT["hmm.dominant_state"]
+            try
+                delete!(Cecelia.QC_TEXT, "hmm.dominant_state")
+                @test read_qc(img, "behaviour.hmmStates", "default")["findings"][1]["short"] ==
+                      "One state holds 91% of cells"
+            finally
+                Cecelia.QC_TEXT["hmm.dominant_state"] = saved
+            end
+        end
+
+        @testset "pre-catalog sidecars are read unchanged" begin
+            # Findings banked before the catalog carry no `key`; they must pass through verbatim.
+            img = CciaImage(; dir = mktempdir())
+            write_qc(img, "mycat.myTask", "default",
+                     [qc_finding("warn", "legacy.code", "Old short", "Old long.")])
+            doc = read_qc(img, "mycat.myTask", "default")
+            @test doc["findings"][1]["short"] == "Old short"
+            @test doc["findings"][1]["long"] == "Old long."
+            @test !haskey(doc["findings"][1], :key)
         end
 
         @testset "sidecar round-trip" begin
