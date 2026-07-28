@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Project Guide
+# Cecelia Feijoa — Project Guide
 
 Cecelia is an immunological image analysis tool (Nature Communications 2025).
 Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend) · **Python/Napari** (image viewer)
@@ -95,7 +95,7 @@ Unification status + what's not-yet-extracted lives in [`docs/todo/UX_PRIMITIVES
 
 ## Previous prompts
 
-Completed prompt files are kept in a `previous-prompts/` folder in the **workspace root** (outside `cecelia-pineapple/`) — set aside but accessible. They are **reference only**: historical context for finished work, not instructions to be re-run.
+Completed prompt files are kept in a `previous-prompts/` folder in the **workspace root** (outside `cecelia-feijoa/`) — set aside but accessible. They are **reference only**: historical context for finished work, not instructions to be re-run.
 
 ## TODO.md
 
@@ -300,7 +300,7 @@ rather than a separate script.
 ## Architecture
 
 ```
-cecelia-pineapple/
+cecelia-feijoa/
   app/          Julia package — Cecelia.jl (Revise-tracked) + each task's co-located Python
                 runner (app/src/tasks/<cat>/<name>_run.py, run by path via run_py).
   api/          Julia API server scripts — NOT a package, NOT Revise-tracked
@@ -405,9 +405,9 @@ limitations (perf, edge cases, silent no-ops) — as a short prioritized list. D
 to be asked "any reservations?". Surface the risk at the decision point, then commit on the go-ahead.
 See [`docs/DEV.md`](docs/DEV.md) → *Commits*.
 
-**Dev dir config — single source of truth:** `cecelia-pineapple/.env`
+**Dev dir config — single source of truth:** `cecelia-feijoa/.env`
 ```
-CECELIA_DEV_DIR=~/cecelia-pineapple/dev
+CECELIA_DEV_DIR=~/cecelia-feijoa/dev
 ```
 This file is git-ignored (machine-specific). `init_cecelia!` reads it automatically — no env var export needed. The `CECELIA_DEV_DIR` env var still overrides it if set.
 

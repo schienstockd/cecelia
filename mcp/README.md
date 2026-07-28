@@ -110,7 +110,7 @@ Add to your Claude Code MCP config (adjust the absolute path to this checkout):
     "cecelia-observer": {
       "command": "pixi",
       "args": ["run", "mcp"],
-      "cwd": "/home/dominik/cc-workspace/cecelia/cecelia-pineapple"
+      "cwd": "/home/dominik/cc-workspace/cecelia/cecelia-feijoa"
     }
   }
 }

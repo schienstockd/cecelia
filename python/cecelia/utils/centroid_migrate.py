@@ -5,7 +5,7 @@ ONE home for converting any prior centroid layout to the current one (`obsm['spa
 `centroid_x`/`_y`/`_z` in `uns['spatial_cols']`, `obsm['temporal']` labelled `centroid_t`). Two prior
 shapes are handled — see `docs/todo/CENTROID_AXES_PLAN.md`:
 
-  A. Pineapple with skimage's positional labels: `obsm['spatial']` present but `uns['spatial_cols']`
+  A. Feijoa with skimage's positional labels: `obsm['spatial']` present but `uns['spatial_cols']`
      is `centroid-0..N` (and `uns['temporal_cols']` is `['t']`). Relabel only — the matrices are
      unchanged (skimage z,y,x order → `centroid_z/_y/_x`).
   B. Old R (or any pre-obsm) file with flat `centroid_x/_y/_z/_t` columns in `var`/`X`: lift them into

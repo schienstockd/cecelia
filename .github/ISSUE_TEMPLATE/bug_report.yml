@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: >-
-        Thanks for taking the time to report a bug. Cecelia Pineapple is early
+        Thanks for taking the time to report a bug. Cecelia Feijoa is early
         software and has not yet been widely tested, so detailed reports are
         genuinely useful. Please search existing issues first to avoid duplicates.
   - type: textarea

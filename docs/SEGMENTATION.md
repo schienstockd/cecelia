@@ -220,7 +220,7 @@ pixi run models-fetch     # schienstockd/ceceliaModels master → <repo>/models/
 
 Override the ref with `--ref v1.2` or the destination with `--dest /some/path`. The installers
 do the same fetch at install time (`CECELIA_MODELS_REF` env var to pin a ref there). Only
-`cellposeModels/` is installed — the pineapple btrack task uses a vendored config beside its
+`cellposeModels/` is installed — the feijoa btrack task uses a vendored config beside its
 runner, so `btrackModels/` from upstream is skipped.
 
 #### Design notes

@@ -82,7 +82,7 @@ async function waitForBackend(timeoutMs = 60000) {
 <template>
   <div class="setup-wrap">
     <div class="setup-card">
-      <div class="setup-logo">🍍</div>
+      <img class="setup-logo" src="/feijoa.svg" alt="" aria-hidden="true" width="40" height="40" />
       <h1 class="setup-title">Welcome to Cecelia</h1>
       <p class="setup-sub cc-muted">Where would you like to store your projects?</p>
 
@@ -131,7 +131,7 @@ async function waitForBackend(timeoutMs = 60000) {
   flex-direction: column;
   gap: 0.5rem;
 }
-.setup-logo { font-size: 2.5rem; line-height: 1; }
+.setup-logo { display: block; margin: 0 auto; }
 .setup-title { margin: 0.5rem 0 0; font-size: 1.4rem; font-weight: 600; }
 .setup-sub { margin: 0 0 1rem; }   /* + .cc-muted */
 .setup-label { margin-bottom: 0.15rem; }

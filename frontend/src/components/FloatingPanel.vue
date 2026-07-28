@@ -1,3 +1,13 @@
+<script lang="ts">
+// Module scope (NOT `<script setup>`, which re-runs per instance): one stacking order shared by
+// every FloatingPanel on screen, so "the panel you last touched is on top" can be decided across
+// instances. Ordering logic + the z-index base live in utils/panelStack.ts so they're unit-tested.
+import { ref } from 'vue'
+import { raisePanel, dropPanel, panelZ } from '../utils/panelStack'
+
+const stack = ref<string[]>([])
+</script>
+
 <script setup lang="ts">
 // A generic floating, draggable, resizable, collapsible panel that floats above the app content
 // (position: fixed). Position/size/collapsed persist per `storageKey` so it reopens where you left it.
@@ -9,7 +19,7 @@
 // size owned by CSS `resize`, no persistence). This is a top-level viewport window (position: fixed,
 // pointer-drag + resize handle + collapse + localStorage). Different coordinate system, event model,
 // and feature set — a deliberate split, not duplication to merge (see INVENTORY.md).
-import { reactive, onMounted, onUnmounted, watch } from 'vue'
+import { reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -42,8 +52,18 @@ function clampIntoView() {
   st.x = Math.min(Math.max(st.x, 0), Math.max(0, window.innerWidth - 60))
   st.y = Math.min(Math.max(st.y, 0), Math.max(0, window.innerHeight - 40))
 }
-onMounted(() => { clampIntoView(); window.addEventListener('resize', clampIntoView) })
-onUnmounted(() => { window.removeEventListener('resize', clampIntoView); endGesture() })
+// ── stacking: the most recently touched panel renders on top ──
+// Opening a panel raises it (you just asked for it, so it should be in front), and any pointer
+// press inside it raises it again. Closing drops it so it doesn't hold a slot in the ordering.
+const z = computed(() => panelZ(stack.value, props.storageKey))
+function raise() { stack.value = raisePanel(stack.value, props.storageKey) }
+
+onMounted(() => { clampIntoView(); raise(); window.addEventListener('resize', clampIntoView) })
+onUnmounted(() => {
+  window.removeEventListener('resize', clampIntoView)
+  endGesture()
+  stack.value = dropPanel(stack.value, props.storageKey)
+})
 
 // ── drag (by header) / resize (bottom-right handle) — one pointer-move loop for both ──
 let mode: 'drag' | 'resize' | null = null
@@ -77,9 +97,12 @@ function endGesture() {
 </script>
 
 <template>
-  <div class="fp" :style="{ left: st.x + 'px', top: st.y + 'px', width: st.w + 'px',
-                            height: st.collapsed ? 'auto' : st.h + 'px',
-                            ...(accent ? { borderColor: accent } : {}) }">
+  <!-- .capture: the resize grip stops propagation on pointerdown, so a bubble-phase handler here
+       would miss a resize gesture. Capture runs on the way down, before any child handler. -->
+  <div class="fp" @pointerdown.capture="raise"
+       :style="{ left: st.x + 'px', top: st.y + 'px', width: st.w + 'px',
+                 height: st.collapsed ? 'auto' : st.h + 'px', zIndex: z,
+                 ...(accent ? { borderColor: accent } : {}) }">
     <div class="fp-header" @pointerdown="onHeaderDown">
       <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
@@ -100,7 +123,8 @@ function endGesture() {
 <style scoped>
 .fp {
   position: fixed;
-  z-index: 60;                     /* above content + right panel, below modals/console */
+  /* z-index is bound inline (see PANEL_Z_BASE in utils/panelStack.ts) — panels are stacked by
+     most-recently-touched, so it can't be a flat value here. */
   display: flex;
   flex-direction: column;
   background: var(--cc-surface-1);          /* solid — floats over content, must not be see-through */

@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: >-
-  If you use Cecelia Pineapple in your research, please cite both the software
+  If you use Cecelia Feijoa in your research, please cite both the software
   (this record) and the original Cecelia paper (see preferred-citation).
-title: "Cecelia Pineapple"
+title: "Cecelia Feijoa"
 abstract: >-
   A Julia package with a graphical interface for cellular image cytometry —
   import, segmentation, tracking, gating, behavioural analysis, and clustering

@@ -37,7 +37,7 @@ claude mcp add cecelia-observer \
 ```
 
 e.g. `PYTHONPATH=/home/dominik/cc-workspace/cecelia/mcp-observer-slice-c/mcp` and the pixi Python at
-`/home/dominik/cc-workspace/cecelia/cecelia-pineapple/.pixi/envs/default/bin/python`. Override the API
+`/home/dominik/cc-workspace/cecelia/cecelia-feijoa/.pixi/envs/default/bin/python`. Override the API
 with `CECELIA_API_URL` if not `http://127.0.0.1:8080`.
 
 Then start a **fresh** `claude` session as the observer ("just sit next to me / watch what I'm doing")

@@ -1,4 +1,4 @@
-"""Unit tests for the legacy → Pineapple h5ad rewrite (cecelia.utils.legacy_migrate).
+"""Unit tests for the legacy → Feijoa h5ad rewrite (cecelia.utils.legacy_migrate).
 
 Builds tiny synthetic AnnData files (no R, no zarr) covering the two legacy shapes and pins the
 schema conversion: index←label, centroids var→obsm (only when absent), and dropping the excluded

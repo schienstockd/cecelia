@@ -15,7 +15,7 @@ gives per-component **start / stop / restart**, plus one global **Quit everythin
 Trigger: a stale **napari bridge**. The bridge is a long-lived child that survives server restarts
 and isn't Revise-tracked, so edits to `napari_bridge.py` (and PR #78's `configure_autosave`) don't
 take effect until it's killed + relaunched — today that means a second terminal (`pixi run
-stop-napari` + reopen). The old R app had a shutdown button; the pineapple app had nothing.
+stop-napari` + reopen). The old R app had a shutdown button; the feijoa app had nothing.
 
 Components managed: **Application** (Julia backend :8080), **Napari bridge** (:7655), **Notebooks /
 Pluto** (:7660). Vite frontend is **excluded** (prod: backend serves the built UI; dev: it's serving

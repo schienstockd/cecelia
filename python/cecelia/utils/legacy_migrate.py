@@ -1,4 +1,4 @@
-"""Engine for migrating a legacy R/Shiny cecelia project into the new Pineapple layout — **images,
+"""Engine for migrating a legacy R/Shiny cecelia project into the new Feijoa layout — **images,
 segmentation, and tracking only**. Clustering, gating, and HMM are intentionally NOT migrated (they
 are trivial to re-run in the new app, and their old formats diverged).
 

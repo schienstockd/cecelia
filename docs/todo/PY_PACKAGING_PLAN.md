@@ -37,7 +37,7 @@ cecelia's `zarr_utils` / `ome_xml_utils` / `dim_utils`, and runs btrack from
 `app/py/tasks/tracking/cell_config.json`. Today its notebooks do:
 
 ```python
-sys.path.insert(0, "/abs/path/to/cecelia-pineapple/app")
+sys.path.insert(0, "/abs/path/to/cecelia-feijoa/app")
 import py.utils.zarr_utils as zarr_utils
 ```
 

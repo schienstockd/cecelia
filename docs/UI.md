@@ -530,7 +530,12 @@ the **napari Viewer controls** are its first consumer — mounted in `App.vue`, 
   `storageKey` under `cc.floating.<storageKey>` (reopens where you left it). Drag by the header, resize
   from the bottom-right grip, collapse to header-only. Position is clamped into the viewport on mount +
   window resize so a stale/off-screen box always comes back.
-- **z-index 60** — above content and the right panel, below modals/console.
+- **Stacking** — panels start at z-index 60 (above content and the right panel, below
+  modals/console) and are ordered **most-recently-touched on top**: opening a panel or pressing
+  anywhere inside it raises it above its siblings, so two open panels no longer stack by DOM
+  declaration order. The ordering lives in [`utils/panelStack.ts`](../frontend/src/utils/panelStack.ts)
+  (`PANEL_Z_BASE` + one step per open panel, always well below the modal layer); `FloatingPanel`
+  binds the result inline, so don't reintroduce a flat `z-index` in its stylesheet.
 - Rationale: the viewer controls grew (populations, tracks, colour-by + legend) and crowded the left
   nav; a floating panel frees the nav and lets you place the controls beside the napari window.
 

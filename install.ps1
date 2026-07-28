@@ -155,7 +155,7 @@ if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
 # ── Custom cellpose models (segmentation) ───────────────────────────────────────
 # Mirrors the bioformats2raw pattern: ~26 MB (schienstockd/ceceliaModels — `ccia.fluo` for
 # fluorescence today; more later), too large for the bundle. Only cellposeModels/ is installed —
-# the pineapple btrack config is vendored beside its runner.
+# the feijoa btrack config is vendored beside its runner.
 if (Test-Path (Join-Path $InstallDir 'models/cellposeModels/ccia.fluo')) {
   Say 'Using cecelia models already installed.'
 } else {

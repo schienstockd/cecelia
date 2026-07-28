@@ -1,5 +1,5 @@
 """
-Script parameter utilities for pineapple Python tasks.
+Script parameter utilities for feijoa Python tasks.
 
 Tasks are invoked by Julia as subprocesses.  Julia writes a JSON params file,
 passes its path via --params, and the script deletes it after reading.

@@ -1,4 +1,4 @@
-# Cecelia Pineapple — Releasing
+# Cecelia Feijoa — Releasing
 
 *When* to cut a release and *what a version means* — the policy. For the tag **mechanics** (branch +
 PR, tag off `main`, prerelease suffix) see [`docs/DEV.md`](DEV.md) → *Releases*; for the build/update

@@ -138,7 +138,7 @@ model `ccia.fluo` alone is ~26 MB, larger than the entire app tarball, and more 
 follow. `install.sh` / `install.ps1` fetch them from
 [`schienstockd/ceceliaModels`](https://github.com/schienstockd/ceceliaModels) into
 `<install>/models/cellposeModels/` (only `cellposeModels/`; the upstream `btrackModels/` isn't
-needed here — pineapple's btrack config is vendored beside its runner). The Julia
+needed here — feijoa's btrack config is vendored beside its runner). The Julia
 resolver`cellpose_model_path(name)` (config.jl) mirrors bioformats2raw's bundled/override pattern:
 `<install>/models/cellposeModels/` first, `<config_dir>/models/cellposeModels/` as a user override
 slot. Dev shortcut: `pixi run models-fetch` — same fetch, driven by `scripts/models_fetch.py`.

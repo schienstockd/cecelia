@@ -1,4 +1,4 @@
-"""Migrate ONE legacy image (data + segmentation + tracking) into the new Pineapple layout. Called by
+"""Migrate ONE legacy image (data + segmentation + tracking) into the new Feijoa layout. Called by
 the Julia ``importImages.migrateLegacy`` task handler, once per image. Read-only on the source; writes
 only under the new object dirs. Writes the image's ccid field dict to ``resultPath`` for Julia to
 apply. See ``legacy_migrate.migrate_image`` and ``docs/todo/LEGACY_MIGRATION_PLAN.md``.

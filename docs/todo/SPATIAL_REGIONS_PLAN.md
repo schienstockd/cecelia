@@ -1,7 +1,7 @@
 # Spatial Analysis + Region Clustering — Parked Plan
 
 **Status:** in-progress on branch `feat/spatial-regions` (Opus pass 2026-07-20; decisions confirmed
-by Dominik same day). Source prompt: `cecelia-pineapple/docs/prompts/spatial-region-clustering-prompt.md`.
+by Dominik same day). Source prompt: `cecelia-feijoa/docs/prompts/spatial-region-clustering-prompt.md`.
 
 ## Goal
 
