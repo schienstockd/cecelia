@@ -97,6 +97,23 @@ export function unionViewSnapshot(
   return { layers: merged }
 }
 
+// One show-labels request. Cell labels (`labels`) and branch/skeleton labels (`branchLabels`) share
+// the endpoint and its single `show` flag; either payload may be empty. Sending both in ONE request
+// (rather than two) keeps them atomic against the bridge's layer reconciliation.
+export interface PushLabelsOpts {
+  labels?: Record<string, string[]>         // {valueName → label files} → labels/ store
+  branchLabels?: Record<string, string[]>   // {valueName → label files} → branchLabels/ store
+  show: boolean
+  cache: boolean
+}
+export function pushLabels(o: PushLabelsOpts): Promise<Response | undefined> {
+  return _post('/api/napari/show-labels', {
+    ...(o.labels       && Object.keys(o.labels).length       ? { allLabels: o.labels }             : {}),
+    ...(o.branchLabels && Object.keys(o.branchLabels).length ? { allBranchLabels: o.branchLabels } : {}),
+    showLabels: o.show, labelsCache: o.cache,
+  })
+}
+
 export interface PushTracksOpts {
   valueNames: string[]            // segmentations whose whole-segmentation (_tracked) ribbons to show
   showGatedTracks: boolean

@@ -20,6 +20,7 @@ import { useTaskStore } from './stores/tasks'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { todayKey } from './lib/tips'
+import { useNapariAutoShow } from './composables/useNapariAutoShow'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -29,6 +30,12 @@ const appCtl = useAppControlStore()
 const observer = useObserverStore()
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
+
+// Restore each image's remembered napari overlays (labels, branches, tracks, populations) when it
+// opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with
+// the floating Viewer panel closed (its default) nothing was listening for `napari:opened`, so the
+// toggles read ON but no overlay was ever requested until the user flipped them by hand.
+useNapariAutoShow()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
 // project export/import, task:run) registers via taskStore.add(), which bumps `lastStarted`. One

@@ -20,6 +20,7 @@ import { elapsedLabel } from '../../utils/stillOverlay'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { captureViewLegend } from '../../utils/napariOverlays'
 import { restoreOverlays } from '../../utils/napariOverlays'
+import { suppressAutoShowOnce, releaseAutoShowSuppression } from '../../composables/useNapariAutoShow'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -202,6 +203,9 @@ async function zoomToSource(i: number) {
   zooming.value = i
   err.value = ''
   pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot, colourBy: c.colourBy }
+  // we reproduce the CAPTURED frame below, so the app-level autoshow must not restore the user's
+  // remembered toggles over it on this open (see composables/useNapariAutoShow)
+  suppressAutoShowOnce(c.imageUid)
   try {
     const res = await fetch('/api/napari/open', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -209,11 +213,11 @@ async function zoomToSource(i: number) {
                              labelsCache: settings.napariLabelsCache }),
     })
     if (!res.ok && res.status !== 202) {
-      pendingApply.value = null
+      pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
       err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Open in Napari failed'
     }
   } catch (e) {
-    pendingApply.value = null
+    pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
     err.value = e instanceof Error ? e.message : String(e)
   } finally {
     zooming.value = -1
