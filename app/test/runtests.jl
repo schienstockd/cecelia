@@ -6,7 +6,22 @@ import DataFrames: DataFrame, nrow   # only the symbols the tests construct/meas
 
 # ── Smoke tests — no API, no WebSocket, no Vue ────────────────────────────────
 # Run from the app/ directory:  julia --project test/runtests.jl
-# Requires CECELIA_DEV_DIR to point at a config with a valid projects_dir.
+
+# HERMETIC BY DEFAULT: unless `CECELIA_DEV_DIR` is already set, point config at a throwaway dir with a
+# throwaway projects dir. The suite CREATES projects, and with no `custom.toml` anywhere `projects_dir()`
+# is the shipped placeholder `/path/to/projects` — so `create_project!` did `mkdir("/path")` and ~30
+# testsets errored with EACCES/EROFS. That is invisible on a dev machine (a real `.env` → `custom.toml`
+# makes it pass) and is why the suite could not run in CI at all.
+#
+# Set `CECELIA_DEV_DIR` yourself to run against a specific config instead. Julia deletes both temp dirs
+# at exit. Paths go in TOML *literal* strings (single quotes) so Windows backslashes are not escapes.
+if !haskey(ENV, "CECELIA_DEV_DIR")
+    let cfg = mktempdir(), proj = mktempdir()
+        write(joinpath(cfg, "custom.toml"), "[dirs]\nprojects = '" * proj * "'\n")
+        ENV["CECELIA_DEV_DIR"] = cfg
+        @info "Tests: hermetic config" config_dir=cfg projects_dir=proj
+    end
+end
 
 init_cecelia!()
 
