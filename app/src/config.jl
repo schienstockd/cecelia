@@ -41,10 +41,17 @@ go through. `homedir()` is correct on Windows (it honours `USERPROFILE`).
 """
 function expand_user(path::AbstractString)::String
     s = String(path)
-    s == "~"            && return homedir()
-    startswith(s, "~/")  && return joinpath(homedir(), s[3:end])
+    s == "~" && return homedir()
     # Windows users may type either separator
-    Sys.iswindows() && startswith(s, "~\\") && return joinpath(homedir(), s[3:end])
+    if startswith(s, "~/") || (Sys.iswindows() && startswith(s, "~\\"))
+        # Split the remainder into components rather than pasting it on, so the result is a canonical
+        # path: `joinpath(homedir(), "foo/bar")` on Windows yields `C:\Users\x\foo/bar` — mixed
+        # separators, which Windows tolerates but which makes every path comparison unreliable.
+        # Only treat `\` as a separator ON Windows; on Unix it is a legal filename character.
+        seps = Sys.iswindows() ? ('/', '\\') : ('/',)
+        parts = split(s[3:end], seps; keepempty = false)
+        return isempty(parts) ? homedir() : joinpath(homedir(), parts...)
+    end
     s
 end
 

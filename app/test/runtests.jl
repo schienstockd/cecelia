@@ -163,7 +163,15 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # Windows accepts either separator after the tilde
         if Sys.iswindows()
             @test expand_user("~\\foo") == joinpath(homedir(), "foo")
+            @test expand_user("~\\foo\\bar") == joinpath(homedir(), "foo", "bar")
+            # The result must be a CANONICAL path — no mixed separators. Pasting the remainder on
+            # verbatim gave `C:\Users\x\foo/bar`, which Windows tolerates but which makes every path
+            # comparison unreliable (and this is what CI caught first time it ran on Windows).
+            @test !occursin('/', expand_user("~/foo/bar"))
         end
+        # collapsing a doubled separator is fine; losing a component is not
+        @test expand_user("~//foo") == joinpath(homedir(), "foo")
+        @test splitpath(expand_user("~/a/b/c"))[end-2:end] == ["a", "b", "c"]
     end
 
     # ── ensure_config_dir: safe to WRITE into ────────────────────────────────────
@@ -664,7 +672,12 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         p = Cecelia.repl_doc_path()
         if isfile(p)
             committed = read(p, String)
-            @test committed == Cecelia.render_repl_doc(committed)
+            # Compare line-ending agnostically: this is a CONTENT drift-guard, not a byte-exactness
+            # check. On Windows git checks the file out with CRLF while `repl_api_section()` emits LF,
+            # so the splice mismatched on every line and the test failed for a reason that has nothing
+            # to do with docstring drift.
+            _lf(s) = replace(s, "\r\n" => "\n")
+            @test _lf(committed) == _lf(Cecelia.render_repl_doc(committed))
             @test occursin(Cecelia.REPL_DOC_BEGIN, committed)
         else
             @test_skip "docs/REPL.md not found at $p"
