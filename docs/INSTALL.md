@@ -124,6 +124,33 @@ pixi run python -c "import torch, napari, cellpose; print('cuda', torch.cuda.is_
 > pin, the dropped `coastal` dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
 > model — lives in `docs/SHIPPING.md`, not here.
 
+### Don't move or rename the checkout after installing
+
+The Pixi env is **not relocatable** — `pixi install` bakes the absolute prefix into generated
+files. Renaming or moving the checkout leaves them pointing at the old path, and nothing errors
+loudly: console scripts in `.pixi/envs/default/bin/` get an unusable shebang, and
+`etc/fonts/fonts.conf` points at font directories and a font cache that no longer exist (which
+surfaces as napari rendering its UI in the wrong font).
+
+If you move the checkout, rebuild the env from the committed lockfile:
+
+```bash
+pixi run stop          # the backend and napari run from this env
+rm -rf .pixi
+pixi install
+```
+
+Safe and reproducible — `pixi.lock` is committed, and nothing user-owned lives in `.pixi`
+(projects, models and `bioformats2raw` all sit outside it). Verify:
+
+```bash
+grep -rIl <old-directory-name> .pixi/envs/default | wc -l   # expect 0
+pixi run test-py
+```
+
+The same applies to a **git worktree**: it is a different path, so it needs its own
+`pixi install` (see `docs/DEV.md`).
+
 ---
 
 ## 5. Julia packages
