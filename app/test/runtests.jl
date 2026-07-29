@@ -85,6 +85,49 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
     end
 
+    # ── python_bin_path: resolved, not a bare name ───────────────────────────────
+    # It used to return the config default `"python3"` verbatim. That works for anything JULIA spawns
+    # (pixi run puts the env first on PATH) but not for the string the observer registers into the
+    # user's OWN Claude Code config: launched from a plain shell, bare `python3` is the SYSTEM python,
+    # which has neither `mcp` nor `websockets` — so the observer's tools failed in exactly the sessions
+    # one-click setup exists to enable. And on Windows `python3` frequently doesn't exist at all.
+    @testset "python_bin_path resolution" begin
+        # candidate order — `iswin` explicit so the Windows list is asserted from any host
+        @test Cecelia._python_bin_candidates("", false) == ["python3", "python"]
+        @test Cecelia._python_bin_candidates("", true)  == ["python", "python3"]   # conda ships python.exe
+        # the SHIPPED default is not a deliberate choice, so it gets the platform fallbacks
+        @test Cecelia._python_bin_candidates(Cecelia._PYTHON_BIN_DEFAULT, true) == ["python", "python3"]
+        @test Cecelia._python_bin_candidates("  python3  ", false) == ["python3", "python"]  # trimmed
+        # a DELIBERATELY configured name is the only candidate — resolve it, never substitute another
+        # interpreter (that would run tasks under something lacking the analysis deps, silently)
+        @test Cecelia._python_bin_candidates("mypy-thon", false) == ["mypy-thon"]
+        @test Cecelia._python_bin_candidates("python", false) == ["python"]
+        @test Cecelia._PYTHON_BIN_DEFAULT == "python3"          # must match app/config.toml [dirs]
+
+        # the live resolver: with no explicit path configured it must return something ABSOLUTE that
+        # exists — that is the whole point (the old bare name failed `isfile`).
+        conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+        had = haskey(dirs, "python"); old = get(dirs, "python", nothing)
+        try
+            dirs["python"] = "python3"          # the shipped default → must resolve, not pass through
+            let p = python_bin_path()
+                @test isabspath(p)
+                @test isfile(p)
+            end
+            # an explicitly configured PATH is honoured verbatim — the user named an exact interpreter
+            dirs["python"] = "/opt/custom/bin/python3.11"
+            @test python_bin_path() == "/opt/custom/bin/python3.11"
+            # …including through a leading ~
+            dirs["python"] = joinpath("~", "venv", "bin", "python")
+            @test python_bin_path() == joinpath(homedir(), "venv", "bin", "python")
+            # an unresolvable bare name degrades to itself rather than to nothing
+            dirs["python"] = "cecelia-no-such-interpreter-42"
+            @test python_bin_path() == "cecelia-no-such-interpreter-42"
+        finally
+            had ? (dirs["python"] = old) : delete!(dirs, "python")
+        end
+    end
+
     # ── expand_user: portable leading-~ expansion ────────────────────────────────
     # Base.expanduser is documented Unix-only and silently returns the path unchanged on Windows, so
     # every stored `~`-prefixed path (custom.toml dirs, .env CECELIA_DEV_DIR) went through unexpanded
