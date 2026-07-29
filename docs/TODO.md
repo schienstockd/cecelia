@@ -130,6 +130,25 @@ port is incomplete without it. 🔹 needs-input
 
 ## Backlog
 
+**#00088** — **Move `test-data/` into the repo so the 18 fixture-gated testsets run in CI**
+The fixtures dir is at the **workspace root**, outside the repo and not in git, and
+`test_projects_dir()` resolves `@__DIR__/../../..` to find it. So a fresh clone and every CI runner
+have no fixtures, and 18 testsets skip while the suite still reports a green pass: `LabelProps`
+reader/writer, the **Julia/Python reader parity** guard, `pop_df`/`pop_df_multi`/`pop_df :track`,
+`track_props`, `plot_summary_data`, count + measure metrics. That is the whole data-access core
+unexercised anywhere but a dev machine that happens to have the folder — and fixture edits get no
+history, no review and no way back if the folder is lost.
+
+Fix: point the resolver at `@__DIR__/../..` (in-repo), move the live fixtures in, delete the
+workspace-root copy, update the fixture section in `CLAUDE.md` + the README. **Cost:** binary
+`.h5ad` in git history permanently (~450 KB today, and each future update adds a full copy — the
+"keep fixtures small" rule starts genuinely mattering). Coordinate with whoever is editing fixtures
+at the time; the anisotropy work added `aniso__branch.h5ad` on 2026-07-29.
+
+A stale tracked copy at `cecelia-feijoa/test-data/` — unread by any test, last touched by the
+Pineapple→Feijoa rename — was deleted rather than left to mislead. Its `B.h5ad` had also **diverged**
+from the live one (420 KB vs 332 KB), which is exactly the drift an unread duplicate invites.
+
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener
