@@ -104,14 +104,22 @@ git push -u origin feat/<short-slug>
 ## CI
 
 Every push/PR runs `.github/workflows/ci.yml` (smoke: fresh checkout → `pixi install` →
-`julia … instantiate` → API tests → **Python tests** → frontend build → **frontend tests (Vitest)** → server serves
-`/api/health` + the frontend). It runs the
+`julia … instantiate` → **package tests** → API tests → **Python tests** → MCP tests → frontend build →
+**frontend tests (Vitest)** → server serves `/api/health` + the frontend). It runs the
 **full chain as a matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
 platform-specific install/build/boot failure is caught in CI rather than by a tester — e.g. a PyPI
 dep with no macOS wheel falling back to a source build (TODO #00062). The repo is public, so
 GitHub-hosted runners are free on all OSes (no minute metering — the multipliers only bill private
 repos). All steps run under `bash` (Git Bash on the Windows runner). Keep it green before requesting
 a merge. See `docs/SHIPPING.md` for the release pipeline.
+
+> **A PR with no checks is not a passing PR.** `pull_request` is intentionally left **unfiltered** so
+> a *stacked* PR — one whose base is another feature branch, not `main` — still runs. It used to be
+> filtered to `[main]`, and a stacked PR then matched no trigger and showed **zero checks**, which reads
+> as green-by-absence: nothing on the page says the suite never ran. That is how #409 — the PR that
+> added the package tests to CI — got reviewed with no CI. If you ever see a PR with no checks, that is
+> the bug; `gh pr checks <n>` saying *"no checks reported"* is the tell. (`push` stays filtered to
+> `main` so a branch push doesn't double-run alongside its own PR.)
 
 > **Frontend typecheck — use `vue-tsc -b`, never `vue-tsc --noEmit`.** The frontend uses TS **project
 > references**, and `vue-tsc --noEmit` on the root config **silently skips the `.vue` files** (exits 0

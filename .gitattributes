@@ -1,0 +1,13 @@
+# Line endings: normalise to LF in the repo AND on checkout, on every platform.
+#
+# Without `eol=lf`, git hands a Windows checkout CRLF. That is not cosmetic — it broke the
+# `docs/REPL.md` golden test the first time the package suite ran on Windows: the test compares the
+# committed file against a section regenerated from live docstrings, which is emitted with LF, so every
+# line mismatched for a reason unrelated to the docstring drift it exists to catch. Any future
+# golden/snapshot test would hit the same wall. Julia, Node and Python all read LF fine on Windows.
+* text=auto eol=lf
+
+# Binary — never line-ending-convert or diff these. `text=auto` already detects them, but being
+# explicit means a corrupt fixture can't be blamed on heuristics.
+*.png   binary
+*.h5ad  binary

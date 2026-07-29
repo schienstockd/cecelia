@@ -5,6 +5,22 @@
 # Run: `julia --project=api api/test/runtests.jl`  (or `pixi run test-api`).
 ENV["CECELIA_NO_SERVE"] = "1"
 
+# HERMETIC BY DEFAULT — same guard as `app/test/runtests.jl`, and here it fixes a real leak, not just
+# CI. Testsets redirect `dirs["projects"]` to a temp dir individually and restore it in a `finally`;
+# anything that forgets, or any `create_project!` on a path between one restore and the next redirect,
+# writes into the DEVELOPER'S REAL projects dir and shows up in their project list. (Dominik has been
+# seeing these: `apiqc-7602` was still sitting there, from a testset since renamed.) Pointing config at
+# a throwaway dir for the whole run makes the whole class impossible instead of per-testset diligence.
+#
+# Set `CECELIA_DEV_DIR` yourself to run against a specific config. Julia deletes both temp dirs at exit.
+# Paths go in TOML *literal* strings (single quotes) so Windows backslashes are not escapes.
+if !haskey(ENV, "CECELIA_DEV_DIR")
+    let cfg = mktempdir(), proj = mktempdir()
+        write(joinpath(cfg, "custom.toml"), "[dirs]\nprojects = '" * proj * "'\n")
+        ENV["CECELIA_DEV_DIR"] = cfg
+    end
+end
+
 using Test
 include(joinpath(@__DIR__, "..", "src", "server.jl"))   # defines handlers + shared state; does not start
 using JSON3

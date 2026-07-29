@@ -16,11 +16,15 @@ name: CI
 # Pixi env is cached on pixi.lock (per platform). fail-fast is off so one OS failing still reports
 # the others. Runs on pushes/PRs to main and on demand.
 
+# `pull_request` is deliberately NOT filtered to `[main]`. With that filter a STACKED pr — one whose
+# base is another feature branch — matched no trigger and got **zero checks**, which reads as
+# green-by-absence rather than as "not run": nothing on the pr says the suite never ran. That is how
+# #409 (the pr that ADDS the package tests to CI) was reviewed with no CI at all. Pushes stay filtered
+# to main so a plain branch push doesn't double-run alongside its own pr.
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 defaults:

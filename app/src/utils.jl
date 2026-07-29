@@ -9,7 +9,12 @@ gen_uid(n::Int=UID_LENGTH) = String(rand(UID_CHARS, n))
 
 function _dir_bytes(path::String)::Int
     if Sys.isunix()
-        try; parse(Int, split(readchomp(`du -sb $path`))[1]); catch; 0; end
+        # `du -sk` (KiB), NOT `-sb`: `-b` is a GNU coreutils extension that BSD/macOS `du` does not
+        # have, so on macOS the command failed, the `catch` swallowed it, and this returned **0 for
+        # every directory** — storage reclaim silently reported nothing to free. `-k` is in POSIX and
+        # works on both. It reports disk BLOCKS rather than apparent size (so slightly larger than
+        # `-sb` on Linux), which is the more honest number for "how much space would I get back".
+        try; parse(Int, split(readchomp(`du -sk $path`))[1]) * 1024; catch; 0; end
     else
         try
             total = 0

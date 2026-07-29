@@ -6,7 +6,22 @@ import DataFrames: DataFrame, nrow   # only the symbols the tests construct/meas
 
 # ── Smoke tests — no API, no WebSocket, no Vue ────────────────────────────────
 # Run from the app/ directory:  julia --project test/runtests.jl
-# Requires CECELIA_DEV_DIR to point at a config with a valid projects_dir.
+
+# HERMETIC BY DEFAULT: unless `CECELIA_DEV_DIR` is already set, point config at a throwaway dir with a
+# throwaway projects dir. The suite CREATES projects, and with no `custom.toml` anywhere `projects_dir()`
+# is the shipped placeholder `/path/to/projects` — so `create_project!` did `mkdir("/path")` and ~30
+# testsets errored with EACCES/EROFS. That is invisible on a dev machine (a real `.env` → `custom.toml`
+# makes it pass) and is why the suite could not run in CI at all.
+#
+# Set `CECELIA_DEV_DIR` yourself to run against a specific config instead. Julia deletes both temp dirs
+# at exit. Paths go in TOML *literal* strings (single quotes) so Windows backslashes are not escapes.
+if !haskey(ENV, "CECELIA_DEV_DIR")
+    let cfg = mktempdir(), proj = mktempdir()
+        write(joinpath(cfg, "custom.toml"), "[dirs]\nprojects = '" * proj * "'\n")
+        ENV["CECELIA_DEV_DIR"] = cfg
+        @info "Tests: hermetic config" config_dir=cfg projects_dir=proj
+    end
+end
 
 init_cecelia!()
 
@@ -148,7 +163,15 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # Windows accepts either separator after the tilde
         if Sys.iswindows()
             @test expand_user("~\\foo") == joinpath(homedir(), "foo")
+            @test expand_user("~\\foo\\bar") == joinpath(homedir(), "foo", "bar")
+            # The result must be a CANONICAL path — no mixed separators. Pasting the remainder on
+            # verbatim gave `C:\Users\x\foo/bar`, which Windows tolerates but which makes every path
+            # comparison unreliable (and this is what CI caught first time it ran on Windows).
+            @test !occursin('/', expand_user("~/foo/bar"))
         end
+        # collapsing a doubled separator is fine; losing a component is not
+        @test expand_user("~//foo") == joinpath(homedir(), "foo")
+        @test splitpath(expand_user("~/a/b/c"))[end-2:end] == ["a", "b", "c"]
     end
 
     # ── ensure_config_dir: safe to WRITE into ────────────────────────────────────
@@ -649,7 +672,12 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         p = Cecelia.repl_doc_path()
         if isfile(p)
             committed = read(p, String)
-            @test committed == Cecelia.render_repl_doc(committed)
+            # Compare line-ending agnostically: this is a CONTENT drift-guard, not a byte-exactness
+            # check. On Windows git checks the file out with CRLF while `repl_api_section()` emits LF,
+            # so the splice mismatched on every line and the test failed for a reason that has nothing
+            # to do with docstring drift.
+            _lf(s) = replace(s, "\r\n" => "\n")
+            @test _lf(committed) == _lf(Cecelia.render_repl_doc(committed))
             @test occursin(Cecelia.REPL_DOC_BEGIN, committed)
         else
             @test_skip "docs/REPL.md not found at $p"
@@ -3996,7 +4024,10 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     @testset "branch pop_type wiring" begin
         # POP_MAP_SUFFIX resolves the gating file suffix.
         @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
-        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"), "gating/stroma__branch.json")
+        # build the expected tail with joinpath — a literal "gating/..." fails on Windows, where the
+        # path is "\\gating\\stroma__branch.json" (the product is fine; the assertion wasn't portable)
+        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"),
+                       joinpath("gating", "stroma__branch.json"))
 
         # ACCEPT_TOKENS + validators.
         @test "branch" in Cecelia.ACCEPT_TOKENS
@@ -6307,6 +6338,39 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 init_cecelia!()
             end
         end
+    end
+
+    # The tar invocation must never hand a Windows drive letter to `-f`. GNU tar reads an archive
+    # path as `host:path` when a colon precedes any separator, so `-f D:\a\...\x.tar` becomes a
+    # connection attempt to host `D` and the pack silently produces nothing — which is how `.ccbundle`
+    # export (the backup mechanism) came to be broken on Windows while every unix path was fine: a unix
+    # absolute path can NEVER trigger it, because the leading `/` comes before the colon.
+    #
+    # That asymmetry is exactly why this needs a PROPERTY test rather than a behaviour test. Running
+    # tar here would pass on unix no matter what the code does — a test that cannot fail. So assert the
+    # shape of the command instead: `-f` takes a bare filename, the directory rides on the cwd. Both
+    # assertions fail against the old absolute-`-f` form on every platform.
+    @testset "tar commands keep drive letters out of -f" begin
+        pack = Cecelia._tar_pack_cmd(joinpath("D:", "a", "out", "store.zarr.tar"),
+                                     joinpath("D:", "proj", "0", "img", "store.zarr"))
+        # the flag is the combined `-cf`, so the archive is the token after it
+        fidx = findfirst(==("-cf"), pack.exec)
+        @test fidx !== nothing
+        farg = pack.exec[fidx + 1]
+        @test farg == "store.zarr.tar"                      # bare filename…
+        @test !occursin(':', farg)                          # …so no drive letter can reach tar
+        @test !occursin('/', farg) && !occursin('\\', farg)
+        @test pack.dir == joinpath("D:", "a", "out")        # the directory rides on the cwd instead
+        # -C is NOT subject to the host:path parse, so it stays absolute
+        cidx = findfirst(==("-C"), pack.exec)
+        @test cidx !== nothing && pack.exec[cidx + 1] == joinpath("D:", "proj", "0", "img")
+        @test pack.exec[end] == "store.zarr"                # the member, relative to -C
+
+        unpack = Cecelia._tar_unpack_cmd(joinpath("D:", "a", "bundle", "0", "img", "store.zarr.tar"))
+        uidx = findfirst(==("-xf"), unpack.exec)
+        @test uidx !== nothing && unpack.exec[uidx + 1] == "store.zarr.tar"
+        @test !occursin(':', unpack.exec[uidx + 1])
+        @test unpack.dir == joinpath("D:", "a", "bundle", "0", "img")
     end
 
     # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
