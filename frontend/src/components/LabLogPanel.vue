@@ -328,13 +328,10 @@ async function dismissEntry(entry: LabLogEntry) {
          Shown when the CLI is missing, or when a run failed because it isn't authenticated. -->
     <div v-if="observerSetup" class="ll-setup">
       <template v-if="observerSetup === 'missing'">
-        <strong>Claude Code not detected.</strong> To let an assistant watch your analysis and note
-        things here: install Claude Code so <code>claude</code> is on your PATH, then run
-        <code>claude</code> once to log in. No other setup — Cecelia wires the tools automatically.
+        <strong>Claude Code not detected.</strong> Install it, then run <code>claude</code> once to log in.
       </template>
       <template v-else>
-        <strong>Claude Code isn't logged in.</strong> The last run failed to authenticate — run
-        <code>claude</code> in a terminal once to log in, then try again. (Nothing else to configure.)
+        <strong>Claude Code isn't logged in.</strong> Run <code>claude</code> in a terminal, then try again.
       </template>
       <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
     </div>
