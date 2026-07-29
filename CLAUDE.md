@@ -279,6 +279,15 @@ use the named helper, don't re-derive the platform branch inline:
   `Sys.iswindows()`, never hardcode one.
 - **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
   `.bat` vs no-extension.
+- **Leading `~` in a path** — use `expand_user()` in `config.jl`, never `Base.expanduser`, which is
+  documented Unix-only and is a **silent no-op on Windows** (a `~` then survives into
+  `joinpath`/`open`, e.g. `~/.cecelia\observer-mcp.json`).
+- **Writing into the config dir** — use `ensure_config_dir()`, not bare `config_dir()`: the latter is
+  a pure path computation and the directory doesn't exist until something creates it.
+- **Finding/spawning a CLI on PATH** — use `agent_bin_path()` + `_agent_spawn_cmd()` in
+  `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
+  never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
+  `CreateProcess` refuses batch files, they need `cmd /c`.
 - **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`; never write
   `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
   handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia

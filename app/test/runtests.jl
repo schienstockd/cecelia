@@ -358,6 +358,49 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
               "{\"command\":\"/old/python\"}"
         @test Cecelia.OBSERVER_MCP_NAME == "cecelia-observer"   # the name users see in `claude mcp list`
 
+        # ── Windows CLI resolution + spawn wrapping ──────────────────────────────────────────
+        # The observer was invisible on Windows: `Sys.which` only tries the bare name plus `.exe`/
+        # `.com` (base/sysinfo.jl), never `.cmd`/`.bat`, so an npm-installed `claude.cmd` was never
+        # found → available:false → "Set up my terminal" told users WITH Claude Code to install it.
+        # And a `.cmd` cannot be spawned directly — CreateProcess refuses batch files.
+        # These helpers take `iswin` explicitly so BOTH platforms' behaviour is asserted from any
+        # host — the reason this shipped broken is that nobody could exercise the Windows path.
+        @test Cecelia._agent_bin_candidates("claude", false) == ["claude"]        # unix: as given
+        @test Cecelia._agent_bin_candidates("claude", true) ==
+              ["claude", "claude.cmd", "claude.bat"]                             # windows: + batch shims
+        # an explicit extension is Sys.which's job already — don't append to it
+        @test Cecelia._agent_bin_candidates("claude.exe", true) == ["claude.exe"]
+        @test Cecelia._agent_bin_candidates("claude.cmd", true) == ["claude.cmd"]
+
+        # only batch files need the shell, and only on Windows
+        @test Cecelia._needs_cmd_shell("C:/n/claude.cmd", true)
+        @test Cecelia._needs_cmd_shell("C:/n/claude.BAT", true)                  # extension case-insensitive
+        @test !Cecelia._needs_cmd_shell("C:/n/claude.exe", true)
+        @test !Cecelia._needs_cmd_shell("/usr/bin/claude", false)
+        @test !Cecelia._needs_cmd_shell("/usr/bin/claude.cmd", false)            # never on unix
+
+        # argv rewriting: argv[1] becomes the resolved path, and a batch file gains `cmd /c`
+        logical = ["claude", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "/usr/bin/claude", false) ==
+              ["/usr/bin/claude", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "C:/npm/claude.cmd", true) ==
+              ["cmd", "/c", "C:/npm/claude.cmd", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "C:/p/claude.exe", true) ==
+              ["C:/p/claude.exe", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        # unresolvable → argv untouched, so the spawn fails naming what the user configured
+        @test Cecelia._agent_spawn_argv(logical, nothing, true) == logical
+        @test Cecelia._agent_spawn_argv(String[], nothing, true) == String[]
+        # the spec argument must survive rewriting verbatim — it is the whole payload
+        @test Cecelia._agent_spawn_argv(logical, "C:/npm/claude.cmd", true)[7] == "{}"
+
+        # live resolver: an absolute path to a real executable resolves to itself; nonsense is nothing.
+        # (Uses this Julia's own binary — no assumption about what is on PATH.)
+        let jl = joinpath(Sys.BINDIR, Sys.iswindows() ? "julia.exe" : "julia")
+            isfile(jl) && @test Cecelia.agent_bin_path(jl) == jl
+        end
+        @test Cecelia.agent_bin_path("") === nothing
+        @test Cecelia.agent_bin_path("cecelia-definitely-no-such-binary-42") === nothing
+
         # Is the user's own terminal set up? Drives which button the lab-log toolbar shows, so the
         # three states must be exact. A stale entry (another checkout's python, or no/!matching
         # CECELIA_API_URL) is NOT "set up" — it fails silently in the user's session.
