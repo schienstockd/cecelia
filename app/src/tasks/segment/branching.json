@@ -8,6 +8,7 @@
   "params": [
     {
       "key": "valueName",
+      "tip": "Which segmentation to skeletonise",
       "label": "Segmentation",
       "type": "valueNameSelection",
       "field": "labels",
@@ -15,12 +16,14 @@
     },
     {
       "key": "outputValueName",
+      "tip": "Names the branch table and skeleton labels",
       "label": "Output name",
       "type": "text",
       "default": "default"
     },
     {
       "key": "refPops",
+      "tip": "Skeletonise only these cells, not the whole segmentation",
       "label": "Restrict to population",
       "type": "popSelection",
       "accepts": ["live", "clust", "region"],
@@ -28,6 +31,7 @@
     },
     {
       "key": "preDilationSize",
+      "tip": "Closes gaps before skeletonising; too high merges separate fibres",
       "label": "Pre-dilation",
       "type": "int",
       "min": 0,
@@ -37,6 +41,7 @@
     },
     {
       "key": "postDilationSize",
+      "tip": "Thickens the skeleton for visibility only; measurements are unaffected",
       "label": "Post-dilation",
       "type": "int",
       "min": 0,
@@ -46,30 +51,65 @@
     },
     {
       "key": "useBorders",
+      "tip": "Skeletonise label outlines instead of their interiors",
       "label": "Use label boundaries",
       "type": "bool",
       "default": false
     },
     {
       "key": "flattenBranching",
+      "tip": "Max-project Z first, giving one 2D network per timepoint",
       "label": "Flatten Z",
       "type": "bool",
       "default": false
     },
     {
+      "key": "integrateTime",
+      "label": "Integrate time",
+      "type": "bool",
+      "tip": "One network for the whole movie",
+      "default": false
+    },
+    {
+      "key": "integrateTimeMode",
+      "label": "Integrate mode",
+      "type": "select",
+      "default": "max",
+      "tip": "Applies to the raw channel; labels always merge",
+      "options": [
+        { "value": "max", "label": "max" },
+        { "value": "avg", "label": "avg" }
+      ]
+    },
+    {
       "key": "calcAnisotropy",
+      "tip": "Also compute the fibre-orientation field and per-image anisotropy",
       "label": "Anisotropy",
       "type": "bool",
       "default": false
     },
     {
       "key": "calcFlattened",
+      "tip": "Measure orientation on a Z-MIP while keeping the skeleton 3D",
       "label": "Anisotropy on Z-MIP",
       "type": "bool",
       "default": false
     },
     {
+      "key": "anisotropySource",
+      "label": "Anisotropy from",
+      "type": "select",
+      "tip": "Channel survives a bad segmentation; skeleton is smoother",
+      "default": "skeleton",
+      "options": [
+        { "value": "skeleton", "label": "skeleton" },
+        { "value": "mask",     "label": "mask" },
+        { "value": "channel",  "label": "channel" }
+      ]
+    },
+    {
       "key": "fibreChannels",
+      "tip": "Only used when Anisotropy from = channel",
       "label": "Fibre channels",
       "type": "channelSelection",
       "multiple": true,
@@ -77,21 +117,23 @@
     },
     {
       "key": "structureTensorSigma",
-      "label": "Structure-tensor sigma (px)",
+      "tip": "Smoothing before orientation is measured; too low gives a noisy field",
+      "label": "Integration scale (px)",
       "type": "float",
       "min": 0.5,
-      "max": 20.0,
-      "step": 0.1,
-      "default": 2.0
+      "max": 50.0,
+      "step": 0.5,
+      "default": 12.0
     },
     {
       "key": "anisotropyBoxSize",
-      "label": "Anisotropy box size (px)",
+      "tip": "Spacing of the orientation grid; smaller is finer but a bigger file",
+      "label": "Grid box (px)",
       "type": "int",
       "min": 5,
       "max": 200,
       "step": 1,
-      "default": 45
+      "default": 15
     }
   ]
 }

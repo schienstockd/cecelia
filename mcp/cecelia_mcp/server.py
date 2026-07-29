@@ -96,6 +96,7 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     not segmentation. The metric producers:
       - "segment.cellpose"           → nCells
       - "segment.measureLabels"      → nCells
+      - "segment.branching"          → nBranches, meanBranchLength, anisotropy
       - "tracking.bayesian_tracking" → nTracks, meanTrackLength, nTrackedCells
       - "tracking.track_measures"    → nTracks, meanSpeed, meanDisplacement
       - "behaviour.hmm_states"       → nDecoded, nStates, dominantStateFrac
@@ -110,6 +111,11 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
        {funName, valueNames: [...], byValueName: {"T": <doc>, "B": <doc>}}
     (that is why a bare clustering query used to come back empty — it defaulted to "default", where
     clustering banks nothing). Pass an explicit value_name only to get that single label set's <doc>.
+
+    Most metrics are COUNTS, but a few are ratios in 0–1 (`anisotropy`, `dominantStateFrac`,
+    `largestClusterFrac`, `fracAggregated`, `fracInContact`) — quote those as fractions, not totals.
+    `anisotropy` is structural directionality: 0 = uniform, 1 = non-uniform; real fibrous tissue
+    sits around 0.1–0.4, so a low value is not a defect.
 
     Each <doc> is {funName, valueName, nIncluded, metrics: {<key>: {n, median, mad, mean, sd, threshold,
     outliers: {imageUid: {value, z|relDev}}}}}. Outliers use a robust modified z-score (median/MAD) —

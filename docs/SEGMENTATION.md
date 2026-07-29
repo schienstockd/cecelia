@@ -329,7 +329,13 @@ Pipeline:
 2. **Optional** `refPops` mask: Julia resolves the selected population to a label-ID list via
    `resolve_pop_type` + `cells_in_pop` (Decision 7) and hands it to Python — no gate evaluation
    crosses the language boundary.
-3. **Optional** Z-MIP (`flattenBranching`) and/or label-boundary conversion (`useBorders`).
+3. **Optional** T-collapse (`integrateTime` + `integrateTimeMode`), Z-MIP (`flattenBranching`)
+   and/or label-boundary conversion (`useBorders`). `integrateTime` gives **one network for the
+   whole movie** instead of one per frame — much cheaper, and the right input when you want a
+   single spatial summary to correlate against tracks pooled over time. Neither mode is a default;
+   both are scientifically valid. Note the label stack always collapses by MAX (a union of where
+   structure existed) — the *average* of a label image is meaningless, so `integrateTimeMode`
+   applies only to the raw channel.
 4. Per timepoint: binary closing (`preDilationSize`) → `skimage.morphology.skeletonize` → optional
    dilation (`postDilationSize`) → `skan.Skeleton` + `skan.summarize(separator='-')`.
 5. Write a skeleton labels zarr at `{proj}/1/{uid}/branchLabels/{value_name}.zarr` (a **separate**
@@ -338,14 +344,65 @@ Pipeline:
    skeleton path, `X` = skan's measurements (`branch-distance`, `branch-type`, endpoint indices,
    Euclidean distance, etc.), `obsm['spatial']` = median of the branch's two endpoint coordinates
    (Decision 8), `obsm['temporal']` = `centroid_t` on timeseries.
-7. **Optional** anisotropy (`calcAnisotropy` + `fibreChannels`): local structure tensor on the
-   fibre channel via `skimage.feature.structure_tensor(sigma=structureTensorSigma)`, mean-pooled
-   over `anisotropyBoxSize × anisotropyBoxSize` boxes, eigendecomposed. Outputs
-   `ilee_coor_list` / `ilee_eigval` / `ilee_eigvec` / `ilee_box_total_length` /
-   `ilee_box_anisotropy` / `ilee_summary` into `uns` (see Decision 4 in
-   `docs/todo/BRANCHING_PLAN.md` for algorithmic ancestry — Li et al. 2023).
-8. QC: `nBranches` / `nSkeletons` / `meanBranchLength` banked; `branching.no_branches` warn for
-   empty output. Cohort metrics: `nBranches`, `meanBranchLength`.
+7. **Optional** anisotropy (`calcAnisotropy`): local structure tensor via
+   `skimage.feature.structure_tensor(sigma=structureTensorSigma)`, aggregated over
+   `anisotropyBoxSize` boxes, eigendecomposed. All the maths lives in
+   `cecelia.utils.anisotropy_utils`. Algorithmic ancestry: Li et al. 2023 (ILEE_CSK).
+
+   Written into the branch sidecar's `uns`, all under one `orientation_` prefix (2D shapes shown;
+   3D is the same family with an extra leading spatial axis):
+
+   | key | shape | what |
+   |---|---|---|
+   | `orientation_coords` | `(T, ny, nx, 2)` | box centre `(y, x)`, in PIXELS |
+   | `orientation_eigval` | `(T, ny, nx, 2)` | eigenvalues, **ascending** `[λmin, λmax]` |
+   | `orientation_eigvec` | `(T, ny, nx, 2, 2)` | eigenvectors as ROWS — `[…, i, :]` ↔ `eigval[…, i]` |
+   | `orientation_box_length` | `(T, ny, nx)` | skeleton pixels in the box (the length weight) |
+   | `orientation_box_coherence` | `(T, ny, nx)` | `(λmax − λmin)/(λmax + λmin)` ∈ [0,1] |
+   | `orientation_summary` | dataframe, one row per frame | occupancy, cv, skewness, `MF_full_length`, `branching_act`, `anisotropy` |
+   | `orientation_meta` | dict | `box_size_px`, `sigma_px`, `source`, `scale_um_per_px`, `flattened`, `t_index`, `eigvec_layout`, `eigval_order`, `fibre_direction` |
+
+   > **Renamed from `ilee_*` (2026-07-29).** The old names claimed an ILEE lineage the arrays do
+   > not have — see the box below — and `ilee_box_anisotropy` was per-box *coherence*, not the
+   > per-image `anisotropy` scalar, which made the two easy to confuse. Runs banked before the
+   > rename keep the old keys; re-run the task to read them.
+
+   `t_index` maps stack position → real timepoint (`[-1]` when `integrateTime` collapsed it).
+   **Never infer the timepoint from the position** — the pass used to skip empty frames, which
+   silently shifted the whole T axis.
+
+   > **The fibre direction is the MINOR eigenvector.** The structure tensor measures intensity
+   > *gradients*, which are largest ACROSS a fibre, so its dominant eigenvector points
+   > perpendicular to the structure. Always read the direction through
+   > `anisotropy_utils.fibre_orientation`; never index `orientation_eigvec` by hand. The old ILEE
+   > tangent tensor used the OPPOSITE convention (major = fibre), so these arrays are shape-alike
+   > but **not** index-compatible with the old R vignettes — `uns['orientation_meta']` records
+   > `eigval_order`, `eigvec_layout` and `fibre_direction` so a reader never has to guess. A 90°
+   > error here is silent: the arrows still look like a plausible field.
+
+   `anisotropySource` picks what the tensor reads — `skeleton` (default), `mask`, or `channel`
+   (needs `fibreChannels`). The segmentation-derived sources are denoised and measure closest to
+   the legacy skeleton-only estimator; `channel` is the only one that survives a bad segmentation.
+
+   **Defaults are measured, not guessed** (EaMaVq SHG, scan in
+   `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` Decision 4): `skeleton`, `sigma=12`, `box=15`. Tune on
+   *direction contrast* (`anisotropy_utils.direction_contrast` — near-vs-far agreement), never on
+   coherence and never on neighbour agreement alone: both are trivially "improved" by blurring the
+   field into uselessness.
+8. QC: `nBranches` / `nSkeletons` / `meanBranchLength`, plus `anisotropy` when the pass ran;
+   `branching.no_branches` warn for empty output. Cohort metrics: `nBranches`,
+   `meanBranchLength`, `anisotropy`.
+
+   `anisotropy` is the per-image structure readout — a **length-weighted** mean of per-box
+   coherence (ILEE's `by_length`), 0 = uniform, 1 = non-uniform. Real fibrous tissue sits around
+   **0.1–0.4**, so a low number is not a defect. Weighting matters: an unweighted mean counts
+   empty background boxes equally and drifts with how much blank field an image contains.
+
+**Reading it back.** There is **no anisotropy plot in the app** — it is figure-shaped, so it lives
+in a notebook. Three package accessors (`app/src/anisotropy.jl`) return tidy DataFrames:
+`quiver_df` (the arrows), `branch_segments` (the network), `anisotropy_df` (the per-image scalar,
+across images). Tracks come from `pop_df` — there is no separate accessor. Recipe, and the three
+traps: `docs/NOTEBOOKS.md` → *Structure anisotropy*.
 9. Auto-create one filter pop per unique `branch-type` (`ensure_filter_pop!` under the branch pop
    map's root) — semantic names (`endpoint-to-endpoint`, `endpoint-to-junction`,
    `junction-to-junction`, `isolated-cycle`) so pickers show meaningful populations, not integer codes.
