@@ -14,7 +14,7 @@ function _deep_merge(a::Dict, b::Dict)::Dict
 end
 
 # Read KEY=value pairs from a .env file. Skips comments and blank lines.
-# Values are NOT shell-expanded; use expanduser() on the result.
+# Values are NOT shell-expanded; use expand_user() on the result.
 function _read_dotenv(path::String)::Dict{String,String}
     out = Dict{String,String}()
     isfile(path) || return out
@@ -27,15 +27,36 @@ function _read_dotenv(path::String)::Dict{String,String}
     out
 end
 
+"""
+    expand_user(path) -> String
+
+Replace a leading `~` with the user's home directory, **on every platform**.
+
+Use this instead of `Base.expanduser`, which is documented as Unix-only ("On Unix systems, replace
+a tilde character…") and is a **silent no-op on Windows** — a `~`-prefixed path then survives
+verbatim into `joinpath`/`open`, producing paths like `~/.cecelia\\observer-mcp.json` that no
+Windows API resolves. Every stored path in `custom.toml`/`.env` may legitimately start with `~`
+(that is what keeps them portable across users), so this is the one expansion helper they all
+go through. `homedir()` is correct on Windows (it honours `USERPROFILE`).
+"""
+function expand_user(path::AbstractString)::String
+    s = String(path)
+    s == "~"            && return homedir()
+    startswith(s, "~/")  && return joinpath(homedir(), s[3:end])
+    # Windows users may type either separator
+    Sys.iswindows() && startswith(s, "~\\") && return joinpath(homedir(), s[3:end])
+    s
+end
+
 # Pure resolver (unit-testable, no env/file reads): given the three ordered signals, pick the dir.
 # Order: explicit arg → CECELIA_DEV_DIR env → CECELIA_DEV_DIR in .env → ~/.cecelia default.
 function _resolve_config_dir(dev_dir::Union{AbstractString,Nothing},
                              env_val::Union{AbstractString,Nothing},
                              dotenv_val::Union{AbstractString,Nothing})::String
-    isnothing(dev_dir)    || return expanduser(String(dev_dir))
-    isnothing(env_val)    || return expanduser(String(env_val))
-    isnothing(dotenv_val) || return expanduser(String(dotenv_val))
-    expanduser("~/.cecelia")
+    isnothing(dev_dir)    || return expand_user(String(dev_dir))
+    isnothing(env_val)    || return expand_user(String(env_val))
+    isnothing(dotenv_val) || return expand_user(String(dotenv_val))
+    expand_user("~/.cecelia")
 end
 
 """
@@ -59,6 +80,23 @@ function config_dir(dev_dir::Union{String,Nothing} = nothing)::String
     _resolve_config_dir(dev_dir,
                         get(ENV, "CECELIA_DEV_DIR", nothing),
                         get(dotenv, "CECELIA_DEV_DIR", nothing))
+end
+
+"""
+    ensure_config_dir([dev_dir]) -> String
+
+[`config_dir`](@ref), created if it does not exist yet. Use this — not bare `config_dir()` — before
+**writing** anything into it.
+
+`config_dir()` is a pure path computation: on a machine that has never run the setup wizard the
+directory genuinely does not exist, so `open(joinpath(config_dir(), …), "w")` fails with
+`SystemError: No such file or directory`. That is not hypothetical — it broke CI on all three
+platforms once the observer wrote its MCP config on every status call.
+"""
+function ensure_config_dir(dev_dir::Union{String,Nothing} = nothing)::String
+    d = config_dir(dev_dir)
+    mkpath(d)
+    d
 end
 
 """
@@ -186,7 +224,7 @@ end
 
 function _cfg_dir(key::String, default::String)::String
     d = get(cecelia_conf(), "dirs", Dict{String,Any}())
-    expanduser(string(get(d, key, default)))
+    expand_user(string(get(d, key, default)))
 end
 
 const _PROJECTS_DIR_PLACEHOLDER = "/path/to/projects"
@@ -212,14 +250,14 @@ end
 Persist `path` as `dirs.projects` in the user's `custom.toml` (creating the file/dir if needed,
 **merging** so other keys survive) and hot-reload config. Writer half of the config pair — it
 targets the same [`custom_toml_path`](@ref) the reader uses. The literal string is stored (so a
-leading `~` stays portable across users); `expanduser` happens on read in `_cfg_dir`. Returns the
+leading `~` stays portable across users); `expand_user` happens on read in `_cfg_dir`. Returns the
 stored path. Creating/validating the projects directory itself is the caller's job (the setup
 endpoint). See `docs/todo/ONBOARDING_PLAN.md` (D1/D3).
 """
 function set_projects_dir!(path::AbstractString)::String
     stored   = strip(String(path))
+    ensure_config_dir()
     cfg_path = custom_toml_path()
-    mkpath(dirname(cfg_path))
     cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
     dirs = get(cfg, "dirs", Dict{String,Any}())
     dirs["projects"] = stored
@@ -239,7 +277,7 @@ function bioformats2raw_bin()::String
     exe = Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw"
     d   = get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "bioformats2raw", "")
     if !isempty(string(d)) && string(d) != "/path/to/bioformats2raw"
-        return joinpath(expanduser(string(d)), "bin", exe)
+        return joinpath(expand_user(string(d)), "bin", exe)
     end
     bundled = joinpath(@__DIR__, "..", "..", "bioformats2raw", "bin", exe)   # repo/install root
     isfile(bundled) && return bundled

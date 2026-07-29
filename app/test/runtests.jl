@@ -71,12 +71,60 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._resolve_config_dir("/x", "/y", "/z") == "/x"       # explicit wins
         @test Cecelia._resolve_config_dir(nothing, "/y", "/z") == "/y"    # env beats .env
         @test Cecelia._resolve_config_dir(nothing, nothing, "/z") == "/z" # .env beats default
+        # `expand_user`, NOT Base.expanduser: the latter is a no-op on Windows, so asserting against
+        # it would compare two unexpanded strings and pass vacuously there.
         @test Cecelia._resolve_config_dir(nothing, nothing, nothing) ==   # installed-app default
-              expanduser("~/.cecelia")
-        @test Cecelia._resolve_config_dir("~/foo", nothing, nothing) == expanduser("~/foo")
+              expand_user("~/.cecelia")
+        @test Cecelia._resolve_config_dir("~/foo", nothing, nothing) == expand_user("~/foo")
+        # …and the resolved default must be a real absolute path on EVERY platform — a surviving `~`
+        # is the Windows bug that produced `~/.cecelia\observer-mcp.json` in CI.
+        @test isabspath(Cecelia._resolve_config_dir(nothing, nothing, nothing))
+        @test !startswith(Cecelia._resolve_config_dir(nothing, nothing, nothing), "~")
         # public composition
         @test config_dir("/tmp/ceceliatest") == "/tmp/ceceliatest"
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
+    end
+
+    # ── expand_user: portable leading-~ expansion ────────────────────────────────
+    # Base.expanduser is documented Unix-only and silently returns the path unchanged on Windows, so
+    # every stored `~`-prefixed path (custom.toml dirs, .env CECELIA_DEV_DIR) went through unexpanded
+    # there. These assertions hold on all three platforms.
+    @testset "expand_user" begin
+        @test expand_user("~") == homedir()
+        @test expand_user("~/foo") == joinpath(homedir(), "foo")
+        @test expand_user("~/foo/bar") == joinpath(homedir(), "foo", "bar")
+        # never leaves a tilde behind
+        @test !startswith(expand_user("~/foo"), "~")
+        # absolute + relative paths pass through untouched
+        @test expand_user("/abs/path") == "/abs/path"
+        @test expand_user("relative/path") == "relative/path"
+        @test expand_user("") == ""
+        # a tilde that isn't a leading path component is a legitimate filename character
+        @test expand_user("/tmp/a~b") == "/tmp/a~b"
+        @test expand_user("~notauser/foo") == "~notauser/foo"
+        # Windows accepts either separator after the tilde
+        if Sys.iswindows()
+            @test expand_user("~\\foo") == joinpath(homedir(), "foo")
+        end
+    end
+
+    # ── ensure_config_dir: safe to WRITE into ────────────────────────────────────
+    # config_dir() is a pure path computation, so on a machine that has never run the setup wizard
+    # the directory does not exist and `open(joinpath(config_dir(), …), "w")` throws. That broke CI
+    # on all three platforms when the observer began writing its MCP config on every status call.
+    @testset "ensure_config_dir" begin
+        base = mktempdir()
+        target = joinpath(base, "never-created")
+        @test !isdir(target)
+        @test ensure_config_dir(target) == target
+        @test isdir(target)                              # created
+        @test ensure_config_dir(target) == target        # idempotent on an existing dir
+        @test isdir(target)
+        # and a file can actually be written into it — the thing the observer needs
+        nested = joinpath(base, "a", "b", "c")           # several levels missing
+        ensure_config_dir(nested)
+        write(joinpath(nested, "observer-mcp.json"), "{}")
+        @test isfile(joinpath(nested, "observer-mcp.json"))
     end
 
     # ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
