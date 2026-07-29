@@ -4,13 +4,14 @@
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
-import { ref, computed, watch, nextTick } from 'vue'
-import { isAuthError, observerSetupReason } from '../utils/observerSetup'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { isAuthError, observerSetupReason, terminalCta } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
 import CcToggle from './CcToggle.vue'
@@ -40,26 +41,20 @@ const imageNames = ref<Record<string, string>>({})   // uid → current name, fo
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
-const chatCopied = ref(false)              // brief "Prompt copied" state on the Chat-to-Claude button
-let chatCopiedTimer: ReturnType<typeof setTimeout> | null = null
+// brief "Prompt copied" state on the Chat-to-Claude button — 2.5s, longer than the default flash
+// because the user has to go and paste it somewhere else. Shared helper (docs/UI.md → UX primitives).
+const { isCopied: chatCopied, copy: copyPrompt } = useCopyFlash(2500)
 
 // Chat to Claude: copy a starter prompt (project context + MCP pointer) to the clipboard for a full
 // external session. Re-copies on each click. Works for any MCP assistant — no `claude` install needed.
 // No toast — the button flashes "Prompt copied" (colour + tooltip) for a couple of seconds instead.
 async function chatToClaude() {
   if (!projectUid.value) return
-  const text = buildChatPrompt(projectUid.value, pm.current?.name)
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
-  }
-  chatCopied.value = true
-  if (chatCopiedTimer) clearTimeout(chatCopiedTimer)
-  chatCopiedTimer = setTimeout(() => { chatCopied.value = false }, 2500)
+  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name))
 }
+// Which terminal button the toolbar shows: 'setup' / 'resync' (not set up, or stale) vs 'chat'.
+const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
+
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
 const observerModels = computed(() => observer.models)
@@ -157,11 +152,14 @@ async function clearContext() {
 }
 
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
-// (Observer status/session is refreshed app-wide by the store — see App.vue.)
+// (Observer status/session is refreshed app-wide by the store — see App.vue.) Refresh it again on
+// mount so the terminal-setup button reflects the config as of NOW: the user may have registered (or
+// broken) `cecelia-observer` in a terminal since the app loaded, and this panel is where they'd look.
 watch(projectUid, async () => {
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
+onMounted(() => observer.refresh())
 
 async function submit() {
   const lines = draftToLines(draft.value)
@@ -297,12 +295,25 @@ async function dismissEntry(entry: LabLogEntry) {
                 v-tooltip.top="'Model Ask Claude runs'">
           <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
         </select>
+        <!-- ONE slot, two states. Until the user's own terminal has the observer MCP, that IS the next
+             step, so it takes the slot instead of hiding in the info dialog; once set up it becomes
+             Chat to Claude. With no `claude` on PATH we always show Chat (the prompt suits any MCP
+             assistant). See utils/observerSetup.ts terminalCta. -->
+        <button v-if="terminalCtaMode !== 'chat'" class="ll-capture" :disabled="observer.registering"
+                @click="observer.registerMcp()"
+                v-tooltip.top="terminalCtaMode === 'resync'
+                  ? 'Your terminal\'s cecelia-observer points somewhere else — re-register it'
+                  : 'Register cecelia-observer in Claude Code so you can chat in a terminal'">
+          <i class="pi pi-download" />
+          {{ observer.registering ? 'Setting up…'
+             : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
+        </button>
         <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
              one-shot. Copies a starter prompt; no `claude` install needed. -->
-        <button class="ll-capture" :class="{ copied: chatCopied }" :disabled="!projectUid" @click="chatToClaude"
-                v-tooltip.top="chatCopied ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
+        <button v-else class="ll-capture" :class="{ copied: chatCopied() }" :disabled="!projectUid" @click="chatToClaude"
+                v-tooltip.top="chatCopied() ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
                   : 'Copy a starter prompt for a full chat in Claude Code'">
-          <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
+          <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" /> {{ chatCopied() ? 'Copied' : 'Chat to Claude' }}
         </button>
         <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"
               v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>

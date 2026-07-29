@@ -8,6 +8,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
+import { useCopyFlash } from '../composables/useCopyFlash'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -19,7 +20,8 @@ const loading = ref(true)
 const error   = ref<string | null>(null)
 const data    = ref<PkgResp | null>(null)
 const q       = ref('')
-const copied  = ref(false)
+// shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+const { isCopied: copied, copy } = useCopyFlash()
 
 async function load() {
   loading.value = true; error.value = null
@@ -49,9 +51,7 @@ function copyAll() {
     '# Julia',
     ...d.julia.map(p => `${p.name}\t${p.version}`),
   ]
-  navigator.clipboard.writeText(lines.join('\n'))
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 1500)
+  copy(lines.join('\n'))
 }
 </script>
 
@@ -65,7 +65,7 @@ function copyAll() {
         </span>
         <button class="mini-btn" :disabled="!data" @click="copyAll"
           v-tooltip.bottom="'Copy the full list as text (for bug reports)'">
-          <i :class="['pi', copied ? 'pi-check' : 'pi-copy']" /> {{ copied ? 'Copied' : 'Copy' }}
+          <i :class="['pi', copied() ? 'pi-check' : 'pi-copy']" /> {{ copied() ? 'Copied' : 'Copy' }}
         </button>
       </div>
     </template>

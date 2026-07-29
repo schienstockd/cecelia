@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
+import { useCopyFlash } from '../composables/useCopyFlash'
 
 const props = defineProps<{ allowManage?: boolean }>()
 
@@ -13,24 +14,8 @@ const log         = useLogStore()
 const newSetName    = ref('')
 const showNewInput  = ref(false)
 const confirmDelete = ref(false)
-const copiedSetUid  = ref(false)
-
-async function copySetUid(uid: string) {
-  try {
-    await navigator.clipboard.writeText(uid)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = uid
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
-  copiedSetUid.value = true
-  setTimeout(() => { copiedSetUid.value = false }, 1200)
-}
+// Copy set UID — shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+const { isCopied: copiedSetUid, copy: copySetUid } = useCopyFlash()
 const creating      = ref(false)
 
 const activeSet = computed(() => project.activeSet())
@@ -109,8 +94,8 @@ async function deleteSet() {
       <template v-if="activeSet">
         <span class="set-uid cc-muted cc-fs-xs">{{ activeSet.uid }}</span>
         <button class="set-uid-copy cc-btn cc-btn-bare cc-btn-icon" @click="copySetUid(activeSet.uid)"
-          v-tooltip.bottom="copiedSetUid ? 'Copied!' : 'Copy set UID to clipboard'">
-          <i :class="copiedSetUid ? 'pi pi-check' : 'pi pi-copy'" />
+          v-tooltip.bottom="copiedSetUid() ? 'Copied!' : 'Copy set UID to clipboard'">
+          <i :class="copiedSetUid() ? 'pi pi-check' : 'pi pi-copy'" />
         </button>
       </template>
     </div>

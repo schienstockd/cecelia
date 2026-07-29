@@ -102,6 +102,16 @@ rather than a project being silently mutated. `test_client.py` asserts those two
 
 ### Wire into Claude Code
 
+**You don't have to do this by hand.** The lab-log panel's info dialog has a **Set up my terminal**
+button: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
+with the spec below already resolved (python bin, `PYTHONPATH`, API port), so plain `claude` gets the
+tools in every session. It removes-then-adds, so it's also the re-sync after a move/reinstall. The
+config file it uses for the *in-app* agent is `<config_dir>/observer-mcp.json`
+(`api/src/observer_api.jl` → `_write_observer_mcp_config`), which also works as
+`claude --mcp-config <path>` for a single session. See
+[`../docs/ai-assist/OBSERVER-SETUP.md`](../docs/ai-assist/OBSERVER-SETUP.md). The manual route below is
+for when you'd rather edit the config yourself.
+
 Add to your Claude Code MCP config (adjust the absolute path to this checkout):
 
 ```json

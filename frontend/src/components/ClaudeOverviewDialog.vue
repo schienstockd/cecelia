@@ -5,12 +5,30 @@
   (testable, one place to edit). Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
 -->
 <script setup lang="ts">
+import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import {
   CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
+  CLAUDE_TERMINAL, claudeChatCommand,
 } from '../lib/claudeOverview'
+import { useObserverStore } from '../stores/observer'
+import { useCopyFlash } from '../composables/useCopyFlash'
+import { terminalCta } from '../utils/observerSetup'
 
 defineEmits<{ (e: 'close'): void }>()
+
+// Terminal setup is ONE CLICK: the backend registers the observer MCP in the user's Claude Code
+// config, so plain `claude` picks it up. Nothing to copy — a mistyped path is the failure mode we're
+// designing out. The `--mcp-config` line only appears if that fails, and only with the real path.
+// The primary entry point for this is the lab-log toolbar (it replaces Chat to Claude until set up);
+// the same control is repeated here because this dialog is where people come to understand the flow.
+const observer = useObserverStore()
+const fallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
+const ctaMode = computed(() => terminalCta(observer.available, observer.terminalState))
+
+// copy-to-clipboard for the fallback line — shared helper (docs/UI.md → UX-primitive catalog)
+const { isCopied: copied, copy } = useCopyFlash()
+const copyCommand = () => copy(fallbackCommand.value)
 </script>
 
 <template>
@@ -24,6 +42,37 @@ defineEmits<{ (e: 'close'): void }>()
           <li v-for="(s, i) in e.steps" :key="i">{{ s }}</li>
         </ol>
       </div>
+    </div>
+
+    <!-- terminal hand-off: one click, Cecelia registers the MCP for the user's own claude -->
+    <div class="co-terminal">
+      <p class="co-terminal-note cc-muted cc-fs-md">{{ CLAUDE_TERMINAL.note }}</p>
+      <div class="co-terminal-row">
+        <button v-if="ctaMode !== 'chat'" class="cc-btn cc-btn-primary" :disabled="observer.registering"
+                @click="observer.registerMcp()">
+          <i class="pi pi-download" />
+          {{ observer.registering ? CLAUDE_TERMINAL.busy
+             : ctaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
+        </button>
+        <span v-else class="co-terminal-done cc-fs-sm">
+          <i class="pi pi-check" /> {{ CLAUDE_TERMINAL.done }}
+        </span>
+      </div>
+      <p v-if="ctaMode === 'resync'" class="co-terminal-err cc-fs-sm">{{ CLAUDE_TERMINAL.staleWhy }}</p>
+      <!-- failure fallback: the real resolved command, never a placeholder -->
+      <template v-if="observer.registerError">
+        <p class="co-terminal-err cc-fs-sm">{{ observer.registerError }}</p>
+        <template v-if="fallbackCommand">
+          <p class="co-terminal-note cc-muted cc-fs-sm">{{ CLAUDE_TERMINAL.failedPrefix }}</p>
+          <div class="co-cmd">
+            <code class="co-cmd-text">{{ fallbackCommand }}</code>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyCommand"
+              v-tooltip.left="copied() ? 'Copied!' : 'Copy command'">
+              <i :class="copied() ? 'pi pi-check' : 'pi pi-copy'" />
+            </button>
+          </div>
+        </template>
+      </template>
     </div>
 
     <!-- capability grid: sees / suggests / creates / can't -->
@@ -54,6 +103,21 @@ defineEmits<{ (e: 'close'): void }>()
 .co-entry-head .pi { color: var(--cc-accent); }
 .co-entry-what { margin: 8px 0 10px; line-height: 1.4; }
 .co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
+
+.co-terminal { margin-bottom: 18px; }
+.co-terminal-note { margin: 0 0 6px; line-height: 1.4; }
+.co-terminal-row { display: flex; align-items: center; gap: 10px; }
+.co-terminal-done { color: var(--cc-sev-ok); display: inline-flex; align-items: center; gap: 4px; }
+.co-terminal-err { margin: 8px 0 4px; color: var(--cc-sev-warn); }
+.co-cmd {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--cc-surface-2); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-md); padding: 6px 6px 6px 10px;
+}
+.co-cmd-text {
+  flex: 1; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
+  color: var(--cc-text); overflow-x: auto; white-space: nowrap;
+}
 
 .co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .co-cell { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg); padding: 12px 14px; }

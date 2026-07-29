@@ -15,6 +15,13 @@ export const useObserverStore = defineStore('observer', () => {
 
   const available = ref(false)
   const models = ref<string[]>(['haiku', 'sonnet', 'opus'])
+  // Path of the MCP config Cecelia generates for the spawned agent — reused verbatim as the
+  // `claude --mcp-config <path>` line the info panel offers if one-click setup fails.
+  const mcpConfigPath = ref('')
+  // Is the user's OWN terminal set up? 'missing' | 'stale' | 'current', read from Claude Code's config
+  // by the backend. Drives which button the lab-log toolbar shows (setup vs Chat to Claude), so it must
+  // come from the real config — never from optimistic local state after a click.
+  const terminalState = ref('')
   const session = ref<ObserverSession | null>(null)
   const busy = ref(false)
   const appendTick = ref(0)              // bumped when a pass appends → the open panel reloads entries
@@ -25,6 +32,8 @@ export const useObserverStore = defineStore('observer', () => {
     const s = await observerApi.status(projectUid() || undefined)
     available.value = s.available
     if (s.models?.length) models.value = s.models
+    if (s.mcpConfigPath) mcpConfigPath.value = s.mcpConfigPath
+    terminalState.value = s.terminal?.state ?? ''
     session.value = s.session ?? null
   }
 
@@ -57,5 +66,27 @@ export const useObserverStore = defineStore('observer', () => {
     session.value = res?.session ?? null
   }
 
-  return { available, models, session, busy, appendTick, refresh, runPass, clear }
+  // One-click terminal setup (the lab-log toolbar's button until it's done): register the observer MCP
+  // in the user's own Claude Code config so plain `claude` has the tools. Idempotent — clicking it again
+  // re-syncs a stale entry. Detection is a config-file read on the backend (see _observer_terminal_state);
+  // we deliberately never shell out to `claude mcp list`, which health-checks every server.
+  const registering = ref(false)
+  const registerError = ref('')
+  async function registerMcp() {
+    if (registering.value) return
+    registering.value = true
+    registerError.value = ''
+    try {
+      const res = await observerApi.register()
+      // Trust the config read-back, not the exit code: `terminalState` is what the UI branches on.
+      terminalState.value = res?.terminal?.state ?? terminalState.value
+      if (res?.ok !== true) registerError.value = String(res?.error || 'Setup failed')
+    } catch {
+      registerError.value = 'Setup failed — is Cecelia still running?'
+    } finally { registering.value = false }
+  }
+
+  return { available, models, mcpConfigPath, terminalState, session, busy, appendTick,
+           registering, registerError,
+           refresh, runPass, clear, registerMcp }
 })

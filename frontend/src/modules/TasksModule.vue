@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import TeleportPopover from '../components/TeleportPopover.vue'
@@ -21,7 +22,8 @@ const throttleOpen = ref(false)
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
 const logEl        = ref<HTMLElement | null>(null)
-const copied       = ref(false)
+// shared copy+flash helper (docs/UI.md → UX-primitive catalog)
+const { isCopied: copied, copy } = useCopyFlash()
 
 const selected = computed(() => tasks.tasks.find(t => t.id === selectedId.value) ?? null)
 
@@ -86,9 +88,7 @@ const canRerun = (t: TaskEntry) =>
 
 async function copyLog() {
   if (!selected.value?.log.length) return
-  await navigator.clipboard.writeText(selected.value.log.join('\n'))
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 1500)
+  await copy(selected.value.log.join('\n'))
 }
 
 function elapsed(t: TaskEntry) {
@@ -207,8 +207,8 @@ const FILTERS: ChipOption[] = [
             </div>
             <span v-if="elapsed(selected)" class="log-elapsed cc-muted cc-fs-xs">{{ elapsed(selected) }}</span>
             <div class="log-actions">
-              <button class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog" v-tooltip.left="copied ? 'Copied!' : 'Copy log'">
-                <i :class="['pi', copied ? 'pi-check' : 'pi-copy']" />
+              <button class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog" v-tooltip.left="copied() ? 'Copied!' : 'Copy log'">
+                <i :class="['pi', copied() ? 'pi-check' : 'pi-copy']" />
               </button>
               <button v-if="selected.status === 'running' || selected.status === 'queued'"
                 class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(selected)"

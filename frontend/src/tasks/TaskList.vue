@@ -6,6 +6,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 
@@ -16,7 +17,8 @@ const router      = useRouter()
 const projectMeta = useProjectMetaStore()
 
 const expanded  = ref<Set<string>>(new Set())
-const copied    = ref<Set<string>>(new Set())
+// shared copy+flash helper, keyed per task row (docs/UI.md → UX-primitive catalog)
+const { isCopied, copy } = useCopyFlash()
 
 // Scoped to the current project — otherwise switching projects leaves the previous project's
 // (e.g. cancelled) tasks visible in this module's list.
@@ -67,11 +69,7 @@ function jumpToTask(t: TaskEntry) {
 
 async function copyLog(t: TaskEntry) {
   if (!t.log.length) return
-  await navigator.clipboard.writeText(t.log.join('\n'))
-  copied.value = new Set([...copied.value, t.id])
-  setTimeout(() => {
-    copied.value = new Set([...copied.value].filter(id => id !== t.id))
-  }, 1500)
+  await copy(t.log.join('\n'), t.id)     // keyed flash — one row at a time
 }
 
 function elapsed(t: TaskEntry) {
@@ -152,9 +150,9 @@ function elapsed(t: TaskEntry) {
             v-if="t.log.length"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="copyLog(t)"
-            v-tooltip.left="copied.has(t.id) ? 'Copied!' : 'Copy log to clipboard'"
+            v-tooltip.left="isCopied(t.id) ? 'Copied!' : 'Copy log to clipboard'"
           >
-            <i :class="['pi', copied.has(t.id) ? 'pi-check' : 'pi-copy']" />
+            <i :class="['pi', isCopied(t.id) ? 'pi-check' : 'pi-copy']" />
           </button>
 
           <button

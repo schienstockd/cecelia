@@ -377,6 +377,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_observer_feedback(body_bytes)
         elseif path == "/api/observer/clear"
             api_observer_clear(body_bytes)
+        elseif path == "/api/observer/register"
+            api_observer_register(body_bytes)
         elseif path == "/api/lablog/dismiss"
             api_lablog_dismiss(body_bytes)
         elseif path == "/api/images/meta/resync"

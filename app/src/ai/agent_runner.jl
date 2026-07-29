@@ -46,16 +46,26 @@ end
 agent_available(a::AgentBackend)::Bool = !isnothing(Sys.which(_agent_bin(a)))
 _agent_bin(a::ClaudeAgent)::String = a.bin
 
-# The MCP config the spawned agent loads — points at the SAME `cecelia_mcp.server`, talking back to
-# this API. `mcp_dir` is repo-root/mcp (on PYTHONPATH); `api_url` is this server. Reuses mcp/ unchanged.
+# The MCP server's name — one literal, used by the config, the `--allowedTools` filter, and the
+# register/remove commands. Renaming it in one place must rename it everywhere.
+const OBSERVER_MCP_NAME = "cecelia-observer"
+
+# The server SPEC (one entry) — points at the SAME `cecelia_mcp.server`, talking back to this API.
+# `mcp_dir` is repo-root/mcp (on PYTHONPATH); `api_url` is this server. Reuses mcp/ unchanged. Split
+# out from the wrapper below because `claude mcp add-json <name> <json>` takes exactly this object.
+function observer_mcp_spec(mcp_dir::AbstractString, python_bin::AbstractString,
+                           api_url::AbstractString)::Dict{String,Any}
+    Dict{String,Any}("command" => String(python_bin),
+                     "args"    => ["-m", "cecelia_mcp.server"],
+                     "env"     => Dict{String,Any}("PYTHONPATH" => String(mcp_dir),
+                                                   "CECELIA_API_URL" => String(api_url)))
+end
+
+# The `--mcp-config` file shape (`{mcpServers: {<name>: <spec>}}`) — what the spawned agent loads.
 function observer_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString,
                              api_url::AbstractString)::Dict{String,Any}
     Dict{String,Any}("mcpServers" => Dict{String,Any}(
-        "cecelia-observer" => Dict{String,Any}(
-            "command" => String(python_bin),
-            "args"    => ["-m", "cecelia_mcp.server"],
-            "env"     => Dict{String,Any}("PYTHONPATH" => String(mcp_dir),
-                                          "CECELIA_API_URL" => String(api_url)))))
+        OBSERVER_MCP_NAME => observer_mcp_spec(mcp_dir, python_bin, api_url)))
 end
 
 # Build the `claude -p` command. PURE given its inputs → unit-tested without spawning anything.
@@ -66,11 +76,112 @@ function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_pa
     args = String[a.bin, "-p", String(prompt),
                   "--output-format", "json",
                   "--mcp-config", String(mcp_config_path),
-                  "--allowedTools", "mcp__cecelia-observer"]
+                  "--allowedTools", "mcp__" * OBSERVER_MCP_NAME]
     isempty(system_prompt) || append!(args, ["--append-system-prompt", String(system_prompt)])
     isempty(session_id)    || append!(args, ["--resume", String(session_id)])
     isempty(a.model)       || append!(args, ["--model", a.model])
     Cmd(args)
+end
+
+# ── One-click terminal setup ──────────────────────────────────────────────────────────────────────
+#
+# The in-app buttons need no setup (Cecelia passes `--mcp-config` to the spawned agent). A session the
+# USER starts in their own terminal does — and asking a biologist to paste a path-bearing command is
+# how support tickets happen. So Cecelia registers the server for them: `claude mcp add-json <name>
+# <spec> -s user`, after which plain `claude` has the observer tools in every session.
+#
+# `add-json` is NOT idempotent — a second add prints "already exists" and fails — so registering is
+# always remove-then-add. That also makes it a RE-SYNC: the paths/port in the spec are re-resolved
+# every time, so clicking it again after a move/reinstall fixes a stale entry.
+# Both builders are PURE → unit-tested without spawning anything.
+_build_mcp_register_cmd(a::ClaudeAgent, spec_json::AbstractString; scope::AbstractString = "user")::Cmd =
+    Cmd(String[a.bin, "mcp", "add-json", OBSERVER_MCP_NAME, String(spec_json), "-s", String(scope)])
+_build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user")::Cmd =
+    Cmd(String[a.bin, "mcp", "remove", OBSERVER_MCP_NAME, "-s", String(scope)])
+
+# ── Is the user's terminal already set up? ─────────────────────────────────────────────────────────
+#
+# The lab-log panel offers "Set up my terminal" INSTEAD of "Chat to Claude" until this says yes, so the
+# setup isn't buried in an info dialog. Detection reads Claude Code's config file rather than shelling
+# out: `claude mcp get/list` health-check every server (spawning our own Python MCP process) which would
+# make opening the panel slow for a question we ask on every refresh.
+#
+# User-scope servers live at the top level of `~/.claude.json` as `mcpServers[<name>]`
+# (`projects[<dir>].mcpServers` is the per-directory `local` scope — deliberately ignored: our button
+# writes `-s user`, which works from any directory).
+claude_config_path()::String =
+    (d = get(ENV, "CLAUDE_CONFIG_DIR", ""); isempty(d) ? joinpath(homedir(), ".claude.json") :
+                                                         joinpath(d, ".claude.json"))
+
+# The registered spec, or `nothing`. Tolerant: an unreadable/!JSON config just means "not set up"
+# (it's another tool's file — never error the status route over its shape).
+function read_registered_observer_spec(path::AbstractString = claude_config_path())
+    isfile(path) || return nothing
+    cfg = try
+        JSON3.read(read(path, String))
+    catch
+        return nothing
+    end
+    cfg isa AbstractDict || return nothing
+    servers = get(cfg, :mcpServers, nothing)
+    servers isa AbstractDict || return nothing
+    get(servers, Symbol(OBSERVER_MCP_NAME), nothing)
+end
+
+# Compare what's registered against what this install needs. PURE → unit-tested.
+#   :missing — nothing registered; offer setup
+#   :stale   — registered, but pointing at a different interpreter / mcp dir / API port. It would
+#              connect to the wrong place or fail outright, so it needs the same one-click re-sync as
+#              :missing (a stale entry fails SILENTLY in the user's terminal — the worst outcome).
+#   :current — good to go
+function observer_registration_state(registered, want::AbstractDict)::Symbol
+    registered === nothing && return :missing
+    registered isa AbstractDict || return :stale
+    _s(x) = x === nothing ? "" : string(x)
+    _s(get(registered, :command, nothing)) == _s(want["command"]) || return :stale
+    args = get(registered, :args, nothing)
+    (args !== nothing && collect(String.(args)) == String.(want["args"])) || return :stale
+    renv = get(registered, :env, nothing)
+    renv isa AbstractDict || return :stale
+    for (k, v) in want["env"]
+        _s(get(renv, Symbol(k), nothing)) == _s(v) || return :stale
+    end
+    :current
+end
+
+# Convenience for the API layer: the state of the live config against the spec we'd register.
+observer_registration_state(want::AbstractDict) =
+    observer_registration_state(read_registered_observer_spec(), want)
+
+# Register (or re-sync) the observer MCP in the user's Claude Code config. Returns
+# `(ok, message)` — `message` is the CLI's own output, shown verbatim in the UI on failure so a
+# problem is never silent. The remove is best-effort: "not found" on a first run is the normal case.
+# LIVE path (spawns the CLI) — the pure builders above are the tested surface.
+function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
+                               scope::AbstractString = "user", timeout_s::Int = 30)
+    agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
+    try
+        run(pipeline(_build_mcp_remove_cmd(a; scope), stdout = devnull, stderr = devnull); wait = true)
+    catch
+        # nothing registered yet (or a different scope) — that's the expected first-run path
+    end
+    # Same spawn idiom as _run_observer_once: pipe + timeout timer, and check termsignal too (libuv
+    # reports exitcode 0 for signal-kills).
+    out = Pipe()
+    local output = ""
+    ok = try
+        proc = run(pipeline(_build_mcp_register_cmd(a, spec_json; scope); stdout = out, stderr = out);
+                   wait = false)
+        close(out.in)
+        timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
+        output = read(out, String)
+        wait(proc)
+        close(timer)
+        proc.exitcode == 0 && proc.termsignal == 0
+    catch e
+        output = sprint(showerror, e); false
+    end
+    (ok, strip(output))
 end
 
 # A stored session id goes stale when Claude Code prunes/expires it (its own log rotation, or a

@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
@@ -85,9 +86,11 @@ async function saveName() {
   }
 }
 
+// Project ID copy — shared helper, so it flashes like every other copy button (it previously had no
+// confirmation at all) and keeps working when the Clipboard API is unavailable.
+const { isCopied: uidCopied, copy } = useCopyFlash()
 function copyUid() {
-  if (projectMeta.current?.uid)
-    navigator.clipboard.writeText(projectMeta.current.uid)
+  if (projectMeta.current?.uid) copy(projectMeta.current.uid)
 }
 
 // ── Software updates ───────────────────────────────────────────────────────
@@ -334,8 +337,9 @@ async function switchWt(path: string) {
             <div class="field-row">
               <input class="field-input mono" :value="projectMeta.current.uid" readonly
                      v-tooltip.bottom="'Read-only unique identifier used internally.'" />
-              <button class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="copyUid" v-tooltip.left="'Copy project ID'">
-                <i class="pi pi-copy" />
+              <button class="icon-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="copyUid"
+                v-tooltip.left="uidCopied() ? 'Copied!' : 'Copy project ID'">
+                <i :class="['pi', uidCopied() ? 'pi-check' : 'pi-copy']" />
               </button>
             </div>
           </div>

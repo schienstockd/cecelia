@@ -50,11 +50,15 @@ export interface ObserverSession {
   passes?: ObserverPass[]  // activity log, newest-first
 }
 
+/** Is the user's OWN terminal set up with the observer MCP? `state`: 'missing' (never registered),
+ *  'stale' (registered but pointing at another interpreter/port — would fail silently), 'current'. */
+export interface ObserverTerminal { state: 'missing' | 'stale' | 'current'; ready: boolean }
+
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
 export const observerApi = {
   /** Availability (drives the disabled-with-why UI) + this project's session/usage when a uid is
    *  given. Never throws → unavailable on error. */
-  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; prompt?: string; session?: ObserverSession }> => {
+  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; prompt?: string; mcpConfigPath?: string; terminal?: ObserverTerminal; session?: ObserverSession }> => {
     try {
       const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
       const res = await fetch(`/api/observer/status${q}`)
@@ -69,4 +73,7 @@ export const observerApi = {
     svcPost('/api/observer/feedback', { projectUid, model, trigger }),
   /** Clear context: reset the project's session + token totals. Returns { ok, session }. */
   clear: (projectUid: string) => svcPost('/api/observer/clear', { projectUid }),
+  /** One-click terminal setup: register (or re-sync) the observer MCP in the user's own Claude Code
+   *  config so plain `claude` has the tools. Idempotent. Returns { ok, available, name, message, error }. */
+  register: () => svcPost('/api/observer/register', {}),
 }

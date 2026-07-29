@@ -59,6 +59,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
 | Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
+| Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |

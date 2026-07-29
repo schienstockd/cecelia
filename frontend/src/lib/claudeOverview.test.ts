@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
+  CLAUDE_TERMINAL, claudeChatCommand,
 } from './claudeOverview'
 
 describe('claudeOverview content model', () => {
@@ -24,5 +25,20 @@ describe('claudeOverview content model', () => {
   it('offers example prompts spanning QC → notebook', () => {
     expect(CLAUDE_EXAMPLES.length).toBeGreaterThanOrEqual(3)
     expect(CLAUDE_EXAMPLES.join(' ')).toMatch(/notebook/i)
+  })
+
+  it('builds the fallback command from the REAL config path, or nothing at all', () => {
+    expect(claudeChatCommand('/home/u/.cecelia/observer-mcp.json'))
+      .toBe('claude --mcp-config /home/u/.cecelia/observer-mcp.json')
+    // No path yet → empty, so the dialog renders nothing. A placeholder here would be a command a
+    // user copies verbatim into a terminal and gets an error from — the exact failure to design out.
+    expect(claudeChatCommand('')).toBe('')
+  })
+
+  it('offers one-click terminal setup, not an instruction to register anything', () => {
+    expect(CLAUDE_TERMINAL.note).toMatch(/no setup/i)
+    expect(CLAUDE_TERMINAL.action.length).toBeLessThan(30)      // a button label, not a sentence
+    expect(CLAUDE_TERMINAL.done).toMatch(/claude/)             // tells them what to type next
+    for (const s of Object.values(CLAUDE_TERMINAL)) expect(s.length).toBeLessThan(140)
   })
 })
