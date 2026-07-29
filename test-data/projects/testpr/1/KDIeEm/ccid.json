@@ -1,0 +1,33 @@
+{
+    "class": "CciaImage",
+    "uid": "KDIeEm",
+    "name": "test-fixture-kdieem",
+    "kind": "static",
+    "status": "done",
+    "filepath": {
+        "default": "ccidImage.ome.zarr",
+        "_active": "default"
+    },
+    "labels": {
+        "B": [
+            "B.zarr"
+        ]
+    },
+    "label_props": {
+        "B": "B.h5ad",
+        "_active": "B"
+    },
+    "imChannelNames": {
+        "default": [
+            "ch0",
+            "ch1",
+            "ch2",
+            "ch3"
+        ],
+        "_active": "default"
+    },
+    "attr": {},
+    "meta": {
+        "SizeC": "4"
+    }
+}
