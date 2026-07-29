@@ -293,6 +293,63 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test srv["args"] == ["-m", "cecelia_mcp.server"]
         @test srv["env"]["PYTHONPATH"] == "/repo/mcp"
         @test srv["env"]["CECELIA_API_URL"] == "http://127.0.0.1:8080"
+        # the wrapper is built FROM the spec — one source of truth for both the --mcp-config file and
+        # `claude mcp add-json` (which takes the bare spec)
+        @test srv == Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
+
+        # one-click terminal setup: add-json is not idempotent, so registering is remove-then-add at
+        # user scope, and both commands must name the SAME server as the config/--allowedTools filter
+        reg = Cecelia._build_mcp_register_cmd(a, "{\"command\":\"/env/python\"}")
+        @test reg.exec == [a.bin, "mcp", "add-json", Cecelia.OBSERVER_MCP_NAME,
+                           "{\"command\":\"/env/python\"}", "-s", "user"]
+        rm_cmd = Cecelia._build_mcp_remove_cmd(a)
+        @test rm_cmd.exec == [a.bin, "mcp", "remove", Cecelia.OBSERVER_MCP_NAME, "-s", "user"]
+        @test Cecelia._build_mcp_register_cmd(a, "{}"; scope = "local").exec[end] == "local"
+        # the restore path uses the SAME add command, so a prior entry can be put back verbatim
+        @test Cecelia._build_mcp_register_cmd(a, "{\"command\":\"/old/python\"}").exec[5] ==
+              "{\"command\":\"/old/python\"}"
+        @test Cecelia.OBSERVER_MCP_NAME == "cecelia-observer"   # the name users see in `claude mcp list`
+
+        # Is the user's own terminal set up? Drives which button the lab-log toolbar shows, so the
+        # three states must be exact. A stale entry (another checkout's python, or no/!matching
+        # CECELIA_API_URL) is NOT "set up" — it fails silently in the user's session.
+        want = Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
+        @test Cecelia.observer_registration_state(nothing, want) === :missing
+        registered = JSON3.read(JSON3.write(merge(want, Dict("type" => "stdio"))))  # as Claude stores it
+        @test Cecelia.observer_registration_state(registered, want) === :current    # extra keys are fine
+        other_py = JSON3.read(JSON3.write(Cecelia.observer_mcp_spec("/repo/mcp", "/OTHER/python",
+                                                                   "http://127.0.0.1:8080")))
+        @test Cecelia.observer_registration_state(other_py, want) === :stale        # moved checkout
+        other_port = JSON3.read(JSON3.write(Cecelia.observer_mcp_spec("/repo/mcp", "/env/python",
+                                                                     "http://127.0.0.1:9999")))
+        @test Cecelia.observer_registration_state(other_port, want) === :stale      # different port
+        # the real-world case that bit an early manual registration: PYTHONPATH set, CECELIA_API_URL absent
+        no_url = JSON3.read(JSON3.write(Dict("command" => "/env/python", "args" => ["-m", "cecelia_mcp.server"],
+                                             "env" => Dict("PYTHONPATH" => "/repo/mcp"))))
+        @test Cecelia.observer_registration_state(no_url, want) === :stale
+        @test Cecelia.observer_registration_state(Dict{String,Any}("command" => "/env/python"), want) === :stale
+
+        # config path honours Claude Code's own env override; missing file → not set up, never an error
+        withenv("CLAUDE_CONFIG_DIR" => "/tmp/cc-cfg") do
+            @test Cecelia.claude_config_path() == joinpath("/tmp/cc-cfg", ".claude.json")
+        end
+        withenv("CLAUDE_CONFIG_DIR" => nothing) do
+            @test Cecelia.claude_config_path() == joinpath(homedir(), ".claude.json")
+        end
+        @test Cecelia.read_registered_observer_spec(joinpath(mktempdir(), "nope.json")) === nothing
+        let bad = joinpath(mktempdir(), "bad.json")
+            write(bad, "not json at all")
+            @test Cecelia.read_registered_observer_spec(bad) === nothing     # another tool's file — tolerate
+        end
+        let cfgf = joinpath(mktempdir(), ".claude.json")
+            write(cfgf, JSON3.write(Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))
+            @test Cecelia.observer_registration_state(
+                Cecelia.read_registered_observer_spec(cfgf), want) === :current
+            # per-directory `local` scope is deliberately NOT counted — our button registers user scope
+            write(cfgf, JSON3.write(Dict("projects" => Dict("/somewhere" =>
+                Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))))
+            @test Cecelia.read_registered_observer_spec(cfgf) === nothing
+        end
 
         # the prompt carries the project + the discipline rules
         fp = Cecelia.observer_feedback_prompt("NRUBxU")

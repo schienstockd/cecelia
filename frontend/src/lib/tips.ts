@@ -10,7 +10,8 @@
 import type { WhatNewCard } from './whatsNew'
 
 // First entry is the welcome card (kind 'about') — brief intro to cecelia; the rest are tips in
-// pipeline-arc order (segmentation is the entry point; analysis features read from it).
+// pipeline-arc order (segmentation is the entry point; analysis features read from it), with the
+// assist surfaces (Claude/MCP) last.
 export const TIPS: WhatNewCard[] = [
   {
     id: 'about-cecelia',
@@ -73,7 +74,7 @@ export const TIPS: WhatNewCard[] = [
     title: 'Populations form a tree',
     description: 'A gate is applied INSIDE its parent population — so populations form a tree (root/CD4+/effector). Any child pop can itself be gated further; the address is the "/-separated" path.',
     steps: [
-      'Pick the parent population in the Population Manager.',
+      'Select the parent population in the Population Manager.',
       'Draw the next gate — it operates on that parent only.',
       'The new pop appears indented beneath its parent.',
     ],
@@ -86,7 +87,7 @@ export const TIPS: WhatNewCard[] = [
     description: 'Leiden clusters aren\'t populations by default — but you can promote any cluster (or a set of them) into a named population that behaves like any other.',
     steps: [
       'Run Cluster cells (or Cluster tracks).',
-      'Open the Cluster panel, pick clusters that share a phenotype.',
+      'Open the Cluster panel, select clusters that share a phenotype.',
       'Save as population — the new pop appears in the manager.',
     ],
     sketchAnimation: { id: 'clusters' },
@@ -95,7 +96,7 @@ export const TIPS: WhatNewCard[] = [
     id: 'tip-region-clustering',
     kind: 'tip',
     title: 'Region clustering',
-    description: 'Cluster cells by their SPATIAL NEIGHBOURHOOD rather than by their own phenotype. Each region shares a local cell-mix; cells keep their own type but pick up a region label — great for CytoMAP-style tissue-architecture summaries.',
+    description: 'Cluster cells by their SPATIAL NEIGHBOURHOOD rather than by their own phenotype. Each region shares a local cell-mix; cells keep their own type and gain a region label — great for CytoMAP-style tissue-architecture summaries.',
     steps: [
       'Segment + phenotype your cells (gate or cluster them).',
       'Run Spatial → Region clustering.',
@@ -119,10 +120,10 @@ export const TIPS: WhatNewCard[] = [
     id: 'tip-stats-on-plots',
     kind: 'tip',
     title: 'Stats on plots',
-    description: 'Turn on Stats in the plot options — the server picks the right between-group test (Mann-Whitney / Kruskal-Wallis by default), Bonferroni-adjusts pairwise, and draws brackets + stars on the chart. Compact letters for many groups.',
+    description: 'Turn on Stats in the plot options — the server selects the right between-group test (Mann-Whitney / Kruskal-Wallis by default), Bonferroni-adjusts pairwise, and draws brackets + stars on the chart. Compact letters for many groups.',
     steps: [
       'Open the Population Manager\'s Stats panel.',
-      'Enable "Compare groups"; pick a test or leave auto.',
+      'Enable "Compare groups"; select a test or leave auto.',
       'Brackets + stars land on the summary plot in place.',
     ],
     sketchAnimation: { id: 'stats' },
@@ -162,6 +163,18 @@ export const TIPS: WhatNewCard[] = [
       'Open the image in napari; tracks show as polylines coloured by state.',
     ],
     sketchAnimation: { id: 'napari_tracks' },
+  },
+  {
+    id: 'tip-claude-mcp',
+    kind: 'tip',
+    title: 'Claude Code can read your project',
+    description: 'The cecelia-observer MCP server gives a Claude Code session read-only access to this project — images, QC, cohort outliers, lineage, populations, behaviour, clusters. It points out what looks off and names the knob worth trying; you make the change and run it. Ask, and it notes the decision in the lab log or builds you a Pluto notebook.',
+    steps: [
+      'Lab log → info (i) → Set up my terminal (once).',
+      'Run claude in a terminal.',
+      'Click Chat to Claude, paste the prompt in, ask away.',
+    ],
+    sketchAnimation: { id: 'claude_mcp' },
   },
 ]
 

@@ -6,9 +6,10 @@
   (PhysicalSizeDialog, Metadata page) — this one only shows.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
+import { useCopyFlash } from '../composables/useCopyFlash'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -41,15 +42,9 @@ const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 
-// copy-to-clipboard for path-like values (mirrors ImageTable's copy-UID affordance)
-const copied = ref<string | null>(null)
-async function copy(key: string, value: string) {
-  try {
-    await navigator.clipboard.writeText(value)
-    copied.value = key
-    setTimeout(() => { if (copied.value === key) copied.value = null }, 1200)
-  } catch { /* clipboard blocked — no-op, the text is still visible */ }
-}
+// copy-to-clipboard for path-like values — shared helper, keyed per field
+const { isCopied, copy: copyValue } = useCopyFlash()
+const copy = (key: string, value: string) => copyValue(value, key)
 </script>
 
 <template>
@@ -67,8 +62,8 @@ async function copy(key: string, value: string) {
         <div v-if="img.oriPath" class="md-path">
           <code class="md-code">{{ img.oriPath }}</code>
           <button class="md-copy cc-btn cc-btn-bare cc-btn-icon" @click="copy('ori', img.oriPath!)"
-            v-tooltip.left="copied === 'ori' ? 'Copied!' : 'Copy path'">
-            <i :class="copied === 'ori' ? 'pi pi-check' : 'pi pi-copy'" />
+            v-tooltip.left="isCopied('ori') ? 'Copied!' : 'Copy path'">
+            <i :class="isCopied('ori') ? 'pi pi-check' : 'pi pi-copy'" />
           </button>
         </div>
         <p v-else class="md-none cc-muted">Not recorded — imported before source paths were tracked, or created in-app.</p>

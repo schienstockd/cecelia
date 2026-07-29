@@ -898,6 +898,18 @@ end
         # the picker's choices + shipped default are exposed so the panel can populate the dropdown
         @test Set(String.(s.models)) == Set(["haiku", "sonnet", "opus"])
         @test String(s.defaultModel) in Set(["haiku", "sonnet", "opus"])
+        # the MCP config is written on STATUS (not only on a feedback run) so the info panel can always
+        # offer `claude --mcp-config <path>` — the user never hand-registers an MCP server
+        @test isfile(String(s.mcpConfigPath))
+        let cfg = JSON3.read(read(String(s.mcpConfigPath), String))
+            @test haskey(cfg.mcpServers, Symbol("cecelia-observer"))
+        end
+        # terminal-setup detection: which button the lab-log toolbar shows (setup vs Chat to Claude).
+        # Don't assert WHICH state — it depends on the dev machine's ~/.claude.json — but `ready` must
+        # mean exactly "current", since the UI treats a stale entry as not set up.
+        @test String(s.terminal.state) in Set(["missing", "stale", "current"])
+        @test s.terminal.ready isa Bool
+        @test s.terminal.ready == (String(s.terminal.state) == "current")
     end
 
     # feedback: validated before anything is spawned.
@@ -907,6 +919,10 @@ end
     # clear context: same validation, no spawn.
     @test _post(api_observer_clear, Dict())[1] == 400                          # projectUid missing
     @test _post(api_observer_clear, Dict("projectUid" => "nope"))[1] == 404    # unknown project
+
+    # register (one-click terminal setup) is deliberately NOT called here: on a machine with Claude
+    # Code installed it would rewrite the developer's own ~/.claude.json. Its command builders are
+    # pure and covered in app/test/runtests.jl (`_build_mcp_register_cmd`/`_build_mcp_remove_cmd`).
 end
 
 @testset "API: cohort QC" begin

@@ -10,6 +10,7 @@ import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
 import { isExcluded, isIncluded, includedUids, isImported } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
 import { useNapariOpen } from '../composables/useNapariOpen'
@@ -84,24 +85,10 @@ function pageIconFor(): { tip: string } | null {
 const selected  = ref<Set<string>>(new Set())
 const deleteUid = ref<string | null>(null)
 const napariLoading = ref<Set<string>>(new Set())
-const copiedUid = ref<string | null>(null)
-
-async function copyUid(uid: string) {
-  try {
-    await navigator.clipboard.writeText(uid)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = uid
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
-  copiedUid.value = uid
-  setTimeout(() => { copiedUid.value = null }, 1200)
-}
+// Copy UID from the row's actions menu. The menu closes on click, so there's nothing to flash —
+// just the copy (via the shared helper, which keeps the non-secure-context fallback).
+const { copy: copyToClipboard } = useCopyFlash()
+const copyUid = (uid: string) => copyToClipboard(uid)
 
 // ── Inline cell editing ─────────────────────────────────────────────────────────
 // One generic core (click a cell → edit → Enter/blur commits, Esc cancels) reused by attributes,

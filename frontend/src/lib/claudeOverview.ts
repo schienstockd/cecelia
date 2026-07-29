@@ -80,6 +80,31 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   },
 ]
 
+// ── Terminal hand-off ────────────────────────────────────────────────────────────────────────────
+// "Ask Claude" needs NO setup (Cecelia passes `--mcp-config` to the agent it spawns). A session the
+// USER starts in their own terminal does — so the dialog offers ONE BUTTON that registers the server
+// in their Claude Code config (POST /api/observer/register), after which plain `claude` has the tools.
+// Nothing to copy and no path to mistype: a pasted half-command is exactly how this breaks for someone
+// who doesn't read shell errors. The `--mcp-config` line below is only a fallback, shown when
+// registration fails — and only ever with a REAL resolved path (never a placeholder).
+
+/** Fallback one-liner for a single session. Empty string when the path isn't known yet — callers must
+ *  render nothing rather than a placeholder a user could copy verbatim and have fail. */
+export function claudeChatCommand(mcpConfigPath: string): string {
+  return mcpConfigPath ? `claude --mcp-config ${mcpConfigPath}` : ''
+}
+
+/** The button's own label + the states around it. Short, imperative (docs/UI.md house style). */
+export const CLAUDE_TERMINAL = {
+  note: 'Ask Claude needs no setup. To chat in your own terminal, set it up once:',
+  action: 'Set up my terminal',
+  resync: 'Fix terminal setup',
+  busy: 'Setting up…',
+  done: 'Terminal ready — run claude, then use Chat to Claude',
+  staleWhy: 'Your registered server points elsewhere (moved install or a different port)',
+  failedPrefix: 'Setup failed. Start Claude Code with this instead:',
+} as const
+
 // Copyable one-liners that show the range — from QC to a notebook.
 // Keep them short and uniform so they read as a clean row of chips.
 export const CLAUDE_EXAMPLES: string[] = [

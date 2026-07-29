@@ -24,3 +24,23 @@ export function observerSetupReason(available: boolean, lastFailedAuth: boolean)
   if (lastFailedAuth) return 'auth'
   return null
 }
+
+// ── Which terminal button the lab-log toolbar shows ───────────────────────────────────────────────
+// One button in one slot, so the setup step isn't hidden in the info dialog: until the user's own
+// terminal is set up they get "Set up my terminal"; after that, "Chat to Claude".
+export type TerminalCta = 'setup' | 'resync' | 'chat'
+
+/**
+ * `available` = the `claude` CLI is on PATH. `state` = the backend's registration reading
+ * (missing/stale/current, `terminal.state` on /api/observer/status).
+ *
+ * - No CLI → 'chat'. The starter prompt works with ANY MCP assistant, so we must not hide it behind a
+ *   Claude-specific registration the user may not want.
+ * - 'stale' → 'resync', not 'chat': the entry points at another interpreter/port and would fail
+ *   silently in their session.
+ */
+export function terminalCta(available: boolean, state?: string): TerminalCta {
+  if (!available) return 'chat'
+  if (state === 'stale') return 'resync'
+  return state === 'current' ? 'chat' : 'setup'
+}

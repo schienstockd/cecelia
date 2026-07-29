@@ -59,6 +59,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
 | Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
+| Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
@@ -778,6 +779,33 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   Everywhere else the budget holds.
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
+
+## Explainer sketches + tips (What's New modal)
+
+The tip-of-the-day / release-notes cards (`components/WhatNewCard.vue`, content in `lib/tips.ts` +
+`lib/whatsNew.ts`) render an animated sketch through `<SketchCanvas>` from **feijoa** — a sibling
+sketchbook repo (`github:schienstockd/feijoa`), consumed as a git dependency. A card points at one by id
+(`sketchAnimation: { id: 'claude_mcp' }`); an id the catalogue doesn't have falls through to a grey
+"Animation coming soon" placeholder.
+
+**Adding a sketch is a TWO-repo change, and skipping the second half fails invisibly:**
+
+1. Author it in feijoa (`~/cc-workspace/feijoa/src/sketches/<name>.ts`), register it in
+   `src/sketches/index.ts` (map + `sketchList` + named export), `npm run typecheck`, **push `main`**.
+2. In cecelia: `npm update feijoa` in `frontend/`, and **commit the changed `package-lock.json`**.
+
+Step 2 is the one that gets forgotten. `frontend/package.json` declares the branch
+(`github:schienstockd/feijoa#main`) but the **lock pins a commit sha**, and that's what installs — Linux
+CI and `release.yml` run `npm ci` (which also trips on lockfile drift), the installers run `npm install`
+and keep the locked sha. Meanwhile **dev resolves feijoa through the sibling-checkout Vite alias in
+`vite.config.ts`**, so a new sketch renders perfectly on your machine while every release build shows the
+grey placeholder. Verify with `ls frontend/node_modules/feijoa/src/sketches/` after the update, not by
+looking at the dev server.
+
+Tip copy follows *UI copy — keep it short*: a one-paragraph description plus 2-4 imperative steps. The
+sketch carries the explanation; the card is not the place for prose.
+
+Rationale + the sketch-act format: `docs/todo/SKETCH_ENGINE_PLAN.md`.
 
 ## ModuleLayout component
 
