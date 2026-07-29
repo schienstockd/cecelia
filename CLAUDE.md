@@ -444,8 +444,10 @@ Revise reloads function bodies on save. Struct/macro changes still need a restar
 
 ## Testing
 
-**Four test categories — one per layer. All four run in CI on every OS, and each has a `pixi run`
-task that runs the whole suite. Write AND run the matching category in the same change as the code:**
+**Four test categories — one per layer. All four run in CI on every OS (one step per category in
+`.github/workflows/ci.yml` — keep it that way; the package suite was missing for a long time, which is
+how three Windows-only path bugs shipped), and each has a `pixi run` task that runs the whole suite.
+Write AND run the matching category in the same change as the code:**
 
 | You changed… | Write/run | Command |
 |---|---|---|
