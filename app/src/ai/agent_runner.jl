@@ -42,8 +42,76 @@ struct AgentResult
     error::String
 end
 
+# ── Finding and spawning the CLI (Windows) ────────────────────────────────────────────────────────
+#
+# Two Windows facts that made this feature invisible-and-broken there, both handled HERE so no caller
+# re-derives the platform branch (same rule as `bioformats2raw_bin`/`_kill_tree` — see CLAUDE.md):
+#
+#  1. `Sys.which` does NOT find `.cmd`/`.bat`. Its candidate list (base/sysinfo.jl) is the bare name
+#     plus `.exe` and `.com` only. Claude Code installed via npm ships `claude.cmd` (+ `.ps1` + an
+#     extensionless shell script), so `Sys.which("claude")` returned `nothing`, `agent_available` was
+#     `false`, and the whole observer was gated off — while "Set up my terminal" told a user who HAD
+#     Claude Code installed to go install it. Only the native installer (`claude.exe`) worked.
+#
+#  2. A `.cmd`/`.bat` cannot be executed directly. Windows `CreateProcess` (what Julia's `run` uses)
+#     refuses batch files; they have to go through `cmd /c`.
+#
+# Extensions to try, in PATHEXT-ish order. `.ps1` is deliberately excluded: running it needs a
+# PowerShell host plus an execution policy that may forbid it, and npm always installs the `.cmd`
+# alongside, so there is nothing to gain.
+const _AGENT_WIN_EXTS = (".cmd", ".bat")
+
+# The names to look for, in order. PURE and explicitly parameterised on `iswin` (rather than reading
+# `Sys.iswindows()` inside) so the WINDOWS behaviour is unit-testable from any host — the whole reason
+# this bug shipped is that nobody could exercise the Windows path.
+_agent_bin_candidates(name::AbstractString, iswin::Bool)::Vector{String} =
+    (iswin && isempty(splitext(String(name))[2])) ?
+        String[String(name), (String(name) * e for e in _AGENT_WIN_EXTS)...] :
+        String[String(name)]
+
+# Does this resolved path have to be started via `cmd /c`? PURE, same reasoning as above.
+_needs_cmd_shell(path::AbstractString, iswin::Bool)::Bool =
+    iswin && lowercase(splitext(String(path))[2]) in _AGENT_WIN_EXTS
+
+# The argv to actually spawn, given the logical argv and the resolved argv[1]. PURE.
+function _agent_spawn_argv(argv::Vector{String}, resolved::Union{String,Nothing},
+                           iswin::Bool)::Vector{String}
+    isempty(argv) && return argv
+    isnothing(resolved) && return argv         # not found: let the spawn fail with the original name
+    out = copy(argv); out[1] = String(resolved)
+    _needs_cmd_shell(out[1], iswin) ? vcat(String["cmd", "/c"], out) : out
+end
+
+"""
+    agent_bin_path(bin) -> String | Nothing
+
+Absolute path to the agent CLI, or `nothing` if it isn't on `PATH`. Extension-aware on Windows (see
+the comment above): falls back to `<bin>.cmd` / `<bin>.bat` when the bare name isn't found.
+"""
+function agent_bin_path(bin::AbstractString)::Union{String,Nothing}
+    isempty(String(bin)) && return nothing
+    for cand in _agent_bin_candidates(bin, Sys.iswindows())
+        p = Sys.which(cand)
+        isnothing(p) || return String(p)
+    end
+    nothing
+end
+
+# Turn a logical argv (as the pure builders below produce it) into something the OS will actually
+# start: resolve argv[1] to its absolute path, and route batch files through `cmd /c`. Keeping this
+# separate from the builders is deliberate — the builders stay pure and platform-independent, so
+# their unit tests assert one argv shape on every OS, and only this function knows about Windows.
+#
+# NOTE on `cmd /c`: cmd.exe applies its OWN parsing to the rest of the line, so
+# `claude mcp add-json <name> <spec>` — whose spec argument is quoted JSON — is the part of this to
+# distrust on Windows until it has actually been run there. Everything else passes plain arguments.
+_agent_spawn_cmd(cmd::Cmd)::Cmd =
+    (argv = collect(String, cmd.exec);
+     isempty(argv) ? cmd :
+     Cmd(_agent_spawn_argv(argv, agent_bin_path(argv[1]), Sys.iswindows())))
+
 # Is the agent CLI available on PATH? Drives the UI availability gate (feature hidden if absent).
-agent_available(a::AgentBackend)::Bool = !isnothing(Sys.which(_agent_bin(a)))
+agent_available(a::AgentBackend)::Bool = !isnothing(agent_bin_path(_agent_bin(a)))
 _agent_bin(a::ClaudeAgent)::String = a.bin
 
 # The MCP server's name — one literal, used by the config, the `--allowedTools` filter, and the
@@ -171,7 +239,7 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
                                scope::AbstractString = "user", timeout_s::Int = 30)
     agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
     _run_quiet(cmd) = try
-        run(pipeline(cmd, stdout = devnull, stderr = devnull); wait = true); true
+        run(pipeline(_agent_spawn_cmd(cmd), stdout = devnull, stderr = devnull); wait = true); true
     catch
         false
     end
@@ -182,8 +250,8 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
     out = Pipe()
     local output = ""
     ok = try
-        proc = run(pipeline(_build_mcp_register_cmd(a, spec_json; scope); stdout = out, stderr = out);
-                   wait = false)
+        proc = run(pipeline(_agent_spawn_cmd(_build_mcp_register_cmd(a, spec_json; scope));
+                            stdout = out, stderr = out); wait = false)
         close(out.in)
         timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
         output = read(out, String)
@@ -239,7 +307,7 @@ end
 function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
                             system_prompt::AbstractString, session_id::AbstractString,
                             timeout_s::Real, on_process::Function)::AgentResult
-    cmd = _build_claude_cmd(a, prompt, mcp_config_path; session_id, system_prompt)
+    cmd = _agent_spawn_cmd(_build_claude_cmd(a, prompt, mcp_config_path; session_id, system_prompt))
     out = Pipe()
     proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
     close(out.in)
