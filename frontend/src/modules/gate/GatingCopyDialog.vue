@@ -104,7 +104,7 @@ async function copy() {
             </label>
           </div>
           <CcToggle class="cg-layout" v-model="copyLayout" label="Also copy plot layout"
-            v-tooltip.top="'Also copy the plot layout (plots, channels, parents).'" />
+            v-tooltip.top="'Also copy the plot layout (plots, channels, parents)'" />
         </template>
         <p v-else-if="siblings.length" class="cg-empty cc-muted">No images have the “{{ valueName }}” segmentation.</p>
 

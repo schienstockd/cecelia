@@ -90,7 +90,7 @@ function copyImage() {
     </div>
 
     <div class="copy-row">
-      <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copy (data IS duplicated on disk).'">To set</span>
+      <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copy (data IS duplicated on disk)'">To set</span>
       <select v-model="targetUid" class="copy-select">
         <option v-for="s in allSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
         <option value="">＋ New set…</option>
@@ -103,8 +103,7 @@ function copyImage() {
     </div>
 
     <p class="copy-hint cc-muted">
-      Duplicates the chosen version as a new image; derived data (segmentations, populations, gating) is
-      dropped. Runs in the background — the copy appears when it finishes.
+      Copies the version as a new image. Segmentations, populations and gating are dropped.
     </p>
 
     <template #footer>

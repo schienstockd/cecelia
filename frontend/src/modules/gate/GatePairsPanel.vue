@@ -143,7 +143,7 @@ function exportAs(kind: string) {
         <span class="ax-lbl">chans</span>
         <div class="chan-pick">
           <button ref="pickBtn" class="chan-btn" :class="{ on: pickOpen }" @click="pickOpen = !pickOpen"
-                  v-tooltip.bottom="'Choose the channels to plot against each other'">
+                  v-tooltip.bottom="'Select the channels to plot against each other'">
             {{ channels.length ? `${channels.length} selected` : 'select channels' }} <i class="pi pi-chevron-down" />
           </button>
           <TeleportPopover v-model="pickOpen" :anchor="pickBtn">
@@ -192,7 +192,7 @@ function exportAs(kind: string) {
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
                  :highlight="highlightPops" :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
                  :reload-key="reloadKey" @coerced="coerced = $event">
-      <template #empty>Pick channels above to compare them against each other.</template>
+      <template #empty>Select channels above to compare them against each other.</template>
     </GateMontage>
   </CanvasPanel>
 </template>

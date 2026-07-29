@@ -5300,6 +5300,93 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     @testset "QC framework" begin
+        # ── The QC copy catalog (app/src/qc.jl → QC_TEXT) ─────────────────────────────────────────
+        #
+        # QC prose used to live inline in the analysis functions, which made it the least reviewable
+        # copy in the app. It now sits in one table; these pin the contract that table has to keep.
+        @testset "copy catalog" begin
+            @test length(Cecelia.QC_TEXT) > 15
+
+            # Placeholders are filled from keywords, and the emitted `code` is independent of the
+            # catalog key — the two cases the `key` argument exists for.
+            f = Cecelia.qc_finding("warn", "drift.canvas_expansion";
+                                   key = "output.canvas_expansion", pct = 42)
+            @test f["code"] == "drift.canvas_expansion"
+            @test f["short"] == "Output canvas grew +42% in XY"
+
+            # Loud failures, not a user-visible "{channel}".
+            @test_throws ErrorException Cecelia.qc_text("no.such.key")
+            @test_throws ErrorException Cecelia.qc_text("rescale.channel_flat")   # missing `channel`
+
+            # House style (docs/UI.md): `short` is a fragment, `long` is a sentence. Checked here
+            # because the frontend ratchet cannot see Julia strings.
+            bad_short = [k for (k, v) in Cecelia.QC_TEXT if occursin(r"[^.]\.$", v.short)]
+            @test isempty(bad_short)
+            no_period = [k for (k, v) in Cecelia.QC_TEXT if !endswith(v.long, ".")]
+            @test isempty(no_period)
+
+            # Every placeholder the catalog uses must be one a caller actually passes; a typo'd
+            # `{metrics}` would otherwise only surface when that finding fires in production.
+            KNOWN = Set(["channel", "pct", "unit", "dims", "metric", "value", "dir", "median"])
+            unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
+                       for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
+                       if !(m.captures[1] in KNOWN)]
+            @test isempty(unknown)
+
+            # The inputs are persisted, not just the output — that's what read-time rendering needs.
+            g = Cecelia.qc_finding("info", "hmm.dominant_state"; pct = 91)
+            @test g["key"] == "hmm.dominant_state" && g["subs"]["pct"] == 91
+        end
+
+        # ── Read-time rendering ───────────────────────────────────────────────────────────────────
+        #
+        # The point of the catalog: fixing a wording should reach QC that is ALREADY on disk, without
+        # re-running the analysis that produced it. (And, later, a locale switch does the same.)
+        @testset "findings re-render on read" begin
+            img = CciaImage(; dir = mktempdir())
+            write_qc(img, "behaviour.hmmStates", "default",
+                     [Cecelia.qc_finding("info", "hmm.dominant_state"; pct = 91)])
+
+            @test read_qc(img, "behaviour.hmmStates", "default")["findings"][1]["short"] ==
+                  "One state holds 91% of cells"
+
+            # Edit the catalog; the banked file on disk is NOT rewritten.
+            orig = Cecelia.QC_TEXT["hmm.dominant_state"]
+            try
+                Cecelia.QC_TEXT["hmm.dominant_state"] =
+                    (short = "{pct}% of cells in one state", long = orig.long)
+                doc = read_qc(img, "behaviour.hmmStates", "default")
+                @test doc["findings"][1]["short"] == "91% of cells in one state"
+                # Symbol access is what lab_log_context/qc_cohort use — must survive the rebuild.
+                @test String(get(doc["findings"][1], :short, "")) == "91% of cells in one state"
+                @test get(doc, :funName, "") == "behaviour.hmmStates"
+            finally
+                Cecelia.QC_TEXT["hmm.dominant_state"] = orig
+            end
+
+            # A catalog entry that disappears must fall back to the stored snapshot, not blow up the
+            # read — this is a data path shared by every image in the payload.
+            saved = Cecelia.QC_TEXT["hmm.dominant_state"]
+            try
+                delete!(Cecelia.QC_TEXT, "hmm.dominant_state")
+                @test read_qc(img, "behaviour.hmmStates", "default")["findings"][1]["short"] ==
+                      "One state holds 91% of cells"
+            finally
+                Cecelia.QC_TEXT["hmm.dominant_state"] = saved
+            end
+        end
+
+        @testset "pre-catalog sidecars are read unchanged" begin
+            # Findings banked before the catalog carry no `key`; they must pass through verbatim.
+            img = CciaImage(; dir = mktempdir())
+            write_qc(img, "mycat.myTask", "default",
+                     [qc_finding("warn", "legacy.code", "Old short", "Old long.")])
+            doc = read_qc(img, "mycat.myTask", "default")
+            @test doc["findings"][1]["short"] == "Old short"
+            @test doc["findings"][1]["long"] == "Old long."
+            @test !haskey(doc["findings"][1], :key)
+        end
+
         @testset "sidecar round-trip" begin
             img = CciaImage(; dir = mktempdir())
             f = qc_finding("warn", "demo.code", "short text", "long text"; detail = Dict("k" => 1))
@@ -6055,6 +6142,81 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         two_sentence = ["$f: $t" for (f, t) in tips if multi_sentence(t) && !(t in ALLOWED)]
         @test isempty(two_sentence)
+    end
+
+    # ── UI copy house style: task-spec `label` + `tip` ────────────────────────────────────────────
+    #
+    # The Julia half of `docs/UI.md` → *House style*, mirroring the frontend checks in
+    # `frontend/src/utils/uiCopy.test.ts`. Split for the same reason the `tip` budget is: task specs
+    # are backend files and the frontend never holds a copy of one.
+    #
+    # This is the surface that actually drifted. Nothing could see the whole corpus at once, so the
+    # two halves of the app diverged along the storage boundary — 14 task labels went Title Case
+    # ("Bayesian Tracking", "Drift Correction") while every frontend label stayed sentence case, and
+    # all 164 tips grew a trailing period that no tooltip in the frontend had. `pixi run ui-copy`
+    # found it; this keeps it found. Exact allow-lists, not counts.
+    @testset "task spec copy follows the house style" begin
+        ALLOWED_TITLE_CASE = String[]      # a label that is really a proper name
+        ALLOWED_TRAILING_PERIOD = String[] # a `tip` that is genuinely a sentence
+
+        # `@testset` bodies are their own scope, so the collector above isn't visible here — this one
+        # pulls both keys in a single walk rather than re-deriving two nearly identical recursions.
+        function collect_copy!(labels, tips, params, file)
+            params isa AbstractVector || return
+            for p in params
+                p isa AbstractDict || continue
+                l = get(p, :label, get(p, "label", nothing))
+                l isa AbstractString && push!(labels, (file, join(split(String(l)), " ")))
+                t = get(p, :tip, get(p, "tip", nothing))
+                t isa AbstractString && push!(tips, (file, join(split(String(t)), " ")))
+                collect_copy!(labels, tips, get(p, :params, get(p, "params", nothing)), file)
+            end
+        end
+
+        # Mirrors `isTitleCase` in uiCopy.ts — see there for why the allowances exist. A capital is
+        # only evidence of Title Case when the word isn't expected to carry one: acronyms, single
+        # letters, known proper nouns, and the first word after a separator ("Spatial / Time").
+        PROPER = r"^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Napari|Zarr|Pluto|Rscript)$"
+        SEPARATOR = r"^[/+&–—|]+$"
+        expected_cap(w) = occursin(r"^[A-Z0-9+&/–-]+$", w) || length(w) == 1 || occursin(PROPER, w)
+        function title_case(text)
+            words = [w for w in split(text) if occursin(r"^[A-Za-z]", w) || occursin(SEPARATOR, w)]
+            length(words) < 2 && return false
+            judged = [(w = words[i], after_sep = occursin(SEPARATOR, words[i - 1]))
+                      for i in 2:length(words) if !occursin(SEPARATOR, words[i])]
+            isempty(judged) && return false
+            any(j -> occursin(r"^[A-Z]", j.w) && !j.after_sep && !expected_cap(j.w), judged) &&
+                all(j -> occursin(r"^[A-Z]", j.w) || j.after_sep || expected_cap(j.w), judged)
+        end
+
+        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
+        labels, tips2 = Tuple{String,String}[], Tuple{String,String}[]
+        for (root, _, files) in walkdir(tasks_dir), f in files
+            endswith(f, ".json") || continue
+            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
+            spec isa AbstractDict || continue
+            l = get(spec, :label, nothing)
+            l isa AbstractString && push!(labels, (f, join(split(String(l)), " ")))
+            collect_copy!(labels, tips2, get(spec, :params, nothing), f)
+        end
+
+        @test length(labels) > 150              # the walk found task + param labels
+
+        titled = ["$f: $l" for (f, l) in labels if title_case(l) && !(l in ALLOWED_TITLE_CASE)]
+        @test isempty(titled)
+
+        # `…`/`...` is a continuation, not a sentence end.
+        dotted = ["$f: $t" for (f, t) in tips2
+                  if occursin(r"[^.]\.$", t) && !(t in ALLOWED_TRAILING_PERIOD)]
+        @test isempty(dotted)
+
+        # Only the words with a decided winner. Create/Add, Delete/Remove and Run/Start are NOT
+        # synonyms (see the vocabulary table in docs/UI.md) and are deliberately absent.
+        BANNED = ["Choose" => "Select", "Pick" => "Select", "Display" => "Show",
+                  "Execute" => "Run", "Modify" => "Edit", "Discard" => "Remove"]
+        wrong_verb = ["$f: \"$s\" — use $good" for (f, s) in vcat(labels, tips2)
+                      for (bad, good) in BANNED if occursin(Regex("\\b$bad\\b", "i"), s)]
+        @test isempty(wrong_verb)
     end
 
     # ── Stats module (docs/todo/STATS_ANNOTATIONS_PLAN.md) ─────────────────────

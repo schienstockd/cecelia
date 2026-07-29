@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The A cells to annotate with their nearest B cell."
+      "tip": "The A cells to annotate with their nearest B cell"
     },
     {
       "key": "popsB",
@@ -24,7 +24,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The target population within segmentation B."
+      "tip": "The target population within segmentation B"
     },
     {
       "key": "maxContactDist",
@@ -34,7 +34,7 @@
       "max": 1000,
       "step": 1,
       "default": 5,
-      "tip": "Surface-to-surface distance (µm) counting as contact."
+      "tip": "Surface-to-surface distance (µm) counting as contact"
     }
   ]
 }

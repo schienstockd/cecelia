@@ -107,8 +107,8 @@ async function onFilesSelected(paths: string[]) {
         :disabled="!hasSet"
         @click="openFilePicker"
         v-tooltip.bottom="hasSet
-          ? 'Browse and select microscopy image files to add to this set.'
-          : 'Create or select a set first, then add images.'"
+          ? 'Browse and select microscopy image files to add to this set'
+          : 'Create or select a set first, then add images'"
       >
         <i class="pi pi-plus" /> Add images
       </button>
@@ -117,8 +117,8 @@ async function onFilesSelected(paths: string[]) {
         :disabled="!hasSet"
         @click="openMigrate"
         v-tooltip.bottom="hasSet
-          ? 'Import images, segmentation and tracking from an old (R/Shiny) cecelia project.'
-          : 'Create or select a set first.'"
+          ? 'Import images, segmentation and tracking from an old (R/Shiny) cecelia project'
+          : 'Create or select a set first'"
       >
         <i class="pi pi-history" /> Migrate legacy project
       </button>

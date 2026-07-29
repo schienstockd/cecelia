@@ -178,7 +178,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
                   :indeterminate="someSelected"
                   @change="selectAll"
                   :disabled="imageEntries.length === 0"
-                  v-tooltip.right="'Select all image files in this directory.'"
+                  v-tooltip.right="'Select all image files in this directory'"
                 />
               </th>
               <th class="col-name">Name</th>
@@ -252,20 +252,20 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
       <div class="footer-actions">
         <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
-          v-tooltip.top="'Cancel and close the file browser.'">
+          v-tooltip.top="'Cancel and close the file browser'">
           Cancel
         </button>
         <!-- dir mode: pick the current folder; image/bundle: confirm the selection -->
         <button v-if="mode === 'dir'" class="cc-btn cc-btn-primary"
           :disabled="!listing?.current" @click="confirm"
-          v-tooltip.top="'Use this folder.'">
+          v-tooltip.top="'Use this folder'">
           <i class="pi pi-check" /> Use this folder
         </button>
         <button v-else class="cc-btn cc-btn-primary"
           :disabled="selected.size === 0" @click="confirm"
           v-tooltip.top="mode === 'bundle'
-            ? 'Import the selected bundle.'
-            : (selected.size > 0 ? `Add ${selected.size} selected file(s) to the set.` : 'Select at least one image file first.')">
+            ? 'Import the selected bundle'
+            : (selected.size > 0 ? `Add ${selected.size} selected file(s) to the set` : 'Select at least one image file first')">
           <i class="pi" :class="mode === 'bundle' ? 'pi-upload' : 'pi-plus'" />
           {{ mode === 'bundle' ? 'Select bundle' : `Add ${selected.size > 0 ? selected.size : ''} to set` }}
         </button>

@@ -69,6 +69,34 @@ generalised across tasks.
 `findings` is the contract the frontend depends on; `trajectory`/`detail` are producer-specific extras.
 `level ∈ info | warn` (reserve `error` — QC never blocks). Worst level on an image drives the badge.
 
+### Text is rendered on READ, not baked in at write
+
+A finding also carries **`key`** (its entry in the `QC_TEXT` catalog at the top of `app/src/qc.jl`) and
+**`subs`** (the values its placeholders need):
+
+```json
+{ "level": "info", "code": "hmm.dominant_state", "key": "hmm.dominant_state",
+  "subs": { "pct": 91 },
+  "short": "One state holds 91% of cells",        // snapshot — see below
+  "long":  "Check the behaviour is really this uniform, or the model may have too many states.",
+  "detail": { "dominantStateFrac": 0.912 } }
+```
+
+`key` + `subs` are the **stored truth**; `short`/`long` are re-rendered from the catalog by
+`_qc_hydrate` on every read (`read_qc`/`read_all_qc` both go through `_read_qc_file`). So improving a
+warning's wording reaches QC that is already on disk, with no re-run of the analysis that produced it —
+and a locale overlay later becomes a lookup change rather than a data migration.
+
+`short`/`long` are still written, as a **snapshot**: it keeps a sidecar readable on its own, and it is
+the fallback when a catalog entry has been renamed away or a `subs` value is missing. Hydration never
+throws — this is a data path shared by every image in the table payload, so a bad entry degrades to the
+snapshot instead of failing the read.
+
+Findings banked **before** the catalog carry no `key` and pass through verbatim; the hydrator
+short-circuits on them before allocating, so old projects cost nothing. Custom modules using the
+four-argument `qc_finding(level, code, short, long)` are in this same category by design — they have no
+catalog entry, and their text is theirs.
+
 ## Finding text — clean, brief, ACTIONABLE (a hard rule)
 
 The user should read a flag and immediately know **what to do**. Every producer's findings follow this:

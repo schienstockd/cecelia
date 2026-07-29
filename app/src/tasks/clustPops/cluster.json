@@ -12,7 +12,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output suffix → clusters.<suffix>."
+      "tip": "Output suffix → clusters.<suffix>"
     },
     {
       "key": "popsToCluster",
@@ -22,7 +22,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Cells to cluster; every selection is clustered jointly."
+      "tip": "Cells to cluster; every selection is clustered jointly"
     },
     {
       "key": "clusterMeasures",
@@ -31,7 +31,7 @@
       "multiple": true,
       "includeChannels": true,
       "default": [],
-      "tip": "Feature columns to cluster on."
+      "tip": "Feature columns to cluster on"
     },
     {
       "key": "resolution",
@@ -41,14 +41,14 @@
       "max": 5,
       "step": 0.05,
       "default": 1,
-      "tip": "Leiden resolution — higher gives more, smaller clusters."
+      "tip": "Leiden resolution — higher gives more, smaller clusters"
     },
     {
       "key": "mergeUmap",
       "label": "Calculate UMAP",
       "type": "bool",
       "default": true,
-      "tip": "Also compute a UMAP embedding (obsm['X_umap.<suffix>']) for plotting."
+      "tip": "Also compute a UMAP embedding (obsm['X_umap.<suffix>']) for plotting"
     },
     {
       "key": "normalisation",
@@ -62,11 +62,11 @@
             { "value": "cells",    "label": "Per cell (total)" },
             { "value": "NONE",     "label": "No normalisation" }
           ],
-          "tip": "Per-channel percentile rescale to [0,1], per-cell total normalisation, or none." },
-        { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each channel by its median before the percentile rescale." },
-        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Exclude channels above this fraction of a cell's total (0 = off)." },
-        { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-channel normalisation." },
-        { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-channel normalisation." }
+          "tip": "Per-channel percentile rescale to [0,1], per-cell total normalisation, or none" },
+        { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each channel by its median before the percentile rescale" },
+        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Exclude channels above this fraction of a cell's total (0 = off)" },
+        { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-channel normalisation" },
+        { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-channel normalisation" }
       ]
     },
     {
@@ -81,14 +81,14 @@
             { "value": "log",         "label": "Log" },
             { "value": "reversedLog", "label": "Reversed log" }
           ],
-          "tip": "Optional transform applied before normalisation." },
+          "tip": "Optional transform applied before normalisation" },
         { "key": "logBase", "label": "Log base", "type": "select", "default": 0,
           "options": [
             { "value": 0,  "label": "Ln" },
             { "value": 2,  "label": "Log2" },
             { "value": 10, "label": "Log10" }
           ],
-          "tip": "Base for the log transform (Ln when 0)." }
+          "tip": "Base for the log transform (Ln when 0)" }
       ]
     },
     {
@@ -97,8 +97,8 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        { "key": "usePaga", "label": "Use PAGA", "type": "bool", "default": false, "tip": "Initialise the UMAP from a PAGA graph (preserves global cluster topology)." },
-        { "key": "pagaThreshold", "label": "PAGA threshold", "type": "float", "min": 0, "max": 0.5, "step": 0.02, "default": 0.1, "tip": "Edge-weight threshold for the PAGA graph." }
+        { "key": "usePaga", "label": "Use PAGA", "type": "bool", "default": false, "tip": "Initialise the UMAP from a PAGA graph (preserves global cluster topology)" },
+        { "key": "pagaThreshold", "label": "PAGA threshold", "type": "float", "min": 0, "max": 0.5, "step": 0.02, "default": 0.1, "tip": "Edge-weight threshold for the PAGA graph" }
       ]
     }
   ]

@@ -100,7 +100,7 @@ async function deleteSet() {
         class="set-select"
         :value="project.activeSetUid ?? ''"
         @change="project.activeSetUid = ($event.target as HTMLSelectElement).value || null"
-        v-tooltip.bottom="'Switch between image sets in this project.'"
+        v-tooltip.bottom="'Switch between image sets in this project'"
         :disabled="project.sets.length === 0"
       >
         <option value="" disabled>— no sets —</option>
@@ -124,19 +124,19 @@ async function deleteSet() {
           @keydown.enter="createSet"
           @keydown.escape="showNewInput = false"
           autofocus
-          v-tooltip.bottom="'Press Enter to create, Escape to cancel.'"
+          v-tooltip.bottom="'Press Enter to create, Escape to cancel'"
         />
         <button class="cc-btn cc-btn-primary" @click="createSet" :disabled="creating"
-          v-tooltip.bottom="'Create this image set.'">
+          v-tooltip.bottom="'Create this image set'">
           <i v-if="creating" class="pi pi-spin pi-cog" />
           <template v-else>Create</template>
         </button>
         <button class="cc-btn cc-btn-ghost" @click="showNewInput = false"
-          v-tooltip.bottom="'Cancel.'">Cancel</button>
+          v-tooltip.bottom="'Cancel'">Cancel</button>
       </template>
       <template v-else>
         <button class="cc-btn cc-btn-ghost" @click="showNewInput = true"
-          v-tooltip.bottom="'Create a new image set to group related images together.'">
+          v-tooltip.bottom="'Create a new image set to group related images together'">
           <i class="pi pi-plus" /> New set
         </button>
       </template>
@@ -152,11 +152,11 @@ async function deleteSet() {
       <template v-if="confirmDelete">
         <span class="confirm-text cc-muted cc-fs-md">Delete <strong>{{ activeSet?.name }}</strong>?</span>
         <button class="cc-btn cc-btn-danger-ghost" @click="deleteSet"
-          v-tooltip.bottom="'Permanently delete this set and remove all its images from disk.'">
+          v-tooltip.bottom="'Permanently delete this set and remove all its images from disk'">
           Confirm
         </button>
         <button class="cc-btn cc-btn-ghost" @click="confirmDelete = false"
-          v-tooltip.bottom="'Cancel deletion.'">Cancel</button>
+          v-tooltip.bottom="'Cancel deletion'">Cancel</button>
       </template>
     </template>
 

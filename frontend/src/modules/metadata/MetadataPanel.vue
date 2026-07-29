@@ -283,7 +283,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <section class="panel-section">
       <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
       <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
-        v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s).'">
+        v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s)'">
         <i class="pi pi-ruler" /> Open editor
         <span v-if="flaggedCount" class="warn-count" v-tooltip.bottom="`${flaggedCount} image(s) in this set are flagged`">{{ flaggedCount }}</span>
       </button>
@@ -300,9 +300,9 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div class="field-row">
         <input class="field-input flex1" v-model="newAttrName" placeholder="New attribute name…"
           @keydown.enter="createAttr"
-          v-tooltip.bottom="'Name for the new metadata column — e.g. condition, timepoint.'" />
+          v-tooltip.bottom="'Name for the new metadata column — e.g. condition, timepoint'" />
         <button class="cc-btn cc-btn-primary" @click="createAttr" :disabled="!newAttrName.trim()"
-          v-tooltip.bottom="'Add this attribute key to all images in the set.'">
+          v-tooltip.bottom="'Add this attribute key to all images in the set'">
           Create
         </button>
       </div>
@@ -311,7 +311,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div class="field-row">
         <select class="field-input flex1" v-model="selectedAttr"
           :disabled="attrNames.length === 0"
-          v-tooltip.bottom="'Choose which attribute to assign values to.'">
+          v-tooltip.bottom="'Select which attribute to assign values to'">
           <option value="">— select attribute —</option>
           <option v-for="n in attrNames" :key="n" :value="n">{{ n }}</option>
         </select>
@@ -329,10 +329,10 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <input class="field-input flex1" v-model="singleValue" placeholder="Value…"
           :disabled="attrDisabled"
           @keydown.enter="assignSingleValue"
-          v-tooltip.bottom="'Assign this value to the selected attribute for all target images.'" />
+          v-tooltip.bottom="'Assign this value to the selected attribute for all target images'" />
         <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !singleValue"
           @click="assignSingleValue"
-          v-tooltip.bottom="'Apply to selected images, or all images if none are selected.'">
+          v-tooltip.bottom="'Apply to selected images, or all images if none are selected'">
           Assign
         </button>
       </div>
@@ -348,7 +348,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           v-tooltip.bottom="'Regex over the name; a (group) if present, e.g. M(\\d+)→4'" />
         <button class="cc-btn cc-btn-ghost" :disabled="attrDisabled || !regexpValue"
           @click="assignRegexp"
-          v-tooltip.bottom="'Extract a value from each image filename or path.'">
+          v-tooltip.bottom="'Extract a value from each image filename or path'">
           Apply
         </button>
       </div>
@@ -374,7 +374,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <!-- Builder: split by a separator, take a field — writes into the SAME regex field above, so
            there's only ever one input + one preview. For the common "no clue about regex" case. -->
       <button class="builder-toggle cc-section-toggle" @click="builderOpen = !builderOpen" :disabled="attrDisabled"
-        v-tooltip.bottom="'Build the pattern above without writing regex — pick a separator and field.'">
+        v-tooltip.bottom="'Build the pattern above without writing regex — select a separator and field'">
         <i :class="['pi', builderOpen ? 'pi-chevron-down' : 'pi-chevron-right']" /> Builder
       </button>
       <div v-if="builderOpen" class="builder" :class="{ disabled: attrDisabled }">
@@ -410,7 +410,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
             </select>
             <CcToggle class="radio-label" label="no ext" :disabled="attrDisabled"
               :model-value="builderStripExt" @update:model-value="builderStripExt = $event; applyBuilder()"
-              v-tooltip.bottom="'Drop a trailing .extension from the captured value.'" />
+              v-tooltip.bottom="'Drop a trailing .extension from the captured value'" />
           </div>
         </template>
 
@@ -421,7 +421,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
             <input type="text" class="field-input flex1"
               v-model="beforeText" @input="applyBuilder" placeholder="text, e.g. M" :disabled="attrDisabled" />
             <select class="field-input" v-model="beforeCls" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'…then a varying part (a number, letters, …).'">
+              v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
               <option value="none">—</option>
               <option value="digits">+ number</option>
               <option value="letters">+ letters</option>
@@ -447,7 +447,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
             <input type="text" class="field-input flex1"
               v-model="afterText" @input="applyBuilder" placeholder="text, e.g. -" :disabled="attrDisabled" />
             <select class="field-input" v-model="afterCls" @change="applyBuilder" :disabled="attrDisabled"
-              v-tooltip.bottom="'…then a varying part (a number, letters, …).'">
+              v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
               <option value="none">—</option>
               <option value="digits">+ number</option>
               <option value="letters">+ letters</option>
@@ -470,7 +470,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <p class="section-hint cc-muted">Numbers images within each attribute group (<strong>GroupSeq</strong>).</p>
       <button class="cc-btn cc-btn-ghost" @click="assignGroupSequences"
         :disabled="attrNames.length === 0"
-        v-tooltip.bottom="'Assign GroupSeq from the current attribute values.'">
+        v-tooltip.bottom="'Assign GroupSeq from the current attribute values'">
         Assign
       </button>
     </section>
@@ -482,11 +482,11 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div class="field-col">
         <textarea class="field-textarea" v-model="channelNameList" rows="4"
           placeholder="One channel name per line…"
-          v-tooltip.bottom="'Assign these channel names to the selected images (or all if none selected).'" />
+          v-tooltip.bottom="'Assign these channel names to the selected images (or all if none selected)'" />
         <div class="field-row">
           <button class="cc-btn cc-btn-ghost" :disabled="!channelNameList.trim()"
             @click="assignChannelNames"
-            v-tooltip.bottom="'Set channel names on the target images.'">
+            v-tooltip.bottom="'Set channel names on the target images'">
             Assign channels
           </button>
         </div>

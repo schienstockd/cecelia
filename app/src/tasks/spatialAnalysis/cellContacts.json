@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The cells to annotate — for each, the nearest B cell and whether it is in contact."
+      "tip": "The cells to annotate — for each, the nearest B cell and whether it is in contact"
     },
     {
       "key": "popsB",
@@ -24,7 +24,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "The target population; may span segmentations."
+      "tip": "The target population; may span segmentations"
     },
     {
       "key": "maxContactDist",
@@ -34,7 +34,7 @@
       "max": 1000,
       "step": 1,
       "default": 10,
-      "tip": "Centroid distance (µm) counting as contact."
+      "tip": "Centroid distance (µm) counting as contact"
     }
   ]
 }

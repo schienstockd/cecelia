@@ -86,7 +86,86 @@ export function hintStrings(src: string): string[] {
   return out
 }
 
+// Attributes that carry copy a user reads. `title` and `aria-label` are here because they are read
+// out loud or on hover even though they never render as visible text.
+const COPY_ATTRS = 'label|header|title|placeholder|emptyMessage|empty-message|acceptLabel|rejectLabel|aria-label'
+
+/**
+ * Copy passed through an attribute — `label="Crop image"`, `:header="editing ? 'Edit' : 'New'"`.
+ *
+ * Both forms are read: the static attribute directly, and the string literals inside a bound one
+ * (same reason as `tooltipStrings` — the expression is not what the user sees).
+ */
+export function attrStrings(src: string): string[] {
+  const out: string[] = []
+  for (const m of src.matchAll(new RegExp(`(?<![:\\w-])(${COPY_ATTRS})\\s*=\\s*"([^"]*)"`, 'g'))) {
+    const text = normalise(stripInterpolation(m[2]))
+    if (text) out.push(text)
+  }
+  for (const m of src.matchAll(new RegExp(`:(${COPY_ATTRS})\\s*=\\s*("|')([\\s\\S]*?)\\2`, 'g'))) {
+    for (const lit of m[3].matchAll(LITERAL)) {
+      const text = normalise(stripInterpolation(lit[1] ?? lit[2] ?? ''))
+      if (text) out.push(text)
+    }
+  }
+  return out
+}
+
+/**
+ * Bare text nodes inside `<template>` — button captions, headings, empty states. The largest copy
+ * surface in the app and, until now, the only one nothing could see.
+ *
+ * CAUTION on the tag regex. Stripping tags with the obvious `/<[^>]*>/` is WRONG here: an arrow
+ * function in a handler (`@blur="save(v => set(v))"`) contains a `>` that ends the match early and
+ * leaks the rest of the attribute list out as "text". That inflated this bucket by roughly 3× when
+ * measured. The pattern below steps over quoted attribute values instead, and the guard drops any
+ * run still carrying markup — belt and braces, because a parse leak here reads as real copy.
+ */
+const TAG = /<\/?[A-Za-z][^>"']*(?:(?:"[^"]*"|'[^']*')[^>"']*)*>/g
+
+export function textStrings(src: string): string[] {
+  const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
+  const out: string[] = []
+  for (const line of tpl.replace(/<!--[\s\S]*?-->/g, '').replace(TAG, '\n').split('\n')) {
+    const text = normalise(stripInterpolation(line.replace(/\{\{[^}]*\}\}/g, '')))
+    if (text.length < 3 || !/[A-Za-z]{2}/.test(text)) continue
+    if (/^[a-z]+(?:_[a-z]+)+$/.test(text)) continue            // snake_case → an identifier, not copy
+    if (/[<>{}]|=["']|\.\w+\(|\bv-[a-z]/.test(text)) continue  // markup that survived the strip
+    out.push(text)
+  }
+  return out
+}
+
+// A capital mid-string is only evidence of Title Case if the word isn't EXPECTED to carry one.
+// Without this allowance "Calculate UMAP", "Use Dask" and "Flatten Z" all read as violations and the
+// signal is mostly noise — 16 real hits hid behind 23 raw ones.
+const PROPER = /^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Napari|Zarr|Pluto|Rscript)$/
+const expectedCap = (w: string) => /^[A-Z0-9+&/–-]+$/.test(w) || w.length === 1 || PROPER.test(w)
+
+/**
+ * Whether a label is Title Cased rather than the house sentence case.
+ *
+ * A word after a separator starts a new phrase, so its capital is expected too — `Spatial / Time`
+ * and `Segment + Measure` are two parallel labels, not Title Case. The word BEFORE the separator is
+ * still judged normally, so `AF + Drift Correction` is correctly flagged on "Correction".
+ */
+const SEPARATOR = /^[/+&–—|]+$/
+
+export function isTitleCase(text: string): boolean {
+  const tokens = normalise(text).split(' ')
+  const words = tokens.filter((w) => /^[A-Za-z]/.test(w) || SEPARATOR.test(w))
+  const judged = words
+    .map((w, i) => ({ w, afterSep: i > 0 && SEPARATOR.test(words[i - 1]!) }))
+    .filter(({ w }, i) => i > 0 && !SEPARATOR.test(w))
+  if (!judged.length) return false
+  return judged.some(({ w, afterSep }) => /^[A-Z]/.test(w) && !afterSep && !expectedCap(w))
+    && judged.every(({ w, afterSep }) => /^[A-Z]/.test(w) || afterSep || expectedCap(w))
+}
+
 // Task-JSON `tip` fields carry the same budget, but they are backend files (`app/src/tasks/**`) and
 // the frontend never owns a copy of a task spec. That half of the ratchet lives with them, in
 // `app/test/runtests.jl` — keeping this suite to `frontend/src` and free of node builtins (reading
 // outside the Vite root would mean adding `@types/node` for one glob).
+//
+// The whole-corpus view across all three sources — SFCs, task specs and Julia QC text — is
+// `scripts/ui_copy_inventory.mjs`, which imports this module rather than re-implementing it.

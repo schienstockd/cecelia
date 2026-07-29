@@ -671,7 +671,7 @@ onUnmounted(() => {
     <!-- stale-bridge warning: napari started before the latest napari-code changes (it survives a
          backend restart). Brief here; the action is the Restart button + the tooltip. -->
     <div v-if="bridgeStale" class="viewer-stale"
-         v-tooltip.bottom="'Napari started before your latest changes — restart it, then reopen the image.'">
+         v-tooltip.bottom="'Napari started before your latest changes — restart it, then reopen the image'">
       <i class="pi pi-exclamation-triangle" />
       <span class="viewer-stale-txt">Napari running old code</span>
       <button class="viewer-stale-btn" @click="restartNapari">Restart</button>
@@ -829,7 +829,7 @@ onUnmounted(() => {
             {{ item.label }}
           </span>
           <button class="cby-reset" @click="resetColours"
-                  v-tooltip.right="'Reset colours to population colours / the default palette'">reset</button>
+                  v-tooltip.right="'Reset colours to population colours / the default palette'">Reset</button>
         </div>
       </div>
 

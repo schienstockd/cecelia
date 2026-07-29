@@ -35,3 +35,7 @@ pluto/deps.so
 pluto/deps.so.stamp
 # Runtime Pluto session secret (written by pluto/launch.jl; read by the API to build authorized URLs).
 pluto/.plutosecret
+
+# Generated copy inventory (`pixi run ui-copy`) — a snapshot for reading, regenerated on demand.
+# Committing it would just produce diff noise on every copy change.
+/UI_COPY_INVENTORY.md

@@ -1,7 +1,7 @@
 {
   "task": "cellposeSegment",
   "fun_name": "segment.cellpose",
-  "label": "Cellpose Segmentation",
+  "label": "Cellpose segmentation",
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",
@@ -11,14 +11,14 @@
       "label": "Image to segment",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Select which image version to segment."
+      "tip": "Select which image version to segment"
     },
     {
       "key": "outputValueName",
       "label": "Output label name",
       "type": "text",
       "default": "default",
-      "tip": "Name for the output label set."
+      "tip": "Name for the output label set"
     },
     {
       "key": "models",
@@ -39,14 +39,14 @@
           "gaussianFilter": 0.0
         }
       },
-      "tip": "One entry per model; pair 'base' + 'nuc' for nucleus-anchored.",
+      "tip": "One entry per model; pair 'base' + 'nuc' for nucleus-anchored",
       "params": [
         {
           "key": "model",
           "label": "Model",
           "type": "select",
           "default": "cyto3",
-          "tip": "Cellpose model to use.",
+          "tip": "Cellpose model to use",
           "options": [
             { "label": "Cyto3",   "value": "cyto3" },
             { "label": "Cyto2",   "value": "cyto2" },
@@ -59,7 +59,7 @@
           "label": "Match as",
           "type": "select",
           "default": "base",
-          "tip": "Role of this model's output; one 'base' + one 'nuc' to pair.",
+          "tip": "Role of this model's output; one 'base' + one 'nuc' to pair",
           "options": [
             { "label": "Base (primary)", "value": "base" },
             { "label": "Nucleus",        "value": "nuc"  }
@@ -71,7 +71,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels carrying the cell signal; merged by maximum."
+          "tip": "Channels carrying the cell signal; merged by maximum"
         },
         {
           "key": "nucChannels",
@@ -79,7 +79,7 @@
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels carrying the nucleus signal; empty = cytoplasm only."
+          "tip": "Channels carrying the nucleus signal; empty = cytoplasm only"
         },
         {
           "key": "cellDiameter",
@@ -89,7 +89,7 @@
           "max": 500,
           "step": 1,
           "default": 10,
-          "tip": "Expected cell diameter in µm."
+          "tip": "Expected cell diameter in µm"
         },
         {
           "key": "normalise",
@@ -99,7 +99,7 @@
           "max": 100.0,
           "step": 0.1,
           "default": 99.9,
-          "tip": "Upper percentile for intensity normalisation."
+          "tip": "Upper percentile for intensity normalisation"
         },
         {
           "key": "advanced",
@@ -115,7 +115,7 @@
               "max": 1.0,
               "step": 0.05,
               "default": 0.2,
-              "tip": "Cellpose z-stitch threshold; 0 = independent 2D slices."
+              "tip": "Cellpose z-stitch threshold; 0 = independent 2D slices"
             },
             {
               "key": "threshold",
@@ -125,7 +125,7 @@
               "max": 65535,
               "step": 1,
               "default": 0,
-              "tip": "Zero pixels below this before normalisation (0 = off)."
+              "tip": "Zero pixels below this before normalisation (0 = off)"
             },
             {
               "key": "medianFilter",
@@ -135,7 +135,7 @@
               "max": 15,
               "step": 1,
               "default": 0,
-              "tip": "Median filter kernel size applied before normalisation (0 = off)."
+              "tip": "Median filter kernel size applied before normalisation (0 = off)"
             },
             {
               "key": "gaussianFilter",
@@ -145,7 +145,7 @@
               "max": 10.0,
               "step": 0.5,
               "default": 0.0,
-              "tip": "Gaussian blur sigma applied before normalisation (0 = off)."
+              "tip": "Gaussian blur sigma applied before normalisation (0 = off)"
             }
           ]
         }
@@ -165,14 +165,14 @@
           "max": 1.0,
           "step": 0.05,
           "default": 0.3,
-          "tip": "IoU for matching nucleus labels to base labels."
+          "tip": "IoU for matching nucleus labels to base labels"
         },
         {
           "key": "removeUnmatched",
           "label": "Remove unmatched cells",
           "type": "bool",
           "default": false,
-          "tip": "Remove base cells that have no matching nucleus (only with nuc+base pair)."
+          "tip": "Remove base cells that have no matching nucleus (only with nuc+base pair)"
         },
         {
           "key": "minCellSize",
@@ -182,7 +182,7 @@
           "max": 100000,
           "step": 10,
           "default": 0,
-          "tip": "Remove objects smaller than this many pixels (0 = off)."
+          "tip": "Remove objects smaller than this many pixels (0 = off)"
         },
         {
           "key": "cellSizeMax",
@@ -192,7 +192,7 @@
           "max": 10000000,
           "step": 100,
           "default": 0,
-          "tip": "Remove objects larger than this many pixels (0 = off)."
+          "tip": "Remove objects larger than this many pixels (0 = off)"
         },
         {
           "key": "labelExpansion",
@@ -202,7 +202,7 @@
           "max": 50,
           "step": 1,
           "default": 0,
-          "tip": "Expand label boundaries outward by N pixels (0 = off)."
+          "tip": "Expand label boundaries outward by N pixels (0 = off)"
         },
         {
           "key": "labelErosion",
@@ -212,21 +212,21 @@
           "max": 50,
           "step": 1,
           "default": 0,
-          "tip": "Erode label boundaries inward by N pixels (0 = off)."
+          "tip": "Erode label boundaries inward by N pixels (0 = off)"
         },
         {
           "key": "clearTouchingBorder",
           "label": "Clear border cells",
           "type": "bool",
           "default": false,
-          "tip": "Remove cells that touch the XY image border."
+          "tip": "Remove cells that touch the XY image border"
         },
         {
           "key": "clearDepth",
           "label": "Clear Z-depth cells",
           "type": "bool",
           "default": false,
-          "tip": "Remove cells touching the first or last Z slice."
+          "tip": "Remove cells touching the first or last Z slice"
         }
       ]
     },
@@ -245,7 +245,7 @@
           "max": 1.0,
           "step": 0.05,
           "default": 0.0,
-          "tip": "IoU for stitching cells split at a tile seam (0 = max merge)."
+          "tip": "IoU for stitching cells split at a tile seam (0 = max merge)"
         }
       ]
     },
@@ -260,7 +260,7 @@
           "label": "Global normalisation",
           "type": "bool",
           "default": true,
-          "tip": "Take intensity percentiles from the lowest-resolution level."
+          "tip": "Take intensity percentiles from the lowest-resolution level"
         }
       ]
     }

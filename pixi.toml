@@ -152,6 +152,12 @@ app = "python app.py"
 # cellpose checkpoints, TODO #00087.
 models-fetch = "python scripts/models_fetch.py"
 
+# Dump every front-facing string (SFCs + task specs + Julia QC text) to UI_COPY_INVENTORY.md, with
+# the drift signals over it — capitalisation, duplicate phrasings, competing verbs. For READING the
+# app's language end-to-end; the build-failing subset is the ratchet in uiCopy.test.ts +
+# app/test/runtests.jl. Parsing lives in frontend/src/utils/uiCopy.ts. See docs/UI.md → UI copy.
+ui-copy = "node scripts/ui_copy_inventory.mjs"
+
 # Update the env to the latest versions allowed by pixi.toml (console update path; the in-app
 # "Update" button hits /api/update, which runs the same). Refreshes pixi.lock.
 update = "pixi update"
