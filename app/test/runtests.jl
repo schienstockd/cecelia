@@ -30,7 +30,7 @@ init_cecelia!()
 # of the deletable dev projects dir (`projects_dir()`). Override with CECELIA_TEST_DATA.
 # (@__DIR__ = app/test → ../../.. = workspace root.)  See test-data/README.md.
 test_projects_dir() = get(ENV, "CECELIA_TEST_DATA",
-    normpath(joinpath(@__DIR__, "..", "..", "..", "test-data", "projects")))
+    normpath(joinpath(@__DIR__, "..", "..", "test-data", "projects")))   # <repo>/test-data, IN git
 
 """Absolute path to a fixture under test-data/projects (no existence check)."""
 fixture_path(relparts...) = joinpath(test_projects_dir(), relparts...)
@@ -53,8 +53,8 @@ function have_fixture(path::AbstractString)::Bool
         ╚══════════════════════════════════════════════════════════════════════════╝
         Expected: $path
         Tests that assert against real data are skipped without it, leaving that path
-        unverified. The fixtures dir lives OUTSIDE this repo (a sibling of it), so a fresh clone
-        never has it — restore <workspace-root>/test-data/ or set CECELIA_TEST_DATA
+        unverified. Fixtures are committed under <repo>/test-data/, so this normally means a
+        partial checkout — restore it with `git checkout -- test-data` or set CECELIA_TEST_DATA
         to a projects dir containing the file above."""
     end
     false
@@ -77,6 +77,34 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test !isempty(python_bin_path())
         @test tasks_concurrent_limit() >= 1
         @test napari_discrete_gpu() isa Bool   # [napari].discreteGpu, default false
+    end
+
+    # ── Fixture size ratchet ─────────────────────────────────────────────────────
+    # Fixtures are committed now, and `.h5ad` is binary: git stores a WHOLE new copy per update and
+    # history can't be pruned without a rewrite. "Keep fixtures small" was already the rule but nothing
+    # enforced it, and an in-repo dir is a standing invitation to drop a GB OME-ZARR in. This is the
+    # enforcement — same shape as the UI-copy ratchets: an exact cap, not a vibe.
+    #
+    # 1 MB leaves ~3x headroom over today's largest (B.h5ad, 332 KB). If a fixture genuinely needs more,
+    # that is a design conversation (regenerate smaller / synthesise / gate the test differently), not a
+    # number to nudge up.
+    @testset "fixtures stay small" begin
+        root = normpath(joinpath(@__DIR__, "..", "..", "test-data"))
+        CAP  = 1024 * 1024
+        if isdir(root)
+            oversized = Tuple{String,Int}[]
+            total = 0
+            for (dir, _, files) in walkdir(root), f in files
+                n = filesize(joinpath(dir, f)); total += n
+                n > CAP && push!(oversized, (relpath(joinpath(dir, f), root), n))
+            end
+            @test isempty(oversized)          # names the offender if it fires
+            isempty(oversized) || @info "oversized fixtures" oversized
+            # a whole-tree bound too: many medium files are as bad as one large one
+            @test total <= 8 * CAP
+        else
+            @test_skip "test-data/ not present"
+        end
     end
 
     # ── Config resolver (dev↔prod coordination) ─────────────────────────────────

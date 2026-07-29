@@ -482,12 +482,11 @@ and param validation. Specifically:
 ### Test data fixtures
 
 Tests must **not** depend on the dev projects dir (`projects_dir()`) — it can be deleted, and the
-test would then silently skip. When a test needs real data, copy a **small** fixture into the fixtures
-dir at the **workspace root** — which is **OUTSIDE this repo** (a sibling of it), and therefore NOT in
-git:
+test would then silently skip. When a test needs real data, copy a **small** fixture into the
+**committed** fixtures dir in this repo:
 
 ```
-<workspace-root>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
+<repo>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
 ```
 
 Resolve it in `runtests.jl` with the generic helpers — `fixture_path("proj","1","img","labelProps","x.h5ad")`
@@ -496,17 +495,13 @@ on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single
 missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
 
 **Keep fixtures small** — e.g. a `labelProps/*.h5ad` (hundreds of KB), not GB-scale raw images or
-OME-ZARR pyramids. Document any fixture you add in `<workspace-root>/test-data/README.md`.
+OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
 
-> **Know what this costs.** Because the dir is outside the repo, a fresh clone and every CI runner have
-> NO fixtures, so the **18** fixture-gated testsets — `LabelProps` reader/writer, the Julia/Python
-> reader parity guard, `pop_df`/`pop_df_multi`/`pop_df :track`, `track_props`, `plot_summary_data`,
-> count/measure metrics — **skip** there. The suite still reports a green pass. That is the whole
-> data-access core going unexercised anywhere but a dev machine that happens to have the folder, and
-> fixture edits get no history or review. Moving `test-data/` INTO the repo would fix all of that at
-> the price of binary `.h5ad` in git history forever — see `docs/TODO.md`. A stale tracked copy used to
-> sit at `cecelia-feijoa/test-data/`, unread by any test since the resolver points a level higher; it
-> was deleted rather than left to mislead.
+> **The cap is enforced, not advisory.** `.h5ad` is binary, so git stores a whole new copy per update
+> and history can't be pruned without a rewrite — and a committed fixtures dir invites someone to drop a
+> GB-scale store in. The `fixtures stay small` testset fails if any single file exceeds **1 MB** or the
+> tree exceeds **8 MB** (today: largest 332 KB, tree 432 KB). Needing more room is a design conversation,
+> not a number to raise.
 
 ---
 
