@@ -6340,6 +6340,39 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    # The tar invocation must never hand a Windows drive letter to `-f`. GNU tar reads an archive
+    # path as `host:path` when a colon precedes any separator, so `-f D:\a\...\x.tar` becomes a
+    # connection attempt to host `D` and the pack silently produces nothing — which is how `.ccbundle`
+    # export (the backup mechanism) came to be broken on Windows while every unix path was fine: a unix
+    # absolute path can NEVER trigger it, because the leading `/` comes before the colon.
+    #
+    # That asymmetry is exactly why this needs a PROPERTY test rather than a behaviour test. Running
+    # tar here would pass on unix no matter what the code does — a test that cannot fail. So assert the
+    # shape of the command instead: `-f` takes a bare filename, the directory rides on the cwd. Both
+    # assertions fail against the old absolute-`-f` form on every platform.
+    @testset "tar commands keep drive letters out of -f" begin
+        pack = Cecelia._tar_pack_cmd(joinpath("D:", "a", "out", "store.zarr.tar"),
+                                     joinpath("D:", "proj", "0", "img", "store.zarr"))
+        # the flag is the combined `-cf`, so the archive is the token after it
+        fidx = findfirst(==("-cf"), pack.exec)
+        @test fidx !== nothing
+        farg = pack.exec[fidx + 1]
+        @test farg == "store.zarr.tar"                      # bare filename…
+        @test !occursin(':', farg)                          # …so no drive letter can reach tar
+        @test !occursin('/', farg) && !occursin('\\', farg)
+        @test pack.dir == joinpath("D:", "a", "out")        # the directory rides on the cwd instead
+        # -C is NOT subject to the host:path parse, so it stays absolute
+        cidx = findfirst(==("-C"), pack.exec)
+        @test cidx !== nothing && pack.exec[cidx + 1] == joinpath("D:", "proj", "0", "img")
+        @test pack.exec[end] == "store.zarr"                # the member, relative to -C
+
+        unpack = Cecelia._tar_unpack_cmd(joinpath("D:", "a", "bundle", "0", "img", "store.zarr.tar"))
+        uidx = findfirst(==("-xf"), unpack.exec)
+        @test uidx !== nothing && unpack.exec[uidx + 1] == "store.zarr.tar"
+        @test !occursin(':', unpack.exec[uidx + 1])
+        @test unpack.dir == joinpath("D:", "a", "bundle", "0", "img")
+    end
+
     # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
     #
     # All three copy testsets below walk THIS list. They each used to hardcode `src/tasks`, which
