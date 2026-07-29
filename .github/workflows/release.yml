@@ -44,6 +44,11 @@ jobs:
             api app python app.py pixi.toml pixi.lock VERSION \
             napari/napari_bridge.py frontend/dist \
             install.sh install.ps1 README.md docs
+          # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
+          # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
+          # `out/cecelia.tar.gz` would not match a file downloaded as `cecelia.tar.gz`.
+          cd out && sha256sum cecelia.tar.gz > cecelia.tar.gz.sha256 && cd ..
+          cat out/cecelia.tar.gz.sha256
           ls -lh out/
 
       - name: Publish GitHub Release
@@ -51,6 +56,7 @@ jobs:
         with:
           files: |
             out/cecelia.tar.gz
+            out/cecelia.tar.gz.sha256
             install.sh
             install.ps1
           generate_release_notes: true

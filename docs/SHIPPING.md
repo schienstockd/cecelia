@@ -174,7 +174,13 @@ launcher.
 > re-resolves optional deps for the host and is far less prone to it. `release.yml` keeps `npm ci`
 > because it only ever runs on `ubuntu-latest`, where the current-platform binding installs reliably.
 
-**Why a dev channel.** So testers can track HEAD without a tag being cut every couple of days. GitHub
+**Why a dev channel.** For **people who want to work ON Cecelia** — tracking HEAD without a tag being
+cut every couple of days. It is *not* how end users run it: a biologist installs a tag, and the Node
+requirement plus local frontend build make dev a poor fit for anyone not developing the thing. **It
+has no users today**, and if it gains any they will be contributors. So don't reason about delivery
+as though users are on it — a tag is the only thing that reaches them (`docs/RELEASING.md` → *the
+consequence*).
+GitHub
 serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —
 so the dev path just points the *same* installer at that URL. `CECELIA_BRANCH` overrides the branch.
 
