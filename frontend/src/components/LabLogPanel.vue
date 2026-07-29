@@ -246,6 +246,7 @@ async function dismissEntry(entry: LabLogEntry) {
       <textarea
         ref="inputEl"
         v-model="draft"
+        v-tooltip.top="'What you observed; Claude reads this as lab context'"
         class="ll-input"
         rows="2"
         :disabled="!projectUid || busy"

@@ -13,7 +13,7 @@
       "label": "Segmentation",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Which tracked segmentation's label properties to read/write."
+      "tip": "Which tracked segmentation's label properties to read/write"
     },
     {
       "key": "measure",
@@ -21,7 +21,7 @@
       "type": "text",
       "default": "live.cell.speed",
       "required": true,
-      "tip": "Per-cell measure to summarise per track (e.g. live.cell.speed)."
+      "tip": "Per-cell measure to summarise per track (e.g. live.cell.speed)"
     },
     {
       "key": "trackFiltering",
@@ -37,7 +37,7 @@
           "max": 1000,
           "step": 1,
           "default": 1,
-          "tip": "Tracks shorter than this (in cells) are skipped."
+          "tip": "Tracks shorter than this (in cells) are skipped"
         }
       ]
     },
@@ -57,7 +57,7 @@
             { "value": "robust", "label": "robust (median / MAD)" },
             { "value": "none",   "label": "none (skip Python step)" }
           ],
-          "tip": "How the Python step standardises the Julia track-mean column."
+          "tip": "How the Python step standardises the Julia track-mean column"
         }
       ]
     }

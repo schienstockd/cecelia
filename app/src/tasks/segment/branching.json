@@ -11,20 +11,23 @@
       "label": "Segmentation",
       "type": "valueNameSelection",
       "field": "labels",
-      "default": "default"
+      "default": "default",
+      "tip": "Select which label set to skeletonise"
     },
     {
       "key": "outputValueName",
       "label": "Output name",
       "type": "text",
-      "default": "default"
+      "default": "default",
+      "tip": "Name for the output branch label set"
     },
     {
       "key": "refPops",
       "label": "Restrict to population",
       "type": "popSelection",
       "accepts": ["live", "clust", "region"],
-      "default": "NONE"
+      "default": "NONE",
+      "tip": "Skeletonise only these cells; NONE = the whole segmentation"
     },
     {
       "key": "preDilationSize",
@@ -33,7 +36,8 @@
       "min": 0,
       "max": 10,
       "step": 1,
-      "default": 2
+      "default": 2,
+      "tip": "Close gaps by this many pixels before skeletonising (0 = off)"
     },
     {
       "key": "postDilationSize",
@@ -42,38 +46,44 @@
       "min": 0,
       "max": 10,
       "step": 1,
-      "default": 2
+      "default": 2,
+      "tip": "Thicken the saved skeleton for visibility; measures are unaffected"
     },
     {
       "key": "useBorders",
       "label": "Use label boundaries",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Skeletonise the label outlines instead of their interiors"
     },
     {
       "key": "flattenBranching",
       "label": "Flatten Z",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Project the stack to one plane and skeletonise in 2D (3D only)"
     },
     {
       "key": "calcAnisotropy",
       "label": "Anisotropy",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Measure local fibre alignment per branch; needs fibre channels"
     },
     {
       "key": "calcFlattened",
       "label": "Anisotropy on Z-MIP",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Measure alignment on the Z projection instead of the full stack"
     },
     {
       "key": "fibreChannels",
       "label": "Fibre channels",
       "type": "channelSelection",
       "multiple": true,
-      "default": []
+      "default": [],
+      "tip": "Channels carrying the fibre signal alignment is measured on"
     },
     {
       "key": "structureTensorSigma",
@@ -82,7 +92,8 @@
       "min": 0.5,
       "max": 20.0,
       "step": 0.1,
-      "default": 2.0
+      "default": 2.0,
+      "tip": "Smoothing before alignment; raise it for thicker or noisier fibres"
     },
     {
       "key": "anisotropyBoxSize",
@@ -91,7 +102,8 @@
       "min": 5,
       "max": 200,
       "step": 1,
-      "default": 45
+      "default": 45,
+      "tip": "Neighbourhood each branch's alignment is averaged over"
     }
   ]
 }

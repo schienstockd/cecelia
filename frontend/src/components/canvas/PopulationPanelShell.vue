@@ -78,6 +78,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
     <div v-show="!collapsed" class="pm-footer">
       <ChipSelect class="pm-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
+                  v-tooltip.top="'Apply these options to every plot or just the active one'"
                   @update:model-value="v => emit('update:scope', v as 'global' | 'local')" />
     </div>
   </div>

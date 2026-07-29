@@ -25,7 +25,7 @@ import { execFileSync } from 'node:child_process'
 
 import {
   normalise, isTooLong, isMultiSentence, isTitleCase,
-  tooltipStrings, hintStrings, attrStrings, textStrings,
+  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls,
 } from '../frontend/src/utils/uiCopy.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -53,10 +53,16 @@ const add = (text, kind, file) => {
 const EXTRACTORS = [
   [tooltipStrings, 'tooltip'], [hintStrings, 'hint'], [attrStrings, 'attr'], [textStrings, 'text'],
 ]
+// COVERAGE, not copy: the controls with no hover help at all. Collected here rather than in `rows`
+// because it is the absence of a string — it has no text to dedupe, group or measure.
+const bare = []
+const covered = { with: 0, without: 0 }
+
 for (const path of walk(join(ROOT, 'frontend/src'), (p) => p.endsWith('.vue'))) {
   const src = readFileSync(path, 'utf8')
   const rel = relative(ROOT, path)
   for (const [fn, kind] of EXTRACTORS) for (const s of fn(src)) add(s, kind, rel)
+  for (const c of uncoveredControls(src, rel)) bare.push(`${rel}:${c.line} <${c.tag}>`)
   for (const m of src.matchAll(/(?:summary|detail|message)\s*:\s*("|'|`)([\s\S]*?)\1/g))
     add(m[2].replace(/\$\{[^}]*\}/g, '…'), 'toast', rel)
 }
@@ -68,7 +74,13 @@ for (const path of walk(join(ROOT, 'frontend/src'), (p) => p.endsWith('.ts') && 
 }
 
 // ── B. task specs + plot definitions (already a keyed catalog) ───────────────────────────────────
-for (const dir of ['app/src/tasks', 'app/src/plotDefinitions']) {
+//
+// `docs/examples/custom-modules` is in here because those ARE task specs — `load_custom_modules!`
+// loads them and `ParamRenderer` renders them; they live in `docs/` only because they are the
+// template a user copies to write a drop-in module. Coverage below is required for both, which is
+// why their 7 tips got swept to the house style along with everything else.
+const TIPPED_DIRS = ['app/src/tasks', 'docs/examples/custom-modules']
+for (const dir of [...TIPPED_DIRS, 'app/src/plotDefinitions']) {
   for (const path of walk(join(ROOT, dir), (p) => p.endsWith('.json'))) {
     const rel = relative(ROOT, path)
     let spec
@@ -81,6 +93,14 @@ for (const dir of ['app/src/tasks', 'app/src/plotDefinitions']) {
         if (!p || typeof p !== 'object') continue
         if (p.label) add(p.label, 'param:label', rel)
         if (p.tip) add(p.tip, 'param:tip', rel)
+        // Sections and groups are container HEADERS, not inputs — exempt, same as the Julia ratchet.
+        // `plotDefinitions` is exempt WHOLESALE: its `params` array is a defaults bag, not a form
+        // (`SummaryPanel.vue` reads only `.default`), so a tip there would render to nobody. Its
+        // strings still appear in the inventory below — visible, just not required.
+        if (p.key && p.type !== 'section' && p.type !== 'group' && TIPPED_DIRS.includes(dir)) {
+          if (String(p.tip ?? '').trim()) covered.with++
+          else { covered.without++; bare.push(`${rel} — param \`${p.key}\` has no tip`) }
+        }
         visit(p.params ?? p.items ?? [])
       }
     }
@@ -178,6 +198,10 @@ const signals = {
   'Over budget on an UNENFORCED surface (review question, not a build failure)':
     all.filter((r) => !ENFORCED.has(r.kind) && !CARD_KINDS.has(r.kind) && isTooLong(r.text))
        .map((r) => `[${r.text.length}] ${r.text} — ${where(r)}`),
+  // The presence half of the rule. Everything else in this report reads copy that EXISTS; this is
+  // the copy that doesn't — a settable control or task param a user can change with no explanation
+  // anywhere on it. Ratcheted (uiCopy.test.ts + app/test/runtests.jl), so expect zero.
+  'Settable control or task param with NO tooltip (ratcheted — expect zero)': bare,
   'Capitalisation — the minority style among labels':
     minorityOf(all.filter((r) => isLabelKind(r.kind)), (r) => isTitleCase(r.text)).map((r) => `${r.text} — ${where(r)}`),
   'Trailing period on tooltips — the minority style':
@@ -233,7 +257,9 @@ md += `Reflects ${stamp}. Regenerate before reviewing; the ratchet in \`uiCopy.t
 md += '`app/test/runtests.jl` is what runs automatically in CI.\n\n'
 md += '| kind | unique strings |\n|---|---|\n'
 for (const [k, v] of kinds) md += `| ${k} | ${v.length} |\n`
-md += `| **total** | **${all.length}** |\n\n## Drift signals\n\n`
+md += `| **total** | **${all.length}** |\n\n`
+md += `Task-param tip coverage: **${covered.with}/${covered.with + covered.without}** `
+md += `(sections and groups are container headers and exempt).\n\n## Drift signals\n\n`
 md += 'Two of these are advisory and run noisy on purpose — read them, do not treat them as a list of\n'
 md += 'bugs. *Same phrase written more than one way* normalises case away, which is what catches a\n'
 md += 'genuine `Cecelia`/`cecelia` slip but also flags a heading against the same word used mid-sentence.\n'

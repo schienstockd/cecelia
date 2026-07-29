@@ -362,11 +362,13 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
       <div class="radio-row">
         <label class="radio-label">
-          <input type="radio" v-model="regexpSource" value="name" :disabled="attrDisabled" />
+          <input type="radio" v-model="regexpSource" value="name" :disabled="attrDisabled"
+            v-tooltip.bottom="'Match against the file name only'" />
           Filename
         </label>
         <label class="radio-label">
-          <input type="radio" v-model="regexpSource" value="filepath" :disabled="attrDisabled" />
+          <input type="radio" v-model="regexpSource" value="filepath" :disabled="attrDisabled"
+            v-tooltip.bottom="'Match against the full original path'" />
           Original path
         </label>
       </div>
@@ -380,7 +382,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div v-if="builderOpen" class="builder" :class="{ disabled: attrDisabled }">
         <div class="field-row">
           <span class="builder-label cc-muted">Mode</span>
-          <select class="field-input" v-model="builderMode" @change="applyBuilder" :disabled="attrDisabled">
+          <select class="field-input" v-model="builderMode" @change="applyBuilder" :disabled="attrDisabled"
+            v-tooltip.bottom="'Split the name into fields, or extract around a marker'">
             <option value="field">Split into fields</option>
             <option value="around">Around a marker</option>
           </select>
@@ -390,7 +393,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
         <template v-if="builderMode === 'field'">
           <div class="field-row">
             <span class="builder-label cc-muted">Split by</span>
-            <select class="field-input" v-model="builderSep" @change="applyBuilder" :disabled="attrDisabled">
+            <select class="field-input" v-model="builderSep" @change="applyBuilder" :disabled="attrDisabled"
+              v-tooltip.bottom="'Character the name is split on'">
               <option value="-">- dash</option>
               <option value="_">_ underscore</option>
               <option value=".">. dot</option>
@@ -398,11 +402,13 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               <option value="custom">custom…</option>
             </select>
             <input v-if="builderSep === 'custom'" type="text" class="field-input builder-custom"
-              v-model="builderCustomSep" @input="applyBuilder" maxlength="4" placeholder="sep" :disabled="attrDisabled" />
+              v-model="builderCustomSep" @input="applyBuilder" maxlength="4" placeholder="sep" :disabled="attrDisabled"
+              v-tooltip.bottom="'Your own separator character'" />
           </div>
           <div class="field-row">
             <span class="builder-label cc-muted">Take</span>
-            <select class="field-input" v-model="builderPos" @change="applyBuilder" :disabled="attrDisabled">
+            <select class="field-input" v-model="builderPos" @change="applyBuilder" :disabled="attrDisabled"
+              v-tooltip.bottom="'Which field of the split name to keep'">
               <option value="first">1st field</option>
               <option value="second">2nd field</option>
               <option value="third">3rd field</option>
@@ -419,7 +425,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <div class="field-row">
             <span class="builder-label cc-muted">Preceded by</span>
             <input type="text" class="field-input flex1"
-              v-model="beforeText" @input="applyBuilder" placeholder="text, e.g. M" :disabled="attrDisabled" />
+              v-model="beforeText" @input="applyBuilder" placeholder="text, e.g. M" :disabled="attrDisabled"
+              v-tooltip.bottom="'Text that comes just before the part you want'" />
             <select class="field-input" v-model="beforeCls" @change="applyBuilder" :disabled="attrDisabled"
               v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
               <option value="none">—</option>
@@ -431,7 +438,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           </div>
           <div class="field-row">
             <span class="builder-label cc-muted">Extract</span>
-            <select class="field-input" v-model="extractKind" @change="applyBuilder" :disabled="attrDisabled">
+            <select class="field-input" v-model="extractKind" @change="applyBuilder" :disabled="attrDisabled"
+              v-tooltip.bottom="'Kind of value to capture'">
               <option value="digits">a number</option>
               <option value="letters">letters</option>
               <option value="lower">lowercase</option>
@@ -440,12 +448,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               <option value="custom">custom…</option>
             </select>
             <input v-if="extractKind === 'custom'" type="text" class="field-input flex1"
-              v-model="extractText" @input="applyBuilder" placeholder="e.g. [a-d]" :disabled="attrDisabled" />
+              v-model="extractText" @input="applyBuilder" placeholder="e.g. [a-d]" :disabled="attrDisabled"
+              v-tooltip.bottom="'Your own character set to capture'" />
           </div>
           <div class="field-row">
             <span class="builder-label cc-muted">Followed by</span>
             <input type="text" class="field-input flex1"
-              v-model="afterText" @input="applyBuilder" placeholder="text, e.g. -" :disabled="attrDisabled" />
+              v-model="afterText" @input="applyBuilder" placeholder="text, e.g. -" :disabled="attrDisabled"
+              v-tooltip.bottom="'Text that comes just after the part you want'" />
             <select class="field-input" v-model="afterCls" @change="applyBuilder" :disabled="attrDisabled"
               v-tooltip.bottom="'…then a varying part (a number, letters, …)'">
               <option value="none">—</option>

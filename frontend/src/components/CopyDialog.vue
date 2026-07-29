@@ -84,14 +84,14 @@ function copyImage() {
 
     <div v-if="valueNames.length > 1" class="copy-row">
       <span class="copy-lbl cc-muted" v-tooltip.right="'Which image version to copy (becomes the copy\'s default)'">Version</span>
-      <select v-model="selectedValueName" class="copy-select">
+      <select v-model="selectedValueName" class="copy-select" v-tooltip.right="'Which image version to copy'">
         <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
       </select>
     </div>
 
     <div class="copy-row">
       <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copy (data IS duplicated on disk)'">To set</span>
-      <select v-model="targetUid" class="copy-select">
+      <select v-model="targetUid" class="copy-select" v-tooltip.right="'Set the copy is placed in'">
         <option v-for="s in allSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
         <option value="">＋ New set…</option>
       </select>
@@ -99,7 +99,7 @@ function copyImage() {
     <div v-if="!targetUid" class="copy-row">
       <span class="copy-lbl cc-muted" />
       <input class="copy-name-input" v-model="newName" placeholder="New set name…"
-             @keydown.enter="copyImage" autofocus />
+             v-tooltip.right="'Name for the new set'" @keydown.enter="copyImage" autofocus />
     </div>
 
     <p class="copy-hint cc-muted">

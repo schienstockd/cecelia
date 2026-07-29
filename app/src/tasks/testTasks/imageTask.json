@@ -10,13 +10,15 @@
       "type": "int",
       "default": 0,
       "min": 0,
-      "max": 5000
+      "max": 5000,
+      "tip": "Sleep this long to simulate work"
     },
     {
       "key": "message",
       "label": "Log message",
       "type": "text",
-      "default": "imageTask ran"
+      "default": "imageTask ran",
+      "tip": "Text written to the task log"
     }
   ]
 }

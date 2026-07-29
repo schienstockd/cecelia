@@ -228,7 +228,7 @@ defineExpose({ refresh })
   <div class="nbt">
     <div class="nbt-add">
       <input v-model="newName" type="text" placeholder="New notebook name…"
-             @keyup.enter="createNotebook" :disabled="busy" />
+             v-tooltip.right="'Name for the new notebook'" @keyup.enter="createNotebook" :disabled="busy" />
       <button class="cc-btn cc-btn-primary" :disabled="busy || !newName.trim()" @click="createNotebook">
         <i class="pi pi-plus" /> Add notebook
       </button>
@@ -248,7 +248,7 @@ defineExpose({ refresh })
 
           <!-- Description: inline-editable for project notebooks -->
           <td class="nbt-desc">
-            <input v-if="editingFile === nb.file" :ref="focusEditInput" v-model="editValue"
+            <input v-if="editingFile === nb.file" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
                    type="text" @blur="commitEdit(nb)" @keyup.enter="commitEdit(nb)" @keyup.esc="cancelEdit" />
             <span v-else :class="{ 'nbt-editable': nb.scope === 'project', 'nbt-muted': !nb.description }"
                   @click="startEdit(nb)">
@@ -297,7 +297,7 @@ defineExpose({ refresh })
               </span>
               <template v-else>
                 <label class="nbt-hist-label">Restore to version</label>
-                <select v-model.number="restoreVersion" :disabled="busy"
+                <select v-model.number="restoreVersion" :disabled="busy" v-tooltip.top="'Snapshot to roll this notebook back to'"
                         @change="confirmingRestore = null">
                   <option v-for="s in snapshots" :key="s.version" :value="s.version">v{{ s.version }}</option>
                 </select>

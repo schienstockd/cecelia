@@ -208,6 +208,7 @@ defineExpose({ exportImage, exportSvg })
         <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
           <div class="gs-pop">
             <CcToggle class="gs-check" label="show gating hierarchy"
+                   v-tooltip.bottom="'Draw the parent-child tree beside the plots'"
                    :model-value="showHierarchy" @update:model-value="showHierarchy = $event" />
           </div>
         </TeleportPopover>

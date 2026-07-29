@@ -154,6 +154,7 @@ function exportAs(kind: string) {
               </div>
               <div class="chan-list">
                 <label v-for="c in [...g.columns, ...g.spatialAxes]" :key="c" class="chan-item"
+                       v-tooltip.right="'Include this measure in the pair grid'"
                        :class="{ disabled: !channels.includes(c) && atCap }">
                   <input type="checkbox" :checked="channels.includes(c)"
                          :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />

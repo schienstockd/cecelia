@@ -1077,6 +1077,7 @@ onActivated(async () => {
         :options="tabOptions"
         :model-value="activeTab"
         aria-label="Chain view"
+        v-tooltip.bottom="'Edit the chain, or watch a run in progress'"
         @update:model-value="v => activeTab = v as 'edit' | 'live'"
       />
     </div>
@@ -1088,6 +1089,7 @@ onActivated(async () => {
         <select
           v-if="runOptions.length"
           class="chain-select live-run-select"
+          v-tooltip.bottom="'Which run to show progress for'"
           :value="selectedRunId"
           @change="selectedRunId = ($event.target as HTMLSelectElement).value"
         >
@@ -1176,7 +1178,7 @@ onActivated(async () => {
           <div class="qc-expand-card">
             <div class="qc-expand-head">
               <span>Segmentation QC · {{ qcExpand.valueName }}</span>
-              <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="qcExpand = null"><i class="pi pi-times" /></button>
+              <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" v-tooltip.left="'Close'" @click="qcExpand = null"><i class="pi pi-times" /></button>
             </div>
             <div class="qc-expand-body">
               <SummaryCanvas :image-uids="qcExpand.imageUids" module="segment" />
@@ -1252,12 +1254,13 @@ onActivated(async () => {
         <input
           v-model="newChainName"
           class="new-chain-input"
+          v-tooltip.right="'Name for the new chain'"
           placeholder="chain name…"
           @keydown.enter="createChain"
           @keydown.esc="showNewInput = false; newChainName = ''"
           autofocus
         />
-        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save" @click="createChain" :disabled="!newChainName.trim()">
+        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save" v-tooltip.right="'Create the chain'" @click="createChain" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
         </button>
       </div>

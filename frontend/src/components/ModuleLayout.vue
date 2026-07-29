@@ -412,6 +412,7 @@ const visibleUids = computed<string[]>(() =>
             <div v-for="key in attrKeys" :key="key" class="filter-row">
               <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
               <ChipSelect class="filter-chips" multiple :options="attrChipOpts(key)"
+                v-tooltip.right="`Show only images with these ${key} values`"
                 :model-value="attrFilters[key] ?? []"
                 @update:model-value="v => setAttrFilter(key, v as string[])" />
             </div>

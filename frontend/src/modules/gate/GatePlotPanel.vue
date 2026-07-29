@@ -343,11 +343,12 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <span class="ctrl-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
+                  v-tooltip.bottom="'Shape to draw the next gate with'"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl">
         <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
-          <select class="ax-chan" v-model="xChan">
+          <select class="ax-chan" v-model="xChan" v-tooltip.bottom="'Measure on the X axis'">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
               <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
@@ -358,7 +359,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
           <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
-          <select class="ax-chan" v-model="yChan">
+          <select class="ax-chan" v-model="yChan" v-tooltip.bottom="'Measure on the Y axis'">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
               <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
@@ -398,7 +399,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       </div>
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
-        <input v-model="newName" placeholder="name…" autofocus
+        <input v-model="newName" placeholder="name…" autofocus v-tooltip.top="'Name for the new gate'"
                :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
                @keyup.enter="confirmGate" @keyup.esc="pending = null" />
         <button class="cc-btn cc-btn-primary" :disabled="!!nameError" @click="confirmGate">Add</button>
