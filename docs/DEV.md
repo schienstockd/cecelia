@@ -166,6 +166,13 @@ OS in the matrix, and each has a `pixi run` task that runs the whole suite:
   `python` + `numpy`/`dask`/`zarr` resolve. First member: `test_zarr_store.py` (the `create_multiscales`
   chunk-aligned store round-trip).
 
+**Trap — `@testset` reseeds the global RNG, so `gen_uid()` is NOT unique across testsets.** Julia's
+`Test` seeds each testset deterministically, which means two testsets that both
+`create_project! → add_set! → add_image!` are handed the **same uid sequence** and land in the
+**same directory on disk**. It stays invisible until a test asserts on a directory's *contents*
+(`img_branch_value_names` did, and read the previous testset's files). If a testset writes files it
+will then read back, pass an explicit `uid=` to `add_image!` rather than trusting `gen_uid`.
+
 ## Dev worktree switch (Settings → System)
 
 When several git worktrees exist (the branch-preview workflow), **Settings → System → Worktree** lists

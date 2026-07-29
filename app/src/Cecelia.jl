@@ -24,7 +24,7 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
-export img_branch_props_path, img_branch_labels_dir, img_branch_labels_path
+export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
@@ -45,7 +45,7 @@ export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categ
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of
-export obsm, obsm_keys
+export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
@@ -72,6 +72,7 @@ export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
 export pop_df_multi, resolve_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
+export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, is_tracked
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 
@@ -144,6 +145,7 @@ include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
 include("spatial.jl")   # cross-poptype region queries (needs pop_df)
+include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
 include("plotting/plot_data.jl")
 include("plotting/stats.jl")
 include("tracking/track_props.jl")

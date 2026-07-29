@@ -189,6 +189,54 @@ using the skeleton labels + the raw image, plus a new task param.
 
 ---
 
+## Structure-vs-motion angle map (field-vs-field correlation)
+
+**What.** A tile map of the angle between the local collagen orientation and the local direction
+of cell motion — "where do cells move along the fibres vs across them". The legacy version
+(`behaviourTcells3P.Rmd:595-710`) got there by running the *whole* pipeline a second time on the
+tracks: `segment.binariseTracks` rasterised a `live` population's paths into a label image,
+`createBranching` skeletonised that, and the map was then field-vs-field between the two grids.
+
+**Why deferred.** It is not in Figure 4, and it was not what was asked for — panels B and D answer
+"how do tracks relate to the structure" with an overlay and a per-image correlation. Building a
+second rasterise → skeletonise → eigendecompose pipeline for a map nobody requested is speculative
+scope.
+
+**Revisit when.** Someone wants the per-box structure-vs-motion angle map. The cheap route is
+probably NOT the legacy one: the orientation grid already exists (`quiver_df`), so a per-box mean
+track vector from `pop_df` would give the same map without a second skeletonisation. Note the
+vignette's 0–180° range splits one physical alignment across both ends of its scale — fold to
+0–90°.
+
+**Reference:** `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` Decision 11;
+`old-R-shiny-version/inst/modules/sources/segment/{binariseTracks.R,py/binarise_tracks.py}`.
+
+---
+
+## Branch populations in the UI (gating page + plot picker)
+
+**What.** `branch` is a real pop type — the sidecar, the pop map and `pop_df(img, "branch", …)` all
+work — but no UI surface can reach it. `/api/gating/channels` and `/api/plots/populations` both
+enumerate `label_props` value_names, and a branch value_name is a *segmentation* (`SHG`) that
+usually has no per-cell table, so the picker looks for `B__branch`/`T__branch` and finds nothing.
+The four branch types also list flat rather than as subpopulations of one `SHG` pop.
+
+**Why deferred.** Partial fixes were written during the anisotropy work and then reverted
+deliberately: repairing one link of a chain that is broken end to end just hides the breakage, and
+the readouts that motivated it turned out to belong in a notebook anyway (where `pop_df` reaches
+branch pops directly, no picker involved).
+
+**Revisit when.** Someone wants to select branch populations in the app — most likely the moment a
+branch-level measure (`anisotropy`, or `branch-weight` from the network-weights port) is worth
+plotting on a module page. The work is: value_name enumeration that includes
+`img_branch_value_names` (that helper exists), a `_resolve_vn` that doesn't silently redirect a
+branch value_name to the active cell one, a `channels` route branch that reads the branch sidecar,
+and a real parent/child hierarchy for the auto-created branch-type pops.
+
+**Reference:** `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` → *Known limitation*; `docs/POPULATION.md`.
+
+---
+
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a

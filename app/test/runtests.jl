@@ -960,6 +960,51 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 "preDilationSize" => 2, "postDilationSize" => 2))
             true
         end
+
+        # anisotropySource (docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 5) — a select with three
+        # allowed values. The runner raises on anything else, so an unknown value must not get past
+        # validation and reach Python as a subprocess failure.
+        for src in ("skeleton", "mask", "channel")
+            @test begin
+                validate_params(Branching(), Dict{String,Any}("anisotropySource" => src))
+                true
+            end
+        end
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("anisotropySource" => "intensity"))
+
+        # The retuned anisotropy defaults must be the ones the plan measured (Decision 4): a silent
+        # revert to sigma=2/box=45 gives a near-random direction field (finding A2).
+        let spec = Cecelia._task_spec(Branching())
+            bykey = Dict(String(get(p, "key", "")) => p for p in spec["params"])
+            @test bykey["structureTensorSigma"]["default"] == 12.0
+            @test bykey["anisotropyBoxSize"]["default"] == 15
+            @test bykey["anisotropySource"]["default"] == "skeleton"
+        end
+        # sigma is float 0.5–50 / box is int 5–200 — out of range must be rejected
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("structureTensorSigma" => 999.0))
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("anisotropyBoxSize" => 1))
+    end
+
+    # Cohort QC must aggregate the per-image anisotropy readout — it is Figure 4 panel D's x-axis
+    # (SPATIAL_ANISOTROPY_PLAN Decision 6), so dropping it from COHORT_METRICS silently removes
+    # the plot's data source.
+    @testset "Cohort metrics — branching anisotropy" begin
+        @test "anisotropy" in COHORT_METRICS["segment.branching"]
+        @test "nBranches" in COHORT_METRICS["segment.branching"]
+
+        # `anisotropy` is the first RATIO metric in a cohort list otherwise made of counts, so
+        # check the outlier rule behaves on 0–1 values at the magnitudes real data produces
+        # (EaMaVq measures ≈ 0.32). The modified-z path is scale-free, but the MAD==0 fallback
+        # is a RELATIVE departure, so tiny numbers are where it would misbehave if anywhere.
+        r = Cecelia._cohort_outliers(Dict("a" => 0.31, "b" => 0.33, "c" => 0.30, "d" => 0.09))
+        @test haskey(r.outliers, "d") && !haskey(r.outliers, "a")
+        # …and a cohort that merely spans the normal 0.1–0.4 band must NOT flag anything: real
+        # tissue varies this much, and a false "outlier" on every low-anisotropy image is noise.
+        @test isempty(Cecelia._cohort_outliers(
+            Dict("a" => 0.12, "b" => 0.21, "c" => 0.30, "d" => 0.38)).outliers)
     end
 
     # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
@@ -4545,6 +4590,156 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # a 2D-only track set (no z column) is trivially 2D
         P2 = zeros(12, 2); for k in 1:11; P2[k+1, :] = P2[k, :] .+ [dy(k), dx(k)]; end
         @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
+    end
+
+    # ── uns reader: the anisotropy grid on the branch sidecar ─────────────────────────────────────
+    # The one thing worth pinning here is the DIMENSION REVERSAL. HDF5 stores C-order, Julia reads
+    # column-major, so a numpy (T, y, x, comp) array arrives as (comp, x, y, T) — every axis flipped,
+    # INCLUDING the two box axes, which are equal-length and would therefore swap silently. The
+    # fixture's values encode their own (t, y, x) coordinates precisely so a transposed read fails
+    # instead of passing on symmetry.
+    @testset "uns reader (anisotropy grid)" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+        if !have_fixture(h5)
+            @test_skip "aniso__branch fixture (missing)"
+        else
+            lp = label_props(h5)
+            @test "orientation_coords" in uns_keys(lp) && "orientation_meta" in uns_keys(lp)
+
+            # producer order = numpy order: (T, y_boxes, x_boxes, component)
+            coor = uns_array(lp, "orientation_coords")
+            @test size(coor) == (3, 4, 4, 2)
+            # value encodes 100t + 10y + x, so this catches an axis swap, not just a shape match
+            @test coor[1, 1, 1, 1] ≈ 0.0f0
+            @test coor[3, 2, 4, 1] ≈ 100 * 2 + 10 * 1 + 3      # t=2, y=1, x=3 (0-based)
+            @test coor[3, 2, 4, 2] ≈ 1000 + 100 * 2 + 10 * 1 + 3
+            @test size(uns_array(lp, "orientation_eigvec")) == (3, 4, 4, 2, 2)
+            @test size(uns_array(lp, "orientation_box_coherence")) == (3, 4, 4)
+
+            # as_stored hands back the raw (reversed) layout for a caller that wants it
+            @test size(uns_array(lp, "orientation_coords"; as_stored=true)) == (2, 4, 4, 3)
+
+            # the self-describing block — strings, scalars and arrays all round-trip
+            m = uns_dict(lp, "orientation_meta")
+            @test m["box_size_px"] == 15 && m["sigma_px"] ≈ 12.0
+            @test m["source"] == "skeleton" && m["fibre_direction"] == "minor"
+            @test m["eigval_order"] == "ascending" && m["eigvec_layout"] == "vec_major"
+            @test Int.(m["t_index"]) == [0, 1, 2]
+            @test length(m["scale_um_per_px"]) == 2
+
+            # absent key, and a group requested as an array (or vice versa) → nothing, not a throw
+            @test uns_array(lp, "no_such_key") === nothing
+            @test uns_array(lp, "orientation_meta") === nothing
+            @test uns_dict(lp, "orientation_coords") === nothing
+
+            # `orientation_summary` is a pandas DataFrame in uns — a third encoding, read by uns_df
+            s = uns_df(lp, "orientation_summary")
+            @test s isa DataFrame && nrow(s) == 3
+            @test "anisotropy" in names(s) && "MF_full_length" in names(s)
+            @test Float64.(s.anisotropy) ≈ [0.21, 0.32, 0.43] atol = 1e-6
+            @test uns_df(lp, "orientation_coords") === nothing      # a plain array is not a dataframe
+            @test uns_df(lp, "no_such_key") === nothing
+        end
+    end
+
+    # ── The notebook readouts: quiver_df / branch_segments / anisotropy_df ────────────────────────
+    # These three are the whole point of the anisotropy pass — the arrows, the branch network and
+    # the per-image scalar, as tidy frames a Pluto notebook can plot directly (docs/NOTEBOOKS.md).
+    # The fixture is built so a WRONG read fails: the fibre (minor) eigenvector is a pure +x unit
+    # vector and the major one is +y, so taking the wrong eigenvector rotates every arrow 90°.
+    @testset "anisotropy notebook readouts" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+        if !have_fixture(h5)
+            @test_skip "aniso__branch fixture (missing)"
+        else
+            # EXPLICIT uids. `@testset` reseeds the global RNG per testset, so `gen_uid()` deals
+            # every testset the SAME sequence — two testsets that both create a project+set+image
+            # land in the same directory. Harmless until one of them, like this pair, asserts on
+            # the directory's CONTENTS.
+            proj = create_project!(name="aniso-fixture")
+            s = add_set!(proj; name="set-A")
+            img = add_image!(s; name="img-a", uid="anisoA")
+            dir = img_label_props_dir(img); mkpath(dir)
+            rm.(joinpath.(dir, readdir(dir)); force=true)     # a previous run's copies
+            cp(h5, img_branch_props_path(img, "SHG"))
+
+            @test img_branch_value_names(img) == ["SHG"]
+
+            # ── arrows ────────────────────────────────────────────────────────────────────────
+            q = quiver_df(img; value_name="SHG")
+            @test nrow(q) == 3 * 4 * 4                       # every frame, every box
+            @test sort(unique(q.t)) == [0, 1, 2]
+            # the MINOR eigenvector is (y=0, x=1) ⇒ u=1, v=0. If the reader took the major one
+            # instead the arrows would come back (0, 1) — a silent 90° rotation.
+            @test all(q.u .≈ 1.0) && all(q.v .≈ 0.0)
+            # box centres, and that x/y did not swap: coor[...,1] is y, coor[...,2] is x
+            r = only(q[(q.t .== 2) .& (q.iy .== 1) .& (q.ix .== 3), :] |> eachrow)
+            @test r.y ≈ 100 * 2 + 10 * 1 + 3
+            @test r.x ≈ 1000 + 100 * 2 + 10 * 1 + 3
+            # the deliberately-empty box carries its zero length through, so it can be filtered out
+            @test only(q[(q.t .== 0) .& (q.iy .== 0) .& (q.ix .== 0), :].length) == 0.0
+            @test count(>(0.0), q.length) == 3 * (16 - 1)
+
+            @test nrow(quiver_df(img; value_name="SHG", t=1)) == 16
+            @test_throws ErrorException quiver_df(img; value_name="SHG", t=99)
+            @test_throws ErrorException quiver_df(img; value_name="nope")
+
+            # ── branch segments ───────────────────────────────────────────────────────────────
+            b = branch_segments(img; value_name="SHG")
+            @test nrow(b) == 6
+            # x from axis 1, y from axis 0 — a swap here would mirror the whole network
+            @test b.y1 == [0.0, 10, 20, 30, 40, 50] && b.x1 == [1.0, 11, 21, 31, 41, 51]
+            @test b.y2 == [4.0, 14, 24, 34, 44, 54] && b.x2 == [5.0, 15, 25, 35, 45, 55]
+            @test b.branch_type == [0, 1, 2, 3, 1, 2]
+            @test nrow(branch_segments(img; value_name="SHG", t=1)) == 2
+
+            # ── per-image scalar ──────────────────────────────────────────────────────────────
+            a = anisotropy_df(img)
+            @test nrow(a) == 3 && unique(a.uID) == [img.uid] && unique(a.value_name) == ["SHG"]
+            @test a.t == [0, 1, 2]                           # from orientation_meta.t_index, not position
+            @test Float64.(a.anisotropy) ≈ [0.21, 0.32, 0.43] atol = 1e-6
+            @test "occupancy" in names(a) && "branching_act" in names(a)
+
+            # a second branch table on the same image (SHG collagen + a DCs network) — long format,
+            # one block per value_name, which is what makes a cross-image comparison filterable
+            cp(h5, img_branch_props_path(img, "DCs"); force=true)
+            a2 = anisotropy_df(img)
+            @test nrow(a2) == 6 && sort(unique(a2.value_name)) == ["DCs", "SHG"]
+            @test nrow(anisotropy_df(img; value_name="SHG")) == 3
+
+            # across images — the cohort frame Figure 4 panel D scatters
+            img2 = add_image!(s; name="img-b", uid="anisoB")
+            mkpath(img_label_props_dir(img2))
+            cp(h5, img_branch_props_path(img2, "SHG"); force=true)
+            across = anisotropy_df([img, img2]; value_name="SHG")
+            @test nrow(across) == 6 && sort(unique(across.uID)) == sort([img.uid, img2.uid])
+
+            # an image with no branch table contributes nothing — never an error, never a zero row
+            img3 = add_image!(s; name="img-c", uid="anisoC")
+            @test nrow(anisotropy_df(img3)) == 0
+            @test nrow(anisotropy_df([img, img3]; value_name="SHG")) == 3
+        end
+    end
+
+    # ── Branch value_names are NOT label_props value_names ────────────────────────────────────────
+    # Branching runs on a SEGMENTATION, which need not have a per-cell measurement table: an SHG
+    # collagen mask is skeletonised but never measured, so it lives in `labels`/`branch_labels`
+    # while `label_props` holds only the measured cell segmentations. Enumerating branch pops from
+    # `label_props` therefore found NOTHING — it looked for B__branch / T__branch and missed the
+    # SHG__branch that exists, so the branch picker came back empty. One image can carry several
+    # (SHG + DCs, per behaviourUbiTom3P.Rmd), so this is the plural case.
+    @testset "branch value_names come from the sidecars" begin
+        proj = create_project!(name="bvn-$(rand(1000:9999))")
+        s = add_set!(proj; name="set-A")
+        img = add_image!(s; name="img-a")
+        dir = img_label_props_dir(img); mkpath(dir)
+        @test img_branch_value_names(img) == String[]          # nothing banked yet
+        for f in ("SHG__branch.h5ad", "DCs__branch.h5ad", "B.h5ad", "B__tracks.h5ad")
+            touch(joinpath(dir, f))
+        end
+        # only the __branch sidecars, and NOT the cell/track tables that sit beside them
+        @test img_branch_value_names(img) == ["DCs", "SHG"]
+        @test img_branch_props_path(img, "SHG") == joinpath(dir, "SHG__branch.h5ad")
     end
 
     @testset "plot groupBy (generic categorical sub-axis)" begin
