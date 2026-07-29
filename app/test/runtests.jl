@@ -53,7 +53,8 @@ function have_fixture(path::AbstractString)::Bool
         ╚══════════════════════════════════════════════════════════════════════════╝
         Expected: $path
         Tests that assert against real data are skipped without it, leaving that path
-        unverified. Restore test-data/ (see test-data/README.md) or set CECELIA_TEST_DATA
+        unverified. The fixtures dir lives OUTSIDE this repo (a sibling of it), so a fresh clone
+        never has it — restore <workspace-root>/test-data/ or set CECELIA_TEST_DATA
         to a projects dir containing the file above."""
     end
     false
