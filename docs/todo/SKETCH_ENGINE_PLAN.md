@@ -2,6 +2,11 @@
 
 Status: wired · repo `github.com/schienstockd/feijoa` · git-dep + conditional sibling Vite alias
 
+> **Promoted:** the durable half of this plan — how a sketch reaches a card, and the two-repo
+> push + `npm update feijoa` rule (with the trap that dev's sibling alias hides a stale lock) — now
+> lives in [`docs/UI.md`](../UI.md) -> *Explainer sketches + tips*. What stays here is the rationale,
+> the blue-sky direction, and the sketch-act format.
+
 ## What this is today
 
 A sibling play repo where sketches are authored for cecelia's tip-of-the-day and update-notes

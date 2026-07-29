@@ -731,6 +731,33 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
 
+## Explainer sketches + tips (What's New modal)
+
+The tip-of-the-day / release-notes cards (`components/WhatNewCard.vue`, content in `lib/tips.ts` +
+`lib/whatsNew.ts`) render an animated sketch through `<SketchCanvas>` from **feijoa** — a sibling
+sketchbook repo (`github:schienstockd/feijoa`), consumed as a git dependency. A card points at one by id
+(`sketchAnimation: { id: 'claude_mcp' }`); an id the catalogue doesn't have falls through to a grey
+"Animation coming soon" placeholder.
+
+**Adding a sketch is a TWO-repo change, and skipping the second half fails invisibly:**
+
+1. Author it in feijoa (`~/cc-workspace/feijoa/src/sketches/<name>.ts`), register it in
+   `src/sketches/index.ts` (map + `sketchList` + named export), `npm run typecheck`, **push `main`**.
+2. In cecelia: `npm update feijoa` in `frontend/`, and **commit the changed `package-lock.json`**.
+
+Step 2 is the one that gets forgotten. `frontend/package.json` declares the branch
+(`github:schienstockd/feijoa#main`) but the **lock pins a commit sha**, and that's what installs — Linux
+CI and `release.yml` run `npm ci` (which also trips on lockfile drift), the installers run `npm install`
+and keep the locked sha. Meanwhile **dev resolves feijoa through the sibling-checkout Vite alias in
+`vite.config.ts`**, so a new sketch renders perfectly on your machine while every release build shows the
+grey placeholder. Verify with `ls frontend/node_modules/feijoa/src/sketches/` after the update, not by
+looking at the dev server.
+
+Tip copy follows *UI copy — keep it short*: a one-paragraph description plus 2-4 imperative steps. The
+sketch carries the explanation; the card is not the place for prose.
+
+Rationale + the sketch-act format: `docs/todo/SKETCH_ENGINE_PLAN.md`.
+
 ## ModuleLayout component
 
 `frontend/src/components/ModuleLayout.vue`
