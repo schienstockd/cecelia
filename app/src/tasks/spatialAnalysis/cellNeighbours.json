@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "Cells to connect into a spatial neighbour graph."
+      "tip": "Cells to connect into a spatial neighbour graph"
     },
     {
       "key": "neighbourMethod",
@@ -26,7 +26,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "Delaunay (radius-pruned), kNN, or fixed radius."
+      "tip": "Delaunay (radius-pruned), kNN, or fixed radius"
     },
     {
       "key": "neighbourRadius",
@@ -36,7 +36,7 @@
       "max": 1000,
       "step": 1,
       "default": 30,
-      "tip": "Neighbourhood radius in µm; also prunes Delaunay edges."
+      "tip": "Neighbourhood radius in µm; also prunes Delaunay edges"
     },
     {
       "key": "nNeighbours",
@@ -46,7 +46,7 @@
       "max": 100,
       "step": 1,
       "default": 6,
-      "tip": "Number of nearest neighbours for the kNN graph."
+      "tip": "Number of nearest neighbours for the kNN graph"
     }
   ]
 }

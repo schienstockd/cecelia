@@ -204,6 +204,40 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
 explaining, put it in the relevant `docs/<AREA>.md` and leave the UI silent.
 
+### House style — how it's written
+
+Length is only half of it. The other half is writing the same thing the same way twice, which nothing
+watched until `pixi run ui-copy` could show the whole corpus at once. It found the two halves of the
+app had drifted apart along the storage boundary: **task specs had gone Title Case while the frontend
+stayed sentence case**, 60 phrases had picked up a second spelling, and one action had up to four
+verbs. None of that is visible a file at a time — which is the argument for the inventory.
+
+| Rule | Do | Not |
+|---|---|---|
+| **Sentence case** for every label, button, header and menu item. Acronyms and proper nouns keep their case. | `Bayesian tracking`, `Drift correction`, `Calculate UMAP` | `Bayesian Tracking`, `Drift Correction` |
+| **No trailing period** on a tooltip or a task-spec `tip`. It's a fragment, not a sentence. | `Which image version to crop` | `Which image version to crop.` |
+| **One verb per action** — see the table below. | `Select channels` | `Choose channels`, `Pick channels` |
+
+Full sentences still take a period: QC `long` text is imperative prose and keeps its punctuation, as
+do multi-sentence notifications.
+
+**Verb vocabulary.** Where two words mean the same thing, one wins. Where they mean different things,
+both stay — the distinction is the point, so it's written down rather than left to taste.
+
+| Use | For | Not |
+|---|---|---|
+| **Select** | choosing from options that already exist | ~~Choose~~, ~~Pick~~ |
+| **Show** | toggling visibility | ~~Display~~ |
+| **Create** | making a new object | — |
+| **Add** | attaching an existing object to a collection | — |
+| **Delete** | destroying data permanently | — |
+| **Remove** | detaching from a list; the data survives | — |
+| **Run** | a task or chain | ~~Execute~~ |
+| **Start** | a long-lived service (napari, Pluto) | ~~Launch~~ (as a verb; the noun "on launch" is fine) |
+
+`Create`/`Add`, `Delete`/`Remove` and `Run`/`Start` are **not** synonyms — picking the wrong one is a
+copy bug, not a style preference.
+
 **Two of these are now enforced, not just asked for.** `utils/uiCopy.test.ts` fails the build on a
 `v-tooltip` literal, a `ModuleLayout` `hint`, or a task-JSON `tip` that runs past **90 characters** or
 into a **second sentence** — across every SFC and every task spec. It holds an **exact allow-list**,
@@ -212,6 +246,21 @@ and stops meaning anything at zero). Both surfaces were swept to zero, so the ba
 nothing else, and the current single entry is a *notification* whose second sentence is a call to
 action rather than an explanation. Before adding an entry, check whether the fact belongs in
 `docs/<AREA>.md` instead — that was true of every one of the ~100 strings the sweeps shortened.
+
+**Reading the whole corpus.** `pixi run ui-copy` (`scripts/ui_copy_inventory.mjs`) dumps every
+front-facing string — SFCs, task specs, Julia QC text and the What's-New/tip cards, ~1,700 of them —
+to a git-ignored `UI_COPY_INVENTORY.md`, grouped by kind, with the drift signals over the top. Use it
+to review the app's language end-to-end; the build-failing subset stays the ratchet. It imports
+`utils/uiCopy.ts`, which is the one canonical parser — add an extractor there rather than writing a
+second scraper.
+
+**Visibility is not enforcement.** Two surfaces are in the inventory on purpose and ratcheted on
+purpose *not*: bare template text nodes (the largest bucket — extraction is heuristic, so a guard
+would fail builds on parse noise) and the **tip cards** in `lib/tips.ts` (long-form explainers with a
+sketch; there is no agreed length, tone or punctuation rule to hold them to, and they are excluded
+from the length signal for that reason). A ratchet needs a decided rule — without one it grows an
+allow-list until it stops meaning anything, which is the `cssScenarios` lesson. So these are here to
+be *read* and judged by a person, not to break CI.
 
 > **Measure the rendered string, not the binding.** A tooltip binding is an *expression*, so
 > `v-tooltip="flagged ? 'Deselect flagged images' : 'Select all N flagged image(s)'"` is 95 characters

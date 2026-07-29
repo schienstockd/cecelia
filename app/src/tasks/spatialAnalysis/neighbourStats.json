@@ -11,7 +11,7 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output suffix → spatialStats/<suffix>.json."
+      "tip": "Output suffix → spatialStats/<suffix>.json"
     },
     {
       "key": "basisPops",
@@ -21,7 +21,7 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Cell types for pairwise contact statistics; at least two."
+      "tip": "Cell types for pairwise contact statistics; at least two"
     },
     {
       "key": "neighbourMethod",
@@ -33,7 +33,7 @@
         { "value": "knn",      "label": "k nearest neighbours" },
         { "value": "radius",   "label": "Fixed radius" }
       ],
-      "tip": "How the neighbour graph is built."
+      "tip": "How the neighbour graph is built"
     },
     {
       "key": "neighbourRadius",
@@ -43,7 +43,7 @@
       "max": 1000,
       "step": 1,
       "default": 30,
-      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)."
+      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)"
     },
     {
       "key": "nNeighbours",
@@ -53,7 +53,7 @@
       "max": 100,
       "step": 1,
       "default": 6,
-      "tip": "Number of nearest neighbours for the kNN graph."
+      "tip": "Number of nearest neighbours for the kNN graph"
     }
   ]
 }

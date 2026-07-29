@@ -499,7 +499,7 @@ const pct = computed(() => {
       class="select-input"
       :value="val as string"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.right="param.tip ?? 'Select an image version (valueName).'"
+      v-tooltip.right="param.tip ?? 'Select an image version (valueName)'"
     >
       <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
       <option v-if="availableValueNames.length === 0" value="" disabled>— no versions available —</option>
@@ -507,7 +507,7 @@ const pct = computed(() => {
 
     <!-- popSelection (multi / across segmentations): chip list of value_name-prefixed populations -->
     <div v-else-if="param.type === 'popSelection' && popAcross" class="channel-select-wrap"
-      v-tooltip.right="param.tip ?? 'Select populations across segmentations.'">
+      v-tooltip.right="param.tip ?? 'Select populations across segmentations'">
       <div v-if="popMultiOptions.length === 0" class="channel-empty cc-muted">
         No populations — select an image first.
       </div>
@@ -524,14 +524,14 @@ const pct = computed(() => {
       class="select-input"
       :value="(val as string) ?? 'NONE'"
       @change="val = ($event.target as HTMLSelectElement).value"
-      v-tooltip.right="param.tip ?? 'Track the whole segmentation or a gated population.'"
+      v-tooltip.right="param.tip ?? 'Track the whole segmentation or a gated population'"
     >
       <option v-for="opt in popOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
     </select>
 
     <!-- labelPropsColsSelection: grouped (Tracking / Object) multi-select chip lists -->
     <div v-else-if="param.type === 'labelPropsColsSelection'" class="channel-select-wrap"
-      v-tooltip.right="param.tip ?? 'Select measurement columns.'">
+      v-tooltip.right="param.tip ?? 'Select measurement columns'">
       <div v-if="colGroups.length === 0" class="channel-empty cc-muted">
         No measures — select a population first.
       </div>
@@ -547,7 +547,7 @@ const pct = computed(() => {
     <div v-else-if="param.type === 'motionDimsSelection'" class="motion-dims">
       <select class="select-input" :value="(val as string) ?? 'auto'"
               @change="val = ($event.target as HTMLSelectElement).value"
-              v-tooltip.right="param.tip ?? 'Compute measures in-plane (2D) or full 3D.'">
+              v-tooltip.right="param.tip ?? 'Compute measures in-plane (2D) or full 3D'">
         <option value="auto">Auto (recommended)</option>
         <option value="2D">2D (in-plane)</option>
         <option value="3D">3D</option>
@@ -568,7 +568,7 @@ const pct = computed(() => {
 
     <!-- channelSelection: togglable chip list from image context -->
     <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap"
-      v-tooltip.right="param.tip ?? 'Select channels to process.'">
+      v-tooltip.right="param.tip ?? 'Select channels to process'">
       <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
         No channels — select images first.
       </div>
@@ -587,7 +587,7 @@ const pct = computed(() => {
   <!-- section rendered outside .param-row so it spans full width -->
   <div v-if="param.type === 'section'" class="param-section">
     <button class="section-toggle cc-section-toggle cc-eyebrow cc-fs-sm" @click="sectionOpen = !sectionOpen"
-      v-tooltip.left="sectionOpen ? 'Collapse advanced parameters.' : 'Expand advanced parameters.'">
+      v-tooltip.left="sectionOpen ? 'Collapse advanced parameters' : 'Expand advanced parameters'">
       <i :class="['pi', sectionOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
       {{ param.label }}
     </button>

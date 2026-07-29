@@ -612,7 +612,7 @@ onUnmounted(stopResize)
   <div v-if="moveUid" class="move-bar">
     <span>Move <strong>{{ moveImg?.name }}</strong> to</span>
     <select class="move-select" v-model="moveTargetUid"
-      v-tooltip.right="'Destination set (data is not copied — only the set membership changes).'">
+      v-tooltip.right="'Destination set (data is not copied — only the set membership changes)'">
       <option v-for="s in otherSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
       <option value="">＋ New set…</option>
     </select>
@@ -643,7 +643,7 @@ onUnmounted(stopResize)
           <input v-if="!singleSelect" type="checkbox"
             :checked="allSelected" :indeterminate="someSelected"
             @change="toggleAll"
-            v-tooltip.right="'Select / deselect all.'"
+            v-tooltip.right="'Select / deselect all'"
           />
         </th>
 
@@ -695,14 +695,14 @@ onUnmounted(stopResize)
         </th>
 
         <!-- fixed: channel count (only when not showing per-channel columns) -->
-        <th v-if="!showAttrs" class="col-fixed col-ch" v-tooltip.bottom="'Number of channels — click to sort.'">
+        <th v-if="!showAttrs" class="col-fixed col-ch" v-tooltip.bottom="'Number of channels — click to sort'">
           <span class="th-sort" :class="{ active: sortActive('ch') }" @click.stop="toggleSort('ch')">
             Ch <i :class="['sort-ico', sortIcon('ch')]" />
           </span>
         </th>
 
         <!-- fixed: z-slices (only when the set has a z-stack) -->
-        <th v-if="anyZStack" class="col-fixed col-ch" v-tooltip.bottom="'Number of z-slices — click to sort.'">
+        <th v-if="anyZStack" class="col-fixed col-ch" v-tooltip.bottom="'Number of z-slices — click to sort'">
           <span class="th-sort" :class="{ active: sortActive('z') }" @click.stop="toggleSort('z')">
             Z <i :class="['sort-ico', sortIcon('z')]" />
           </span>
@@ -710,7 +710,7 @@ onUnmounted(stopResize)
 
         <!-- fixed: timelapse duration (only when the set has a timelapse) -->
         <th v-if="anyTimelapse" class="col-fixed col-dur"
-          v-tooltip.bottom="'Total timelapse duration (first → last frame) — click to sort.'">
+          v-tooltip.bottom="'Total timelapse duration (first → last frame) — click to sort'">
           <span class="th-sort" :class="{ active: sortActive('duration') }" @click.stop="toggleSort('duration')">
             Duration <i :class="['sort-ico', sortIcon('duration')]" />
           </span>
@@ -735,7 +735,7 @@ onUnmounted(stopResize)
           <input type="checkbox" :checked="selected.has(img.uid)"
             :disabled="isExcluded(img) && !canSelectExcluded"
             @change="toggle(img.uid)"
-            v-tooltip.right="isExcluded(img) && !canSelectExcluded ? 'Excluded — include it to select for a run.' : undefined" />
+            v-tooltip.right="isExcluded(img) && !canSelectExcluded ? 'Excluded — include it to select for a run' : undefined" />
         </td>
 
         <td class="col-fixed col-viewer" @click.stop>
@@ -747,8 +747,8 @@ onUnmounted(stopResize)
             v-tooltip.right="!isImported(img)
               ? 'Import this image first'
               : project.napariImageUid === img.uid
-                ? 'Currently shown in Napari — click to reload.'
-                : 'Open this image in Napari viewer.'"
+                ? 'Currently shown in Napari — click to reload'
+                : 'Open this image in Napari viewer'"
           >
             <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
             <i v-else class="pi pi-eye" />
@@ -766,7 +766,7 @@ onUnmounted(stopResize)
               <i class="pi pi-flag" /> QC
             </span>
             <span v-if="isExcluded(img)" class="excl-badge"
-              v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing.'">
+              v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
               <i class="pi pi-ban" /> Excluded
             </span>
             <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
@@ -796,7 +796,7 @@ onUnmounted(stopResize)
               @keyup.esc="cancelEdit"
               @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
             <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
-              v-tooltip.right="'Click to edit the note.'">
+              v-tooltip.right="'Click to edit the note'">
               <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
             </span>
           </span>
@@ -811,7 +811,7 @@ onUnmounted(stopResize)
               @keyup.esc="cancelEdit"
               @blur="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))" />
             <span v-else class="cell-text attr-cell"
-              v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Name channel ${idx}`"
+              v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Channel ${idx} — click to name`"
               @click.stop="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
               {{ img.channelNames?.[idx - 1] || '—' }}
             </span>
@@ -869,7 +869,7 @@ onUnmounted(stopResize)
           <button
             class="action-btn cc-btn cc-btn-bare cc-btn-icon del-btn"
             @click="confirmDelete(img.uid)"
-            v-tooltip.left="'Remove this image from the set.'"
+            v-tooltip.left="'Remove this image from the set'"
             :disabled="img.status === 'converting'"
           >
             <i class="pi pi-times" />

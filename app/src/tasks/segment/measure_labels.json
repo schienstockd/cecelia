@@ -1,7 +1,7 @@
 {
   "task": "measureLabels",
   "fun_name": "segment.measureLabels",
-  "label": "Measure Labels",
+  "label": "Measure labels",
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "cpu",
@@ -13,14 +13,14 @@
       "type": "valueNameSelection",
       "field": "labels",
       "default": "default",
-      "tip": "Which label set to measure."
+      "tip": "Which label set to measure"
     },
     {
       "key": "intensityValueName",
       "label": "Image for intensities",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Which image version to measure intensities from."
+      "tip": "Which image version to measure intensities from"
     },
     {
       "key": "measureOptions",
@@ -33,7 +33,7 @@
           "label": "Intensity measure",
           "type": "select",
           "default": "mean",
-          "tip": "Statistic to use for per-channel intensity measurement.",
+          "tip": "Statistic to use for per-channel intensity measurement",
           "options": [
             { "label": "Mean",   "value": "mean"   },
             { "label": "Median", "value": "median" }
@@ -47,14 +47,14 @@
           "max": 10.0,
           "step": 0.5,
           "default": 0.0,
-          "tip": "Gaussian blur sigma applied to the image before intensity measurement (0 = off)."
+          "tip": "Gaussian blur sigma applied to the image before intensity measurement (0 = off)"
         },
         {
           "key": "extendedMeasures",
           "label": "Extended 3D measures",
           "type": "bool",
           "default": false,
-          "tip": "3D shape descriptors (surface area, sphericity, …); slow."
+          "tip": "3D shape descriptors (surface area, sphericity, …); slow"
         }
       ]
     },

@@ -418,11 +418,11 @@ const visibleUids = computed<string[]>(() =>
           </div>
           <div class="filter-actions">
             <button class="cc-btn cc-btn-ghost" :disabled="!hasFilters" @click="applyFilters"
-              v-tooltip.top="'Apply selected filters to the image list.'">Apply</button>
+              v-tooltip.top="'Apply selected filters to the image list'">Apply</button>
             <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters" @click="resetFilters"
-              v-tooltip.top="'Clear the attribute filters.'">Reset</button>
+              v-tooltip.top="'Clear the attribute filters'">Reset</button>
             <CcToggle class="filter-invert" v-model="filterInvert" :disabled="!hasApplied" label="Invert"
-              v-tooltip.top="'Invert the filter — show images that do NOT match.'" />
+              v-tooltip.top="'Invert the filter — show images that do NOT match'" />
           </div>
         </div>
 

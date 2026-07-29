@@ -1,7 +1,7 @@
 {
   "task": "hmmTransitions",
   "fun_name": "behaviour.hmm_transitions",
-  "label": "HMM Transitions",
+  "label": "HMM transitions",
   "category": "Behaviour",
   "env": ["local"],
   "resource_pool": "cpu",
@@ -16,14 +16,14 @@
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Track populations whose HMM states to read."
+      "tip": "Track populations whose HMM states to read"
     },
     {
       "key": "colName",
       "label": "Name",
       "type": "text",
       "default": "default",
-      "tip": "Suffix for the output column: live.cell.hmm.transitions.<name>."
+      "tip": "Suffix for the output column: live.cell.hmm.transitions.<name>"
     },
     {
       "key": "hmmStates",
@@ -33,21 +33,21 @@
       "trimPrefix": "live.cell.hmm.state.",
       "hideInComposite": true,
       "default": [],
-      "tip": "HMM state columns; several combine into a hybrid state."
+      "tip": "HMM state columns; several combine into a hybrid state"
     },
     {
       "key": "includeStart",
       "label": "Include start",
       "type": "bool",
       "default": false,
-      "tip": "Emit the first in-track transition (from the track start)."
+      "tip": "Emit the first in-track transition (from the track start)"
     },
     {
       "key": "includeSelfTransitions",
       "label": "Self transitions",
       "type": "bool",
       "default": true,
-      "tip": "Keep transitions where the state does not change (e.g. 1_1)."
+      "tip": "Keep transitions where the state does not change (e.g. 1_1)"
     }
   ]
 }

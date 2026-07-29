@@ -151,15 +151,31 @@ writer, never a hand-rolled sidecar:
    cluster/state", "canvas grew abnormally". Keep the text brief + actionable (short = the problem;
    long = the imperative action; numbers go in `detail`).
 
+**The text lives in `QC_TEXT`, not at the call site.** Add an entry keyed by the finding's `code` to
+the catalog at the top of `app/src/qc.jl`, then emit it by code. Wording is then reviewable as a set
+(`pixi run ui-copy` lists every QC string alongside the rest of the app's copy) instead of being
+buried in an analysis function:
+
+```julia
+# app/src/qc.jl — QC_TEXT
+"mycat.no_output" => (
+    short = "No objects produced",
+    long  = "Check the inputs/params and re-run this step."),
+```
+
 ```julia
 # after the task's work succeeds, inside _run_task
 n = <objective count you already computed>
-findings = n == 0 ?
-    [qc_finding("warn", "mycat.no_output", "No objects produced",
-        "Check the inputs/params and re-run this step.")] : Dict{String,Any}[]
+findings = n == 0 ? [qc_finding("warn", "mycat.no_output")] : Dict{String,Any}[]
 write_qc(img, "mycat.myTask", out_value_name, findings;
          metrics = Dict{String,Any}("nCells" => n))
 ```
+
+Numbers that belong *in* the message (rarely — most belong in `detail`) go in as `{name}`
+placeholders filled from keywords: `qc_finding("info", "mycat.dominant"; pct = 92)`. A missing
+substitution or an unknown key throws, so a half-rendered `{pct}` can't reach a user. Pass `key =`
+only where one code carries two wordings — see the note on the catalog. The four-argument
+`qc_finding(level, code, short, long)` stays for **custom modules**, which have no catalog entry.
 
 - **Keep the finding logic in a PURE helper and unit-test it** (like `_segment_qc_findings`,
   `cluster_qc_findings`, `hmm_states_qc_findings`, `track_measures_qc_findings` in `qc.jl`) — the
@@ -510,7 +526,7 @@ A composite task chains two or more existing tasks in sequence, reusing their Py
 {
   "task":            "afDriftCorrect",
   "fun_name":        "cleanupImages.afDriftCorrect",
-  "label":           "AF & Drift Correction",
+  "label":           "AF & drift correction",
   "category":        "Cleanup",
   "env":             ["local"],
   "resource_pool":   "default",
@@ -587,7 +603,7 @@ A set-scope task differs from an image-scope task in three places:
 1. **`_run_task` dispatches on a vector.** Define `_run_task(::MyTask, imgs::Vector{CciaImage}, params; on_log, on_progress, on_process)` instead of the single-`img` form. Build the pooled cross-image table with `pop_df(imgs, uids, pop_type, pops; …)` (it stacks per-image rows and tags each with a `uID` column). Write results back **per image** (loop `imgs`, write each one's labelProps). See `app/src/tasks/behaviour/hmm_states.jl`.
 2. **The JSON spec declares `"scope": "set"`.** This is what routes the run. `task_scope(task)` reads it (default `"image"`). It also makes the task a **picnic node** on the whiteboard automatically — a chain node inherits its scope from this field (`_task_default_scope`, see `docs/SCHEDULER.md` → *Node scopes*), so you never restate scope when building a chain.
    ```json
-   { "fun_name": "behaviour.hmm_states", "task": "hmmStates", "label": "HMM States", "category": "Behaviour", "scope": "set", "env": ["local"], "resource_pool": "default", "params": [ … ] }
+   { "fun_name": "behaviour.hmm_states", "task": "hmmStates", "label": "HMM states", "category": "Behaviour", "scope": "set", "env": ["local"], "resource_pool": "default", "params": [ … ] }
    ```
 3. **Invocation passes all image UIDs.** The scheduler has a set-scope overload `run_task(task, imgs::Vector{CciaImage}, params; …)` that queues through the pool like the single-image form (status + logfile attach to the first image as representative). The WS `task:run` handler (`api/src/sockets.jl`) checks `task_scope`: a `"set"` task reads `imageUids` from the message and runs the vector form once; an `"image"` task keeps the per-image loop. The frontend `TaskRunner` sends `imageUids: selectedUids` (one `task:run`) when `def.scope === 'set'`.
 

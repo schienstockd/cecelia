@@ -265,7 +265,7 @@ defineExpose({ refresh })
             <a v-if="serverRunning" class="cc-btn cc-btn-ghost" :href="openUrl(nb)" target="_blank"
                rel="noopener" v-tooltip.top="'Open in Pluto'"><i class="pi pi-external-link" /></a>
             <button v-else class="cc-btn cc-btn-ghost" disabled
-                    v-tooltip.top="'Launch the server first'"><i class="pi pi-external-link" /></button>
+                    v-tooltip.top="'Start the server first'"><i class="pi pi-external-link" /></button>
 
             <button class="cc-btn cc-btn-ghost" :disabled="busy" @click="duplicate(nb)"
                     v-tooltip.top="'Duplicate into this project'"><i class="pi pi-copy" /></button>

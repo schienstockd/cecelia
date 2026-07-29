@@ -153,7 +153,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 
           <button v-if="server !== 'running'" class="cc-btn cc-btn-primary"
                   :disabled="server === 'starting'" @click="launch">
-            <i class="pi pi-play" /> Launch server
+            <i class="pi pi-play" /> Start server
           </button>
 
           <template v-else>

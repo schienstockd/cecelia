@@ -269,21 +269,21 @@ async function fillFlagged() {
         </p>
 
         <ChipSelect class="toggle-row" multiple :options="dimOptions" v-model="includeModel"
-          v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct.'" />
+          v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct'" />
 
         <div class="dims-row" :class="{ excluded: !includeX && !includeY && !includeZ }">
           <label class="dim-label cc-muted" v-tooltip.bottom="'Pixel size in X'">X</label>
           <input class="field-input" :class="{ warn: targetFlags.has('x'), mixed: isMixed('physicalSizeX') }"
             type="number" step="any" v-model.number="physX" :disabled="!includeX" placeholder="—"
-            v-tooltip.bottom="isMixed('physicalSizeX') ? 'Other selected images have a different X — this is just ' + focusedImg?.name + '\'s.' : null" />
+            v-tooltip.bottom="isMixed('physicalSizeX') ? 'Other selected images have a different X — this is just ' + focusedImg?.name + '\'s' : null" />
           <label class="dim-label cc-muted" v-tooltip.bottom="'Pixel size in Y'">Y</label>
           <input class="field-input" :class="{ warn: targetFlags.has('y'), mixed: isMixed('physicalSizeY') }"
             type="number" step="any" v-model.number="physY" :disabled="!includeY" placeholder="—"
-            v-tooltip.bottom="isMixed('physicalSizeY') ? 'Other selected images have a different Y — this is just ' + focusedImg?.name + '\'s.' : null" />
+            v-tooltip.bottom="isMixed('physicalSizeY') ? 'Other selected images have a different Y — this is just ' + focusedImg?.name + '\'s' : null" />
           <label class="dim-label cc-muted" v-tooltip.bottom="'Voxel depth — the Z step'">Z</label>
           <input class="field-input" :class="{ warn: targetFlags.has('z'), mixed: isMixed('physicalSizeZ') }"
             type="number" step="any" v-model.number="physZ" :disabled="!includeZ" placeholder="—"
-            v-tooltip.bottom="isMixed('physicalSizeZ') ? 'Other selected images have a different Z — this is just ' + focusedImg?.name + '\'s.' : null" />
+            v-tooltip.bottom="isMixed('physicalSizeZ') ? 'Other selected images have a different Z — this is just ' + focusedImg?.name + '\'s' : null" />
           <select class="field-input unit-input" v-model="physUnit" v-tooltip.bottom="'Unit for X/Y/Z'">
             <option value="micrometer">µm</option>
             <option value="nanometer">nm</option>
@@ -295,7 +295,7 @@ async function fillFlagged() {
           <label class="dim-label cc-muted" v-tooltip.bottom="'Time between frames'">Δt</label>
           <input class="field-input" :class="{ warn: targetFlags.has('t'), mixed: isMixed('timeIncrement') }"
             type="number" step="any" v-model.number="timeInc" :disabled="!includeT" placeholder="—"
-            v-tooltip.bottom="isMixed('timeIncrement') ? 'Other selected images have a different Δt — this is just ' + focusedImg?.name + '\'s.' : null" />
+            v-tooltip.bottom="isMixed('timeIncrement') ? 'Other selected images have a different Δt — this is just ' + focusedImg?.name + '\'s' : null" />
           <select class="field-input unit-input" v-model="timeUnit" v-tooltip.bottom="'Unit for the frame interval'">
             <option value="second">s</option>
             <option value="minute">min</option>
@@ -310,7 +310,7 @@ async function fillFlagged() {
         Fill flagged
       </button>
       <button class="cc-btn cc-btn-ghost" :disabled="copying" @click="copyToSelected"
-        v-tooltip.top="'Copy this image\'s values to the other selected images.'">
+        v-tooltip.top="'Copy this image\'s values to the other selected images'">
         <i v-if="copying" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
         Copy to selected
       </button>

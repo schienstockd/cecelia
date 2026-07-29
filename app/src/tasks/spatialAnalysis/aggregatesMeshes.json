@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The population to detect aggregates of."
+      "tip": "The population to detect aggregates of"
     },
     {
       "key": "maxClusterDist",
@@ -24,7 +24,7 @@
       "max": 1000,
       "step": 1,
       "default": 5,
-      "tip": "Surface-to-surface distance (µm) that links two cells."
+      "tip": "Surface-to-surface distance (µm) that links two cells"
     },
     {
       "key": "minCells",
@@ -34,7 +34,7 @@
       "max": 1000,
       "step": 1,
       "default": 5,
-      "tip": "Minimum number of connected cells for a group to count as an aggregate."
+      "tip": "Minimum number of connected cells for a group to count as an aggregate"
     }
   ]
 }

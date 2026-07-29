@@ -147,14 +147,14 @@ function isNavDisabled(item: NavItem): boolean {
           </div>
           <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
           <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"
-            v-tooltip.right="'Switch project or create a new one.'">
+            v-tooltip.right="'Switch project or create a new one'">
             <i class="pi pi-ellipsis-h" />
           </button>
         </div>
       </template>
       <template v-else>
         <button class="open-project-btn" @click="showPanel = true"
-          v-tooltip.right="'Open or create a project to get started.'">
+          v-tooltip.right="'Open or create a project to get started'">
           <i class="pi pi-folder-open" />
           Manage projects…
         </button>
@@ -185,7 +185,7 @@ function isNavDisabled(item: NavItem): boolean {
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.soon" class="soon-badge">soon</span>
             <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-fs-xs"
-              v-tooltip.right="'Requires an open project.'">
+              v-tooltip.right="'Requires an open project'">
               <i class="pi pi-lock" />
             </span>
           </RouterLink>

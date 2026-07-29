@@ -11,14 +11,14 @@
       "label": "Image to remove",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Which image version to delete from disk."
+      "tip": "Which image version to delete from disk"
     },
     {
       "key": "newDefault",
       "label": "New default",
       "type": "valueNameSelection",
       "default": "default",
-      "tip": "Which version becomes the active image after removal."
+      "tip": "Which version becomes the active image after removal"
     }
   ]
 }

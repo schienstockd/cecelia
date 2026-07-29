@@ -14,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The population to detect aggregates of."
+      "tip": "The population to detect aggregates of"
     },
     {
       "key": "clustDiameter",
@@ -24,7 +24,7 @@
       "max": 1000,
       "step": 1,
       "default": 15,
-      "tip": "DBSCAN eps in microns — cells within this distance are linked into the same aggregate."
+      "tip": "DBSCAN eps in microns — cells within this distance are linked into the same aggregate"
     },
     {
       "key": "minCells",
@@ -34,14 +34,14 @@
       "max": 1000,
       "step": 1,
       "default": 5,
-      "tip": "Minimum number of cells for a group to count as an aggregate (DBSCAN minPts)."
+      "tip": "Minimum number of cells for a group to count as an aggregate (DBSCAN minPts)"
     },
     {
       "key": "perTimepoint",
       "label": "Per timepoint",
       "type": "bool",
       "default": false,
-      "tip": "Detect aggregates per timepoint; off = pool all."
+      "tip": "Detect aggregates per timepoint; off = pool all"
     }
   ]
 }

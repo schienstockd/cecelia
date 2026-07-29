@@ -153,7 +153,7 @@ async function confirmImport() {
       <input
         v-model="rscript"
         class="lm-input"
-        placeholder="Rscript path (optional — only if R isn't found, e.g. /usr/bin/Rscript or your renv Rscript)"
+        placeholder="Rscript path (optional — only if R isn't found)"
       />
 
       <p v-if="error" class="lm-error"><i class="pi pi-exclamation-triangle" /> {{ error }}</p>

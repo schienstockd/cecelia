@@ -241,7 +241,7 @@ async function dismissEntry(entry: LabLogEntry) {
     <div class="ll-compose" :class="{ correcting }">
       <div v-if="correcting" class="ll-correcting">
         <i class="pi pi-reply" /> correction
-        <button class="ll-link" @click="cancelCorrection">cancel</button>
+        <button class="ll-link" @click="cancelCorrection">Cancel</button>
       </div>
       <textarea
         ref="inputEl"

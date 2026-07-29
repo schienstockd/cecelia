@@ -326,7 +326,7 @@ const { width: sidebarWidth, onResizeStart } =
       <select
         class="fn-select"
         v-model="selectedTask"
-        v-tooltip.left="'Select which analysis function to run on the selected images.'"
+        v-tooltip.left="'Select which analysis function to run on the selected images'"
       >
         <option
           v-for="d in defs"
@@ -343,13 +343,13 @@ const { width: sidebarWidth, onResizeStart } =
         <span class="env-badge"
           v-for="env in taskDef.env"
           :key="env"
-          v-tooltip.right="`Runs in the ${env} environment.`">
+          v-tooltip.right="`Runs in the ${env} environment`">
           {{ env }}
         </span>
         <span
           v-if="activeTaskGatingReason"
           class="env-badge"
-          v-tooltip.right="'Selected images do not carry the axes this task needs.'"
+          v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
       </div>
     </section>
@@ -376,8 +376,8 @@ const { width: sidebarWidth, onResizeStart } =
         :disabled="!canRun"
         @click="run"
         v-tooltip.left="canRun
-          ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s).`
-          : (activeTaskGatingReason || 'Select at least one image from the list to enable run.')"
+          ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s)`
+          : (activeTaskGatingReason || 'Select at least one image from the list to enable run')"
       >
         <i class="pi pi-play" />
         {{ runLabel }}
@@ -410,14 +410,14 @@ const { width: sidebarWidth, onResizeStart } =
             v-if="activeTasks.length"
             class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
             @click="cancelAll"
-            v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module.`"
+            v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module`"
           >
             <i class="pi pi-times-circle" />
           </button>
           <button
             class="clear-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="taskStore.clearFinished(module, projectMeta.current?.uid)"
-            v-tooltip.left="'Remove all completed and failed tasks from the list.'"
+            v-tooltip.left="'Remove all completed and failed tasks from the list'"
           >
             <i class="pi pi-filter-slash" />
           </button>

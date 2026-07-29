@@ -141,7 +141,7 @@ function elapsed(t: TaskEntry) {
             v-if="!t.chainRunId && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="rerun(t)"
-            v-tooltip.left="'Rerun this task with the same parameters.'"
+            v-tooltip.left="'Rerun this task with the same parameters'"
           >
             <i class="pi pi-replay" />
           </button>
@@ -159,7 +159,7 @@ function elapsed(t: TaskEntry) {
             v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="tasks.remove(t.id)"
-            v-tooltip.left="'Dismiss this task from the list.'"
+            v-tooltip.left="'Dismiss this task from the list'"
           >
             <i class="pi pi-trash" />
           </button>

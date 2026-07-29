@@ -1202,7 +1202,7 @@ onActivated(async () => {
             class="chain-select"
             :value="activeChain"
             @change="switchChain(($event.target as HTMLSelectElement).value)"
-            v-tooltip.right="'Select a chain to edit.'"
+            v-tooltip.right="'Select a chain to edit'"
           >
             <option v-for="name in chainNames" :key="name" :value="name">{{ name }}</option>
           </select>
@@ -1212,7 +1212,7 @@ onActivated(async () => {
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             @click="showNewInput = !showNewInput"
-            v-tooltip.right="'Create a new chain template.'"
+            v-tooltip.right="'Create a new chain template'"
           >
             <i class="pi pi-plus" />
           </button>
@@ -1232,7 +1232,7 @@ onActivated(async () => {
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
             @click="loadChain(activeChain)"
-            v-tooltip.right="'Reload chain from disk — discards unsaved edits.'"
+            v-tooltip.right="'Reload chain from disk — discards unsaved edits'"
           >
             <i class="pi pi-refresh" />
           </button>
@@ -1240,7 +1240,7 @@ onActivated(async () => {
             class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
             :disabled="!activeChain || saving"
             @click="saveChain"
-            v-tooltip.right="'Save the current chain to disk.'"
+            v-tooltip.right="'Save the current chain to disk'"
           >
             <i :class="['pi', saving ? 'pi-spinner pi-spin' : 'pi-save']" />
           </button>
@@ -1298,7 +1298,7 @@ onActivated(async () => {
             <div v-if="!paletteCategories.length" class="palette-hint palette-hint-retry cc-muted">
               No task definitions found.
               <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense palette-retry-btn" @click="loadAllTaskDefs"
-                v-tooltip.right="'Retry loading task definitions from the server.'">
+                v-tooltip.right="'Retry loading task definitions from the server'">
                 <i class="pi pi-refresh" />
               </button>
             </div>
@@ -1320,7 +1320,7 @@ onActivated(async () => {
             v-if="project.sets.length"
             class="chain-select run-set-select"
             v-model="runSetUid"
-            v-tooltip.right="'Select which set to run the chain on.'"
+            v-tooltip.right="'Select which set to run the chain on'"
           >
             <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
           </select>

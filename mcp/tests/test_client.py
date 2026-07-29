@@ -145,7 +145,7 @@ class ClientTest(unittest.TestCase):
         self.assertIn(("GET", "/api/tasks/definitions"), ALLOWED_ROUTES)
         raw = {"tracking": [{
             "task": "bayesianTracking", "fun_name": "tracking.bayesian_tracking",
-            "label": "Bayesian Tracking", "category": "Tracking",
+            "label": "Bayesian tracking", "category": "Tracking",
             "env": ["local"], "resource_pool": "default",
             "params": [
                 {"key": "maxSearchRadius", "label": "Max search radius", "type": "int",
