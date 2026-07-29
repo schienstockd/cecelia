@@ -247,11 +247,19 @@ action rather than an explanation. Before adding an entry, check whether the fac
 `docs/<AREA>.md` instead — that was true of every one of the ~100 strings the sweeps shortened.
 
 **Reading the whole corpus.** `pixi run ui-copy` (`scripts/ui_copy_inventory.mjs`) dumps every
-front-facing string — SFCs, task specs and Julia QC text, ~1,650 of them — to a git-ignored
-`UI_COPY_INVENTORY.md`, grouped by kind, with the drift signals over the top. Use it to review the
-app's language end-to-end; the build-failing subset stays the ratchet. It imports
+front-facing string — SFCs, task specs, Julia QC text and the What's-New/tip cards, ~1,700 of them —
+to a git-ignored `UI_COPY_INVENTORY.md`, grouped by kind, with the drift signals over the top. Use it
+to review the app's language end-to-end; the build-failing subset stays the ratchet. It imports
 `utils/uiCopy.ts`, which is the one canonical parser — add an extractor there rather than writing a
 second scraper.
+
+**Visibility is not enforcement.** Two surfaces are in the inventory on purpose and ratcheted on
+purpose *not*: bare template text nodes (the largest bucket — extraction is heuristic, so a guard
+would fail builds on parse noise) and the **tip cards** in `lib/tips.ts` (long-form explainers with a
+sketch; there is no agreed length, tone or punctuation rule to hold them to, and they are excluded
+from the length signal for that reason). A ratchet needs a decided rule — without one it grows an
+allow-list until it stops meaning anything, which is the `cssScenarios` lesson. So these are here to
+be *read* and judged by a person, not to break CI.
 
 > **Measure the rendered string, not the binding.** A tooltip binding is an *expression*, so
 > `v-tooltip="flagged ? 'Deselect flagged images' : 'Select all N flagged image(s)'"` is 95 characters
