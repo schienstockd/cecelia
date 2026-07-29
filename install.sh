@@ -106,6 +106,28 @@ say "Downloading $URL"
 curl -fSL "$URL" -o "$TMP/cecelia.tar.gz" \
   || err "Download failed — $([ "$CHANNEL" = dev ] && echo "is branch '$BRANCH' correct?" || echo "does the release exist yet?")"
 
+# Verify the bundle against the SHA-256 published beside it. HTTPS covers the transport; this covers
+# a truncated or swapped asset. Stable channel only — the dev channel pulls a GitHub branch archive,
+# which has no digest.
+#
+# VERIFY-IF-PRESENT: releases up to v0.1.0-rc9 predate the digest asset, so a MISSING one is not
+# fatal (that would make every existing release uninstallable). A MISMATCH is fatal.
+if [ "$CHANNEL" != "dev" ] && curl -fsSL "$URL.sha256" -o "$TMP/cecelia.tar.gz.sha256" 2>/dev/null; then
+  expected="$(awk '{print $1}' "$TMP/cecelia.tar.gz.sha256" 2>/dev/null)"
+  # sha256sum is GNU/Linux; macOS ships shasum. Neither guaranteed → skip rather than fail.
+  if   have sha256sum; then actual="$(sha256sum "$TMP/cecelia.tar.gz" | awk '{print $1}')"
+  elif have shasum;    then actual="$(shasum -a 256 "$TMP/cecelia.tar.gz" | awk '{print $1}')"
+  else actual=""; say "Neither sha256sum nor shasum found — skipping checksum verification."
+  fi
+  if [ -n "$actual" ] && [ -n "$expected" ]; then
+    [ "$actual" = "$expected" ] || err "Checksum mismatch for $VERSION.
+  expected: $expected
+  actual:   $actual
+The download is corrupt or has been tampered with — not installing."
+    say "Checksum verified."
+  fi
+fi
+
 say "Installing to $INSTALL_DIR"
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"

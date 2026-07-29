@@ -97,6 +97,33 @@ $Tmp = New-TemporaryFile
 Say "Downloading $Url"
 Invoke-WebRequest -Uri $Url -OutFile $Tmp
 
+# Verify the bundle against the SHA-256 published beside it — the Windows half of the same check in
+# install.sh. HTTPS covers the transport; this covers a truncated or swapped asset. Stable channel
+# only (a dev branch archive has no digest).
+#
+# VERIFY-IF-PRESENT: releases up to v0.1.0-rc9 predate the digest asset, so a MISSING one is not
+# fatal — that would make every existing release uninstallable. A MISMATCH is fatal.
+if ($Channel -ne 'dev') {
+  $ShaTmp = New-TemporaryFile
+  $HaveDigest = $true
+  try {
+    # -UseBasicParsing for Windows PowerShell 5.1 without IE first-run configured.
+    Invoke-WebRequest -Uri "$Url.sha256" -OutFile $ShaTmp -UseBasicParsing -ErrorAction Stop
+  } catch { $HaveDigest = $false }
+
+  if ($HaveDigest) {
+    # `sha256sum` format is "<hash>  <name>"; take the first token.
+    $Expected = ((Get-Content $ShaTmp -Raw).Trim() -split '\s+')[0].ToLower()
+    $Actual   = (Get-FileHash -Path $Tmp -Algorithm SHA256).Hash.ToLower()
+    if ($Expected -and $Actual -ne $Expected) {
+      Remove-Item $ShaTmp, $Tmp -ErrorAction SilentlyContinue
+      throw "Checksum mismatch for $Version.`n  expected: $Expected`n  actual:   $Actual`nThe download is corrupt or has been tampered with - not installing."
+    }
+    Say 'Checksum verified.'
+  }
+  Remove-Item $ShaTmp -ErrorAction SilentlyContinue
+}
+
 Say "Installing to $InstallDir"
 if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null

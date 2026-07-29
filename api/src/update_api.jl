@@ -177,6 +177,29 @@ function api_update_apply(body_bytes::Vector{UInt8})
         # RECEIVED, which is the actual hang we care about; a total cap would instead kill a
         # legitimately slow download of a large bundle on a poor connection. Don't "fix" this.
         Downloads.download(url, tarball)
+
+        # Integrity: check the bundle against the `.sha256` published beside it. HTTPS covers the
+        # transport; this covers a TRUNCATED or SWAPPED asset, which transport security says nothing
+        # about — and we are about to hand this payload to the launcher to overwrite the app with.
+        #
+        # VERIFY-IF-PRESENT, deliberately. Releases up to and including v0.1.0-rc9 have no digest
+        # asset, so REQUIRING one would make every existing release uninstallable from a client that
+        # has this code. Absent digest → proceed (and say so in the message); present digest that
+        # does NOT match → refuse. Tighten to mandatory once no supported release predates it.
+        digest = try
+            String(take!(Downloads.download("$url.sha256", IOBuffer())))
+        catch
+            ""   # 404 on a pre-digest release, or the fetch failed — not fatal, see above
+        end
+        verified = false
+        if !isempty(strip(digest))
+            if !Cecelia._sha256_matches(tarball, digest)
+                rm(staging; recursive = true, force = true)
+                return 500, JSON3.write((;
+                    error = "the downloaded bundle does not match its published SHA-256 — refusing to stage it."))
+            end
+            verified = true
+        end
         # Go through `_run_tar` (app/src/project_io.jl) rather than a bare `run` — it is the one tar
         # runner. A bare `run` skipped `track_job!` (so the extract could not be cancelled) and, more
         # importantly, missed the `termsignal` check: libuv reports `exitcode == 0` for a
@@ -191,7 +214,7 @@ function api_update_apply(body_bytes::Vector{UInt8})
         end
         write(joinpath(_APP_ROOT, ".pending-update"), tag)   # marker the launcher looks for
         broadcast_ws(Dict("type" => "update:staged", "version" => tag))
-        200, JSON3.write((; staged = tag,
+        200, JSON3.write((; staged = tag, verified,
             message = "Update $tag downloaded. Restart Cecelia to finish installing."))
     catch e
         rm(staging; recursive = true, force = true)

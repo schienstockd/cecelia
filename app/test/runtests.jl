@@ -127,6 +127,38 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isfile(joinpath(nested, "observer-mcp.json"))
     end
 
+    # ── Release-bundle integrity ─────────────────────────────────────────────────
+    # `/api/update/apply` hands the downloaded payload to the launcher, which overwrites the app
+    # with it on the next restart — so a truncated or swapped asset matters, and HTTPS says nothing
+    # about either. These back the `.sha256` published beside the bundle by `release.yml`.
+    @testset "_file_sha256 / _sha256_matches" begin
+        mktempdir() do d
+            f = joinpath(d, "cecelia.tar.gz")
+            write(f, "some bundle bytes")
+            h = Cecelia._file_sha256(f)
+
+            @test occursin(r"^[0-9a-f]{64}$", h)                         # lowercase hex, 64 chars
+            @test h == Cecelia._file_sha256(f)                           # stable
+            @test Cecelia._sha256_matches(f, "$h  cecelia.tar.gz")       # GNU `sha256sum` form
+            @test Cecelia._sha256_matches(f, h)                          # bare hash
+            @test Cecelia._sha256_matches(f, "$h  cecelia.tar.gz\n")     # trailing newline
+            @test Cecelia._sha256_matches(f, uppercase(h))               # case-insensitive
+
+            # Every not-a-match must be FALSE, never an exception — the caller decides whether a
+            # missing/broken digest is fatal (it is verify-if-present, so it isn't).
+            @test !Cecelia._sha256_matches(f, "0"^64)                    # wrong digest
+            @test !Cecelia._sha256_matches(f, "")                        # empty file
+            @test !Cecelia._sha256_matches(f, "   \n ")                  # whitespace only
+            @test !Cecelia._sha256_matches(f, "<!DOCTYPE html>")         # an error page, not a digest
+            @test !Cecelia._sha256_matches(f, h[1:40])                   # truncated
+            @test !Cecelia._sha256_matches(f, h * "ff")                  # over-long
+
+            # A changed byte must change the verdict — the whole point.
+            write(f, "some bundle bytez")
+            @test !Cecelia._sha256_matches(f, "$h  cecelia.tar.gz")
+        end
+    end
+
     # ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
     # A user-placed checkpoint under `<config_dir>/models/cellposeModels/{name}` is picked up
     # by the cellpose Julia handler and passed to Python as an absolute file path (which

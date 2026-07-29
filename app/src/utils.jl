@@ -1,3 +1,7 @@
+# SHA is also imported in tasks/chain.jl; repeat it here rather than depend on include order or
+# on an unrelated file keeping its import.
+import SHA
+
 const UID_LENGTH = 6
 const UID_CHARS  = collect("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
@@ -17,4 +21,37 @@ function _dir_bytes(path::String)::Int
             total
         catch; 0; end
     end
+end
+
+# ── Release-bundle integrity ──────────────────────────────────────────────────────────────────────
+
+"""
+    _file_sha256(path) -> String
+
+Lowercase hex SHA-256 of a file, streamed rather than slurped — the release bundle is small today but
+this must not depend on that.
+
+Used by `/api/update/apply` to check a downloaded bundle against the `.sha256` published beside it.
+HTTPS already covers the transport; this covers a truncated or swapped asset, which transport
+security says nothing about.
+"""
+_file_sha256(path::AbstractString)::String = open(io -> bytes2hex(SHA.sha256(io)), path)
+
+"""
+    _sha256_matches(path, digest_file_contents) -> Bool
+
+Whether `path` hashes to the digest recorded in a `sha256sum`-style line:
+
+    2f0a…9c  cecelia.tar.gz
+
+Only the first whitespace-delimited token is read, so both the GNU (`hash  name`) and bare-hash forms
+work. Comparison is case-insensitive and whitespace-tolerant; a malformed or empty digest file is
+`false` rather than an error, so the CALLER decides whether a missing/broken digest is fatal.
+"""
+function _sha256_matches(path::AbstractString, digest_contents::AbstractString)::Bool
+    tok = first(split(strip(digest_contents)), 1)
+    isempty(tok) && return false
+    expected = lowercase(strip(first(tok)))
+    occursin(r"^[0-9a-f]{64}$", expected) || return false
+    _file_sha256(path) == expected
 end
