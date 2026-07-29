@@ -4024,7 +4024,10 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     @testset "branch pop_type wiring" begin
         # POP_MAP_SUFFIX resolves the gating file suffix.
         @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
-        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"), "gating/stroma__branch.json")
+        # build the expected tail with joinpath — a literal "gating/..." fails on Windows, where the
+        # path is "\\gating\\stroma__branch.json" (the product is fine; the assertion wasn't portable)
+        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"),
+                       joinpath("gating", "stroma__branch.json"))
 
         # ACCEPT_TOKENS + validators.
         @test "branch" in Cecelia.ACCEPT_TOKENS
