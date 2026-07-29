@@ -70,6 +70,70 @@ end
     @test haskey(JSON3.read(body), :error)
 end
 
+@testset "API: update version ordering (rcN sorts numerically)" begin
+    # THE BUG THIS PINS. Julia parses `v"0.1.0-rc10"`'s prerelease as the single STRING `("rc10",)`,
+    # and strings compare lexicographically — so `"rc10" < "rc9"` and rc10 sorted BELOW rc9.
+    # `api_update_check` reports the MAX release, so once rc10 existed the max stayed rc9: rc9
+    # clients saw "up to date" and older clients were updated *to* rc9 and stuck there. Silent, no
+    # error, latent from rc1, triggered at the 9→10 boundary. `_parse_ver` now rewrites `-rc10` →
+    # `-rc.10` so the digits are a NUMERIC identifier.
+    @test _parse_ver("v0.1.0-rc10") > _parse_ver("v0.1.0-rc9")
+    @test _parse_ver("v0.1.0-rc11") > _parse_ver("v0.1.0-rc2")
+    @test _parse_ver("v0.1.0-rc100") > _parse_ver("v0.1.0-rc99")
+
+    # ...without disturbing the orderings that were already right.
+    @test _parse_ver("v0.1.0-rc9") > _parse_ver("v0.1.0-rc8")
+    @test _parse_ver("v0.1.0") > _parse_ver("v0.1.0-rc10")     # a release outranks its prereleases
+    @test _parse_ver("v0.2.0") > _parse_ver("v0.1.0")
+    @test _parse_ver("v0.1.1") > _parse_ver("v0.1.0")
+
+    # Shape + tolerance: `v`/`V` prefix and surrounding space are stripped, junk is `nothing`
+    # (so a "dev" checkout never reports an update rather than erroring).
+    @test _parse_ver("V0.1.0") == _parse_ver(" v0.1.0 ") == VersionNumber("0.1.0")
+    @test _parse_ver("dev") === nothing
+    @test _parse_ver("") === nothing
+    @test _parse_ver("v0.1.0-rc10").prerelease == ("rc", 10)   # numeric identifier, not "rc10"
+
+    # An already-dotted tag must not be rewritten twice.
+    @test _parse_ver("v0.1.0-rc.10") == _parse_ver("v0.1.0-rc10")
+
+    # End-to-end over a release LIST, the way `api_update_check` picks a winner: the newest tag must
+    # win regardless of the order GitHub returns it in.
+    pick(tags) = argmax(t -> _parse_ver(t), tags)
+    @test pick(["v0.1.0-rc8", "v0.1.0-rc10", "v0.1.0-rc9"]) == "v0.1.0-rc10"
+    @test pick(["v0.1.0-rc10", "v0.1.0", "v0.1.0-rc9"]) == "v0.1.0"
+end
+
+@testset "API: update apply guard rails" begin
+    # `api_update_apply` refuses to run in a git checkout — which is where these tests live — so the
+    # guards are extracted into `_apply_precheck` to be reachable at all. Pure: no network, no root.
+    ok(tag) = _apply_precheck(tag; scope = "user", installed = true)
+
+    @test ok("v0.1.0") === nothing              # cleared to download
+    @test ok("v0.1.0-rc9") === nothing
+    @test ok("v0.1.0-rc.10") === nothing
+    @test ok("0.1.0") === nothing               # the `v` is optional
+
+    # Scope/install guards still fire, and in priority order — a system install is refused even
+    # with a perfectly good tag.
+    @test _apply_precheck("v0.1.0"; scope = "system", installed = true)[1] == 403
+    @test _apply_precheck("v0.1.0"; scope = "dev", installed = false)[1] == 400
+    @test _apply_precheck(""; scope = "user", installed = true)[1] == 400
+
+    # `tag` is interpolated into the download URL and written to `.pending-update`, so free-form
+    # input must not survive: traversal, a second path segment, a query string or whitespace would
+    # each point the download somewhere other than this release's asset.
+    for bad in ["../../etc/passwd", "v0.1.0/../../other", "v0.1.0?x=1", "v0.1.0 rm -rf",
+                "latest", "main", "v0.1", "v0.1.0;whoami", "v0.1.0\nx", "https://evil/x"]
+        r = _apply_precheck(bad; scope = "user", installed = true)
+        @test r !== nothing && r[1] == 400
+    end
+
+    # Anchoring: a valid tag with junk appended must NOT pass (an unanchored regex would let it).
+    @test _apply_precheck("v0.1.0/evil"; scope = "user", installed = true) !== nothing
+    @test _apply_precheck("xv0.1.0"; scope = "user", installed = true) !== nothing
+end
+
 @testset "API: setup wizard" begin
     st, body = api_setup_defaults(HTTP.Request("GET", "/api/setup/defaults"))
     @test st == 200

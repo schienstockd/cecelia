@@ -60,6 +60,26 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 acknowledgements (celltrackR GPL-2) — TODO #00060. Fine to skip for personal rc's; required the moment
 someone else installs it.
 
+### One-time constraint: everything shipped so far is stuck behind `v0.1.0-rc9`
+
+`api/src/update_api.jl` compares tags with Julia's `VersionNumber`, which parses `rc10`'s prerelease
+as the single **string** `"rc10"` — and `"rc10" < "rc9"` lexicographically. `_parse_ver` now rewrites
+`-rc10` → `-rc.10` so the digits compare numerically, **but that fix only helps clients that already
+have it.** Anyone running `v0.1.0-rc9` compares with their own copy of the old function, so:
+
+| Next tag | Reaches an rc9 client? |
+|---|---|
+| `v0.1.0-rc10` (…and rc11 … rc19) | **no** — sorts *below* rc9; the GUI says "up to date" |
+| `v0.1.0` / `v0.2.0` / any release | **yes** — a release always outranks its own prereleases |
+| `v0.1.0-rc9.1` | yes, but it is an unreadable version to hand anyone |
+
+Worse, an rc8 client offered the "newest" release is sent to **rc9** and then dead-ends there, so
+rc9 is a terminal state for every existing install until a tag outranks it.
+
+**So the next tag must be a plain release** (`v0.1.0` or higher). After that the ladder is safe and
+`-rcN` works normally again. This also fixes `releases/latest`, which only ever resolves to a
+non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install channels*).
+
 ## Cutting a release — the short checklist
 
 1. CI matrix green on `main` (all three OSes).
