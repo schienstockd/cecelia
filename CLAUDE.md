@@ -275,8 +275,11 @@ Do not add a `useGPU` param to task JSON or Julia handlers.
 All code must run on Linux, macOS, and Windows. Each of these has already caused a real bug —
 use the named helper, don't re-derive the platform branch inline:
 
-- **Python venv path** differs (`bin/python3` vs `Scripts\python.exe`) — always branch on
-  `Sys.iswindows()`, never hardcode one.
+- **Python interpreter** — use `python_bin_path()` in `config.jl`; never hardcode an interpreter name
+  or venv layout (`bin/python3` vs `Scripts\python.exe`). It resolves to an **absolute** path and tries
+  the platform's spellings (Windows conda envs ship `python.exe` and often no `python3` at all). A bare
+  name is not good enough for any string that leaves the `pixi run` environment — the observer
+  registers this value into the user's own Claude Code config, launched from a plain shell.
 - **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
   `.bat` vs no-extension.
 - **Leading `~` in a path** — use `expand_user()` in `config.jl`, never `Base.expanduser`, which is

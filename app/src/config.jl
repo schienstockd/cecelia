@@ -286,7 +286,56 @@ function bioformats2raw_bin()::String
     joinpath(_cfg_dir("bioformats2raw", "/path/to/bioformats2raw"), "bin", exe)
 end
 
-python_bin_path()::String = _cfg_dir("python", "python3")
+# The shipped `[dirs] python` value. Must match `app/config.toml` — it is the sentinel for "nobody
+# chose this", the same role `_PROJECTS_DIR_PLACEHOLDER` plays for the projects dir.
+const _PYTHON_BIN_DEFAULT = "python3"
+
+# Interpreter names to try, in order. PURE and parameterised on `iswin` so BOTH platforms' behaviour is
+# testable from any host. Windows conda/pixi envs ship `python.exe` and frequently no `python3` at all,
+# so `python` must be tried there; on Unix `python3` is the unambiguous one.
+#
+# A name the user DELIBERATELY configured is the only candidate: resolve it to an absolute path if we
+# can, but never silently substitute a different interpreter. Falling back would run tasks under an
+# interpreter that lacks the analysis deps and report nothing about why — worse than failing on the
+# name they asked for. The shipped default is not a deliberate choice, so it does get the fallbacks.
+_python_bin_candidates(configured::AbstractString, iswin::Bool)::Vector{String} =
+    let c = String(strip(String(configured)))
+        (isempty(c) || c == _PYTHON_BIN_DEFAULT) ?
+            (iswin ? String["python", "python3"] : String["python3", "python"]) :
+            String[c]
+    end
+
+"""
+    python_bin_path() -> String
+
+The Python interpreter the engine's subprocesses run — **resolved to an absolute path** whenever it
+can be found on `PATH`.
+
+Absolute, not the bare `"python3"` it used to return, because the string escapes the activated
+environment. `pixi run` puts the Pixi env first on `PATH`, so a bare name resolves correctly for
+anything *Julia* spawns (`run_py`, the napari bridge) — but the observer's MCP spec registers this
+value into the user's **own** Claude Code config, where it is launched from a plain shell with no Pixi
+activation. There, a bare `python3` is the *system* python, which has neither `mcp` nor `websockets`,
+so the observer's tools failed to start in exactly the sessions the one-click setup was meant to
+enable. It also could not work on Windows at all, where `python3` frequently does not exist.
+
+Resolution: an explicitly configured `dirs.python` **path** (anything with a directory component) is
+used verbatim — the user has said precisely which interpreter. A bare *name* (including the shipped
+default `"python3"`) is resolved through `PATH`, falling back to the platform's other spellings. If
+nothing resolves, the configured/legacy bare name is returned unchanged, so behaviour never gets
+worse than before.
+"""
+function python_bin_path()::String
+    raw  = strip(string(get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "python", "")))
+    conf = isempty(raw) ? "" : expand_user(String(raw))
+    # An explicit PATH wins verbatim; a bare NAME falls through to resolution below.
+    isempty(conf) || isempty(dirname(conf)) || return conf
+    for cand in _python_bin_candidates(conf, Sys.iswindows())
+        p = Sys.which(cand)
+        isnothing(p) || return String(p)
+    end
+    isempty(conf) ? "python3" : conf
+end
 
 # Default for launching the napari bridge on the discrete GPU (hybrid-graphics machines). Reads
 # `[napari].discreteGpu`; the api layer holds the runtime toggle (Settings) and seeds it from this.
