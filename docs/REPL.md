@@ -179,6 +179,13 @@ cells to paste) → once happy, they run it without you.
   above**: pool in one `pop_df` call rather than looping+`vcat`, and confirm pop paths/column names
   via `get_populations` / `get_measure_summary` instead of a candidate-list guesser. Plot with
   AlgebraOfGraphics + CairoMakie; export with `CSV.write`. Obey the **write rules above** (figures/CSV only).
+- **Include a `DATA_STAMP` cell — every generated notebook, no exceptions.** Pluto reacts to *cell*
+  changes, not to files, so after the user re-runs a pipeline task the notebook keeps rendering the
+  **old data with no sign it is stale**. Emit one stamp cell listing the files the notebook reads,
+  and a bare `DATA_STAMP` line at the top of every cell that reads from disk; re-running the stamp
+  cell then cascades. Full pattern + why nothing automatic exists yet: `docs/NOTEBOOKS.md` →
+  *Refreshing after a pipeline re-run*. Omitting it is how a user ends up trusting a plot of data
+  they already replaced.
 - **`description`** is ONE short line (a title-ish phrase shown in the notebook table), not a paragraph
   — it's capped server-side. Reword later with `set_notebook_description`.
 - **Create vs revise**: `create_notebook` is create-only (409 on an existing name). To CHANGE an

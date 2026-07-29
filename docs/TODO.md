@@ -28,6 +28,38 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+**#00088** — **Per-notebook reset (re-run a notebook on new data without killing the Pluto server)**
+Pluto has no filesystem watcher, so a notebook keeps rendering **stale data with no visible sign**
+after a pipeline task rewrites its inputs. The `DATA_STAMP` convention
+(`docs/NOTEBOOKS.md` → *Refreshing after a pipeline re-run*) is the working answer today, but it is
+manual and easy to forget. The only reset currently available is the Notebooks page's **Restart**,
+which stops the whole Pluto server and takes **every** open session (and their unsaved edits) with it
+— which is what prompted this (Dominik, 2026-07-29).
+
+**Mechanism, verified against the pinned Pluto (`Pluto/F6SNP`, `src/webserver/Router.jl`):**
+- `GET /notebooklist` → a Dict of `notebook_id => path`. **MsgPack-encoded** (`pack`), not JSON, and
+  `api/` has no MsgPack dep — so prefer the redirect route below over adding one.
+- `GET|POST /shutdown?id=<uuid>` → `SessionActions.shutdown` for **that one session**.
+- `GET /open?path=<abs>` → 302 to `/edit?id=<uuid>`, so the id can be read from the `Location`
+  header with no new dependency. (Opening an already-open path returns the existing session.)
+
+So: `POST /api/notebooks/reset { projectUid, file }` = resolve abs path → `open` without following
+redirects → parse `id` → `shutdown?id=` → return ok. Then the row's existing **Open** runs it fresh.
+UI: one per-row button in `NotebookTable.vue` (`pi-replay`), beside Snapshot/History.
+
+**Risks to handle, not ignore:**
+- These are Pluto's **desktop-app** endpoints ("normally shutdown is done through Dynamic.jl" per its
+  own comment) — semi-public, not a stability guarantee. Fail gracefully and pin the Pluto version
+  the behaviour was verified against.
+- A reset **discards unsaved in-session edits**. Snapshot first, the way `/api/notebooks/revise`
+  already does, so nothing is unrecoverable.
+- `open`-then-`shutdown` on a notebook that was not running starts a session just to kill it. Cheap,
+  but check `/notebooklist` first if it ever matters.
+
+Related, and a bigger decision: **`PlutoUI` is not in `pluto/Project.toml`**. Adding it would give
+`Button` (an in-notebook refresh) *and* sliders for a timepoint, but costs a re-resolve of all three
+manifests. Decide that separately.
+
 **#00003** — **Per-image lockfiles wired into task commit sites**
 Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
 guard and is never called. The real (rare) collision risk is two tasks doing concurrent
