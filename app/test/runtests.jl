@@ -305,6 +305,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm_cmd = Cecelia._build_mcp_remove_cmd(a)
         @test rm_cmd.exec == [a.bin, "mcp", "remove", Cecelia.OBSERVER_MCP_NAME, "-s", "user"]
         @test Cecelia._build_mcp_register_cmd(a, "{}"; scope = "local").exec[end] == "local"
+        # the restore path uses the SAME add command, so a prior entry can be put back verbatim
+        @test Cecelia._build_mcp_register_cmd(a, "{\"command\":\"/old/python\"}").exec[5] ==
+              "{\"command\":\"/old/python\"}"
         @test Cecelia.OBSERVER_MCP_NAME == "cecelia-observer"   # the name users see in `claude mcp list`
 
         # Is the user's own terminal set up? Drives which button the lab-log toolbar shows, so the

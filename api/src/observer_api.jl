@@ -88,7 +88,18 @@ function api_observer_register(::Vector{UInt8})
             error = "No assistant CLI found. Install Claude Code to enable this."))
     end
     spec = _observer_want_spec()
-    ok, message = register_observer_mcp(agent, JSON3.write(spec))
+    # Already correct → touch nothing. The user's main Claude config shouldn't be rewritten just
+    # because someone clicked a button twice.
+    prior = read_registered_observer_spec()
+    if observer_registration_state(prior, spec) === :current
+        return 200, JSON3.write((; ok = true, available = true, name = OBSERVER_MCP_NAME,
+                                   message = "Already set up", error = "",
+                                   terminal = _observer_terminal_state()))
+    end
+    # Otherwise pass the entry that's there now so a failed re-sync can put it back (see
+    # register_observer_mcp) — and so a first-time setup never runs a `remove` at all.
+    ok, message = register_observer_mcp(agent, JSON3.write(spec);
+                                        prior_json = prior === nothing ? "" : JSON3.write(prior))
     # Report the state read back from the config, not the CLI's exit code alone — the UI flips its
     # button on `terminal.ready`, so it must reflect what's actually on disk.
     200, JSON3.write((; ok = ok, available = true, name = OBSERVER_MCP_NAME,

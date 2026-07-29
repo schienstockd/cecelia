@@ -54,11 +54,17 @@ interpreter) or a different port still *looks* registered to Claude Code, but th
 Cecelia — and it fails quietly. That's treated as not-set-up rather than offering a Chat button that
 appears to work.
 
-**Safe to click again.** `add-json` refuses a name that already exists, so the route removes first —
-which makes the button a **re-sync**: click it after moving the checkout, changing the Python env, or
-changing the port, and the registered paths are refreshed. (It is the only thing in Cecelia that writes
-to your Claude Code config, and only on that click. `claude mcp remove cecelia-observer -s user` undoes
-it.)
+**Safe to click again.** `add-json` refuses a name that already exists, so re-syncing removes first —
+click the button after moving the checkout, changing the Python env, or changing the port and the
+registered paths are refreshed.
+
+**About your Claude config.** `~/.claude.json` is your main Claude Code config (project history, caches,
+auth state), so Cecelia never edits it directly: every write is `claude mcp …`, letting the tool that
+owns the file do its own read-modify-write on the one `cecelia-observer` key. Detection is a read.
+Three further guards: an already-correct entry is a **no-op** (nothing is rewritten); a first-time setup
+runs **no** `remove` at all; and when a re-sync does remove an old entry and the replacement fails, the
+old entry is **restored** (and the dialog says whether that worked) — so a failed click can't leave you
+with less than you had. `claude mcp remove cecelia-observer -s user` undoes the whole thing.
 
 **If it fails** the dialog falls back to showing the generated config's real path:
 

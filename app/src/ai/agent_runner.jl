@@ -155,16 +155,28 @@ observer_registration_state(want::AbstractDict) =
 
 # Register (or re-sync) the observer MCP in the user's Claude Code config. Returns
 # `(ok, message)` — `message` is the CLI's own output, shown verbatim in the UI on failure so a
-# problem is never silent. The remove is best-effort: "not found" on a first run is the normal case.
+# problem is never silent.
+#
+# We never edit `~/.claude.json` ourselves — every write goes through Claude Code's own CLI, which owns
+# that file's format and does its own read-modify-write. It is the user's MAIN config (project history,
+# caches, auth state), so the only safe way to touch one key in it is to let its owner do it.
+#
+# `prior_json` is the entry currently registered (or ""), and it exists for one reason: `add-json`
+# refuses an existing name, so re-syncing a stale entry means remove-then-add — two commands, and a
+# failure between them would leave the user with NO registration, i.e. worse off than before they
+# clicked. So: remove only when something is actually there, and restore it if the add then fails.
 # LIVE path (spawns the CLI) — the pure builders above are the tested surface.
 function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
+                               prior_json::AbstractString = "",
                                scope::AbstractString = "user", timeout_s::Int = 30)
     agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
-    try
-        run(pipeline(_build_mcp_remove_cmd(a; scope), stdout = devnull, stderr = devnull); wait = true)
+    _run_quiet(cmd) = try
+        run(pipeline(cmd, stdout = devnull, stderr = devnull); wait = true); true
     catch
-        # nothing registered yet (or a different scope) — that's the expected first-run path
+        false
     end
+    # Nothing registered → nothing to remove, so a failed add can't lose anything.
+    isempty(prior_json) || _run_quiet(_build_mcp_remove_cmd(a; scope))
     # Same spawn idiom as _run_observer_once: pipe + timeout timer, and check termsignal too (libuv
     # reports exitcode 0 for signal-kills).
     out = Pipe()
@@ -180,6 +192,13 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
         proc.exitcode == 0 && proc.termsignal == 0
     catch e
         output = sprint(showerror, e); false
+    end
+    # Put the user's previous entry back if we removed it and the replacement didn't land. Best-effort
+    # and reported either way — never silently leave them with less than they started with.
+    if !ok && !isempty(prior_json)
+        restored = _run_quiet(_build_mcp_register_cmd(a, prior_json; scope))
+        output = string(output, restored ? "\n(your previous cecelia-observer entry was restored)" :
+                                          "\n(could not restore your previous cecelia-observer entry)")
     end
     (ok, strip(output))
 end
