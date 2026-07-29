@@ -316,6 +316,7 @@ async function switchWt(path: string) {
             <div class="field-row">
               <input
                 class="field-input"
+                v-tooltip.right="'Project name shown in the header and picker'"
                 v-model="editName"
                 @keydown.enter="saveName"
                 placeholder="Project name"
@@ -371,7 +372,8 @@ async function switchWt(path: string) {
       <div class="field">
         <label class="field-label">Version</label>
         <div class="field-row">
-          <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly />
+          <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly
+                 v-tooltip.right="'Cecelia version currently running'" />
           <button
             class="save-btn"
             :disabled="appCtl.updateChecking"
@@ -472,7 +474,8 @@ async function switchWt(path: string) {
       <div class="field">
         <label class="field-label">Modules directory</label>
         <div class="field-row">
-          <input class="field-input mono" :value="customModules.dir || '—'" readonly />
+          <input class="field-input mono" :value="customModules.dir || '—'" readonly
+                 v-tooltip.right="'Where drop-in task modules are loaded from'" />
           <button
             class="save-btn"
             :disabled="customModules.loading"
@@ -720,6 +723,7 @@ async function switchWt(path: string) {
 
       <textarea
         class="repl-input mono"
+        v-tooltip.top="'Julia to evaluate in the running server'"
         v-model="replCode"
         rows="3"
         spellcheck="false"

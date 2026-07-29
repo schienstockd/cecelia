@@ -108,6 +108,7 @@ const filterOptions = computed<ChipOption[]>(() =>
       <ChipSelect
         class="filter-chips"
         variant="segmented"
+        v-tooltip.top="'Show only messages of this severity'"
         :options="filterOptions"
         :model-value="filter"
         @update:model-value="v => filter = v as Filter"

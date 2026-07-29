@@ -242,7 +242,8 @@ async function previewOpen() {
         <div v-for="ch in channelList" :key="ch" class="bm-row">
           <span class="bm-ch">{{ ch }}</span>
           <SwatchSelect :model-value="channels[ch] ?? ''" :options="colormapOpts"
-                        @update:model-value="v => setChannel(ch, v)" />
+                        @update:model-value="v => setChannel(ch, v)"
+                        v-tooltip.left="'Colourmap this channel renders in'" />
         </div>
       </section>
 
@@ -250,19 +251,21 @@ async function previewOpen() {
       <section class="bm-sec">
         <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
-                    aria-label="Movie overlays" />
+                    aria-label="Movie overlays" v-tooltip.left="'Layers drawn over the image in every movie'" />
         <div v-if="showTracks" class="bm-inset">
           <span class="bm-lbl cc-muted">tail</span>
-          <input type="range" min="1" max="20" step="1" v-model.number="tailWidth" />
+          <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
+                 v-tooltip.left="'Thickness of the track tail'" />
           <span class="bm-val">{{ tailWidth }}</span>
         </div>
         <div v-if="showPops" class="bm-inset">
-          <select v-model="popType" class="bm-mini">
+          <select v-model="popType" class="bm-mini" v-tooltip.left="'Which population type to draw as points'">
             <option value="flow">gating</option>
             <option value="clust">clusters</option>
           </select>
           <span class="bm-lbl cc-muted">size</span>
-          <input type="range" min="1" max="20" step="1" v-model.number="pointsSize" />
+          <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
+                 v-tooltip.left="'Diameter of the population points'" />
           <span class="bm-val">{{ pointsSize }}</span>
         </div>
       </section>
@@ -270,7 +273,7 @@ async function previewOpen() {
       <!-- Colour by -->
       <section class="bm-sec">
         <h4>Colour by <span class="bm-sub cc-muted">measure used to colour tracks / labels</span></h4>
-        <select v-model="colourBy">
+        <select v-model="colourBy" v-tooltip.left="'Cell measure mapped to track and label colour'">
           <option value="">— none (population / default colour) —</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>
@@ -279,7 +282,7 @@ async function previewOpen() {
       <!-- Image version -->
       <section v-if="versionNames.length > 1" class="bm-sec">
         <h4>Image version</h4>
-        <select v-model="valueName">
+        <select v-model="valueName" v-tooltip.left="'Which image version to record'">
           <option value="">active</option>
           <option v-for="vn in versionNames" :key="vn" :value="vn">{{ vn }}</option>
         </select>
@@ -298,7 +301,7 @@ async function previewOpen() {
         <div class="bm-attrs">
           <span class="bm-lbl cc-muted">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
-                      aria-label="Filename attributes" />
+                      aria-label="Filename attributes" v-tooltip.left="'Attributes joined to build each movie filename'" />
           <span v-else class="bm-hint cc-muted">no attributes — files named by uid</span>
         </div>
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>

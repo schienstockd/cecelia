@@ -67,9 +67,9 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 <template>
   <div class="pb">
     <div class="pb-head">
-      <label class="pb-num cc-muted cc-fs-xs"><span>cols</span>
+      <label class="pb-num cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate columns'"><span>cols</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="cols" @change="cols = clamp(cols)" /></label>
-      <label class="pb-num cc-muted cc-fs-xs"><span>rows</span>
+      <label class="pb-num cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate rows'"><span>rows</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="rows" @change="rows = clamp(rows)" /></label>
       <span class="pb-hint cc-muted cc-fs-2xs">drag to merge · click a merge to split</span>
     </div>

@@ -61,10 +61,10 @@ const tipsOptOut = computed({
            over the container's aspect-ratio and overflow the card. -->
       <SketchCanvas :definition="sketch" width="100%" height="100%" />
       <template v-if="navigable">
-        <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" @click.stop="emit('nav-prev')">
+        <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" v-tooltip.right="'Previous tip'" @click.stop="emit('nav-prev')">
           <i class="pi pi-chevron-left" />
         </button>
-        <button type="button" class="wn-nav wn-nav-next" aria-label="Next tip" @click.stop="emit('nav-next')">
+        <button type="button" class="wn-nav wn-nav-next" aria-label="Next tip" v-tooltip.left="'Next tip'" @click.stop="emit('nav-next')">
           <i class="pi pi-chevron-right" />
         </button>
       </template>
@@ -87,7 +87,8 @@ const tipsOptOut = computed({
       <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link cc-muted">
         View on GitHub <i class="pi pi-external-link" />
       </a>
-      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="wn-optout cc-muted cc-fs-xs" />
+      <CcToggle v-if="isTip" v-model="tipsOptOut" label="Don't show tips on launch" class="wn-optout cc-muted cc-fs-xs"
+                v-tooltip.top="'Stop opening this dialog at startup'" />
       <a :href="issueUrl" target="_blank" rel="noopener" class="wn-link wn-link-right cc-muted">
         Report a problem <i class="pi pi-external-link" />
       </a>

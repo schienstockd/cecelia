@@ -61,7 +61,8 @@ function copyAll() {
       <div class="pk-toolbar">
         <span class="search-wrap">
           <i class="pi pi-search" />
-          <input class="search-input" v-model="q" placeholder="Filter by name…" />
+          <input class="search-input" v-model="q" placeholder="Filter by name…"
+                 v-tooltip.bottom="'Filter the list by package name'" />
         </span>
         <button class="mini-btn" :disabled="!data" @click="copyAll"
           v-tooltip.bottom="'Copy the full list as text (for bug reports)'">

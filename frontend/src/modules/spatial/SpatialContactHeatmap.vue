@@ -53,7 +53,8 @@ useDataRefresh(() => props.imageUids, load)   // refetch when a spatial task fin
   <div class="contact-heatmap">
     <div v-if="resp && resp.suffixes.length > 1" class="ch-controls">
       <label>Run
-        <select :value="suffix" @change="suffix = ($event.target as HTMLSelectElement).value">
+        <select :value="suffix" @change="suffix = ($event.target as HTMLSelectElement).value"
+                v-tooltip.right="'Which spatial run to show'">
           <option v-for="s in resp.suffixes" :key="s" :value="s">{{ s }}</option>
         </select>
       </label>

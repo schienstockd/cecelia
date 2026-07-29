@@ -196,7 +196,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 |---|---|
 | Page / panel subtitle | none by default; a short phrase only if the page is genuinely opaque |
 | Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
-| Task-JSON `tip` | omit unless the param is non-obvious; then one short line |
+| Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*) |
 | QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
 | Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** a first-run empty state (no projects / no images) may orient a newcomer — see *Onboarding* |
 | First-use hint (`HintCallout`) | one line, by construction |
@@ -270,6 +270,74 @@ be *read* and judged by a person, not to break CI.
 > `${…}`, whose rendered width is unknowable at check time; page subtitles, empty states and QC text
 > are not machine-checked at all and stay a review question.
 
+### Tooltip coverage — the presence half
+
+Everything above polices the copy that *exists*. This polices the copy that **doesn't**: an input a
+user can change with no hover help anywhere on it. Length had a ratchet from the start; presence
+didn't, and presence is the half that drifted — a panel picks up tooltips on six of its ten rows and
+nothing can see the four. The first sweep found **94** bare controls across 32 SFCs and **27** task /
+plot params with no `tip`, `segment/branching.json` worst at twelve out of twelve.
+
+**The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
+a `tip`.** Both are ratcheted to zero with an empty allow-list.
+
+| Surface | Checker | Ratchet |
+|---|---|---|
+| SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |
+| **Icon-only buttons** — a `<button>` whose whole content is an `<i>` glyph | same | same |
+| `params[].tip` in `app/src/tasks/**` and `docs/examples/custom-modules/**` | `each_spec` + `collect_settable!` | `app/test/runtests.jl` |
+
+Both land in `pixi run ui-copy` as *Settable control or task param with NO tooltip*, with a
+`file:line` per hit, and the report prints task-param coverage as a fraction.
+
+What is deliberately **out of scope**, so the signal stays worth reading:
+
+- **Buttons with a caption.** "Run" / "Delete set" is already its own help, so requiring a tooltip
+  on all 152 of them buys tautologies — the generated-screen noise the copy budget exists to
+  prevent. An input's *value* has no caption, which is why inputs are in. **Icon-only buttons have
+  no caption either, so they ARE checked** — a bare trash glyph is the CellProfiler case at its
+  purest. This is a rule the codebase already followed unasked (139 of 150 carried a tooltip before
+  anything checked), so the handful that didn't read as oversights, not as a new imposition.
+  An `aria-label` is not coverage: it is read out, never shown on hover.
+- **`section` / `group` params.** Container headers ("Advanced", "Filters"), not inputs. Their
+  children are checked normally.
+- **The wrapper primitives' own definitions.** `CcToggle.vue` holds the checkbox every toggle renders
+  through; its tooltip belongs at the call site, so the internal input is skipped.
+- **`app/src/plotDefinitions/**`.** These carry a `params` array of the same *shape*, which makes
+  them look like a fourth spec surface — they aren't. It is a **defaults bag, not a form**: the only
+  consumer is `SummaryPanel.vue`, `props.spec.params?.find(p => p.key === k)?.default ?? d`, which
+  reads `default` and nothing else. A `label` or `tip` there renders to nobody, so requiring one
+  buys strings that look maintained and reach no user. The controls a user really operates for those
+  plots are hand-rolled in the SFC, and the frontend ratchet already covers them. (The top-level
+  `spec.label` *is* rendered, in the plot picker, and is unchecked — a small separate gap. Don't
+  close it by dragging the whole directory into the param walk.)
+
+`docs/examples/custom-modules/**` is the opposite case and IS in scope: those are real task specs
+that `load_custom_modules!` loads and `ParamRenderer` renders, living in `docs/` only because they
+are the template a user copies.
+
+**Only `v-tooltip` counts.** A native `title=` is not coverage — it renders as the browser's own
+unstyled tooltip, appears on a delay we don't control, and is invisible to the copy ratchets, so
+accepting it would let a control pass the check looking nothing like the rest of the app. (Most
+`title=` in the codebase is a component *prop* — `BaseModal`, `ModulePage`, `ConfirmDeleteButton` —
+not a native tooltip.) **Per-option `tip`s don't count either**: `ChipSelect`/`CcCycleButton` options
+may each carry one, and they're worth having, but they explain the individual choices, not what the
+control as a whole is for — so the control still needs its own `v-tooltip`.
+
+> **A tooltip on an ANCESTOR counts.** Most of this app puts it on the row, not the control —
+> `<label class="po-row" v-tooltip.left="'X tick angle'"><span>X angle</span><input type="range" /></label>`
+> — and the user does get help on hover. Checking the tag alone calls that a violation and
+> over-reports by ~90% (155 hits against a true 82), which is enough noise to make the signal
+> ignorable. Same failure mode, and same fix, as measuring the rendered string above.
+
+One knock-on: `ParamRenderer` used to bind `v-tooltip="param.tip ?? ''"` (and, for some types, a
+generic fallback like `?? 'Select channels to process'`). With every param now guaranteed a `tip`
+those are dead, and worse than dead — they render an *empty* tooltip, or a plausible generic one,
+where a missing tip should be visibly missing. All ten are gone; the binding is plain `param.tip`.
+
+Presence is the half a machine can decide. Whether a tip is the *right* tip is still a review
+question — exactly as the length check can't tell you a short line is a good one.
+
 ---
 
 ## Design tokens
@@ -341,6 +409,11 @@ identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 Every interactive element must carry a `v-tooltip.right="'Description'"`.
 CellProfiler is the reference for tooltip *density* — if a button does something non-obvious, it has a
 tooltip. Density, not length: one line each, per *UI copy — keep it short* above.
+
+**Density is now enforced for the controls a user SETS**, not just asked for — see *Tooltip coverage*
+below. It was review-only until it drifted: `branching.json` shipped twelve parameters with no tip at
+all (a form reading "Flatten Z", "Pre-dilation", "Anisotropy box size (px)" with nothing to hover),
+and 94 inputs across 32 SFCs had none either — typically four rows of a panel whose other six did.
 
 All errors go to `useLogStore().error(msg, { source, detail })`.
 Task failures must never be silent — errors must reach the console bar visible to the user.

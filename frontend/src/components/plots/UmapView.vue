@@ -593,27 +593,27 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
               v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
       <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-start">
         <div class="uv-opts">
-          <label class="uv-opt cc-muted"><span>Colour by</span>
+          <label class="uv-opt cc-muted" v-tooltip.left="'What the point colours encode'"><span>Colour by</span>
             <select v-model="colourBy">
               <option value="cluster">cluster</option>
               <option value="population">population</option>
               <option value="attribute">attribute</option>
             </select>
           </label>
-          <label v-if="colourBy === 'attribute'" class="uv-opt cc-muted"><span>Colour attribute</span>
+          <label v-if="colourBy === 'attribute'" class="uv-opt cc-muted" v-tooltip.left="'Image attribute mapped to colour'"><span>Colour attribute</span>
             <select v-model="colourAttr">
               <option value="" disabled>attribute…</option>
               <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
             </select>
           </label>
-          <label class="uv-opt cc-muted"><span>Facet by</span>
+          <label class="uv-opt cc-muted" v-tooltip.left="'Split into one small panel per value'"><span>Facet by</span>
             <select v-model="facetBy">
               <option value="none">no facet</option>
               <option value="attribute">attribute</option>
               <option value="population">population</option>
             </select>
           </label>
-          <label v-if="facetBy === 'attribute'" class="uv-opt cc-muted"><span>Facet attribute</span>
+          <label v-if="facetBy === 'attribute'" class="uv-opt cc-muted" v-tooltip.left="'Image attribute the panels split on'"><span>Facet attribute</span>
             <select v-model="facetAttr">
               <option value="" disabled>attribute…</option>
               <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>

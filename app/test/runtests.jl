@@ -6143,6 +6143,39 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
+    #
+    # All three copy testsets below walk THIS list. They each used to hardcode `src/tasks`, which
+    # exempted the custom-module examples — 7 tips, every one breaking the no-trailing-period rule,
+    # in the very file people COPY to write a drop-in module. Those specs are loaded by
+    # `load_custom_modules!` and rendered by the same `ParamRenderer`, so they are task specs that
+    # happen to live in `docs/`. Missing directories are skipped, so a trimmed checkout is fine.
+    #
+    # `app/src/plotDefinitions/` is deliberately NOT here, and the distinction is worth keeping
+    # straight: those files have a `params` array of the same SHAPE, but it is a defaults bag, not a
+    # form. Its only consumer is `SummaryPanel.vue` —
+    #     `props.spec.params?.find(p => p.key === k)?.default ?? d`
+    # — which reads `default` and nothing else. A `label` or `tip` there renders to nobody, so
+    # requiring one would have produced nine strings that look maintained and reach no user. The
+    # controls a user really operates for those plots are hand-rolled in the SFC, and the frontend
+    # ratchet already covers them. (The top-level `spec.label` IS rendered, in the plot picker, and
+    # is unchecked — a small, separate gap; don't fix it by dragging the whole directory in here.)
+    spec_dirs() = filter(isdir, [
+        joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks"),
+        joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "custom-modules"),
+    ])
+    # Walk every spec, yielding (label-for-messages, parsed spec) so a failure names a findable file.
+    # The label carries the containing directory — `tasks/x.json` vs `plotDefinitions/x.json` — because
+    # base names collide across surfaces (`track_measures.json` exists in both).
+    function each_spec(visit)
+        for dir in spec_dirs(), (root, _, files) in walkdir(dir), fname in files
+            endswith(fname, ".json") || continue
+            spec = try JSON3.read(read(joinpath(root, fname), String)) catch; continue end
+            spec isa AbstractDict || continue
+            visit(joinpath(basename(root), fname), spec)
+        end
+    end
+
     # ── UI copy budget: task-spec `tip` fields ────────────────────────────────────────────────────
     #
     # The enforceable half of `docs/UI.md` → *UI copy — keep it short*, for the surface Julia owns.
@@ -6179,13 +6212,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             false
         end
 
-        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
         tips = Tuple{String,String}[]
         nspecs = 0
-        for (root, _, files) in walkdir(tasks_dir), f in files
-            endswith(f, ".json") || continue
-            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
-            spec isa AbstractDict || continue
+        each_spec() do f, spec
             nspecs += 1
             collect_tips!(tips, get(spec, :params, nothing), f)
         end
@@ -6199,6 +6228,59 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         two_sentence = ["$f: $t" for (f, t) in tips if multi_sentence(t) && !(t in ALLOWED)]
         @test isempty(two_sentence)
+    end
+
+    # ── UI copy COVERAGE: every task param carries a `tip` ────────────────────────────────────────
+    #
+    # The testset above polices tips that EXIST. This one polices the ones that don't. `docs/UI.md`
+    # asks for CellProfiler-style tip DENSITY — every setting explains itself on hover — and until
+    # this existed nothing could see a gap: `branching.json` shipped **twelve** parameters with no
+    # tip at all, so the form read "Flatten Z" / "Pre-dilation" / "Anisotropy box size (px)" with no
+    # way to find out what any of them did short of reading the Python runner.
+    #
+    # Presence is the half a machine can decide; whether a tip is the RIGHT tip stays a review
+    # question, exactly as the length ratchet can't tell you a short line is a good line. The
+    # frontend half of this rule — settable controls with no `v-tooltip` — is `uncoveredControls`
+    # in `frontend/src/utils/uiCopy.ts`, checked in `uiCopy.test.ts`.
+    #
+    # SECTIONS AND GROUPS ARE EXEMPT. They are container headers ("Advanced", "Filters"), not inputs
+    # — a user can't set them to anything, and requiring one would buy 18 tips saying "advanced
+    # options". Their CHILDREN are checked like any other param.
+    @testset "every task param carries a tip" begin
+        CONTAINER = ("section", "group")
+        # A param whose label genuinely IS the whole explanation. Empty on purpose — same reason as
+        # the length ratchet's: an allow-list that starts populated never gets emptied. Before adding
+        # one, try writing the tip; it is nearly always shorter than the argument for skipping it.
+        ALLOWED_NO_TIP = String[]
+
+        # Collects every SETTABLE param (container children included), flagged tipped or not, so the
+        # guard below can assert the walk actually found something — a silently empty walk would
+        # otherwise report perfect coverage, which is how the QC scraper once lost 40 strings.
+        function collect_settable!(out, params, file)
+            params isa AbstractVector || return out
+            for p in params
+                p isa AbstractDict || continue
+                ptype = string(get(p, :type, get(p, "type", "")))
+                if haskey(p, :key) && !(ptype in CONTAINER)
+                    tip = get(p, :tip, nothing)
+                    push!(out, (file, string(get(p, :key, "?")),
+                                !isempty(strip(tip isa AbstractString ? String(tip) : ""))))
+                end
+                collect_settable!(out, get(p, :params, nothing), file)
+            end
+            out
+        end
+
+        params = Tuple{String,String,Bool}[]
+        each_spec() do f, spec
+            collect_settable!(params, get(spec, :params, nothing), f)
+        end
+
+        @test length(params) > 150              # the walk found the params it is meant to police
+
+        missing_tips = ["$f: $k" for (f, k, tipped) in params
+                        if !tipped && !("$f: $k" in ALLOWED_NO_TIP)]
+        @test isempty(missing_tips)
     end
 
     # ── UI copy house style: task-spec `label` + `tip` ────────────────────────────────────────────
@@ -6246,12 +6328,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 all(j -> occursin(r"^[A-Z]", j.w) || j.after_sep || expected_cap(j.w), judged)
         end
 
-        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
         labels, tips2 = Tuple{String,String}[], Tuple{String,String}[]
-        for (root, _, files) in walkdir(tasks_dir), f in files
-            endswith(f, ".json") || continue
-            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
-            spec isa AbstractDict || continue
+        each_spec() do f, spec
             l = get(spec, :label, nothing)
             l isa AbstractString && push!(labels, (f, join(split(String(l)), " ")))
             collect_copy!(labels, tips2, get(spec, :params, nothing), f)

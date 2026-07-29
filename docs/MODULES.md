@@ -463,7 +463,15 @@ Current users: `behaviour.hmm_states` / `behaviour.hmm_transitions` / `clustTrac
 
 `section` inside `group.params` works — use it for Advanced sub-panels within each group entry.
 
-`tip` on any param adds a tooltip to the label in the UI.
+`tip` on a param adds a tooltip to its label in the UI, and is **required on every param** — the one
+exemption is a `section`/`group`, which is a container header rather than an input. `app/test/runtests.jl`
+fails the build on a param with no `tip` (and on one over 90 characters, running to a second
+sentence, or ending in a period), across `app/src/tasks/**` and the drop-in examples in
+`docs/examples/custom-modules/**` alike (`plotDefinitions/` params are a defaults bag, never
+rendered as a form — see `docs/UI.md`) — one shared `each_spec` walk, so a new
+spec directory is added in one place. Write what the parameter
+*does*, not why it exists; long explanations go in the relevant `docs/<AREA>.md`. Rationale and the
+frontend half of the same rule: `docs/UI.md` → *Tooltip coverage*.
 
 ---
 

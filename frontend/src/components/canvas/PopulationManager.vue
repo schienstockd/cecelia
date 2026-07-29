@@ -243,7 +243,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
       <div v-if="showFilterForm && !readonly && !clusterMode" class="pm-ff">
         <div class="pm-ff-title">{{ fpEditPath ? 'Edit filter population' : 'New filter population' }}</div>
         <div class="pm-ff-head">
-          <input v-model="fpName" class="pm-ff-name" placeholder="Population name" />
+          <input v-model="fpName" class="pm-ff-name" placeholder="Population name"
+                 v-tooltip.top="'Name for the new population'" />
           <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
         </div>
         <label class="pm-ff-row cc-muted cc-fs-xs">Under
@@ -252,14 +253,15 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           </select>
         </label>
         <div v-for="(c, i) in fpConds" :key="i" class="pm-ff-cond cc-muted cc-fs-xs">
-          <select v-model="c.measure" class="pm-ff-measure">
+          <select v-model="c.measure" class="pm-ff-measure" v-tooltip.top="'Measure this condition filters on'">
             <option value="" disabled>measure…</option>
             <option v-for="m in filterMeasures" :key="m" :value="m">{{ g.colLabel(m) }}</option>
           </select>
-          <select v-model="c.fun" class="pm-ff-fun">
+          <select v-model="c.fun" class="pm-ff-fun" v-tooltip.top="'How the measure is compared'">
             <option v-for="f in FILTER_FUNS" :key="f" :value="f">{{ f }}</option>
           </select>
-          <input v-model="c.values" class="pm-ff-vals" :placeholder="c.fun === 'in' ? 'a, b, c' : 'value'" />
+          <input v-model="c.values" class="pm-ff-vals" :placeholder="c.fun === 'in' ? 'a, b, c' : 'value'"
+                 v-tooltip.top="'Value to compare against; comma-separated for in'" />
           <button v-if="fpConds.length > 1" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" @click="removeFpCond(i)" v-tooltip.left="'Remove condition'">
             <i class="pi pi-times" />
           </button>
@@ -289,7 +291,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 
           <span v-if="editing !== p.path" class="pm-name"
                 @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
-          <input v-else class="pm-rename" v-model="editName" autofocus
+          <input v-else class="pm-rename" v-model="editName" autofocus v-tooltip.top="'Enter to save the new name'"
                  @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
 
           <!-- filter pops are badged (vs hand-drawn gates); the badge is the EDIT affordance (click →
@@ -353,7 +355,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           </div>
           <label class="pm-colour-custom">
             <span>custom</span>
-            <input type="color" :value="colourPopColour"
+            <input type="color" :value="colourPopColour" v-tooltip.top="'Select a colour outside the palette'"
                    @change="setColour(($event.target as HTMLInputElement).value, false)" />
           </label>
         </div>
@@ -388,6 +390,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <span class="pm-opt-label cc-muted cc-fs-xs">Axis</span>
             <ChipSelect class="pm-seg" variant="segmented" :options="AXIS_OPTIONS"
                         :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
+                        v-tooltip.top="'Start the axes at zero or fit them to the data'"
                         @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
           </div>
           </template>

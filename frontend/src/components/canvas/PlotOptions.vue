@@ -35,11 +35,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <i :class="open.layout ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Layout</span>
       </button>
       <div v-show="open.layout" class="po-body">
-        <div class="po-row cc-muted cc-fs-xs"><span>Legend</span>
+        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Show the series key beside the plot'"><span>Legend</span>
           <CcToggle :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Log scale on the measure axis'"><span>Log scale</span>
           <CcToggle :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
-        <div class="po-row cc-muted cc-fs-xs"><span>Gridlines</span>
+        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Draw axis gridlines behind the data'"><span>Gridlines</span>
           <CcToggle :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Rotate the x tick labels (angle below)'"><span>Rotate X labels</span>
           <CcToggle :model-value="vis.rotateXLabel" @update:model-value="set({ rotateXLabel: $event })" /></div>
@@ -53,11 +53,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One small-multiple panel per series (mutually exclusive with rotate)'"><span>Facet</span>
           <CcToggle :model-value="vis.facet"
                  @update:model-value="set({ facet: $event, ...($event ? { rotate: false } : {}) })" /></div>
-        <div class="po-row cc-muted cc-fs-xs"><span>Dark theme</span>
+        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Dark plot background; export always uses light'"><span>Dark theme</span>
           <CcToggle :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y min</span>
           <input class="po-txt" type="text" :value="vis.yMin" @change="set({ yMin: ($event.target as HTMLInputElement).value })" /></label>
-        <label class="po-row cc-muted cc-fs-xs"><span>Y max</span>
+        <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y max</span>
           <input class="po-txt" type="text" :value="vis.yMax" @change="set({ yMax: ($event.target as HTMLInputElement).value })" /></label>
       </div>
     </template>
@@ -74,11 +74,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           </select></label>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Colour points by series (else grey)'"><span>Colour data</span>
           <CcToggle :model-value="vis.colorData" @update:model-value="set({ colorData: $event })" /></div>
-        <label class="po-row cc-muted cc-fs-xs"><span>Point size</span>
+        <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Radius of each plotted cell'"><span>Point size</span>
           <input type="range" min="0.5" max="8" step="0.5" :value="vis.pointSize"
                  @input="set({ pointSize: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.pointSize }}</span></label>
-        <label class="po-row cc-muted cc-fs-xs"><span>Point opacity</span>
+        <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Lower it where points overlap heavily'"><span>Point opacity</span>
           <input type="range" min="0.05" max="1" step="0.05" :value="vis.pointOpacity"
                  @input="set({ pointOpacity: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.pointOpacity.toFixed(2) }}</span></label>
@@ -91,7 +91,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <i :class="open.colours ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Colours</span>
       </button>
       <div v-show="open.colours" class="po-body">
-        <label class="po-row cc-muted cc-fs-xs"><span>Palette</span>
+        <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Colour scheme series are drawn in'"><span>Palette</span>
           <select class="po-sel" :value="vis.palette" @change="set({ palette: ($event.target as HTMLSelectElement).value as VisProps['palette'] })">
             <option value="standard">standard (population)</option><option value="distinct">distinct</option>
             <option value="cecelia">Cecelia</option>
@@ -140,13 +140,13 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <i :class="open.labels ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" /><span class="cc-eyebrow">Labels</span>
       </button>
       <div v-show="open.labels" class="po-body">
-        <label class="po-row po-col cc-muted cc-fs-xs"><span>Title</span>
+        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'Heading above the plot (blank = none)'"><span>Title</span>
           <input class="po-txt wide" type="text" :value="vis.title" @change="set({ title: ($event.target as HTMLInputElement).value })" /></label>
-        <label class="po-row po-col cc-muted cc-fs-xs"><span>X label</span>
+        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'X axis caption (blank = the measure name)'"><span>X label</span>
           <input class="po-txt wide" type="text" :value="vis.labX" @change="set({ labX: ($event.target as HTMLInputElement).value })" /></label>
-        <label class="po-row po-col cc-muted cc-fs-xs"><span>Y label</span>
+        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'Y axis caption (blank = the measure name)'"><span>Y label</span>
           <input class="po-txt wide" type="text" :value="vis.labY" @change="set({ labY: ($event.target as HTMLInputElement).value })" /></label>
-        <label class="po-row cc-muted cc-fs-xs"><span>Font size</span>
+        <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Type size for titles, axes and tick labels'"><span>Font size</span>
           <input type="range" min="8" max="20" step="1" :value="vis.fontSize"
                  @input="set({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.fontSize }}</span></label>

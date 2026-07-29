@@ -321,6 +321,7 @@ defineExpose({ exportImage })
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
             <CcToggle class="is-check cc-muted cc-fs-xs" label="legend (channels · pops · colour-by)"
+              v-tooltip.bottom="'Show the channel and population key under the strip'"
               :model-value="showLegend" @update:model-value="showLegend = $event" />
             <CcToggle class="is-check cc-muted cc-fs-xs" label="clean capture"
               v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing'"
@@ -332,10 +333,10 @@ defineExpose({ exportImage })
               v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
               :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
             <template v-if="separator === 'angled' && orientation === 'h'">
-              <label class="is-slider cc-muted cc-fs-xs">angle
+              <label class="is-slider cc-muted cc-fs-xs" v-tooltip.bottom="'Slant of the separator between frames'">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ skew }}</span></label>
-              <label class="is-slider cc-muted cc-fs-xs">width
+              <label class="is-slider cc-muted cc-fs-xs" v-tooltip.bottom="'Thickness of the separator between frames'">width
                 <input type="range" min="1" max="12" :value="thick" @input="thick = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ thick }}</span></label>
             </template>

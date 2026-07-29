@@ -143,6 +143,7 @@ async function confirmImport() {
         <input
           v-model="path"
           class="lm-input"
+          v-tooltip.right="'Folder of the old R project to migrate'"
           placeholder="/path/to/old/cecelia/projects/&lt;PROJECT&gt;"
           @keyup.enter="scan"
         />
@@ -153,6 +154,7 @@ async function confirmImport() {
       <input
         v-model="rscript"
         class="lm-input"
+        v-tooltip.right="'Rscript binary to read the old project with'"
         placeholder="Rscript path (optional — only if R isn't found)"
       />
 
@@ -189,7 +191,8 @@ async function confirmImport() {
             </thead>
             <tbody>
               <tr v-for="im in manifest.images" :key="im.uid" :class="{ off: !selected.has(im.uid) }">
-                <td><input type="checkbox" :checked="selected.has(im.uid)" @change="toggle(im.uid)" /></td>
+                <td><input type="checkbox" :checked="selected.has(im.uid)" @change="toggle(im.uid)"
+                           v-tooltip.right="'Include this image in the migration'" /></td>
                 <td>
                   <div class="lm-name">{{ im.name }}</div>
                   <div class="cc-muted">{{ im.uid }}</div>
