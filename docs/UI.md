@@ -10,6 +10,7 @@ before you render anything. Both are enforced by tests, so skipping them fails t
 |---|---|
 | Which component/class to use for a control | **UX primitive catalog — CHECK BEFORE BUILDING** |
 | How much text a tooltip / tip / empty state may carry | **UI copy — keep it short** |
+| Whether a control needs a tooltip *at all* | **Tooltip coverage — the presence half** |
 | Colours, radii, font sizes, fixed dimensions | **Design tokens** |
 | Buttons · inputs · toggles · chips | **Button utilities** · **Form controls** |
 | Modals · confirms · deletes · popovers | **Modals & dialogs** · **No native browser dialogs** |
@@ -198,7 +199,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 | Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
 | Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*) |
 | QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
-| Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** a first-run empty state (no projects / no images) may orient a newcomer — see *Onboarding* |
+| Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** the two *first-run* states (no projects / no images) get title + ≤2 lines + one CTA — bounded in *Onboarding*, which is the rule for them |
 | First-use hint (`HintCallout`) | one line, by construction |
 
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
@@ -275,8 +276,8 @@ be *read* and judged by a person, not to break CI.
 Everything above polices the copy that *exists*. This polices the copy that **doesn't**: an input a
 user can change with no hover help anywhere on it. Length had a ratchet from the start; presence
 didn't, and presence is the half that drifted — a panel picks up tooltips on six of its ten rows and
-nothing can see the four. The first sweep found **94** bare controls across 32 SFCs and **27** task /
-plot params with no `tip`, `segment/branching.json` worst at twelve out of twelve.
+nothing can see the four. The first sweep found **94** bare controls across 32 SFCs, **4** icon-only
+buttons, and **18** task params with no `tip` — `segment/branching.json` worst at twelve of twelve.
 
 **The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
 a `tip`.** Both are ratcheted to zero with an empty allow-list.
@@ -304,7 +305,7 @@ What is deliberately **out of scope**, so the signal stays worth reading:
 - **The wrapper primitives' own definitions.** `CcToggle.vue` holds the checkbox every toggle renders
   through; its tooltip belongs at the call site, so the internal input is skipped.
 - **`app/src/plotDefinitions/**`.** These carry a `params` array of the same *shape*, which makes
-  them look like a fourth spec surface — they aren't. It is a **defaults bag, not a form**: the only
+  them look like another spec surface — they aren't. It is a **defaults bag, not a form**: the only
   consumer is `SummaryPanel.vue`, `props.spec.params?.find(p => p.key === k)?.default ?? d`, which
   reads `default` and nothing else. A `label` or `tip` there renders to nobody, so requiring one
   buys strings that look maintained and reach no user. The controls a user really operates for those
@@ -406,14 +407,11 @@ identity hue (a chain node), it is not a severity → `--cc-warn`/`--cc-danger`.
 
 ## Hard requirements
 
-Every interactive element must carry a `v-tooltip.right="'Description'"`.
-CellProfiler is the reference for tooltip *density* — if a button does something non-obvious, it has a
-tooltip. Density, not length: one line each, per *UI copy — keep it short* above.
-
-**Density is now enforced for the controls a user SETS**, not just asked for — see *Tooltip coverage*
-below. It was review-only until it drifted: `branching.json` shipped twelve parameters with no tip at
-all (a form reading "Flatten Z", "Pre-dilation", "Anisotropy box size (px)" with nothing to hover),
-and 94 inputs across 32 SFCs had none either — typically four rows of a panel whose other six did.
+**Tooltips: every control a user *sets*, and every icon-only button, carries a `v-tooltip`.** Place
+it where it reads best (`.left` / `.top` / `.bottom` / `.right`) — there is no default side. A button
+with a visible caption does **not** need one. CellProfiler is the reference for *density*, one line
+each. The exact scope, what counts as coverage, and the ratchet are in *Tooltip coverage* above —
+**that section is the rule; this is the pointer.** Don't restate it here.
 
 All errors go to `useLogStore().error(msg, { source, detail })`.
 Task failures must never be silent — errors must reach the console bar visible to the user.
@@ -845,11 +843,20 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   callout keyed by id in `localStorage` (`cc.hint.<id>`). Module pages declare one via `ModuleLayout`'s
   `hint` + `hint-key` props (don't hand-roll it per page); the global "use the bottom-left Quit button,
   not the browser tab" hint is in `App.vue`.
-- **Empty states** — already exist: `ProjectPanel.vue` `.pp-empty` (no projects) and `ImageTable.vue`
-  `.empty-state` (no images). Extend the copy there; don't add a parallel component. These are the ONE
-  carve-out from *UI copy — keep it short*: that budget exists because prose on a page you use daily is
-  noise forever, which doesn't apply to a state a user sees once, before they know the app reads CZI.
-  Everywhere else the budget holds.
+- **Empty states** — exactly two, and they already exist: `ProjectPanel.vue` (`.pp-empty.cc-empty`,
+  no projects) and `ImageTable.vue` (`.cc-empty.cc-empty-lg`, no images). Extend the copy there;
+  don't add a parallel component. These are the ONE carve-out from *UI copy — keep it short*: that
+  budget exists because prose on a page you use daily is noise forever, which doesn't apply to a
+  state a user sees once, before they know the app reads CZI. Everywhere else the budget holds.
+
+  **The carve-out has a shape, not a blank cheque** — both existing states already fit it, so match
+  them rather than inventing a third form:
+
+  > a **title** (`No images yet`) · **at most two short lines** of orientation · **one CTA button**.
+
+  Anything past that is the thing the budget exists to stop. The carve-out is for the *first-run*
+  states above only: a "no populations yet" or "no results yet" empty state is an ordinary one and
+  gets the one-line budget.
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
 
