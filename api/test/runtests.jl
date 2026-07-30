@@ -1775,3 +1775,39 @@ end
         close(q)
     end
 end
+
+# api/src runs in `Main` with `using Cecelia`, so it can only call Cecelia functions UNQUALIFIED if
+# they are EXPORTED. Miss an export and the code loads fine, the route registers fine, and the call
+# dies at runtime with `UndefVarError: f not defined in Main` — which is exactly how the live-preview
+# `refresh_labels!` shipped broken: defined next to `show_labels!`, but not added to the export list
+# beside it. Nothing about that is specific to napari, so this checks the whole class rather than a
+# hand-kept list: every function Cecelia OWNS and api/src calls unqualified must be exported.
+@testset "API: Cecelia functions called unqualified from api/src are exported" begin
+    src_dir = joinpath(@__DIR__, "..", "src")
+    # comments stripped so a mention in prose can't trip the scan (crude, but `#` inside a string
+    # would only ever cause a FALSE ALARM here, never a miss)
+    sources = join([replace(read(joinpath(src_dir, f), String), r"#[^\n]*" => "")
+                    for f in readdir(src_dir) if endswith(f, ".jl")], "\n")
+
+    missing_exports = Symbol[]
+    for sym in names(Cecelia; all = true)
+        s = string(sym)
+        (occursin("#", s) || startswith(s, "@")) && continue
+        isdefined(Cecelia, sym) || continue
+        f = getfield(Cecelia, sym)
+        f isa Function || continue
+        # only names Cecelia itself defines — `parentmodule` keeps Base/stdlib re-exports (length,
+        # get, …) out, which would otherwise all look unexported
+        parentmodule(f) === Cecelia || continue
+        Base.isexported(Cecelia, sym) && continue
+        # called unqualified: not preceded by a dot (`Cecelia.f(`, `obj.f(`) or another word char
+        occursin(Regex("(?<![.\\w])" * escape_string(s) * "\\s*\\("), sources) || continue
+        # …and not a same-named function the api layer defines for itself
+        occursin(Regex("function\\s+" * escape_string(s) * "\\s*\\("), sources) && continue
+        push!(missing_exports, sym)
+    end
+
+    @test isempty(missing_exports)
+    isempty(missing_exports) ||
+        @info "not exported from Cecelia but called unqualified in api/src" missing_exports
+end

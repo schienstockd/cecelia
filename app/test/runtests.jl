@@ -6767,12 +6767,12 @@ end
             @test (n2, c2) == (2, 3)
 
             # segment counts → findings: 0 base cells warns; any base count is clean
-            f0, p0 = Cecelia._segment_qc_findings(Dict("base" => 0))
+            f0, p0 = Cecelia.segment_qc_findings(Dict("base" => 0))
             @test p0 == 0 && length(f0) == 1 && f0[1]["code"] == "segment.no_cells"
-            fN, pN = Cecelia._segment_qc_findings(Dict("base" => 812, "nuc" => 790))
+            fN, pN = Cecelia.segment_qc_findings(Dict("base" => 812, "nuc" => 790))
             @test pN == 812 && isempty(fN)
             # no explicit "base" key → primary falls back to the sole type's count
-            _, pf = Cecelia._segment_qc_findings(Dict("nuc" => 5))
+            _, pf = Cecelia.segment_qc_findings(Dict("nuc" => 5))
             @test pf == 5
 
             # metadata calibration findings (port of the old frontend fieldIssues) — codes + field
@@ -7741,6 +7741,87 @@ end
             @test_throws ArgumentError Cecelia.run_stats(three; test=:mannwhitney)
             @test_throws ArgumentError Cecelia.run_stats(["A"=>[1.0,2], "B"=>[3.0,4]];
                                                         test=:notarealtest)
+        end
+    end
+
+    # ── Segmentation label-store conventions + live outputs ────────────────────
+    # The algorithm-agnostic half of a segmentation task (app/src/segmentation.jl) and the
+    # `live_outputs` trait that makes a still-being-written store discoverable (task.jl).
+    #
+    # Declared out here because a `struct` can't be defined inside a @testset (it wraps its body in a
+    # local scope): a task whose live-output declaration throws, used below to assert the scheduler
+    # treats a preview as a convenience rather than a precondition for running.
+    struct _BadLiveTask <: Cecelia.CciaTask end
+    Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
+
+    @testset "segmentation conventions and live outputs" begin
+        @testset "segment_label_files mirrors the writer" begin
+            # 'base' → {vn}.zarr, any other matchAs → an extra {vn}_{ma}.zarr (segmentation_utils._store_path)
+            @test Cecelia.segment_label_files("X", Dict("0" => Dict("matchAs" => "base"))) == ["X.zarr"]
+            @test Cecelia.segment_label_files("X", Dict("0" => Dict("matchAs" => "base"),
+                                                       "1" => Dict("matchAs" => "nuc"))) ==
+                  ["X.zarr", "X_nuc.zarr"]
+            # two models of the SAME type write one store between them, not two
+            @test Cecelia.segment_label_files("X", Dict("0" => Dict("matchAs" => "base"),
+                                                       "1" => Dict("matchAs" => "base"))) == ["X.zarr"]
+            # a model with no matchAs is 'base' (the writer's own default)
+            @test Cecelia.segment_label_files("X", Dict("0" => Dict{String,Any}())) == ["X.zarr"]
+            # no models at all (REPL call, malformed params) still names the primary store
+            @test Cecelia.segment_label_files("X", nothing) == ["X.zarr"]
+            @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
+        end
+
+        @testset "live_outputs is opt-in per task" begin
+            params = Dict{String,Any}("outputValueName" => "X",
+                                      "models" => Dict("0" => Dict("matchAs" => "base"),
+                                                       "1" => Dict("matchAs" => "nuc")))
+            lo = Cecelia.live_outputs(Cecelia.CellposeSegment(), params)
+            @test length(lo) == 1
+            @test lo[1].kind == "labels"
+            @test lo[1].value_name == "X"
+            @test lo[1].files == ["X.zarr", "X_nuc.zarr"]
+            # falls back to the default value_name like the task itself does
+            @test Cecelia.live_outputs(Cecelia.CellposeSegment(),
+                                       Dict{String,Any}())[1].value_name == Cecelia.VERSIONED_DEFAULT_VAL
+
+            # A task that assembles its output in RAM and writes it once has nothing to watch, and
+            # must NOT claim otherwise — branching writes its store at the very end of the run.
+            @test isempty(Cecelia.live_outputs(Cecelia.Branching(), params))
+            @test isempty(Cecelia.live_outputs(Cecelia.MeasureLabels(), params))
+            @test isempty(Cecelia.live_outputs(Cecelia.BayesianTracking(), params))
+        end
+
+        # A preview is a convenience: a task whose declaration throws must still run.
+        @testset "a throwing live_outputs never blocks the task" begin
+            @test isempty(Cecelia._live_outputs_for(_BadLiveTask(), Dict{String,Any}()))
+        end
+
+        # REGRESSION: the composite is what the segmentation module page actually runs, and its steps
+        # execute via `_run_task` (no TaskRecord of their own), so the composite must answer for them.
+        # This shipped broken — `segment.cellposeMeasure` declared nothing and no preview appeared.
+        @testset "a composite declares its steps' live outputs" begin
+            params = Dict{String,Any}("outputValueName" => "X",
+                                      "models" => Dict("0" => Dict("matchAs" => "base")))
+            lo = Cecelia.live_outputs(Cecelia.CompositeTask("segment.cellposeMeasure"), params)
+            @test length(lo) == 1
+            @test lo[1] == (kind = "labels", value_name = "X", files = ["X.zarr"])
+
+            # a composite of non-streaming steps still declares nothing
+            @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("cleanupImages.afDriftCorrect"), params))
+            # unknown composite / no spec → empty, never a throw
+            @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("not.a.composite"), params))
+        end
+
+        @testset "img_labels_path resolves registered and in-progress stores" begin
+            mktempdir() do dir
+                img = CciaImage(; uid = "uid1", name = "name1", dir = joinpath(dir, "1", "uid1"))
+                img.labels["A"] = ["A.zarr", "A_nuc.zarr"]
+                @test Cecelia.img_labels_dir(img) == joinpath(img._dir, "labels")
+                # registered → the recorded filename (first of the set)
+                @test Cecelia.img_labels_path(img, "A") == joinpath(img._dir, "labels", "A.zarr")
+                # NOT registered → the convention, which is also where a running task is writing
+                @test Cecelia.img_labels_path(img, "X") == joinpath(img._dir, "labels", "X.zarr")
+            end
         end
     end
 

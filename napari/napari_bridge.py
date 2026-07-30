@@ -286,12 +286,29 @@ class NapariState:
         self._colcol_cache = {k: v for k, v in self._colcol_cache.items()
                               if k[0] not in (value_name, branch_key)}
 
-    def show_labels(self, value_name: str = "default",
-                    label_files: list = None,
-                    show_labels: bool = True, show_points: bool = False,
-                    cache: bool = False):
+    def _label_store_path(self, subdir: str, label_filename: str) -> str:
+        """Absolute path of one label store. `subdir` is the store family — "labels" for cell
+        segmentations, "branchLabels" for skeletons (mirrors `img_labels_dir`/`img_branch_labels_dir`
+        on the Julia side)."""
+        return os.path.join(self._task_dir, subdir, label_filename)
+
+    def _show_label_stores(self, subdir: str, suffix: str, value_name: str,
+                           label_files: list, show: bool, cache: bool,
+                           levels: int = None, after_add=None):
+        """Add or remove one family's label layers — the ONE implementation behind `show_labels`,
+        `show_branch_labels` and the live preview.
+
+        Those three differ only in the store subdirectory, the layer-name suffix, and what happens
+        after a layer is added; opening the store, aligning it to the viewer's axes and adding it is
+        identical, and had already drifted into two near-copies before a third was needed here.
+
+        `levels` caps the pyramid depth (default: the image's level count, so label levels line up
+        with the image's). `after_add(value_name, layer)` runs per added layer. A store that isn't on
+        disk is skipped and logged — that's a legitimate case (a single-model run writes no `_nuc`
+        set) — but a store that IS present and unreadable raises, because that's a real fault.
+        """
         if self._task_dir is None:
-            raise RuntimeError("call set_task_dir before show_labels")
+            raise RuntimeError(f"call set_task_dir before showing {subdir}")
         if label_files is None:
             label_files = [f"{value_name}.zarr"]
         self._invalidate_colcol_cache(value_name)
@@ -299,39 +316,105 @@ class NapariState:
         for label_filename in label_files:
             # name by the value_name (drop the ".zarr") → "(C) Labels", not "(C.zarr) Labels"
             stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
-            layer_name = f"({stem}) Labels"
-            if show_labels:
-                labels_path = os.path.join(self._task_dir, "labels", label_filename)
-                if not os.path.exists(labels_path):
-                    # genuinely-optional set (e.g. single-model run has no _nuc.zarr) — skip,
-                    # but make it visible rather than silent so a wrong path is debuggable.
-                    print(f"[show_labels] skip: not on disk: {labels_path}", flush=True)
-                    continue
-
-                # labels are a flat multiscales store (segmentation_utils writes axes + numeric
-                # `datasets`), same layout as an image — open via the shared reader. Cap to the
-                # image's level count so label pyramid levels line up with the image's.
-                n_levels = len(self._im_data) if self._im_data else None
-                arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=n_levels, as_dask=True)
-                # a present-but-unreadable label set is a real error — surface it, don't no-op.
-                if not arrays:
-                    raise RuntimeError(f"no label arrays loaded from {labels_path}")
-
+            layer_name = f"({stem}) {suffix}"
+            if not show:
                 _remove_layer(self._viewer, layer_name)
-                layer = napari_utils.add_labels(
-                    self._viewer, arrays if len(arrays) > 1 else arrays[0],
-                    name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
-                    cache=cache,
-                    # align the layer's dims to the viewer's BY NAME (see expand_to_axes) — a store
-                    # with fewer axes than the image would otherwise have them read from the right —
-                    # and stretch a projected store across the axis it collapsed (lazy; no bytes)
-                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
-                    image_shape=self._display_shape(),
-                )
-                print(f"[show_labels] added {layer_name}: shape={layer.data.shape} "
-                      f"scale={self._im_scale} cache={cache}", flush=True)
-            else:
-                _remove_layer(self._viewer, layer_name)
+                continue
+
+            labels_path = self._label_store_path(subdir, label_filename)
+            if not os.path.exists(labels_path):
+                print(f"[{subdir}] skip: not on disk: {labels_path}", flush=True)
+                continue
+
+            # labels are a flat multiscales store (segmentation_utils writes axes + numeric
+            # `datasets`), same layout as an image — open via the shared reader.
+            n_levels = levels if levels is not None else \
+                (len(self._im_data) if self._im_data else None)
+            arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=n_levels, as_dask=True)
+            # a present-but-unreadable label set is a real error — surface it, don't no-op.
+            if not arrays:
+                raise RuntimeError(f"no label arrays loaded from {labels_path}")
+
+            # A stem holds at most ONE layer of its family at a time, so adding evicts every sibling
+            # suffix — that is what swaps a live preview for the finished set (and back) instead of
+            # leaving two layers of the same labels stacked on each other.
+            for other in _LABEL_SUFFIXES.get(subdir, (suffix,)):
+                _remove_layer(self._viewer, f"({stem}) {other}")
+            layer = napari_utils.add_labels(
+                self._viewer, arrays if len(arrays) > 1 else arrays[0],
+                name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
+                cache=cache,
+                # align the layer's dims to the viewer's BY NAME (see expand_to_axes) — a store
+                # with fewer axes than the image would otherwise have them read from the right —
+                # and stretch a projected store across the axis it collapsed (lazy; no bytes).
+                # This is also why a Z-FLATTENED skeleton of a timelapse renders as a CURTAIN
+                # through z rather than a tower: it belongs to the whole volume, not to z=0
+                # (ports the old R create_branching, which wrote the MIP onto every z plane).
+                axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
+                image_shape=self._display_shape(),
+            )
+            print(f"[{subdir}] added {layer_name}: shape={layer.data.shape} "
+                  f"scale={self._im_scale} cache={cache} levels={len(arrays)}", flush=True)
+            if after_add is not None:
+                after_add(value_name, layer)
+
+    def show_labels(self, value_name: str = "default",
+                    label_files: list = None,
+                    show_labels: bool = True, show_points: bool = False,
+                    cache: bool = False, preview: bool = False):
+        """Add or remove the cell-segmentation labels layers for a value_name.
+
+        `show_points` is INERT and always has been — centroid points are their own command
+        (`show_populations`, which knows about pop types and colours). Kept only so the existing wire
+        payload from `show_labels!` stays valid; don't build anything on it.
+
+        `preview=True` shows a store that is still being WRITTEN by a running segmentation, in its own
+        `({vn}) Labels (live)` layer. Two things differ, and both are forced here rather than trusted
+        to the caller:
+
+        * **Level 0 only.** A label store declares its whole pyramid in `.zattrs` when it is created
+          but only holds level 0 until the writer finalises it (`_finalize_label_pyramid`), so asking
+          for the image's level count would raise `KeyError: '1'`. The preview therefore renders at
+          full resolution at every zoom — the honest cost of watching an unfinished store.
+        * **Caching off.** The whole point is to see bytes that changed since the last look, and
+          napari's cachey would serve the old ones (see `napari_utils.add_labels` on why dask task
+          names make that cache dangerous for re-run labels specifically).
+        """
+        self._show_label_stores(
+            "labels", "Labels (live)" if preview else "Labels",
+            value_name, label_files, show_labels,
+            cache=False if preview else cache,
+            levels=1 if preview else None,
+        )
+
+    def refresh_labels(self, value_name: str = "default", label_files: list = None):
+        """Re-read an in-progress label store into its EXISTING live-preview layer.
+
+        Reassigns `layer.data` from a freshly opened view of the same store, which is what actually
+        forces the re-read: `layer.refresh()` alone re-slices whatever the layer already holds. Shape
+        is stable by construction — the store is allocated at its full final shape before the first
+        frame is written — so this is always a like-for-like swap, and cheap enough to call on every
+        progress tick. A value_name with no preview layer is a silent no-op (the user turned it off,
+        or the run finished and the real layer took over).
+        """
+        if self._task_dir is None:
+            raise RuntimeError("call set_task_dir before refresh_labels")
+        if label_files is None:
+            label_files = [f"{value_name}.zarr"]
+
+        for label_filename in label_files:
+            stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
+            layer_name = f"({stem}) Labels (live)"
+            if layer_name not in self._viewer.layers:
+                continue
+            labels_path = self._label_store_path("labels", label_filename)
+            if not os.path.exists(labels_path):
+                continue
+            arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=1, as_dask=True)
+            if not arrays:
+                continue
+            self._viewer.layers[layer_name].data = arrays[0]
+            print(f"[refresh_labels] {layer_name}", flush=True)
 
     def show_branch_labels(self, value_name: str = "default",
                            label_files: list = None, show_labels: bool = True,
@@ -340,54 +423,21 @@ class NapariState:
         `show_labels` but the store lives in `branchLabels/`, not `labels/`, and the layer is
         namespaced `({vn}) Branches` so it doesn't collide with regular Labels. The generic labels
         picker never lists branch labels (docs/todo/BRANCHING_PLAN.md Decision 6)."""
-        if self._task_dir is None:
-            raise RuntimeError("call set_task_dir before show_branch_labels")
-        if label_files is None:
-            label_files = [f"{value_name}.zarr"]
-        self._invalidate_colcol_cache(value_name)
+        def _default_colour_by(vn, _layer):
+            # Default colour-by branch-type (ports the old R `show_branching` behaviour).
+            # Routed through `_classify_column` (see `_read_branch_column`), so branch-type
+            # ∈ {0,1,2,3} is correctly detected as CATEGORICAL and gets 4 distinct Okabe-Ito
+            # colours (one per skan type), not a continuous viridis ramp. Bridge-side so every
+            # show hits the same default. Best-effort — a missing column / broken sidecar
+            # shouldn't fail the layer add; the user still sees the layer, just in raw label colours.
+            try:
+                self.colour_branch_labels(value_name=vn, column="branch-type", percentile=100.0)
+            except Exception as e:
+                print(f"[show_branch_labels] default colour-by branch-type skipped: {e}",
+                      flush=True)
 
-        for label_filename in label_files:
-            stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
-            layer_name = f"({stem}) Branches"
-            if show_labels:
-                labels_path = os.path.join(self._task_dir, "branchLabels", label_filename)
-                if not os.path.exists(labels_path):
-                    print(f"[show_branch_labels] skip: not on disk: {labels_path}", flush=True)
-                    continue
-                n_levels = len(self._im_data) if self._im_data else None
-                arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=n_levels, as_dask=True)
-                if not arrays:
-                    raise RuntimeError(f"no branch label arrays loaded from {labels_path}")
-                _remove_layer(self._viewer, layer_name)
-                layer = napari_utils.add_labels(
-                    self._viewer, arrays if len(arrays) > 1 else arrays[0],
-                    name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
-                    cache=cache,
-                    # a Z-FLATTENED skeleton of a timelapse is (t,y,x) for a (t,z,y,x) image; without
-                    # the names napari renders its time axis as Z — a tower (see expand_to_axes). With
-                    # the image's extent it becomes a CURTAIN through z, which is what a MIP-derived
-                    # skeleton is: it belongs to the whole volume, not to z=0. Ports the old R
-                    # behaviour (create_branching wrote the MIP onto every z plane) without the bytes.
-                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
-                    image_shape=self._display_shape(),
-                )
-                print(f"[show_branch_labels] added {layer_name}: shape={layer.data.shape} "
-                      f"scale={self._im_scale} cache={cache}", flush=True)
-                # Default colour-by branch-type (ports the old R `show_branching` behaviour).
-                # Now routed through `_classify_column` (see `_read_branch_column`), so — unlike
-                # before — branch-type ∈ {0,1,2,3} is correctly detected as CATEGORICAL and gets
-                # 4 distinct Okabe-Ito colours (one per skan type), not a continuous viridis ramp.
-                # Bridge-side so every show hits the same default. Best-effort — a missing column
-                # / broken sidecar shouldn't fail the layer add; the user still sees the layer,
-                # just in the raw label colours.
-                try:
-                    self.colour_branch_labels(value_name=value_name, column="branch-type",
-                                              percentile=100.0)
-                except Exception as e:
-                    print(f"[show_branch_labels] default colour-by branch-type skipped: {e}",
-                          flush=True)
-            else:
-                _remove_layer(self._viewer, layer_name)
+        self._show_label_stores("branchLabels", "Branches", value_name, label_files,
+                                show_labels, cache=cache, after_add=_default_colour_by)
 
     def _labels_color_dict(self, labels, vals, is_cat, percentile: float = 99.5, overrides=None):
         """Per-label RGBA dict for a DirectLabelColormap, plus a `{value(str) -> '#hex'}` legend for
@@ -1346,6 +1396,16 @@ class NapariState:
 # its own copies — they were consolidated so images are opened ONE way. See docs/NAPARI.md.
 
 
+# Every layer-name suffix each label-store family can occupy, keyed by its on-disk subdirectory. A
+# given store gets AT MOST ONE of these at a time, so `_show_label_stores` evicts all of a family's
+# suffixes before adding one — that's what makes a finished segmentation replace its own live preview
+# (and a preview of a re-run replace the finished layer, whose store the re-run has just deleted).
+_LABEL_SUFFIXES = {
+    "labels":       ("Labels", "Labels (live)"),
+    "branchLabels": ("Branches",),
+}
+
+
 def _remove_layer(viewer: napari.Viewer, name: str):
     if name in viewer.layers:
         viewer.layers.remove(name)
@@ -1379,6 +1439,13 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 show_labels=cmd.get("show_labels", True),
                 show_points=cmd.get("show_points", False),
                 cache=bool(cmd.get("cache", False)),
+                preview=bool(cmd.get("preview", False)),
+            )
+
+        elif t == "refresh_labels":
+            state.refresh_labels(
+                value_name=cmd.get("value_name", "default"),
+                label_files=cmd.get("label_files", None),
             )
 
         elif t == "colour_labels":

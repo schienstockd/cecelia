@@ -10,6 +10,7 @@ import { pushLabels as apiPushLabels, buildTitleCard, type TitleCardPayload } fr
 import {
   pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
   colourLegend, colourLegendLabels, resetColourLegend,
+  livePreviews, previewShown, togglePreview,
 } from '../composables/useNapariAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napariAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
@@ -81,7 +82,19 @@ const napariImage = computed(() => {
 
 const valueNames = computed(() => Object.keys(napariImage.value?.filepaths ?? {}))
 const labelNames  = computed(() => Object.keys(napariImage.value?.labels ?? {}))
-const hasLabels   = computed(() => labelNames.value.length > 0)
+
+// One row per label set, registered ones plus any store a task is writing RIGHT NOW (see
+// `livePreviews`). A live-only set has no h5ad, no tracks and no branches yet — and deleting a store
+// mid-write makes no sense — so its row offers the preview toggle and nothing else. A re-run to an
+// EXISTING name is both at once: one row, with the preview watching the store the re-run recreated.
+const labelRows = computed(() => {
+  const live = new Set(livePreviews.value.map(p => p.valueName))
+  const names = [...labelNames.value, ...[...live].filter(vn => !labelNames.value.includes(vn))]
+  return names.map(valueName => ({
+    valueName, registered: labelNames.value.includes(valueName), live: live.has(valueName),
+  }))
+})
+const hasLabelRows = computed(() => labelRows.value.length > 0)
 
 // the set the open image belongs to — the key for per-set napari viewer prefs (colour-by, show-3D,
 // point size, overlay toggles). These are experiment-level: set once, hold across the set's images.
@@ -596,34 +609,44 @@ onUnmounted(() => {
         <span v-else class="viewer-hint cc-muted">No versions registered.</span>
 
         <!-- segmentation label sets: show labels / tracks, delete -->
-        <div v-if="hasLabels" class="viewer-labels-list">
-          <div v-for="vn in labelNames" :key="vn" class="viewer-label-row">
+        <div v-if="hasLabelRows" class="viewer-labels-list">
+          <div v-for="row in labelRows" :key="row.valueName" class="viewer-label-row">
             <i class="pi pi-th-large viewer-label-icon" />
-            <span class="viewer-label-name cc-muted" :title="vn">{{ vn }}</span>
+            <span class="viewer-label-name cc-muted" :title="row.valueName">{{ row.valueName }}</span>
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
+            <!-- The live-preview toggle is NOT hover-hidden: it exists only while the run does, so a
+                 hidden affordance would be missed for good. -->
+            <button
+              v-if="row.live"
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': previewShown[row.valueName] }"
+              @click="togglePreview(row.valueName)"
+              v-tooltip.right="previewShown[row.valueName] ? 'Hide the live preview' : 'Preview this run while it writes'"
+            ><i class="pi pi-bolt" /></button>
             <!-- Ordered DERIVED → BASIS, left to right: branches, tracks, then the segmentation itself
                  rightmost, because the segmentation is what the other two are computed from. -->
-            <button
-              v-if="(napariImage?.branchLabels?.[vn]?.length ?? 0) > 0"
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[vn] }"
-              @click="toggleBranch(vn)"
-              v-tooltip.right="branchVns[vn] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
-            ><i class="pi pi-wave-pulse" /></button>
-            <button
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[vn] }"
-              @click="toggleTrack(vn)"
-              v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
-            ><i class="pi pi-share-alt" /></button>
-            <button
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[vn] }"
-              @click="toggleLabel(vn)"
-              v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
-            ><i class="pi pi-eye" /></button>
-            <ConfirmDeleteButton class="row-act"
-              title="Delete label set from disk"
-              armed-title="Click again to permanently delete this label set"
-              @confirm="deleteLabel(vn)" />
+            <template v-if="row.registered">
+              <button
+                v-if="(napariImage?.branchLabels?.[row.valueName]?.length ?? 0) > 0"
+                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[row.valueName] }"
+                @click="toggleBranch(row.valueName)"
+                v-tooltip.right="branchVns[row.valueName] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
+              ><i class="pi pi-wave-pulse" /></button>
+              <button
+                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[row.valueName] }"
+                @click="toggleTrack(row.valueName)"
+                v-tooltip.right="trackVns[row.valueName] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
+              ><i class="pi pi-share-alt" /></button>
+              <button
+                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
+                @click="toggleLabel(row.valueName)"
+                v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Napari' : 'Show labels in Napari'"
+              ><i class="pi pi-eye" /></button>
+              <ConfirmDeleteButton class="row-act"
+                title="Delete label set from disk"
+                armed-title="Click again to permanently delete this label set"
+                @confirm="deleteLabel(row.valueName)" />
+            </template>
           </div>
         </div>
       </div>

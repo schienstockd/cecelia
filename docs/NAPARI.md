@@ -549,6 +549,36 @@ The labels zarr is also a multiscale pyramid — the bridge loads as many levels
 filename (so `C.zarr` → `(C) Labels`, not `(C.zarr) Labels`). `colour_labels` targets layers by the
 `({value_name})` prefix.
 
+### One adder for every label family
+
+`show_labels`, `show_branch_labels` and the live preview all go through **`_show_label_stores`**. They
+differ only in the store subdirectory (`labels/` vs `branchLabels/`), the layer-name suffix, and an
+optional `after_add` hook (branches default to colour-by `branch-type`); opening the store, aligning it
+to the viewer's axes and adding it is identical — and had already drifted into two near-copies before
+the preview needed a third. Add a new label family by calling that helper, not by copying it.
+
+`_LABEL_SUFFIXES` maps each subdirectory to every layer-name suffix its stores can occupy:
+
+| Subdir | Suffixes |
+|---|---|
+| `labels` | `Labels`, `Labels (live)` |
+| `branchLabels` | `Branches` |
+
+A store holds **at most one** of its family's suffixes at a time — the adder evicts the siblings — so a
+finished set replaces its own live preview, and a re-run's preview replaces the finished layer whose
+store that re-run has just deleted.
+
+### Live preview of a store being written (`preview=True`)
+
+`show_labels(preview=True)` shows a label store a task is *still writing*, in a `({vn}) Labels (live)`
+layer. It forces **level 0 only** (the store declares its full pyramid in `.zattrs` but only holds level
+0 until the writer finalises it — asking for more raises `KeyError: '1'`) and **caching off** (the point
+is to see changed bytes). `refresh_labels` then re-reads it in place by reassigning `layer.data` from a
+fresh view — cheap, no layer teardown, so the layer keeps its position and display settings — and is a
+no-op for a value_name with no preview layer. Shape is stable by construction: the store is allocated at
+its full final shape before the first frame. Full rationale + the discovery path:
+`docs/SEGMENTATION.md` → *Previewing a running run*.
+
 ---
 
 ## Timestamp overlay (timecourse)

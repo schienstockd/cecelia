@@ -26,17 +26,10 @@ function _inject_dynamic_options!(spec::Dict{String,Any}, ::CellposeSegment)::Di
     spec
 end
 
-# Pure QC helper (drift pattern): objective segment counts → findings + the primary (base) count.
-# Only the "0 cells" case is an advisory finding; the counts themselves are banked as metrics.
-function _segment_qc_findings(counts::AbstractDict)
-    primary = haskey(counts, "base") ? counts["base"] :
-              (isempty(counts) ? 0 : first(values(counts)))
-    findings = primary == 0 ?
-        [qc_finding("warn", "segment.no_cells", "No cells segmented",
-            "Segmentation produced no objects — check the channels/diameter and re-run this step.")] :
-        Dict{String,Any}[]
-    findings, primary
-end
+# Cellpose streams into label stores created at full shape up front (SegmentationUtils), so a run can
+# be watched in napari before it finishes. One line, because nothing about that is cellpose-specific —
+# see `segment_live_outputs` in segmentation.jl and `live_outputs` in task.jl.
+live_outputs(::CellposeSegment, params::AbstractDict) = segment_live_outputs(params)
 
 function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
@@ -141,28 +134,19 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
 
     on_log("[INFO] Segmentation complete.")
 
-    # Derive all zarr filenames that the Python code will have written.
-    # 'base' → {outputValueName}.zarr; other types → {outputValueName}_{ma}.zarr
-    match_as_list = unique([string(get(m, "matchAs", "base")) for (_, m) in models_converted])
-    non_base      = filter(ma -> ma != "base", match_as_list)
-    label_files   = vcat(["$(out_value_name).zarr"],
-                         ["$(out_value_name)_$(ma).zarr" for ma in non_base])
-
-    # Update ccid.json: record label outputs in the `labels` dict
-    raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-    labels_dict = Dict{String, Vector{String}}(
-        String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-        for (k, v) in get(raw2, "labels", Dict{String,Any}()))
-    labels_dict[out_value_name] = label_files
-    raw2["labels"] = labels_dict
-    write_json_atomic(ccid, raw2)
+    # The zarr filenames the Python code will have written — the same derivation the live-preview
+    # declaration uses, so the two can't disagree about what this run produces — then register them
+    # in ccid.json, which is what makes the set appear in every `labels` picker (segmentation.jl).
+    # The atomic write this block used to do inline now lives in `register_label_files!`.
+    label_files = segment_label_files(out_value_name, models_converted)
+    register_label_files!(img, out_value_name, label_files)
 
     # QC (advisory): bank the objective per-type cell count the Python runner wrote (drift pattern).
     if isfile(qc_out_path)
         try
             qmeta  = JSON3.read(read(qc_out_path, String))
             counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
-            findings, primary = _segment_qc_findings(counts)
+            findings, primary = segment_qc_findings(counts)
             write_qc(img, "segment.cellpose", out_value_name, findings;
                      metrics = Dict{String,Any}("nCells" => primary, "byType" => counts))
             on_log("[QC] segmented $primary cell(s)" *

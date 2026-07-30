@@ -78,6 +78,25 @@ function img_label_props_path(img::CciaImage, value_name::AbstractString="defaul
     joinpath(img_label_props_dir(img), filename)
 end
 
+"""The image's labels directory — `{proj}/1/{uid}/labels`. Cell-segmentation label zarrs live here
+(the `branchLabels/` sibling below holds skeleton labels)."""
+img_labels_dir(img::CciaImage)::String = joinpath(img._dir, "labels")
+
+"""
+Absolute path to a segmentation labels zarr for a value_name — resolves the registered filename
+from `img.labels`, falling back to the conventional `{value_name}.zarr` when the value_name isn't
+registered yet. That fallback is load-bearing, not defensive: a segmentation run creates its store
+*before* it registers anything in `ccid.json` (registration happens only on success), so this is
+also the path of a store currently being written. Image-owned + pop_type-neutral, exactly like
+`img_label_props_path`; a `labels` value_name can carry SEVERAL files (base + nuc), so use
+`img.labels[vn]` directly when you need all of them.
+"""
+function img_labels_path(img::CciaImage, value_name::AbstractString="default")::String
+    filenames = get(img.labels, String(value_name), String[])
+    filename = isempty(filenames) ? "$(value_name).zarr" : first(filenames)
+    joinpath(img_labels_dir(img), filename)
+end
+
 """
     img_spatial_graph_path(img, suffix) -> String
     img_spatial_graph_suffixes(img)     -> Vector{String}

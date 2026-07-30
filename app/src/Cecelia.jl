@@ -25,6 +25,7 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
+export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
@@ -124,7 +125,7 @@ export chain_node, make_chain
 # ── Napari viewer ─────────────────────────────────────────────────────────────
 export NapariViewer
 export launch!, close!, restart!, send
-export open_image!, show_labels!, show_branch_labels!
+export open_image!, show_labels!, show_branch_labels!, refresh_labels!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!
 export capture_view_state, apply_view_state!
@@ -159,6 +160,9 @@ include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on i
 include("lab_log.jl")
 include("lab_log_context.jl")
 include("tasks/task.jl")
+# algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
+# after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
+include("segmentation.jl")
 include("tasks/testTasks/imageTask.jl")
 include("tasks/testTasks/setTask.jl")
 include("tasks/testTasks/incrementalPlotTask.jl")

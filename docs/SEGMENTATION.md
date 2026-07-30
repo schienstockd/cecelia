@@ -95,7 +95,24 @@ python/cecelia/utils/cellpose_utils.py            CellposeUtils(SegmentationUtil
 app/src/tasks/segment/cellpose_run.py      entry point (named _run to avoid shadowing the cellpose package)
 ```
 
-Future algorithms (Stardist, etc.) subclass `SegmentationUtils` and implement `predict_slice`.
+Future algorithms (Stardist, coastal, etc.) subclass `SegmentationUtils` and implement `predict_slice`.
+
+### The Julia half — `app/src/segmentation.jl`
+
+Swapping the algorithm is a Python concern (one subclass, one `predict_slice`), but a new backend also
+needs a Julia task handler, and most of what that handler does with its *output* is not specific to any
+algorithm. Those pieces live in `app/src/segmentation.jl` so a second backend adds a `_run_task` and
+its own param translation, and nothing else:
+
+| Helper | What it owns |
+|---|---|
+| `segment_label_files(vn, models)` | the output filename convention — mirrors `_store_path` in `segmentation_utils.py` |
+| `register_label_files!(img, vn, files)` | recording the finished set in `ccid.json` `labels` |
+| `segment_live_outputs(params)` | the live-preview declaration (below) |
+| `segment_qc_findings(counts)` | per-type counts → advisory QC findings |
+
+What stays in the task's own `.jl`: resolving the input image, translating params for the backend, and
+any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose_model_path`).
 
 ### `SegmentationUtils` responsibilities
 - XY tiling with overlap (`blockSize`, `overlap`)
@@ -249,6 +266,43 @@ The toggle in ViewerPanel:
 - `showingLabels` defaults to `true` and is a sticky preference (not reset on image switch)
 - On `POST /api/napari/open`, if `showLabels=true` is included, labels are shown as part of the same request so WS messages are ordered: `set_task_dir` → `open_image` → `show_labels`
 - The standalone toggle uses `POST /api/napari/show-labels`
+
+### Previewing a running run
+
+A segmentation's label store can be watched **while it is still being written**. That works because of
+how `predict_from_zarr` streams: the store is created at its full final shape before the first frame,
+then filled one timepoint at a time, and every per-frame step (seam stitching, size filters, nuc/base
+matching) runs *before* the frame is written. So a completed frame in the preview is the **final** label
+data, not a provisional pass.
+
+What makes it discoverable is the task, not the image: `ccid.json` registers a label set only when the
+run **succeeds**, so mid-run there is no `labels` entry to put in a picker. Instead the task declares
+its in-flight output via the `live_outputs` trait (`app/src/tasks/task.jl`), the scheduler records that
+on the `TaskRecord` at submit time, and `GET /api/tasks` publishes it. The frontend reads that
+snapshot on every task lifecycle event (`liveLabelPreviews` in `utils/napariAutoShow.ts`) and offers a
+⚡ toggle per in-flight store in the ViewerPanel segmentations list.
+
+Declaring it is opt-in per task, because writing-as-you-go is a property of the backend:
+`segment.cellpose` streams (`live_outputs(::CellposeSegment, params) = segment_live_outputs(params)`),
+while `segment.branching` assembles its store in RAM and writes it once at the end, so it correctly
+declares nothing.
+
+Two things differ from a normal labels layer, both forced bridge-side rather than trusted to the caller:
+
+- **Level 0 only.** A label store declares its whole pyramid in `.zattrs` when created, but levels 1…N
+  only exist after `_finalize_label_pyramid` runs at the end. Asking for the image's level count
+  therefore raises `KeyError: '1'`. The preview renders full-resolution at every zoom — the honest cost
+  of watching an unfinished store, and why it is a manual toggle rather than automatic.
+- **Caching off.** The point is to see bytes that changed, and napari's `cachey` would serve the old
+  ones (see `napari_utils.add_labels` on why dask task names make that cache dangerous for re-run
+  labels specifically).
+
+The preview layer is namespaced `({vn}) Labels (live)` and a store holds at most one layer of its family
+at a time: adding the finished set evicts its own preview, and vice versa (`_LABEL_SUFFIXES` in
+`napari_bridge.py`). Progress ticks drive `POST /api/napari/refresh-labels`, which reassigns
+`layer.data` from a fresh view in place — throttled to one read per 2 s, since cellpose emits a tick per
+XY tile. The toggle is deliberately **not** persisted: it describes a store that exists only while one
+task runs, so restoring it later would produce a dead toggle for a layer the bridge can only skip.
 
 ---
 

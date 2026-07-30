@@ -17,12 +17,17 @@ end
 Snapshot of tasks currently known to the scheduler (queued or running) as named tuples.
 Deregistered on completion, so this is a live view of in-flight work only — nothing terminal.
 `status` is stringified for JSON. Mirrors `list_pools()`; read-only reporting, no control.
+
+`live_outputs` carries the stores the task is streaming into right now (usually empty — see
+`live_outputs` in task.jl). This snapshot is therefore also the answer to "what can I watch while it
+runs?", which is how the napari viewer offers a preview of a segmentation before `ccid.json` knows
+about its output.
 """
 function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
            image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
-           status=string(rec.status)) for rec in values(_TASKS)]
+           status=string(rec.status), live_outputs=rec.live_outputs) for rec in values(_TASKS)]
     end
 end
 
@@ -246,15 +251,33 @@ mutable struct TaskRecord
     # already handled by the on_process race guard below).
     @atomic proc::Union{Base.Process, Nothing}
     on_status_change::Function
+    # Stores this task streams into while it runs (usually empty — see `live_outputs` in task.jl).
+    # Resolved once at submit time from the task + its params, because the record outlives the
+    # params dict and a viewer asking "what can I watch right now?" must not re-derive it.
+    live_outputs::Vector{LiveOutput}
 end
 
 const _TASKS      = Dict{String, TaskRecord}()
 const _TASKS_LOCK = ReentrantLock()
 
-function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change)
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, :queued, nothing, on_status_change)
+function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
+                         live_outputs::Vector{LiveOutput} = LiveOutput[])
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, :queued, nothing,
+                     on_status_change, live_outputs)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
     rec
+end
+
+# What a task declares it streams to disk while running, resolved defensively: a task whose
+# `live_outputs` overload throws (a malformed param, a future backend's bug) must still RUN — a
+# preview is a convenience, never a precondition. Empty is always a valid answer.
+function _live_outputs_for(task::CciaTask, params::AbstractDict)::Vector{LiveOutput}
+    try
+        live_outputs(task, params)
+    catch e
+        @warn "live_outputs failed; task runs without a preview" task=typeof(task) exception=e
+        LiveOutput[]
+    end
 end
 
 function _deregister_task!(id)
@@ -462,7 +485,8 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
     pool      = _pool(pool_name)
     rec       = _register_task!(task_id, fun_name, pool_name,
-                                 img.uid, chain_run_id, on_status_change)
+                                 img.uid, chain_run_id, on_status_change;
+                                 live_outputs = _live_outputs_for(task, params))
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)
@@ -503,7 +527,8 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
     pool      = _pool(pool_name)
     rep       = first(imgs)
-    rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change)
+    rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
+                                 live_outputs = _live_outputs_for(task, params))
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)
