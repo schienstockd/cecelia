@@ -602,22 +602,24 @@ onUnmounted(() => {
             <span class="viewer-label-name cc-muted" :title="vn">{{ vn }}</span>
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
-            <button
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[vn] }"
-              @click="toggleLabel(vn)"
-              v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
-            ><i class="pi pi-eye" /></button>
-            <button
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[vn] }"
-              @click="toggleTrack(vn)"
-              v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
-            ><i class="pi pi-share-alt" /></button>
+            <!-- Ordered DERIVED → BASIS, left to right: branches, tracks, then the segmentation itself
+                 rightmost, because the segmentation is what the other two are computed from. -->
             <button
               v-if="(napariImage?.branchLabels?.[vn]?.length ?? 0) > 0"
               class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': branchVns[vn] }"
               @click="toggleBranch(vn)"
               v-tooltip.right="branchVns[vn] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
             ><i class="pi pi-wave-pulse" /></button>
+            <button
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[vn] }"
+              @click="toggleTrack(vn)"
+              v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
+            ><i class="pi pi-share-alt" /></button>
+            <button
+              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[vn] }"
+              @click="toggleLabel(vn)"
+              v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
+            ><i class="pi pi-eye" /></button>
             <ConfirmDeleteButton class="row-act"
               title="Delete label set from disk"
               armed-title="Click again to permanently delete this label set"

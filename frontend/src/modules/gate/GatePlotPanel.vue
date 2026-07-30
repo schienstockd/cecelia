@@ -26,6 +26,7 @@ import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../
 import { childGateSignature } from '../../utils/childGateSig'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -110,8 +111,10 @@ const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value))
 // goes amber. It reverts to the preference automatically on a compatible measure (server re-decides).
 const effXt = ref<Kind>(xt.value)
 const effYt = ref<Kind>(yt.value)
-const xCoerced = computed(() => effXt.value !== xt.value)
-const yCoerced = computed(() => effYt.value !== yt.value)
+// the shared "we substituted a setting" shape — one wording, one amber marker, and the WHY is never
+// optional (the select's tooltip used to say only "Axis transform"). See plots/autoOverride.ts.
+const xOverride = computed(() => transformOverride(xt.value, effXt.value))
+const yOverride = computed(() => transformOverride(yt.value, effYt.value))
 // the axis dropdown DISPLAYS the effective transform; changing it sets the user's PREFERENCE (persisted)
 const xtSel = computed<Kind>({ get: () => effXt.value, set: v => { xt.value = v } })
 const ytSel = computed<Kind>({ get: () => effYt.value, set: v => { yt.value = v } })
@@ -354,10 +357,11 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
               <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             </optgroup>
           </select>
-          <select class="tsel" :class="{ 'tsel-amber': xCoerced }" v-model="xtSel" v-tooltip.bottom="'Axis transform'">
+          <select class="tsel" :class="{ 'cc-auto-override': !!xOverride }" v-model="xtSel"
+                  v-tooltip.bottom="overrideTooltip(xOverride, 'Axis transform')">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
-          <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
-             v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
+          <i v-if="xOverride" class="pi pi-exclamation-triangle ax-warn"
+             v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
           <select class="ax-chan" v-model="yChan" v-tooltip.bottom="'Measure on the Y axis'">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
@@ -365,10 +369,11 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
               <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
             </optgroup>
           </select>
-          <select class="tsel" :class="{ 'tsel-amber': yCoerced }" v-model="ytSel" v-tooltip.bottom="'Axis transform'">
+          <select class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
+                  v-tooltip.bottom="overrideTooltip(yOverride, 'Axis transform')">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
-          <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
-             v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
+          <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
+             v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">pop</span>
           <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to show; new gates are its children'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
@@ -429,8 +434,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
    (background, border, chevron, focus) comes from the global form base in style.css */
 .panel-ctrl select { width: 8rem; padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
-/* amber: this axis' preferred transform was auto-linearised because the measure's range can't use it */
-.panel-ctrl select.tsel.tsel-amber { border-color: var(--cc-sev-warn); color: var(--cc-sev-warn); }
+/* the amber marker for an auto-overridden control is the shared .cc-auto-override utility (style.css) */
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }

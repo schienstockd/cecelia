@@ -354,6 +354,11 @@ body {
 /* Secondary / de-emphasised text — hints, subtitles, captions, meta lines. The modifier picks the tier;
    the role (dim, secondary) is what the base class means and does not change with size. */
 .cc-muted { color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
+/* SEVERITY modifier on the same role: a meta line that carries a warning (an auto-overridden setting, an
+   excluded-image caveat). A severity axis, not a size one — compose with a density modifier freely.
+   Use this instead of stacking `.cc-muted` with a scoped `color:` rule, which shadows the utility it
+   sits on (the `cssScenarios` ratchet flags exactly that). */
+.cc-muted-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-sm); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).
@@ -516,3 +521,32 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    snapshot (the `.capturing` ancestor is set on the board grid while exporting) */
 .capturing .cc-panel-controls { opacity: 0 !important; pointer-events: none !important; }
 .capturing .drag-icon { visibility: hidden !important; }
+
+/* ── Plot legend / title overlays ──────────────────────────────────────────────
+   The canvas plots render a BARE <svg> and float their legend/title as absolute HTML overlays
+   (plots/overlays.ts explains why: Plot's inline legend wraps the chart in a <figure> whose swatch div
+   eats layout height and clips the bottom axis). The overlay POSITIONING lives here, globally, because
+   two hosts draw these — PlotChart and the bespoke cluster HMM panels — and they had drifted into two
+   slightly different copies. The host only has to be `position: relative` and set the ink colour.
+
+   Anchored top-RIGHT, but shrink-to-fit (`width: max-content` under a max-width) with rows
+   LEFT-aligned. Right-aligning (`justify-content: flex-end`) put a wrapped row's lone entry hard
+   against the frame, which read as a random offset. Reserving the right amount of top margin is the
+   other half, and it needs the MEASURED height — see `legendTopPad` / PlotChart's corrective render. */
+.plot-legend-overlay {
+  position: absolute; top: 4px; right: 8px; display: flex; flex-wrap: wrap; gap: 3px 12px;
+  width: max-content; max-width: 58%; justify-content: flex-start;
+  border-radius: var(--cc-radius-xs); padding: 1px 2px;
+}
+/* Plot's own swatch styles would otherwise override the theme ink the host sets inline */
+.plot-legend-overlay * { color: inherit !important; }
+.plot-title-overlay {
+  position: absolute; top: 4px; left: 8px; max-width: 60%; font-weight: 600; font-size: var(--cc-fs-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Auto-overridden controls ──────────────────────────────────────────────────
+   A setting the app could not honour and substituted (see plots/autoOverride.ts). Amber on the control
+   itself, so the plot never silently disagrees with its own options; the WHY is the control's tooltip,
+   built by `overrideTooltip` — a marker without an explanation is what this replaces. */
+.cc-auto-override { border-color: var(--cc-sev-warn) !important; color: var(--cc-sev-warn) !important; }

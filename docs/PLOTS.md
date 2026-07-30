@@ -13,8 +13,98 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    the same definition available on the whiteboard too.
 
 Reusing `PlotChart` alone inside a hand-rolled panel is **not** compliance — that's the anti-pattern.
-A new data source is a new `popType` in `pop_df` (e.g. `labels` = ungated all-cells), **not** a new
-route. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
+A new data source is normally a new `popType` in `pop_df` (e.g. `labels` = ungated all-cells), **not** a
+new route.
+
+**When the data isn't a `pop_df` aggregation.** Some readouts are per-population-PAIR statistics a task
+already computed — the interaction matrix (`spatialAnalysis.neighbourStats` → `spatialStats/{suffix}.json`:
+contact log-odds + permutation z/p). `pop_df` yields per-cell/per-track rows, so there is no popType that
+expresses it. That does NOT license a bespoke route: add a **matrix mode** to `plot_summary_data`
+(`matrixMode: "interaction"` alongside `profile`/`crosstab`) which reads the sidecar through the existing
+package reader, and register an ordinary spec. The plot is then a normal registry plot — duplicable,
+arrangeable, exportable, board-hostable — with one route and one renderer. Such a plot has no series and
+no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
+`suffix` and offers a run picker built from the `suffixes` the response reports.
+
+This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
+counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
+
+### WHICH page a plot belongs to — explore, not define
+
+Hosting is one mechanism; *placement* is a separate decision, and it has one rule:
+
+> **A page that DEFINES populations carries no summary plots.** Defining pages — Gate, Track, Cluster
+> cells, Cluster tracks, Cluster regions — get only the canvas they need to *make* populations (the
+> gating canvas, or `ClusterPlots`' heatmap + UMAP + population manager). Summarising those populations
+> happens on the **Explore** pages, and on the Analysis board.
+
+Enforced by the *"plot specs live on the page that EXPLORES"* testset in `app/test/runtests.jl`, which
+fails if any spec targets `clustPops`/`clustTracks`/`clustRegions`.
+
+### One spec, several population families
+
+There is **one** `population_summary.json`. It used to be five near-identical files differing in nothing
+but `dataSource.popType`, one per page that produced a pop type. Instead the spec declares every family
+it can plot, and each page declares which of them it offers:
+
+```json
+"dataSource": { "popTypes": [
+  { "popType": "flow",       "granularity": "cell",  "label": "Gated" },
+  { "popType": "clust",      "granularity": "cell",  "label": "Cell clusters" },
+  { "popType": "live",       "granularity": "track", "label": "Tracked" },
+  { "popType": "track",      "granularity": "track", "label": "Tracked (gated)" },
+  { "popType": "trackclust", "granularity": "track", "label": "Track clusters" },
+  { "popType": "region",     "granularity": "cell",  "label": "Regions" } ] },
+"modules": { "phenotype": ["flow","clust"],
+             "behaviourAnalysis": ["live","track","trackclust"],
+             "spatialAnalysis": ["region"] }
+```
+
+Four rules make this work; each one was a bug before it was a rule.
+
+1. **`modules` replaces `module` for a multi-page spec**, and the **server narrows** `popTypes` to the
+   requested page's allow-list (`_narrow_spec_poptypes`). The frontend renders a picker over whatever it
+   was handed and needs no per-page knowledge; the universal board (no `module` query) gets them all.
+   Curation stays a data decision, in one file.
+2. **Granularity is per family, never per spec.** `flow`/`clust`/`region` populations are cell-grained,
+   `live`/`track`/`trackclust` track-grained *here*; the behaviour plots declare the same three families
+   at their own granularity (cell for the HMM readouts, track for `track_measures`). `SummaryPanel` sends the *chosen* family's granularity — sending
+   the spec's single value asked the backend for cell rows under a track pop type, and that is the one
+   thing that genuinely blocked a shared spec. Note `live` is cell-grained for `cell_properties` and
+   track-grained here, so granularity can never be derived from the pop type alone.
+3. **One family per plot, and the population manager is a view of the ACTIVE plot's family.** The picker
+   lives on the plot (persisted in panel state); both hosts pass `activeSpecId` + `activePopType` into
+   `useSummaryData`, so the manager lists that family. There is deliberately no second selector on the
+   manager, and a plot deliberately cannot mix families: the manager shows one family at a time, so
+   cross-family selections would be invisible and impossible to un-tick.
+4. **Selections are kept across families, so requests must filter.** Keys are family-tagged
+   (`popType::valueName/pop`) and are *not* pruned when the family changes — that is what stops
+   switching family from wiping other plots' selections (commit `4c8e677`). The flip side: a panel can
+   hold keys for a family it no longer shows, so it narrows at request time (`filterSeriesToPopType`).
+   Keeping them means switching family and back restores the previous pick.
+
+Pure logic + the persisted-canvas migration live in `frontend/src/plots/popTypes.ts` (`popTypeOptions`,
+`granularityFor`, `resolvePopType`, `filterSeriesToPopType`, `isPrecomputedSpec`,
+`SPEC_ALIASES`/`migrateSpecId`), unit-tested in `popTypes.test.ts`. `SPEC_ALIASES` maps the four removed
+spec ids onto the survivor plus the family they meant, because a saved panel whose `specId` no longer
+resolves renders *nothing* rather than erroring.
+
+**The family list is CURATED, and pinned to the producing tasks.** *Reading* the list is generic
+(`popTypeOptions` — one function, every surface); its *contents* are a per-spec judgement, because "which
+family can this measure be sliced by" is not something the data can answer. The cost of curation is
+silent drift, and it drifted: **Spatial cell measures** offered Gated / Cell clusters / Regions / Tracked
+but not **Track clusters**, a family every spatial task accepts as input. So a test pins the plot's
+families against the *producing tasks'* own `accepts` lists, through the canonical token mapping
+(`_normalise_accepts` → `_accept_pop_types`) rather than a second hand-written list. A new family
+accepted by a task therefore fails the suite until the plot offers it. Note `flow` is offered *on top* of
+the mapping: `_normalise_accepts` folds `flow`→`live` (same gate map), but a plot keeps them apart —
+"Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
+
+**A PRECOMPUTED plot has no family selection at all.** `isPrecomputedSpec` (today: `matrix.mode ===
+"interaction"`) marks a plot whose rows/columns come from the analysis run it reads, not from the
+population picker. Three surfaces ask that one predicate — the panel (needs no series), the population
+picker (says so instead of offering dead eye toggles), and the server (`api_plot_data`'s `precomputed`,
+which must not reject a body with no pops). Forking it is how one of them ends up disagreeing.
 
 ---
 
@@ -87,6 +177,21 @@ panel, and `PlotChart` draws the legend separately via `Plot.legend()` as an **a
 friendly labels (`strip`→"beeswarm", `stacked100`→"100% stacked"); the internal `ChartType` is
 unchanged.
 
+Because the overlay consumes no layout height, the plot must reserve that room itself — and getting it
+wrong is what made legends look arbitrary. Two rules, both in one place:
+
+1. **Layout** — `style.css` `.plot-legend-overlay`: anchored top-right but **shrink-to-fit**
+   (`width: max-content` under a `max-width`) with rows **left-aligned**. Right-aligning pushed a
+   wrapped row's lone entry hard against the frame, which reads as a random offset. This is global CSS,
+   not per-component scoped: two hosts draw these overlays (`PlotChart` and the cluster HMM panels) and
+   the scoped copies had drifted apart.
+2. **Reserved height** — `legendTopPad` (`plots/plot.ts`), used by every builder. It reserves the
+   **measured** height of the rendered node: `PlotChart` renders, measures the overlay, and re-renders
+   **once** with `legendHeight` set. The previous rule *estimated* "3 entries per row, at most 3 rows",
+   so three long labels wrapped to two rows while one row's worth of margin was reserved and the second
+   row landed on the frame. How many rows a legend takes depends on the label texts and the panel width;
+   neither is visible to the option builder, so the estimate is a first frame only, never the answer.
+
 **Option popovers MUST use `position: fixed`.** A `SummaryPanel` (like every canvas panel) has
 `overflow: hidden` on its card so the plot area clips cleanly — which also clips any `position:
 absolute` child that extends past the panel, e.g. the plot-options popover, especially for a panel
@@ -145,11 +250,57 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
 | Measure type | Applicable charts |
 |---|---|
 | **numeric**     | histogram, boxplot, violin, bar (mean ± error), strip/jitter |
+| **numeric, 0/1** | the numeric set **+ `percent`** (% positive, Wilson CI) |
 | **categorical** | frequency (grouped bars), stacked, 100%-stacked (proportion) |
 
 The panel's chart-type dropdown offers **only the charts valid for the selected measure's type**.
 Backend returns `measureType` so the panel filters; specs keep `chartTypes` as the *allowed* set and
 the panel intersects with what's valid for the measure.
+
+### `percent` — % positive of a BOOLEAN (0/1) measure
+
+"What % of B cells are in contact with a T cell?" and "how many T cells are clustered?" are one
+question: the fraction of a population whose 0/1 measure is positive
+(`<popType>.cell.contact#<target>`, `<popType>.cell.is.aggregate`). Both were previously reachable
+only as a `bar` of the **mean** — an unlabelled fraction between 0 and 1, which reads as neither.
+
+`chart_type = "percent"` returns, per series, `value` = observed % positive, `nPositive`/`n`, and the
+**Wilson score interval** bounds (`lower`/`upper`, plus `ci95` as the wider half-width for consumers
+that want one symmetric number). Wilson, not Wald: a contact fraction is routinely near 0 or 1, and
+Wald claims a zero-width interval at p=0 ("no contacts observed" ⇒ "never happens") and leaves [0,1]
+just off the boundary. The bounds are asymmetric about the estimate, so both are sent and the renderer
+uses them as given.
+
+It is offered from the **data**, not a list of column names: the response carries `measureBoolean`
+(every non-missing finite value is 0 or 1), so a boolean measure added later needs no registration —
+a spec need only list `percent` in `chartTypes` once, and the panel drops it on measures where it
+would mean nothing. A **population summary**'s synthetic per-image `count` is deliberately excluded
+(counts that happen to be 0/1 are not a boolean measure).
+
+### `interaction` — the log-odds matrix is a SIGNED effect size
+
+A third matrix mode, and both halves of the heatmap code were written for two — worth spelling out,
+because the failure was silent in both.
+
+**Encoding.** `interaction` fell into the `profile` branch (`matrixMode !== 'crosstab'`), which
+**per-row min-max rescales** each row to `[0,1]` on sequential viridis. That is right for a profile
+(differently-scaled features per row) and destroys a log-odds matrix: the **sign disappears**, so
+association (+) and avoidance (−) only read as "biggest/smallest in this row" — the effect size was
+visible nowhere but the tooltip. A signed effect size is **diverging, pivoted at 0, with a symmetric
+domain** (`±max|value|`), so equal association and avoidance are equally saturated. The value is filled
+from the raw number, never a rescale; `z`, `p` and the observed count ride along per cell (they were on
+the wire and displayed nowhere), and the star ladder comes from the server's own `_significance` rather
+than a second ladder in the renderer.
+
+**Controls.** Which heatmap options *do* something is one table, `heatmapControls` — the ad-hoc `v-if`s
+it replaces offered two **inert** controls for this mode: **Category** (the request sends
+`category: ''`, since the axes come from the run) and **Normalize**, which sat in the `v-else` of a
+`mode === 'profile'` test, so a third mode silently inherited crosstab's control. Both changed nothing
+when turned. Adding a fourth mode now means answering the question once.
+
+No `comparisons` on a percent chart: a between-group test on 0/1 data is a proportion test
+(chi-square/Fisher), not the rank/ANOVA family `_stats_from_series` runs, and silently applying the
+wrong one is worse than offering none.
 
 **Time series overrides the set.** When the `groupBy` column is a **temporal** column (`t`), per-frame
 distribution charts make no sense (thousands of boxes), so the dropdown switches to **`trend`**

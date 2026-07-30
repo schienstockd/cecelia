@@ -19,6 +19,7 @@ import RenderModeToggle, { type RenderMode } from '../../components/plots/Render
 import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
 import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -48,8 +49,11 @@ const pairsDefault = (chs: string[]): Kind =>
 const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v; props.ui.xt = pairsDefault(v) } })
 const pairsDefaultTransform = computed<Kind>(() => pairsDefault(channels.value))
 const transform = computed<Kind>({ get: () => props.ui.xt ?? pairsDefaultTransform.value, set: v => { props.ui.xt = v } })
-// ≥1 tile's transform was auto-linearised (measure range too small) → amber the control + explain
+// ≥1 tile's transform was auto-linearised (measure range too small). Same shared shape as
+// GatePlotPanel — see plots/autoOverride.ts; `coerced` is set per-fetch from the server's plotmeta.
 const coerced = ref(false)
+const pairsOverride = computed(() =>
+  coerced.value ? transformOverride(transform.value, 'linear') : null)
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
@@ -165,12 +169,12 @@ function exportAs(kind: string) {
             </div>
           </TeleportPopover>
         </div>
-        <select class="tsel" :class="{ 'tsel-amber': coerced }" v-model="transform"
-                v-tooltip.bottom="'Axis transform (per channel; auto-linear where the range needs it)'">
+        <select class="tsel" :class="{ 'cc-auto-override': !!pairsOverride }" v-model="transform"
+                v-tooltip.bottom="overrideTooltip(pairsOverride, 'Axis transform (per channel)')">
           <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option>
         </select>
-        <i v-if="coerced" class="pi pi-exclamation-triangle ax-warn"
-           v-tooltip.bottom="`Some channels’ range is too small for ${transform} — those shown linear`" />
+        <i v-if="pairsOverride" class="pi pi-exclamation-triangle ax-warn"
+           v-tooltip.bottom="overrideTooltip(pairsOverride, '')" />
       </div>
       </div>
     </template>
@@ -212,8 +216,7 @@ function exportAs(kind: string) {
 .ax-lbl { width: 2.6rem; color: var(--cc-text-dim); flex-shrink: 0; }
 .ax-chan { width: 12rem; flex: none; }
 .tsel { width: 5.5rem; flex-shrink: 0; }
-/* amber: some channels' range can't use the chosen transform → those tiles auto-shown on linear */
-.tsel.tsel-amber { border-color: var(--cc-sev-warn); color: var(--cc-sev-warn); }
+/* the amber marker is the shared .cc-auto-override utility (style.css) */
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 /* channel multiselect popover */
 .chan-pick { position: relative; flex: 1; min-width: 0; }

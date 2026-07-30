@@ -13,9 +13,14 @@ import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue
 import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
+import { xRotationOverride, type AutoOverride } from '../../plots/autoOverride'
 import type { PlotDataResponse } from '../../plots/types'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
+// settings the RENDERER had to substitute (today: rotating x tick labels that wouldn't fit). Reported
+// up so the host can say so — a plot silently disagreeing with its own controls is the thing we avoid.
+// See plots/autoOverride.ts.
+const emit = defineEmits<{ 'auto-override': [AutoOverride[]] }>()
 const host = useTemplateRef<HTMLElement>('host')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
 let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -24,14 +29,23 @@ let ro: ResizeObserver | null = null
 
 let legendNode: HTMLElement | null = null
 let titleNode: HTMLElement | null = null
+// Measured height of the rendered legend overlay. The legend is absolute HTML, so how many rows it
+// wraps to depends on the label texts and the panel width — neither of which the option builder can
+// see, and guessing "3 entries per row" is what made the reserved band look arbitrary (3 long labels
+// wrap to 2 rows, one row was reserved, the second sat on the frame). So: render, measure, and if the
+// reservation was wrong, render ONCE more with the real number. Remembered across renders so a resize
+// starts from the last known height instead of flashing the estimate again.
+let legendH = 0
 
-async function render() {
+async function render(pass = 0) {
   if (!host.value) return
   if (!Plot) Plot = await import('@observablehq/plot')
-  const base = props.data ? buildPlotOptions(Plot, props.data, props.opts) as any : null
-  // size from the panel body; fall back to sensible defaults before layout settles
+  // size from the panel body; fall back to sensible defaults before layout settles. Measured BEFORE the
+  // build because the builder needs the width to decide whether the x tick labels fit their bands.
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
+  const buildOpts = { ...props.opts, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const base = props.data ? buildPlotOptions(Plot, props.data, buildOpts) as any : null
   node?.remove(); node = null
   legendNode?.remove(); legendNode = null
   titleNode?.remove(); titleNode = null
@@ -46,6 +60,8 @@ async function render() {
   // matches the plot ink.
   ;(node as SVGElement).style.setProperty('--plot-background', props.opts?.darkTheme ? '#1f2226' : 'white')
   host.value.append(node)
+  // report any setting the builder substituted (`_autoRotatedX`)
+  emit('auto-override', [xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel)].filter(Boolean) as AutoOverride[])
 
   const ink = props.opts.darkTheme ? '#e6e6e6' : '#111'
   if (props.opts.legend && base._colorLegend) {
@@ -63,6 +79,16 @@ async function render() {
   }
   // title as an overlay (top-left) with the theme ink — see plot.ts note on why not opts.title
   if (props.opts.title) { titleNode = titleOverlay(props.opts.title, ink); host.value.append(titleNode) }
+
+  // …now that the legend is in the document, measure it. One corrective re-render at most (`pass`),
+  // so a legend whose height depends on the reserved margin can't oscillate.
+  const measured = legendNode ? Math.ceil(legendNode.getBoundingClientRect().height) : 0
+  if (pass === 0 && measured > 0 && Math.abs(measured - legendH) > 1) {
+    legendH = measured
+    await render(1)
+  } else if (measured === 0 && legendH !== 0) {
+    legendH = 0                                  // legend gone (single series / toggled off)
+  }
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
@@ -86,7 +112,7 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
 }
 defineExpose({ toImageURL })
 
-watch(() => [props.data, props.opts], render, { deep: true })
+watch(() => [props.data, props.opts], () => render(), { deep: true })
 onMounted(() => {
   render()
   if (host.value && typeof ResizeObserver !== 'undefined') {
@@ -107,14 +133,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null
 /* legend drawn as an absolute overlay (top-right) so it never eats height / clips the x-axis.
    colour is set inline by PlotChart (theme ink); descendants inherit it (force inherit so Plot's
    own swatch styles don't override the dark-theme ink). */
-.plot-host :deep(.plot-legend-overlay) {
-  position: absolute; top: 4px; right: 6px; display: flex; flex-wrap: wrap; gap: 2px 10px;
-  max-width: 58%; justify-content: flex-end; border-radius: var(--cc-radius-xs); padding: 1px 4px;
-}
-.plot-host :deep(.plot-legend-overlay *) { color: inherit !important; }
-/* title overlay (top-left), theme ink set inline */
-.plot-host :deep(.plot-title-overlay) {
-  position: absolute; top: 4px; left: 8px; max-width: 60%; font-weight: 600; font-size: var(--cc-fs-sm);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+/* legend + title overlay POSITIONING is global (style.css `.plot-legend-overlay` / `.plot-title-overlay`)
+   — two hosts draw them and the copies had drifted. All this host owes them is `position: relative`
+   (above) and the ink colour, which PlotChart sets inline. */
 </style>

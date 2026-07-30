@@ -47,8 +47,36 @@ function _record_stats_event(project_uid::AbstractString, result::AbstractDict)
 end
 
 # ── GET /api/plots/definitions[?module=X] — the plot-type registry ────────────────
-# Flat list of plot specs (each carries its own `module`); the frontend groups by module and
-# filters the per-module vs universal canvas. Optional `module` query narrows server-side.
+#
+# Flat list of plot specs. A spec declares where it belongs in one of two ways:
+#   • `module: "phenotype"`            — a single page (most specs).
+#   • `modules: {page => [popType…]}`  — SEVERAL pages, each offering its own subset of the spec's
+#     `dataSource.popTypes`. This is how ONE "Population summary" spec replaced five near-identical
+#     per-popType copies while each page still curates the population families it shows: Phenotype
+#     offers gated + cell clusters, Behaviour tracked + track clusters, Spatial regions.
+#
+# The narrowing happens HERE, server-side: a page is served the spec with `dataSource.popTypes` already
+# cut to that page's allow-list, so the frontend just renders a picker over whatever it was given and
+# needs no per-page knowledge. The universal Analysis board (no `module` query) gets the full list.
+# See docs/PLOTS.md → *Which page a plot belongs to*.
+function _narrow_spec_poptypes(spec::AbstractDict, want::AbstractString)
+    mods = get(spec, "modules", nothing)
+    (mods isa AbstractDict && !isempty(want)) || return spec
+    allow = get(mods, want, nothing)
+    allow isa AbstractVector || return spec
+    keep = Set(String(x) for x in allow)
+    ds = get(spec, "dataSource", nothing)
+    ds isa AbstractDict || return spec
+    pts = get(ds, "popTypes", nothing)
+    pts isa AbstractVector || return spec
+    out  = Dict{String,Any}(String(k) => v for (k, v) in spec)
+    outds = Dict{String,Any}(String(k) => v for (k, v) in ds)
+    # preserve the spec's own ordering (it decides the default = first offered), not the allow-list's
+    outds["popTypes"] = [p for p in pts if String(get(p, "popType", "")) in keep]
+    out["dataSource"] = outds
+    out
+end
+
 function api_plot_definitions(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     want = get(q, "module", "")
@@ -58,7 +86,10 @@ function api_plot_definitions(req::HTTP.Request)
         endswith(f, ".json") || continue
         try
             spec = JSON3.read(read(f, String), Dict{String,Any})
-            (isempty(want) || string(get(spec, "module", "")) == want) && push!(specs, spec)
+            mods = get(spec, "modules", nothing)
+            hit = isempty(want) || string(get(spec, "module", "")) == want ||
+                  (mods isa AbstractDict && haskey(mods, want))
+            hit && push!(specs, _narrow_spec_poptypes(spec, want))
         catch e
             @warn "Skipping malformed plot spec" path=f exception=e
         end
@@ -168,28 +199,6 @@ function api_plot_attrs(req::HTTP.Request)
     200, JSON3.write(Dict("attrs" => [Dict("name" => n, "values" => sort(vals[n])) for n in names]))
 end
 
-# ── GET /api/plots/contact_matrix — CODEX pairwise contact log-odds as a heatmap matrix ────────────
-# Query: projectUid, imageUid, suffix? (a neighbourStats run; default = first). Returns the pop × pop
-# log-odds matrix for the shared matrix renderer (PlotChart): `{ suffixes, suffix, basis, cells, ... }`
-# where cells = [{x, y, value}] over basis × basis. Read-only sidecar read (spatialStats/{suffix}.json)
-# via the package `contact_matrix` — the same reader MCP uses, no second copy. (Decision 16.)
-function api_plot_contact_matrix(req::HTTP.Request)
-    q    = HTTP.queryparams(HTTP.URI(req.target))
-    proj = get(q, "projectUid", "")
-    isempty(proj) && return _gerr(400, "projectUid required")
-    img, err = _gating_image(proj, get(q, "imageUid", ""))
-    err === nothing || return err
-    m = try
-        contact_matrix(img; suffix = get(q, "suffix", ""))
-    catch e
-        return _gerr(400, sprint(showerror, e))
-    end
-    200, JSON3.write(Dict(
-        "suffixes" => collect(m.suffixes), "suffix" => m.suffix, "basis" => collect(m.basis),
-        "nCells" => m.nCells, "nEdges" => m.nEdges,
-        "cells" => [Dict("x" => c.x, "y" => c.y, "value" => c.value) for c in m.cells]))
-end
-
 # ── POST /api/plot_data — server-side aggregation for one summary panel ────────────
 # Body: { projectUid, popType, granularity ("cell"|"track"),
 #         chartType ("histogram"|"frequency"|"bar"|"boxplot"), measure, bins?, normalize?,
@@ -268,11 +277,19 @@ function api_plot_data(body_bytes::Vector{UInt8})
     stat_unit in (:individual, :image) || return _gerr(400, "statUnit must be individual or image")
     image_agg in (:mean, :median) || return _gerr(400, "imageAgg must be mean or median")
 
+    # A PRECOMPUTED per-population-PAIR statistic (the interaction matrix) has no population
+    # selection: its rows/columns are fixed by the `neighbourStats` run it reads, so requiring pops
+    # here rejects the only body the panel can send. Route it through the targets form with an empty
+    # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
+    precomputed = chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction"
+
     # population targets: explicit (value_name, pop) pairs, or the legacy single-segmentation form.
     # `targets === nothing` → use the legacy `pops` + resolved `value_name` path.
     raw_series = get(body, "series", nothing)
     targets = nothing
-    if raw_series !== nothing
+    if precomputed
+        targets = Tuple{String,String}[]
+    elseif raw_series !== nothing
         targets = Tuple{String,String}[(string(get(s, "valueName", "")), string(get(s, "pop", "")))
                                        for s in raw_series]
         isempty(targets) && return _gerr(400, "series required (select populations to plot)")
@@ -320,6 +337,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map,
+                                  # `suffix` names WHICH RUN — a clustering run for a cluster plot, a
+                                  # neighbourStats run for the interaction matrix. Same field, same meaning.
+                                  stats_suffix = something(cluster_suffix, ""),
                                   stats_enabled = stats_enabled, stats_test = stats_test)
             stats_enabled && _record_stats_event(proj, result)
             return 200, JSON3.write(_json_safe(result))
@@ -344,6 +364,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
+                              stats_suffix = something(cluster_suffix, ""),
                               stats_enabled = stats_enabled, stats_test = stats_test)
         stats_enabled && _record_stats_event(proj, result)
         return 200, JSON3.write(_json_safe(result))

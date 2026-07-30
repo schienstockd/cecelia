@@ -9,13 +9,14 @@
   Spatial regions are neighbourhood-composition niches ("what cell types surround each cell"). This is a
   SEPARATE page from Spatial analysis (Decision 12). Reuses the cluster canvas (ClusterPlots) with
   pop-type="region" — no bespoke region panel (feedback: use the existing framework).
+
+  Like its two sibling clustering pages, this page only DEFINES populations. The `region` population
+  summary lives on **Spatial**, next to the other spatial readouts.
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import ClusterPlots from './cluster/ClusterPlots.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
-import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: regionDefs, reload: reloadDefs } = useTaskDefs('clustRegions')
@@ -34,11 +35,6 @@ const { defs: regionDefs, reload: reloadDefs } = useTaskDefs('clustRegions')
     </template>
     <template #plots="{ selectedUids, selectUids }">
       <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="region" />
-    </template>
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Population summary" max-height="none" :storage-key="'cc-popsum-open:clustRegions'">
-        <SummaryCanvas :image-uids="selectedUids" module="clustRegions" />
-      </CollapsibleSection>
     </template>
   </ModuleLayout>
 </template>

@@ -203,12 +203,8 @@ defineExpose({ exportImage, getCsv })
 .hmm-body { display: flex; flex: 1; min-height: 0; padding: 6px; }
 .hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; }
 .hmm-host :deep(svg) { display: block; }
-/* themed legend/title overlays (float over the plot, theme ink) — see plots/overlays.ts */
-.hmm-host :deep(.plot-legend-overlay) { position: absolute; top: 4px; right: 6px; display: flex; flex-wrap: wrap;
-  gap: 2px 10px; max-width: 62%; justify-content: flex-end; border-radius: var(--cc-radius-xs); padding: 1px 4px; }
-.hmm-host :deep(.plot-legend-overlay *) { color: inherit !important; }
-.hmm-host :deep(.plot-title-overlay) { position: absolute; top: 4px; left: 8px; max-width: 70%; font-weight: 600;
-  font-size: var(--cc-fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* legend/title overlays: positioning is global (style.css) so this panel and PlotChart cannot drift —
+   see plots/overlays.ts. The host supplies `position: relative` (above) and the ink. */
 .cc-sel { font-size: var(--cc-fs-sm); }
 /* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }

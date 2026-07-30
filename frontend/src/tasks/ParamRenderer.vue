@@ -48,6 +48,9 @@ const val = computed({
 //   'filepath' or absent → img.filepaths keys  (image versions)
 function imageFieldKeys(img: CciaImage, field: string | undefined): string[] {
   if (field === 'labels') return Object.keys(img.labels ?? {})
+  // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
+  // across the selected images is exactly the set of graphs a pooled analysis can run over.
+  if (field === 'spatialGraphs') return Object.keys(img.spatialGraphs ?? {})
   return Object.keys(img.filepaths ?? { default: '' })
 }
 

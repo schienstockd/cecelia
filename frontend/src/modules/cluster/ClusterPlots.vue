@@ -83,7 +83,7 @@ const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
-  suffixes, nameMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
+  suffixes, labelMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
   runMembers, validUids, strayUids, missingUids, shownPopsFor,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
@@ -156,7 +156,7 @@ const nameOf = (uid: string) =>
 // generic <component v-bind>, exactly like the Analysis board (LayoutCanvas.clusterPanelProps). Panels
 // self-seed their own defaults (e.g. heatmap features), so no host-side seeding is needed.
 function clusterPanelProps(p: CanvasItem<ClusterPanelState>) {
-  const ctx = { featureOptions: featureOptions.value, nameMap: nameMap.value,
+  const ctx = { featureOptions: featureOptions.value, nameMap: labelMap.value,
                 hmmStateCols: hmmStateCols.value, hmmTransitionCols: hmmTransitionCols.value }
   return {
     projectUid: projectUid.value, setUid: setUid.value, imageUids: validUids.value,

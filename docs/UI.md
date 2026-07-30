@@ -1839,3 +1839,56 @@ Moved to **`docs/POPULATION.md`** → *Gating plot — rendering & UX hacks*: th
 contour maths, gate hit-testing without stealing pointer events, and cross-plot propagation. Those are
 gating-model internals rather than UI conventions. **Read them before touching `PlotLayers` /
 `GateOverlay`.**
+
+## Auto-overridden settings — never silent
+
+When the app cannot honour a chosen option and substitutes another, it says so. Silently substituting
+leaves the user looking at a plot that disagrees with its own controls, with no way to tell whether the
+setting is broken or the data made it impossible.
+
+One mechanism — `frontend/src/plots/autoOverride.ts`:
+
+1. Build an `AutoOverride` (`{ setting, from, to, why }`) **where the substitution is decided** — nothing
+   downstream knows the reason.
+2. Mark the affected control with the shared **`.cc-auto-override`** utility (amber, `style.css`).
+3. Use **`overrideTooltip(o, fallback)`** for its hover text, so the explanation can't be left out. Where
+   there is no single control to mark, `overrideNote([...])` gives a one-line footer for the panel.
+
+Today's overrides:
+
+| Where | Substitution | Decided by |
+|---|---|---|
+| Gate plot / gate pairs | axis transform → `linear` when the measure's range can't take logicle | the server (`plotmeta` reports the transform it USED) |
+| Any summary plot | x tick labels → rotated when they wouldn't fit their bands | `needsXRotation` (measured label widths vs the panel width) |
+
+This replaced two ad-hoc copies. `GatePlotPanel` and `GatePairsPanel` each did their own
+preferred-vs-used comparison with their own amber class and their own wording — and `GatePlotPanel`'s
+transform select was tooltipped just "Axis transform", so the amber announced that *something* had
+happened without ever saying what. A third case (auto-rotation) was the point at which a third variant
+stopped being acceptable.
+
+**A marked control SHOWS the effective value and WRITES the preference** (`effectiveOf`). This is the
+half that's easy to miss: an ambered control still displaying the value that was *not* used reads as
+"your setting is being ignored". The gating transform selects have always done it — the select's getter
+reads the transform the server USED, its setter writes the user's preference — and the rotate toggle sat
+at *off* beside a rotated plot until it did the same. The control is then effectively stuck while the
+override holds, which is correct (the plot really is rotated) and lifts on its own when the cause does:
+a wider panel, shorter labels, a compatible measure. In **Global** vis scope the amber reflects the
+ACTIVE plot while the toggle governs every plot — same convention as the stats-test readout beside it.
+
+**Mark the CONTROL, not just the plot.** The notice reaches two places, and both matter: the affected
+control in the population picker goes amber with `overrideTooltip` (so the toggle never sits at *off*
+beside a rotated plot), and the panel shows a short footer note. Both read the same
+`PlotReadout` — `{ stats, overrides }`, threaded as **one object** through
+`SummaryPanel → host → SeriesPicker → PopulationPanelShell → PlotOptions`. Parallel props are how the
+first attempt failed: the override was emitted and the toggle never heard about it.
+
+**A panel notice belongs in the panel CHROME.** `.sp-body` is `overflow: hidden` with a `height: 100%`
+chart in it, so a sibling rendered after the chart is pushed out of view — the first version of these
+notes was emitted correctly and simply never seen. Put them in the `#footer` slot.
+
+**Auto-rotation is a decision, not a guess.** Each of `n` categories gets an equal band of the plotting
+area, so a label wider than its band must collide with its neighbour; `needsXRotation` measures the
+widest label with the same canvas text metric the axis margins use. It needs the panel width, which the
+option builders don't have — `PlotChart` passes `plotWidth` (the same value it hands `Plot.plot`), and
+the builder reports the outcome back on `_autoRotatedX` → `@auto-override` → the panel's note.

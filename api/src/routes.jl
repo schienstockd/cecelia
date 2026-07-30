@@ -1854,6 +1854,12 @@ function _image_payload(img::CciaImage)
         # so the generic labels picker (measure / segment / tracking) never lists them
         # (BRANCHING_PLAN Decision 6). The Viewer surfaces them as a separate toggle.
         branchLabels    = img.branch_labels,
+        # Spatial neighbour graphs built by spatialAnalysis.cellNeighbours, keyed by RUN suffix (the
+        # graph pools across segmentations, so it is not a value_name — see img_spatial_graph_suffixes).
+        # Surfaced as a versioned-style dict so a `valueNameSelection` with `field: "spatialGraphs"`
+        # offers the graphs present on ALL selected images — which is exactly the set a pooled analysis
+        # can run over. Discovered by listing spatialGraph/, not registered in ccid.json.
+        spatialGraphs   = Dict{String,Any}(s => "$(s).h5ad" for s in img_spatial_graph_suffixes(img)),
         attr            = img.attr,
         # Include/exclude in further processing (default true). Excluded images are greyed in the
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.

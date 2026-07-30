@@ -322,6 +322,11 @@ class NapariState:
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
                     cache=cache,
+                    # align the layer's dims to the viewer's BY NAME (see expand_to_axes) — a store
+                    # with fewer axes than the image would otherwise have them read from the right —
+                    # and stretch a projected store across the axis it collapsed (lazy; no bytes)
+                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
                 )
                 print(f"[show_labels] added {layer_name}: shape={layer.data.shape} "
                       f"scale={self._im_scale} cache={cache}", flush=True)
@@ -358,6 +363,13 @@ class NapariState:
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
                     cache=cache,
+                    # a Z-FLATTENED skeleton of a timelapse is (t,y,x) for a (t,z,y,x) image; without
+                    # the names napari renders its time axis as Z — a tower (see expand_to_axes). With
+                    # the image's extent it becomes a CURTAIN through z, which is what a MIP-derived
+                    # skeleton is: it belongs to the whole volume, not to z=0. Ports the old R
+                    # behaviour (create_branching wrote the MIP onto every z plane) without the bytes.
+                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
                 )
                 print(f"[show_branch_labels] added {layer_name}: shape={layer.data.shape} "
                       f"scale={self._im_scale} cache={cache}", flush=True)
@@ -505,6 +517,20 @@ class NapariState:
         if not self._axes:
             return []
         return [a.lower() for a in self._axes if a.lower() != "c"]
+
+    def _display_shape(self):
+        """Extent of each display axis, aligned with `_display_axes` (channel axis dropped).
+
+        Used to STRETCH a projected label store across the axis it collapsed: a skeleton computed on the
+        Z-MIP belongs to the whole volume, so it should render on every plane rather than only the first
+        (`napari_utils.expand_to_axes`, `viewer_shape`). Level 0's shape, because that is the level the
+        layer's own Y/X are measured against."""
+        if not self._axes or not self._im_data:
+            return None
+        shape = list(self._im_data[0].shape)
+        if len(shape) != len(self._axes):
+            return None                       # metadata doesn't describe the store — don't guess
+        return [n for ax, n in zip(self._axes, shape) if ax.lower() != "c"]
 
     def _centroid_matrix(self, value_name: str):
         """Return (labels, C, axes): per-cell centroid coordinates as an (n, n_display_dim)

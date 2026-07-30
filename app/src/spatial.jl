@@ -14,6 +14,10 @@ using DataFrames: DataFrame, groupby, combine, nrow, rename!, sort!, dropmissing
 
 _region_col(suffix::AbstractString) = "regions.$(suffix)"
 
+# Display name of the composition "other" bin — graph neighbours outside the analysis's basis. One
+# constant so the column name, the sidecar label and any UI text agree.
+const OTHER_BASIS_NAME = "other"
+
 # Shared basis resolution for spatial tasks that pool cells across segmentations (clustRegions,
 # spatialAnalysis.neighbourStats). Given `df` = a pooled `pop_df` result (cols uID, value_name, label,
 # pop), assign each cell a 0-based code for its (value_name, pop) PAIR — so B/qc and T/qc are distinct

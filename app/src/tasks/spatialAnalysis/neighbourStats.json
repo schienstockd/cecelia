@@ -1,59 +1,53 @@
 {
   "task": "neighbourStats",
   "fun_name": "spatialAnalysis.neighbourStats",
-  "label": "Contact statistics",
+  "label": "Interaction matrix",
   "category": "Spatial analysis",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "cpu",
   "params": [
     {
+      "key": "graphSuffix",
+      "label": "Neighbour graph",
+      "type": "valueNameSelection",
+      "field": "spatialGraphs",
+      "default": "default",
+      "tip": "Which neighbour graph to analyse \u2014 run \"Neighbour graph\" first"
+    },
+    {
       "key": "statsSuffix",
-      "label": "Suffix",
+      "label": "Name",
       "type": "text",
       "default": "default",
-      "tip": "Output suffix → spatialStats/<suffix>.json"
+      "tip": "Output name \u2192 spatialStats/<name>.json"
     },
     {
       "key": "basisPops",
       "label": "Populations",
       "type": "popSelection",
-      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "accepts": [
+        "live",
+        "clust",
+        "region",
+        "track",
+        "trackclust"
+      ],
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Cell types for pairwise contact statistics; at least two"
+      "tip": "Cell types to test for pairwise association; at least two"
     },
     {
-      "key": "neighbourMethod",
-      "label": "Graph type",
-      "type": "select",
-      "default": "delaunay",
-      "options": [
-        { "value": "delaunay", "label": "Delaunay (radius-pruned)" },
-        { "value": "knn",      "label": "k nearest neighbours" },
-        { "value": "radius",   "label": "Fixed radius" }
-      ],
-      "tip": "How the neighbour graph is built"
-    },
-    {
-      "key": "neighbourRadius",
-      "label": "Radius (µm)",
-      "type": "float",
-      "min": 0,
-      "max": 1000,
-      "step": 1,
-      "default": 30,
-      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)"
-    },
-    {
-      "key": "nNeighbours",
-      "label": "k (neighbours)",
+      "key": "nPermutations",
+      "label": "Permutations",
       "type": "int",
-      "min": 1,
-      "max": 100,
-      "step": 1,
-      "default": 6,
-      "tip": "Number of nearest neighbours for the kNN graph"
+      "min": 0,
+      "max": 10000,
+      "step": 100,
+      "default": 1000,
+      "tip": "Random relabellings for the significance test; 0 skips it"
     }
   ]
 }

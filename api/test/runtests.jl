@@ -588,6 +588,112 @@ end
     end
 end
 
+@testset "API: plot-spec per-page popType narrowing" begin
+    # ONE spec serves several pages, each offering its own subset of the population families. The
+    # narrowing happens server-side so the frontend needs no per-page knowledge — it renders a picker
+    # over whatever list it was handed. See docs/PLOTS.md → *Which page a plot belongs to*.
+    spec = Dict{String,Any}(
+        "id" => "population_summary",
+        "dataSource" => Dict{String,Any}("popTypes" => Any[
+            Dict{String,Any}("popType" => "flow", "granularity" => "cell"),
+            Dict{String,Any}("popType" => "clust", "granularity" => "cell"),
+            Dict{String,Any}("popType" => "live", "granularity" => "track"),
+            Dict{String,Any}("popType" => "trackclust", "granularity" => "track"),
+            Dict{String,Any}("popType" => "region", "granularity" => "cell")]),
+        "modules" => Dict{String,Any}("phenotype" => ["flow", "clust"],
+                                      "behaviourAnalysis" => ["live", "trackclust"],
+                                      "spatialAnalysis" => ["region"]))
+    pts(s) = [String(p["popType"]) for p in s["dataSource"]["popTypes"]]
+
+    # each page sees only its own families, in the SPEC's order (the spec decides the default = first)
+    @test pts(_narrow_spec_poptypes(spec, "phenotype")) == ["flow", "clust"]
+    @test pts(_narrow_spec_poptypes(spec, "behaviourAnalysis")) == ["live", "trackclust"]
+    @test pts(_narrow_spec_poptypes(spec, "spatialAnalysis")) == ["region"]
+    # granularity travels with the family, so the panel can send the right one per pick
+    ph = _narrow_spec_poptypes(spec, "phenotype")["dataSource"]["popTypes"]
+    @test all(String(p["granularity"]) == "cell" for p in ph)
+
+    # the universal board (no module) gets the FULL list — it hosts every family at once
+    @test length(pts(_narrow_spec_poptypes(spec, ""))) == 5
+    # narrowing must not mutate the spec it was handed (specs are re-read per request, but a shared
+    # in-memory spec would otherwise be progressively emptied by successive page queries)
+    @test length(spec["dataSource"]["popTypes"]) == 5
+    # a page not listed at all is left untouched rather than silently emptied
+    @test length(pts(_narrow_spec_poptypes(spec, "segment"))) == 5
+    # a legacy single-`module` spec has no `modules` and passes straight through
+    legacy = Dict{String,Any}("module" => "phenotype",
+                              "dataSource" => Dict{String,Any}("popType" => "flow", "granularity" => "cell"))
+    @test _narrow_spec_poptypes(legacy, "phenotype") === legacy
+end
+
+@testset "API: interaction matrix needs no population selection" begin
+    # The interaction matrix's rows/columns come from the `neighbourStats` run it reads, so the panel
+    # sends NO `series`/`pops`. The generic selector guard rejected that body before `plot_summary_data`
+    # could intercept on matrixMode — "pops (or series) required" on a plot that has no pops to pick.
+    pops_required(r) = occursin("pops (or series) required", String(r[2]))
+    base = Dict("projectUid" => "nope-not-a-project", "popType" => "flow", "granularity" => "cell")
+
+    inter = _post(api_plot_data, merge(base, Dict("chartType" => "matrix", "matrixMode" => "interaction")))
+    @test !pops_required(inter)          # gets past the guard (then fails on the bogus project, as it should)
+
+    # the guard must still hold for every OTHER plot — including the other matrix modes, which DO
+    # aggregate a pop_df frame and are meaningless without a selection.
+    for mode in ("profile", "crosstab")
+        r = _post(api_plot_data, merge(base, Dict("chartType" => "matrix", "matrixMode" => mode)))
+        @test pops_required(r)
+    end
+    @test pops_required(_post(api_plot_data, merge(base, Dict("chartType" => "bar"))))
+    # an explicitly EMPTY series list is a different mistake (the user unticked everything) and keeps
+    # its own message rather than being waved through as "precomputed"
+    empty_series = _post(api_plot_data, merge(base, Dict("chartType" => "bar", "series" => [])))
+    @test occursin("series required", String(empty_series[2]))
+end
+
+@testset "API: cluster/region run resolution is family-aware" begin
+    # The channels endpoint enumerates a pop_type's OWN obs column family. Hardcoding "clusters." here
+    # is why the Region-clustering page showed an empty run list (falling back to "default") while
+    # `regions.immune` sat in obs — see docs/todo/SPATIAL_REGIONS_PLAN.md.
+    obs = ["label", "clusters.myeloid", "regions.immune", "regions.niches", "live.cell.speed"]
+    @test _cluster_suffixes(obs, "clust")      == ["myeloid"]
+    @test _cluster_suffixes(obs, "trackclust") == ["myeloid"]
+    @test Set(_cluster_suffixes(obs, "region")) == Set(["immune", "niches"])
+    @test _cluster_suffixes(obs) == ["myeloid"]          # default stays the clusters family
+    @test isempty(_cluster_suffixes(["label"], "region"))
+
+    # sidecar reads are family-scoped too, and a missing file/run is empty rather than a throw
+    lpdir = mktempdir(); props = joinpath(lpdir, "B.h5ad")
+    Cecelia._write_clust_features!(props, "immune", ["spatial.comp.B_qc.immune"], ["u1", "u2"];
+                                   family = "regions", labels = Dict("spatial.comp.B_qc.immune" => "B/qc"))
+    @test _clust_features(props, ["immune"], "regions")["immune"] == ["spatial.comp.B_qc.immune"]
+    @test _clust_members(props, ["immune"], "regions")["immune"]  == ["u1", "u2"]
+    @test _clust_feature_labels(props, ["immune"], "regions")["immune"]["spatial.comp.B_qc.immune"] == "B/qc"
+    @test isempty(_clust_features(props, ["immune"], "clusters")["immune"])   # different family
+    @test isempty(_clust_feature_labels(props, ["immune"], "clusters"))      # no labels → key omitted
+    @test isempty(_clust_members(joinpath(lpdir, "gone.h5ad"), ["immune"], "regions")["immune"])
+
+    # REGRESSION: an entry written BEFORE the `labels` field existed — i.e. any image not re-run since.
+    # Reading it must not throw. `something(get(...), nothing)` did: with every argument `nothing`,
+    # `something()` raises ArgumentError("No value arguments present"), which surfaced as repeated 500s
+    # from /api/gating/channels?popType=region.
+    legacy = joinpath(lpdir, "L.h5ad")
+    open(replace(legacy, r"\.h5ad$" => ".clustfeatures.json"), "w") do f
+        JSON3.write(f, Dict("niches" => Dict("features" => ["B/qc"], "partOf" => ["u1"])))
+    end
+    @test _clust_feature_labels(legacy, ["niches"], "regions") == Dict{String,Any}()
+    @test _clust_members(legacy, ["niches"], "regions")["niches"] == ["u1"]
+    @test _clust_features(legacy, ["niches"], "regions")["niches"] == ["B/qc"]
+    # …and the oldest layout of all: a bare feature ARRAY, with no partOf and no labels
+    oldest = joinpath(lpdir, "O.h5ad")
+    open(replace(oldest, r"\.h5ad$" => ".clustfeatures.json"), "w") do f
+        JSON3.write(f, Dict("old" => ["f1", "f2"]))
+    end
+    @test _clust_feature_labels(oldest, ["old"], "regions") == Dict{String,Any}()
+    @test _clust_members(oldest, ["old"], "regions")["old"] == String[]
+    # a suffix with no entry at all must also be safe (the obs column exists, the sidecar lags)
+    @test _clust_feature_labels(props, ["nosuchrun"], "regions") == Dict{String,Any}()
+    @test _clust_members(props, ["nosuchrun"], "regions")["nosuchrun"] == String[]
+end
+
 @testset "API: plotmeta gate-autoscale helpers" begin
     # _gates_bbox: display-space bbox over a mixed rectangle + polygon gate list
     @test _gates_bbox([]) == (Inf, -Inf, Inf, -Inf)          # nothing to enclose

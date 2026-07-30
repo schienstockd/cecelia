@@ -9,19 +9,31 @@
   Points). Default = all four.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
+import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
+import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
 
 const props = withDefaults(defineProps<{
   vis: VisProps
   sections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
-  // `auto` resolves the test server-side from the group count, so the user can't tell which one ran.
-  // The active plot's last result reports it back here (methodNote) and we echo it under the Test select.
-  statsNote?: string
-}>(), { sections: () => ['layout', 'points', 'colours', 'labels'], statsNote: '' })
+  // What the active plot's last render actually DID, as opposed to what these controls asked for: which
+  // stats test `auto` resolved to (and why), and any setting the renderer had to substitute. A control
+  // whose value was overridden marks itself amber and explains in its tooltip — see plots/plotReadout.ts.
+  readout?: PlotReadout
+}>(), { sections: () => ['layout', 'points', 'colours', 'labels'], readout: emptyReadout })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
+// the x-tick-label rotation the renderer applied without being asked (labels wouldn't fit their bands)
+const xLabelOverride = computed(() => overrideFor(props.readout, 'X labels'))
+// …and the toggle DISPLAYS that, while still writing the user's preference — same contract as the gating
+// transform selects (see effectiveOf). An ambered control showing the value that was NOT used reads as
+// "your setting is being ignored".
+const rotateXShown = computed<boolean>({
+  get: () => effectiveOf(xLabelOverride.value, !!props.vis.rotateXLabel, true),
+  set: v => set({ rotateXLabel: v }),
+})
 const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false, stats: false })
 const set = (patch: Partial<VisProps>) => emit('update:vis', patch)
 const has = (s: string) => props.sections.includes(s as 'layout')
@@ -41,9 +53,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <CcToggle :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Draw axis gridlines behind the data'"><span>Gridlines</span>
           <CcToggle :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Rotate the x tick labels (angle below)'"><span>Rotate X labels</span>
-          <CcToggle :model-value="vis.rotateXLabel" @update:model-value="set({ rotateXLabel: $event })" /></div>
-        <label v-if="vis.rotateXLabel" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'X tick-label angle (degrees)'"><span>X angle</span>
+        <div class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!xLabelOverride }"
+             v-tooltip.left="overrideTooltip(xLabelOverride, 'Rotate the x tick labels (angle below)')">
+          <span>Rotate X labels<i v-if="xLabelOverride" class="pi pi-exclamation-triangle po-warn" /></span>
+          <CcToggle v-model="rotateXShown" /></div>
+        <!-- the angle applies whenever labels are rotated, however that came about -->
+        <label v-if="rotateXShown" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'X tick-label angle (degrees)'"><span>X angle</span>
           <input type="range" min="0" max="90" step="5" :value="vis.rotateXAngle ?? 45"
                  @input="set({ rotateXAngle: parseInt(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
@@ -123,8 +138,9 @@ const has = (s: string) => props.sections.includes(s as 'layout')
             <option value="kruskal">Kruskal-Wallis</option>
             <option value="anova">One-way ANOVA</option>
           </select></label>
-        <div v-if="vis.statsEnabled && (vis.statsTest ?? 'auto') === 'auto' && statsNote"
-             class="po-note cc-muted cc-fs-2xs" v-tooltip.left="'Test the active plot ran'">{{ statsNote }}</div>
+        <div v-if="vis.statsEnabled && (vis.statsTest ?? 'auto') === 'auto' && readout.stats.note"
+             class="po-note cc-muted cc-fs-2xs"
+             v-tooltip.left="readout.stats.reason || 'Test the active plot ran'">{{ readout.stats.note }}</div>
         <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One letter per group; shared letter = no difference'"><span>Compact letters</span>
           <CcToggle :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Also show non-significant brackets'"><span>Show ns</span>
@@ -156,6 +172,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
 </template>
 
 <style scoped>
+/* inline warning glyph on an auto-overridden row (amber comes from .cc-auto-override) */
+.po-warn { margin-left: 4px; }
 .po { display: flex; flex-direction: column; }
 /* + cc-section-toggle (row) — this keeps only the padding and the uppercase section-label tier */
 .po-toggle { padding: 6px 8px; }

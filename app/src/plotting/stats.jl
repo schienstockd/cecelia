@@ -26,6 +26,7 @@ struct StatsResult
     p_value::Float64                   # omnibus p (two-tailed for 2-group tests)
     significance::String               # ns / * / ** / *** / ****   (GP-style ladder)
     method_note::String                # human-readable, e.g. "Mann-Whitney U (two-sided)"
+    auto_reason::String                # why `:auto` chose this test; "" when the caller named it
     comparison_pairs::Vector{Tuple{String,String,Float64,String}}  # (a, b, p_adj, significance)
     letters::Vector{String}            # compact letter display, per group (parallel to `groups`)
 end
@@ -45,6 +46,14 @@ _bonferroni(ps::Vector{<:Real}) = clamp.(ps .* length(ps), 0.0, 1.0)
 
 # Which test we run when the caller says `:auto`.
 _auto_test(n_groups::Int)::Symbol = n_groups == 2 ? :mannwhitney : :kruskal
+
+# …and WHY, stated by the side that decides. The UI showed the resolved test name but never its basis
+# ("why that test?"), and deriving the explanation in the frontend would fork the rule: change
+# `_auto_test` and the tooltip would quietly start lying. Both non-parametric, hence "(rank-based)" —
+# `:auto` never assumes normality, so it is safe on the distributions we plot without a normality check.
+_auto_reason(n_groups::Int)::String =
+    n_groups == 2 ? "2 groups → Mann-Whitney U (rank-based)" :
+                    "$(n_groups) groups → Kruskal-Wallis (rank-based)"
 
 # Extract the "the statistic" scalar. HypothesisTests hides these under differently named fields
 # per test — grab whatever's there; NaN if the field is missing (StatsResult.statistic is
@@ -80,6 +89,7 @@ function run_stats(groups; test::Symbol=:auto)::StatsResult
         isempty(v) && throw(ArgumentError("group \"$lbl\" is empty"))
     end
 
+    auto_reason = test === :auto ? _auto_reason(n_groups) : ""
     test = test === :auto ? _auto_test(n_groups) : test
 
     ns      = length.(values)
@@ -90,7 +100,8 @@ function run_stats(groups; test::Symbol=:auto)::StatsResult
     pairs        = _pairwise(values, labels, test)
     letters      = _cld_letters(labels, pairs)
 
-    StatsResult(test, labels, ns, means, medians, stat, p, _significance(p), note, pairs, letters)
+    StatsResult(test, labels, ns, means, medians, stat, p, _significance(p), note, auto_reason,
+                pairs, letters)
 end
 
 function _run_omnibus(test::Symbol, vals::Vector{Vector{Float64}})

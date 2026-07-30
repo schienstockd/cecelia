@@ -351,6 +351,47 @@ The channel axis is excluded from the scale array before passing to `viewer.add_
 
 Units are set per-layer via `layer.units` (a tuple matching the spatial axes). `viewer.scale_bar.unit = None` is intentional — setting a unit string on the scale bar is deprecated in napari 0.7.1; the layer units drive it instead.
 
+### A layer with fewer axes than the image — align BY NAME
+
+**napari aligns a layer's dimensions against the viewer's from the RIGHT.** A layer with fewer
+dimensions is therefore not "missing its leading axes" — its axes are *reinterpreted* as the viewer's
+trailing ones. A Z-projected timelapse skeleton stored as `(t,y,x)`, added to a `(t,z,y,x)` viewer, has
+its **time axis rendered as Z**: every frame stacked into one volume, a tower standing on the image.
+`scale` cannot fix this; the dimensions themselves are misassigned.
+
+So every derived store (labels, branch labels) is aligned by axis NAME, in `add_labels` — the one place
+they all pass through:
+
+```python
+napari_utils.add_labels(viewer, arrays, scale=self._im_scale, units=self._im_units,
+                        axes=zarr_utils.read_axes(labels_path),      # what the store says it is
+                        image_axes=self._display_axes())             # viewer axes, channel excluded
+```
+
+`expand_to_axes` inserts a length-1 axis for each viewer axis the store lacks (lazily — `arr[..., None]`
+keeps a dask store lazy), and `image_shape` then **stretches** those inserted axes to the viewer's extent.
+It **refuses** rather than guesses when the names can't be trusted: a rank/name mismatch (a store whose
+`.zattrs` axes don't describe its array), an axis the viewer doesn't have, or a transposed store. The
+caller then falls back to `align_axis_vector`, which only makes `scale` the right *length*.
+
+**A projection is a CURTAIN, not one plane.** A skeleton computed on the Z-MIP belongs to the whole volume,
+so leaving it on plane 0 is correct about the data and wrong about the meaning — it reads as a separate
+layer floating beside the image. The old R version got this right by writing the MIP onto every Z plane
+*before* skeletonising (`create_branching.py`: *"this will propagate the 2D image into 3D — otherwise the
+following steps will be a bit confusing"*), i.e. by duplicating the bytes; its full-rank store is also why
+it never hit the axis-alignment problem at all. Here it is a lazy `np.broadcast_to` (which dispatches
+through `__array_function__`, so a dask store stays lazy): the store stays honest about having no Z, and
+nothing is stored twice — a 201×20×544×548 uint32 curtain would be 4.8 GB if it were ever materialised,
+and napari reads one plane at a time, so it never is. Only the INSERTED axes stretch; a pyramid level keeps
+its own Y/X, or stretching them would resample the level. In 3D rendering the result extrudes through the
+stack; in 2D the overlay follows the slider through z.
+
+This depends on stores declaring truthful axes, which is the writer's half of the same contract: a task
+whose store is not the source image's shape passes `axes=` to `create_multiscales` explicitly (labels
+carry no C; `flattenBranching` drops Z; `integrateTime` drops T — see `branching_run._store_axes` and
+`docs/todo/SPATIAL_ANISOTROPY_PLAN.md` finding A8). A store that lies about its axes is unusable
+metadata, not a hint, which is why the reader refuses it rather than guessing.
+
 ---
 
 ## Channel names

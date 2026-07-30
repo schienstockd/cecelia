@@ -18,7 +18,12 @@ function _collect_region_cols!(out, vn::AbstractString, props::AbstractString)
     end
 end
 
-# pairwise contact log-odds sidecars (spatialStats/{suffix}.json) → flat records
+# pairwise interaction sidecars (spatialStats/{suffix}.json) → flat records. Carries the permutation
+# test alongside the effect size, so a reader can tell "these avoid each other" from "these avoid each
+# other more than a random arrangement would" (`zScore`/`pValue` are null when the test was skipped).
+_nullable_float(r, k) = let v = get(r, k, nothing)
+    (v === nothing || v isa Nothing) ? nothing : Float64(v)
+end
 function _collect_contact_stats(img::CciaImage)
     dir = joinpath(img._dir, "spatialStats"); out = Any[]
     isdir(dir) || return out
@@ -28,11 +33,17 @@ function _collect_contact_stats(img::CciaImage)
         recs = get(d, :records, nothing); recs isa AbstractVector || continue
         pairs = [(; popA = string(r.popA), popB = string(r.popB),
                    observed = Float64(get(r, :observed, 0)), expected = Float64(get(r, :expected, 0)),
-                   logOdds = Float64(get(r, :logOdds, 0)), association = string(get(r, :association, "")))
+                   logOdds = Float64(get(r, :logOdds, 0)),
+                   zScore = _nullable_float(r, :zScore), pValue = _nullable_float(r, :pValue),
+                   significant = Bool(get(r, :significant, false)),
+                   association = string(get(r, :association, "")))
                  for r in recs]
         push!(out, (; suffix = f[1:prevind(f, end, 5)],
                      basis = String[string(x) for x in get(d, :basis, [])],
-                     nCells = Int(get(d, :nCells, 0)), nEdges = Int(get(d, :nEdges, 0)), pairs = pairs))
+                     nCells = Int(get(d, :nCells, 0)), nEdges = Int(get(d, :nEdges, 0)),
+                     graphSuffix = string(get(d, :graphSuffix, "")),
+                     nPermutations = Int(get(d, :nPermutations, 0)),
+                     coverage = Float64(get(d, :coverage, 1.0)), pairs = pairs))
     end
     out
 end

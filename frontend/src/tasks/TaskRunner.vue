@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
+import { buildParamValues, flattenParams } from './paramValues'
 import { usePanelResize } from '../composables/usePanelResize'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
@@ -110,25 +111,6 @@ async function fetchSavedParams(def: TaskDef): Promise<ParamValues> {
   } catch { return {} }
 }
 
-function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues {
-  const vals: ParamValues = {}
-  for (const p of def.params) {
-    if (p.type === 'section') {
-      // Sections are stored flat (flattenParams hoists children to the top level on run), so read
-      // the child from the flat key. savedSection is kept first for any legacy nested records.
-      const savedSection = ((saved[p.key] ?? {}) as ParamValues)
-      const sectionVals: ParamValues = {}
-      for (const sp of p.params ?? []) {
-        sectionVals[sp.key] = savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null
-      }
-      vals[p.key] = sectionVals
-    } else {
-      vals[p.key] = saved[p.key] ?? p.default ?? null
-    }
-  }
-  return vals
-}
-
 // Saved params are fetched from the server, so guard against a slower earlier request landing after
 // a newer one (function/selection changed mid-flight).
 let paramReqSeq = 0
@@ -137,7 +119,11 @@ async function initParams(def: TaskDef | undefined) {
   // Restore an in-progress draft for this exact scope first; only then fall back to server-saved
   // params + defaults. (Drafts are written on user edits only, so this never masks a newer save.)
   const draft = drafts.get(currentDraftKey.value)
-  if (draft) { paramValues.value = draft; return }
+  // Reconcile the draft against the CURRENT spec instead of restoring it raw. A draft outlives a param
+  // set change, so a raw restore left new params absent from the form — and `undefined` is dropped by
+  // JSON.stringify, so those params vanished from the run payload AND from the funParams record the
+  // server writes, i.e. the setting silently stopped being remembered. See tasks/paramValues.ts.
+  if (draft) { paramValues.value = buildParamValues(def, draft); return }
   const seq = ++paramReqSeq
   const saved = await fetchSavedParams(def)
   if (seq !== paramReqSeq) return
@@ -149,23 +135,6 @@ async function initParams(def: TaskDef | undefined) {
 function onParamEdit(key: string, value: unknown) {
   paramValues.value[key] = value
   drafts.set(currentDraftKey.value, paramValues.value)
-}
-
-// Flatten top-level section params before sending — sections are UI containers only.
-// Nested keys (e.g. paramValues.labelModifications.matchThreshold) are hoisted flat.
-function flattenParams(def: TaskDef, vals: ParamValues): ParamValues {
-  const flat: ParamValues = {}
-  for (const p of def.params) {
-    if (p.type === 'section') {
-      const nested = ((vals[p.key] ?? {}) as ParamValues)
-      for (const sp of p.params ?? []) {
-        flat[sp.key] = nested[sp.key] ?? sp.default ?? null
-      }
-    } else {
-      flat[p.key] = vals[p.key]
-    }
-  }
-  return flat
 }
 
 watch(selectedTask, (task) => {

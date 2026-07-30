@@ -1,13 +1,23 @@
 {
   "id": "population_summary",
   "label": "Population summary",
-  "module": "phenotype",
+  "modules": {
+    "phenotype": ["flow", "clust"],
+    "behaviourAnalysis": ["live", "track", "trackclust"],
+    "spatialAnalysis": ["region"]
+  },
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "violin", "bar", "count"],
   "whiteboardCompatible": true,
   "dataSource": {
-    "popType": "flow",
-    "granularity": "cell"
+    "popTypes": [
+      { "popType": "flow",       "granularity": "cell",  "label": "Gated" },
+      { "popType": "clust",      "granularity": "cell",  "label": "Cell clusters" },
+      { "popType": "live",       "granularity": "track", "label": "Tracked" },
+      { "popType": "track",      "granularity": "track", "label": "Tracked (gated)" },
+      { "popType": "trackclust", "granularity": "track", "label": "Track clusters" },
+      { "popType": "region",     "granularity": "cell",  "label": "Regions" }
+    ]
   },
   "scopeModes": ["per_image", "summarised", "by_attr"],
   "params": [

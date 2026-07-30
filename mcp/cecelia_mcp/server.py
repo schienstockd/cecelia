@@ -288,10 +288,18 @@ def get_spatial_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
         are neighbourhood-composition niches (what cell types surround each cell); a cell has BOTH a
         cluster label and a region label. `suffix` is the run id.
       - `contactStats`: list, one per neighbourStats run —
-        `{suffix, basis: [populations], nCells, nEdges, pairs: [{popA, popB, observed, expected,
-        logOdds, association: associated|avoided}]}`. `logOdds` is the CODEX observed-vs-expected
-        contact log-odds ratio: > 0 = the two cell types selectively ASSOCIATE (co-localise), < 0 =
-        they AVOID each other. Use it to answer "which cell types co-localise / avoid each other?".
+        `{suffix, graphSuffix, basis: [populations], nCells, nEdges, coverage, nPermutations,
+        pairs: [{popA, popB, observed, expected, logOdds, zScore, pValue, significant,
+        association: associated|avoided}]}`. `logOdds` is the CODEX observed-vs-expected contact
+        log-odds ratio — the EFFECT SIZE: > 0 = the two cell types selectively ASSOCIATE
+        (co-localise), < 0 = they AVOID each other. `zScore`/`pValue` are the SIGNIFICANCE, from
+        `nPermutations` random relabellings of the same neighbour graph: they answer "is this more
+        than a random arrangement of these cell types would give?". Both are null when the test was
+        skipped (nPermutations = 0), in which case logOdds is descriptive only. `pValue` cannot go
+        below 1/(nPermutations+1), so p at that floor means "no permutation matched it", not p=0.
+        `coverage` is the fraction of the graph's cells that were in `basis` — a low value means the
+        statistics cover a small slice of the graph. Use this to answer "which cell types co-localise
+        or avoid each other, and is it real?".
     Summary-level, reads current on-disk state (region columns + spatialStats sidecars)."""
     return _client.get_spatial_stats(project_uid, image_uid or None, set_uid or None)
 

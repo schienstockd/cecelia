@@ -78,6 +78,26 @@ function img_label_props_path(img::CciaImage, value_name::AbstractString="defaul
     joinpath(img_label_props_dir(img), filename)
 end
 
+"""
+    img_spatial_graph_path(img, suffix) -> String
+    img_spatial_graph_suffixes(img)     -> Vector{String}
+
+The spatial neighbour graph `spatialAnalysis.cellNeighbours` persists per run:
+`{img._dir}/spatialGraph/{suffix}.h5ad`. The graph is POP-AGNOSTIC and pools across segmentations, so —
+unlike labelProps — it is keyed by RUN suffix, not by value_name (a `{vn}.spatial.h5ad` next to the cell
+table could not represent a cross-segmentation graph, which is why it was replaced). Discovery is by
+listing the directory, the same convention as the `spatialStats/{suffix}.json` sidecars — no ccid.json
+registration needed. Image-owned + pop_type-neutral, like `img_label_props_path`.
+"""
+img_spatial_graph_dir(img::CciaImage)::String = joinpath(img._dir, "spatialGraph")
+img_spatial_graph_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_spatial_graph_dir(img), "$(suffix).h5ad")
+function img_spatial_graph_suffixes(img::CciaImage)::Vector{String}
+    d = img_spatial_graph_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".h5ad")])
+end
+
 # Generic value_name checks over a versioned property field (default `label_props` = the segmentations).
 # It's just "does this versioned field carry this value_name" — reusable wherever a feature must know
 # whether an image has a given value_name before acting on it (e.g. copying gating across images).

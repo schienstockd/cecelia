@@ -323,32 +323,92 @@ save_pop_map!(m::PopulationMap, img::CciaImage) = save_pop_map!(m, img._dir)
 # that took part in a run = those whose clustfeatures sidecar carries `suffix` — the single source of
 # truth for "which segmentations belong to this clustering".
 _clustfeatures_path(props_path::AbstractString) = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
-function _clustfeatures_suffixes(props_path::AbstractString)::Set{String}
-    s = _clustfeatures_path(props_path)
-    isfile(s) || return Set{String}()
-    try
-        Set{String}(String(k) for k in keys(JSON3.read(read(s, String), Dict{String,Any})))
-    catch
-        Set{String}()
+
+# The sidecar is keyed by the FULL obs column the run wrote — `{family}.{suffix}` (= the
+# `_cluster_measure_prefix` family + the run suffix), so a `clusters.immune` cell clustering and a
+# `regions.immune` region clustering coexist on one segmentation instead of clobbering each other.
+_clustfeatures_key(suffix::AbstractString, family::AbstractString) = "$(family).$(suffix)"
+
+# Split a sidecar key back into (suffix, family). A LEGACY key is a bare suffix with no family prefix
+# (written before families existed); it returns `nothing` for the family and is then treated as matching
+# ANY requested family — preserving the old single-namespace behaviour for existing sidecars, so this
+# change is regression-free on data already on disk.
+const _CLUSTFEATURES_FAMILIES = ("clusters", "regions")
+function _clustfeatures_split_key(key::AbstractString)
+    for fam in _CLUSTFEATURES_FAMILIES
+        startswith(key, fam * ".") && return (String(key)[ncodeunits(fam)+2:end], fam)
     end
+    (String(key), nothing)
+end
+
+_clustfeatures_raw(props_path::AbstractString) =
+    let s = _clustfeatures_path(props_path)
+        isfile(s) ? (try JSON3.read(read(s, String), Dict{String,Any}) catch; Dict{String,Any}() end) :
+                    Dict{String,Any}()
+    end
+
+# Suffixes recorded for `family` ("clusters" for clust/trackclust, "regions" for region). Legacy
+# family-less entries match every family (see `_clustfeatures_split_key`).
+function _clustfeatures_suffixes(props_path::AbstractString;
+                                 family::AbstractString = "clusters")::Set{String}
+    out = Set{String}()
+    for k in keys(_clustfeatures_raw(props_path))
+        sfx, fam = _clustfeatures_split_key(String(k))
+        (fam === nothing || fam == String(family)) && push!(out, sfx)
+    end
+    out
 end
 
 """
-    co_clustered_value_names(img, suffix; granularity=:cell) -> Vector{String}
+    _clustfeatures_entry(props_path, suffix; family="clusters") -> AbstractDict | nothing
+
+THE reader for one run's clustfeatures entry — do not index the raw sidecar JSON anywhere else. Prefers
+the family-qualified key (`{family}.{suffix}`) and falls back to the legacy bare-suffix key, normalising
+the OLDEST format (`{suffix => [features]}`, a bare array with no membership) to the current shape. Every
+consumer (the channels endpoint, the observer summaries) goes through this so there is one place that
+knows the sidecar's three historical layouts.
+"""
+function _clustfeatures_entry(props_path::AbstractString, suffix::AbstractString;
+                              family::AbstractString = "clusters")
+    raw = _clustfeatures_raw(props_path)
+    for k in (_clustfeatures_key(suffix, family), String(suffix))
+        v = get(raw, k, nothing)
+        v isa AbstractDict && return v
+        v isa AbstractVector && return Dict{String,Any}(     # oldest format: features only
+            "features" => String[string(x) for x in v], "partOf" => String[], "labels" => Dict{String,Any}())
+    end
+    nothing
+end
+
+# One run's recorded feature columns (the heatmap's row universe), `String[]` when unrecorded.
+function _clustfeatures_features(props_path::AbstractString, suffix::AbstractString;
+                                 family::AbstractString = "clusters")::Vector{String}
+    e = _clustfeatures_entry(props_path, suffix; family=family)
+    e === nothing && return String[]
+    f = get(e, "features", get(e, :features, nothing))
+    f isa AbstractVector ? String[string(x) for x in f] : String[]
+end
+
+"""
+    co_clustered_value_names(img, suffix; granularity=:cell, family="clusters") -> Vector{String}
 
 The image's segmentations (value_names) that took part in clustering run `suffix` — i.e. whose
-clustfeatures sidecar (`{props}.clustfeatures.json`) carries `suffix`. `granularity=:track` reads the
-per-track table's sidecar (`trackclust`), `:cell` the cell table's (`clust`). First-appearance order
-of `versioned_keys(img.label_props)`. Falls back to the active value_name when nothing is recorded
-(pre-clustfeatures runs), so callers always get at least one segmentation.
+clustfeatures sidecar (`{props}.clustfeatures.json`) carries `suffix` for `family`. `granularity=:track`
+reads the per-track table's sidecar (`trackclust`), `:cell` the cell table's (`clust`). `family` is the
+obs-column family ("clusters" for clust/trackclust, "regions" for region — pass
+`_cluster_measure_family(pop_type)`), so a region run and a cell-clustering run that share a suffix
+resolve to their own member segmentations. First-appearance order of `versioned_keys(img.label_props)`.
+Falls back to the active value_name when nothing is recorded (pre-clustfeatures runs), so callers always
+get at least one segmentation.
 """
 function co_clustered_value_names(img::CciaImage, suffix::AbstractString;
-                                  granularity::Symbol=:cell)::Vector{String}
+                                  granularity::Symbol=:cell,
+                                  family::AbstractString="clusters")::Vector{String}
     out = String[]
     for vn in versioned_keys(img.label_props)
         v = String(vn)
         p = granularity === :track ? img_track_props_path(img, v) : img_label_props_path(img, v)
-        String(suffix) in _clustfeatures_suffixes(p) && push!(out, v)
+        String(suffix) in _clustfeatures_suffixes(p; family=family) && push!(out, v)
     end
     isempty(out) ? String[String(get(img.label_props, "_active", "default"))] : out
 end
@@ -362,6 +422,9 @@ _is_cluster_pop_type(pop_type)::Bool = String(pop_type) in ("clust", "trackclust
 
 # The obs-column family a cluster-style pop type filters over — the one place the prefix is decided.
 _cluster_measure_prefix(pop_type)::String = String(pop_type) == "region" ? "regions." : "clusters."
+# …and the same decision without the dot, for the clustfeatures sidecar key (`{family}.{suffix}`) and
+# any caller that needs the bare family name. Derived, never re-decided.
+_cluster_measure_family(pop_type)::String = chopsuffix(_cluster_measure_prefix(pop_type), ".")
 
 # Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "{prefix}{suffix}").
 function _referenced_cluster_suffixes(m::PopulationMap)::Set{String}
@@ -386,7 +449,7 @@ function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
                                  pop_type::AbstractString)::Union{PopulationMap,Nothing}
     granularity = pop_type == "trackclust" ? :track : :cell
     p = granularity === :track ? img_track_props_path(img, value_name) : img_label_props_path(img, value_name)
-    my_suffixes = _clustfeatures_suffixes(p)
+    my_suffixes = _clustfeatures_suffixes(p; family=_cluster_measure_family(pop_type))
     isempty(my_suffixes) && return nothing              # this vn wasn't clustered → nothing to share
     for vn in versioned_keys(img.label_props)
         v = String(vn); v == value_name && continue
@@ -526,7 +589,8 @@ function _expand_cluster_pops(img::CciaImage, pops, pop_type::AbstractString, de
             suffix = String(fm)[ncodeunits(prefix)+1:end]; break
         end
         suffix === nothing && (push!(out, p); continue)                        # unknown → leave to default_vn
-        for vn in co_clustered_value_names(img, suffix; granularity=granularity)
+        for vn in co_clustered_value_names(img, suffix; granularity=granularity,
+                                           family=_cluster_measure_family(pop_type))
             push!(out, "$(vn)$(p)")                                            # "/A" → "B/A", "T/A", …
         end
     end
@@ -1337,14 +1401,24 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                 include_x::Bool=false, include_obs::Bool=true, unique_labels::Bool=true,
                 drop_na::Bool=false, flush_cache::Bool=false,
                 raw_channel_names::Bool=false, granularity::Symbol=:cell,
-                cell_measures=String[], categorical=String[])::DataFrame
+                cell_measures=String[], categorical=String[],
+                expand_cluster_pops::Bool=true)::DataFrame
     granularity in (:cell, :track) ||
         error("pop_df: granularity must be :cell or :track (got :$granularity)")
     # value_name=nothing → active segmentation key (same resolution as label_props(img))
     resolved_vn = something(value_name, get(img.label_props, "_active", "default"))
     # cluster pops are GLOBAL to a run → a bare ref spans all co-clustered segmentations (R popDT
     # parity); value_name-prefixed refs are untouched. No-op for non-cluster pop_types.
-    pops = _expand_cluster_pops(img, pops, String(pop_type), resolved_vn)
+    #
+    # `expand_cluster_pops=false` turns that off for a caller that has ALREADY decided the segmentation
+    # per pop. The plot series path is the case that needs it: the picker offers each (segmentation,
+    # population) pair as its OWN row, so selecting three region pops under `B` must plot exactly those
+    # three — not six, silently doubled by the run-wide expansion into `T`. It cannot be inferred from
+    # `value_name` being explicit, because the per-POPULATION cluster heatmap deliberately passes an
+    # explicit value_name AND wants the expansion (docs/todo/CLUSTER_POOLING_PLAN.md), so the two
+    # intentions have to be stated rather than guessed.
+    pops = expand_cluster_pops ?
+        _expand_cluster_pops(img, pops, String(pop_type), resolved_vn) : pops
 
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,

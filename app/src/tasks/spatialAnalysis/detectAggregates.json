@@ -21,7 +21,7 @@
       "label": "Neighbourhood (µm)",
       "type": "float",
       "min": 0,
-      "max": 1000,
+      "max": 100,
       "step": 1,
       "default": 15,
       "tip": "DBSCAN eps in microns — cells within this distance are linked into the same aggregate"
@@ -31,7 +31,7 @@
       "label": "Min cells",
       "type": "int",
       "min": 2,
-      "max": 1000,
+      "max": 100,
       "step": 1,
       "default": 5,
       "tip": "Minimum number of cells for a group to count as an aggregate (DBSCAN minPts)"

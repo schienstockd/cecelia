@@ -3,6 +3,7 @@ import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
 import { tkey, parseTkey } from '../plots/series'
+import { resolvePopType, granularityFor, popTypeOptions } from '../plots/popTypes'
 import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
@@ -21,11 +22,17 @@ export function useSummaryData(opts: {
   setUid: Ref<string | null>
   module: string | null | undefined
   shared: Ref<Record<string, unknown>>
-  // OPTIONAL: the id of the ACTIVE slot's spec (the universal board). When set, the population picker's
-  // popType/granularity follow the ACTIVE plot's spec instead of the first registered spec — so a mixed
-  // board (flow / live / clust / trackclust) surfaces the RIGHT pops for whichever plot is selected.
-  // Omitted on the per-module canvases (their specs share a popType, so specs[0] is correct).
+  // The id of the ACTIVE slot's/panel's spec. The population picker's popType/granularity follow the
+  // ACTIVE plot's spec rather than the first registered one, so a canvas hosting a MIX of popTypes
+  // (flow / live / clust / trackclust / region) surfaces the RIGHT pops for whichever plot is selected.
+  // Passed by BOTH hosts (LayoutCanvas and SummaryCanvas) — it was board-only while every module page's
+  // specs happened to share a popType, which the per-poptype population summaries broke. Still optional
+  // so a host with a single spec need not thread it; `specs[0]` is then correct by definition.
   activeSpecId?: Ref<string | null>
+  // The ACTIVE panel's chosen pop type, for a spec that offers several (the collapsed "Population
+  // summary"). This is what makes the population manager a view of the active plot's family: the plot
+  // owns the choice, the manager follows it. Ignored when the active spec offers only one.
+  activePopType?: Ref<string | null>
 }) {
   const { projectUid, imageUids, setUid, module } = opts
   const ws = useWsStore()
@@ -75,10 +82,16 @@ export function useSummaryData(opts: {
   // active plot's spec (board only; each spec carries ONE popType because the plots are split per
   // module page) — its popType/granularity drive the picker so a mixed board surfaces the right pops.
   const activeSpec = computed(() => opts.activeSpecId?.value ? specById.value[opts.activeSpecId.value] : undefined)
-  const popType = computed(() => activeSpec.value?.dataSource.popType ?? specs.value[0]?.dataSource.popType ?? 'live')
+  // The pop type the population picker lists = the ACTIVE plot's. For a spec offering a choice that is
+  // the panel's own pick (resolved against what this page offers, so a pick carried over from the board
+  // can't ask for a family this page hasn't got); for a single-family spec it is simply that family.
+  // Granularity always follows the pop type — never the spec — because they differ per family.
+  const effSpec = computed(() => activeSpec.value ?? specs.value[0])
+  const popType = computed(() =>
+    effSpec.value ? resolvePopType(effSpec.value, opts.activePopType?.value ?? null) : 'live')
   const granularity = computed(() =>
-    activeSpec.value?.dataSource.granularity
-      ?? (specs.value.some(s => s.dataSource.granularity === 'track') ? 'track' : 'cell'))
+    effSpec.value ? granularityFor(effSpec.value, popType.value)
+      : (specs.value.some(s => s.dataSource.granularity === 'track') ? 'track' : 'cell'))
   async function loadSpecs() {
     const q = module ? `?module=${encodeURIComponent(module)}` : ''
     try { specs.value = await (await fetch(`/api/plots/definitions${q}`)).json() } catch { specs.value = [] }
@@ -112,16 +125,17 @@ export function useSummaryData(opts: {
     mergeColors(segPops.value)
     warmColors()
   }
-  // Pre-warm colours for EVERY (popType, granularity) among the specs — the board hosts a mix, but
+  // Pre-warm colours for EVERY (popType, granularity) the specs can offer — the board hosts a mix, but
   // loadPops only fetches the ACTIVE slot's popType. Without this, a slot never made active has no
   // colours, so a full-board PDF export paints it grey. Colours are stable → a single seed each is
-  // enough. No-op on module pages (one combo, already covered by loadPops).
+  // enough. Enumerates each spec's FULL option list (not just its default), so a page whose one spec
+  // offers several families — Phenotype's gated + cell clusters — is warmed for all of them.
   async function warmColors() {
     if (!imageUid.value && !imageUids.value.length) return
     const combos = new Map<string, { pt: string; gran: string }>()
     for (const s of specs.value)
-      combos.set(`${s.dataSource.popType}|${s.dataSource.granularity}`,
-                 { pt: s.dataSource.popType, gran: s.dataSource.granularity })
+      for (const o of popTypeOptions(s))
+        combos.set(`${o.popType}|${o.granularity}`, { pt: o.popType, gran: o.granularity })
     if (combos.size <= 1) return
     await Promise.all([...combos.values()].map(async c => {
       try { mergeColors(await (await fetch(popsUrl(c.pt, c.gran))).json()) } catch { /* ignore */ }

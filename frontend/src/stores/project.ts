@@ -31,6 +31,10 @@ export interface CciaImage {
   // Skeleton-labels from segment.branching — kept separate from `labels` so the generic labels
   // picker never lists them (see BRANCHING_PLAN Decision 6). Napari surfaces them as a distinct toggle.
   branchLabels?: Record<string, string[]>
+  // Spatial neighbour graphs from spatialAnalysis.cellNeighbours, keyed by RUN suffix (the graph pools
+  // across segmentations, so it is not a value_name). Feeds `valueNameSelection` with
+  // `field: "spatialGraphs"` on the analyses that consume a graph.
+  spatialGraphs?: Record<string, string>
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)

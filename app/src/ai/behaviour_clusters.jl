@@ -51,14 +51,9 @@ function _behaviour_image(img::CciaImage)
     (; _observer_image_header(img)..., behaviour = out)
 end
 
-# The feature list a clustering run was computed on, from the `.clustfeatures.json` sidecar.
-function _clustfeatures_features(props_path::AbstractString, suffix::AbstractString)::Vector{String}
-    p = _clustfeatures_path(props_path); isfile(p) || return String[]
-    d = try JSON3.read(read(p, String)) catch; return String[] end
-    e = get(d, Symbol(suffix), nothing); (e isa AbstractDict) || return String[]
-    f = get(e, :features, nothing)
-    f isa AbstractVector ? String[string(x) for x in f] : String[]
-end
+# The feature list a clustering run was computed on → the shared sidecar reader (population_manager.jl),
+# which knows the sidecar's family-qualified and legacy key layouts. Behaviour/HMM clustering is the
+# `clusters` family, so no family argument is needed here.
 
 # Collect the `clusters.{suffix}` distributions from one table's obs (cell props = clustPops, track props
 # = clustTracks) into `out`. The run's feature list is the SAME for a suffix across every image, so it's

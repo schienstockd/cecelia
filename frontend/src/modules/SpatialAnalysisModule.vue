@@ -1,24 +1,28 @@
 <!--
   Spatial analysis module page. Pick image(s), then run the spatial-analysis tasks in the right-hand
-  TaskRunner (all IMAGE-scope):
-   • Neighbour graph (squidpy) — the shared substrate.
-   • Contact statistics — pairwise cell-type contact log-odds (association / avoidance).
+  TaskRunner (all IMAGE-scope). Order matters — the graph comes first:
+   • Neighbour graph (squidpy) — THE substrate, persisted to spatialGraph/{suffix}.h5ad. Pop-agnostic:
+     it stores node identity only, so one graph serves every later population question. Every other
+     readout here (and region clustering on its own page) LOADS it rather than building its own
+     (Decision 17).
+   • Interaction matrix — pairwise log-odds (association / avoidance) PLUS a permutation test, so you can
+     tell a real pattern from a random arrangement of the same cell types (Decision 18). Needs no
+     regions: interactions are just a labelling of the graph.
    • Aggregate detection — points (DBSCAN) and mesh (surface proximity) routes.
-   • Cell contacts — points (kNN) and mesh (surface distance) routes.
+   • Cell contacts — PER-CELL columns (contact flag / µm to the nearest target / contact id); points
+     (kNN) and mesh (surface distance) routes. NOT the same thing as the Interaction matrix above: that
+     one is a population×population summary in spatialStats/, this one annotates individual cells.
 
   A SEPARATE page from Region clustering (Decision 12). Spatial readouts land as obs columns /
   populations (composition `spatial.comp.*`, `*.cell.is.aggregate`, `regions.*`) and are exposed via MCP
-  (get_spatial_stats). The #plots canvas is the generic SummaryCanvas (registry-driven, docs/PLOTS.md) —
-  it plots those per-cell spatial measures like any other; new spatial plots slot in as registry specs
-  over time (Decision 16). Population selectors accept any cell poptype (flow / live / clust / region),
-  so cross-poptype spatial questions work here (docs/todo/SPATIAL_REGIONS_PLAN.md).
+  (get_spatial_stats). The #plots canvas is the generic SummaryCanvas (registry-driven, docs/PLOTS.md).
+  Population selectors accept any cell poptype (flow / live / clust / region), so cross-poptype spatial
+  questions work here (docs/todo/SPATIAL_REGIONS_PLAN.md).
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
-import SpatialContactHeatmap from './spatial/SpatialContactHeatmap.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: spatialDefs, reload: reloadDefs } = useTaskDefs('spatialAnalysis')
@@ -37,12 +41,6 @@ const { defs: spatialDefs, reload: reloadDefs } = useTaskDefs('spatialAnalysis')
     </template>
     <template #plots="{ selectedUids }">
       <SummaryCanvas :image-uids="selectedUids" module="spatialAnalysis" />
-    </template>
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Cell-type contacts (log-odds)" max-height="none"
-        :storage-key="'cc-contact-open:spatialAnalysis'">
-        <SpatialContactHeatmap :image-uids="selectedUids" />
-      </CollapsibleSection>
     </template>
   </ModuleLayout>
 </template>

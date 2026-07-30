@@ -6,8 +6,11 @@
   "chartTypes": ["histogram", "boxplot", "violin", "bar", "strip"],
   "whiteboardCompatible": true,
   "dataSource": {
-    "popType": "live",
-    "granularity": "track",
+    "popTypes": [
+      { "popType": "live",       "granularity": "track" },
+      { "popType": "track",      "granularity": "track" },
+      { "popType": "trackclust", "granularity": "track" }
+    ],
     "measure": "live.track.speed",
     "measureOptions": [
       "live.track.speed",

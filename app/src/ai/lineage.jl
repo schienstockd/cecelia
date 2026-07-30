@@ -44,7 +44,9 @@ function _image_cluster_runs(img::CciaImage, segs::AbstractVector)
     acc = Dict{String,Set{String}}()
     for v in segs, p in (img_label_props_path(img, v), img_track_props_path(img, v))
         isfile(p) || continue
-        for suf in _clustfeatures_suffixes(p)
+        # `clusters` family only — region-clustering runs are reported by the spatial summary
+        # (`ai/spatial.jl` regionRuns), so they must not double-report here as cluster runs.
+        for suf in _clustfeatures_suffixes(p; family="clusters")
             push!(get!(acc, suf, Set{String}()), v)
         end
     end
