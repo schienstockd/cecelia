@@ -1561,3 +1561,52 @@ end
     @test _ev_task_id(NamedTuple())            == ""
     @test _ev_task_id((; task_id = "x")) isa String
 end
+
+# ── Chain event → WS bridge: the frames that actually go out ───────────────────
+# The four `subscribe_chain_events!` handlers were only covered through `_ev_task_id`, so a mistyped
+# key ("taskID", "task_id") would have passed every other test. No socket needed: this harness already
+# include-d server.jl, so the subscriptions are live and `broadcast_ws` writes a pre-serialised frame
+# into each client's queue — register a Channel as a fake client and read the frame back.
+@testset "API: chain bridge frames" begin
+    q = Channel{String}(32)
+    lock(_ws_clients_lock) do; _ws_clients[:probe] = q; end
+    try
+        base = (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                 node_id="n1", fn="segment.branching", params=Dict{String,Any}("a"=>1),
+                 task_id="tid123")
+        fire(t, p) = (Cecelia._fire_chain_event!(t, p); JSON3.read(take!(q)))
+
+        for (ev, wire) in (("node:queued", "chain:node:queued"), ("node:running", "chain:node:running"))
+            f = fire(ev, base)
+            @test String(f.type)       == wire
+            @test String(f.taskId)     == "tid123"          # ← the correlation handle, right key name
+            @test String(f.runId)      == "r1"
+            @test String(f.chainName)  == "ch"
+            @test String(f.projectUid) == "p"
+            @test String(f.imageUid)   == "EaMaVq"
+            @test String(f.nodeId)     == "n1"
+            @test String(f.fn)         == "segment.branching"
+            @test haskey(f, :params)
+        end
+
+        f = fire("node:done", (; base..., result=Dict{String,Any}("valueName"=>"B")))
+        @test String(f.type) == "chain:node:done" && String(f.taskId) == "tid123"
+        @test String(f.result.valueName) == "B"
+
+        f = fire("node:failed", (; base..., status="cancelled"))
+        @test String(f.type) == "chain:node:failed" && String(f.taskId) == "tid123"
+        @test String(f.status) == "cancelled"               # console needs WHICH terminal it was
+
+        # a node with no task id yet (skipped/set-scope) must broadcast "" — not null, not a throw
+        f = fire("node:failed", (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                                  node_id="n2", fn="f", status="skipped", task_id=nothing))
+        @test String(f.taskId) == ""
+        # …and a hand-fired REPL event that omits the field entirely must not take the bridge down
+        f = fire("node:queued", (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                                  node_id="n3", fn="f", params=Dict{String,Any}()))
+        @test String(f.taskId) == ""
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, :probe); end
+        close(q)
+    end
+end
