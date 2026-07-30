@@ -1,6 +1,7 @@
 # Chain Scheduler
 
-Design reference for `app/src/tasks/chain.jl` and `app/src/events.jl`.
+Design reference for `app/src/tasks/scheduler.jl` (pools, task records, `run_task`),
+`app/src/tasks/chain.jl` (the chain executor) and `app/src/events.jl` (the event bus).
 
 The scheduler exists to solve two problems the old R version had: (1) images were processed in
 lockstep batches — image 1 sat idle after finishing import instead of starting denoise immediately,
@@ -39,34 +40,29 @@ defined globally in `config.toml` `[pools]` (see Resource pools below).
 Internally spawns three kinds of concurrent tasks (`Threads.@spawn`):
 
 ```
-image_tasks  — one OS thread per image, walks all "image"-scope nodes in topo order
-set_tasks    — one OS thread per "set"-scope node, waits for all images then runs once
-incr_tasks   — one OS thread per "incremental"-scope node, event-driven debounced watcher
+image_tasks  — one task per image, walks all "image"-scope nodes in topo order
+set_tasks    — one task per "set"-scope node, waits for all images then runs once
+incr_tasks   — one task per "incremental"-scope node, event-driven debounced watcher
 ```
 
 All three kinds run concurrently. `run_chain` `fetch`es all of them before returning —
 it blocks the caller until the entire chain finishes.
 
-### Why OS threads (not async tasks)?
+### Why `Threads.@spawn` (not `@async`)?
 
-Chain nodes call `run_task`, which may block on a Python subprocess. Julia's async (`@async`)
-doesn't help for blocking I/O — it only helps for I/O that yields back to the scheduler.
-`Threads.@spawn` puts each image on a real OS thread so blocking one image never stalls others.
+Chain nodes call `run_task`, which may block on a Python subprocess. `@async` doesn't help for
+blocking I/O — it only helps I/O that yields back to the scheduler, so one blocked image would stall
+every other image sharing its thread. `Threads.@spawn` schedules each task across the thread pool,
+so a blocking node occupies one thread and the rest keep moving. (Tasks are multiplexed onto
+`--threads` OS threads — 50 images is 50 tasks, not 50 threads.)
 
 ---
 
 ## Resource pools
 
-There is **one** concurrency mechanism: the global scheduler worker pools. (An earlier design
-had a second, per-run `Base.Semaphore` layer on `ChainRun`; it was removed — it double-gated and
-was never wired from the API, which silently disabled it. Pools are now config-only.)
-
-### Scheduler worker pools (global, config-defined)
-
-`ResourcePool` structs in `_POOLS::Dict{String, ResourcePool}` in `scheduler.jl`. Each pool owns ONE
-persistent `Channel` of `TaskJob`s, ONE dispatcher task draining it, and a resizable budget of `limit`
-**slots** — concurrency is the slot budget, not a worker count (see *Slot-acquire model* below). A pool
-with `limit = 1` runs its jobs strictly one at a time — that is how `gpu` work is serialised.
+There is **one** concurrency mechanism: the global pools in `scheduler.jl`. (An earlier design added a
+second, per-run `Base.Semaphore` layer on `ChainRun`; it was removed — it double-gated, and was never
+wired from the API, which silently disabled it. Pools are config-only.)
 
 Pools are **global and persistent**, shared across every chain run and every module-page task —
 all execution goes through `run_task` → `_pool(name)` → the pool's queue. Defined in `config.toml`:
@@ -79,63 +75,55 @@ io      = 8    # local disk IO — bioformats2raw import/convert, crop
 network = 1    # remote/SMB reads — reserved for HPC/remote tasks (no tasks assigned yet)
 ```
 
-One pool per real bottleneck resource; the name says *what* it rations, not *how much*. Each
-limit is just a starting default — adjustable live (see *Live pool limits* below), so you can
-throttle whenever you want (e.g. drop `io` to 1 while importing over a slow SMB share) without
-editing config or restarting. `network` is defined but unused today; it exists so remote/HPC
-task runners have a lane to land in later.
+One pool per real bottleneck resource; the name says *what* it rations, not *how much*. Every limit is
+only a starting default — each is a live throttle (below), so you can drop `io` to 1 while importing
+over a slow SMB share without editing config or restarting. `network` is defined but unused today; it
+exists so remote/HPC task runners have a lane to land in later.
 
-`_pools_init!` reads `[pools]` at first use. `cpu` is guaranteed to exist (falls back to
-`tasks_concurrent_limit()` if absent). A node/task names its pool via the `resource_pool` field
-of its JSON spec (or, for a chain node, `ChainNode.resource_pool`).
+`_pools_init!` reads `[pools]` at first use; `cpu` always exists (falls back to
+`tasks_concurrent_limit()`). A task names its pool in the `resource_pool` field of its JSON spec, a
+chain node in `ChainNode.resource_pool`. **A missing pool warns once** and falls back to `cpu` — a GPU
+task silently landing in the wide cpu pool was the original "all GPU tasks run at once" bug.
 
-**Missing-pool fallback warns.** If a task requests a pool not in `[pools]`, `_pool` falls back to
-`cpu` and emits a one-time `@warn` (a GPU task silently landing in the wide cpu pool was
-the original "all GPU tasks run at once" bug). Add the pool to config to silence it.
+### Slot-acquire model — a resizable slot budget, not a worker count
 
-`resize_pool!(name, limit)` creates or resizes a pool at runtime (REPL/test path; e.g. tests
-register `slow_pool`/`par_pool` this way). `list_pools()` returns `[(; name, limit)]` for every
-initialized pool, exposed via `GET /api/pools` and shown in the pool dropdowns.
+Each pool (`ResourcePool` in `_POOLS`) owns **one** persistent `Channel` of `TaskJob`s, **one**
+dispatcher task draining it, a mutable `limit` (= max concurrent jobs), a live `in_flight` count, and a
+`Threads.Condition` guarding both counters. The dispatcher pulls a job, calls `_acquire_slot!` (blocks
+while `in_flight >= limit`), then runs it on its own spawned task, which releases the slot in a
+`finally`. A pool with `limit = 1` runs its jobs strictly one at a time — that is how `gpu` work is
+serialised.
 
-`pool_status()` returns `[(; name, limit, running, queued)]` — the same pools plus **live
-occupancy**: `running` = `in_flight` (slots currently executing) read from `_POOLS`, `queued` =
-tasks assigned to that pool sitting in `_TASKS` at status `:queued`. The two snapshots are taken
-under their own locks (`_POOLS_LOCK`, `_TASKS_LOCK`) and merged outside both — never nest them.
-This is what `GET /api/pools` actually serves; the `PoolThrottle` popover polls it (~1.5 s) to show
-a "running / limit" readout + bar under each slider. There is no `pool:*` WS event — occupancy is
-poll-only.
+Because a slot is claimed **at execution time** and checked against the *current* `limit`, a pool never
+runs more than `limit` jobs at once — including the instant after a throttle-down. So `resize_pool!`
+only sets `limit` and `notify`s, keeping the same queue and dispatcher (no queued job is ever orphaned):
 
-**Slot-acquire model — concurrency is a resizable slot budget, not a worker count.** Each pool has a
-fixed `queue`, a mutable `limit` (= max concurrent jobs), a live `in_flight` count, and a
-`Threads.Condition`. A single **dispatcher** task per pool pulls each job, calls `_acquire_slot!`
-(blocks while `in_flight >= limit`), then runs the job on its own task which `_release_slot!`s (and
-`notify`s) when done. `resize_pool!` just sets `limit` under the condition and `notify`s:
-- **grow** → the `notify` wakes the dispatcher if it was waiting for a slot; the queued backlog fans
-  out immediately up to the new `limit`;
-- **shrink** → in-flight jobs finish and release their slots; the dispatcher stays blocked in
-  `_acquire_slot!` until enough drain, then admits the next — so it settles to the new `limit`.
+- **grow** → the `notify` wakes a dispatcher waiting for a slot; the backlog fans out immediately.
+- **shrink** → running jobs are never interrupted; the dispatcher stays blocked in `_acquire_slot!`
+  until enough drain, so occupancy settles down to the new limit without ever oversubscribing.
 
-Because the slot is claimed **at execution time** and checked against the *current* `limit`, a pool
-never runs more than `limit` jobs at once — including the instant after a throttle-down (already-
-running jobs finish; no *new* one starts until `in_flight < limit`). This replaced an earlier design
-that swapped the queue on resize (which orphaned already-queued jobs onto the old workers at the old
-concurrency and could transiently oversubscribe).
+This replaced a design that swapped the queue on resize, which orphaned already-queued jobs onto the
+old workers at the old concurrency. `resize_pool!` also *creates* a pool if absent — the REPL/test path
+(tests register `slow_pool`/`par_pool` this way).
 
 ### Live pool limits (Task Manager throttle)
 
 Each pool's limit is a live throttle, not a fixed config value — the day-to-day control (the old R
-"concurrent tasks" slider, but one per resource). `set_pool_limit!(name, limit)` (`scheduler.jl`)
-does two things: `resize_pool!` to apply immediately, **and** persist the new limit to the user's
-`custom.toml` `[pools]` (merged, like `set_projects_dir!`) so it survives a restart. Clamped to
-`[1, POOL_LIMIT_MAX]`. Exposed as `POST /api/pools/set` `{name, limit}` (only already-configured
-pool names are accepted — no typo pools accumulating in `custom.toml`). The UI is the reusable
-`PoolThrottle.vue` component — a compact 2×2 slider grid (`cpu`/`gpu`, then `io`/`network`) shown
-in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not buried in Settings.
+"concurrent tasks" slider, but one per resource). `set_pool_limit!(name, limit)` = `resize_pool!` to
+apply immediately **plus** a merged write to the user's `custom.toml` `[pools]` (like
+`set_projects_dir!`) so it survives a restart. Clamped to `[1, POOL_LIMIT_MAX]`. Exposed as
+`POST /api/pools/set` `{name, limit}`, which rejects unknown pool names so typo pools can't accumulate
+in `custom.toml`. The UI is `PoolThrottle.vue` — a compact 2×2 slider grid (`cpu`/`gpu`, then
+`io`/`network`) in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not Settings.
 
-`resize_pool!` keeps the pool's one queue and dispatcher and only changes the slot budget, so no
-queued job is ever orphaned: a raise `notify`s the dispatcher and the backlog fans out immediately;
-a lower leaves it blocked in `_acquire_slot!` until enough in-flight jobs drain. Shrinking is safe —
-it never interrupts a running job, it just stops admitting new ones until the pool is under the limit.
+### Reporting occupancy
+
+`list_pools()` → `[(; name, limit)]` for every initialised pool (this feeds the pool dropdowns).
+`pool_status()` → the same plus **live occupancy**: `running` = `in_flight` (slots executing now),
+`queued` = tasks in `_TASKS` at `:queued` for that pool. The two snapshots are taken under their **own**
+locks (`_POOLS_LOCK`, `_TASKS_LOCK`) and merged outside both — never nest them. `GET /api/pools` serves
+`pool_status()`; the `PoolThrottle` popover polls it (~1.5 s) for the "running / limit" readout + bar
+under each slider. There is no `pool:*` WS event — occupancy is poll-only.
 
 ### Queue visibility — :queued vs :running
 
@@ -143,13 +131,13 @@ A node that is waiting for a pool slot and a node actively executing are **diffe
 the live view must distinguish them (a saturated GPU pool must not look like a hang).
 
 `_execute_image_chain!` marks the node `:queued` *before* calling `run_task`, then flips it to
-`:running` only when a pool worker actually picks the job up — driven by `run_task`'s
-`on_status_change` callback (the worker calls `_set_status!(rec, :running)` in `_execute_job!`).
+`:running` only when the job actually starts — driven by `run_task`'s `on_status_change` callback
+(`_execute_job!` calls `_set_status!(rec, :running)` once it holds a slot).
 So `startedAt` (and the live elapsed timer) counts from the real slot acquisition, not from when
 the image thread reached the node. With `gpu = 1` and three images, the live grid shows one
 `:running` and two `:queued`, and each task's elapsed reflects its own ~2 min, not 2/4/6 min.
 
-> **Pitfall (tests):** `node:running` now fires from the pool worker thread while `node:done`
+> **Pitfall (tests):** `node:running` fires from the job's own task while `node:done`
 > fires from the image thread, so a size-1 pool has a benign running/done handoff overlap (both
 > contend on `run._lock`). Assert serialisation by **wall-clock** (sum of durations), not by
 > counting concurrent `node:running`/`node:done` events. A size-N>1 pool is race-free because all
@@ -164,7 +152,8 @@ the image thread reached the node. With `gpu = 1` and three images, the live gri
 `_CANCELLED_CHAINS::Set{String}` — set of run IDs that have been cancelled.
 `_CANCELLED_CHAINS_LOCK::ReentrantLock` — guards all reads and writes to the set.
 
-Both live in `api/src/scheduler.jl`.
+Both live in `app/src/tasks/scheduler.jl` — in the **package**, not the API layer, so cancel works
+from the REPL and tests with no server running.
 
 ### Public API (exported from `Cecelia.jl`)
 
@@ -201,38 +190,35 @@ In `_run_set_scope_node!` the cancel check also runs before the barrier wait; if
 set-scope runner marks all pending images as `:cancelled` and signals the done channel to unblock
 waiting image threads (avoiding deadlock).
 
-**Race guard (start window):** if cancel arrives after a worker sets `:running` but before the
+**Race guard (start window):** if cancel arrives after the job sets `:running` but before the
 task's `on_process` callback records the subprocess handle, `cancel_task!` would find `rec.proc ==
 nothing` and skip the kill. `_execute_job!`'s `on_process` wrapper closes this: right after storing
 `rec.proc`, it re-checks `is_cancelled(job.id)` and kills immediately if so.
 
-### Limitation — set-scope / incremental subprocesses
+### Limitation — set-scope / incremental nodes *inside a chain*
 
-The per-image path is fully covered. Set-scope and incremental nodes call the multi-image
-`_run_task` directly with `on_process = _ -> nothing` and are **not** registered in `_TASKS`, so a
-chain cancel won't kill a subprocess they spawned mid-run (the between-node flag still stops
-not-yet-started ones). No real set-scope subprocess task exists yet (only mock/plot tasks); see
-TODO #00016 if one is added.
+The per-image path is fully covered. It's specifically the **chain's** set-scope and incremental
+runners (`_run_set_scope_node!`, `_run_incremental_node!`) that call the multi-image `_run_task`
+**directly** — with `on_process = _ -> nothing` and no `_TASKS` entry — so `cancel_chain_run!` can't
+reach a subprocess they spawned mid-run (the between-node flag still stops not-yet-started ones). A
+set-scope task launched from a **module page** is unaffected: `handle_task_run` goes through the
+registered `run_task(task, imgs, …)` overload, so it has a `TaskRecord` and cancels normally.
+
+Impact is currently nil — no real set-scope subprocess task exists (only mock/plot tasks). When the
+first one lands (e.g. HMM training), give the chain's multi-image path a `TaskRecord` + `chain_run_id`
+like the per-image path: **TODO #00020**.
 
 ---
 
 ## pool_name override in run_task
 
-`run_task` (both overloads in `scheduler.jl`) accepts an optional kwarg:
+Both `run_task` overloads take `pool_name::String = ""`; when non-empty it overrides the task spec's
+`resource_pool`, directing that one call to a specific pool. Two callers use it:
 
-```julia
-run_task(task_type, img, params; pool_name::String = "", ...)
-```
-
-When `pool_name` is non-empty, it overrides the pool name from the task spec's `resource_pool`
-field. This allows the caller to direct a task to a specific scheduler worker pool at call time.
-
-**From the WS handler**: `handle_task_run` in `sockets.jl` reads `poolName` from the WS message
-payload and passes it as `pool_name` to `run_task`. The frontend sends `poolName` in the
-`task:run` message, populated from the pool dropdown in `TaskRunner.vue`.
-
-**From chain nodes**: `_execute_image_chain!` passes `pool_name = node.resource_pool` so each
-node routes to the correct global pool even when the task spec's default differs.
+- **WS handler** — `handle_task_run` (`sockets.jl`) forwards `poolName` from the `task:run` message,
+  which the frontend populates from the pool dropdown in `TaskRunner.vue`.
+- **Chain nodes** — `_execute_image_chain!` passes `pool_name = node.resource_pool`, so a node routes
+  to its configured pool even when the task spec's default differs.
 
 ---
 
@@ -352,27 +338,23 @@ Editing a template after a run has started does not retroactively change what th
 > also migrate a legacy `<project>/chains/` on access. A round-trip test asserts the settings/ path.
 
 **Run record** (`<project>/settings/chains/runs/<run_id>/run.json`) — created when a template is
-applied to a set of images. Stores a **frozen copy** of the template via a SHA-256 content hash, not
-a pointer to the template file. The template content is cached once under
-`settings/chains/.cache/<hash>.json`.
-
-Run records store `template_hash` (not the template inline) to keep `run.json` compact.
-`load_chain_run` resolves the hash to the cached template.
+applied to a set of images. It stores a **frozen** `template_hash` (SHA-256 of the content), not the
+template inline and not a pointer to the template *file*: the content is cached once under
+`settings/chains/.cache/<hash>.json`, and `load_chain_run` resolves the hash back to it. So editing the
+template afterwards can't rewrite history, and `run.json` stays compact.
 
 ### Live QC row
 
-A task whose JSON spec declares `"qcPlot": "<plotDefId>"` (e.g. `segment.cellposeMeasure` /
-`segment.measureLabels` → `segmentation_qc`) gets an **automatic QC thumbnail** in the Live view — a
-band above the image grid, aligned to the producing column. QC is **not** a chain node: it's an
-always-available overlay tied to the producing node, toggled from the Live toolbar. Because a segment
-run may produce several segmentations, each QC column shows **one thumbnail per `value_name`** (B, T,
-…), stacked. The value_names are discovered from the canonical population picker
-(`/api/plots/populations?popType=labels`); each thumbnail (`ChainQcNode`) shows the aggregate cell
-count + a per-image sparkline (from `POST /api/plot_data`, `popType=labels` + `chartType=count`, one
-request per run image, debounced, re-run as images clear the stage — incremental fill). Clicking a
-thumbnail expands the full segment QC canvas (`SummaryCanvas module="segment"`). This reuses the
-canonical plot framework end-to-end (registry def + `SummaryCanvas` + `/api/plot_data`) — there is no
-bespoke QC route or panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
+A task whose spec declares `"qcPlot": "<plotDefId>"` (`segment.cellposeMeasure` /
+`segment.measureLabels` → `segmentation_qc`) gets an automatic QC thumbnail in a band above the image
+grid, aligned to the producing column. QC is **not** a chain node — it's an overlay tied to the
+producing node, toggled from the Live toolbar. A segment run can produce several segmentations, so each
+column stacks **one thumbnail per `value_name`** (B, T, …), discovered from the canonical population
+picker (`/api/plots/populations?popType=labels`). Each `ChainQcNode` shows the aggregate cell count + a
+per-image sparkline (`POST /api/plot_data`, `popType=labels` + `chartType=count`; one debounced request
+per image, re-run as images clear the stage — incremental fill), and expands on click to the full
+`SummaryCanvas module="segment"`. All of it reuses the canonical plot framework — no bespoke QC route or
+panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
 
 ### Loading past runs into the Live view
 
@@ -484,10 +466,10 @@ unsubscribe_chain_events!("node:done",  handler)
 
 | Event | Payload fields | Fired when |
 |-------|---------------|-----------|
-| `"node:queued"` | `run_id, project_uid, image_uid, node_id, fn, params` | Node submitted to its pool, waiting for a worker slot |
-| `"node:running"` | `run_id, project_uid, image_uid, node_id, fn, params` | A pool worker picked the job up (real start) |
-| `"node:done"` | `run_id, project_uid, image_uid, node_id, fn, params, result` | Node transitions to `:done` |
-| `"node:failed"` | `run_id, project_uid, image_uid, node_id, fn, status` | Node transitions to `:failed`, `:skipped`, or `:cancelled` (`status` carries which) |
+| `"node:queued"` | *base* = `run_id, chain_name, project_uid, image_uid, node_id, fn, params` | Node submitted to its pool, waiting for a free slot |
+| `"node:running"` | *base* | The job acquired a slot and started (real start) |
+| `"node:done"` | *base* `+ result` | Node transitions to `:done` |
+| `"node:failed"` | *base* `− params + status` | Node transitions to `:failed`, `:skipped` or `:cancelled` (`status` carries which) |
 
 **Why fired outside the lock**: handlers may need to read `run.image_states` or trigger further
 work. Re-entering `run._lock` from inside the lock would deadlock. The result is captured inside
@@ -505,10 +487,12 @@ run_chain(proj, uids; chain="my-chain")
 
 **Triggering a run from the UI**: `ws.ts` sends `{ type: "chain:run", projectUid, chain, imageUids }`. The handler in `sockets.jl` (`handle_chain_run`) calls `load_project(project_uid)` then `run_chain` in a `Threads.@spawn` so the WS thread is never blocked. On success it broadcasts `chain:run:done`; on error `chain:run:failed` (also surfaced in the log console).
 
-**API WebSocket bridge**: `api/src/server.jl` subscribes to all three events at startup and broadcasts them to all connected clients as:
-- `chain:node:running` — `{type, runId, projectUid, imageUid, nodeId, fn, params}`
-- `chain:node:done`    — `{type, runId, projectUid, imageUid, nodeId, fn, params, result}`
-- `chain:node:failed`  — `{type, runId, projectUid, imageUid, nodeId, fn, status}`
+**API WebSocket bridge**: `api/src/server.jl` subscribes to **all four** events at startup and
+broadcasts each to every connected client, `chain:`-prefixed with camelCase keys:
+- `chain:node:queued`  — `{type, runId, chainName, projectUid, imageUid, nodeId, fn, params}`
+- `chain:node:running` — same shape
+- `chain:node:done`    — `{…, params, result}`
+- `chain:node:failed`  — `{…, status}` (which of failed/skipped/cancelled)
 
 `ws.ts` routes these into `taskStore.addFromChainEvent`, which upserts a `TaskEntry` keyed by `runId::nodeId::imageUid`. The Live tab in `ChainModule.vue` renders these tasks as a VueFlow grid.
 
@@ -520,7 +504,7 @@ run_chain(proj, uids; chain="my-chain")
 :pending → :queued → :running → :done
                               → :failed
                               → :cancelled (cancel_chain_run! killed the subprocess mid-run)
-         → :queued → :cancelled (cancel flag seen before the pool worker picked it up)
+         → :queued → :cancelled (cancel flag seen before the job got a slot)
          → :skipped  (fault isolation: a DIRECT predecessor is :failed/:cancelled/:skipped)
 ```
 
@@ -533,8 +517,8 @@ its successor sees a skipped pred → also skipped). Topo order guarantees every
 is set before a node is evaluated. Incremental (plot) predecessors never gate. The predecessor map
 is built from `template_snapshot.edges` in `_execute_image_chain!`.
 
-`:queued` is the slot-wait state (job submitted to its pool, no worker free yet); `:running` is
-set when a pool worker actually starts the job — see Queue visibility above.
+`:queued` is the slot-wait state (submitted to its pool, no free slot yet); `:running` is set when the
+job acquires a slot and starts — see *Queue visibility* above.
 
 Transitions are written under `run._lock` and persisted to `run.json` after every change
 (`_save_run!` inside the lock). Events are fired outside the lock.
@@ -564,8 +548,8 @@ These are easy to break accidentally:
    the pool in `config.toml` instead. The slot is released in the dispatcher's `finally`, so it comes
    back even if the job dies.
 
-6. **Mark `:queued` before `run_task`, `:running` from the worker** — the node must not flip to
-   `:running` until a pool worker starts it (via `on_status_change`), or `startedAt`/elapsed and the
+6. **Mark `:queued` before `run_task`, `:running` from the job** — the node must not flip to
+   `:running` until the job actually starts (via `on_status_change`), or `startedAt`/elapsed and the
    "waiting vs running" distinction break (the 2/4/6-min bug).
 
 7. **`Threads.@spawn` not `@async`** — tasks call blocking Python subprocesses. `@async` would
@@ -573,17 +557,14 @@ These are easy to break accidentally:
    I/O in `_run_task` still works.
 
 8. **Every job posts to `job.done` exactly once — in a `finally`.** `run_task` is parked in
-   `take!(job.done)` and nothing else will ever wake it, and the dispatcher's `Threads.@spawn` is
-   fire-and-forget, so an exception escaping `_execute_job!` is **silent**. The cost is a submitter
-   blocked forever plus a `TaskRecord` stranded at `:running` (`_deregister_task!` never runs) — and it
-   looks like nothing is wrong, because the slot was already released: pools read idle while
-   `list_tasks()`, the GUI and the task console all keep listing a task that finished. So: anything
-   added between `_set_status!(rec, :running)` and the post is inside the guarded window, `post!`
-   replaces bare `put!` (the channel holds 1 — a second post would block), and the outer `catch` marks
-   the record `:failed` rather than leaving it `:running`. Both `Threads.@spawn`s in `_start_pool!` log
-   their exceptions for the same reason: a spawned task's error is otherwise lost, and a dispatcher that
-   dies wedges the whole pool at `:queued`. Pinned by the *"Job posts its result even when the error
-   path throws"* testset.
+   `take!(job.done)`, nothing else will ever wake it, and an exception in the dispatcher's
+   fire-and-forget `Threads.@spawn` is **silent**. So a throw escaping `_execute_job!` costs a submitter
+   blocked forever and a `TaskRecord` stranded at `:running` (`_deregister_task!` never runs) — while
+   looking fine, because the slot was already released: pools read idle as `list_tasks()`, the GUI and
+   the task console keep listing a finished task. Hence `post!` (never a bare `put!` — the channel holds
+   1) in a `finally`, and an outer `catch` that marks the record `:failed`. Both `Threads.@spawn`s in
+   `_start_pool!` log their exceptions for the same reason — and a dispatcher that dies wedges its whole
+   pool at `:queued`. Pinned by the *"Job posts its result even when the error path throws"* testset.
 
    > The console side of this pairs with it: WS task frames are lossy by design, so the task console
    > must reconcile `GET /api/tasks` in **both** directions — see `docs/API.md`. A row that is only ever
@@ -602,8 +583,8 @@ make_chain(proj, "my-pipeline", [
     chain_node("importImages.omezarr"),
     chain_node("cleanupImages.cellposeCorrect"; resource_pool="gpu",
                params=Dict("model" => "cyto2")),
-    chain_node("testTasks.setTask"; scope="set"),   # picnic node
-])
+    chain_node("testTasks.setTask"; scope="set"),   # picnic node — explicit, as this mock
+])                                                  # spec declares no scope of its own
 
 # Or build manually (identical result, more control over node IDs)
 n1 = ChainNode(; id="import",  fn="importImages.omezarr")
@@ -636,16 +617,16 @@ run = load_chain_run(proj, run_id)
 
 | File | Role |
 |------|------|
-| `app/src/tasks/chain.jl` | Chain data model, scheduler, executor, resume logic, `chain_node`/`make_chain` REPL helpers |
+| `app/src/tasks/scheduler.jl` | Resource pools + dispatchers, `TaskRecord`/`_TASKS`, `run_task`, cancel registry |
+| `app/src/tasks/chain.jl` | Chain data model, executor, barriers, resume logic, `chain_node`/`make_chain` REPL helpers |
 | `app/src/events.jl` | Package-level pub/sub event bus |
 | `app/src/tasks/testTasks/imageTask.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
 | `app/src/tasks/testTasks/setTask.jl` | Mock set-scope task |
 | `app/src/tasks/testTasks/incrementalPlotTask.jl` | Mock incremental plot task |
-| `app/test/runtests.jl` | Verification tests (Steps 4–7) |
+| `app/test/runtests.jl` | Pool, chain-run, resume, barrier-policy and job-completion testsets |
 | `api/src/routes.jl` | `api_chains_list`, `api_chains_get`, `api_chains_save` — chain CRUD over HTTP |
 | `frontend/src/modules/ChainModule.vue` | Whiteboard page: Edit tab (palette, VueFlow canvas, node config) + Live tab (real-time task grid) |
 | `frontend/src/components/ChainTaskNode.vue` | Custom VueFlow node for image/incremental-scope tasks |
 | `frontend/src/components/ChainPicnicNode.vue` | Custom VueFlow node for set-scope tasks (visually distinct) |
 | `frontend/src/components/ChainLiveNode.vue` | Custom VueFlow node for live run display (status-colored header) |
-| `frontend/src/components/plots/IntensityHistogram.vue` | Plotly before/after intensity histogram; lazy-loads `plotly.js-dist-min` |
-| `frontend/src/plotly-dist-min.d.ts` | TS module shim re-exporting `plotly.js` types for `plotly.js-dist-min` |
+| `frontend/src/components/ChainQcNode.vue` | QC thumbnail in the Live view's QC band (see *Live QC row*) |

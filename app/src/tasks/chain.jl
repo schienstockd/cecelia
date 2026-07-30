@@ -5,13 +5,13 @@ import SHA
 # Two distinct artifacts:
 #
 #   ChainTemplate  — reusable, no images baked in. Lives at
-#                    <project>/chains/<name>.json. Editing a template never
+#                    <project>/settings/chains/<name>.json. Editing a template never
 #                    retroactively changes a completed run.
 #
 #   ChainRun       — created when a template is applied to a set of images.
 #                    Stores a FROZEN COPY of the template at run time (not a
 #                    pointer to the template file). Per-image per-node state
-#                    is persisted to <project>/chains/runs/<run_id>/run.json
+#                    is persisted to <project>/settings/chains/runs/<run_id>/run.json
 #                    after every node completion.
 
 # ── Template ──────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ ChainTemplate(name, nodes, edges) = ChainTemplate(name, nodes, edges, String[])
 # ── Run record ────────────────────────────────────────────────────────────────
 
 mutable struct ImageNodeState
-    status::Symbol                          # :pending | :running | :done | :failed | :cancelled | :skipped
+    status::Symbol                          # :pending | :queued | :running | :done | :failed | :cancelled | :skipped
     task_id::Union{String,Nothing}
     result::Union{Dict{String,Any},Nothing}
     params_hash::Union{String,Nothing}      # sha256 of effective params — set on :done, used for resume skip
@@ -88,10 +88,10 @@ mutable struct ChainRun
     template_hash::String                   # sha256 hex — pointer to cache entry on disk
     image_states::Dict{String,Dict{String,ImageNodeState}}  # uid => node_id => state
     created_at::Float64
-    _dir::String                            # <project>/chains/runs/<run_id>/
+    _dir::String                            # <project>/settings/chains/runs/<run_id>/
     _lock::ReentrantLock                    # guards image_states + disk writes
-    _barriers::Dict{String,Channel{Nothing}} # node_id => arrive channel (Step 3)
-    _barriers_done::Dict{String,Channel{Nothing}} # node_id => done channel (Step 3)
+    _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)
+    _barriers_done::Dict{String,Channel{Nothing}} # node_id => done channel   (set-scope barrier)
 end
 # NOTE: resource-pool concurrency is NOT a per-run concern. Every node runs via
 # `run_task`, which routes through the global scheduler pools (`_POOLS` in
@@ -148,7 +148,7 @@ function _edge_from_dict(d)::ChainEdge
 end
 
 """
-Load a chain template from `<project>/chains/<name>.json`.
+Load a chain template from `<project>/settings/chains/<name>.json`.
 """
 function load_chain_template(proj::CciaProject, name::String)::ChainTemplate
     path = _template_path(proj, name)
@@ -163,7 +163,7 @@ function load_chain_template(proj::CciaProject, name::String)::ChainTemplate
 end
 
 """
-Write a chain template to `<project>/chains/<name>.json`.
+Write a chain template to `<project>/settings/chains/<name>.json`.
 Creates the chains/ directory if needed.
 """
 function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplate
@@ -182,7 +182,7 @@ function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplat
 end
 
 # ── Template content cache ─────────────────────────────────────────────────────
-# Templates are stored once under chains/.cache/<sha256>.json.
+# Templates are stored once under settings/chains/.cache/<sha256>.json.
 # Run records reference the hash — editing a template after a run has started
 # produces a new hash, leaving the old cache entry (and run records) untouched.
 
@@ -989,7 +989,7 @@ scheduler.jl, sized from config.toml `[pools]`) — `run_chain` takes no pool ar
 A pool with limit 1 (e.g. `gpu`) serialises that node's work across the whole process.
 
 ## Fresh run
-Template is loaded from `<project>/chains/<name>.json` and `chain` must be given.
+Template is loaded from `<project>/settings/chains/<name>.json` and `chain` must be given.
 A frozen copy is stored in the run record — editing the template after the run
 has started does not change what that run is understood to have done.
 
