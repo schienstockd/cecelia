@@ -55,7 +55,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    ccid       = joinpath(img._dir, "ccid.json")
+    ccid       = state_file(img)
     raw        = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     filename = versioned_get_field(raw, "filepath", value_name)
@@ -118,13 +118,13 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
 
     # register the copied zarr as `default` + carry the source channel names onto the new image's ccid.
     # Derived data is intentionally NOT carried — a copy starts clean (drop labels/pops/gating).
-    new_ccid = joinpath(new_img._dir, "ccid.json")
+    new_ccid = state_file(new_img)
     raw2     = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(new_ccid, String)))
     versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
     ch_names = versioned_get_field(raw, "imChannelNames", value_name)
     isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
     raw2["status"] = "done"   # a copy is a complete image (zarr written) — imported, not 'pending'
-    open(new_ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(new_ccid, raw2)
 
     # carry the source version's napari layer-props sidecar (per-channel colormap/contrast) so the copy
     # opens with the same colours. Best-effort (only if the source was opened with autosave). Same 1:1

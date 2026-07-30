@@ -82,7 +82,7 @@ function reidentify_project!(proj_uid::AbstractString, new_uid::AbstractString; 
         d = JSON3.read(read(pj, String), Dict{String,Any})
         d["uid"] = String(new_uid)
         new_name === nothing || (d["name"] = String(new_name))
-        open(pj, "w") do io; JSON3.pretty(io, d); end
+        write_json_atomic(pj, d)
     end
     _reidentify_files!(new_root, String(proj_uid), String(new_uid))
     String(new_uid)
@@ -356,7 +356,7 @@ function import_project(bundle::AbstractString;
             d  = JSON3.read(read(pj, String), Dict{String,Any})
             d["uid"]  = dest_uid
             d["name"] = string(get(d, "name", uid), " (imported)")
-            open(pj, "w") do io; JSON3.pretty(io, d); end
+            write_json_atomic(pj, d)
             _reidentify_files!(tmp, uid, dest_uid)
         end
 

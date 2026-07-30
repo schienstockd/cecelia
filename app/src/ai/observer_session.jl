@@ -32,7 +32,7 @@ end
 function _write_observer_session(proj::CciaProject, s::Dict{String,Any})::Dict{String,Any}
     p = observer_session_path(proj)
     mkpath(dirname(p))
-    open(p, "w") do io; JSON3.write(io, s); end
+    write_json_atomic(p, s)
     s
 end
 

@@ -241,6 +241,48 @@ function channel_names(img::CciaImage; value_name=nothing)::Union{Vector{String}
     isnothing(v) ? nothing : collect(String, v)
 end
 
+# ── State file — the object owns its own path ─────────────────────────────────
+# Ported from the old R `reactivePersistentObject.R`, where the state file was private to the object
+# (`private$getStateFile()`) and everything — save, load, and the `.lock` — derived from it. That
+# encapsulation was lost in the port: 20+ call sites each re-derived `joinpath(obj._dir, STATE_FILENAME)`
+# and threaded the string around, and `_lock_path` invented its OWN name (`.cecelia.lock`) instead of
+# deriving from the state file, which is why per-image locking (TODO #00003) had nothing to hang off.
+#
+# So: ask for the state file, never build the path. `state_file` is the single derivation — one generic
+# with a method per form a caller actually has (loaded object / metadata dir / project dir + uid), so
+# the API layer answering from raw uids uses the same helper rather than re-spelling `1/` + the
+# filename. The lockfile is `state_file(obj) * ".lock"`, exactly as in R. `STATE_FILENAME` is exported
+# only so an out-of-tree caller can recognise the file; in-tree, call `state_file`.
+const STATE_FILENAME = "ccid.json"
+
+"""
+    obj_meta_dir(proj_dir, obj_uid) -> String
+
+An object's metadata directory — `{proj_dir}/1/{obj_uid}/`. The `1/` (metadata) vs `0/` (image data)
+split is layout knowledge that belongs here, next to its `0/` counterpart `img_zero_dir`, not spelled
+out at each call site.
+"""
+obj_meta_dir(proj_dir::AbstractString, obj_uid::AbstractString)::String =
+    joinpath(proj_dir, "1", obj_uid)
+
+"""
+    state_file(obj)                  -> String   # a loaded image / set / project
+    state_file(meta_dir)             -> String   # a metadata dir already in hand
+    state_file(proj_dir, obj_uid)    -> String   # by uid, without loading the object
+
+Absolute path of an object's persisted state — `ccid.json` for an image/set, `project.json` for a
+project. THE way to locate it, in whichever form the caller has: never join the filename or the `1/`
+segment yourself.
+
+The object form is preferred where an object is loaded (the R `getStateFile` encapsulation); the uid
+form exists because the API layer routinely answers a request from raw uids without paying to load
+the object.
+"""
+state_file(img::CciaImage)::String = joinpath(img._dir, STATE_FILENAME)
+state_file(meta_dir::AbstractString)::String = joinpath(meta_dir, STATE_FILENAME)
+state_file(proj_dir::AbstractString, obj_uid::AbstractString)::String =
+    state_file(obj_meta_dir(proj_dir, obj_uid))
+
 function save!(img::CciaImage)
     d = Dict{String,Any}(
         "class"          => "CciaImage",
@@ -257,9 +299,7 @@ function save!(img::CciaImage)
         "included"       => img.included,
         "note"           => img.note,
     )
-    open(joinpath(img._dir, "ccid.json"), "w") do f
-        JSON3.pretty(f, d)
-    end
+    write_json_atomic(state_file(img), d)
 end
 
 # ── Per-task param memory (funParams) ───────────────────────────────────────────
@@ -280,7 +320,7 @@ Last-used params for task `fun` stored in `<ccid_dir>/ccid.json` under `meta["fu
 `nothing` if absent. `ccid_dir` is an object metadata dir (`{proj}/1/{uid}/`) — image or set.
 """
 function read_module_fun_params(ccid_dir::String, fun::String)::Union{Dict{String,Any},Nothing}
-    path = joinpath(ccid_dir, "ccid.json")
+    path = state_file(ccid_dir)
     isfile(path) || return nothing
     raw  = JSON3.read(read(path, String), Dict{String,Any})
     meta = get(raw, "meta", nothing)
@@ -298,7 +338,7 @@ Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.jso
 (`meta["funParams"][fun]`), preserving every other field. No-op if the file is absent.
 """
 function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict)
-    path = joinpath(ccid_dir, "ccid.json")
+    path = state_file(ccid_dir)
     isfile(path) || return nothing
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String), Dict{String,Any}))
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
@@ -306,7 +346,7 @@ function write_module_fun_params!(ccid_dir::String, fun::String, params::Abstrac
     fp[fun] = Dict{String,Any}(String(k) => v for (k, v) in params)
     meta[FUN_PARAMS_META_KEY] = fp
     raw["meta"] = meta
-    open(path, "w") do io; JSON3.pretty(io, raw); end
+    write_json_atomic(path, raw)
     nothing
 end
 
@@ -397,7 +437,7 @@ tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing
 
 function _load_image(dir::String)::CciaImage
-    d = JSON3.read(read(joinpath(dir, "ccid.json"), String), Dict{String,Any})
+    d = read_state_json(state_file(dir); as = Dict{String,Any})
     to_spaths(key) = Dict{String,String}(
         string(k) => string(v) for (k, v) in get(d, key, Dict{String,Any}()))
     # labels: Dict{String, Vector{String}} — value can be a list or a bare string (legacy)

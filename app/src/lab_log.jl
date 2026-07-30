@@ -145,7 +145,7 @@ function upsert_daily_context_block!(proj::CciaProject, author::AbstractString, 
         p       = lab_log_path(proj)
         content = (isfile(p) && !isempty(read(p, String))) ? read(p, String) : ""
         if isempty(content)
-            open(p, "w") do io; print(io, block); end
+            write_atomic(io -> print(io, block), p)
             return block
         end
         segs    = _ll_segments(content)
@@ -156,7 +156,7 @@ function upsert_daily_context_block!(proj::CciaProject, author::AbstractString, 
         joined  = join(kept, "\n")
         joined  = rstrip(joined) == "" ? "" : joined   # kept was only blanks → treat as empty
         sep     = isempty(joined) ? "" : (endswith(joined, "\n") ? "\n" : "\n\n")
-        open(p, "w") do io; print(io, joined, sep, block); end
+        write_atomic(io -> print(io, joined, sep, block), p)
         return block
     end
 end
@@ -192,9 +192,7 @@ function set_dismissed!(proj::CciaProject, entry_id::AbstractString, dismissed::
     with_transaction(proj) do
         p = _dismissed_path(proj)
         mkpath(dirname(p))
-        open(p, "w") do io
-            JSON3.write(io, out)
-        end
+        write_json_atomic(p, out)
     end
     out
 end

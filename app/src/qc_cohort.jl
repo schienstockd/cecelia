@@ -212,7 +212,7 @@ function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::Abstract
         write_qc(img, cohort_fun, value_name, findings)
     end
     path = cohort_qc_path(set, fun_name, value_name); mkpath(dirname(path))
-    open(path, "w") do io; JSON3.write(io, doc); end
+    write_json_atomic(path, doc)
     doc
 end
 

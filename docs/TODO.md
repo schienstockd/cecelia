@@ -61,17 +61,21 @@ Related, and a bigger decision: **`PlutoUI` is not in `pluto/Project.toml`**. Ad
 manifests. Decide that separately.
 
 **#00003** — **Per-image lockfiles wired into task commit sites**
-Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
-guard and is never called. The real (rare) collision risk is two tasks doing concurrent
-read-modify-write of the *same* image's `ccid.json` — e.g. a set-level operation fanning out
-over images that overlap. A project-wide lock is too coarse (it would serialise unrelated
-images); the original R design (`reactivePersistentObject.R`) locked per-object but held the
-lock for the entire load→compute→save span.
+The *mechanism* now exists: `with_transaction(f, obj)` (in `model/project.jl`) takes any persisted
+object and locks `state_file(obj) * ".lock"`, so `with_transaction(f, img)` already gives a
+per-image lock. What remains is **wiring it into the task commit sites** — nothing calls it yet, so
+two concurrent read-modify-writes of the *same* image's `ccid.json` can still lose an update (e.g. a
+set-level operation fanning out over images that overlap).
 
-Recommended approach (better than the original on two counts):
-- **Per-image lockfile, co-located with state:** `with_transaction(f, img::CciaImage)` locking
-  `joinpath(img._dir, "ccid.json") * ".lock"` (not the project). Different images never block
-  each other.
+Scope note: this is the *lost-update* half only. Truncation — the unrecoverable failure, where an
+interrupted write left a half-written `ccid.json` and took the whole project load down with it — is
+handled unconditionally by `write_atomic` and needs no lock.
+
+Recommended approach (better than the original R, which held the lock across the whole
+load→compute→save span):
+- **Per-image lockfile, co-located with state:** `with_transaction(f, img::CciaImage)` — done, and
+  derived from `state_file(img)` exactly as R's `lockFile` derived from `getStateFile()`. Different
+  images never block each other.
 - **Lock the commit, not the computation.** The original held the lock across the whole
   transaction; instead acquire it *only* around the final read-modify-write of `ccid.json`
   (reread → merge task result → write → release), leaving the long bf2raw/cellpose run

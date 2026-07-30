@@ -231,7 +231,7 @@ function write_qc(img::CciaImage, fun_name::AbstractString, value_name::Abstract
     isnothing(output) || (doc["output"] = output)
     for (k, v) in extras; doc[string(k)] = v; end
     path = qc_path(img, fun_name, value_name)
-    open(path, "w") do io; JSON3.write(io, doc); end
+    write_json_atomic(path, doc)
     path
 end
 
@@ -436,7 +436,7 @@ end
 # same image, and both are recomputed here from persisted meta so they never diverge. Banks the base
 # import metric (`import_metrics`, every image) plus the rescale metrics (converted images only).
 function write_metadata_qc!(img::CciaImage)
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     isfile(ccid) || return
     raw      = JSON3.read(read(ccid, String))
     meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, :meta, Dict{String,Any}()))

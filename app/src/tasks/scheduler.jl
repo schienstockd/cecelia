@@ -227,9 +227,7 @@ function set_pool_limit!(name::AbstractString, limit::Integer)::Int
     pools = get(cfg, "pools", Dict{String,Any}())
     pools[nm] = lim
     cfg["pools"] = pools
-    open(cfg_path, "w") do io
-        TOML.print(io, cfg)
-    end
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
     lim
 end
 

@@ -13,6 +13,8 @@ function CciaSet(; uid=gen_uid(), name="", dir="")
     CciaSet(uid, name, String[], Dict{String,Any}(), dir, CciaImage[])
 end
 
+state_file(s::CciaSet)::String = joinpath(s._dir, STATE_FILENAME)
+
 function save!(s::CciaSet)
     d = Dict{String,Any}(
         "class"      => "CciaSet",
@@ -21,9 +23,7 @@ function save!(s::CciaSet)
         "image_uids" => s.image_uids,
         "meta"       => s.meta,
     )
-    open(joinpath(s._dir, "ccid.json"), "w") do f
-        JSON3.pretty(f, d)
-    end
+    write_json_atomic(state_file(s), d)
     for img in s._images
         save!(img)
     end
@@ -34,7 +34,7 @@ end
 # distinction was dropped in favour of per-image axis gating; see Cecelia.task_applies).
 function _load_set(proj_dir::String, set_uid::String)::CciaSet
     dir = joinpath(proj_dir, "1", set_uid)
-    d = JSON3.read(read(joinpath(dir, "ccid.json"), String), Dict{String,Any})
+    d = read_state_json(state_file(dir); as = Dict{String,Any})
     uids = String.(collect(d["image_uids"]))
     s = CciaSet(d["uid"], d["name"],
                 uids, Dict{String,Any}(get(d, "meta", Dict{String,Any}())),
@@ -52,7 +52,7 @@ Dispatches on the "class" field in ccid.json — no need to know the type in adv
 function init_object(proj_uid::String, uid::String)
     proj_dir = joinpath(projects_dir(), proj_uid)
     dir = joinpath(proj_dir, "1", uid)
-    d = JSON3.read(read(joinpath(dir, "ccid.json"), String), Dict{String,Any})
+    d = read_state_json(state_file(dir); as = Dict{String,Any})
     if get(d, "class", "") == "CciaSet"
         _load_set(proj_dir, uid)
     else

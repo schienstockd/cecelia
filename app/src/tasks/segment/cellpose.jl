@@ -38,7 +38,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
 
     value_name     = string(get(params, "valueName",     VERSIONED_DEFAULT_VAL))
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     # Resolve input image path
@@ -137,6 +137,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     # The zarr filenames the Python code will have written — the same derivation the live-preview
     # declaration uses, so the two can't disagree about what this run produces — then register them
     # in ccid.json, which is what makes the set appear in every `labels` picker (segmentation.jl).
+    # The atomic write this block used to do inline now lives in `register_label_files!`.
     label_files = segment_label_files(out_value_name, models_converted)
     register_label_files!(img, out_value_name, label_files)
 

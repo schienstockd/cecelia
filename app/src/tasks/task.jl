@@ -528,7 +528,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
     # so we can remove intermediate sub-task entries after the chain completes.
     out_vn_raw = get(spec, "outputValueName", nothing)
     out_vn     = isnothing(out_vn_raw) ? nothing : string(out_vn_raw)
-    ccid       = joinpath(img._dir, "ccid.json")
+    ccid       = state_file(img)
     pre_keys   = Set{String}()
     if !isnothing(out_vn) && isfile(ccid)
         raw0 = JSON3.read(read(ccid, String))
@@ -613,7 +613,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
                 fp2[out_vn] = out_filename
                 fp2[VERSIONED_ACTIVE_KEY] = out_vn
                 raw2["filepath"] = fp2
-                open(ccid, "w") do io; JSON3.write(io, raw2); end
+                write_json_atomic(ccid, raw2)
                 on_log("[INFO] Composite output registered as '$out_vn' → $out_filename")
             end
             result = Dict{String,Any}("valueName" => out_vn, "filename" => out_filename)

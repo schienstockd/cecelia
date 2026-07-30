@@ -65,26 +65,24 @@ Reads and rewrites `ccid.json` in place rather than going through `save!`, becau
 holds a `CciaImage` loaded before the run and saving the whole object would clobber any field a
 concurrently-running task on the same image has since written.
 
-MERGE NOTE (`fix/atomic-state-writes`): that branch makes `write_json_atomic` the one way to write
-durable state (a truncating `open(path, "w")` can leave a half-written ccid.json if the process dies
-mid-write, which bricks the WHOLE project's load) and `state_file(img)` the one way to locate it. It
-converts the *inline* ccid write that used to live in `cellpose.jl` — which this helper replaced — so
-whichever branch lands second, the resolution is these two lines here, once, and dropping that
-branch's now-obsolete `cellpose.jl` hunk:
-
-    ccid = state_file(img)                # not joinpath(img._dir, "ccid.json")
-    write_json_atomic(ccid, raw)          # not open(ccid, "w")
+Goes through the three canonical state helpers, never a hand-rolled equivalent: `state_file` to locate
+`ccid.json` (never join the filename), `read_ccid_raw` to read it, and `write_json_atomic` to write it.
+That last one matters here specifically — a truncating write-mode open that dies mid-write leaves a
+half-written `ccid.json`, and `_load_set` has no per-image guard, so ONE truncated file makes the WHOLE
+project fail to open with every other image intact but unreachable. See #420. (Phrased without the
+literal call form on purpose: the `no hand-rolled state writes` detector greps source lines, and only
+skips `#` comments — a docstring naming the pattern would read as an offender.)
 """
 function register_label_files!(img::CciaImage, out_value_name::AbstractString,
                               label_files::Vector{String})
-    ccid = joinpath(img._dir, "ccid.json")
-    raw  = read_ccid_raw(ccid)   # the canonical reader (helpers.jl) — don't re-spell the JSON3 walk
+    ccid = state_file(img)
+    raw  = read_ccid_raw(ccid)
     labels_dict = Dict{String, Vector{String}}(
         String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
         for (k, v) in get(raw, "labels", Dict{String,Any}()))
     labels_dict[String(out_value_name)] = label_files
     raw["labels"] = labels_dict
-    open(ccid, "w") do io; JSON3.write(io, raw); end
+    write_json_atomic(ccid, raw)
     label_files
 end
 

@@ -280,7 +280,7 @@ end
 
 function _write_registry!(uid::AbstractString, reg::AbstractDict)
     mkpath(_settings_dir_for_project(uid))
-    open(_registry_path(uid), "w") do io; JSON3.write(io, reg); end
+    write_json_atomic(_registry_path(uid), reg)
 end
 
 # Sanitise a user-supplied notebook name → a safe `*.jl` basename. Rejects (returns nothing) any
@@ -497,7 +497,7 @@ function api_notebooks_write(body_bytes::Vector{UInt8})
     dir = _project_notebooks_dir(uid); mkpath(dir)
     dest = joinpath(dir, file)
     isfile(dest) && return 409, JSON3.write((; error = "Notebook already exists: $file (pick a new name; create-only)"))
-    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells))); end
+    write_atomic(io -> write(io, _pluto_notebook_source(collect(cells))), dest)
 
     reg = _read_registry(uid)
     reg[file] = Dict{String,Any}("description" => _cap_desc(String(get(body, :description, ""))),
@@ -550,7 +550,7 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
     # Reuse the prior version's cell ids (read BEFORE we truncate) so Pluto's auto_reload_from_file can
     # merge the change into an OPEN notebook in place instead of leaving it stale.
     reuse = _content_cell_ids(dest)
-    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells); reuse_ids = reuse)); end
+    write_atomic(io -> write(io, _pluto_notebook_source(collect(cells); reuse_ids = reuse)), dest)
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))

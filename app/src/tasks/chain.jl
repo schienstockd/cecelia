@@ -168,8 +168,8 @@ Creates the chains/ directory if needed.
 """
 function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplate
     mkpath(_chains_dir(proj))
-    open(_template_path(proj, t.name), "w") do io
-        JSON3.write(io, (;
+    write_atomic(_template_path(proj, t.name)) do io
+        JSON3.pretty(io, (;
             name  = t.name,
             nodes = [(; id=n.id, fn=n.fn, scope=n.scope, params=n.params,
                        barrier_policy=n.barrier_policy, resource_pool=n.resource_pool)
@@ -252,8 +252,8 @@ function _save_run!(run::ChainRun)
         )
         for (uid, node_map) in run.image_states
     )
-    open(joinpath(run._dir, "run.json"), "w") do io
-        JSON3.write(io, (;
+    write_atomic(joinpath(run._dir, "run.json")) do io
+        JSON3.pretty(io, (;
             id             = run.id,
             chain_name     = run.chain_name,
             project_uid    = run.project_uid,

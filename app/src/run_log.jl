@@ -55,8 +55,6 @@ function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::A
         "params" => _run_log_params(params),
         "at" => String(at)))
     length(entries) > RUN_LOG_CAP && (entries = entries[(end - RUN_LOG_CAP + 1):end])
-    open(run_log_path(img), "w") do io
-        JSON3.write(io, entries)
-    end
+    write_json_atomic(run_log_path(img), entries)
     entries
 end
