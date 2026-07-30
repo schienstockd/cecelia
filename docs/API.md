@@ -175,9 +175,19 @@ retires rows that vanish from it** (2 consecutive misses; tallied `ended` — "f
 `task:status` frame — dropped for a slow client, or never delivered on a half-open socket — otherwise
 strands the row as `running` forever, so the console lists tasks the scheduler has long since finished
 while every pool reads idle. Rows for WS-only producers (jobs, batch movies) never appear in the
-snapshot and are exempt from retiring. The reconciliation half is split out as the socket-free
-`_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals*
-testset (the script's entrypoint is `PROGRAM_FILE`-guarded so the suite can `include` it).
+snapshot and are exempt from retiring — they identify themselves with `fun` + `pool` on their status
+frames. That identity is also the console's other retire rule: a row with **neither** (`_unattributed`)
+has only ever seen `task:log`/`task:progress` frames, so it can't be live work and is dropped by the
+snapshot too — silently, since we never saw what it was. Without that rule such a row is immortal:
+absent from the scheduler, so no snapshot can ever mark it eligible. That was the **zombie queued row**
+— `task:log` used to get-or-*create* its row unconditionally, and a cancelled task's killed subprocess
+flushes its remaining stdout *after* the terminal frame, so each trailing line minted a fresh blank row
+stuck at the default `queued` (six cancels → six phantom rows, `GET /api/tasks` returning `[]`). Log
+frames now honour `SEEN_TERM` like status/progress do: still shown in the logs pane, never resurrecting
+a row. The reconciliation half is split out as the socket-free
+`_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals* and
+*ignores post-mortem log frames* testsets (the script's entrypoint is `PROGRAM_FILE`-guarded so the
+suite can `include` it).
 **Chain nodes** report their outcome through a different door: a chain run emits no `task:status`
 frames, so the console attributes one from the `taskId` on the terminal `chain:node:done`/`failed`
 frame (see `docs/SCHEDULER.md` → *Event bus*). A row already retired as `ended` is *corrected* if its

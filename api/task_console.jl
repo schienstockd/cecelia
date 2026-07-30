@@ -56,7 +56,9 @@ mutable struct TaskView
     # Reconciliation state (see refresh_snapshot!). `in_snapshot` marks a task the /api/tasks
     # snapshot has listed at least once — i.e. a real SCHEDULER task, so its absence from a later
     # snapshot is meaningful. WS-only producers (jobs, batch movies) never appear in the snapshot
-    # and must never be pruned by it. `misses` counts consecutive snapshots it went missing from.
+    # and must never be pruned by it — they identify themselves with fun + pool on their status
+    # frames, which is also what tells them apart from an unattributed row (`_unattributed`, which
+    # IS prunable). `misses` counts consecutive snapshots it went missing from.
     in_snapshot::Bool
     misses::Int
 end
@@ -155,6 +157,18 @@ end
 # is never retired on a one-poll race.
 const SNAPSHOT_MISSES_TO_RETIRE = 2
 
+# …with ONE addition: an UNATTRIBUTED row is eligible too. Every `task:status` frame in the codebase
+# carries `fun` (and non-scheduler producers also carry `pool`), so a row with neither has only ever
+# seen `task:log` / `task:progress` frames — it has no identity, and nothing to display but its id.
+# Left ineligible it is immortal: absent from the scheduler (so no snapshot can set `in_snapshot`) yet
+# never retired, it sits in the table as "queued / waiting" forever while every pool reads idle.
+# It cannot be a live job or batch movie — those announce themselves with fun + pool — and it cannot
+# be a live scheduler task, because that would be IN the snapshot and so never miss a poll.
+# Dropped silently rather than tallied: we never saw what it was, so "ended" would be a claim about a
+# task we can't even name. Nor is it added to SEEN_TERM — if frames keep coming the row simply comes
+# back and is dropped again, which is self-correcting; SEEN_TERM would suppress it permanently.
+_unattributed(t::TaskView) = isempty(t.fun_name) && isempty(t.pool_name)
+
 # Pure half — takes already-parsed rows, touches no socket, so `api/test/runtests.jl` can drive it
 # with synthetic snapshots (that's the only automated coverage this script can have: it's run by path,
 # never imported, so the entrypoint at the bottom is guarded to keep `include`ing it side-effect-free).
@@ -179,14 +193,22 @@ function _reconcile_snapshot!(rows)
             t.in_snapshot  = true
             t.misses       = 0
         end
-        # retire what the scheduler no longer knows about (outcome unseen — tallied as "ended")
+        # retire what the scheduler no longer knows about: a task it once listed is tallied as "ended"
+        # (finished, outcome unseen); an unattributed row is dropped without a tally (see above).
         for (id, t) in collect(TASKS)
-            (t.in_snapshot && !(id in present)) || continue
+            ((t.in_snapshot || _unattributed(t)) && !(id in present)) || continue
             t.misses += 1
             t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
-            _note_terminal!(id, "ended")
-            push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
-                        col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
+            if t.in_snapshot
+                _note_terminal!(id, "ended")
+                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
+                            col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
+            else
+                delete!(TASKS, id)
+                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "dropped"),
+                            col(DIM, " (unattributed — logs only, never in the scheduler)"));
+                            colour = GREY)
+            end
         end
     end
     nothing
@@ -258,7 +280,17 @@ function handle_ws(raw::AbstractString)
         elseif type == "task:log"
             id = String(get(msg, :taskId, "")); isempty(id) && return
             line = String(get(msg, :line, ""))
-            t = _task!(id); t.last_log = line; t.updated = Dates.now()
+            # Always SHOW the line — but never let it (re)create a row for a task that has already
+            # finished. Post-mortem log frames are normal: cancel_task! kills the subprocess and the
+            # terminal frame goes out at once, then the process reader flushes whatever was still in
+            # the pipe. A log frame carries no fun / pool / status, so `_task!` minted a blank row
+            # stuck at the default "queued" — and nothing could ever retire it: the scheduler had
+            # already deregistered the task, so it never came back in a snapshot to set `in_snapshot`.
+            # That was the zombie queued row (six of them after seven cancels, every pool idle).
+            id in SEEN_TERM || let t = _task!(id)
+                t.last_log = line
+                t.updated  = Dates.now()
+            end
             push_log!(id, line)
 
         elseif type == "task:result"

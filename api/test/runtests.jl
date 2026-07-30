@@ -1466,6 +1466,58 @@ end
     @test C.TASKS["t3"].misses == 0
     reconcile([])
     @test haskey(C.TASKS, "t3")                           # would have been retired if it hadn't reset
+
+    # an UNATTRIBUTED row (no fun, no pool — only ever log/progress frames) is prunable even though
+    # the snapshot never listed it: nothing else could ever remove it, so it sat there forever.
+    reset_console!()
+    C._task!("ghost")                        # blank fun + pool, default status "queued"
+    reconcile([])                            # miss 1
+    @test haskey(C.TASKS, "ghost")
+    reconcile([])                            # miss 2 → dropped
+    @test !haskey(C.TASKS, "ghost")
+    @test sum(values(C.TALLY)) == 0                       # no outcome claimed for a task we can't name
+    @test !("ghost" in C.SEEN_TERM)                       # …and not suppressed, so a real task returns
+end
+
+# ── Task console: post-mortem log frames must not resurrect a finished task ────
+# The zombie-queued-row regression. Cancelling a running task broadcasts the terminal `task:status`
+# at once (cancel_task! → on_status_change), then the killed subprocess's reader flushes whatever was
+# still in its pipe as `task:log` frames. Those carry no fun / pool / status, so each one minted a
+# fresh blank row stuck at the default "queued" — and the snapshot could never retire it, because the
+# scheduler had already deregistered the task. Six cancels, six immortal "queued / waiting" rows with
+# every pool reading idle and GET /api/tasks returning [].
+@testset "API: task console ignores post-mortem log frames" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="spatialAnalysis.aggregatesMeshes",
+                                  pool_name="cpu", image_uid="EaMaVq", chain_run_id="")
+    feed(frame) = redirect_stdout(devnull) do; C.handle_ws(JSON3.write(frame)) end
+    recon(rows)  = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.LOGS);
+                        empty!(C.ENDED_IDS); for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    reset_console!()
+    recon([row("k1")])
+    feed((; type="task:status", taskId="k1", status="cancelled", imageUid="EaMaVq",
+           fun="spatialAnalysis.aggregatesMeshes"))
+    @test !haskey(C.TASKS, "k1") && C.TALLY["cancelled"] == 1
+
+    # the dying subprocess's remaining stdout arrives AFTER the terminal frame
+    nlogs = length(C.LOGS)
+    feed((; type="task:log", taskId="k1", line=">> t74: 13 meshes, 0 aggregate(s)"))
+    feed((; type="task:log", taskId="k1", line="[QC] mesh aggregates: 31, 18% of cells."))
+    @test !haskey(C.TASKS, "k1")                          # ← used to reappear as a blank "queued" row
+    @test length(C.LOGS) == nlogs + 2                     # still SHOWN, just not resurrected as a row
+    @test C.TALLY["cancelled"] == 1                        # and not re-counted
+
+    # a progress frame after the fact is likewise ignored (this half was already guarded — pin it)
+    feed((; type="task:progress", taskId="k1", progress=0.9))
+    @test !haskey(C.TASKS, "k1")
+
+    # the row STAYS while the task is alive — a log frame for a live task is the normal case
+    reset_console!()
+    recon([row("k2")])
+    feed((; type="task:log", taskId="k2", line=">> t01: 4 meshes"))
+    @test haskey(C.TASKS, "k2") && C.TASKS["k2"].last_log == ">> t01: 4 meshes"
 end
 
 # ── Task console: a chain node's real outcome ─────────────────────────────────
