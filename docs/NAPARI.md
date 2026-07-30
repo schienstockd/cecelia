@@ -369,10 +369,22 @@ napari_utils.add_labels(viewer, arrays, scale=self._im_scale, units=self._im_uni
 ```
 
 `expand_to_axes` inserts a length-1 axis for each viewer axis the store lacks (lazily — `arr[..., None]`
-keeps a dask store lazy), so a projection renders on a single Z plane, which is what it physically is.
+keeps a dask store lazy), and `image_shape` then **stretches** those inserted axes to the viewer's extent.
 It **refuses** rather than guesses when the names can't be trusted: a rank/name mismatch (a store whose
 `.zattrs` axes don't describe its array), an axis the viewer doesn't have, or a transposed store. The
 caller then falls back to `align_axis_vector`, which only makes `scale` the right *length*.
+
+**A projection is a CURTAIN, not one plane.** A skeleton computed on the Z-MIP belongs to the whole volume,
+so leaving it on plane 0 is correct about the data and wrong about the meaning — it reads as a separate
+layer floating beside the image. The old R version got this right by writing the MIP onto every Z plane
+*before* skeletonising (`create_branching.py`: *"this will propagate the 2D image into 3D — otherwise the
+following steps will be a bit confusing"*), i.e. by duplicating the bytes; its full-rank store is also why
+it never hit the axis-alignment problem at all. Here it is a lazy `np.broadcast_to` (which dispatches
+through `__array_function__`, so a dask store stays lazy): the store stays honest about having no Z, and
+nothing is stored twice — a 201×20×544×548 uint32 curtain would be 4.8 GB if it were ever materialised,
+and napari reads one plane at a time, so it never is. Only the INSERTED axes stretch; a pyramid level keeps
+its own Y/X, or stretching them would resample the level. In 3D rendering the result extrudes through the
+stack; in 2D the overlay follows the slider through z.
 
 This depends on stores declaring truthful axes, which is the writer's half of the same contract: a task
 whose store is not the source image's shape passes `axes=` to `create_multiscales` explicitly (labels

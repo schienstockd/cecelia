@@ -116,6 +116,65 @@ class TestExpandToAxes(unittest.TestCase):
         self.assertEqual(out.shape, (4, 1, 8, 8))
 
 
+class TestProjectionCurtain(unittest.TestCase):
+    """A projected store belongs to the WHOLE volume, so it renders on every plane it collapsed.
+
+    Inserting a singleton Z put a Z-MIP skeleton on plane 0 only — correct about the data, wrong about the
+    meaning, and it read as "a separate layer floating beside the image". The old R version got this right
+    by writing the MIP onto every Z plane *before* skeletonising (`create_branching.py`: "this will
+    propagate the 2D image into 3D"), i.e. it duplicated the bytes. Here it is a lazy broadcast, so the
+    store stays honest about having no Z and nothing is stored twice.
+    """
+    def test_z_projection_becomes_a_curtain(self):
+        arr = np.zeros((201, 544, 548), dtype=np.uint32)
+        out, ok = expand_to_axes(arr, ["t", "y", "x"], ["t", "z", "y", "x"],
+                                 viewer_shape=[201, 20, 544, 548])
+        self.assertTrue(ok)
+        self.assertEqual(out.shape, (201, 20, 544, 548))      # every z plane, not just the first
+
+    def test_it_stays_lazy_and_stores_nothing(self):
+        try:
+            import dask.array as da
+        except ImportError:                                     # pragma: no cover
+            self.skipTest("dask not installed")
+        arr = da.zeros((201, 544, 548), chunks=(1, 544, 548), dtype=np.uint32)
+        out, ok = expand_to_axes(arr, ["t", "y", "x"], ["t", "z", "y", "x"],
+                                 viewer_shape=[201, 20, 544, 548])
+        self.assertTrue(ok)
+        self.assertEqual(out.shape, (201, 20, 544, 548))
+        self.assertTrue(hasattr(out, "compute"))               # 4.8 GB if materialised — it never is
+        # every z plane reads the SAME source plane, which is what makes it free
+        self.assertTrue(np.array_equal(np.asarray(out[7, 0]), np.asarray(out[7, 19])))
+
+    def test_only_the_INSERTED_axes_stretch(self):
+        # a pyramid level's own Y/X must survive — stretching them would resample the level
+        levels = [np.zeros((4, 16, 16)), np.zeros((4, 8, 8))]
+        out, ok = expand_to_axes(levels, ["t", "y", "x"], ["t", "z", "y", "x"],
+                                 viewer_shape=[4, 5, 16, 16])
+        self.assertTrue(ok)
+        self.assertEqual([a.shape for a in out], [(4, 5, 16, 16), (4, 5, 8, 8)])
+
+    def test_omitting_the_extent_keeps_the_single_plane(self):
+        arr = np.zeros((201, 544, 548), dtype=np.uint32)
+        out, _ = expand_to_axes(arr, ["t", "y", "x"], ["t", "z", "y", "x"])
+        self.assertEqual(out.shape, (201, 1, 544, 548))
+
+    def test_a_full_rank_store_is_untouched(self):
+        arr = np.zeros((7, 20, 283, 230))
+        out, ok = expand_to_axes(arr, ["t", "z", "y", "x"], ["t", "z", "y", "x"],
+                                 viewer_shape=[7, 20, 283, 230])
+        self.assertTrue(ok)
+        self.assertIs(out, arr)                                # nothing inserted, nothing stretched
+
+    def test_a_degenerate_extent_is_harmless(self):
+        arr = np.zeros((4, 8, 8))
+        for shape in ([4, 0, 8, 8], [4, 1, 8, 8], [4]):
+            out, ok = expand_to_axes(arr, ["t", "y", "x"], ["t", "z", "y", "x"], viewer_shape=shape)
+            self.assertTrue(ok)
+            self.assertEqual(out.shape[0], 4)
+            self.assertEqual(out.shape[-2:], (8, 8))
+
+
 class TestWriterAndReaderAgree(unittest.TestCase):
     """The writer's declared axes must be usable by the reader's name alignment.
 

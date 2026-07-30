@@ -155,7 +155,22 @@ def _insert_singleton_axes(arr, positions):
   return arr[tuple(None if i in at else slice(None) for i in range(n_out))]
 
 
-def expand_to_axes(data, layer_axes, viewer_axes):
+def _broadcast_axes(arr, positions, viewer_shape):
+  """Stretch the length-1 axes at ``positions`` to the viewer's extent. ``np.broadcast_to`` dispatches
+  through ``__array_function__``, so a dask-backed store stays LAZY and costs nothing — the expansion is
+  a view, not data (a 201x20x544x548 uint32 curtain would be 4.8 GB if it were ever materialised; napari
+  reads one plane at a time, so it never is)."""
+  if viewer_shape is None:
+    return arr
+  shape = list(getattr(arr, 'shape', ()))
+  at = set(positions)
+  for i in at:
+    if i < len(shape) and i < len(viewer_shape) and viewer_shape[i]:
+      shape[i] = int(viewer_shape[i])          # only the INSERTED axes; Y/X keep this level's own size
+  return np.broadcast_to(arr, tuple(shape)) if tuple(shape) != tuple(getattr(arr, 'shape', ())) else arr
+
+
+def expand_to_axes(data, layer_axes, viewer_axes, viewer_shape=None):
   """Give a layer array every axis the viewer has, in the viewer's order, by inserting length-1 axes.
 
   **napari aligns a layer's dimensions against the viewer's from the RIGHT.** A layer with fewer
@@ -169,6 +184,15 @@ def expand_to_axes(data, layer_axes, viewer_axes):
   Aligning by NAME is the fix: insert a singleton for each viewer axis the layer lacks, and the layer's
   own axes land where they belong. A Z-projection then renders on a single Z plane, which is what it
   physically is, and time steps with the slider.
+
+  ``viewer_shape`` (optional, aligned with ``viewer_axes``) additionally **stretches** each inserted axis
+  to the viewer's extent, so a Z-PROJECTED store shows on every Z plane instead of on one. That is what a
+  projection means — the skeleton was computed on the MIP, so it belongs to the whole volume, not to
+  z=0 — and it is what the old R version did, by writing the MIP onto every Z plane *before*
+  skeletonising (`create_branching.py`: *"this will propagate the 2D image into 3D — otherwise the
+  following steps will be a bit confusing"*). Here it is a lazy broadcast instead of duplicated bytes, so
+  the store stays honest about having no Z. In 3D rendering the result is an extruded curtain; in 2D the
+  overlay follows the slider through z. Omit it to keep the single plane.
 
   ``layer_axes``/``viewer_axes`` are axis-name sequences (case-insensitive, e.g. ``['t','y','x']`` and
   ``['t','z','y','x']``); ``viewer_axes`` must already EXCLUDE the channel axis (napari splits channels
@@ -199,13 +223,14 @@ def expand_to_axes(data, layer_axes, viewer_axes):
   if len(lay) == len(view):
     return data, True           # already aligned; nothing to insert
   missing = [i for i in range(len(view)) if i not in set(pos)]
+  grow = lambda a: _broadcast_axes(_insert_singleton_axes(a, missing), missing, viewer_shape)
   if isinstance(data, (list, tuple)):
-    return [_insert_singleton_axes(a, missing) for a in data], True
-  return _insert_singleton_axes(data, missing), True
+    return [grow(a) for a in data], True
+  return grow(data), True
 
 
 def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels', visible=True,
-               cache=False, axes=None, image_axes=None):
+               cache=False, axes=None, image_axes=None, image_shape=None):
   """Add an instance/label layer (0 = background) at ``opacity`` (0.7 by default). Returns the layer.
 
   ``cache=False`` by default (napari's own default is True). napari's Labels layer, with a
@@ -224,10 +249,12 @@ def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels',
   are known: a derived label store can have FEWER axes than the image (a Z-projected skeleton of a
   timelapse), and napari reinterprets a short layer's axes as the viewer's trailing ones, which
   silently renders time as Z. See ``expand_to_axes``; without the names we can only fix up ``scale``,
-  which does not fix the dimension assignment."""
+  which does not fix the dimension assignment. ``image_shape`` (the viewer's extent, channel axis
+  excluded) additionally stretches a projected store across the axis it collapsed — a MIP-derived
+  skeleton belongs to the whole volume, so it renders on every plane rather than only the first."""
   require_napari()
   # ONE place every labels layer goes through — align here, not at each call site.
-  labels, aligned = expand_to_axes(labels, axes, image_axes)
+  labels, aligned = expand_to_axes(labels, axes, image_axes, viewer_shape=image_shape)
   nd = layer_ndim(labels)
   kw = dict(name=name, scale=scale if aligned else align_axis_vector(scale, nd),
             opacity=opacity, visible=visible, cache=bool(cache))
