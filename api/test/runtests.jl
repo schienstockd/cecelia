@@ -486,6 +486,46 @@ end
           (isfile(_sysimage_path()) && _stamp_matches(onstamp, string(VERSION), _manifest_hash()))
 end
 
+@testset "API: image geometry (axis mapping + version resolution)" begin
+    # Pure parts of image_geometry.jl — no zarr, no IO. These were `_crop_*` privates until a second
+    # consumer showed none of it was crop-specific (docs: the anisotropy grid advisory).
+
+    # Zarr.jl is column-major and presents the array REVERSED, so the C-order axis at position i sits
+    # at Julia dim ndims-i+1. Getting this backwards silently swaps x and y — and a square frame
+    # would hide it, so assert with a NON-square rank-5 layout.
+    d = axis_dims(["t", "c", "z", "y", "x"], 5)
+    @test d["t"] == 5 && d["c"] == 4 && d["z"] == 3 && d["y"] == 2 && d["x"] == 1
+
+    d3 = axis_dims(["c", "y", "x"], 3)
+    @test d3["x"] == 1 && d3["y"] == 2 && d3["c"] == 3
+
+    # no axes in .zattrs → fall back to the conventional order for that rank, not an error
+    @test axis_dims(String[], 5)["x"] == 1
+    @test axis_dims(String[], 2)["y"] == 2
+    @test !haskey(axis_dims(String[], 2), "z")
+
+    # absent .zattrs → empty, and the caller falls back rather than throwing
+    mktempdir() do dir
+        @test read_ngff_axes(dir) == String[]
+    end
+    # malformed .zattrs must not take the request down
+    mktempdir() do dir
+        write(joinpath(dir, ".zattrs"), "{not json")
+        @test read_ngff_axes(dir) == String[]
+    end
+    mktempdir() do dir
+        write(joinpath(dir, ".zattrs"),
+              """{"multiscales":[{"axes":[{"name":"T"},{"name":"Y"},{"name":"X"}]}]}""")
+        @test read_ngff_axes(dir) == ["t", "y", "x"]     # lowercased
+    end
+
+    # version resolution reports WHY it failed instead of throwing — the route maps it to a status
+    _, _, e1 = resolve_image_version("", "", nothing)
+    @test e1 == "projectUid + imageUid required"
+    _, _, e2 = resolve_image_version("no-such-project", "no-such-image", nothing)
+    @test e2 == "Image not found"
+end
+
 @testset "API: crop render composite" begin
     # Pure colourise/blend for the in-app crop MIP (crop_render.jl) — no zarr/IO. (C,H,W) float +
     # per-channel (lo,hi,cmap,visible) → H×W RGB, clip-to-contrast + additive blend.

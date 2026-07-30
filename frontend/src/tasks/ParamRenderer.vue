@@ -7,7 +7,8 @@
 import { computed, ref, watch } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
-import { SEVERITY, type Severity } from '../lib/severity'
+import { SEVERITY } from '../lib/severity'
+import { paramAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
@@ -304,71 +305,41 @@ watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName,
 
 const colAllValues = computed(() => colGroups.value.flatMap(g => g.opts).map(o => o.value))
 
-// motionDimsSelection: auto/2D/3D for track measures. In 'auto' we fetch the backend's z-assessment
-// (cached by h5ad mtime, cheap) for the selected image+segmentation and show the recommendation +
-// warning BEFORE the user runs — they can still override to 3D. Value sent: "auto" | "2D" | "3D".
-interface MotionDims { dims: number; zUsed: boolean; confidence: string; reason: string
-  metrics?: { nSteps?: number; autocorrX?: number; autocorrY?: number; autocorrZ?: number; persist2D?: number; persist3D?: number } }
-const motionDims = ref<MotionDims | null>(null)
-const motionLoading = ref(false)
-async function loadMotionDims() {
-  if (props.param.type !== 'motionDimsSelection') return
-  const img = props.context?.images?.[0]
-  const projectUid = props.context?.projectUid
-  const valueName = (props.context?.values?.valueName as string) ?? 'default'
-  motionDims.value = null
-  if (!img || !projectUid) return
-  motionLoading.value = true
+// ── param advisory (generic) ───────────────────────────────────────────────────────────────────
+// A one-line "know this before you run" readout under the control, for params that are easy to set
+// wrongly. The judgement lives in `paramAdvisors.ts` (pure + unit-tested); this only fetches when the
+// advisor needs the backend, and renders. Was hand-rolled per-param for motionDimsSelection; adding
+// the anisotropy grid-size readout would have been a second copy, so it is one mechanism now.
+const advisor = computed(() => paramAdvisor(props.param))
+const advisory = ref<ParamAdvisory | null>(null)
+const advisoryLoading = ref(false)
+
+const advisoryCtx = computed<AdvisorContext>(() => ({
+  projectUid: props.context?.projectUid,
+  images: props.context?.images,
+  values: props.context?.values,
+}))
+
+let advisorySeq = 0
+async function loadAdvisory() {
+  const a = advisor.value
+  advisory.value = null
+  if (!a) return
+  const seq = ++advisorySeq          // only the latest run may write; a slider drag races otherwise
+  advisoryLoading.value = true
   try {
-    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}`
-    const res = await fetch(`/api/tracking/motion-dims?${q}`)
-    if (res.ok) motionDims.value = await res.json() as MotionDims
-  } catch { /* leave null */ } finally { motionLoading.value = false }
+    const r = await a.advise(val.value, advisoryCtx.value)
+    if (seq === advisorySeq) advisory.value = r
+  } finally {
+    if (seq === advisorySeq) advisoryLoading.value = false
+  }
 }
-watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName],
-  () => { loadMotionDims() }, { immediate: true })
-// brief one-liner (full detector reason goes in the tooltip)
-const motionWarn = computed(() => {
-  const m = motionDims.value; if (!m) return false
-  return (val.value ?? 'auto') === 'auto' && (m.dims === 2 || m.confidence === 'low')
-})
-const motionMsg = computed(() => {
-  const m = motionDims.value; if (!m) return ''
-  if ((val.value ?? 'auto') !== 'auto') return `using ${val.value} (auto: ${m.dims}D)`
-  if (m.confidence === 'low') return `${m.dims}D — uncertain, review`
-  return `${m.dims}D recommended`
-})
-// traffic-light flag: how usable is the z-axis? ok = real 3D motion; warn = borderline / uncertain;
-// fail = z is clearly jitter (anti-persistent). Only shown for the 'auto' recommendation. Rendered as
-// a shape-distinct severity icon (not a colour-only dot) via the canonical severity model.
-const motionFlag = computed<Severity | ''>(() => {
-  const m = motionDims.value; if (!m || (val.value ?? 'auto') !== 'auto') return ''
-  if (m.dims === 3) return m.confidence === 'high' ? 'ok' : 'warn'
-  const aZ = m.metrics?.autocorrZ                         // dims === 2: severity from z autocorrelation
-  return (typeof aZ === 'number' && aZ <= 0) ? 'fail' : 'warn'   // ≤0 = reversing (bad); else just under cutoff
-})
-// plain-language explanation (replaces the technical detector `reason` in the tooltip): what we
-// tested, the result, and by how far the z-axis missed the migration cutoff.
-const motionTip = computed(() => {
-  const m = motionDims.value; if (!m) return ''
-  const mt = m.metrics ?? {}
-  const f = (x?: number) => typeof x === 'number' ? x.toFixed(2) : '?'
-  const aZ = mt.autocorrZ, p2 = mt.persist2D, p3 = mt.persist3D, n = mt.nSteps
-  if (typeof n === 'number' && n < 50)
-    return `Only ${n} track steps — too few to judge the z-axis reliably. Kept 3D to be safe; review.`
-  const straight = (typeof p2 === 'number' && typeof p3 === 'number')
-    ? ` Path straightness is ${f(p2)} in-plane vs ${f(p3)} once z is included.` : ''
-  if (m.dims === 2)
-    return `Tested whether vertical (z) motion is real or just jitter. Its step-to-step direction is `
-      + `${typeof aZ === 'number' && aZ <= 0 ? 'random/reversing' : 'weak'} `
-      + `(z consistency ${f(aZ)}; real migration needs > 0.10).${straight} `
-      + `So z looks like jitter — measures use the flat in-plane (2D) path.`
-  if (m.dims === 3 && m.confidence === 'high')
-    return `Tested whether vertical (z) motion is real or just jitter. The z direction is consistent `
-      + `(z consistency ${f(aZ)}, comparable to in-plane).${straight} z is real motion — full 3D kept.`
-  return `The z-axis signal is borderline (z consistency ${f(aZ)}; cutoff is 0.10).${straight} `
-      + `Kept 3D to be safe — review, or force 2D if you know the z spacing is coarse.`
-})
+// `val` is in the key list on purpose: an async advisor still depends on the CURRENT value (the grid
+// estimate changes as the slider moves), and `reloadOn` only covers the context. The fetch itself is
+// the expensive part, so advisors whose fetch does not depend on the value should cache — today both
+// are cheap enough (one metadata read) that correctness wins over a caching layer nobody needs yet.
+watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value)],
+  () => { loadAdvisory() }, { immediate: true, deep: true })
 
 // group helpers — value is Record<string, ParamValues> keyed by "0", "1", ...
 const groupEntries = computed(() => {
@@ -552,15 +523,6 @@ const pct = computed(() => {
         <option value="2D">2D (in-plane)</option>
         <option value="3D">3D</option>
       </select>
-      <div v-if="motionLoading" class="md-note cc-muted">checking z…</div>
-      <div v-else-if="motionDims" class="md-note cc-muted"
-           :class="{ warn: motionWarn }" v-tooltip.right="motionTip">
-        <i :class="['pi', motionWarn ? 'pi-exclamation-triangle' : 'pi-check-circle']" />
-        {{ motionMsg }}
-        <i v-if="motionFlag" class="pi md-flag" :class="SEVERITY[motionFlag].icon"
-           :style="{ color: SEVERITY[motionFlag].color }"
-           v-tooltip.right="motionFlag === 'ok' ? 'z carries real migration' : motionFlag === 'fail' ? 'z is clearly jitter — 2D strongly advised' : 'borderline — only just decided'" />
-      </div>
     </div>
 
     <!-- section / group: rendered outside .param-row below -->
@@ -581,6 +543,24 @@ const pct = computed(() => {
       v-tooltip.right="`${param.type} — populated from image metadata`">
       <i class="pi pi-spinner pi-spin" style="font-size:var(--cc-fs-xs)" />
       {{ param.type }}
+    </div>
+
+    <!-- ONE advisory block for every param that registers an advisor (paramAdvisors.ts). A note
+         under the control, whatever the control is.
+         MUST sit AFTER the widget chain closes, never inside it: a `v-if` placed mid-chain starts a
+         NEW chain, so every `v-else-if`/`v-else` below it re-parents onto this condition — which is
+         exactly what happened, and the `v-else` fallback above then rendered its "unsupported type"
+         spinner under every param on the page. -->
+    <div v-if="advisoryLoading" class="param-advisory cc-muted">checking…</div>
+    <div v-else-if="advisory" class="param-advisory cc-muted"
+         :class="`sev-${advisory.severity}`" v-tooltip.right="advisory.tip">
+      <i class="pi" :class="SEVERITY[advisory.severity].icon" />
+      {{ advisory.message }}
+      <!-- optional second signal: how good the DATA is, as distinct from how concerning the
+           recommendation is. Own colour + own tooltip; colour is never the only cue. -->
+      <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"
+         :style="{ color: SEVERITY[advisory.flag.severity].color }"
+         v-tooltip.right="advisory.flag.tip" />
     </div>
   </div>
 
@@ -752,6 +732,15 @@ const pct = computed(() => {
 /* channel selection */
 .channel-select-wrap { width: 100%; }
 .channel-empty { font-style: italic; padding: 0.2rem 0; }
+/* Generic param advisory note. Colour comes from the validated severity palette and is never the
+   sole cue — a shape-distinct icon rides along (see lib/severity.ts). */
+/* no font-size here: `.cc-muted` on the element already sets --cc-fs-sm, and repeating it is a
+   no-op the cssScenarios shadowing detector (rightly) fails on. */
+.param-advisory { display: flex; align-items: center; gap: 0.3rem; }
+.param-advisory.sev-warn { color: var(--cc-sev-warn); }
+.param-advisory.sev-fail { color: var(--cc-sev-fail); }
+.param-advisory-flag { margin-left: 0.1rem; }
+
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
 .md-note { display: inline-flex; align-items: center; gap: 0.3rem; }

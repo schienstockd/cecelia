@@ -21,55 +21,9 @@ const _CROP_CMAP_RGB = Dict(
 )
 const _CROP_DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
 
-# Open the level-0 array of a cecelia OME-ZARR + its NGFF axis names (C-order, e.g. ["t","c","z","y","x"]).
-# Handles both on-disk layouts: flat (root group, array at "0") and the bioformats2raw series (group at
-# "0", array at "0/0"). Axes come from the multiscales `.zattrs` on whichever group carries it.
-function _crop_open_level0(zarr_path::AbstractString)
-    g = zopen(zarr_path)
-    node = g["0"]
-    if node isa Zarr.ZArray                    # flat: root .zattrs has the multiscales; array is "0"
-        arr, attrs_dir = node, zarr_path
-    else                                       # series: "0" is a group, level-0 array is "0/0"
-        arr, attrs_dir = node["0"], joinpath(zarr_path, "0")
-    end
-    caxes = _crop_read_axes(attrs_dir)
-    arr, caxes
-end
-
-# NGFF axis names from a group's `.zattrs` (multiscales[0].axes[].name), lowercased C-order. Metadata
-# only (JSON), not pixels — reading it here is fine. Falls back to a sensible order by ndims if absent.
-function _crop_read_axes(attrs_dir::AbstractString)
-    p = joinpath(attrs_dir, ".zattrs")
-    if isfile(p)
-        try
-            d = JSON3.read(read(p, String))
-            ms = get(d, :multiscales, nothing)
-            if ms !== nothing && !isempty(ms)
-                ax = get(ms[1], :axes, nothing)
-                ax !== nothing && return String[lowercase(String(get(a, :name, ""))) for a in ax]
-            end
-        catch
-        end
-    end
-    String[]
-end
-
-# Julia array dim (1-based) for each named axis. Zarr.jl reverses to column-major, so the C-order axis
-# at position i (1-based) sits at Julia dim `ndims - i + 1`.
-function _crop_axis_dims(caxes::Vector{String}, nd::Int)
-    d = Dict{String,Int}()
-    if length(caxes) == nd
-        for (i, name) in enumerate(caxes)
-            d[name] = nd - i + 1
-        end
-    else                                        # no axes metadata → assume (t,c,z,y,x) C-order tail
-        fallback = ["t", "c", "z", "y", "x"][(end - nd + 1):end]
-        for (i, name) in enumerate(fallback)
-            d[name] = nd - i + 1
-        end
-    end
-    d
-end
+# Image geometry (open the level-0 array, NGFF axes, axis→dim, version resolution) lives in
+# `image_geometry.jl` — it was private here (`_crop_open_level0` etc.) until a second consumer
+# appeared and showed none of it was crop-specific. This file keeps only what IS about cropping.
 
 # Read the viewer's per-channel display specs from the JSON layer-props file (Phase 0). Returns a vector
 # of (lo, hi, cmap_name, visible) in channel order, or `nothing` if the file is missing/unreadable.
@@ -120,9 +74,9 @@ end
 function render_crop_frame(zarr_path::AbstractString, props_path::AbstractString, t::Int;
                            max_px::Int = 512, z_keep::Int = 12,
                            z_lo_frac::Real = 0.0, z_hi_frac::Real = 1.0)
-    arr, caxes = _crop_open_level0(zarr_path)
+    arr, caxes = open_level0(zarr_path)
     nd = ndims(arr)
-    dims = _crop_axis_dims(caxes, nd)
+    dims = axis_dims(caxes, nd)
     jy, jx = dims["y"], dims["x"]
     jz = get(dims, "z", 0); jc = get(dims, "c", 0); jt = get(dims, "t", 0)
     sz = size(arr)
@@ -181,31 +135,17 @@ end
 
 # ── HTTP routes (GET) ────────────────────────────────────────────────────────────
 # Resolve (projectUid, imageUid, valueName) → (zarr_path, task_dir) using the SAME ccid.json convention
-# as napari open (`read_ccid_raw` + `versioned_get_field`). `value_name` empty ⇒ active/default.
-function _crop_resolve(project_uid::AbstractString, image_uid::AbstractString, value_name)
-    (isempty(project_uid) || isempty(image_uid)) && return (nothing, nothing, "projectUid + imageUid required")
-    proj_dir = joinpath(projects_dir(), project_uid)
-    meta = joinpath(proj_dir, "1", image_uid, "ccid.json")
-    (isdir(proj_dir) && isfile(meta)) || return (nothing, nothing, "Image not found")
-    raw = read_ccid_raw(meta)
-    fn  = versioned_get_field(raw, "filepath", value_name)
-    fn === nothing && return (nothing, nothing, "No filepath registered — run a conversion task first")
-    zp = joinpath(proj_dir, "0", image_uid, string(fn))
-    isdir(zp) || return (nothing, nothing, "Zarr not found on disk")
-    (zp, joinpath(proj_dir, "1", image_uid), nothing)
-end
-
 # GET /api/crop/info?projectUid=&imageUid=&valueName=&maxPx= → {nT,nZ,fullW,fullH,frameW,frameH,maxPx}
 # Dimensions the panel needs: the timepoint/slice counts for the scrubber + range sliders, the displayed
 # frame size, and the full-res size (Phase 2 maps a drawn rectangle back to full px from these).
 function api_crop_info(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, _, err = _crop_resolve(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
     err === nothing || return 404, JSON3.write((; error = err))
     try
-        arr, caxes = _crop_open_level0(zp)
-        d  = _crop_axis_dims(caxes, ndims(arr))
+        arr, caxes = open_level0(zp)
+        d  = axis_dims(caxes, ndims(arr))
         fx = size(arr, d["x"]); fy = size(arr, d["y"])
         nt = haskey(d, "t") ? size(arr, d["t"]) : 1
         nz = haskey(d, "z") ? size(arr, d["z"]) : 1
@@ -238,7 +178,7 @@ end
 function api_crop_frame(req::HTTP.Request)
     q  = HTTP.queryparams(HTTP.URI(req.target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, td, err = _crop_resolve(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    zp, td, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
     err === nothing || return 404, JSON3.write((; error = err))
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     max_px = something(tryparse(Int, get(q, "maxPx", "512")), 512)
