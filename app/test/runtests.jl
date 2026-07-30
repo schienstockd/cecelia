@@ -584,11 +584,61 @@ end
             write(cfgf, JSON3.write(Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))
             @test Cecelia.observer_registration_state(
                 Cecelia.read_registered_observer_spec(cfgf), want) === :current
-            # per-directory `local` scope is deliberately NOT counted — our button registers user scope
+            # this reader is user-scope ONLY — a local-scope entry is not a registration for it to find
             write(cfgf, JSON3.write(Dict("projects" => Dict("/somewhere" =>
                 Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))))
             @test Cecelia.read_registered_observer_spec(cfgf) === nothing
         end
+
+        # ── Local-scope shadowing ────────────────────────────────────────────────────────────
+        # The bug: our button writes `-s user`, but Claude Code resolves `local` scope
+        # (projects[<dir>].mcpServers) FIRST. A leftover local entry pointing at a DELETED checkout
+        # therefore killed the server with ENOENT for every session started in that dir — while the
+        # status route, reading only the top level, reported :current and offered "Chat to Claude".
+        stale_local = Cecelia.observer_mcp_spec("/gone/mcp", "/gone/python", "http://127.0.0.1:8080")
+        let cfgf = joinpath(mktempdir(), ".claude.json")
+            write(cfgf, JSON3.write(Dict(
+                "mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want),
+                "projects"   => Dict(
+                    "/home/u"       => Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => stale_local)),
+                    "/home/u/right" => Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want)),
+                    "/home/u/none"  => Dict("mcpServers" => Dict{String,Any}()),
+                    "/home/u/other" => Dict("mcpServers" => Dict("something-else" => want))))))
+            locals = Cecelia.read_local_observer_specs(cfgf)
+            @test sort(String[d for (d, _) in locals]) == ["/home/u", "/home/u/right"]
+            # only the MISMATCHED one is a problem: a local entry equal to `want` resolves to the same
+            # server, so it is left alone — we never delete config that isn't breaking anything
+            @test Cecelia.observer_shadow_dirs(locals, want) == ["/home/u"]
+            # user scope is still read independently of any of this
+            @test Cecelia.observer_registration_state(
+                Cecelia.read_registered_observer_spec(cfgf), want) === :current
+        end
+        # tolerant like the user-scope reader — a missing/garbage/odd-shaped config is "no shadows",
+        # never an exception (it is another tool's file and this runs on every status poll)
+        @test isempty(Cecelia.read_local_observer_specs(joinpath(mktempdir(), "nope.json")))
+        let bad = joinpath(mktempdir(), "bad.json")
+            write(bad, "not json at all")
+            @test isempty(Cecelia.read_local_observer_specs(bad))
+        end
+        let odd = joinpath(mktempdir(), "odd.json")
+            write(odd, JSON3.write(Dict("projects" => "a string, not an object")))
+            @test isempty(Cecelia.read_local_observer_specs(odd))
+        end
+        @test Cecelia.observer_shadow_dirs(Pair{String,Any}[], want) == String[]
+        # sorted → the folder list the UI reports (and the removal order) is deterministic
+        @test Cecelia.observer_shadow_dirs(
+            Pair{String,Any}["/b" => stale_local, "/a" => stale_local], want) == ["/a", "/b"]
+
+        # `claude mcp remove -s local` acts on the process's CWD, so the cleanup must be able to say
+        # WHERE it runs — and the spawn wrapper must not drop that when it rewrites argv (it rebuilds
+        # the Cmd, which is exactly how a `dir` gets silently lost and the wrong scope edited)
+        @test Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u").exec[end] == "local"
+        @test Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u").dir == "/home/u"
+        @test isempty(Cecelia._build_mcp_remove_cmd(a).dir)                  # unchanged default
+        @test Cecelia._agent_spawn_cmd(
+            Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u")).dir == "/home/u"
+        # a dir that no longer exists is skipped, not attempted (Claude ignores its entry too)
+        @test Cecelia.remove_shadowing_observer_mcps(a, ["/no/such/dir/at/all"]) == (String[], String[])
 
         # the prompt carries the project + the discipline rules
         fp = Cecelia.observer_feedback_prompt("NRUBxU")

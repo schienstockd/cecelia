@@ -18,7 +18,7 @@ export const useObserverStore = defineStore('observer', () => {
   // Path of the MCP config Cecelia generates for the spawned agent — reused verbatim as the
   // `claude --mcp-config <path>` line the info panel offers if one-click setup fails.
   const mcpConfigPath = ref('')
-  // Is the user's OWN terminal set up? 'missing' | 'stale' | 'current', read from Claude Code's config
+  // Is the user's OWN terminal set up? 'missing' | 'stale' | 'shadowed' | 'current', from Claude's config
   // by the backend. Drives which button the lab-log toolbar shows (setup vs Chat to Claude), so it must
   // come from the real config — never from optimistic local state after a click.
   const terminalState = ref('')
@@ -81,6 +81,11 @@ export const useObserverStore = defineStore('observer', () => {
       // Trust the config read-back, not the exit code: `terminalState` is what the UI branches on.
       terminalState.value = res?.terminal?.state ?? terminalState.value
       if (res?.ok !== true) registerError.value = String(res?.error || 'Setup failed')
+      // A clean exit that still isn't 'current' means something we don't own blocked it — most often a
+      // per-folder entry we couldn't remove. Show the server's message; silence here is what made the
+      // button look broken while reporting success.
+      else if (terminalState.value && terminalState.value !== 'current')
+        registerError.value = String(res?.message || '')
     } catch {
       registerError.value = 'Setup failed — is Cecelia still running?'
     } finally { registering.value = false }

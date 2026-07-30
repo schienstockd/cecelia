@@ -52,7 +52,13 @@ export interface ObserverSession {
 
 /** Is the user's OWN terminal set up with the observer MCP? `state`: 'missing' (never registered),
  *  'stale' (registered but pointing at another interpreter/port — would fail silently), 'current'. */
-export interface ObserverTerminal { state: 'missing' | 'stale' | 'current'; ready: boolean }
+// 'shadowed' = registered correctly, but a per-folder (`local`-scope) entry overrides it in the dirs
+// named by `shadowedDirs` — so the user's terminal still has no tools. Not ready, same as 'stale'.
+export interface ObserverTerminal {
+  state: 'missing' | 'stale' | 'shadowed' | 'current'
+  ready: boolean
+  shadowedDirs?: string[]
+}
 
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
 export const observerApi = {

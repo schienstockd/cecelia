@@ -5,7 +5,7 @@
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { isAuthError, observerSetupReason, terminalCta } from '../utils/observerSetup'
+import { isAuthError, observerSetupReason, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
@@ -302,9 +302,7 @@ async function dismissEntry(entry: LabLogEntry) {
              assistant). See utils/observerSetup.ts terminalCta. -->
         <button v-if="terminalCtaMode !== 'chat'" class="ll-capture" :disabled="observer.registering"
                 @click="observer.registerMcp()"
-                v-tooltip.top="terminalCtaMode === 'resync'
-                  ? 'Your terminal\'s cecelia-observer points somewhere else — re-register it'
-                  : 'Register cecelia-observer in Claude Code so you can chat in a terminal'">
+                v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
           <i class="pi pi-download" />
           {{ observer.registering ? 'Setting up…'
              : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
