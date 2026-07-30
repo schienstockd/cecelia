@@ -18,12 +18,12 @@ defineEmits<{ (e: 'update:fps', v: number): void, (e: 'update:scale', v: number)
 <template>
   <div class="mo">
     <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
-    <input type="range" min="1" max="60" step="1" class="mo-range" :value="fps"
+    <input type="range" min="1" max="60" step="1" class="mo-range" :value="fps" v-tooltip.bottom="'Frames per second'"
            @input="$emit('update:fps', ($event.target as HTMLInputElement).valueAsNumber)" />
     <span class="mo-val cc-readout">{{ fps }}</span>
 
     <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
-    <input type="range" min="1" max="3" step="1" class="mo-range" :value="scale"
+    <input type="range" min="1" max="3" step="1" class="mo-range" :value="scale" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'"
            @input="$emit('update:scale', ($event.target as HTMLInputElement).valueAsNumber)" />
     <span class="mo-val cc-readout">{{ scale }}×</span>
   </div>

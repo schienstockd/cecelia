@@ -621,8 +621,10 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   selection reverts from the dimmed backdrop to normal pseudocolour/contour). It's never persisted,
   so there's no pop to delete. The manager's per-pop `pi-images` column toggles a pop's napari visibility
   (its `show` flag) and re-pushes via `store.refreshNapariPops` (silent); the Options box has a
-  **Napari dots** size slider (per-set `settings.get/setPointSize(setUid)`, re-pushes on release). The ViewerPanel
-  *Show populations* toggle re-pushes live on every `gating:popmap` while shown, so the napari
-  overlay tracks gate edits / pop add-remove as you gate. The transient selection pop is **not**
+  **Napari dots** size slider (per-set `settings.get/setPointSize(setUid)`, re-pushes on release). The
+  *Show populations* preference re-pushes live on every `gating:popmap` while on, so the napari overlay
+  tracks gate edits / pop add-remove as you gate — driven by `handleGatingChange` in
+  `composables/useNapariAutoShow`, which `App.vue` mounts app-level, so it works whether or not the
+  floating Viewer panel is open (it used to live in the panel, and silently did nothing when closed). The transient selection pop is **not**
   pushed back into napari (it would steal the active layer mid-draw). See `docs/NAPARI.md` and
   `docs/POPULATION.md`.

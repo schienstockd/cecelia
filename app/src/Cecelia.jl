@@ -1,7 +1,7 @@
 module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
-export init_cecelia!, cecelia_conf, config_dir, custom_toml_path
+export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_path, expand_user
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
@@ -214,7 +214,7 @@ export analysis_lineage, populations_summary, measure_summary, behaviour_summary
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix
-export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config, observer_mcp_spec,
+export ClaudeAgent, agent_available, agent_bin_path, run_observer_turn, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,

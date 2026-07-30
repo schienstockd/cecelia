@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
-  tooltipStrings, hintStrings, attrStrings, textStrings,
+  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -156,6 +156,93 @@ describe('isTitleCase', () => {
   })
 })
 
+describe('uncoveredControls', () => {
+  it('flags a settable control with no hover help', () => {
+    expect(uncoveredControls('<template><label>Bins<input type="number" /></label></template>'))
+      .toEqual([{ tag: 'input', line: 1 }])
+  })
+
+  it('counts a tooltip on the control itself', () => {
+    expect(uncoveredControls(`<template><select v-tooltip.left="'Palette'" /></template>`)).toEqual([])
+  })
+
+  it('counts a tooltip on an ANCESTOR — the row, not the input, usually carries it', () => {
+    // The pattern most of the app is written in. Checking the tag alone calls this a violation and
+    // over-reports by ~90%, which is enough noise to make the whole signal ignorable.
+    const src = `<template><label class="po-row" v-tooltip.left="'X tick angle'"><span>X angle</span>
+      <input type="range" /></label></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('does not let a closed ancestor keep covering its siblings', () => {
+    const src = `<template><div v-tooltip="'a'"><input /></div><select /></template>`
+    expect(uncoveredControls(src)).toEqual([{ tag: 'select', line: 1 }])
+  })
+
+  it('does not treat a void input as an open element that swallows what follows', () => {
+    // Without the VOID guard the unclosed `<input>` stays on the ancestor stack and every later
+    // control inherits its (absent) tooltip state — or worse, a tooltip it never had.
+    const src = `<template><input v-tooltip="'a'"><select /></template>`
+    expect(uncoveredControls(src)).toEqual([{ tag: 'select', line: 1 }])
+  })
+
+  it('does not accept a native title — only v-tooltip is coverage', () => {
+    // A `title=` renders as the browser's own unstyled tooltip and is invisible to the copy
+    // ratchets, so accepting it would let a control pass this check looking nothing like the app.
+    expect(uncoveredControls('<template><input title="Frames per second" /></template>'))
+      .toEqual([{ tag: 'input', line: 1 }])
+  })
+
+  it('ignores inputs a user sets no value on', () => {
+    expect(uncoveredControls('<template><input type="file" /><input type="hidden" /></template>'))
+      .toEqual([])
+  })
+
+  it('ignores a button with a caption — the caption is the help', () => {
+    expect(uncoveredControls('<template><button>Run</button></template>')).toEqual([])
+    expect(uncoveredControls('<template><button><i class="pi pi-play" /> Run</button></template>'))
+      .toEqual([])
+  })
+
+  it('flags an icon-only button — no caption, nothing to read', () => {
+    expect(uncoveredControls('<template><button><i class="pi pi-trash" /></button></template>'))
+      .toEqual([{ tag: 'button', line: 1 }])
+    expect(uncoveredControls(`<template><button v-tooltip="'Delete'"><i class="pi pi-trash" /></button></template>`))
+      .toEqual([])
+  })
+
+  it('treats an INTERPOLATED caption as a caption', () => {
+    // Stripping `{{ … }}` the way the copy extractors do is wrong here — they measure text width,
+    // this asks whether the user sees any words. Dropping it flagged four captioned buttons.
+    const src = `<template><button><span>{{ group.heading }}</span><i class="pi pi-chevron-down" /></button></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('does not treat an aria-label as a visible caption', () => {
+    // Read out by a screen reader, never shown on hover — so it is not this rule's coverage.
+    const src = '<template><button aria-label="Next tip"><i class="pi pi-chevron-right" /></button></template>'
+    expect(uncoveredControls(src)).toEqual([{ tag: 'button', line: 1 }])
+  })
+
+  it('skips the wrapper primitives own definitions', () => {
+    // `CcToggle.vue` holds the checkbox every toggle in the app renders through; its tooltip belongs
+    // at the call site, so counting the internal input reports a violation no caller can fix.
+    const src = '<template><input type="checkbox" /></template>'
+    expect(uncoveredControls(src, '/src/components/CcToggle.vue')).toEqual([])
+    expect(uncoveredControls(src, '/src/components/CropPanel.vue')).toHaveLength(1)
+  })
+
+  it('does not end a tag early on a > inside an attribute value', () => {
+    const src = `<template><div v-tooltip="'a'" @input="f(v => g(v))"><select /></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('reports the line the control is on', () => {
+    expect(uncoveredControls('<template>\n\n  <select />\n</template>'))
+      .toEqual([{ tag: 'select', line: 3 }])
+  })
+})
+
 // ── The ratchet: every rendered string in the app is inside budget ────────────────────────────────
 //
 // An exact allow-list, not a count — the `cssScenarios` lesson. A count-based baseline silently
@@ -261,5 +348,37 @@ describe('UI copy is written the house way (docs/UI.md → House style)', () => 
       }
     }
     expect(found).toEqual([])
+  })
+})
+
+// ── The other ratchet: every settable control HAS hover help ──────────────────────────────────────
+//
+// Length was policed; presence wasn't, and that is the half that actually bit — a panel would get
+// tooltips on six of its ten rows and nobody could see the four. `docs/UI.md` asks for
+// CellProfiler-style tip DENSITY, so this makes the gap visible the same way: an exact allow-list,
+// swept to zero first. See `uncoveredControls` for what counts as covered (ancestor tooltips do) and
+// why buttons are out of scope. The task-spec half — a param with no `tip` — is in
+// `app/test/runtests.jl`, same split as everything else here.
+//
+// Before adding an entry, try writing the tooltip. It is nearly always shorter than the argument for
+// skipping it, and one line under 90 characters is the whole bar.
+const ALLOWED_NO_TOOLTIP: string[] = []
+
+describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () => {
+  const sfcs = Object.entries(SFC)
+
+  it('found the sources it is meant to police', () => {
+    expect(sfcs.length).toBeGreaterThan(50)
+  })
+
+  it('no input, select, textarea or toggle is left without hover help', () => {
+    const bare: string[] = []
+    for (const [path, src] of sfcs) {
+      for (const c of uncoveredControls(src, path)) {
+        const at = `${path}:${c.line} <${c.tag}>`
+        if (!ALLOWED_NO_TOOLTIP.includes(at)) bare.push(at)
+      }
+    }
+    expect(bare).toEqual([])
   })
 })

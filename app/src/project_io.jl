@@ -132,11 +132,37 @@ end
 _tar_available()::Bool = Sys.which("tar") !== nothing
 
 # Run one `tar` (pack or unpack) as a tracked subprocess, so cancel_job! can kill it. Returns clean exit.
-function _run_tar(cmd::Cmd, task_id::AbstractString)::Bool
-    proc = run(pipeline(cmd; stdout = devnull, stderr = devnull); wait = false)
+# `on_err` receives tar's own stderr when it fails. Previously both streams went to `devnull`, so a
+# failed pack reported only "[ERROR] Export failed." with no cause — which is exactly the position we
+# were in when export turned out to be broken on Windows and the log said nothing about why. Success
+# stays silent (tar is chatty and the caller logs its own progress).
+# Tar command builders — PURE, so the one property that matters can be asserted on any host: the
+# `-f` argument is a BARE FILENAME and the process cwd carries the directory.
+#
+# Why that property: GNU tar reads an archive path as `host:path` when a colon appears before any
+# separator, and tries to open a REMOTE archive. Every Windows absolute path starts `D:\...`, so
+# `-f D:\a\...\x.tar` becomes a connection attempt to host `D` — while a unix absolute path can
+# never trigger it (the leading `/` precedes the colon), which is why this only ever failed on Windows
+# and cannot be reproduced on Linux. `-C` is NOT parsed that way, so it stays absolute.
+#
+# Windows' own System32\tar.exe is bsdtar and doesn't do remote at all; but under `shell: bash` —
+# CI, and any Git Bash — `tar` resolves to Git-for-Windows' GNU tar.
+_tar_pack_cmd(out_tar::AbstractString, sdir::AbstractString)::Cmd =
+    Cmd(`tar -cf $(basename(out_tar)) -C $(dirname(sdir)) $(basename(sdir))`; dir = dirname(out_tar))
+_tar_unpack_cmd(tar_path::AbstractString)::Cmd =
+    Cmd(`tar -xf $(basename(tar_path))`; dir = dirname(tar_path))   # extracts into the cwd
+
+function _run_tar(cmd::Cmd, task_id::AbstractString; on_err::Function = _ -> nothing)::Bool
+    err  = IOBuffer()
+    proc = run(pipeline(cmd; stdout = devnull, stderr = err); wait = false)
     track_job!(task_id, proc)
     wait(proc)
-    proc.exitcode == 0 && proc.termsignal == 0   # termsignal too: libuv reports 0 exitcode on kill
+    ok = proc.exitcode == 0 && proc.termsignal == 0   # termsignal too: libuv reports 0 exitcode on kill
+    if !ok
+        msg = strip(String(take!(err)))
+        isempty(msg) || on_err(msg)
+    end
+    ok
 end
 
 # Pack/unpack a set of units in parallel, bounded by `concurrency`, reporting progress + honouring
@@ -211,7 +237,8 @@ function export_project(proj_uid::AbstractString;
         status = _parallel_stores(stores, task_id, concurrency, on_log, on_progress) do (sdir, srel, sname)
             out_tar = joinpath(tmp, srel, sname * PACKED_STORE_EXT)
             mkpath(dirname(out_tar))
-            ok = _run_tar(`tar -cf $out_tar -C $(dirname(sdir)) $(basename(sdir))`, task_id)
+            ok = _run_tar(_tar_pack_cmd(out_tar, sdir), task_id;
+                          on_err = m -> on_log("  [ERROR] tar pack $(joinpath(srel, sname)): $m"))
             ok && on_log("  packed $(joinpath(srel, sname))")
             ok
         end
@@ -311,7 +338,8 @@ function import_project(bundle::AbstractString;
             if !isfile(tar_path)
                 on_log("  !! missing packed store: $rel"); return false
             end
-            ok = _run_tar(`tar -xf $tar_path -C $(dirname(tar_path))`, task_id)
+            ok = _run_tar(_tar_unpack_cmd(tar_path), task_id;
+                          on_err = m -> on_log("  [ERROR] tar unpack $(basename(tar_path)): $m"))
             ok && (rm(tar_path; force = true); on_log("  unpacked $(rel[1:end-length(PACKED_STORE_EXT)])"))
             ok
         end

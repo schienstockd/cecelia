@@ -213,10 +213,12 @@ tracks, no per-pop colour): categorical → per-level pop colours, continuous �
 a track cluster shows the colour you gave it even while the plain `_tracked` layer is shaded by a measure,
 and the strip's populations legend matches the ribbons. (Distinguished by `pop.path` ending `_tracked`.)
 
-**One overlay request-builder.** `utils/napariOverlays` (`pushTracks`/`pushPopulations`/`pushColourLabels`)
-is the single place that builds those three requests; the interactive ViewerPanel and the non-interactive
-callers (zoom-to-source, the strip) both go through it, so there's one request shape per endpoint, not
-two divergent inline copies (the ViewerPanel wrappers add only their legend-harvest on the reply).
+**One overlay request-builder.** `utils/napariOverlays`
+(`pushLabels`/`pushTracks`/`pushPopulations`/`pushColourLabels`) is the single place that builds those
+requests; the interactive ViewerPanel and the non-interactive callers (zoom-to-source, the strip) both go
+through it, so there's one request shape per endpoint, not divergent inline copies (the ViewerPanel
+wrappers add only their legend-harvest on the reply). `pushLabels` carries cell labels and branch
+(skeleton) labels in ONE request — the endpoint's single `show` flag governs both.
 
 ---
 
@@ -396,13 +398,65 @@ They are reset on server restart (the `Ref`s are re-initialised). If napari is c
 
 ---
 
+## Restoring overlays on open
+
+Every image carries **remembered overlay toggles** — per-image label / branch / track-ribbon
+visibility, per-set population, colour-by and point size (see *Viewer preference scoping*). When an
+image opens, those have to be turned back into actual layers, because `POST /api/napari/open` only
+recreates the **channel** layers.
+
+That restore is `pushAllOverlays()` in **`composables/useNapariAutoShow.ts`**, driven by a
+`napari:opened` subscriber that `App.vue` mounts **once, app-level**. The same composable owns the
+`gating:popmap` subscriber (`handleGatingChange` — re-push the overlay when a gate edit / pop
+add-remove-rename / cell selection changes the population tree) and the ONE implementation of each
+overlay push (`pushTracksNow`, `pushPopulationsNow`, `pushColourLabelsNow`) that the ViewerPanel
+toggles delegate to. Three rules hold it together, all of which have been broken in production:
+
+1. **It must not live in a component that can unmount.** It used to live in `ViewerPanel.vue` — which
+   `App.vue` mounts behind `v-if="settings.viewerPanelOpen"`, and that floating panel is **off by
+   default**. With it closed, nothing was subscribed, so opening an image restored *no* overlays while
+   the toggles (persisted in `localStorage`, independent of the panel) still read ON. The symptom is
+   distinctive: labels/tracks/branches appear only after the user flips each toggle off and on. The
+   `gating:popmap` handler had the same defect — with the panel closed, editing a gate left the napari
+   overlay stale.
+2. **The pushes must be sequential.** The bridge drains **one command at a time**
+   (`napari_bridge.drain_queue`) and its layer reconciliation is not push-order-independent: fired
+   concurrently, a later push races an earlier one and some layers stick while others silently never
+   appear. `await` each step — never `Promise.all` (same reason `napariOverlays.restoreOverlays` is
+   sequential).
+
+3. **Read `settings`, never a component's refs.** These run off WS events, so no component watcher is
+   guaranteed to have run first. Trusting `ViewerPanel`'s refs is what previously pushed labels against
+   a stale/empty visibility map and skipped branches entirely. The panel persists every toggle to
+   `settings` *before* pushing, which is exactly why its toggles can delegate to the shared pushes.
+
+Consequences to preserve:
+- **One owner.** No open path sends overlay payloads in the `/api/napari/open` body any more (the
+  route still accepts `showLabels`/`allLabels`/`showBranchLabels`/`allBranchLabels` for REPL/API use).
+  Doing both loaded the same label pyramid twice and put two overlay pushes in flight at once.
+- **Opt-out for captured views.** Analysis-board zoom-to-source reproduces a *captured* frame rather
+  than the remembered toggles, so it claims that image's next open via `suppressAutoShowOnce(imageUid)`
+  (and `releaseAutoShowSuppression(imageUid)` if the open request fails). Claims are held in a **set
+  keyed by image uid**, not one slot: two zoom-to-source clicks in quick succession both have opens in
+  flight, and a single slot would drop the first claim — that image would then get the remembered
+  overlays pushed over its captured frame.
+- **One shared colour-by legend.** `colourLegend` / `colourLegendLabels` are module-level refs here,
+  not ViewerPanel-local, because the pushes that harvest them now run app-level: a gate edit with the
+  panel closed must still leave the legend correct for when it opens.
+- The decisions are pure and unit-tested in `utils/napariAutoShow.ts`
+  (`buildAutoShowPlan`, `activeValueName`, `createClaimRegistry`, `CELL_POP_TYPES`); the composable
+  only orchestrates.
+
+---
+
 ## Reloading: data vs image
 
 **Reloading a shown image refreshes DATA only — never the image pyramid — unless the user ticks
 "reset".** Data reload = re-push the overlays via the existing endpoints (`show-labels`,
 `show-populations`, `show-tracks`, `colour-labels`), each of which re-reads from disk and **replaces its
 layer in place** (`_remove_layer` then add). The pyramid + camera stay. This is fully frontend-orchestrated
-(`ViewerPanel.reloadViewer()` → `pushAllOverlays()`); `POST /api/napari/open` is only for a *full* reopen.
+(`pushAllOverlays()` in `composables/useNapariAutoShow`); `POST /api/napari/open` is only for a *full*
+reopen — and it deliberately carries NO overlay payload (see *Restoring overlays on open* below).
 
 Who triggers what:
 - **Image-table eye** on the already-open image → `project.requestNapariReload()` → `ViewerPanel` reloads
@@ -578,7 +632,9 @@ matching the sidebar module nav — each sending `popType` + `show` (`show:false
 clears that pop type's layers) and a **blank valueName so the server resolves the ACTIVE segmentation**
 (where gating/clustering live; `labelNames[0]` was wrong and left clust pops unresolved). The
 bridge namespaces point layers by `(popType)`, so flow and clust coexist. State is per-pop-type,
-**remembered** (`settings.popVisible`/`setPopVisible`), and auto-applied on open (`onNapariOpened`).
+**remembered** (`settings.popVisible`/`setPopVisible`), and auto-applied on open (see *Restoring
+overlays on open*). Which pop types exist is `CELL_POP_TYPES` in `utils/napariAutoShow` — ONE list, so
+the toggle row and the on-open restore can never disagree.
 `track`/`trackclust` are **not** here (track-grained → membership is track_ids, not cell labels);
 their viz is ribbons via `/api/napari/show-tracks`. The **population manager** has a per-pop visibility column
 (`pi-images`, flips the pop's persisted `show` flag via `/api/gating/pop/update` then re-pushes

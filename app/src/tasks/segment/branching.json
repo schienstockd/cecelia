@@ -8,74 +8,74 @@
   "params": [
     {
       "key": "valueName",
-      "tip": "Which segmentation to skeletonise",
       "label": "Segmentation",
       "type": "valueNameSelection",
       "field": "labels",
-      "default": "default"
+      "default": "default",
+      "tip": "Select which label set to skeletonise"
     },
     {
       "key": "outputValueName",
-      "tip": "Names the branch table and skeleton labels",
       "label": "Output name",
       "type": "text",
-      "default": "default"
+      "default": "default",
+      "tip": "Name for the output branch label set"
     },
     {
       "key": "refPops",
-      "tip": "Skeletonise only these cells, not the whole segmentation",
       "label": "Restrict to population",
       "type": "popSelection",
       "accepts": ["live", "clust", "region"],
-      "default": "NONE"
+      "default": "NONE",
+      "tip": "Skeletonise only these cells; NONE = the whole segmentation"
     },
     {
       "key": "preDilationSize",
-      "tip": "Closes gaps before skeletonising; too high merges separate fibres",
       "label": "Pre-dilation",
       "type": "int",
       "min": 0,
       "max": 10,
       "step": 1,
-      "default": 2
+      "default": 2,
+      "tip": "Close gaps by this many pixels before skeletonising (0 = off)"
     },
     {
       "key": "postDilationSize",
-      "tip": "Thickens the skeleton for visibility only; measurements are unaffected",
       "label": "Post-dilation",
       "type": "int",
       "min": 0,
       "max": 10,
       "step": 1,
-      "default": 2
+      "default": 2,
+      "tip": "Thicken the saved skeleton for visibility; measures are unaffected"
     },
     {
       "key": "useBorders",
-      "tip": "Skeletonise label outlines instead of their interiors",
       "label": "Use label boundaries",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Skeletonise the label outlines instead of their interiors"
     },
     {
       "key": "flattenBranching",
-      "tip": "Max-project Z first, giving one 2D network per timepoint",
       "label": "Flatten Z",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Project the stack to one plane and skeletonise in 2D (3D only)"
     },
     {
       "key": "integrateTime",
+      "tip": "One network for the whole movie",
       "label": "Integrate time",
       "type": "bool",
-      "tip": "One network for the whole movie",
       "default": false
     },
     {
       "key": "integrateTimeMode",
+      "tip": "Applies to the raw channel; labels always merge",
       "label": "Integrate mode",
       "type": "select",
       "default": "max",
-      "tip": "Applies to the raw channel; labels always merge",
       "options": [
         { "value": "max", "label": "max" },
         { "value": "avg", "label": "avg" }
@@ -83,23 +83,23 @@
     },
     {
       "key": "calcAnisotropy",
-      "tip": "Also compute the fibre-orientation field and per-image anisotropy",
       "label": "Anisotropy",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Also compute the fibre-orientation field and per-image anisotropy"
     },
     {
       "key": "calcFlattened",
-      "tip": "Measure orientation on a Z-MIP while keeping the skeleton 3D",
       "label": "Anisotropy on Z-MIP",
       "type": "bool",
-      "default": false
+      "default": false,
+      "tip": "Measure alignment on the Z projection instead of the full stack"
     },
     {
       "key": "anisotropySource",
+      "tip": "Channel survives a bad segmentation; skeleton is smoother",
       "label": "Anisotropy from",
       "type": "select",
-      "tip": "Channel survives a bad segmentation; skeleton is smoother",
       "default": "skeleton",
       "options": [
         { "value": "skeleton", "label": "skeleton" },
@@ -109,31 +109,31 @@
     },
     {
       "key": "fibreChannels",
-      "tip": "Only used when Anisotropy from = channel",
       "label": "Fibre channels",
       "type": "channelSelection",
       "multiple": true,
-      "default": []
+      "default": [],
+      "tip": "Only used when Anisotropy from = channel"
     },
     {
       "key": "structureTensorSigma",
-      "tip": "Smoothing before orientation is measured; too low gives a noisy field",
-      "label": "Integration scale (px)",
+      "label": "Structure-tensor sigma (px)",
       "type": "float",
       "min": 0.5,
       "max": 50.0,
       "step": 0.5,
-      "default": 12.0
+      "default": 12.0,
+      "tip": "Smoothing before alignment; raise it for thicker or noisier fibres"
     },
     {
       "key": "anisotropyBoxSize",
-      "tip": "Spacing of the orientation grid; smaller is finer but a bigger file",
-      "label": "Grid box (px)",
+      "label": "Anisotropy box size (px)",
       "type": "int",
       "min": 5,
       "max": 200,
       "step": 1,
-      "default": 15
+      "default": 15,
+      "tip": "Neighbourhood each branch's alignment is averaged over"
     }
   ]
 }

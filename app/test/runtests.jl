@@ -6,7 +6,22 @@ import DataFrames: DataFrame, nrow   # only the symbols the tests construct/meas
 
 # ── Smoke tests — no API, no WebSocket, no Vue ────────────────────────────────
 # Run from the app/ directory:  julia --project test/runtests.jl
-# Requires CECELIA_DEV_DIR to point at a config with a valid projects_dir.
+
+# HERMETIC BY DEFAULT: unless `CECELIA_DEV_DIR` is already set, point config at a throwaway dir with a
+# throwaway projects dir. The suite CREATES projects, and with no `custom.toml` anywhere `projects_dir()`
+# is the shipped placeholder `/path/to/projects` — so `create_project!` did `mkdir("/path")` and ~30
+# testsets errored with EACCES/EROFS. That is invisible on a dev machine (a real `.env` → `custom.toml`
+# makes it pass) and is why the suite could not run in CI at all.
+#
+# Set `CECELIA_DEV_DIR` yourself to run against a specific config instead. Julia deletes both temp dirs
+# at exit. Paths go in TOML *literal* strings (single quotes) so Windows backslashes are not escapes.
+if !haskey(ENV, "CECELIA_DEV_DIR")
+    let cfg = mktempdir(), proj = mktempdir()
+        write(joinpath(cfg, "custom.toml"), "[dirs]\nprojects = '" * proj * "'\n")
+        ENV["CECELIA_DEV_DIR"] = cfg
+        @info "Tests: hermetic config" config_dir=cfg projects_dir=proj
+    end
+end
 
 init_cecelia!()
 
@@ -15,7 +30,7 @@ init_cecelia!()
 # of the deletable dev projects dir (`projects_dir()`). Override with CECELIA_TEST_DATA.
 # (@__DIR__ = app/test → ../../.. = workspace root.)  See test-data/README.md.
 test_projects_dir() = get(ENV, "CECELIA_TEST_DATA",
-    normpath(joinpath(@__DIR__, "..", "..", "..", "test-data", "projects")))
+    normpath(joinpath(@__DIR__, "..", "..", "test-data", "projects")))   # <repo>/test-data, IN git
 
 """Absolute path to a fixture under test-data/projects (no existence check)."""
 fixture_path(relparts...) = joinpath(test_projects_dir(), relparts...)
@@ -38,7 +53,8 @@ function have_fixture(path::AbstractString)::Bool
         ╚══════════════════════════════════════════════════════════════════════════╝
         Expected: $path
         Tests that assert against real data are skipped without it, leaving that path
-        unverified. Restore test-data/ (see test-data/README.md) or set CECELIA_TEST_DATA
+        unverified. Fixtures are committed under <repo>/test-data/, so this normally means a
+        partial checkout — restore it with `git checkout -- test-data` or set CECELIA_TEST_DATA
         to a projects dir containing the file above."""
     end
     false
@@ -63,6 +79,34 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test napari_discrete_gpu() isa Bool   # [napari].discreteGpu, default false
     end
 
+    # ── Fixture size ratchet ─────────────────────────────────────────────────────
+    # Fixtures are committed now, and `.h5ad` is binary: git stores a WHOLE new copy per update and
+    # history can't be pruned without a rewrite. "Keep fixtures small" was already the rule but nothing
+    # enforced it, and an in-repo dir is a standing invitation to drop a GB OME-ZARR in. This is the
+    # enforcement — same shape as the UI-copy ratchets: an exact cap, not a vibe.
+    #
+    # 1 MB leaves ~3x headroom over today's largest (B.h5ad, 332 KB). If a fixture genuinely needs more,
+    # that is a design conversation (regenerate smaller / synthesise / gate the test differently), not a
+    # number to nudge up.
+    @testset "fixtures stay small" begin
+        root = normpath(joinpath(@__DIR__, "..", "..", "test-data"))
+        CAP  = 1024 * 1024
+        if isdir(root)
+            oversized = Tuple{String,Int}[]
+            total = 0
+            for (dir, _, files) in walkdir(root), f in files
+                n = filesize(joinpath(dir, f)); total += n
+                n > CAP && push!(oversized, (relpath(joinpath(dir, f), root), n))
+            end
+            @test isempty(oversized)          # names the offender if it fires
+            isempty(oversized) || @info "oversized fixtures" oversized
+            # a whole-tree bound too: many medium files are as bad as one large one
+            @test total <= 8 * CAP
+        else
+            @test_skip "test-data/ not present"
+        end
+    end
+
     # ── Config resolver (dev↔prod coordination) ─────────────────────────────────
     # The single resolver both init_cecelia! (reader) and set_projects_dir! (writer) share.
     # Order: explicit arg → CECELIA_DEV_DIR env → .env → ~/.cecelia. See docs/todo/ONBOARDING_PLAN.md.
@@ -71,12 +115,143 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._resolve_config_dir("/x", "/y", "/z") == "/x"       # explicit wins
         @test Cecelia._resolve_config_dir(nothing, "/y", "/z") == "/y"    # env beats .env
         @test Cecelia._resolve_config_dir(nothing, nothing, "/z") == "/z" # .env beats default
+        # `expand_user`, NOT Base.expanduser: the latter is a no-op on Windows, so asserting against
+        # it would compare two unexpanded strings and pass vacuously there.
         @test Cecelia._resolve_config_dir(nothing, nothing, nothing) ==   # installed-app default
-              expanduser("~/.cecelia")
-        @test Cecelia._resolve_config_dir("~/foo", nothing, nothing) == expanduser("~/foo")
+              expand_user("~/.cecelia")
+        @test Cecelia._resolve_config_dir("~/foo", nothing, nothing) == expand_user("~/foo")
+        # …and the resolved default must be a real absolute path on EVERY platform — a surviving `~`
+        # is the Windows bug that produced `~/.cecelia\observer-mcp.json` in CI.
+        @test isabspath(Cecelia._resolve_config_dir(nothing, nothing, nothing))
+        @test !startswith(Cecelia._resolve_config_dir(nothing, nothing, nothing), "~")
         # public composition
         @test config_dir("/tmp/ceceliatest") == "/tmp/ceceliatest"
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
+    end
+
+    # ── python_bin_path: resolved, not a bare name ───────────────────────────────
+    # It used to return the config default `"python3"` verbatim. That works for anything JULIA spawns
+    # (pixi run puts the env first on PATH) but not for the string the observer registers into the
+    # user's OWN Claude Code config: launched from a plain shell, bare `python3` is the SYSTEM python,
+    # which has neither `mcp` nor `websockets` — so the observer's tools failed in exactly the sessions
+    # one-click setup exists to enable. And on Windows `python3` frequently doesn't exist at all.
+    @testset "python_bin_path resolution" begin
+        # candidate order — `iswin` explicit so the Windows list is asserted from any host
+        @test Cecelia._python_bin_candidates("", false) == ["python3", "python"]
+        @test Cecelia._python_bin_candidates("", true)  == ["python", "python3"]   # conda ships python.exe
+        # the SHIPPED default is not a deliberate choice, so it gets the platform fallbacks
+        @test Cecelia._python_bin_candidates(Cecelia._PYTHON_BIN_DEFAULT, true) == ["python", "python3"]
+        @test Cecelia._python_bin_candidates("  python3  ", false) == ["python3", "python"]  # trimmed
+        # a DELIBERATELY configured name is the only candidate — resolve it, never substitute another
+        # interpreter (that would run tasks under something lacking the analysis deps, silently)
+        @test Cecelia._python_bin_candidates("mypy-thon", false) == ["mypy-thon"]
+        @test Cecelia._python_bin_candidates("python", false) == ["python"]
+        @test Cecelia._PYTHON_BIN_DEFAULT == "python3"          # must match app/config.toml [dirs]
+
+        # the live resolver: with no explicit path configured it must return something ABSOLUTE that
+        # exists — that is the whole point (the old bare name failed `isfile`).
+        conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+        had = haskey(dirs, "python"); old = get(dirs, "python", nothing)
+        try
+            dirs["python"] = "python3"          # the shipped default → must resolve, not pass through
+            let p = python_bin_path()
+                @test isabspath(p)
+                @test isfile(p)
+            end
+            # an explicitly configured PATH is honoured verbatim — the user named an exact interpreter
+            dirs["python"] = "/opt/custom/bin/python3.11"
+            @test python_bin_path() == "/opt/custom/bin/python3.11"
+            # …including through a leading ~
+            dirs["python"] = joinpath("~", "venv", "bin", "python")
+            @test python_bin_path() == joinpath(homedir(), "venv", "bin", "python")
+            # an unresolvable bare name degrades to itself rather than to nothing
+            dirs["python"] = "cecelia-no-such-interpreter-42"
+            @test python_bin_path() == "cecelia-no-such-interpreter-42"
+        finally
+            had ? (dirs["python"] = old) : delete!(dirs, "python")
+        end
+    end
+
+    # ── expand_user: portable leading-~ expansion ────────────────────────────────
+    # Base.expanduser is documented Unix-only and silently returns the path unchanged on Windows, so
+    # every stored `~`-prefixed path (custom.toml dirs, .env CECELIA_DEV_DIR) went through unexpanded
+    # there. These assertions hold on all three platforms.
+    @testset "expand_user" begin
+        @test expand_user("~") == homedir()
+        @test expand_user("~/foo") == joinpath(homedir(), "foo")
+        @test expand_user("~/foo/bar") == joinpath(homedir(), "foo", "bar")
+        # never leaves a tilde behind
+        @test !startswith(expand_user("~/foo"), "~")
+        # absolute + relative paths pass through untouched
+        @test expand_user("/abs/path") == "/abs/path"
+        @test expand_user("relative/path") == "relative/path"
+        @test expand_user("") == ""
+        # a tilde that isn't a leading path component is a legitimate filename character
+        @test expand_user("/tmp/a~b") == "/tmp/a~b"
+        @test expand_user("~notauser/foo") == "~notauser/foo"
+        # Windows accepts either separator after the tilde
+        if Sys.iswindows()
+            @test expand_user("~\\foo") == joinpath(homedir(), "foo")
+            @test expand_user("~\\foo\\bar") == joinpath(homedir(), "foo", "bar")
+            # The result must be a CANONICAL path — no mixed separators. Pasting the remainder on
+            # verbatim gave `C:\Users\x\foo/bar`, which Windows tolerates but which makes every path
+            # comparison unreliable (and this is what CI caught first time it ran on Windows).
+            @test !occursin('/', expand_user("~/foo/bar"))
+        end
+        # collapsing a doubled separator is fine; losing a component is not
+        @test expand_user("~//foo") == joinpath(homedir(), "foo")
+        @test splitpath(expand_user("~/a/b/c"))[end-2:end] == ["a", "b", "c"]
+    end
+
+    # ── ensure_config_dir: safe to WRITE into ────────────────────────────────────
+    # config_dir() is a pure path computation, so on a machine that has never run the setup wizard
+    # the directory does not exist and `open(joinpath(config_dir(), …), "w")` throws. That broke CI
+    # on all three platforms when the observer began writing its MCP config on every status call.
+    @testset "ensure_config_dir" begin
+        base = mktempdir()
+        target = joinpath(base, "never-created")
+        @test !isdir(target)
+        @test ensure_config_dir(target) == target
+        @test isdir(target)                              # created
+        @test ensure_config_dir(target) == target        # idempotent on an existing dir
+        @test isdir(target)
+        # and a file can actually be written into it — the thing the observer needs
+        nested = joinpath(base, "a", "b", "c")           # several levels missing
+        ensure_config_dir(nested)
+        write(joinpath(nested, "observer-mcp.json"), "{}")
+        @test isfile(joinpath(nested, "observer-mcp.json"))
+    end
+
+    # ── Release-bundle integrity ─────────────────────────────────────────────────
+    # `/api/update/apply` hands the downloaded payload to the launcher, which overwrites the app
+    # with it on the next restart — so a truncated or swapped asset matters, and HTTPS says nothing
+    # about either. These back the `.sha256` published beside the bundle by `release.yml`.
+    @testset "_file_sha256 / _sha256_matches" begin
+        mktempdir() do d
+            f = joinpath(d, "cecelia.tar.gz")
+            write(f, "some bundle bytes")
+            h = Cecelia._file_sha256(f)
+
+            @test occursin(r"^[0-9a-f]{64}$", h)                         # lowercase hex, 64 chars
+            @test h == Cecelia._file_sha256(f)                           # stable
+            @test Cecelia._sha256_matches(f, "$h  cecelia.tar.gz")       # GNU `sha256sum` form
+            @test Cecelia._sha256_matches(f, h)                          # bare hash
+            @test Cecelia._sha256_matches(f, "$h  cecelia.tar.gz\n")     # trailing newline
+            @test Cecelia._sha256_matches(f, uppercase(h))               # case-insensitive
+
+            # Every not-a-match must be FALSE, never an exception — the caller decides whether a
+            # missing/broken digest is fatal (it is verify-if-present, so it isn't).
+            @test !Cecelia._sha256_matches(f, "0"^64)                    # wrong digest
+            @test !Cecelia._sha256_matches(f, "")                        # empty file
+            @test !Cecelia._sha256_matches(f, "   \n ")                  # whitespace only
+            @test !Cecelia._sha256_matches(f, "<!DOCTYPE html>")         # an error page, not a digest
+            @test !Cecelia._sha256_matches(f, h[1:40])                   # truncated
+            @test !Cecelia._sha256_matches(f, h * "ff")                  # over-long
+
+            # A changed byte must change the verdict — the whole point.
+            write(f, "some bundle bytez")
+            @test !Cecelia._sha256_matches(f, "$h  cecelia.tar.gz")
+        end
     end
 
     # ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
@@ -310,6 +485,49 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
               "{\"command\":\"/old/python\"}"
         @test Cecelia.OBSERVER_MCP_NAME == "cecelia-observer"   # the name users see in `claude mcp list`
 
+        # ── Windows CLI resolution + spawn wrapping ──────────────────────────────────────────
+        # The observer was invisible on Windows: `Sys.which` only tries the bare name plus `.exe`/
+        # `.com` (base/sysinfo.jl), never `.cmd`/`.bat`, so an npm-installed `claude.cmd` was never
+        # found → available:false → "Set up my terminal" told users WITH Claude Code to install it.
+        # And a `.cmd` cannot be spawned directly — CreateProcess refuses batch files.
+        # These helpers take `iswin` explicitly so BOTH platforms' behaviour is asserted from any
+        # host — the reason this shipped broken is that nobody could exercise the Windows path.
+        @test Cecelia._agent_bin_candidates("claude", false) == ["claude"]        # unix: as given
+        @test Cecelia._agent_bin_candidates("claude", true) ==
+              ["claude", "claude.cmd", "claude.bat"]                             # windows: + batch shims
+        # an explicit extension is Sys.which's job already — don't append to it
+        @test Cecelia._agent_bin_candidates("claude.exe", true) == ["claude.exe"]
+        @test Cecelia._agent_bin_candidates("claude.cmd", true) == ["claude.cmd"]
+
+        # only batch files need the shell, and only on Windows
+        @test Cecelia._needs_cmd_shell("C:/n/claude.cmd", true)
+        @test Cecelia._needs_cmd_shell("C:/n/claude.BAT", true)                  # extension case-insensitive
+        @test !Cecelia._needs_cmd_shell("C:/n/claude.exe", true)
+        @test !Cecelia._needs_cmd_shell("/usr/bin/claude", false)
+        @test !Cecelia._needs_cmd_shell("/usr/bin/claude.cmd", false)            # never on unix
+
+        # argv rewriting: argv[1] becomes the resolved path, and a batch file gains `cmd /c`
+        logical = ["claude", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "/usr/bin/claude", false) ==
+              ["/usr/bin/claude", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "C:/npm/claude.cmd", true) ==
+              ["cmd", "/c", "C:/npm/claude.cmd", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        @test Cecelia._agent_spawn_argv(logical, "C:/p/claude.exe", true) ==
+              ["C:/p/claude.exe", "mcp", "add-json", "cecelia-observer", "{}", "-s", "user"]
+        # unresolvable → argv untouched, so the spawn fails naming what the user configured
+        @test Cecelia._agent_spawn_argv(logical, nothing, true) == logical
+        @test Cecelia._agent_spawn_argv(String[], nothing, true) == String[]
+        # the spec argument must survive rewriting verbatim — it is the whole payload
+        @test Cecelia._agent_spawn_argv(logical, "C:/npm/claude.cmd", true)[7] == "{}"
+
+        # live resolver: an absolute path to a real executable resolves to itself; nonsense is nothing.
+        # (Uses this Julia's own binary — no assumption about what is on PATH.)
+        let jl = joinpath(Sys.BINDIR, Sys.iswindows() ? "julia.exe" : "julia")
+            isfile(jl) && @test Cecelia.agent_bin_path(jl) == jl
+        end
+        @test Cecelia.agent_bin_path("") === nothing
+        @test Cecelia.agent_bin_path("cecelia-definitely-no-such-binary-42") === nothing
+
         # Is the user's own terminal set up? Drives which button the lab-log toolbar shows, so the
         # three states must be exact. A stale entry (another checkout's python, or no/!matching
         # CECELIA_API_URL) is NOT "set up" — it fails silently in the user's session.
@@ -483,7 +701,12 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         p = Cecelia.repl_doc_path()
         if isfile(p)
             committed = read(p, String)
-            @test committed == Cecelia.render_repl_doc(committed)
+            # Compare line-ending agnostically: this is a CONTENT drift-guard, not a byte-exactness
+            # check. On Windows git checks the file out with CRLF while `repl_api_section()` emits LF,
+            # so the splice mismatched on every line and the test failed for a reason that has nothing
+            # to do with docstring drift.
+            _lf(s) = replace(s, "\r\n" => "\n")
+            @test _lf(committed) == _lf(Cecelia.render_repl_doc(committed))
             @test occursin(Cecelia.REPL_DOC_BEGIN, committed)
         else
             @test_skip "docs/REPL.md not found at $p"
@@ -3875,7 +4098,10 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     @testset "branch pop_type wiring" begin
         # POP_MAP_SUFFIX resolves the gating file suffix.
         @test Cecelia.POP_MAP_SUFFIX["branch"] == BRANCH_PROPS_SUFFIX
-        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"), "gating/stroma__branch.json")
+        # build the expected tail with joinpath — a literal "gating/..." fails on Windows, where the
+        # path is "\\gating\\stroma__branch.json" (the product is fine; the assertion wasn't portable)
+        @test endswith(gating_path("/tmp", "stroma"; pop_type="branch"),
+                       joinpath("gating", "stroma__branch.json"))
 
         # ACCEPT_TOKENS + validators.
         @test "branch" in Cecelia.ACCEPT_TOKENS
@@ -6338,6 +6564,72 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    # The tar invocation must never hand a Windows drive letter to `-f`. GNU tar reads an archive
+    # path as `host:path` when a colon precedes any separator, so `-f D:\a\...\x.tar` becomes a
+    # connection attempt to host `D` and the pack silently produces nothing — which is how `.ccbundle`
+    # export (the backup mechanism) came to be broken on Windows while every unix path was fine: a unix
+    # absolute path can NEVER trigger it, because the leading `/` comes before the colon.
+    #
+    # That asymmetry is exactly why this needs a PROPERTY test rather than a behaviour test. Running
+    # tar here would pass on unix no matter what the code does — a test that cannot fail. So assert the
+    # shape of the command instead: `-f` takes a bare filename, the directory rides on the cwd. Both
+    # assertions fail against the old absolute-`-f` form on every platform.
+    @testset "tar commands keep drive letters out of -f" begin
+        pack = Cecelia._tar_pack_cmd(joinpath("D:", "a", "out", "store.zarr.tar"),
+                                     joinpath("D:", "proj", "0", "img", "store.zarr"))
+        # the flag is the combined `-cf`, so the archive is the token after it
+        fidx = findfirst(==("-cf"), pack.exec)
+        @test fidx !== nothing
+        farg = pack.exec[fidx + 1]
+        @test farg == "store.zarr.tar"                      # bare filename…
+        @test !occursin(':', farg)                          # …so no drive letter can reach tar
+        @test !occursin('/', farg) && !occursin('\\', farg)
+        @test pack.dir == joinpath("D:", "a", "out")        # the directory rides on the cwd instead
+        # -C is NOT subject to the host:path parse, so it stays absolute
+        cidx = findfirst(==("-C"), pack.exec)
+        @test cidx !== nothing && pack.exec[cidx + 1] == joinpath("D:", "proj", "0", "img")
+        @test pack.exec[end] == "store.zarr"                # the member, relative to -C
+
+        unpack = Cecelia._tar_unpack_cmd(joinpath("D:", "a", "bundle", "0", "img", "store.zarr.tar"))
+        uidx = findfirst(==("-xf"), unpack.exec)
+        @test uidx !== nothing && unpack.exec[uidx + 1] == "store.zarr.tar"
+        @test !occursin(':', unpack.exec[uidx + 1])
+        @test unpack.dir == joinpath("D:", "a", "bundle", "0", "img")
+    end
+
+    # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
+    #
+    # All three copy testsets below walk THIS list. They each used to hardcode `src/tasks`, which
+    # exempted the custom-module examples — 7 tips, every one breaking the no-trailing-period rule,
+    # in the very file people COPY to write a drop-in module. Those specs are loaded by
+    # `load_custom_modules!` and rendered by the same `ParamRenderer`, so they are task specs that
+    # happen to live in `docs/`. Missing directories are skipped, so a trimmed checkout is fine.
+    #
+    # `app/src/plotDefinitions/` is deliberately NOT here, and the distinction is worth keeping
+    # straight: those files have a `params` array of the same SHAPE, but it is a defaults bag, not a
+    # form. Its only consumer is `SummaryPanel.vue` —
+    #     `props.spec.params?.find(p => p.key === k)?.default ?? d`
+    # — which reads `default` and nothing else. A `label` or `tip` there renders to nobody, so
+    # requiring one would have produced nine strings that look maintained and reach no user. The
+    # controls a user really operates for those plots are hand-rolled in the SFC, and the frontend
+    # ratchet already covers them. (The top-level `spec.label` IS rendered, in the plot picker, and
+    # is unchecked — a small, separate gap; don't fix it by dragging the whole directory in here.)
+    spec_dirs() = filter(isdir, [
+        joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks"),
+        joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "docs", "examples", "custom-modules"),
+    ])
+    # Walk every spec, yielding (label-for-messages, parsed spec) so a failure names a findable file.
+    # The label carries the containing directory — `tasks/x.json` vs `plotDefinitions/x.json` — because
+    # base names collide across surfaces (`track_measures.json` exists in both).
+    function each_spec(visit)
+        for dir in spec_dirs(), (root, _, files) in walkdir(dir), fname in files
+            endswith(fname, ".json") || continue
+            spec = try JSON3.read(read(joinpath(root, fname), String)) catch; continue end
+            spec isa AbstractDict || continue
+            visit(joinpath(basename(root), fname), spec)
+        end
+    end
+
     # ── UI copy budget: task-spec `tip` fields ────────────────────────────────────────────────────
     #
     # The enforceable half of `docs/UI.md` → *UI copy — keep it short*, for the surface Julia owns.
@@ -6374,13 +6666,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             false
         end
 
-        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
         tips = Tuple{String,String}[]
         nspecs = 0
-        for (root, _, files) in walkdir(tasks_dir), f in files
-            endswith(f, ".json") || continue
-            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
-            spec isa AbstractDict || continue
+        each_spec() do f, spec
             nspecs += 1
             collect_tips!(tips, get(spec, :params, nothing), f)
         end
@@ -6394,6 +6682,59 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         two_sentence = ["$f: $t" for (f, t) in tips if multi_sentence(t) && !(t in ALLOWED)]
         @test isempty(two_sentence)
+    end
+
+    # ── UI copy COVERAGE: every task param carries a `tip` ────────────────────────────────────────
+    #
+    # The testset above polices tips that EXIST. This one polices the ones that don't. `docs/UI.md`
+    # asks for CellProfiler-style tip DENSITY — every setting explains itself on hover — and until
+    # this existed nothing could see a gap: `branching.json` shipped **twelve** parameters with no
+    # tip at all, so the form read "Flatten Z" / "Pre-dilation" / "Anisotropy box size (px)" with no
+    # way to find out what any of them did short of reading the Python runner.
+    #
+    # Presence is the half a machine can decide; whether a tip is the RIGHT tip stays a review
+    # question, exactly as the length ratchet can't tell you a short line is a good line. The
+    # frontend half of this rule — settable controls with no `v-tooltip` — is `uncoveredControls`
+    # in `frontend/src/utils/uiCopy.ts`, checked in `uiCopy.test.ts`.
+    #
+    # SECTIONS AND GROUPS ARE EXEMPT. They are container headers ("Advanced", "Filters"), not inputs
+    # — a user can't set them to anything, and requiring one would buy 18 tips saying "advanced
+    # options". Their CHILDREN are checked like any other param.
+    @testset "every task param carries a tip" begin
+        CONTAINER = ("section", "group")
+        # A param whose label genuinely IS the whole explanation. Empty on purpose — same reason as
+        # the length ratchet's: an allow-list that starts populated never gets emptied. Before adding
+        # one, try writing the tip; it is nearly always shorter than the argument for skipping it.
+        ALLOWED_NO_TIP = String[]
+
+        # Collects every SETTABLE param (container children included), flagged tipped or not, so the
+        # guard below can assert the walk actually found something — a silently empty walk would
+        # otherwise report perfect coverage, which is how the QC scraper once lost 40 strings.
+        function collect_settable!(out, params, file)
+            params isa AbstractVector || return out
+            for p in params
+                p isa AbstractDict || continue
+                ptype = string(get(p, :type, get(p, "type", "")))
+                if haskey(p, :key) && !(ptype in CONTAINER)
+                    tip = get(p, :tip, nothing)
+                    push!(out, (file, string(get(p, :key, "?")),
+                                !isempty(strip(tip isa AbstractString ? String(tip) : ""))))
+                end
+                collect_settable!(out, get(p, :params, nothing), file)
+            end
+            out
+        end
+
+        params = Tuple{String,String,Bool}[]
+        each_spec() do f, spec
+            collect_settable!(params, get(spec, :params, nothing), f)
+        end
+
+        @test length(params) > 150              # the walk found the params it is meant to police
+
+        missing_tips = ["$f: $k" for (f, k, tipped) in params
+                        if !tipped && !("$f: $k" in ALLOWED_NO_TIP)]
+        @test isempty(missing_tips)
     end
 
     # ── UI copy house style: task-spec `label` + `tip` ────────────────────────────────────────────
@@ -6441,12 +6782,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 all(j -> occursin(r"^[A-Z]", j.w) || j.after_sep || expected_cap(j.w), judged)
         end
 
-        tasks_dir = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
         labels, tips2 = Tuple{String,String}[], Tuple{String,String}[]
-        for (root, _, files) in walkdir(tasks_dir), f in files
-            endswith(f, ".json") || continue
-            spec = try JSON3.read(read(joinpath(root, f), String)) catch; continue end
-            spec isa AbstractDict || continue
+        each_spec() do f, spec
             l = get(spec, :label, nothing)
             l isa AbstractString && push!(labels, (f, join(split(String(l)), " ")))
             collect_copy!(labels, tips2, get(spec, :params, nothing), f)

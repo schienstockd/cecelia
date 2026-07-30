@@ -14,7 +14,7 @@ function _deep_merge(a::Dict, b::Dict)::Dict
 end
 
 # Read KEY=value pairs from a .env file. Skips comments and blank lines.
-# Values are NOT shell-expanded; use expanduser() on the result.
+# Values are NOT shell-expanded; use expand_user() on the result.
 function _read_dotenv(path::String)::Dict{String,String}
     out = Dict{String,String}()
     isfile(path) || return out
@@ -27,15 +27,43 @@ function _read_dotenv(path::String)::Dict{String,String}
     out
 end
 
+"""
+    expand_user(path) -> String
+
+Replace a leading `~` with the user's home directory, **on every platform**.
+
+Use this instead of `Base.expanduser`, which is documented as Unix-only ("On Unix systems, replace
+a tilde character…") and is a **silent no-op on Windows** — a `~`-prefixed path then survives
+verbatim into `joinpath`/`open`, producing paths like `~/.cecelia\\observer-mcp.json` that no
+Windows API resolves. Every stored path in `custom.toml`/`.env` may legitimately start with `~`
+(that is what keeps them portable across users), so this is the one expansion helper they all
+go through. `homedir()` is correct on Windows (it honours `USERPROFILE`).
+"""
+function expand_user(path::AbstractString)::String
+    s = String(path)
+    s == "~" && return homedir()
+    # Windows users may type either separator
+    if startswith(s, "~/") || (Sys.iswindows() && startswith(s, "~\\"))
+        # Split the remainder into components rather than pasting it on, so the result is a canonical
+        # path: `joinpath(homedir(), "foo/bar")` on Windows yields `C:\Users\x\foo/bar` — mixed
+        # separators, which Windows tolerates but which makes every path comparison unreliable.
+        # Only treat `\` as a separator ON Windows; on Unix it is a legal filename character.
+        seps = Sys.iswindows() ? ('/', '\\') : ('/',)
+        parts = split(s[3:end], seps; keepempty = false)
+        return isempty(parts) ? homedir() : joinpath(homedir(), parts...)
+    end
+    s
+end
+
 # Pure resolver (unit-testable, no env/file reads): given the three ordered signals, pick the dir.
 # Order: explicit arg → CECELIA_DEV_DIR env → CECELIA_DEV_DIR in .env → ~/.cecelia default.
 function _resolve_config_dir(dev_dir::Union{AbstractString,Nothing},
                              env_val::Union{AbstractString,Nothing},
                              dotenv_val::Union{AbstractString,Nothing})::String
-    isnothing(dev_dir)    || return expanduser(String(dev_dir))
-    isnothing(env_val)    || return expanduser(String(env_val))
-    isnothing(dotenv_val) || return expanduser(String(dotenv_val))
-    expanduser("~/.cecelia")
+    isnothing(dev_dir)    || return expand_user(String(dev_dir))
+    isnothing(env_val)    || return expand_user(String(env_val))
+    isnothing(dotenv_val) || return expand_user(String(dotenv_val))
+    expand_user("~/.cecelia")
 end
 
 """
@@ -59,6 +87,23 @@ function config_dir(dev_dir::Union{String,Nothing} = nothing)::String
     _resolve_config_dir(dev_dir,
                         get(ENV, "CECELIA_DEV_DIR", nothing),
                         get(dotenv, "CECELIA_DEV_DIR", nothing))
+end
+
+"""
+    ensure_config_dir([dev_dir]) -> String
+
+[`config_dir`](@ref), created if it does not exist yet. Use this — not bare `config_dir()` — before
+**writing** anything into it.
+
+`config_dir()` is a pure path computation: on a machine that has never run the setup wizard the
+directory genuinely does not exist, so `open(joinpath(config_dir(), …), "w")` fails with
+`SystemError: No such file or directory`. That is not hypothetical — it broke CI on all three
+platforms once the observer wrote its MCP config on every status call.
+"""
+function ensure_config_dir(dev_dir::Union{String,Nothing} = nothing)::String
+    d = config_dir(dev_dir)
+    mkpath(d)
+    d
 end
 
 """
@@ -186,7 +231,7 @@ end
 
 function _cfg_dir(key::String, default::String)::String
     d = get(cecelia_conf(), "dirs", Dict{String,Any}())
-    expanduser(string(get(d, key, default)))
+    expand_user(string(get(d, key, default)))
 end
 
 const _PROJECTS_DIR_PLACEHOLDER = "/path/to/projects"
@@ -212,14 +257,14 @@ end
 Persist `path` as `dirs.projects` in the user's `custom.toml` (creating the file/dir if needed,
 **merging** so other keys survive) and hot-reload config. Writer half of the config pair — it
 targets the same [`custom_toml_path`](@ref) the reader uses. The literal string is stored (so a
-leading `~` stays portable across users); `expanduser` happens on read in `_cfg_dir`. Returns the
+leading `~` stays portable across users); `expand_user` happens on read in `_cfg_dir`. Returns the
 stored path. Creating/validating the projects directory itself is the caller's job (the setup
 endpoint). See `docs/todo/ONBOARDING_PLAN.md` (D1/D3).
 """
 function set_projects_dir!(path::AbstractString)::String
     stored   = strip(String(path))
+    ensure_config_dir()
     cfg_path = custom_toml_path()
-    mkpath(dirname(cfg_path))
     cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
     dirs = get(cfg, "dirs", Dict{String,Any}())
     dirs["projects"] = stored
@@ -239,7 +284,7 @@ function bioformats2raw_bin()::String
     exe = Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw"
     d   = get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "bioformats2raw", "")
     if !isempty(string(d)) && string(d) != "/path/to/bioformats2raw"
-        return joinpath(expanduser(string(d)), "bin", exe)
+        return joinpath(expand_user(string(d)), "bin", exe)
     end
     bundled = joinpath(@__DIR__, "..", "..", "bioformats2raw", "bin", exe)   # repo/install root
     isfile(bundled) && return bundled
@@ -248,7 +293,56 @@ function bioformats2raw_bin()::String
     joinpath(_cfg_dir("bioformats2raw", "/path/to/bioformats2raw"), "bin", exe)
 end
 
-python_bin_path()::String = _cfg_dir("python", "python3")
+# The shipped `[dirs] python` value. Must match `app/config.toml` — it is the sentinel for "nobody
+# chose this", the same role `_PROJECTS_DIR_PLACEHOLDER` plays for the projects dir.
+const _PYTHON_BIN_DEFAULT = "python3"
+
+# Interpreter names to try, in order. PURE and parameterised on `iswin` so BOTH platforms' behaviour is
+# testable from any host. Windows conda/pixi envs ship `python.exe` and frequently no `python3` at all,
+# so `python` must be tried there; on Unix `python3` is the unambiguous one.
+#
+# A name the user DELIBERATELY configured is the only candidate: resolve it to an absolute path if we
+# can, but never silently substitute a different interpreter. Falling back would run tasks under an
+# interpreter that lacks the analysis deps and report nothing about why — worse than failing on the
+# name they asked for. The shipped default is not a deliberate choice, so it does get the fallbacks.
+_python_bin_candidates(configured::AbstractString, iswin::Bool)::Vector{String} =
+    let c = String(strip(String(configured)))
+        (isempty(c) || c == _PYTHON_BIN_DEFAULT) ?
+            (iswin ? String["python", "python3"] : String["python3", "python"]) :
+            String[c]
+    end
+
+"""
+    python_bin_path() -> String
+
+The Python interpreter the engine's subprocesses run — **resolved to an absolute path** whenever it
+can be found on `PATH`.
+
+Absolute, not the bare `"python3"` it used to return, because the string escapes the activated
+environment. `pixi run` puts the Pixi env first on `PATH`, so a bare name resolves correctly for
+anything *Julia* spawns (`run_py`, the napari bridge) — but the observer's MCP spec registers this
+value into the user's **own** Claude Code config, where it is launched from a plain shell with no Pixi
+activation. There, a bare `python3` is the *system* python, which has neither `mcp` nor `websockets`,
+so the observer's tools failed to start in exactly the sessions the one-click setup was meant to
+enable. It also could not work on Windows at all, where `python3` frequently does not exist.
+
+Resolution: an explicitly configured `dirs.python` **path** (anything with a directory component) is
+used verbatim — the user has said precisely which interpreter. A bare *name* (including the shipped
+default `"python3"`) is resolved through `PATH`, falling back to the platform's other spellings. If
+nothing resolves, the configured/legacy bare name is returned unchanged, so behaviour never gets
+worse than before.
+"""
+function python_bin_path()::String
+    raw  = strip(string(get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "python", "")))
+    conf = isempty(raw) ? "" : expand_user(String(raw))
+    # An explicit PATH wins verbatim; a bare NAME falls through to resolution below.
+    isempty(conf) || isempty(dirname(conf)) || return conf
+    for cand in _python_bin_candidates(conf, Sys.iswindows())
+        p = Sys.which(cand)
+        isnothing(p) || return String(p)
+    end
+    isempty(conf) ? "python3" : conf
+end
 
 # Default for launching the napari bridge on the discrete GPU (hybrid-graphics machines). Reads
 # `[napari].discreteGpu`; the api layer holds the runtime toggle (Settings) and seeds it from this.

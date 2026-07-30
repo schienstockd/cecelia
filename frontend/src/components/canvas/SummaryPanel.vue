@@ -615,11 +615,11 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
               <CcToggle v-model="heatmapValues" />
             </div>
           </template>
-          <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted">
+          <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted" v-tooltip.left="'Number of histogram bins'">
             <span>Bins</span>
             <input type="number" min="5" max="100" step="5" v-model.number="bins" />
           </label>
-          <label v-else-if="chartType === 'bar'" class="sp-pop-row cc-muted">
+          <label v-else-if="chartType === 'bar'" class="sp-pop-row cc-muted" v-tooltip.left="'Spread the error bars show'">
             <span>Error</span>
             <select v-model="errorMetric">
               <option value="ci95">95% CI</option>
@@ -662,7 +662,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
         </button>
         <div v-if="showExplode" class="sp-explode-pop" @click.stop>
           <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
-          <label v-for="m in measureOpts" :key="m" class="sp-explode-row">
+          <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.left="'Tick to give this measure its own plot'">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ m }}
           </label>
           <div class="sp-explode-ft">

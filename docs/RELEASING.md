@@ -12,13 +12,27 @@ things as he hits them, plus the occasional ad-hoc request ("here's my image, ma
 → ship). There is **no schedulable feature roadmap** to release against. So the cadence is a
 **time-boxed heartbeat + event triggers** — not "release when phase N is done".
 
-Two channels already carry this (see SHIPPING.md):
+Two install channels exist (see SHIPPING.md), but **only one of them has users**:
 
-- **dev channel = `main` HEAD.** Every merged PR is immediately available to anyone on dev. New
-  features do **not** need a tag to reach testers — so *"we added a bunch of stuff"* is **not** a
-  reason to release.
-- **stable channel = tagged release.** A tag is for people who need a **fixed point** they can install,
-  roll back to, or cite.
+- **stable channel = a tag.** This is how *every* real user installs. Biologists do not install from
+  a branch, and there is no reason they should — the dev channel needs Node on PATH and builds the
+  frontend locally.
+- **dev channel = `main` HEAD.** This is for **people who want to work ON Cecelia** — contributors
+  tracking HEAD, not people using it to analyse images. **It has no users today.** That may change
+  if the project picks up contributors; if it does, they are still developers, not the audience a
+  release is cut for.
+
+**The consequence, and it is the one that matters:** *a tag is the only thing that reaches a user.*
+Nothing merged to `main` is available to anyone doing science with Cecelia until it is tagged. So
+untagged work is not "already shipped to testers" — it is undelivered, and the gap grows with every
+merge.
+
+> This paragraph used to say the opposite — that new features "do not need a tag to reach testers", so
+> *"we added a bunch of stuff"* was not a reason to release. That inference rested on a dev channel
+> nobody uses, and it produced the wrong call in review at least once: an accumulated 281-commit gap
+> was waved off as already-delivered when in fact no user could see any of it. If dev ever does pick
+> up contributors, that still doesn't revive the argument — a contributor on HEAD is not someone a
+> release is cut for.
 
 ## Three things, one mechanism
 
@@ -27,8 +41,14 @@ conceptual split:
 
 | | What it is | When |
 |---|---|---|
-| **rc tag** `v0.1.0-rcN` | a snapshot to install / roll back to (GitHub *prerelease*) | cut liberally — the heartbeat, and before risky work |
-| **release** `v0.1.0` | the version you point people at (onboard, cite, demo from) | when someone's work will depend on it |
+| **release** `v0.1.0` | **the default.** A version a user installs and can name | the heartbeat, and any fix a user is waiting on (bump the patch) |
+| **rc tag** `v0.1.0-rcN` | a build you intend to **soak before promoting** | bracketing a risky refactor; a candidate you will re-cut as a release |
+
+**Prefer a plain release.** The rc ladder was the default for nine tags and never converged, because
+none of them were candidates *for* anything — they were snapshots wearing a candidate's label, while
+being the only thing users could install. A prerelease also flags "don't rely on this" to the exact
+people relying on it, and GitHub's `releases/latest` never resolves while every tag is a prerelease.
+If a user hits a bug you have already fixed, that is a **patch release** (`v0.1.1`), not an rc.
 | **milestone** (M-entry) | a coarse "shippable state" note in MILESTONES.md | only at big boundaries (a capability lands, v1.0 freeze) — **not** every tag |
 
 ## The semi-schedule (heartbeat)
@@ -59,6 +79,26 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 **Hard blocker before *any* external handoff:** a root `LICENSE` (GPL-3-or-later) + third-party
 acknowledgements (celltrackR GPL-2) — TODO #00060. Fine to skip for personal rc's; required the moment
 someone else installs it.
+
+### One-time constraint: everything shipped so far is stuck behind `v0.1.0-rc9`
+
+`api/src/update_api.jl` compares tags with Julia's `VersionNumber`, which parses `rc10`'s prerelease
+as the single **string** `"rc10"` — and `"rc10" < "rc9"` lexicographically. `_parse_ver` now rewrites
+`-rc10` → `-rc.10` so the digits compare numerically, **but that fix only helps clients that already
+have it.** Anyone running `v0.1.0-rc9` compares with their own copy of the old function, so:
+
+| Next tag | Reaches an rc9 client? |
+|---|---|
+| `v0.1.0-rc10` (…and rc11 … rc19) | **no** — sorts *below* rc9; the GUI says "up to date" |
+| `v0.1.0` / `v0.2.0` / any release | **yes** — a release always outranks its own prereleases |
+| `v0.1.0-rc9.1` | yes, but it is an unreadable version to hand anyone |
+
+Worse, an rc8 client offered the "newest" release is sent to **rc9** and then dead-ends there, so
+rc9 is a terminal state for every existing install until a tag outranks it.
+
+**So the next tag must be a plain release** (`v0.1.0` or higher). After that the ladder is safe and
+`-rcN` works normally again. This also fixes `releases/latest`, which only ever resolves to a
+non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install channels*).
 
 ## Cutting a release — the short checklist
 

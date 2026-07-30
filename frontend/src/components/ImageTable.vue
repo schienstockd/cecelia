@@ -616,7 +616,7 @@ onUnmounted(stopResize)
       <option v-for="s in otherSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
       <option value="">＋ New set…</option>
     </select>
-    <input v-if="!moveTargetUid" class="move-name-input" v-model="moveNewName"
+    <input v-if="!moveTargetUid" class="move-name-input" v-model="moveNewName" v-tooltip.right="'Name for the new set'"
       placeholder="New set name…" @keydown.enter="doMove" @keydown.escape="moveUid = null" autofocus />
     <button class="cc-btn cc-btn-primary" @click="doMove" :disabled="moving">
       <i v-if="moving" class="pi pi-spin pi-cog" /><template v-else>Move</template>
@@ -789,7 +789,7 @@ onUnmounted(stopResize)
           <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
                exclusion reason (shown in the badge tooltip + CSV) -->
           <span class="note-row" @click.stop>
-            <input v-if="isEditing(img.uid, NOTE_KEY)"
+            <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.right="'Enter to save, Esc to cancel'"
               class="attr-edit" v-model="editValue" :ref="focusEditInput"
               :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
               @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
@@ -805,7 +805,7 @@ onUnmounted(stopResize)
         <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
         <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize">
           <template v-if="editableMeta && channelEditable(img, idx)">
-            <input v-if="isEditing(img.uid, 'ch:' + idx)"
+            <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.right="'Enter to save, Esc to cancel'"
               class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
               @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
               @keyup.esc="cancelEdit"
@@ -824,7 +824,7 @@ onUnmounted(stopResize)
         <!-- attributes: editable only on the Metadata page (editableMeta); read-only elsewhere -->
         <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize">
           <template v-if="editableMeta">
-            <input v-if="isEditing(img.uid, 'attr:' + key)"
+            <input v-if="isEditing(img.uid, 'attr:' + key)" v-tooltip.right="'Enter to save, Esc to cancel'"
               class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
               @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
               @keyup.esc="cancelEdit"

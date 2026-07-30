@@ -16,11 +16,15 @@ name: CI
 # Pixi env is cached on pixi.lock (per platform). fail-fast is off so one OS failing still reports
 # the others. Runs on pushes/PRs to main and on demand.
 
+# `pull_request` is deliberately NOT filtered to `[main]`. With that filter a STACKED pr — one whose
+# base is another feature branch — matched no trigger and got **zero checks**, which reads as
+# green-by-absence rather than as "not run": nothing on the pr says the suite never ran. That is how
+# #409 (the pr that ADDS the package tests to CI) was reviewed with no CI at all. Pushes stay filtered
+# to main so a plain branch push doesn't double-run alongside its own pr.
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 defaults:
@@ -62,6 +66,21 @@ jobs:
       # everything the server loads (incl. PythonCall/CondaPkg on first use — see TODO #00056).
       - name: Instantiate Julia (server env)
         run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
+
+      # Julia PACKAGE tests (app/test/runtests.jl) — the data model, ccid.json round-trip, versioned
+      # fields, task dispatch, param validation, the gating engine, config/path resolution. Needs app/
+      # instantiated in its own right (the step above instantiates api/, which only path-SOURCES
+      # Cecelia). This is the largest suite and used to run nowhere but a dev machine, which is how
+      # Windows-only path bugs shipped: `Sys.which` never finding `claude.cmd`, `Base.expanduser`
+      # being a no-op on Windows, `python3` not existing there. Those fixes are asserted by
+      # `iswin`-parameterised helpers precisely so a Windows runner can check them — it has to run here
+      # for that to mean anything. Fixture-dependent testsets self-skip (`have_fixture`), so a CI
+      # checkout without test-data/ still passes.
+      - name: Instantiate Julia (package env)
+        run: pixi run julia-instantiate
+
+      - name: Package tests
+        run: pixi run test-pkg
 
       # API-layer unit tests: load the handlers with CECELIA_NO_SERVE (no socket) and exercise them
       # directly. Fixture-free, so it runs on every OS in the matrix.

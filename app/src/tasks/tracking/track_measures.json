@@ -11,7 +11,8 @@
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
-      "field": "labels"
+      "field": "labels",
+      "tip": "Select which tracked label set to measure"
     },
     {
       "key": "dims",
@@ -24,7 +25,8 @@
       "key": "forceRecompute",
       "label": "Force recompute",
       "type": "bool",
-      "default": true
+      "default": true,
+      "tip": "Recalculate even where measures already exist"
     }
   ]
 }

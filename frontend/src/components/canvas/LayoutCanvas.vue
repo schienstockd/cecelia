@@ -408,15 +408,15 @@ defineExpose({ capturePage, collectCsvs })
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
-                <label class="lc-pop-row cc-muted"><span>cols</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.left="'Number of plot columns on the board'"><span>cols</span>
                   <input type="range" min="1" max="6" :value="entry.cols"
                          @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
                   <span class="lc-val">{{ entry.cols }}</span></label>
-                <label class="lc-pop-row cc-muted"><span>rows</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.left="'Number of plot rows on the board'"><span>rows</span>
                   <input type="range" min="1" max="6" :value="entry.rows"
                          @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
                   <span class="lc-val">{{ entry.rows }}</span></label>
-                <label class="lc-pop-row cc-muted"><span>height</span>
+                <label class="lc-pop-row cc-muted" v-tooltip.left="'Height of each plot slot in pixels'"><span>height</span>
                   <input type="range" min="160" max="720" step="10" :value="rowHeight"
                          @input="rowHeight = +($event.target as HTMLInputElement).value" />
                   <span class="lc-val">{{ rowHeight }}</span></label>
@@ -505,7 +505,7 @@ defineExpose({ capturePage, collectCsvs })
                @mousedown="layout.setActive(canvasKey, i)">
             <!-- per-slot title (figure caption) — persisted in the slot's state, drawn above the plot
                  in the PDF export (pdf.ts). Only for filled slots. -->
-            <input v-if="entry.contents[i]" class="lc-slot-cap" :value="slotTitle(i)"
+            <input v-if="entry.contents[i]" class="lc-slot-cap" :value="slotTitle(i)" v-tooltip.top="'Caption drawn above this plot on export'"
                    @input="setSlotTitle(i, ($event.target as HTMLInputElement).value)"
                    @mousedown.stop placeholder="Add a title…" />
             <div class="lc-slot-plot">

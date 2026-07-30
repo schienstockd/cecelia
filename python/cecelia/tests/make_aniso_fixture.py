@@ -22,10 +22,11 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 
-# <workspace-root>/test-data/… — the fixtures dir is a SIBLING of this repo (see test-data/README.md).
-# Override with CECELIA_TEST_DATA, the same env var runtests.jl honours.
+# <repo>/test-data/projects — the fixtures dir is COMMITTED in this repo (see test-data/README.md).
+# Override with CECELIA_TEST_DATA, the same env var runtests.jl honours. Keep the two resolvers in
+# step: runtests.jl walks up from app/test, this walks up from python/cecelia/tests.
 _ROOT = os.environ.get("CECELIA_TEST_DATA") or os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "test-data", "projects"))
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "test-data", "projects"))
 OUT = os.path.join(_ROOT, "testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
 T, NY, NX = 3, 4, 4
 

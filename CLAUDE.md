@@ -275,10 +275,22 @@ Do not add a `useGPU` param to task JSON or Julia handlers.
 All code must run on Linux, macOS, and Windows. Each of these has already caused a real bug —
 use the named helper, don't re-derive the platform branch inline:
 
-- **Python venv path** differs (`bin/python3` vs `Scripts\python.exe`) — always branch on
-  `Sys.iswindows()`, never hardcode one.
+- **Python interpreter** — use `python_bin_path()` in `config.jl`; never hardcode an interpreter name
+  or venv layout (`bin/python3` vs `Scripts\python.exe`). It resolves to an **absolute** path and tries
+  the platform's spellings (Windows conda envs ship `python.exe` and often no `python3` at all). A bare
+  name is not good enough for any string that leaves the `pixi run` environment — the observer
+  registers this value into the user's own Claude Code config, launched from a plain shell.
 - **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
   `.bat` vs no-extension.
+- **Leading `~` in a path** — use `expand_user()` in `config.jl`, never `Base.expanduser`, which is
+  documented Unix-only and is a **silent no-op on Windows** (a `~` then survives into
+  `joinpath`/`open`, e.g. `~/.cecelia\observer-mcp.json`).
+- **Writing into the config dir** — use `ensure_config_dir()`, not bare `config_dir()`: the latter is
+  a pure path computation and the directory doesn't exist until something creates it.
+- **Finding/spawning a CLI on PATH** — use `agent_bin_path()` + `_agent_spawn_cmd()` in
+  `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
+  never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
+  `CreateProcess` refuses batch files, they need `cmd /c`.
 - **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`; never write
   `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
   handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia
@@ -432,8 +444,10 @@ Revise reloads function bodies on save. Struct/macro changes still need a restar
 
 ## Testing
 
-**Four test categories — one per layer. All four run in CI on every OS, and each has a `pixi run`
-task that runs the whole suite. Write AND run the matching category in the same change as the code:**
+**Four test categories — one per layer. All four run in CI on every OS (one step per category in
+`.github/workflows/ci.yml` — keep it that way; the package suite was missing for a long time, which is
+how three Windows-only path bugs shipped), and each has a `pixi run` task that runs the whole suite.
+Write AND run the matching category in the same change as the code:**
 
 | You changed… | Write/run | Command |
 |---|---|---|
@@ -469,10 +483,10 @@ and param validation. Specifically:
 
 Tests must **not** depend on the dev projects dir (`projects_dir()`) — it can be deleted, and the
 test would then silently skip. When a test needs real data, copy a **small** fixture into the
-version-controlled fixtures dir at the **workspace root**:
+**committed** fixtures dir in this repo:
 
 ```
-<workspace-root>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
+<repo>/test-data/projects/<proj>/1/<img>/labelProps/<name>.h5ad   # mirror the real layout
 ```
 
 Resolve it in `runtests.jl` with the generic helpers — `fixture_path("proj","1","img","labelProps","x.h5ad")`
@@ -482,6 +496,12 @@ missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` 
 
 **Keep fixtures small** — e.g. a `labelProps/*.h5ad` (hundreds of KB), not GB-scale raw images or
 OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
+
+> **The cap is enforced, not advisory.** `.h5ad` is binary, so git stores a whole new copy per update
+> and history can't be pruned without a rewrite — and a committed fixtures dir invites someone to drop a
+> GB-scale store in. The `fixtures stay small` testset fails if any single file exceeds **1 MB** or the
+> tree exceeds **8 MB** (today: largest 332 KB, tree 432 KB). Needing more room is a design conversation,
+> not a number to raise.
 
 ---
 

@@ -388,7 +388,8 @@ const { width: sidebarWidth, onResizeStart } =
           v-tooltip.right="'How many tasks share a concurrency slot; GPU tasks use the gpu pool'">
           Pool
         </span>
-        <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool" />
+        <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
+          v-tooltip.right="'Which resource pool this run queues in'" />
         <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon"
           :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
           @click="throttleOpen = !throttleOpen"

@@ -174,7 +174,13 @@ launcher.
 > re-resolves optional deps for the host and is far less prone to it. `release.yml` keeps `npm ci`
 > because it only ever runs on `ubuntu-latest`, where the current-platform binding installs reliably.
 
-**Why a dev channel.** So testers can track HEAD without a tag being cut every couple of days. GitHub
+**Why a dev channel.** For **people who want to work ON Cecelia** — tracking HEAD without a tag being
+cut every couple of days. It is *not* how end users run it: a biologist installs a tag, and the Node
+requirement plus local frontend build make dev a poor fit for anyone not developing the thing. **It
+has no users today**, and if it gains any they will be contributors. So don't reason about delivery
+as though users are on it — a tag is the only thing that reaches them (`docs/RELEASING.md` → *the
+consequence*).
+GitHub
 serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —
 so the dev path just points the *same* installer at that URL. `CECELIA_BRANCH` overrides the branch.
 
@@ -276,11 +282,25 @@ measure, btrack, the label-props writer, **and** the napari bridge. It now lives
 **`.pixi/`** (managed by Pixi), not under `napari/`. `napari/` keeps only `napari_bridge.py`.
 
 ### The "run via `pixi run`" rule (no hardcoded env paths)
-`pixi run <task>` prepends `.pixi/envs/default/bin` to `PATH`, so `python_bin_path()` stays at its
-config default `"python3"` (no `custom.toml` override) and resolves to the Pixi env python inside an
-activated run. `app/src/napari.jl` no longer hardcodes a venv path; `NAPARI_PYTHON` routes through
-`python_bin_path()`. **Always launch via `pixi run`** (`dev`/`prod`/`app`/`napari`) — launching
-`julia` directly outside the env makes subprocesses fall back to system `python3` and fail.
+`pixi run <task>` prepends `.pixi/envs/default/bin` to `PATH`, so `python_bin_path()` needs no
+`custom.toml` override — it finds the Pixi env python inside an activated run. `app/src/napari.jl` no
+longer hardcodes a venv path; `NAPARI_PYTHON` routes through `python_bin_path()`. **Always launch via
+`pixi run`** (`dev`/`prod`/`app`/`napari`) — launching `julia` directly outside the env makes
+subprocesses fall back to system `python3` and fail.
+
+`python_bin_path()` **resolves to an absolute path** (via `Sys.which`), it does not return the bare
+config default. Two reasons the bare name wasn't enough:
+
+- The string **escapes the activated environment.** The observer registers it into the user's own
+  Claude Code config (`claude mcp add-json`), which launches it from a plain shell with no Pixi
+  activation — where bare `python3` is the *system* python, with neither `mcp` nor `websockets`. The
+  observer's tools failed to start in exactly the sessions one-click setup exists to enable.
+- **Windows** conda/pixi envs ship `python.exe` and frequently no `python3` at all, so the name has to
+  be tried per-platform (`_python_bin_candidates`).
+
+An explicitly configured `dirs.python` **path** is still used verbatim. A deliberately configured
+bare *name* is resolved but never substituted — falling back would run tasks under an interpreter
+lacking the analysis deps and say nothing about why. Only the shipped default gets the fallbacks.
 
 ### Julia and Node are not in Pixi (deliberate, for dev)
 Pixi scopes to the **Python** env. Julia stays on **juliaup + Manifest**, Node on **fnm**; `pixi run`

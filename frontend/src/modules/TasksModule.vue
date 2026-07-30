@@ -120,6 +120,7 @@ const FILTERS: ChipOption[] = [
       <ChipSelect
         class="filter-chips" :options="FILTERS" :model-value="statusFilter"
         aria-label="Filter tasks by status"
+        v-tooltip.bottom="'Show only tasks in this state'"
         @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"

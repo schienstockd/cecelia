@@ -137,17 +137,18 @@ function save() {
 
       <div v-if="info.nT > 1" class="crop-row">
         <span class="crop-lbl cc-muted cc-fs-xs" v-tooltip.top="'Scrub timepoints to select the clearest footprint'">frame</span>
-        <input type="range" min="0" :max="info.nT - 1" v-model.number="t" />
+        <input type="range" min="0" :max="info.nT - 1" v-model.number="t"
+               v-tooltip.top="'Preview frame; does not affect the crop'" />
         <span class="crop-tval">{{ t + 1 }}/{{ info.nT }}</span>
       </div>
       <div v-if="info.nZ > 1" class="crop-row">
         <span class="crop-lbl cc-muted cc-fs-xs" v-tooltip.top="'Keep this z-range — also re-projects the preview to just these slices'">z</span>
-        <RangeSlider v-model:lo="zLo" v-model:hi="zHi" />
+        <RangeSlider v-model:lo="zLo" v-model:hi="zHi" v-tooltip.top="'First and last z slice to keep'" />
         <span class="crop-tval">{{ zLabel }}</span>
       </div>
       <div v-if="info.nT > 1" class="crop-row">
         <span class="crop-lbl cc-muted cc-fs-xs" v-tooltip.top="'Keep this time range'">t</span>
-        <RangeSlider v-model:lo="tLo" v-model:hi="tHi" />
+        <RangeSlider v-model:lo="tLo" v-model:hi="tHi" v-tooltip.top="'First and last frame to keep'" />
         <span class="crop-tval">{{ tLabel }}</span>
       </div>
 

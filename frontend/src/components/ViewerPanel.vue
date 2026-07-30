@@ -6,7 +6,12 @@ import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
-import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
+import { pushLabels as apiPushLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
+import {
+  pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
+  colourLegend, colourLegendLabels, resetColourLegend,
+} from '../composables/useNapariAutoShow'
+import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napariAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import TitleCardControls from './TitleCardControls.vue'
@@ -42,24 +47,26 @@ const visibleLabels     = ref<Record<string, boolean>>({})
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
-// per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust,
-// region) belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
-// (membership is track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below /
-// per-segmentation directions), and trackclust ribbons are still to come. Layers are namespaced by
-// pop type in the bridge, so flow + clust + region coexist. resolve_pops is generic over pop_type, so
-// region (a filter on regions.{suffix}) resolves + colours its centroids like any other cell pop.
-// icons MATCH the sidebar module nav (Gate = pi-chart-scatter, Cluster cells = pi-palette,
-// Region = pi-map, Track = pi-share-alt, Cluster tracks = pi-sitemap) so a pop type reads the same.
-const POP_TYPES: { key: string; icon: string; label: string }[] = [
-  { key: 'flow',   icon: 'pi-chart-scatter', label: 'gating populations' },
-  { key: 'clust',  icon: 'pi-palette',       label: 'cell-cluster populations' },
-  { key: 'region', icon: 'pi-map',           label: 'spatial-region populations' },
-]
+// per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
+// utils/napariAutoShow (CELL_POP_TYPES) — the app-level autoshow restores exactly the same set, so a
+// new pop type can't end up toggleable-but-never-restored. Only CELL-grained types are in that list:
+// show-populations plots by cell label, whereas track/trackclust are track-grained (membership is
+// track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below / per-segmentation
+// directions), and trackclust ribbons are still to come. Layers are namespaced by pop type in the
+// bridge, so flow + clust + region coexist. resolve_pops is generic over pop_type, so region (a filter
+// on regions.{suffix}) resolves + colours its centroids like any other cell pop.
+// Only the icon/label (presentation) lives here — icons MATCH the sidebar module nav (Gate =
+// pi-chart-scatter, Cluster cells = pi-palette, Region = pi-map, Track = pi-share-alt, Cluster tracks
+// = pi-sitemap) so a pop type reads the same.
+const POP_TYPE_UI: Record<CellPopType, { icon: string; label: string }> = {
+  flow:   { icon: 'pi-chart-scatter', label: 'gating populations' },
+  clust:  { icon: 'pi-palette',       label: 'cell-cluster populations' },
+  region: { icon: 'pi-map',           label: 'spatial-region populations' },
+}
+const POP_TYPES = CELL_POP_TYPES.map(key => ({ key, ...POP_TYPE_UI[key] }))
 const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
 const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation branch-overlay visibility
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
-const colourLegend      = ref<Record<string, string>>({})   // {category value → hex} for the colour-by legend
-const colourLegendLabels = ref<Record<string, string>>({})  // {category value → population name} where a pop defines it
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
 
 const napariImage = computed(() => {
@@ -84,9 +91,6 @@ const currentSetUid = computed(() =>
 const show3D = computed<boolean>({
   get: () => currentSetUid.value ? settings.getShow3D(currentSetUid.value) : false,
   set: v => { if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v) } })
-const pointSize = computed<number>({
-  get: () => currentSetUid.value ? settings.getPointSize(currentSetUid.value) : 6,
-  set: v => { if (currentSetUid.value) settings.setPointSize(currentSetUid.value, v) } })
 const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
@@ -110,23 +114,19 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 })
 
 
+// These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
+// useNapariAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
+// can no longer affect what actually reaches napari (it once did: see useNapariAutoShow's rules).
 watch(napariImage, (img) => {
-  // restore the remembered preference rather than always starting hidden — the actual layers
-  // are (re)pushed by onNapariOpened / onGatingChange once the image + centroids are ready.
+  // restore the remembered preference rather than always starting hidden
   gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
   trackVns.value = settings.getTrackVisibility(img.uid, Object.keys(img.labels ?? {}))
   branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
-  const names = Object.keys(img.filepaths ?? {})
-  // Default to the active version (the `_active` key from the versioned filepath dict) — this is
-  // what the server opens when no valueName is passed, so the dropdown must agree. Fall back to
-  // last-non-default → default → first only when no active version is registered.
-  const nonDefault = names.filter(n => n !== 'default')
-  selectedValueName.value =
-    img.activeValueName && names.includes(img.activeValueName) ? img.activeValueName
-    : nonDefault.length > 0 ? nonDefault[nonDefault.length - 1]
-    : names.includes('default') ? 'default' : (names[0] ?? '')
+  // Default to the active version (the `_active` key from the versioned filepath dict) — this is what
+  // the server opens when no valueName is passed, so the dropdown must agree (shared resolver).
+  selectedValueName.value = activeValueName(img)
   // Restore remembered label visibility for this image; unknown labels default to true.
   visibleLabels.value = settings.getLabelVisibility(img.uid, Object.keys(img.labels ?? {}))
   loadObsCols()                       // colour-by options for the selected segmentation
@@ -146,25 +146,11 @@ async function openInNapari(valueName: string) {
     show3D:        show3D.value,
     asDask:        settings.napariAsDask,
   }
-  if (hasLabels.value) {
-    const toShow = Object.fromEntries(
-      Object.entries(napariImage.value?.labels ?? {}).filter(([vn]) => visibleLabels.value[vn])
-    )
-    if (Object.keys(toShow).length) {
-      body.showLabels = true
-      body.allLabels  = toShow
-    }
-  }
-  // Skeleton (branching) labels — a separate registry so the labels picker doesn't list them
-  // (BRANCHING_PLAN Decision 6). Send only the segmentations whose per-vn branch toggle is on
-  // (mirror of visibleLabels/trackVns above).
-  const bl = Object.fromEntries(
-    Object.entries(napariImage.value?.branchLabels ?? {}).filter(([vn]) => branchVns.value[vn])
-  )
-  if (Object.keys(bl).length) {
-    body.showBranchLabels = true
-    body.allBranchLabels  = bl
-  }
+  // Labels/branches/tracks/populations are deliberately NOT sent here. Every open broadcasts
+  // `napari:opened`, and the app-level autoshow (composables/useNapariAutoShow) restores all overlay
+  // kinds from the remembered toggles in one sequential pass. Sending labels in the open body too
+  // would load the same label pyramid twice and put two overlay pushes in flight at once — which the
+  // bridge's one-command-at-a-time layer reconciliation does not tolerate.
   body.labelsCache = settings.napariLabelsCache
   try {
     const res = await fetch('/api/napari/open', {
@@ -240,14 +226,7 @@ async function recordTimelapse() {
 // not just the active/first one). The bridge namespaces layers by `(popType) (valueName)`, so
 // flow/clust overlays across segmentations coexist. `valueName` is still forwarded as the bridge's
 // per-pop default for older senders; blank is fine.
-async function pushPopulations(popType: string, show: boolean, valueName?: string): Promise<boolean> {
-  const uid        = projectStore.napariImageUid
-  const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid) return false
-  // one shared request builder (utils/napariOverlays) — same shape the strip/zoom uses
-  const res = await apiPushPopulations(projectUid, uid, { popType, show, valueName, pointsSize: pointSize.value })
-  return !!res?.ok
-}
+const pushPopulations = pushPopulationsNow
 
 // Per-pop-type visibility toggle; the choice is remembered (persisted) so it carries across opens.
 async function togglePopType(popType: string) {
@@ -259,26 +238,9 @@ async function togglePopType(popType: string) {
 // named by its value_name). `valueNames` = the segmentations whose "directions" toggle is on; empty
 // → the bridge clears all track layers. `colorBy` shades vertices by the chosen obs column.
 const onTrackVns = computed(() => Object.keys(trackVns.value).filter(vn => trackVns.value[vn]))
-async function pushTracks(): Promise<boolean> {
-  const uid        = projectStore.napariImageUid
-  const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid) return false
-  const res = await apiPushTracks(projectUid, uid, {
-    valueNames: onTrackVns.value, showGatedTracks: gatedTracksShown.value,
-    showTrackclust: popVisible('trackclust'), colorBy: colourByCol.value,
-    colourOverrides: userColourOverrides(),
-  })
-  // capture the colour-by legend from the tracks response — the Labels layer may be hidden (then
-  // colour-labels returns none), so tracks are the only legend source when colouring tracks alone.
-  if (res?.ok && colourByCol.value) {
-    try {
-      const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
-      if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
-      if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
-    } catch { /* legend harvest is best-effort */ }
-  }
-  return !!res?.ok
-}
+// Delegates: every toggle below persists to `settings` BEFORE pushing, so the shared push (which reads
+// settings) sees the new value. It also harvests the colour-by legend into the shared refs.
+const pushTracks = pushTracksNow
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, re-push the on-set.
 async function toggleTrack(vn: string) {
@@ -300,17 +262,14 @@ async function toggleBranch(vn: string) {
   }
   const wasVisible = branchVns.value[vn] ?? true
   try {
-    const res = await fetch('/api/napari/show-labels', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allBranchLabels: { [vn]: files }, showLabels: !wasVisible,
-                                labelsCache: settings.napariLabelsCache }),
-    })
-    if (res.ok) {
+    const res = await apiPushLabels({ branchLabels: { [vn]: files }, show: !wasVisible,
+                                      cache: settings.napariLabelsCache })
+    if (res?.ok) {
       branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
       if (uid) settings.setBranchVisibility(uid, branchVns.value)
     } else {
-      log.error(`Show branches "${vn}" failed: ${await _resError(res)}`, { source: 'napari' })
+      log.error(`Show branches "${vn}" failed: ${res ? await _resError(res) : 'network error'}`,
+                { source: 'napari' })
     }
   } catch (e) {
     log.error(`Show branches "${vn}" failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -357,40 +316,21 @@ async function loadObsCols() {
   if (colourByCol.value && !obsCols.value.includes(colourByCol.value)) colourByCol.value = ''
 }
 
-async function pushColourLabels(column: string): Promise<boolean> {
-  const uid = projectStore.napariImageUid
-  const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid) return false
-  if (!column) { colourLegend.value = {}; colourLegendLabels.value = {} }   // reset → no legend
-  const res = await apiPushColourLabels(projectUid, uid, {
-    valueName: selectedValueName.value, column, colourOverrides: userColourOverrides(),
-  })
-  if (res?.ok && column) {   // categorical → {value: hex}; empty for continuous / hidden-labels
-    try {
-      const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
-      if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
-      if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
-    } catch { /* legend harvest is best-effort */ }
-  }
-  return !!res?.ok
-}
+// Delegate, but against the panel's SELECTED version rather than the image's active one — the user may
+// be viewing a different version in the dropdown than the one the server would open by default.
+const pushColourLabels = (column: string): Promise<boolean> =>
+  pushColourLabelsNow(column, selectedValueName.value)
 
 // user picked a colour-by column: persist, recolour the tracks (if shown) and the labels layer
 function onColourBy(e: Event) {
   const col = (e.target as HTMLSelectElement).value
   colourByCol.value = col
   if (currentSetUid.value) settings.setColourBy(currentSetUid.value, col)   // per-set
-  colourLegend.value = {}; colourLegendLabels.value = {}   // clear old column's legend; pushes below repopulate
+  resetColourLegend()                       // clear old column's legend; pushes below repopulate
   if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()   // re-push tracks w/ new color_by
   pushColourLabels(col)                       // recolour labels (or reset when col === '')
 }
 
-// user's per-set/per-column colour recolouring ({value → hex}); sent alongside the pop colours so the
-// bridge uses them (user wins). Empty when no set/column — the pop colours + default palette then apply.
-function userColourOverrides(): Record<string, string> {
-  return currentSetUid.value && colourByCol.value
-    ? settings.getColourOverrides(currentSetUid.value, colourByCol.value) : {}
-}
 // recolour a category value that has no population (its colour isn't defined anywhere) and re-push both
 // layers so the new colour shows immediately; persisted per set + column.
 function onRecolour(value: string, hex: string) {
@@ -427,23 +367,6 @@ const legendItems = computed(() => {
   return items
 })
 
-// Live update while gating: when the population tree changes for the image open in napari
-// (gate edit, pop add/remove/rename, cell selection, dot-size change), re-push so the overlay
-// tracks the gating. The dot-size slider lives in the population manager Options box.
-function onGatingChange(data: Record<string, unknown>) {
-  if (String(data.imageUid ?? '') !== projectStore.napariImageUid) return
-  const vn = data.valueName as string | undefined
-  // track-grained edits (track / trackclust) re-push the RIBBONS (never points — points would be
-  // wrong for track_ids and orphaned by the viewer's toggles). Cell-grained edits (flow / clust)
-  // re-push that pop type's POINT overlay if it's visible.
-  const pt = String(data.popType ?? 'flow')
-  if (pt === 'track' || pt === 'trackclust') {
-    if (gatedTracksShown.value || popVisible('trackclust')) pushTracks()
-  } else if (popVisible(pt)) {
-    pushPopulations(pt, true, vn)
-  }
-}
-
 function onValueNameChange(e: Event) {
   const name = (e.target as HTMLSelectElement).value
   selectedValueName.value = name
@@ -460,17 +383,14 @@ async function toggleLabel(valueName: string) {
     return
   }
   try {
-    const res = await fetch('/api/napari/show-labels', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: !wasVisible,
-                                labelsCache: settings.napariLabelsCache }),
-    })
-    if (res.ok) {
+    const res = await apiPushLabels({ labels: { [valueName]: files }, show: !wasVisible,
+                                      cache: settings.napariLabelsCache })
+    if (res?.ok) {
       visibleLabels.value = { ...visibleLabels.value, [valueName]: !wasVisible }
       if (uid) settings.setLabelVisibility(uid, visibleLabels.value)
     } else {
-      log.error(`Show labels "${valueName}" failed: ${await _resError(res)}`, { source: 'napari' })
+      log.error(`Show labels "${valueName}" failed: ${res ? await _resError(res) : 'network error'}`,
+                { source: 'napari' })
     }
   } catch (e) {
     log.error(`Show labels "${valueName}" failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -487,12 +407,8 @@ async function deleteLabel(valueName: string) {
   // Hide in napari first if visible
   const files = napariImage.value?.labels?.[valueName] ?? []
   if (visibleLabels.value[valueName] && files.length) {
-    await fetch('/api/napari/show-labels', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allLabels: { [valueName]: files }, showLabels: false,
-                                labelsCache: settings.napariLabelsCache }),
-    }).catch(() => {})
+    await apiPushLabels({ labels: { [valueName]: files }, show: false,
+                          cache: settings.napariLabelsCache })
   }
 
   try {
@@ -520,79 +436,17 @@ function onTaskStatus(data: Record<string, unknown>) {
   reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
 }
 
-// Re-push ALL of the image's DATA overlays (labels + colour-by + population/track points/ribbons),
-// each re-read from disk by its endpoint (show-labels/show-populations/show-tracks all replace their
-// layer in place). This is the "reload data" path — it touches NO image pyramid. Shared by the open
-// handler (after a full reopen) and reloadViewer's data-only branch.
-// RULE — read this before adding a 4th overlay kind: `visibleLabels`/`trackVns`/`branchVns` are
-// plain refs populated by the `watch(napariImage, ...)` above (~line 113). This function runs off
-// the `napari:opened` WS subscriber, a SEPARATE listener from that watcher — `nextTick()` only
-// waits for Vue's render flush, it gives no guarantee the watcher fired first. Trusting the refs
-// here is exactly what silently broke branches (no push at all) and labels (pushed against a
-// stale/empty visibility map) — the toggle looked right, nothing actually got asked for until the
-// user flipped it off/on. Fix: never trust the refs in this function — always re-derive straight
-// from `settings` (the durable, timing-independent source) first, for every overlay kind alike.
-function pushAllOverlays() {
-  nextTick(() => {
-    const uid = projectStore.napariImageUid
-    if (!uid) return
-    visibleLabels.value   = settings.getLabelVisibility(uid, Object.keys(napariImage.value?.labels ?? {}))
-    trackVns.value        = settings.getTrackVisibility(uid, labelNames.value)
-    branchVns.value       = settings.getBranchVisibility(uid, Object.keys(napariImage.value?.branchLabels ?? {}))
-    gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
-
-    if (hasLabels.value) {
-      const toShow = Object.fromEntries(
-        Object.entries(napariImage.value?.labels ?? {}).filter(([vn]) => visibleLabels.value[vn])
-      )
-      if (Object.keys(toShow).length) {
-        fetch('/api/napari/show-labels', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ allLabels: toShow, showLabels: true,
-                                    labelsCache: settings.napariLabelsCache }),
-        }).then(async res => {
-          if (!res.ok) { log.error(`Show labels on open failed: ${await _resError(res)}`, { source: 'napari' }); return }
-          // apply the remembered colour-by ONLY if this segmentation actually has that column —
-          // otherwise a stale/absent column would recolour (and hide) napari's distinct default labels
-          if (colourByCol.value && obsCols.value.includes(colourByCol.value)) pushColourLabels(colourByCol.value)
-        }).catch(e =>
-          log.error(`Show labels on open failed: ${e instanceof Error ? e.message : String(e)}`,
-                    { source: 'napari' }))
-      }
-    }
-
-    // Branches (skeleton labels) — mirrors the Labels block above; same `/api/napari/show-labels`
-    // request `toggleBranch` already uses, just fired automatically on open instead of only on toggle.
-    const bl = Object.fromEntries(
-      Object.entries(napariImage.value?.branchLabels ?? {}).filter(([vn]) => branchVns.value[vn])
-    )
-    if (Object.keys(bl).length) {
-      fetch('/api/napari/show-labels', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ allBranchLabels: bl, showLabels: true,
-                                  labelsCache: settings.napariLabelsCache }),
-      }).catch(e =>
-        log.error(`Show branches on open failed: ${e instanceof Error ? e.message : String(e)}`,
-                  { source: 'napari' }))
-    }
-
-    // auto-show each pop type's point overlay that the user last had on (remembered preference)
-    for (const { key } of POP_TYPES) if (popVisible(key)) pushPopulations(key, true)
-    if (onTrackVns.value.length || gatedTracksShown.value || popVisible('trackclust')) pushTracks()
-  })
-}
-
-function onNapariOpened() { pushAllOverlays() }
-
 // Refresh the SHOWN image. Data-only by default (re-push overlays, re-read from disk — the pyramid and
 // camera stay); only reopen the whole image when the user ticked reset, or nothing is shown yet. This
 // is what the eye (on the already-open image) and finished tasks call, so a plain reload no longer
 // yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset / uID change).
+//
+// The overlay re-push itself is NOT this panel's job — it lives in composables/useNapariAutoShow,
+// mounted app-level, because this panel is `v-if`'d in App.vue and so cannot be relied on to exist
+// when an image opens. Read the rules in that file before adding another overlay kind here.
 function reloadViewer() {
   if (settings.napariResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
-  else pushAllOverlays()
+  else void pushAllOverlays()
 }
 
 function onTaskResult(data: Record<string, unknown>) {
@@ -613,12 +467,8 @@ function onTaskResult(data: Record<string, unknown>) {
     nextTick(() => {
       const files = napariImage.value?.labels?.[labelValueName] ?? []
       if (files.length) {
-        fetch('/api/napari/show-labels', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ allLabels: { [labelValueName]: files }, showLabels: true,
-                                    labelsCache: settings.napariLabelsCache }),
-        }).catch(() => {})
+        void apiPushLabels({ labels: { [labelValueName]: files }, show: true,
+                             cache: settings.napariLabelsCache })
       }
     })
   }
@@ -652,17 +502,13 @@ async function restartNapari() {
 
 onMounted(() => {
   pollBridge(); bridgeTimer = window.setInterval(pollBridge, 5000)
-  ws.on('napari:opened', onNapariOpened)
   ws.on('task:status', onTaskStatus)
   ws.on('task:result', onTaskResult)
-  ws.on('gating:popmap', onGatingChange)
 })
 onUnmounted(() => {
   if (bridgeTimer) clearInterval(bridgeTimer)
-  ws.off('napari:opened', onNapariOpened)
   ws.off('task:status', onTaskStatus)
   ws.off('task:result', onTaskResult)
-  ws.off('gating:popmap', onGatingChange)
 })
 </script>
 

@@ -88,6 +88,7 @@ async function waitForBackend(timeoutMs = 60000) {
 
       <label class="setup-label cc-muted cc-fs-md" for="setup-path">Projects folder</label>
       <input id="setup-path" v-model="path" class="setup-input" type="text" spellcheck="false"
+             v-tooltip.right="'Folder all projects and image data are written to'"
              autocomplete="off" placeholder="~/cecelia-projects"
              @keyup.enter="submit" />
 

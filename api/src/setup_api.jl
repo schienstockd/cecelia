@@ -13,7 +13,7 @@ _dir_writable(dir::AbstractString)::Bool =
 # Can `dir` serve as the projects directory? → (ok, message, willCreate). Pure check, no side
 # effects (the actual mkpath happens in /init), so it's safe to call live on every keystroke.
 function _check_projects_dir(dir::AbstractString)
-    path = expanduser(strip(String(dir)))
+    path = expand_user(strip(String(dir)))
     isempty(path)      && return (false, "Enter a folder path.", false)
     isabspath(path)    || return (false, "Use an absolute path (or one starting with ~).", false)
     if ispath(path)
@@ -32,10 +32,10 @@ function _check_projects_dir(dir::AbstractString)
 end
 
 # GET /api/setup/defaults → { projectsDir } — the wizard pre-fill. A leading `~` is kept literal so it
-# stays per-user portable when stored (D1); `expanduser` resolves it (incl. to %USERPROFILE% on
+# stays per-user portable when stored (D1); `expand_user` resolves it (incl. to %USERPROFILE% on
 # Windows) on validate/create/read. `homedir()` fallback only if `~` somehow won't expand here.
 function api_setup_defaults(::HTTP.Request)
-    default = expanduser("~") == "~" ? joinpath(homedir(), "cecelia-projects") : "~/cecelia-projects"
+    default = "~/cecelia-projects"
     200, JSON3.write((; projectsDir = default))
 end
 
@@ -60,7 +60,7 @@ function api_setup_init(body_bytes::Vector{UInt8})
     ok, message, _ = _check_projects_dir(raw)
     ok || return 400, JSON3.write((; error = message))
     try
-        mkpath(expanduser(raw))
+        mkpath(expand_user(raw))
     catch e
         return 400, JSON3.write((; error = "Could not create folder: $(sprint(showerror, e))"))
     end

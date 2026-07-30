@@ -39,7 +39,7 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
              @input="setDuration(($event.target as HTMLInputElement).valueAsNumber)" />
       <span class="tc-dur cc-readout">{{ modelValue.durationSec }}s</span>
       <input type="text" class="tc-note cc-input-xs" placeholder="note (optional)"
-             :value="modelValue.note"
+             :value="modelValue.note" v-tooltip.bottom="'Second line on the title card'"
              @input="patch({ note: ($event.target as HTMLInputElement).value })" />
     </template>
   </div>

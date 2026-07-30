@@ -162,10 +162,142 @@ export function isTitleCase(text: string): boolean {
     && judged.every(({ w, afterSep }) => /^[A-Z]/.test(w) || afterSep || expectedCap(w))
 }
 
+// ── Tooltip COVERAGE — the other half of the rule ────────────────────────────────────────────────
+//
+// Everything above measures the copy that EXISTS. This measures the copy that DOESN'T: which inputs
+// a user can change with no hover help on them at all. `docs/UI.md` asks for CellProfiler-style tip
+// DENSITY — if a control does something non-obvious it has a tooltip — and that half was pure review
+// until now, so it drifted the way review-only rules do: a panel gets tooltips on six of its ten
+// rows and nobody sees the four. Length had a ratchet; presence didn't.
+//
+// This deliberately answers a NARROW question — "does this control have hover help?" — because that
+// is the part a machine can decide. Whether a tooltip is the RIGHT tooltip is still a review
+// question, same as `isTooLong` can't tell you a short line is a good one.
+
+/**
+ * Controls this checks. Inputs the user SETS — a value goes in, state changes.
+ *
+ * Buttons with a CAPTION are deliberately absent: "Run" / "Delete set" is already its own help, so
+ * requiring a tooltip on all 152 of them produces tautologies — the "generated screen" noise the copy
+ * budget exists to prevent. An input's value has no caption, which is why inputs are in. Icon-only
+ * buttons have no caption either and are handled separately below.
+ */
+const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|ChipSelect|CcCycleButton)$/
+
+/**
+ * A `<button>` whose entire content is an icon — `<button><i class="pi pi-trash" /></button>`.
+ *
+ * This is the CellProfiler case at its purest: no caption, no value, nothing on screen to read, so a
+ * tooltip is the ONLY thing standing between the user and guessing what a glyph does. It is also the
+ * rule the codebase already follows without being asked — 139 of 150 icon-only buttons carried one
+ * before this check existed, which is why the remaining 11 read as oversights rather than a style
+ * this ratchet is imposing.
+ *
+ * Non-greedy, and `<button>` never nests, so it cannot run past its own close tag.
+ *
+ * `{{ … }}` IS a caption and must be left in. Stripping interpolation the way the copy extractors do
+ * is wrong here: those measure text width, this asks whether the user sees any words at all, and
+ * `<button><span>{{ group.heading }}</span><i class="pi-chevron-down" /></button>` renders a visible
+ * label. Dropping it flagged four captioned buttons — sidebar group headings, a menu row labelled
+ * `{{ pageIconFor()!.tip }}` — as bare icons.
+ */
+const BUTTON = /<button((?:[^>"']|"[^"]*"|'[^']*')*?)>([\s\S]*?)<\/button>/g
+const isIconOnly = (body: string) =>
+  /<i\b|\bpi-/.test(body) && !body.replace(/<[^>]*>/g, '').trim()
+
+// A control the user never sets a value on, so there is nothing to explain.
+const NOT_A_SETTING = /type\s*=\s*"(?:hidden|file|submit|button|reset)"/
+
+// The primitives' OWN definitions. `CcToggle.vue` contains the `<input type="checkbox">` that every
+// toggle in the app renders through; its tooltip belongs at the CALL SITE (that is what the file's
+// own header comment says), so counting the internal input would report one permanent violation that
+// no caller can fix. Same for the other wrappers.
+const PRIMITIVE_SFC = /(?:^|\/)(?:CcToggle|ChipSelect|SwatchSelect|RangeSlider|CcCycleButton)\.vue$/
+
+// Steps OVER quoted attribute values, so a `>` inside a handler (`@input="f(v => g(v))"`) doesn't
+// end the tag early. Same hazard, and same fix, as the `TAG` regex used by `textStrings`.
+const OPEN_TAG = /<(\/?)([A-Za-z][\w.-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g
+
+// HTML void elements never nest, so they must not be pushed onto the ancestor stack — an `<input>`
+// left on it would swallow every following sibling into a phantom subtree.
+const VOID = /^(?:area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)$/i
+
+export interface UncoveredControl {
+  /** Tag name as written — `select`, `CcToggle`, … */
+  tag: string
+  /** 1-based line within the file, so the report points at something you can open. */
+  line: number
+}
+
+/**
+ * The settable controls — and icon-only buttons — in an SFC with no hover help reachable from them.
+ *
+ * A control counts as COVERED when the tooltip is on the control itself **or on any element it sits
+ * inside**. The ancestor rule is not a convenience — it is how most of this app is already written:
+ *
+ *     <label class="po-row" v-tooltip.left="'X tick-label angle'"><span>X angle</span>
+ *       <input type="range" … /></label>
+ *
+ * The row carries the tooltip and the input is a child, so the user does get help on hover. Checking
+ * the tag alone calls that a violation and over-reports by ~90% (155 hits against a true 82), which
+ * is enough noise to make the whole signal ignorable — the same failure `tooltipStrings` avoids by
+ * reading literals instead of expressions.
+ *
+ * ONLY `v-tooltip` COUNTS. A native `title=` is not coverage: it renders as the browser's own
+ * tooltip — unstyled, slow to appear, invisible to the copy ratchets — so accepting it would let a
+ * control satisfy this check while looking nothing like the rest of the app. (Most `title=` in the
+ * codebase is a component PROP anyway — `BaseModal`, `ModulePage`, `ConfirmDeleteButton` — not a
+ * native tooltip at all.)
+ *
+ * PER-OPTION `tip`s DON'T COUNT EITHER. `ChipSelect` and `CcCycleButton` can carry a `tip` per
+ * option, and those are worth having, but they explain the individual choices — not what the control
+ * as a whole is for. The control still needs its own `v-tooltip`. (They also live in the script or
+ * arrive as a prop, so a template parser can't see them, which would make coverage undecidable.)
+ *
+ * @param src   full SFC source
+ * @param path  the file's path — used only to skip the wrapper primitives' own definitions
+ */
+export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
+  if (PRIMITIVE_SFC.test(path)) return []
+  const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
+  if (!tpl) return []
+
+  // Blank out comments rather than deleting them, so offsets stay usable for line numbers.
+  const clean = tpl.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+  const tplAt = src.indexOf(tpl)
+  const lineAt = (i: number) => src.slice(0, tplAt + i).split('\n').length
+
+  // Which `<button>`s are icon-only, keyed by the offset of their `<`. Collected in a separate pass
+  // because that verdict needs the element's CONTENT, which the tag walk below never sees — it reads
+  // a stream of tags, not a tree.
+  const iconButtonAt = new Set<number>()
+  for (const b of clean.matchAll(BUTTON)) if (isIconOnly(b[2]!)) iconButtonAt.add(b.index!)
+
+  const out: UncoveredControl[] = []
+  const open: { tag: string; tipped: boolean }[] = []
+  for (const m of clean.matchAll(OPEN_TAG)) {
+    const [, closing, tag, attrs, selfClosing] = m
+    if (closing) {
+      // Pop to the matching open tag. An unclosed `<div>` (v-if branches, or a template this regex
+      // mis-reads) would otherwise leave the stack wrong for the rest of the file.
+      const at = open.map((e) => e.tag).lastIndexOf(tag!)
+      if (at >= 0) open.length = at
+      continue
+    }
+    const tipped = /v-tooltip/.test(attrs!)
+    const settable = CONTROL.test(tag!) && !NOT_A_SETTING.test(attrs!)
+    if ((settable || iconButtonAt.has(m.index!)) && !tipped && !open.some((e) => e.tipped))
+      out.push({ tag: tag!, line: lineAt(m.index!) })
+    if (!selfClosing && !VOID.test(tag!)) open.push({ tag: tag!, tipped })
+  }
+  return out
+}
+
 // Task-JSON `tip` fields carry the same budget, but they are backend files (`app/src/tasks/**`) and
 // the frontend never owns a copy of a task spec. That half of the ratchet lives with them, in
 // `app/test/runtests.jl` — keeping this suite to `frontend/src` and free of node builtins (reading
-// outside the Vite root would mean adding `@types/node` for one glob).
+// outside the Vite root would mean adding `@types/node` for one glob). The task-spec COVERAGE rule
+// ("every leaf param carries a `tip`") lives there too, for the same reason.
 //
 // The whole-corpus view across all three sources — SFCs, task specs and Julia QC text — is
 // `scripts/ui_copy_inventory.mjs`, which imports this module rather than re-implementing it.

@@ -20,6 +20,7 @@ import { elapsedLabel } from '../../utils/stillOverlay'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { captureViewLegend } from '../../utils/napariOverlays'
 import { restoreOverlays } from '../../utils/napariOverlays'
+import { suppressAutoShowOnce, releaseAutoShowSuppression } from '../../composables/useNapariAutoShow'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -202,6 +203,9 @@ async function zoomToSource(i: number) {
   zooming.value = i
   err.value = ''
   pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot, colourBy: c.colourBy }
+  // we reproduce the CAPTURED frame below, so the app-level autoshow must not restore the user's
+  // remembered toggles over it on this open (see composables/useNapariAutoShow)
+  suppressAutoShowOnce(c.imageUid)
   try {
     const res = await fetch('/api/napari/open', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -209,11 +213,11 @@ async function zoomToSource(i: number) {
                              labelsCache: settings.napariLabelsCache }),
     })
     if (!res.ok && res.status !== 202) {
-      pendingApply.value = null
+      pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
       err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Open in Napari failed'
     }
   } catch (e) {
-    pendingApply.value = null
+    pendingApply.value = null; releaseAutoShowSuppression(c.imageUid)
     err.value = e instanceof Error ? e.message : String(e)
   } finally {
     zooming.value = -1
@@ -321,6 +325,7 @@ defineExpose({ exportImage })
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
             <CcToggle class="is-check cc-muted cc-fs-xs" label="legend (channels · pops · colour-by)"
+              v-tooltip.bottom="'Show the channel and population key under the strip'"
               :model-value="showLegend" @update:model-value="showLegend = $event" />
             <CcToggle class="is-check cc-muted cc-fs-xs" label="clean capture"
               v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing'"
@@ -332,10 +337,10 @@ defineExpose({ exportImage })
               v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'"
               :model-value="showTimestamp" @update:model-value="showTimestamp = $event" />
             <template v-if="separator === 'angled' && orientation === 'h'">
-              <label class="is-slider cc-muted cc-fs-xs">angle
+              <label class="is-slider cc-muted cc-fs-xs" v-tooltip.bottom="'Slant of the separator between frames'">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ skew }}</span></label>
-              <label class="is-slider cc-muted cc-fs-xs">width
+              <label class="is-slider cc-muted cc-fs-xs" v-tooltip.bottom="'Thickness of the separator between frames'">width
                 <input type="range" min="1" max="12" :value="thick" @input="thick = +($event.target as HTMLInputElement).value" />
                 <span class="is-val">{{ thick }}</span></label>
             </template>

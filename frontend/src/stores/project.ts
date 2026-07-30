@@ -97,6 +97,16 @@ export const useProjectStore = defineStore('project', () => {
   const setUidOfImage = (imageUid: string): string | null =>
     sets.value.find(s => s.images.some(i => i.uid === imageUid))?.uid ?? null
 
+  // The image record for a uid, from whichever set holds it — image uids are unique project-wide, so
+  // callers never need to know the set. One lookup instead of each caller re-walking `sets`.
+  const imageByUid = (imageUid: string): CciaImage | null => {
+    for (const set of sets.value) {
+      const img = set.images.find(i => i.uid === imageUid)
+      if (img) return img
+    }
+    return null
+  }
+
   // Called when a project is opened — replaces the in-memory set/image list.
   function loadFromApi(apiSets: CciaSet[]) {
     sets.value = apiSets
@@ -281,5 +291,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
