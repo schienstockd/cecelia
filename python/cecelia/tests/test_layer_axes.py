@@ -6,7 +6,7 @@ The bug this pins: `segment.branching` with `flattenBranching` (or a z==1 image,
 axis as Z — every timepoint stacked into one volume, "a tower on top of the actual image". Fixing up
 `scale` cannot help; the dimensions themselves are misassigned. Three pieces have to agree:
 
-  1. the writer declares the axes of the ARRAY  (`branching_run.output_axes` → `create_multiscales`)
+  1. the writer declares the axes of the ARRAY  (`branching_run._store_axes` → `create_multiscales`)
   2. the reader aligns BY NAME                  (`napari_utils.expand_to_axes`)
   3. a store whose metadata disagrees with its array is REJECTED, not guessed at
 
@@ -116,39 +116,51 @@ class TestExpandToAxes(unittest.TestCase):
         self.assertEqual(out.shape, (4, 1, 8, 8))
 
 
-class TestBranchingOutputAxes(unittest.TestCase):
-    """What the writer must declare. The store's rank is not the image's: frames are squeezed (a z==1
-    image loses Z) and `flattenBranching` Z-projects."""
+class TestWriterAndReaderAgree(unittest.TestCase):
+    """The writer's declared axes must be usable by the reader's name alignment.
+
+    `branching_run._store_axes` is the writer half (it shipped with the anisotropy work, finding A8:
+    the store is not the image's shape — labels drop C, `integrateTime` drops T, `flattenBranching`
+    drops Z). This asserts the two halves MEET: what the writer declares is exactly what
+    `expand_to_axes` needs to put a short store's axes back where they belong. Nothing else pins that
+    contract, and it is the one that decides whether a Z-projected timelapse renders as a tower.
+    """
 
     def setUp(self):
         self.runner = _load_runner()
 
-    def test_flattened_timelapse(self):
-        # (t,y,x) — the store that produced the tower
-        self.assertEqual(self.runner.output_axes(3, True, 0), ["T", "Y", "X"])
-
-    def test_3d_timelapse(self):
-        self.assertEqual(self.runner.output_axes(4, True, 0), ["T", "Z", "Y", "X"])
-
-    def test_static_2d_and_3d(self):
-        self.assertEqual(self.runner.output_axes(2, False), ["Y", "X"])
-        self.assertEqual(self.runner.output_axes(3, False), ["Z", "Y", "X"])
-
-    def test_time_lands_at_its_stacked_position(self):
-        # `np.stack(frames, axis=t_idx)` puts T wherever t_idx says, so the names must follow it
-        self.assertEqual(self.runner.output_axes(4, True, 1), ["Z", "T", "Y", "X"])
-
-    def test_names_always_match_the_rank(self):
-        for ndim, has_t in ((2, False), (3, False), (3, True), (4, True)):
-            self.assertEqual(len(self.runner.output_axes(ndim, has_t)), ndim)
-
-    def test_the_writer_and_the_reader_agree(self):
-        # end-to-end on the failing shape: what output_axes declares is what expand_to_axes can use
+    def test_z_projected_timelapse_round_trips(self):
+        # the store that produced the tower: (t,y,x) over a 3D+t image
         arr = np.zeros((201, 544, 548), dtype=np.uint32)
-        axes = self.runner.output_axes(arr.ndim, True, 0)
+        axes = self.runner._store_axes(["T", "C", "Z", "Y", "X"], has_time=True, is_3d=False)
+        self.assertEqual(axes, ["T", "Y", "X"])           # C dropped (labels), Z dropped (projected)
         out, ok = expand_to_axes(arr, axes, ["t", "z", "y", "x"])
         self.assertTrue(ok)
-        self.assertEqual(out.shape, (201, 1, 544, 548))
+        self.assertEqual(out.shape, (201, 1, 544, 548))   # Z reinserted where Z belongs
+
+    def test_time_collapsed_store_round_trips(self):
+        # `integrateTime` drops T instead
+        arr = np.zeros((20, 544, 548), dtype=np.uint32)
+        axes = self.runner._store_axes(["T", "C", "Z", "Y", "X"], has_time=False, is_3d=True)
+        self.assertEqual(axes, ["Z", "Y", "X"])
+        out, ok = expand_to_axes(arr, axes, ["t", "z", "y", "x"])
+        self.assertTrue(ok)
+        self.assertEqual(out.shape, (1, 20, 544, 548))
+
+    def test_full_store_needs_no_expansion(self):
+        arr = np.zeros((7, 20, 283, 230), dtype=np.uint32)
+        axes = self.runner._store_axes(["T", "C", "Z", "Y", "X"], has_time=True, is_3d=True)
+        self.assertEqual(axes, ["T", "Z", "Y", "X"])
+        out, ok = expand_to_axes(arr, axes, ["t", "z", "y", "x"])
+        self.assertTrue(ok)
+        self.assertIs(out, arr)
+
+    def test_declared_axes_always_match_the_stored_rank(self):
+        for has_t, is_3d, rank in ((True, True, 4), (True, False, 3), (False, True, 3), (False, False, 2)):
+            axes = self.runner._store_axes(["T", "C", "Z", "Y", "X"], has_time=has_t, is_3d=is_3d)
+            self.assertEqual(len(axes), rank)
+            # …and a rank mismatch is exactly what expand_to_axes must refuse
+            self.assertFalse(expand_to_axes(np.zeros((9,) * (rank + 1)), axes, ["t", "z", "y", "x"])[1])
 
 
 if __name__ == "__main__":

@@ -13,8 +13,10 @@
 #                                   MCP append tool, so the frontend just refreshes the lab log after.
 #   POST /api/observer/register  → one-click terminal setup: register (or re-sync) the observer MCP in
 #                                   the user's own Claude Code config, so plain `claude` has the tools.
-#                                   Idempotent (remove-then-add). The ONLY route that touches the
-#                                   user's Claude config, and only on an explicit click.
+#                                   Idempotent (remove-then-add). Also clears `local`-scope entries that
+#                                   would OVERRIDE ours (Claude resolves local before user — see
+#                                   _observer_terminal_state). The ONLY route that touches the user's
+#                                   Claude config, and only on an explicit click.
 
 _observer_repo_root() = dirname(dirname(@__DIR__))              # api/src → api → repo root
 _observer_mcp_dir()   = joinpath(_observer_repo_root(), "mcp")
@@ -46,13 +48,21 @@ end
 # registration can never disagree about what "set up" means.
 _observer_want_spec() = observer_mcp_spec(_observer_mcp_dir(), python_bin_path(), _observer_api_url())
 
-# `{state, ready}` for the user's own terminal. `state` ∈ missing/stale/current; `ready` is the single
-# thing the UI branches on. A STALE registration counts as not-ready: it points at another checkout's
-# interpreter or a different port, so the tools would silently fail to connect in the user's session —
-# they need the same one-click re-sync, not a Chat button that appears to work.
+# `{state, ready}` for the user's own terminal. `state` ∈ missing/stale/shadowed/current; `ready` is the
+# single thing the UI branches on. A STALE registration counts as not-ready: it points at another
+# checkout's interpreter or a different port, so the tools would silently fail to connect in the user's
+# session — they need the same one-click re-sync, not a Chat button that appears to work.
+#
+# SHADOWED outranks a good user-scope entry: a leftover `local`-scope entry wins over ours in the
+# directory it names, so the registration is correct and the user's session still has no tools. That
+# looked like "the setup button does nothing". `shadowedDirs` names the folders so the UI can say which.
 function _observer_terminal_state()
-    st = observer_registration_state(_observer_want_spec())
-    Dict{String,Any}("state" => String(st), "ready" => st === :current)
+    want    = _observer_want_spec()
+    st      = observer_registration_state(want)
+    shadows = shadowing_observer_dirs(want)
+    st === :current && !isempty(shadows) && (st = :shadowed)
+    Dict{String,Any}("state" => String(st), "ready" => st === :current,
+                     "shadowedDirs" => shadows)
 end
 
 # status doubles as the per-project session/usage readout when given ?projectUid — one call drives
@@ -88,18 +98,33 @@ function api_observer_register(::Vector{UInt8})
             error = "No assistant CLI found. Install Claude Code to enable this."))
     end
     spec = _observer_want_spec()
-    # Already correct → touch nothing. The user's main Claude config shouldn't be rewritten just
-    # because someone clicked a button twice.
     prior = read_registered_observer_spec()
-    if observer_registration_state(prior, spec) === :current
-        return 200, JSON3.write((; ok = true, available = true, name = OBSERVER_MCP_NAME,
-                                   message = "Already set up", error = "",
-                                   terminal = _observer_terminal_state()))
+    # `local`-scope leftovers override our `-s user` entry in the folders they name, so setup is not
+    # done until they're gone — checked BEFORE the early return below, which otherwise reports
+    # "Already set up" for a terminal that has no working tools.
+    shadows = shadowing_observer_dirs(spec)
+    ok, message = if observer_registration_state(prior, spec) === :current
+        # Already correct → touch nothing. The user's main Claude config shouldn't be rewritten just
+        # because someone clicked a button twice.
+        (true, isempty(shadows) ? "Already set up" : "Registration was already correct")
+    else
+        # Otherwise pass the entry that's there now so a failed re-sync can put it back (see
+        # register_observer_mcp) — and so a first-time setup never runs a `remove` at all.
+        register_observer_mcp(agent, JSON3.write(spec);
+                              prior_json = prior === nothing ? "" : JSON3.write(prior))
     end
-    # Otherwise pass the entry that's there now so a failed re-sync can put it back (see
-    # register_observer_mcp) — and so a first-time setup never runs a `remove` at all.
-    ok, message = register_observer_mcp(agent, JSON3.write(spec);
-                                        prior_json = prior === nothing ? "" : JSON3.write(prior))
+    # Clear the shadowing entries only once the user-scope one is good — removing them after a failed
+    # add would leave the user with no working registration at all. Reported per folder: this deletes
+    # something the user (or an older install) put there, so it must never be a silent side effect.
+    if ok && !isempty(shadows)
+        removed, failed = remove_shadowing_observer_mcps(agent, shadows)
+        isempty(removed) || (message = string(message, "\nCleared a conflicting per-folder entry in: ",
+                                              join(removed, ", ")))
+        isempty(failed)  || (message = string(message, "\nCould not clear the entry in: ",
+                                              join(failed, ", "),
+                                              " — run `claude mcp remove ", OBSERVER_MCP_NAME,
+                                              " -s local` there."))
+    end
     # Report the state read back from the config, not the CLI's exit code alone — the UI flips its
     # button on `terminal.ready`, so it must reflect what's actually on disk.
     200, JSON3.write((; ok = ok, available = true, name = OBSERVER_MCP_NAME,

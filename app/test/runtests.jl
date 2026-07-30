@@ -69,6 +69,27 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# ── Fault injection: make the scheduler's OWN error path throw ────────────────────
+# `_execute_job!` must post to `job.done` no matter what, because `run_task` is blocked in `take!` and
+# a throw escaping into the dispatcher's `Threads.@spawn` is silent — the cost is a submitter blocked
+# forever and a TaskRecord stranded at `:running` (a task the scheduler keeps reporting as in-flight
+# long after it finished). A logger is just the injection handle: it puts the throw *inside* the
+# `catch` block, which is the one window the inline handling can't cover. `catch_exceptions = false`
+# is what makes `@warn` propagate instead of reporting; only the scheduler's crash message throws, so
+# Test's own output is untouched.
+using Logging
+struct _ThrowingLogger <: Logging.AbstractLogger
+    inner::Logging.AbstractLogger
+end
+Logging.min_enabled_level(l::_ThrowingLogger) = Logging.min_enabled_level(l.inner)
+Logging.shouldlog(l::_ThrowingLogger, level, _module, group, id) =
+    Logging.shouldlog(l.inner, level, _module, group, id)
+Logging.catch_exceptions(::_ThrowingLogger) = false
+function Logging.handle_message(l::_ThrowingLogger, level, message, _module, group, id, file, line; kwargs...)
+    occursin("Unhandled error in task", string(message)) && error("logger exploded (test)")
+    Logging.handle_message(l.inner, level, message, _module, group, id, file, line; kwargs...)
+end
+
 @testset "Cecelia package smoke tests" begin
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -563,11 +584,61 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             write(cfgf, JSON3.write(Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))
             @test Cecelia.observer_registration_state(
                 Cecelia.read_registered_observer_spec(cfgf), want) === :current
-            # per-directory `local` scope is deliberately NOT counted — our button registers user scope
+            # this reader is user-scope ONLY — a local-scope entry is not a registration for it to find
             write(cfgf, JSON3.write(Dict("projects" => Dict("/somewhere" =>
                 Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want))))))
             @test Cecelia.read_registered_observer_spec(cfgf) === nothing
         end
+
+        # ── Local-scope shadowing ────────────────────────────────────────────────────────────
+        # The bug: our button writes `-s user`, but Claude Code resolves `local` scope
+        # (projects[<dir>].mcpServers) FIRST. A leftover local entry pointing at a DELETED checkout
+        # therefore killed the server with ENOENT for every session started in that dir — while the
+        # status route, reading only the top level, reported :current and offered "Chat to Claude".
+        stale_local = Cecelia.observer_mcp_spec("/gone/mcp", "/gone/python", "http://127.0.0.1:8080")
+        let cfgf = joinpath(mktempdir(), ".claude.json")
+            write(cfgf, JSON3.write(Dict(
+                "mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want),
+                "projects"   => Dict(
+                    "/home/u"       => Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => stale_local)),
+                    "/home/u/right" => Dict("mcpServers" => Dict(Cecelia.OBSERVER_MCP_NAME => want)),
+                    "/home/u/none"  => Dict("mcpServers" => Dict{String,Any}()),
+                    "/home/u/other" => Dict("mcpServers" => Dict("something-else" => want))))))
+            locals = Cecelia.read_local_observer_specs(cfgf)
+            @test sort(String[d for (d, _) in locals]) == ["/home/u", "/home/u/right"]
+            # only the MISMATCHED one is a problem: a local entry equal to `want` resolves to the same
+            # server, so it is left alone — we never delete config that isn't breaking anything
+            @test Cecelia.observer_shadow_dirs(locals, want) == ["/home/u"]
+            # user scope is still read independently of any of this
+            @test Cecelia.observer_registration_state(
+                Cecelia.read_registered_observer_spec(cfgf), want) === :current
+        end
+        # tolerant like the user-scope reader — a missing/garbage/odd-shaped config is "no shadows",
+        # never an exception (it is another tool's file and this runs on every status poll)
+        @test isempty(Cecelia.read_local_observer_specs(joinpath(mktempdir(), "nope.json")))
+        let bad = joinpath(mktempdir(), "bad.json")
+            write(bad, "not json at all")
+            @test isempty(Cecelia.read_local_observer_specs(bad))
+        end
+        let odd = joinpath(mktempdir(), "odd.json")
+            write(odd, JSON3.write(Dict("projects" => "a string, not an object")))
+            @test isempty(Cecelia.read_local_observer_specs(odd))
+        end
+        @test Cecelia.observer_shadow_dirs(Pair{String,Any}[], want) == String[]
+        # sorted → the folder list the UI reports (and the removal order) is deterministic
+        @test Cecelia.observer_shadow_dirs(
+            Pair{String,Any}["/b" => stale_local, "/a" => stale_local], want) == ["/a", "/b"]
+
+        # `claude mcp remove -s local` acts on the process's CWD, so the cleanup must be able to say
+        # WHERE it runs — and the spawn wrapper must not drop that when it rewrites argv (it rebuilds
+        # the Cmd, which is exactly how a `dir` gets silently lost and the wrong scope edited)
+        @test Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u").exec[end] == "local"
+        @test Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u").dir == "/home/u"
+        @test isempty(Cecelia._build_mcp_remove_cmd(a).dir)                  # unchanged default
+        @test Cecelia._agent_spawn_cmd(
+            Cecelia._build_mcp_remove_cmd(a; scope = "local", dir = "/home/u")).dir == "/home/u"
+        # a dir that no longer exists is skipped, not attempted (Claude ignores its entry too)
+        @test Cecelia.remove_shadowing_observer_mcps(a, ["/no/such/dir/at/all"]) == (String[], String[])
 
         # the prompt carries the project + the discipline rules
         fp = Cecelia.observer_feedback_prompt("NRUBxU")
@@ -1183,6 +1254,101 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 "preDilationSize" => 2, "postDilationSize" => 2))
             true
         end
+
+        # anisotropySource (docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 5) — a select with three
+        # allowed values. The runner raises on anything else, so an unknown value must not get past
+        # validation and reach Python as a subprocess failure.
+        for src in ("skeleton", "mask", "channel")
+            @test begin
+                validate_params(Branching(), Dict{String,Any}("anisotropySource" => src))
+                true
+            end
+        end
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("anisotropySource" => "intensity"))
+
+        # The anisotropy scales are in MICRONS, and the keys carry `Um` for exactly that reason: a
+        # project with saved PIXEL params (sigma 2, box 45) must not have them silently reread as µm,
+        # which would be ~3 px and ~75 px. New keys mean the stale values simply do not apply.
+        let spec = Cecelia._task_spec(Branching())
+            bykey = Dict(String(get(p, "key", "")) => p for p in spec["params"])
+            @test haskey(bykey, "structureTensorSigmaUm") && haskey(bykey, "anisotropyBoxUm")
+            @test !haskey(bykey, "structureTensorSigma") && !haskey(bykey, "anisotropyBoxSize")
+            @test bykey["structureTensorSigmaUm"]["default"] == 7.0
+            @test bykey["anisotropyBoxUm"]["default"] == 5.0
+            @test bykey["anisotropySource"]["default"] == "skeleton"
+            # every param carries a tip, and none runs past the copy budget (docs/UI.md)
+            @test all(haskey(p, "tip") for p in spec["params"])
+            @test all(length(String(p["tip"])) <= 90 for p in spec["params"])
+            @test !any(endswith(String(p["tip"]), ".") for p in spec["params"])
+        end
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("structureTensorSigmaUm" => 999.0))
+        @test_throws ParamValidationError validate_params(
+            Branching(), Dict{String,Any}("anisotropyBoxUm" => 0.1))
+    end
+
+    # ── µm → px for the anisotropy scales ─────────────────────────────────────────────────────────
+    # The user sets a PHYSICAL scale (a fibre is ~2 µm thick whatever the objective); the compute is
+    # in pixels. Getting this backwards, or letting a sub-pixel request through, produces a grid that
+    # resamples noise rather than summarising structure.
+    @testset "Anisotropy µm→px conversion" begin
+        # EaMaVq's real calibration: 0.596 µm/px
+        px, clamped = Cecelia._um_to_px(7.0, 0.596; minimum_px = 0.5)
+        @test px ≈ 7.0 / 0.596 && !clamped
+        @test round(Int, first(Cecelia._um_to_px(5.0, 0.596; minimum_px = 3))) == 8
+
+        # A coarser image needs FEWER pixels for the same physical scale — the whole point: the same
+        # setting means the same thing on both, which a pixel setting never did.
+        @test first(Cecelia._um_to_px(5.0, 1.0; minimum_px = 3)) <
+              first(Cecelia._um_to_px(5.0, 0.5; minimum_px = 3))
+
+        # Sub-minimum requests clamp AND say so, rather than silently running a different setting.
+        px2, clamped2 = Cecelia._um_to_px(0.5, 0.596; minimum_px = 3)
+        @test px2 == 3.0 && clamped2
+        @test_throws ErrorException Cecelia._um_to_px(5.0, 0.0; minimum_px = 3)
+
+        # Stored bytes scale as boxes, and boxes as 1/box² — so halving the spacing is 4x the file.
+        # This is the number behind the "what do I actually put there" tip.
+        @test Cecelia._aniso_grid_bytes(1296, 201) == 1296 * 40 * 201        # 36x36 over 201 frames
+        @test Cecelia._aniso_grid_bytes(4 * 1296, 201) == 4 * Cecelia._aniso_grid_bytes(1296, 201)
+        @test Cecelia._aniso_grid_bytes(100, 0) == Cecelia._aniso_grid_bytes(100, 1)  # static image
+
+        # Advisory only, and only past the threshold — a fine grid is a legitimate choice.
+        @test isempty(Cecelia._aniso_grid_findings(Cecelia._aniso_grid_bytes(1296, 201), 1296, 5.0))
+        big = Cecelia._aniso_grid_bytes(36_000, 201)      # ~290 MB, a ~1 µm grid on this image
+        f = Cecelia._aniso_grid_findings(big, 36_000, 1.0)
+        @test length(f) == 1 && f[1]["level"] == "warn"
+        @test f[1]["code"] == "branching.aniso_grid_large"
+        # the number lives in `detail`, per the catalog rule that prose carries no figures
+        @test occursin("289 MB", f[1]["detail"]) && occursin("36000 boxes", f[1]["detail"])
+        @test !occursin("289", f[1]["short"])
+
+        # Both branching findings come from the QC CATALOG now, not inlined at the call site
+        @test haskey(Cecelia.QC_TEXT, "branching.no_branches")
+        @test haskey(Cecelia.QC_TEXT, "branching.aniso_grid_large")
+        @test haskey(Cecelia.QC_TEXT, "branching.uncalibrated")
+        @test Cecelia._branching_qc_findings(0)[1]["short"] == "No branches found"
+        @test isempty(Cecelia._branching_qc_findings(5))
+    end
+
+    # Cohort QC must aggregate the per-image anisotropy readout — it is Figure 4 panel D's x-axis
+    # (SPATIAL_ANISOTROPY_PLAN Decision 6), so dropping it from COHORT_METRICS silently removes
+    # the plot's data source.
+    @testset "Cohort metrics — branching anisotropy" begin
+        @test "anisotropy" in COHORT_METRICS["segment.branching"]
+        @test "nBranches" in COHORT_METRICS["segment.branching"]
+
+        # `anisotropy` is the first RATIO metric in a cohort list otherwise made of counts, so
+        # check the outlier rule behaves on 0–1 values at the magnitudes real data produces
+        # (EaMaVq measures ≈ 0.32). The modified-z path is scale-free, but the MAD==0 fallback
+        # is a RELATIVE departure, so tiny numbers are where it would misbehave if anywhere.
+        r = Cecelia._cohort_outliers(Dict("a" => 0.31, "b" => 0.33, "c" => 0.30, "d" => 0.09))
+        @test haskey(r.outliers, "d") && !haskey(r.outliers, "a")
+        # …and a cohort that merely spans the normal 0.1–0.4 band must NOT flag anything: real
+        # tissue varies this much, and a false "outlier" on every low-anisotropy image is noise.
+        @test isempty(Cecelia._cohort_outliers(
+            Dict("a" => 0.12, "b" => 0.21, "c" => 0.30, "d" => 0.38)).outliers)
     end
 
     # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
@@ -2101,6 +2267,36 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    # ── A job ALWAYS releases its submitter, even if the error path itself throws ──
+    # Regression: `_execute_job!` posted to `job.done` as its last statement, so any throw before that
+    # (here: the crash `@warn` itself failing) escaped into the dispatcher's fire-and-forget
+    # `Threads.@spawn` — silently. `run_task` then blocked in `take!(job.done)` FOREVER and never ran
+    # `_deregister_task!`, leaving the TaskRecord stranded at `:running`: `list_tasks()`, the GUI and
+    # the task console all keep listing a task that finished, while every pool correctly reads idle
+    # (the dispatcher's `finally` had released the slot). The post now lives in a `finally`.
+    @testset "Job posts its result even when the error path throws" begin
+        proj = create_project!(name="job-post-$(rand(1000:9999))")
+        img  = add_image!(add_set!(proj; name="s"); name="img")
+
+        tid = "jobpost$(rand(1000:9999))"
+        old = global_logger()
+        t = try
+            global_logger(_ThrowingLogger(old))
+            th = Threads.@spawn run_task(_CrashTask(), img, Dict{String,Any}(); task_id = tid)
+            timedwait(() -> istaskdone(th), 30.0)        # wait BEFORE restoring, so the throw is injected
+            th
+        finally
+            global_logger(old)                            # a failing @test must not log through it
+        end
+
+        @test istaskdone(t)                               # the whole point — this used to hang forever
+        # guarded: on a regression the task is still blocked, and a bare fetch would hang the SUITE
+        istaskdone(t) && @test fetch(t) === nothing       # aborted job → nil result, like any failure
+        # ...and the record is gone, not stranded at :running for the console/GUI to keep showing
+        @test !any(r -> r.id == tid, list_tasks())
+        rm(proj.root; recursive=true)
+    end
+
     @testset "Run log records status (done + failed)" begin
         proj = create_project!(name="rl-status-$(rand(1000:9999))")
         img  = add_image!(add_set!(proj; name="s"); name="img")
@@ -2139,6 +2335,11 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._task_default_scope("behaviour.hmm")        == "set"
         @test Cecelia._task_default_scope("importImages.remove")  == "image"
         @test Cecelia._task_default_scope("nonexistent.task")     == "image"   # unknown fn → image
+        # EVERY set-scope task declares it in its own spec — including the mock, which used to rely on
+        # each chain node passing scope="set" (the one task that contradicted "the spec is the single
+        # source of truth", and it's the fixture the barrier tests are built on).
+        @test Cecelia._task_default_scope("testTasks.setTask")    == "set"
+        @test chain_node("testTasks.setTask").scope               == "set"
 
         # chain_node / ChainNode with no scope kwarg resolve from the spec …
         @test chain_node("clustTracks.cluster").scope == "set"
@@ -2894,7 +3095,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         save_chain_template!(proj, tpl)
 
         received = String[]
-        handler  = payload -> push!(received, payload.image_uid)
+        payloads = Any[]
+        handler  = payload -> (push!(received, payload.image_uid); push!(payloads, payload))
         subscribe_chain_events!("node:done", handler)
 
         run = run_chain(proj, [i.uid for i in imgs];
@@ -2904,6 +3106,17 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
         # Both images fired node:done events
         @test Set(received) ⊇ Set(i.uid for i in imgs)
+
+        # …and every payload carries the scheduler `task_id` the node ran as, matching the state it
+        # was recorded under. This is the correlation handle the task console needs: a chain run emits
+        # no `task:status` frames, so without it a finished node can only be reported as "outcome
+        # unseen". Never `nothing` — absent ⇒ "" (see _update_node_state!).
+        for p in payloads
+            @test haskey(p, :task_id)
+            @test p.task_id isa String
+            @test p.task_id == run.image_states[p.image_uid][p.node_id].task_id
+            @test !isempty(p.task_id)                     # this node ran, so it has one
+        end
 
         # After unsubscribe, new events don't reach the handler
         n_before = length(received)
@@ -5121,6 +5334,156 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # a 2D-only track set (no z column) is trivially 2D
         P2 = zeros(12, 2); for k in 1:11; P2[k+1, :] = P2[k, :] .+ [dy(k), dx(k)]; end
         @test Cecelia._detect_motion_dims([Cecelia.Track(1, Float64.(0:11), P2)]).dims == 2
+    end
+
+    # ── uns reader: the anisotropy grid on the branch sidecar ─────────────────────────────────────
+    # The one thing worth pinning here is the DIMENSION REVERSAL. HDF5 stores C-order, Julia reads
+    # column-major, so a numpy (T, y, x, comp) array arrives as (comp, x, y, T) — every axis flipped,
+    # INCLUDING the two box axes, which are equal-length and would therefore swap silently. The
+    # fixture's values encode their own (t, y, x) coordinates precisely so a transposed read fails
+    # instead of passing on symmetry.
+    @testset "uns reader (anisotropy grid)" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+        if !have_fixture(h5)
+            @test_skip "aniso__branch fixture (missing)"
+        else
+            lp = label_props(h5)
+            @test "orientation_coords" in uns_keys(lp) && "orientation_meta" in uns_keys(lp)
+
+            # producer order = numpy order: (T, y_boxes, x_boxes, component)
+            coor = uns_array(lp, "orientation_coords")
+            @test size(coor) == (3, 4, 4, 2)
+            # value encodes 100t + 10y + x, so this catches an axis swap, not just a shape match
+            @test coor[1, 1, 1, 1] ≈ 0.0f0
+            @test coor[3, 2, 4, 1] ≈ 100 * 2 + 10 * 1 + 3      # t=2, y=1, x=3 (0-based)
+            @test coor[3, 2, 4, 2] ≈ 1000 + 100 * 2 + 10 * 1 + 3
+            @test size(uns_array(lp, "orientation_eigvec")) == (3, 4, 4, 2, 2)
+            @test size(uns_array(lp, "orientation_box_coherence")) == (3, 4, 4)
+
+            # as_stored hands back the raw (reversed) layout for a caller that wants it
+            @test size(uns_array(lp, "orientation_coords"; as_stored=true)) == (2, 4, 4, 3)
+
+            # the self-describing block — strings, scalars and arrays all round-trip
+            m = uns_dict(lp, "orientation_meta")
+            @test m["box_size_px"] == 15 && m["sigma_px"] ≈ 12.0
+            @test m["source"] == "skeleton" && m["fibre_direction"] == "minor"
+            @test m["eigval_order"] == "ascending" && m["eigvec_layout"] == "vec_major"
+            @test Int.(m["t_index"]) == [0, 1, 2]
+            @test length(m["scale_um_per_px"]) == 2
+
+            # absent key, and a group requested as an array (or vice versa) → nothing, not a throw
+            @test uns_array(lp, "no_such_key") === nothing
+            @test uns_array(lp, "orientation_meta") === nothing
+            @test uns_dict(lp, "orientation_coords") === nothing
+
+            # `orientation_summary` is a pandas DataFrame in uns — a third encoding, read by uns_df
+            s = uns_df(lp, "orientation_summary")
+            @test s isa DataFrame && nrow(s) == 3
+            @test "anisotropy" in names(s) && "MF_full_length" in names(s)
+            @test Float64.(s.anisotropy) ≈ [0.21, 0.32, 0.43] atol = 1e-6
+            @test uns_df(lp, "orientation_coords") === nothing      # a plain array is not a dataframe
+            @test uns_df(lp, "no_such_key") === nothing
+        end
+    end
+
+    # ── The notebook readouts: quiver_df / branch_segments / anisotropy_df ────────────────────────
+    # These three are the whole point of the anisotropy pass — the arrows, the branch network and
+    # the per-image scalar, as tidy frames a Pluto notebook can plot directly (docs/NOTEBOOKS.md).
+    # The fixture is built so a WRONG read fails: the fibre (minor) eigenvector is a pure +x unit
+    # vector and the major one is +y, so taking the wrong eigenvector rotates every arrow 90°.
+    @testset "anisotropy notebook readouts" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+        if !have_fixture(h5)
+            @test_skip "aniso__branch fixture (missing)"
+        else
+            # EXPLICIT uids. `@testset` reseeds the global RNG per testset, so `gen_uid()` deals
+            # every testset the SAME sequence — two testsets that both create a project+set+image
+            # land in the same directory. Harmless until one of them, like this pair, asserts on
+            # the directory's CONTENTS.
+            proj = create_project!(name="aniso-fixture")
+            s = add_set!(proj; name="set-A")
+            img = add_image!(s; name="img-a", uid="anisoA")
+            dir = img_label_props_dir(img); mkpath(dir)
+            rm.(joinpath.(dir, readdir(dir)); force=true)     # a previous run's copies
+            cp(h5, img_branch_props_path(img, "SHG"))
+
+            @test img_branch_value_names(img) == ["SHG"]
+
+            # ── arrows ────────────────────────────────────────────────────────────────────────
+            q = quiver_df(img; value_name="SHG")
+            @test nrow(q) == 3 * 4 * 4                       # every frame, every box
+            @test sort(unique(q.t)) == [0, 1, 2]
+            # the MINOR eigenvector is (y=0, x=1) ⇒ u=1, v=0. If the reader took the major one
+            # instead the arrows would come back (0, 1) — a silent 90° rotation.
+            @test all(q.u .≈ 1.0) && all(q.v .≈ 0.0)
+            # box centres, and that x/y did not swap: coor[...,1] is y, coor[...,2] is x
+            r = only(q[(q.t .== 2) .& (q.iy .== 1) .& (q.ix .== 3), :] |> eachrow)
+            @test r.y ≈ 100 * 2 + 10 * 1 + 3
+            @test r.x ≈ 1000 + 100 * 2 + 10 * 1 + 3
+            # the deliberately-empty box carries its zero length through, so it can be filtered out
+            @test only(q[(q.t .== 0) .& (q.iy .== 0) .& (q.ix .== 0), :].length) == 0.0
+            @test count(>(0.0), q.length) == 3 * (16 - 1)
+
+            @test nrow(quiver_df(img; value_name="SHG", t=1)) == 16
+            @test_throws ErrorException quiver_df(img; value_name="SHG", t=99)
+            @test_throws ErrorException quiver_df(img; value_name="nope")
+
+            # ── branch segments ───────────────────────────────────────────────────────────────
+            b = branch_segments(img; value_name="SHG")
+            @test nrow(b) == 6
+            # x from axis 1, y from axis 0 — a swap here would mirror the whole network
+            @test b.y1 == [0.0, 10, 20, 30, 40, 50] && b.x1 == [1.0, 11, 21, 31, 41, 51]
+            @test b.y2 == [4.0, 14, 24, 34, 44, 54] && b.x2 == [5.0, 15, 25, 35, 45, 55]
+            @test b.branch_type == [0, 1, 2, 3, 1, 2]
+            @test nrow(branch_segments(img; value_name="SHG", t=1)) == 2
+
+            # ── per-image scalar ──────────────────────────────────────────────────────────────
+            a = anisotropy_df(img)
+            @test nrow(a) == 3 && unique(a.uID) == [img.uid] && unique(a.value_name) == ["SHG"]
+            @test a.t == [0, 1, 2]                           # from orientation_meta.t_index, not position
+            @test Float64.(a.anisotropy) ≈ [0.21, 0.32, 0.43] atol = 1e-6
+            @test "occupancy" in names(a) && "branching_act" in names(a)
+
+            # a second branch table on the same image (SHG collagen + a DCs network) — long format,
+            # one block per value_name, which is what makes a cross-image comparison filterable
+            cp(h5, img_branch_props_path(img, "DCs"); force=true)
+            a2 = anisotropy_df(img)
+            @test nrow(a2) == 6 && sort(unique(a2.value_name)) == ["DCs", "SHG"]
+            @test nrow(anisotropy_df(img; value_name="SHG")) == 3
+
+            # across images — the cohort frame Figure 4 panel D scatters
+            img2 = add_image!(s; name="img-b", uid="anisoB")
+            mkpath(img_label_props_dir(img2))
+            cp(h5, img_branch_props_path(img2, "SHG"); force=true)
+            across = anisotropy_df([img, img2]; value_name="SHG")
+            @test nrow(across) == 6 && sort(unique(across.uID)) == sort([img.uid, img2.uid])
+
+            # an image with no branch table contributes nothing — never an error, never a zero row
+            img3 = add_image!(s; name="img-c", uid="anisoC")
+            @test nrow(anisotropy_df(img3)) == 0
+            @test nrow(anisotropy_df([img, img3]; value_name="SHG")) == 3
+        end
+    end
+
+    # ── Branch value_names are NOT label_props value_names ────────────────────────────────────────
+    # Branching runs on a SEGMENTATION, which need not have a per-cell measurement table: an SHG
+    # collagen mask is skeletonised but never measured, so it lives in `labels`/`branch_labels`
+    # while `label_props` holds only the measured cell segmentations. Enumerating branch pops from
+    # `label_props` therefore found NOTHING — it looked for B__branch / T__branch and missed the
+    # SHG__branch that exists, so the branch picker came back empty. One image can carry several
+    # (SHG + DCs, per behaviourUbiTom3P.Rmd), so this is the plural case.
+    @testset "branch value_names come from the sidecars" begin
+        proj = create_project!(name="bvn-$(rand(1000:9999))")
+        s = add_set!(proj; name="set-A")
+        img = add_image!(s; name="img-a")
+        dir = img_label_props_dir(img); mkpath(dir)
+        @test img_branch_value_names(img) == String[]          # nothing banked yet
+        for f in ("SHG__branch.h5ad", "DCs__branch.h5ad", "B.h5ad", "B__tracks.h5ad")
+            touch(joinpath(dir, f))
+        end
+        # only the __branch sidecars, and NOT the cell/track tables that sit beside them
+        @test img_branch_value_names(img) == ["DCs", "SHG"]
+        @test img_branch_props_path(img, "SHG") == joinpath(dir, "SHG__branch.h5ad")
     end
 
     @testset "plot groupBy (generic categorical sub-axis)" begin

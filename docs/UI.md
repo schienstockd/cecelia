@@ -197,7 +197,8 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 |---|---|
 | Page / panel subtitle | none by default; a short phrase only if the page is genuinely opaque |
 | Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
-| Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*) |
+| Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*). Lead with a recommended value where one exists (`Start ~5 µm; …`): a tip that only names the trade-off leaves "what do I put here?" unanswered |
+| Param advisory (`tasks/paramAdvisors.ts`) | one muted line under the control + the reasoning on hover. For when the right value depends on the user's DATA rather than on wording — e.g. the grid a spacing produces and what it costs to store. See `docs/MODULES.md` → *Param advisories* |
 | QC finding | short = the problem, long = the action, imperative (`docs/MODULES.md`) |
 | Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** the two *first-run* states (no projects / no images) get title + ≤2 lines + one CTA — bounded in *Onboarding*, which is the rule for them |
 | First-use hint (`HintCallout`) | one line, by construction |

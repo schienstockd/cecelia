@@ -143,6 +143,30 @@ routes to its own sidecar (docs/POPULATION.md).
 img_branch_props_path(img::CciaImage, value_name::AbstractString="default")::String =
     joinpath(img_label_props_dir(img), "$(value_name)$(BRANCH_PROPS_SUFFIX).h5ad")
 
+"""
+    img_branch_value_names(img) -> Vector{String}
+
+The value_names that have a branch table, from the `{vn}__branch.h5ad` sidecars on disk. Sorted;
+empty when branching never ran.
+
+**These are NOT the `label_props` value_names**, and that difference is load-bearing. Branching
+runs on a *segmentation* (`img.labels`), which need not have a per-cell measurement table — an SHG
+collagen mask is skeletonised but never measured, so it appears in `labels` and `branch_labels`
+while `label_props` holds only the measured cell segmentations. Enumerating branch populations
+from `label_props` therefore finds nothing at all: it looks for `B__branch` / `T__branch` and
+misses the `SHG__branch` that actually exists. A single image can carry several
+(`SHG__branch` + `DCs__branch` — collagen and a dendritic-cell network, as in
+`behaviourUbiTom3P.Rmd`), so this is the plural case, not an edge case.
+
+The sidecar is the right source because it is exactly what `pop_df(img, "branch", …)` reads.
+"""
+function img_branch_value_names(img::CciaImage)::Vector{String}
+    dir = img_label_props_dir(img)
+    isdir(dir) || return String[]
+    suffix = BRANCH_PROPS_SUFFIX * ".h5ad"
+    sort!(String[f[1:end-length(suffix)] for f in readdir(dir) if endswith(f, suffix)])
+end
+
 """The image's branch-labels directory — `{proj}/1/{uid}/branchLabels`. Skeleton label zarrs live
 here (mirrors the `labels/` directory for cell segmentations). Separate on-disk directory so the
 generic `labels` scan never picks up branch label sets. See BRANCHING_PLAN.md Decision 6."""

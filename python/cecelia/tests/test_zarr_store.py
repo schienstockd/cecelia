@@ -86,47 +86,53 @@ class CreateMultiscalesOnDiskTest(unittest.TestCase):
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
-    def _du_cyx(self):
+
+class CreateMultiscalesAxesOverrideTest(unittest.TestCase):
+    """`axes=` lets a caller declare the axes of the array it is actually storing.
+
+    Needed by any writer whose store is not the source image's shape — the branch-labels store has
+    no channel axis and can lose Z (flattenBranching) or T (integrateTime). Without the override it
+    inherited the image's axes verbatim, tagging a 3-axis array `t,c,z,y,x` and handing Y the Z
+    step. See docs/todo/SPATIAL_ANISOTROPY_PLAN.md finding A8.
+
+    The load-bearing assertion is that scale is mapped by axis NAME, not zipped positionally — a
+    positional zip is precisely how the dropped axis shifts everything after it.
+    """
+
+    def _dim_utils(self):
         import ome_types
         from cecelia.utils.dim_utils import DimUtils
         du = DimUtils(ome_types.from_xml(_OME_XML), use_channel_axis=True)
-        du.calc_image_dimensions((2, 4, 3))   # C,Y,X (size-1 T,Z dropped)
+        du.calc_image_dimensions((2, 4, 3))       # C,Y,X
         return du
 
-    def test_ignore_channel_drops_c_from_the_axes_too(self):
-        # `ignore_channel=True` used to affect CHUNKING only, so a labels store written from a 4-channel
-        # image declared 5 axis names for its 4-D array. Metadata that doesn't describe the array can't
-        # be used to align a napari layer (napari_utils.expand_to_axes has to reject it), which is how
-        # `branchLabels/SHG.zarr` ended up unalignable.
-        du = self._du_cyx()
-        labels = np.zeros((4, 3), dtype=np.uint32)          # the same image WITHOUT its channel axis
+    def test_dropping_the_channel_axis_keeps_yx_scales(self):
+        du = self._dim_utils()
+        arr = np.zeros((4, 3), dtype=np.uint16)   # the C axis is gone from the STORE
         d = tempfile.mkdtemp()
         try:
             path = os.path.join(d, "labels.zarr")
-            zu.create_multiscales(labels, path, dim_utils=du, im_chunks=[1, 4, 3],
-                                  nscales=1, ignore_channel=True)
+            zu.create_multiscales(arr, path, dim_utils=du, axes=["Y", "X"],
+                                  im_chunks=(4, 3), nscales=1)
             ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
             self.assertEqual([a["name"] for a in ms["axes"]], ["y", "x"])
-            self.assertEqual(len(ms["axes"]), labels.ndim)   # the invariant that matters
-            # the per-axis scale still comes from the image, looked up BY NAME — Y/X keep 0.5
+            # Y and X keep THEIR OWN 0.5 — a positional zip would have handed Y the C entry (1.0).
             self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"], [0.5, 0.5])
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
-    def test_explicit_axes_win_for_a_collapsed_axis(self):
-        # only the caller knows it Z-projected (segment.branching's flattenBranching), so it says so.
-        du = self._du_cyx()
-        arr = np.zeros((4, 3), dtype=np.uint32)
+    def test_no_override_is_unchanged(self):
+        """Every existing caller passes no `axes` and must be completely unaffected."""
+        du = self._dim_utils()
+        arr = np.zeros((2, 4, 3), dtype=np.uint16)
         d = tempfile.mkdtemp()
         try:
-            path = os.path.join(d, "flat.zarr")
-            zu.create_multiscales(arr, path, dim_utils=du, im_chunks=[1, 4, 3], nscales=1,
-                                  ignore_channel=True, axes=["T", "X"])
+            path = os.path.join(d, "img.zarr")
+            zu.create_multiscales(arr, path, dim_utils=du, im_chunks=(1, 4, 3), nscales=1)
             ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
-            self.assertEqual([a["name"] for a in ms["axes"]], ["t", "x"])
-            # scale is mapped by name off the FULL image order, so X still resolves to 0.5 and the
-            # absent T defaults to 1.0 — a filtered axes list must not shift the scale lookup
-            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"], [1.0, 0.5])
+            self.assertEqual([a["name"] for a in ms["axes"]], ["c", "y", "x"])
+            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"],
+                             [1.0, 0.5, 0.5])
         finally:
             shutil.rmtree(d, ignore_errors=True)
 

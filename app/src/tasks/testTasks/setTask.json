@@ -2,6 +2,7 @@
   "fun_name": "testTasks.setTask",
   "task": "setTask",
   "label": "Test set task",
+  "scope": "set",
   "resource_pool": "cpu",
   "params": [
     {

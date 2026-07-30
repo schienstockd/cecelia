@@ -344,30 +344,33 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
                        squeeze=False, idx_adjust=0, axes=None):
+    """``axes``: explicit axis letters for the array being written, overriding the ones derived
+    from ``dim_utils``. Pass this whenever the stored array's rank differs from the source image's
+    — e.g. a LABEL store (no channel axis), or one where Z or T has been collapsed.
+
+    Without it the axes and the per-axis ``scale`` are taken from ``dim_utils`` verbatim, which
+    silently mislabels such a store: the branch-labels writer produced a 3-axis ``(T, Y, X)`` array
+    tagged ``t,c,z,y,x`` with scale ``[1, 1, 3.0, 0.596, 0.596]``, so anything reading the scale
+    positionally gave Y the Z step (3.0 µm) — a 5× stretch. See
+    docs/todo/SPATIAL_ANISOTROPY_PLAN.md finding A8.
+    """
     # Write zarr v2 format so napari and zarr_data_to_list can read .zattrs directly.
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
 
-    # Build the multiscales metadata (shared builder — see multiscales_metadata). The per-axis base
-    # scale is mapped by axis NAME from the FULL image order (letters are unique), so `axes` may be any
-    # subset of it and the lookups still line up.
-    #
-    # `axes` MUST describe the array actually being written, not the source image: a store whose
-    # `.zattrs` axes disagree with its array is unreadable metadata, and downstream code that aligns a
-    # layer by axis name has to reject it (napari_utils.expand_to_axes). Two ways it drifted: labels
-    # carry no channel axis (hence `ignore_channel`, which now drops C from the metadata too — it used
-    # to only affect chunking, so `segment.branching` wrote 5 axis names for a 4-D array), and a task
-    # may collapse an axis (a Z-projection), which only the caller knows — pass `axes` explicitly then.
-    full = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
-    scale_for_axis = None
-    if full:
-        scale_for_axis = {
-            ax: (float(s) if s is not None else 1.0)
-            for ax, s in zip(full, dim_utils.im_scale())
-        }
+    # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes and the
+    # per-axis base scale come from dim_utils, mapped by axis NAME (letters are unique) — unless
+    # the caller declared the stored array's axes explicitly.
     if axes is not None:
-        axes = [str(a) for a in axes]
+        axes = [str(a).upper() for a in axes]
     else:
-        axes = [a for a in full if not (ignore_channel and str(a).upper() == 'C')]
+        axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
+    scale_for_axis = None
+    if axes and dim_utils is not None:
+        # Map by axis NAME off dim_utils' OWN order — never zip against the (possibly overridden)
+        # `axes` list positionally, or a store that dropped an axis inherits its neighbours' scales.
+        src = {ax: (float(s) if s is not None else 1.0)
+               for ax, s in zip(dim_utils.im_dim_order, dim_utils.im_scale())}
+        scale_for_axis = {ax: src.get(ax, 1.0) for ax in axes}
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
 
@@ -489,7 +492,7 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     return multiscales_zarr, level0, pchunks
 
 
-def read_timepoint(level, dim_utils, t, drop_time=True):
+def read_timepoint(level, dim_utils, t, drop_time=True, ignore_channel=False):
     """Read a single timepoint of an opened zarr/dask level fully into a numpy array.
 
     The generic "read one frame, then tile/slice/process it in RAM" primitive. Reading per
@@ -502,10 +505,16 @@ def read_timepoint(level, dim_utils, t, drop_time=True):
     ``drop_time`` squeezes the length-1 time axis so the frame carries the image's non-time axes in
     their original order (what per-tile slicing and model input expect); pass False to keep a
     length-1 T axis and the full image layout. For a non-timeseries level the whole level is returned
-    (there is only one frame)."""
+    (there is only one frame).
+
+    ``ignore_channel=True`` resolves the time axis against a dim order with C removed — for a LABEL
+    level, which has no channel axis while `dim_utils` describes the source image (with one). Every
+    caller slicing labels must set it: with a C-before-T layout the default would otherwise pick the
+    wrong axis, silently reading one channel's worth of Z instead of a timepoint. (It happens to be
+    harmless for the T-first layouts cecelia imports today, which is exactly why it needs saying.)"""
     if dim_utils is None or not dim_utils.is_timeseries():
         return fortify(level)
-    t_idx = dim_utils.dim_idx('T')
+    t_idx = dim_utils.dim_idx('T', ignore_channel=ignore_channel)
     sl = [slice(None)] * len(level.shape)
     sl[t_idx] = slice(t, t + 1, 1)
     frame = fortify(level[tuple(sl)])

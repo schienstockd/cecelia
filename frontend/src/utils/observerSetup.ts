@@ -32,15 +32,24 @@ export type TerminalCta = 'setup' | 'resync' | 'chat'
 
 /**
  * `available` = the `claude` CLI is on PATH. `state` = the backend's registration reading
- * (missing/stale/current, `terminal.state` on /api/observer/status).
+ * (missing/stale/shadowed/current, `terminal.state` on /api/observer/status).
  *
  * - No CLI → 'chat'. The starter prompt works with ANY MCP assistant, so we must not hide it behind a
  *   Claude-specific registration the user may not want.
  * - 'stale' → 'resync', not 'chat': the entry points at another interpreter/port and would fail
  *   silently in their session.
+ * - 'shadowed' → 'resync' too: our entry is correct, but a per-folder (`local`-scope) one overrides it,
+ *   so the user's terminal still has no tools. This is the case that looked like a broken button.
  */
 export function terminalCta(available: boolean, state?: string): TerminalCta {
   if (!available) return 'chat'
-  if (state === 'stale') return 'resync'
+  if (state === 'stale' || state === 'shadowed') return 'resync'
   return state === 'current' ? 'chat' : 'setup'
+}
+
+/** Tooltip for that button — one line per state; the reasoning lives in docs/ai-assist/OBSERVER.md. */
+export function terminalSetupTooltip(state?: string): string {
+  if (state === 'shadowed') return 'Another folder\'s entry overrides Cecelia\'s — clear it'
+  if (state === 'stale') return 'Your terminal\'s cecelia-observer points somewhere else — re-register it'
+  return 'Register cecelia-observer in Claude Code so you can chat in a terminal'
 }

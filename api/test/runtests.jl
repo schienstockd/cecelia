@@ -486,28 +486,68 @@ end
           (isfile(_sysimage_path()) && _stamp_matches(onstamp, string(VERSION), _manifest_hash()))
 end
 
-@testset "API: crop render composite" begin
-    # Pure colourise/blend for the in-app crop MIP (crop_render.jl) — no zarr/IO. (C,H,W) float +
+@testset "API: image geometry (axis mapping + version resolution)" begin
+    # Pure parts of image_geometry.jl — no zarr, no IO. These were `_crop_*` privates until a second
+    # consumer showed none of it was crop-specific (docs: the anisotropy grid advisory).
+
+    # Zarr.jl is column-major and presents the array REVERSED, so the C-order axis at position i sits
+    # at Julia dim ndims-i+1. Getting this backwards silently swaps x and y — and a square frame
+    # would hide it, so assert with a NON-square rank-5 layout.
+    d = axis_dims(["t", "c", "z", "y", "x"], 5)
+    @test d["t"] == 5 && d["c"] == 4 && d["z"] == 3 && d["y"] == 2 && d["x"] == 1
+
+    d3 = axis_dims(["c", "y", "x"], 3)
+    @test d3["x"] == 1 && d3["y"] == 2 && d3["c"] == 3
+
+    # no axes in .zattrs → fall back to the conventional order for that rank, not an error
+    @test axis_dims(String[], 5)["x"] == 1
+    @test axis_dims(String[], 2)["y"] == 2
+    @test !haskey(axis_dims(String[], 2), "z")
+
+    # absent .zattrs → empty, and the caller falls back rather than throwing
+    mktempdir() do dir
+        @test read_ngff_axes(dir) == String[]
+    end
+    # malformed .zattrs must not take the request down
+    mktempdir() do dir
+        write(joinpath(dir, ".zattrs"), "{not json")
+        @test read_ngff_axes(dir) == String[]
+    end
+    mktempdir() do dir
+        write(joinpath(dir, ".zattrs"),
+              """{"multiscales":[{"axes":[{"name":"T"},{"name":"Y"},{"name":"X"}]}]}""")
+        @test read_ngff_axes(dir) == ["t", "y", "x"]     # lowercased
+    end
+
+    # version resolution reports WHY it failed instead of throwing — the route maps it to a status
+    _, _, e1 = resolve_image_version("", "", nothing)
+    @test e1 == "projectUid + imageUid required"
+    _, _, e2 = resolve_image_version("no-such-project", "no-such-image", nothing)
+    @test e2 == "Image not found"
+end
+
+@testset "API: image render composite" begin
+    # Pure colourise/blend for the server-side preview render (image_render.jl) — no zarr/IO. (C,H,W) float +
     # per-channel (lo,hi,cmap,visible) → H×W RGB, clip-to-contrast + additive blend.
     r(x) = Float64(ColorTypes.red(x)); g(x) = Float64(ColorTypes.green(x)); b(x) = Float64(ColorTypes.blue(x))
 
     # one red channel, mid intensity, full-range contrast → mid red, no green/blue
-    img = _crop_composite_rgb(fill(0.5f0, 1, 2, 2), [(0.0, 1.0, "red", true)])
+    img = composite_rgb(fill(0.5f0, 1, 2, 2), [(0.0, 1.0, "red", true)])
     @test size(img) == (2, 2)
     @test isapprox(r(img[1, 1]), 0.5; atol = 0.01) && g(img[1, 1]) == 0 && b(img[1, 1]) == 0
 
     # contrast clip: value below lo → 0, above hi → 1
     chw = reshape(Float32[0.0 1.0; 0.2 0.8], 1, 2, 2)
-    im2 = _crop_composite_rgb(chw, [(0.2, 0.8, "green", true)])
+    im2 = composite_rgb(chw, [(0.2, 0.8, "green", true)])
     @test isapprox(g(im2[1, 1]), 0.0; atol = 0.01)     # 0.0 < lo → 0
     @test isapprox(g(im2[1, 2]), 1.0; atol = 0.01)     # 1.0 > hi → 1
 
     # invisible channel contributes nothing
-    dark = _crop_composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "red", false)])
+    dark = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "red", false)])
     @test r(dark[1, 1]) == 0
 
     # additive blend: red + green channels → yellow-ish
-    two = _crop_composite_rgb(cat(fill(1.0f0, 1, 1, 1), fill(1.0f0, 1, 1, 1); dims = 1),
+    two = composite_rgb(cat(fill(1.0f0, 1, 1, 1), fill(1.0f0, 1, 1, 1); dims = 1),
                               [(0.0, 1.0, "red", true), (0.0, 1.0, "green", true)])
     @test r(two[1, 1]) > 0.9 && g(two[1, 1]) > 0.9 && b(two[1, 1]) == 0
 end
@@ -1093,9 +1133,16 @@ end
         # terminal-setup detection: which button the lab-log toolbar shows (setup vs Chat to Claude).
         # Don't assert WHICH state — it depends on the dev machine's ~/.claude.json — but `ready` must
         # mean exactly "current", since the UI treats a stale entry as not set up.
-        @test String(s.terminal.state) in Set(["missing", "stale", "current"])
+        @test String(s.terminal.state) in Set(["missing", "stale", "shadowed", "current"])
         @test s.terminal.ready isa Bool
         @test s.terminal.ready == (String(s.terminal.state) == "current")
+        # a per-folder (`local`-scope) entry overrides our user-scope one, so "registered correctly"
+        # is not the same as "the user's terminal works" — `shadowed` names the folders that break it
+        # Asserted as implications, not an equality: a shadow can coexist with a missing/stale user-scope
+        # entry, and then THAT is the headline state (setup still fixes both).
+        @test s.terminal.shadowedDirs isa JSON3.Array
+        String(s.terminal.state) == "shadowed" && @test !isempty(s.terminal.shadowedDirs)
+        isempty(s.terminal.shadowedDirs) || @test !s.terminal.ready
     end
 
     # feedback: validated before anything is spawned.
@@ -1468,4 +1515,263 @@ end
     # non-dict payload → empty
     bad = JSON3.read(JSON3.write(Dict("allBranchLabels" => "nope")))
     @test _parse_all_branch_labels(bad) == Dict{String,Vector{String}}()
+end
+
+# ── Task console: snapshot reconciliation (the stale-"running"-row regression) ──
+# `api/task_console.jl` is run by path (`pixi run console`), never imported, so this is the only
+# automated coverage it can have: its entrypoint is guarded by `PROGRAM_FILE`, and the reconciliation
+# half is split out as the socket-free `_reconcile_snapshot!(rows)` we drive with synthetic snapshots.
+# Wrapped in a module because the script defines top-level consts (TASKS, LOCK, TALLY, …).
+#
+# The bug this pins: the console only ever ADDED rows from GET /api/tasks, and dropped one solely on a
+# terminal task:status frame — which is lossy by design (per-client drop-on-full queue in server.jl,
+# and nothing at all on a half-open socket). One missed frame stranded the row as "running" forever:
+# six tasks listed as running while every pool read idle and the scheduler held none.
+module TaskConsoleUT
+    include(joinpath(@__DIR__, "..", "task_console.jl"))
+end
+
+@testset "API: task console reconciles snapshot removals" begin
+    C = TaskConsoleUT
+    row(id; status="running", fun="segment.branching", pool="cpu", img="EaMaVq") =
+        (; id=id, status=status, fun_name=fun, pool_name=pool, image_uid=img, chain_run_id="")
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+    # retiring pushes an activity line, which STREAM_MODE prints — keep it out of the test output
+    reconcile(rows) = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+
+    # a scheduler task appears, then vanishes with NO terminal frame ever delivered
+    reset_console!()
+    reconcile([row("t1")])
+    @test haskey(C.TASKS, "t1") && C.TASKS["t1"].status == "running"
+    @test C.TASKS["t1"].in_snapshot                       # eligible for retiring
+    reconcile([])                            # miss 1 — not yet (poll/registration race)
+    @test haskey(C.TASKS, "t1")
+    reconcile([])                            # miss 2 — retire
+    @test !haskey(C.TASKS, "t1")                          # ← the row used to live here forever
+    @test C.TALLY["ended"] == 1                           # counted, and NOT guessed as done/failed
+    @test C.TALLY["done"] == 0 && C.TALLY["failed"] == 0
+
+    # a retired task must not be resurrected by a later snapshot (SEEN_TERM)
+    reconcile([row("t1")])
+    @test !haskey(C.TASKS, "t1") && C.TALLY["ended"] == 1
+
+    # a WS-only producer (job / batch movie) never appears in the snapshot → never retired by it
+    reset_console!()
+    t = C._task!("job1"); t.fun_name = "project.export"; t.pool_name = "job"; t.status = "running"
+    for _ in 1:5
+        reconcile([])
+    end
+    @test haskey(C.TASKS, "job1") && C.TALLY["ended"] == 0
+
+    # a terminal status seen IN the snapshot is counted for real, not as "ended"
+    reset_console!()
+    reconcile([row("t2")])
+    reconcile([row("t2"; status="failed")])
+    @test !haskey(C.TASKS, "t2")
+    @test C.TALLY["failed"] == 1 && C.TALLY["ended"] == 0
+
+    # a task still listed keeps its row and its miss counter resets (no drift toward retirement)
+    reset_console!()
+    reconcile([row("t3")])
+    reconcile([])                            # one miss
+    reconcile([row("t3")])                   # back in the snapshot → counter cleared
+    @test C.TASKS["t3"].misses == 0
+    reconcile([])
+    @test haskey(C.TASKS, "t3")                           # would have been retired if it hadn't reset
+
+    # an UNATTRIBUTED row (no fun, no pool — only ever log/progress frames) is prunable even though
+    # the snapshot never listed it: nothing else could ever remove it, so it sat there forever.
+    reset_console!()
+    C._task!("ghost")                        # blank fun + pool, default status "queued"
+    reconcile([])                            # miss 1
+    @test haskey(C.TASKS, "ghost")
+    reconcile([])                            # miss 2 → dropped
+    @test !haskey(C.TASKS, "ghost")
+    @test sum(values(C.TALLY)) == 0                       # no outcome claimed for a task we can't name
+    @test !("ghost" in C.SEEN_TERM)                       # …and not suppressed, so a real task returns
+end
+
+# ── Task console: post-mortem log frames must not resurrect a finished task ────
+# The zombie-queued-row regression. Cancelling a running task broadcasts the terminal `task:status`
+# at once (cancel_task! → on_status_change), then the killed subprocess's reader flushes whatever was
+# still in its pipe as `task:log` frames. Those carry no fun / pool / status, so each one minted a
+# fresh blank row stuck at the default "queued" — and the snapshot could never retire it, because the
+# scheduler had already deregistered the task. Six cancels, six immortal "queued / waiting" rows with
+# every pool reading idle and GET /api/tasks returning [].
+@testset "API: task console ignores post-mortem log frames" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="spatialAnalysis.aggregatesMeshes",
+                                  pool_name="cpu", image_uid="EaMaVq", chain_run_id="")
+    feed(frame) = redirect_stdout(devnull) do; C.handle_ws(JSON3.write(frame)) end
+    recon(rows)  = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.LOGS);
+                        empty!(C.ENDED_IDS); for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    reset_console!()
+    recon([row("k1")])
+    feed((; type="task:status", taskId="k1", status="cancelled", imageUid="EaMaVq",
+           fun="spatialAnalysis.aggregatesMeshes"))
+    @test !haskey(C.TASKS, "k1") && C.TALLY["cancelled"] == 1
+
+    # the dying subprocess's remaining stdout arrives AFTER the terminal frame
+    nlogs = length(C.LOGS)
+    feed((; type="task:log", taskId="k1", line=">> t74: 13 meshes, 0 aggregate(s)"))
+    feed((; type="task:log", taskId="k1", line="[QC] mesh aggregates: 31, 18% of cells."))
+    @test !haskey(C.TASKS, "k1")                          # ← used to reappear as a blank "queued" row
+    @test length(C.LOGS) == nlogs + 2                     # still SHOWN, just not resurrected as a row
+    @test C.TALLY["cancelled"] == 1                        # and not re-counted
+
+    # a progress frame after the fact is likewise ignored (this half was already guarded — pin it)
+    feed((; type="task:progress", taskId="k1", progress=0.9))
+    @test !haskey(C.TASKS, "k1")
+
+    # the row STAYS while the task is alive — a log frame for a live task is the normal case
+    reset_console!()
+    recon([row("k2")])
+    feed((; type="task:log", taskId="k2", line=">> t01: 4 meshes"))
+    @test haskey(C.TASKS, "k2") && C.TASKS["k2"].last_log == ">> t01: 4 meshes"
+end
+
+# ── Task console: a chain node's real outcome ─────────────────────────────────
+# A chain run emits NO `task:status` frames (`handle_chain_run` passes no `on_status_change`), so a
+# chain node's row can only leave the table via the snapshot-retire path — i.e. always
+# "ended / outcome unseen", never done or failed. The `taskId` now carried on every `chain:node:*`
+# frame is the correlation handle; these pin that the console uses it, and that a frame WITHOUT one
+# (skipped before submission, set-scope node, hand-fired REPL event → JSON `null`) is harmless.
+@testset "API: task console attributes chain-node outcomes" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="segment.branching",
+                                  pool_name="cpu", image_uid="EaMaVq", chain_run_id="run1")
+    feed(frame) = redirect_stdout(devnull) do        # STREAM_MODE prints; keep test output clean
+        C.handle_ws(JSON3.write(frame))
+    end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+    recon(rows) = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+
+    # node finishes → counted as DONE (not "ended"), row dropped at once
+    reset_console!()
+    recon([row("c1")])
+    feed((; type="chain:node:done", runId="run1", chainName="ch", projectUid="p",
+           imageUid="EaMaVq", nodeId="n1", fn="segment.branching", taskId="c1"))
+    @test !haskey(C.TASKS, "c1")
+    @test C.TALLY["done"] == 1 && C.TALLY["ended"] == 0
+    # …and the snapshot's retire path must not then double-count it as ended
+    recon([]); recon([])
+    @test C.TALLY["ended"] == 0 && C.TALLY["done"] == 1
+
+    # node:failed carries WHICH terminal it was — cancelled must not be counted as failed
+    reset_console!()
+    recon([row("c2")])
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1",
+           fn="segment.branching", status="cancelled", taskId="c2"))
+    @test C.TALLY["cancelled"] == 1 && C.TALLY["failed"] == 0
+    reset_console!()
+    recon([row("c3")])
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1",
+           fn="segment.branching", status="failed", taskId="c3"))
+    @test C.TALLY["failed"] == 1
+
+    # taskId absent / JSON null (skipped node, set-scope node, hand-fired event) → no crash, no tally,
+    # and the row is left for the snapshot to retire as before
+    reset_console!()
+    recon([row("c4")])
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f"))
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f",
+           taskId=nothing))
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n2", fn="f",
+           status="skipped", taskId=""))
+    @test haskey(C.TASKS, "c4")                       # untouched — nothing to correlate
+    @test sum(values(C.TALLY)) == 0
+    recon([]); recon([])
+    @test !haskey(C.TASKS, "c4") && C.TALLY["ended"] == 1   # falls back to the retire path
+
+    # a LATE terminal frame corrects an `ended` tally rather than leaving a number we know is wrong
+    # (chain frame delayed past the 2-poll retire window). It must move the count, not add one.
+    reset_console!()
+    recon([row("c6")]); recon([]); recon([])
+    @test C.TALLY["ended"] == 1
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c6"))
+    @test C.TALLY["ended"] == 0 && C.TALLY["done"] == 1        # moved, not added
+    # …and a further repeat of that frame changes nothing (no double count)
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c6"))
+    @test C.TALLY["done"] == 1 && sum(values(C.TALLY)) == 1
+    # a real outcome is NOT correctable by a later, different one — first sighting wins
+    reset_console!()
+    recon([row("c7")])
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c7"))
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f",
+           status="failed", taskId="c7"))
+    @test C.TALLY["done"] == 1 && C.TALLY["failed"] == 0
+
+    # a terminal chain frame for a task the console never saw still counts + blocks resurrection
+    reset_console!()
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c5"))
+    @test C.TALLY["done"] == 1
+    recon([row("c5")])
+    @test !haskey(C.TASKS, "c5") && C.TALLY["done"] == 1
+end
+
+# ── Chain event → WS bridge: taskId degradation ───────────────────────────────
+# The bridge reads `task_id` through `_ev_task_id`, not `p.task_id`, because two real payloads lack a
+# usable one: a node with no task id yet (skipped before submission, set-scope/incremental nodes that
+# bypass `run_task`) carries `nothing`, and a hand-fired REPL/test event may omit the field entirely.
+# Either must degrade to "" — a bridge handler that throws would take down chain telemetry for every
+# connected client.
+@testset "API: chain bridge taskId degradation" begin
+    @test _ev_task_id((; task_id = "abc123")) == "abc123"
+    @test _ev_task_id((; task_id = nothing))  == ""       # node had no task id yet
+    @test _ev_task_id((; run_id  = "r1"))     == ""       # field absent (hand-fired event)
+    @test _ev_task_id(NamedTuple())            == ""
+    @test _ev_task_id((; task_id = "x")) isa String
+end
+
+# ── Chain event → WS bridge: the frames that actually go out ───────────────────
+# The four `subscribe_chain_events!` handlers were only covered through `_ev_task_id`, so a mistyped
+# key ("taskID", "task_id") would have passed every other test. No socket needed: this harness already
+# include-d server.jl, so the subscriptions are live and `broadcast_ws` writes a pre-serialised frame
+# into each client's queue — register a Channel as a fake client and read the frame back.
+@testset "API: chain bridge frames" begin
+    q = Channel{String}(32)
+    lock(_ws_clients_lock) do; _ws_clients[:probe] = q; end
+    try
+        base = (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                 node_id="n1", fn="segment.branching", params=Dict{String,Any}("a"=>1),
+                 task_id="tid123")
+        fire(t, p) = (Cecelia._fire_chain_event!(t, p); JSON3.read(take!(q)))
+
+        for (ev, wire) in (("node:queued", "chain:node:queued"), ("node:running", "chain:node:running"))
+            f = fire(ev, base)
+            @test String(f.type)       == wire
+            @test String(f.taskId)     == "tid123"          # ← the correlation handle, right key name
+            @test String(f.runId)      == "r1"
+            @test String(f.chainName)  == "ch"
+            @test String(f.projectUid) == "p"
+            @test String(f.imageUid)   == "EaMaVq"
+            @test String(f.nodeId)     == "n1"
+            @test String(f.fn)         == "segment.branching"
+            @test haskey(f, :params)
+        end
+
+        f = fire("node:done", (; base..., result=Dict{String,Any}("valueName"=>"B")))
+        @test String(f.type) == "chain:node:done" && String(f.taskId) == "tid123"
+        @test String(f.result.valueName) == "B"
+
+        f = fire("node:failed", (; base..., status="cancelled"))
+        @test String(f.type) == "chain:node:failed" && String(f.taskId) == "tid123"
+        @test String(f.status) == "cancelled"               # console needs WHICH terminal it was
+
+        # a node with no task id yet (skipped/set-scope) must broadcast "" — not null, not a throw
+        f = fire("node:failed", (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                                  node_id="n2", fn="f", status="skipped", task_id=nothing))
+        @test String(f.taskId) == ""
+        # …and a hand-fired REPL event that omits the field entirely must not take the bridge down
+        f = fire("node:queued", (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
+                                  node_id="n3", fn="f", params=Dict{String,Any}()))
+        @test String(f.taskId) == ""
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, :probe); end
+        close(q)
+    end
 end

@@ -31,7 +31,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "segment.measureLabels"      => ["nCells"],
     # skeleton branching per image (docs/todo/BRANCHING_PLAN.md): nBranches is the primary count;
     # meanBranchLength flags an image whose skeleton is far more/less fragmented than its peers.
-    "segment.branching"          => ["nBranches", "meanBranchLength"],
+    # `anisotropy` (0 = uniform, 1 = non-uniform) is only banked when the anisotropy pass ran, so
+    # images that skipped it are simply absent from that metric's cohort rather than zero-valued.
+    # It is also the per-image structure readout plotted against behaviour composition — see
+    # docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 6.
+    "segment.branching"          => ["nBranches", "meanBranchLength", "anisotropy"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
     "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
     # clustering is set-scope (one run over all images); per-image QC records how each image's points

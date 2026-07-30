@@ -374,9 +374,11 @@ It **refuses** rather than guesses when the names can't be trusted: a rank/name 
 `.zattrs` axes don't describe its array), an axis the viewer doesn't have, or a transposed store. The
 caller then falls back to `align_axis_vector`, which only makes `scale` the right *length*.
 
-This depends on stores declaring truthful axes: `create_multiscales` drops the channel axis from the
-metadata under `ignore_channel=True`, and a task that collapses an axis passes `axes=` explicitly (see
-`branching_run.output_axes`). A store that lies about its axes is unusable metadata, not a hint.
+This depends on stores declaring truthful axes, which is the writer's half of the same contract: a task
+whose store is not the source image's shape passes `axes=` to `create_multiscales` explicitly (labels
+carry no C; `flattenBranching` drops Z; `integrateTime` drops T — see `branching_run._store_axes` and
+`docs/todo/SPATIAL_ANISOTROPY_PLAN.md` finding A8). A store that lies about its axes is unusable
+metadata, not a hint, which is why the reader refuses it rather than guessing.
 
 ---
 

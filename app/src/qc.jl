@@ -43,8 +43,9 @@ end
 #
 # Text rules (`docs/UI.md` → *UI copy*, `docs/MODULES.md` → *QC*): `short` = the problem, terse and
 # with no trailing period; `long` = what to DO about it, one imperative sentence. Numbers belong in
-# the finding's `detail`, not in the prose — the two `{}` placeholders that remain are the cases
-# where the number IS the message.
+# the finding's `detail`, not in the prose — a `{}` placeholder is only for the cases where the
+# number IS the message (a percentage, a channel index). The set of allowed placeholder names is
+# ASSERTED in runtests, so adding one is a deliberate act, not a typo.
 #
 # KEYED SEPARATELY FROM `code`. Usually the key is the code, but they are deliberately not the same
 # field: `metadata.pixel_size_no_unit` is emitted for the x, y AND z axes with different wording for
@@ -115,6 +116,18 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "clustering.dominant_cluster" => (
         short = "One cluster holds {pct}% of {unit}",
         long  = "Check the population is really this uniform, or raise resolution to split it."),
+
+    # skeleton branching (segment/branching.jl). These predated the catalog and were inlined at the
+    # call site with the four-argument form; moved here so the wording is reviewable with the rest.
+    "branching.no_branches" => (
+        short = "No branches found",
+        long  = "Lower the pre-dilation or check the segmentation, then re-run."),
+    "branching.aniso_grid_large" => (
+        short = "Orientation grid is large",
+        long  = "Raise the grid spacing — the stored field costs 1/box², so doubling it saves about 4x."),
+    "branching.uncalibrated" => (
+        short = "Image has no pixel size",
+        long  = "Set the pixel size, or read the µm scale settings as pixels — 1 µm/px was assumed."),
 
     # output geometry (qc_canvas_expansion)
     "output.canvas_expansion" => (

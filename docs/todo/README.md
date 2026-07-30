@@ -47,6 +47,14 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 - `SERVICE_PANEL_PLAN.md` — Settings control panel: live status + start/stop/restart for backend /
   napari / notebooks, global Quit, and a separate-window "pixi console" (reuses the existing log
   console). Branch `feat/settings-service-panel`; phased (panel → console → backend restart).
+- `SPATIAL_ANISOTROPY_PLAN.md` — branching-port audit (A1–A8) + the structure-anisotropy readouts
+  behind Figure 4 panels B (SHG quiver + tracks) and D (per-image anisotropy). **Notebook, not app
+  plots** — the app computes and stores, `docs/NOTEBOOKS.md` plots. The audit is the substance: the
+  anisotropy `uns` contract was *not* ILEE-compatible (the structure tensor's **minor** eigenvector
+  is the fibre direction, so the docs invited a silent 90° error), the σ/box defaults gave a
+  near-random field, `flattenBranching` dropped the time axis, and the branch labels zarr declared
+  the wrong axes so Y inherited the Z step. Worktree `spatial-anisotropy`, branch
+  `feat/spatial-anisotropy`. Supersedes `docs/prompts/spatial-anisotropy-quiver-prompt.md`.
 - `SPATIAL_REGIONS_PLAN.md` — spatial analysis port + region clustering + CytoMAP parity + live
   behaviour-region extension. New `region` poptype (reuses cluster machinery), squidpy re-added,
   per-cell neighbourhoods primary, cross-poptype query in Julia. Status: planning, no branch.

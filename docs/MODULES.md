@@ -503,6 +503,68 @@ include("tasks/task_registry.jl")   # already there — keep this order
 
 Both `app/src/` files are Revise-tracked. Adding a new struct requires a server restart; changing a function body does not.
 
+### Param advisories — a live "know this before you run" note
+
+Some params are easy to set wrongly in a way the user cannot see from the form: the right value
+depends on *their data*. For those, a param can carry an **advisory** — one muted line under the
+control, with a severity icon and the reasoning on hover.
+
+Register an advisor in **`frontend/src/tasks/paramAdvisors.ts`**; `ParamRenderer` renders every one
+of them through the same block, so **adding one needs no template change**.
+
+```ts
+anisotropyBoxUm: {
+  reloadOn: ctx => [ctx.images?.[0]?.uid],          // re-run when the context changes
+  advise: async (value, ctx) => ({ severity: 'ok', message: '69×68 grid · 37 MB', tip: '…' }),
+},
+```
+
+One entry point, `advise`, async. It started as two kinds — a pure `compute` and an async `load` —
+until both real advisors needed to fetch and `compute` had no user; a purely local advisory is just
+an `advise` that never awaits. `ParamRenderer` re-runs it on the value and on `reloadOn`, and
+sequences the results so a slider drag can't land an out-of-order answer.
+
+- **Keyed by param TYPE first, then param KEY.** Types are global (`motionDimsSelection` can only mean
+  one thing); keys are per-task and repeat — the motion param's key is just `dims`. So register a
+  widget-type advisor under the type and a one-off under a distinctive key.
+- **Return `null` rather than guessing** when an input is missing. An advisory that is absent is
+  fine; one that shows a wrong number is not.
+- **Ask for the ACTIVE image version, don't read a stored per-image size.** The frame extent is a
+  property of a *version*: drift correction expands the canvas (`output.canvas_expansion`) and a crop
+  shrinks it, so EaMaVq is 512×512 as imported and 544×548 corrected. `GET /api/images/geometry`
+  resolves a version (omit `valueName` ⇒ the active one) and reads the extent off its store. Storing
+  `SizeX`/`SizeY` on the image was tried first and reverted for exactly this: a version-dependent
+  value in a version-independent slot, silently wrong on every corrected image.
+- **Advisory, never a gate.** Same rule as QC: it informs, it does not block. Say what it costs and
+  let the user decide — the grid advisor's own tooltip ends "this is a heads-up, not a limit".
+- **Two signals, not one — return a `flag` when the DATA is the problem.** `message`/`severity`
+  answer *"what should I do?"*. The optional `flag` (a second severity icon with its own tooltip)
+  answers *"how much can I trust what this is based on?"*. They move independently:
+
+  | | message / severity | flag |
+  |---|---|---|
+  | motion dims | "2D recommended" — a mild, actionable note | z is *reversing*: the axis is jitter (`fail`) |
+  | grid spacing | "64×64 grid · 33 MB" — an ordinary setting | image uncalibrated, so µm are read as px (`warn`) |
+
+  **Rule of thumb: if re-running with a different setting would not change it, it is a flag, not a
+  severity.** Merging them loses information in a specific direction — the advice's tone swallows the
+  data's. That is not hypothetical: generalising the motion advisory flattened "2D recommended" and
+  "your z axis is noise" into one `warn`, and the severe fact disappeared from the UI until Dominik
+  noticed the missing icon.
+- **The judgement goes in the `.ts`, not the SFC**, so thresholds and wording are unit-tested
+  (`paramAdvisors.test.ts`) — the component only fetches and renders. This is the frontend testing
+  convention (`docs/DEV.md` → *Tests*) and the reason the mechanism exists at all: the first advisory
+  was hand-rolled inside `ParamRenderer` as five bespoke computeds plus its own template block, and
+  the second would have been a second copy.
+
+> **If an advisory duplicates a backend number, pin both sides.** The anisotropy grid advisory
+> mirrors `_aniso_grid_bytes` in `branching.jl` (40 bytes per box per frame) so the estimate shown
+> before a run matches what the run reports after. That duplication is deliberate — a round-trip for
+> a multiplication would be worse — and a test asserts the same value on both sides, so changing one
+> fails the other. It is still an **estimate**: it uses the default import's `SizeX`/`SizeY`, and a
+> drift-corrected variant has a larger canvas, so it reads slightly under. An advisory should be
+> honest about that in its own docstring rather than implying precision it doesn't have.
+
 ### Tasks launched outside a module page (computed params, new-image output)
 
 A task doesn't have to be driven by a module-page form. **`editImages.cropImage`** is launched from the

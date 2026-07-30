@@ -105,10 +105,14 @@ end
 # NOTE on `cmd /c`: cmd.exe applies its OWN parsing to the rest of the line, so
 # `claude mcp add-json <name> <spec>` — whose spec argument is quoted JSON — is the part of this to
 # distrust on Windows until it has actually been run there. Everything else passes plain arguments.
+#
+# `dir` is carried over deliberately: rebuilding the argv into a fresh `Cmd` would drop it, and the
+# local-scope cleanup below is the one caller that MUST run in a specific directory (`claude mcp
+# remove -s local` acts on its own cwd). Losing it there would silently edit the wrong scope.
 _agent_spawn_cmd(cmd::Cmd)::Cmd =
     (argv = collect(String, cmd.exec);
      isempty(argv) ? cmd :
-     Cmd(_agent_spawn_argv(argv, agent_bin_path(argv[1]), Sys.iswindows())))
+     Cmd(Cmd(_agent_spawn_argv(argv, agent_bin_path(argv[1]), Sys.iswindows())); dir = cmd.dir))
 
 # Is the agent CLI available on PATH? Drives the UI availability gate (feature hidden if absent).
 agent_available(a::AgentBackend)::Bool = !isnothing(agent_bin_path(_agent_bin(a)))
@@ -164,8 +168,9 @@ end
 # Both builders are PURE → unit-tested without spawning anything.
 _build_mcp_register_cmd(a::ClaudeAgent, spec_json::AbstractString; scope::AbstractString = "user")::Cmd =
     Cmd(String[a.bin, "mcp", "add-json", OBSERVER_MCP_NAME, String(spec_json), "-s", String(scope)])
-_build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user")::Cmd =
-    Cmd(String[a.bin, "mcp", "remove", OBSERVER_MCP_NAME, "-s", String(scope)])
+_build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user", dir::AbstractString = "")::Cmd =
+    (c = Cmd(String[a.bin, "mcp", "remove", OBSERVER_MCP_NAME, "-s", String(scope)]);
+     isempty(dir) ? c : Cmd(c; dir = String(dir)))
 
 # ── Is the user's terminal already set up? ─────────────────────────────────────────────────────────
 #
@@ -174,9 +179,9 @@ _build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user")::Cmd =
 # out: `claude mcp get/list` health-check every server (spawning our own Python MCP process) which would
 # make opening the panel slow for a question we ask on every refresh.
 #
-# User-scope servers live at the top level of `~/.claude.json` as `mcpServers[<name>]`
-# (`projects[<dir>].mcpServers` is the per-directory `local` scope — deliberately ignored: our button
-# writes `-s user`, which works from any directory).
+# User-scope servers live at the top level of `~/.claude.json` as `mcpServers[<name>]`. Our button
+# writes `-s user`, which works from any directory — but `projects[<dir>].mcpServers` (the per-directory
+# `local` scope) takes PRECEDENCE over it, so it can't be ignored: see `shadowing_observer_dirs`.
 claude_config_path()::String =
     (d = get(ENV, "CLAUDE_CONFIG_DIR", ""); isempty(d) ? joinpath(homedir(), ".claude.json") :
                                                          joinpath(d, ".claude.json"))
@@ -220,6 +225,74 @@ end
 # Convenience for the API layer: the state of the live config against the spec we'd register.
 observer_registration_state(want::AbstractDict) =
     observer_registration_state(read_registered_observer_spec(), want)
+
+# ── Local-scope shadowing ─────────────────────────────────────────────────────────────────────────
+#
+# The failure this exists to catch: our button writes `-s user`, but Claude Code resolves `local`
+# scope (`projects[<dir>].mcpServers`) FIRST. A leftover local entry — e.g. written by an earlier
+# install, or by hand — therefore overrides a perfectly good user-scope registration for every session
+# started in that directory, and when it points at a checkout that no longer exists the server dies
+# with ENOENT and the tools simply aren't there. Reading only the top level made this invisible: the
+# app reported `:current` and offered "Chat to Claude" while every session was in fact broken.
+#
+# Read every local-scope observer entry as `dir => spec`. Tolerant for the same reason as the
+# user-scope reader — it's another tool's file, and its shape must never error the status route.
+function read_local_observer_specs(path::AbstractString = claude_config_path())::Vector{Pair{String,Any}}
+    out = Pair{String,Any}[]
+    isfile(path) || return out
+    cfg = try
+        JSON3.read(read(path, String))
+    catch
+        return out
+    end
+    cfg isa AbstractDict || return out
+    projects = get(cfg, :projects, nothing)
+    projects isa AbstractDict || return out
+    for (dir, entry) in projects
+        entry isa AbstractDict || continue
+        servers = get(entry, :mcpServers, nothing)
+        servers isa AbstractDict || continue
+        spec = get(servers, Symbol(OBSERVER_MCP_NAME), nothing)
+        spec === nothing || push!(out, String(dir) => spec)
+    end
+    out
+end
+
+# Which of those local entries would actually MISLEAD a session, i.e. shadow the user-scope entry with
+# a different endpoint. A local entry that matches `want` resolves to the same server, so it is not a
+# problem and is deliberately left alone — we only ever clear entries that would break or misdirect.
+# PURE → unit-tested. Sorted so the reported list (and the removal order) is deterministic.
+observer_shadow_dirs(locals::Vector{Pair{String,Any}}, want::AbstractDict)::Vector{String} =
+    sort!(String[d for (d, spec) in locals
+                 if observer_registration_state(spec, want) !== :current])
+
+# Convenience for the API layer: shadowing dirs in the live config.
+shadowing_observer_dirs(want::AbstractDict)::Vector{String} =
+    observer_shadow_dirs(read_local_observer_specs(), want)
+
+# Clear the shadowing local-scope entries. `claude mcp remove -s local` acts on the process's cwd, so
+# each removal is spawned IN the offending directory — which is why `_agent_spawn_cmd` preserves `dir`.
+# Best-effort and fully reported: returns `(removed, failed)` so the UI can say which folders were
+# cleaned rather than claiming a blanket success. Skips a dir that no longer exists (spawning there
+# would just fail) — Claude Code ignores its config entry too, so there is nothing to fix.
+function remove_shadowing_observer_mcps(a::ClaudeAgent, dirs::Vector{String}; timeout_s::Int = 30)
+    removed, failed = String[], String[]
+    for d in dirs
+        isdir(d) || continue
+        ok = try
+            proc = run(pipeline(_agent_spawn_cmd(_build_mcp_remove_cmd(a; scope = "local", dir = d));
+                                stdout = devnull, stderr = devnull); wait = false)
+            timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
+            wait(proc)
+            close(timer)
+            proc.exitcode == 0 && proc.termsignal == 0
+        catch
+            false
+        end
+        push!(ok ? removed : failed, d)
+    end
+    (removed, failed)
+end
 
 # Register (or re-sync) the observer MCP in the user's Claude Code config. Returns
 # `(ok, message)` — `message` is the CLI's own output, shown verbatim in the UI on failure so a

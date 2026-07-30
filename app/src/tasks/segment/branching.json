@@ -64,11 +64,29 @@
       "tip": "Project the stack to one plane and skeletonise in 2D (3D only)"
     },
     {
+      "key": "integrateTime",
+      "tip": "One network for the whole movie",
+      "label": "Integrate time",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "integrateTimeMode",
+      "tip": "Applies to the raw channel; labels always merge",
+      "label": "Integrate mode",
+      "type": "select",
+      "default": "max",
+      "options": [
+        { "value": "max", "label": "max" },
+        { "value": "avg", "label": "avg" }
+      ]
+    },
+    {
       "key": "calcAnisotropy",
       "label": "Anisotropy",
       "type": "bool",
       "default": false,
-      "tip": "Measure local fibre alignment per branch; needs fibre channels"
+      "tip": "Also compute the fibre-orientation field and per-image anisotropy"
     },
     {
       "key": "calcFlattened",
@@ -78,32 +96,44 @@
       "tip": "Measure alignment on the Z projection instead of the full stack"
     },
     {
+      "key": "anisotropySource",
+      "tip": "Channel survives a bad segmentation; skeleton is smoother",
+      "label": "Anisotropy from",
+      "type": "select",
+      "default": "skeleton",
+      "options": [
+        { "value": "skeleton", "label": "skeleton" },
+        { "value": "mask",     "label": "mask" },
+        { "value": "channel",  "label": "channel" }
+      ]
+    },
+    {
       "key": "fibreChannels",
       "label": "Fibre channels",
       "type": "channelSelection",
       "multiple": true,
       "default": [],
-      "tip": "Channels carrying the fibre signal alignment is measured on"
+      "tip": "Only used when Anisotropy from = channel"
     },
     {
-      "key": "structureTensorSigma",
-      "label": "Structure-tensor sigma (px)",
+      "key": "structureTensorSigmaUm",
+      "label": "Smoothing scale (µm)",
       "type": "float",
       "min": 0.5,
-      "max": 20.0,
-      "step": 0.1,
-      "default": 2.0,
-      "tip": "Smoothing before alignment; raise it for thicker or noisier fibres"
+      "max": 50.0,
+      "step": 0.5,
+      "default": 7.0,
+      "tip": "Start ~7 µm, near fibre thickness; too low reads noise as structure"
     },
     {
-      "key": "anisotropyBoxSize",
-      "label": "Anisotropy box size (px)",
-      "type": "int",
-      "min": 5,
-      "max": 200,
-      "step": 1,
-      "default": 45,
-      "tip": "Neighbourhood each branch's alignment is averaged over"
+      "key": "anisotropyBoxUm",
+      "label": "Grid spacing (µm)",
+      "type": "float",
+      "min": 0.5,
+      "max": 100.0,
+      "step": 0.5,
+      "default": 5.0,
+      "tip": "Start ~5 µm; finer is better, but halving it quadruples the file"
     }
   ]
 }

@@ -294,6 +294,105 @@ function temporal_columns(lp::LabelProps)::Vector{String}
     end
 end
 
+# ── uns: whole-array metadata that isn't per-row ──────────────────────────────────
+# `obs`/`X`/`obsm` are per-LABEL and belong in the DataFrame path above. `uns` is everything else a
+# producer attached to the file — for the branch sidecar, the anisotropy grid (`aniso_*`) and its
+# `orientation_meta` descriptor. Read it here, in the one file allowed to touch HDF5 directly.
+#
+# **DIMENSION ORDER IS REVERSED.** HDF5 stores C-order; Julia reads column-major, so a numpy array
+# written as `(T, y_boxes, x_boxes, 2)` arrives as `(2, x_boxes, y_boxes, T)` — every axis flipped,
+# including the two box axes, which are the same length and so would swap SILENTLY. That is exactly
+# the positional-read bug the centroid-axis rename was about. `uns_array` therefore returns the
+# array in the PRODUCER's order by default; pass `as_stored=true` for the raw Julia layout.
+
+"""Keys present under `uns` (datasets and groups alike)."""
+uns_keys(lp::LabelProps)::Vector{String} =
+    _with_h5(lp.path, "r") do fid
+        haskey(fid, "uns") ? sort!(String[k for k in keys(fid["uns"])]) : String[]
+    end
+
+"""
+    uns_array(lp, key; as_stored=false) -> Array | nothing
+
+A numeric array from `uns`, in the PRODUCER's (numpy) dimension order — so
+`uns_array(lp, "orientation_eigvec")` is indexed `[t, y_box, x_box, vec, component]`, matching
+`docs/SEGMENTATION.md` and `cecelia.utils.anisotropy_utils`. `nothing` when the key is absent or
+is a group rather than a dataset.
+
+`as_stored=true` skips the reversal and hands back HDF5's raw Julia layout — only for a caller
+that genuinely wants it. Everything else should take the default; see the note above for why a
+positional read of the raw layout is a silent bug.
+"""
+function uns_array(lp::LabelProps, key::AbstractString; as_stored::Bool=false)
+    _with_h5(lp.path, "r") do fid
+        path = "uns/" * String(key)
+        haskey(fid, path) || return nothing
+        obj = fid[path]
+        obj isa HDF5.Dataset || return nothing
+        a = read(obj)
+        (as_stored || !(a isa AbstractArray) || ndims(a) < 2) ? a :
+            permutedims(a, reverse(1:ndims(a)))
+    end
+end
+
+"""
+    uns_dict(lp, key) -> Dict{String,Any} | nothing
+
+A GROUP under `uns` (e.g. `orientation_meta`) as a flat Dict of its scalar/array members. Strings come
+back as `String`, arrays in producer order (same reversal rule as `uns_array`). `nothing` when the
+key is absent or is a dataset rather than a group.
+"""
+function uns_dict(lp::LabelProps, key::AbstractString)
+    _with_h5(lp.path, "r") do fid
+        path = "uns/" * String(key)
+        haskey(fid, path) || return nothing
+        grp = fid[path]
+        grp isa HDF5.Group || return nothing
+        out = Dict{String,Any}()
+        for k in keys(grp)
+            o = grp[k]
+            o isa HDF5.Dataset || continue
+            v = read(o)
+            v = v isa AbstractArray && ndims(v) >= 2 ? permutedims(v, reverse(1:ndims(v))) : v
+            out[String(k)] = v isa AbstractString ? String(v) :
+                             (v isa AbstractArray{<:Cstring} || eltype(v) <: Cstring) ?
+                                 _as_strings(v) : v
+        end
+        out
+    end
+end
+
+"""
+    uns_df(lp, key) -> DataFrame | nothing
+
+A pandas DataFrame stored under `uns` (AnnData's `encoding-type: dataframe`) — e.g. the branch
+sidecar's `orientation_summary`, one row per anisotropy frame. `nothing` when the key is absent or holds
+something other than a dataframe.
+
+Unlike `uns_array` there is no axis reversal to worry about: each column is its own 1-D dataset.
+"""
+function uns_df(lp::LabelProps, key::AbstractString)
+    _with_h5(lp.path, "r") do fid
+        path = "uns/" * String(key)
+        haskey(fid, path) || return nothing
+        grp = fid[path]
+        (grp isa HDF5.Group && _enc(grp) == "dataframe") || return nothing
+        cols = haskey(HDF5.attrs(grp), "column-order") ?
+               _as_strings(HDF5.read_attribute(grp, "column-order")) : String[]
+        df = DataFrame()
+        for c in cols
+            haskey(grp, c) && (df[!, c] = _read_anndata_vector(grp, c))
+        end
+        df
+    end
+end
+
+uns_keys(path::AbstractString) = uns_keys(label_props(path))
+uns_array(path::AbstractString, key::AbstractString; kwargs...) =
+    uns_array(label_props(path), key; kwargs...)
+uns_dict(path::AbstractString, key::AbstractString) = uns_dict(label_props(path), key)
+uns_df(path::AbstractString, key::AbstractString) = uns_df(label_props(path), key)
+
 # ── Terminal: materialise the DataFrame (the only place HDF5 I/O happens) ─────────
 
 """
