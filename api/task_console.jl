@@ -40,8 +40,7 @@ function status_colour(s::AbstractString)
     s == "cancelled" ? MAGENTA : GREY
 end
 
-const ACTIVE   = ("queued", "running")
-const TERMINAL = ("done", "failed", "cancelled")
+const TERMINAL = ("done", "failed", "cancelled")   # everything else is active (queued / running)
 
 # ── State ───────────────────────────────────────────────────────────────────────
 mutable struct TaskView
@@ -54,6 +53,12 @@ mutable struct TaskView
     progress::Float64      # -1 = unknown / not reported yet
     last_log::String
     updated::DateTime
+    # Reconciliation state (see refresh_snapshot!). `in_snapshot` marks a task the /api/tasks
+    # snapshot has listed at least once — i.e. a real SCHEDULER task, so its absence from a later
+    # snapshot is meaningful. WS-only producers (jobs, batch movies) never appear in the snapshot
+    # and must never be pruned by it. `misses` counts consecutive snapshots it went missing from.
+    in_snapshot::Bool
+    misses::Int
 end
 
 const TASKS      = Dict{String,TaskView}()   # taskId => view — ACTIVE tasks only (finished ones drop out)
@@ -65,7 +70,10 @@ const MAX_LOGS   = 500
 # Finished tasks are collapsed to a COUNT, not kept as rows — the console answers "what's running now
 # and how many are done", not "show all 50". TALLY holds cumulative terminal outcomes; SEEN_TERM stops
 # a task being re-counted / re-added (by a late WS event or the snapshot poll) once it has finished.
-const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0)
+# "ended" = finished, outcome unseen: the task left the scheduler snapshot but its terminal
+# task:status frame never arrived (WS telemetry is lossy by design — see broadcast_ws). Counted
+# separately rather than guessed as done/failed, so the console never claims an outcome it didn't see.
+const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0, "ended" => 0)
 const SEEN_TERM  = Set{String}()
 
 # Live resource-pool occupancy (polled from GET /api/pools): per pool, its configured concurrency
@@ -90,7 +98,7 @@ trunc_s(s::AbstractString, n::Int) = length(s) <= n ? String(s) : String(first(s
 # Get-or-create a task view, so a WS event for a not-yet-snapshotted task still shows up.
 function _task!(id::AbstractString)
     get!(TASKS, String(id)) do
-        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now())
+        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now(), false, 0)
     end
 end
 
@@ -112,35 +120,82 @@ function push_log!(id::AbstractString, line::AbstractString)
 end
 
 # A task's first terminal sighting: bump its outcome tally and drop the row (kept only as a count).
+#
+# One exception to "first sighting wins": a task retired as `ended` (finished, outcome unseen) whose
+# real outcome shows up LATER — a chain node's terminal frame delayed past the retire window, or any
+# frame that arrived after the snapshot had already dropped the row. Moving the count is strictly
+# better than keeping a number we know to be wrong, and it can't double-count: the id leaves
+# ENDED_IDS as it's corrected, and every other repeat sighting still returns early.
+const ENDED_IDS = Set{String}()   # ids currently counted as "ended" — correctable, unlike a real outcome
+
 function _note_terminal!(id::AbstractString, status::AbstractString)
-    id in SEEN_TERM && return
-    push!(SEEN_TERM, id)
+    if id in SEEN_TERM
+        (id in ENDED_IDS && status != "ended" && haskey(TALLY, status)) || return
+        TALLY["ended"] -= 1                       # …and fall through to count the real outcome
+        delete!(ENDED_IDS, String(id))
+    else
+        push!(SEEN_TERM, String(id))
+        status == "ended" && push!(ENDED_IDS, String(id))
+    end
     haskey(TALLY, status) && (TALLY[status] += 1)
     delete!(TASKS, id)
 end
 
 # ── HTTP snapshot (fills in fun_name / image / pool for in-flight tasks) ─────────
+# The snapshot is AUTHORITATIVE and complete: /api/tasks returns the scheduler's whole in-flight set
+# under its lock, and a task is deregistered the moment it finishes. So reconciliation runs BOTH ways —
+# rows are added/updated from the snapshot AND retired when they vanish from it. The retire half is what
+# makes WS telemetry genuinely lossy-safe: frames are dropped by design for a slow client (per-client
+# drop-on-full queue in server.jl) and lost outright on a half-open socket, and without this a missed
+# terminal frame stranded the row as "running" forever — the scheduler idle, the console still listing it.
+#
+# Only tasks the snapshot has ALREADY listed (`in_snapshot`) are eligible: jobs and batch movies are
+# WS-only producers that never appear there, and pruning them would delete every row they own.
+# Two consecutive misses are required so a task registered between the poll and its first WS frame
+# is never retired on a one-poll race.
+const SNAPSHOT_MISSES_TO_RETIRE = 2
+
+# Pure half — takes already-parsed rows, touches no socket, so `api/test/runtests.jl` can drive it
+# with synthetic snapshots (that's the only automated coverage this script can have: it's run by path,
+# never imported, so the entrypoint at the bottom is guarded to keep `include`ing it side-effect-free).
+function _reconcile_snapshot!(rows)
+    lock(LOCK) do
+        present = Set{String}()
+        for row in rows
+            id = String(row.id)
+            push!(present, id)
+            id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
+            status = String(get(row, :status, ""))
+            if status in TERMINAL                       # finished before we saw it live → just count it
+                _note_terminal!(id, status)
+                continue
+            end
+            t = _task!(id)
+            t.fun_name     = String(get(row, :fun_name, t.fun_name))
+            t.image_uid    = String(get(row, :image_uid, t.image_uid))
+            t.pool_name    = String(get(row, :pool_name, t.pool_name))
+            t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
+            isempty(status) || (t.status = status)
+            t.in_snapshot  = true
+            t.misses       = 0
+        end
+        # retire what the scheduler no longer knows about (outcome unseen — tallied as "ended")
+        for (id, t) in collect(TASKS)
+            (t.in_snapshot && !(id in present)) || continue
+            t.misses += 1
+            t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
+            _note_terminal!(id, "ended")
+            push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
+                        col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
+        end
+    end
+    nothing
+end
+
 function refresh_snapshot!()
     try
         r = HTTP.get("$HTTP_BASE/api/tasks"; connect_timeout=2, readtimeout=3, retry=false)
-        rows = JSON3.read(String(r.body))
-        lock(LOCK) do
-            for row in rows
-                id = String(row.id)
-                id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
-                status = String(get(row, :status, ""))
-                if status in TERMINAL                       # finished before we saw it live → just count it
-                    _note_terminal!(id, status)
-                    continue
-                end
-                t = _task!(id)
-                t.fun_name     = String(get(row, :fun_name, t.fun_name))
-                t.image_uid    = String(get(row, :image_uid, t.image_uid))
-                t.pool_name    = String(get(row, :pool_name, t.pool_name))
-                t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
-                isempty(status) || (t.status = status)
-            end
-        end
+        _reconcile_snapshot!(JSON3.read(String(r.body)))
         return true
     catch
         return false   # server not up yet / transient — the caller shows connection state
@@ -220,6 +275,16 @@ function handle_ws(raw::AbstractString)
                         colour = status_colour(node == "done" ? "done" :
                                                node == "failed" ? "failed" :
                                                node == "running" ? "running" : "queued"))
+            # A chain run emits NO task:status frames (handle_chain_run passes no on_status_change), so
+            # a chain node's row would otherwise only ever leave the table via the snapshot-retire path —
+            # i.e. always "ended / outcome unseen", never done or failed. `taskId` on the chain event is
+            # the correlation handle: attribute the node's real outcome to its task row here. Terminal
+            # events only; `:queued`/`:running` already come from the snapshot poll.
+            tid = let t = get(msg, :taskId, nothing); t isa AbstractString ? String(t) : "" end
+            if !isempty(tid) && node in ("done", "failed")
+                # node:failed carries which of failed/skipped/cancelled it was
+                _note_terminal!(tid, node == "done" ? "done" : String(get(msg, :status, "failed")))
+            end
 
         elseif startswith(type, "chain:run:") || type == "chain:log"
             detail = type == "chain:log" ? String(get(msg, :line, "")) :
@@ -231,7 +296,7 @@ function handle_ws(raw::AbstractString)
         end
         # ping/pong and anything else are ignored.
     end
-    STREAM_MODE || render()
+    STREAM_MODE || render_throttled()
 end
 
 # ── Dashboard render (in-place redraw) ───────────────────────────────────────────
@@ -275,6 +340,7 @@ function render()
           col(DIM, " · "), col(GREEN, "$(TALLY["done"]) done"),
           col(DIM, " · "), col(RED, "$(TALLY["failed"]) failed"),
           TALLY["cancelled"] > 0 ? string(col(DIM, " · "), col(MAGENTA, "$(TALLY["cancelled"]) cancelled")) : "",
+          TALLY["ended"] > 0 ? string(col(DIM, " · "), col(GREY, "$(TALLY["ended"]) ended")) : "",
           "\n")
 
     # pools panel — configured concurrency limit vs slots in use now (+ any queued) for each pool.
@@ -324,6 +390,19 @@ function render()
 
     print(String(take!(io)))
     flush(stdout)
+    _last_render[] = Dates.now()
+end
+
+# A full-screen repaint per WS frame made the receive loop the bottleneck at task-log volume — and a
+# slow reader is exactly what makes the server drop THIS client's frames (per-client drop-on-full queue
+# in server.jl), so the console helped cause the loss it then couldn't recover from. Coalesce repaints;
+# the 2s snapshot loop always repaints, so a skipped frame is at most 2s behind.
+const RENDER_MIN_INTERVAL = Millisecond(100)
+const _last_render        = Ref(Dates.now() - Second(10))
+
+function render_throttled()
+    Dates.now() - _last_render[] < RENDER_MIN_INTERVAL && return
+    render()
 end
 
 function show_waiting(reason::AbstractString)
@@ -351,6 +430,7 @@ function run_console()
                 # tasks from the previous server session would linger forever (we only ever add rows).
                 lock(LOCK) do
                     empty!(TASKS); empty!(EVENTS); empty!(LOGS); empty!(SEEN_TERM); empty!(POOLS)
+                    empty!(ENDED_IDS)
                     for k in keys(TALLY); TALLY[k] = 0; end
                 end
                 # seed the snapshot, then keep it fresh + keep the socket alive
@@ -360,7 +440,16 @@ function run_console()
                     try sleep(2); refresh_snapshot!(); STREAM_MODE || refresh_pools!(); STREAM_MODE || render() catch end
                 end
                 @async while connected[]
-                    try sleep(20); HTTP.WebSockets.send(ws, "{\"type\":\"ping\"}") catch end
+                    try
+                        sleep(20); HTTP.WebSockets.send(ws, "{\"type\":\"ping\"}")
+                    catch
+                        # A failed keepalive means the socket is dead or half-open. Swallowing it left
+                        # the reader blocked in `for msg in ws` forever — HTTP polling kept refreshing
+                        # rows while no WS frame ever arrived again, so nothing ever reached a terminal
+                        # status. Tear it down instead: the outer loop reconnects, clears and reseeds.
+                        connected[] = false
+                        try; close(ws); catch; end
+                    end
                 end
                 for msg in ws
                     handle_ws(msg isa AbstractString ? msg : String(msg))
@@ -376,9 +465,13 @@ function run_console()
     end
 end
 
-try
-    run_console()
-catch e
-    e isa InterruptException || rethrow()
-    println("\n", col(DIM, "task console stopped."))
+# Entrypoint — only when run as a script (`pixi run console`). Guarded so the test suite can
+# `include` this file to drive `_reconcile_snapshot!` without opening a socket or a dashboard.
+if abspath(PROGRAM_FILE) == @__FILE__
+    try
+        run_console()
+    catch e
+        e isa InterruptException || rethrow()
+        println("\n", col(DIM, "task console stopped."))
+    end
 end

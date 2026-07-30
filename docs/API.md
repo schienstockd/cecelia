@@ -167,13 +167,29 @@ many worker threads, so writing sockets inline would let concurrent threads corr
 and let one slow/half-open client block a worker (which strands a pool slot → tasks stuck at `queued`).
 Workers must never block on WS I/O. The **per-client** queue (rather than one shared drainer) also
 means a single stuck client only ever loses *its own* frames — it can't head-of-line-block delivery to
-the other tabs or the console. WS telemetry is lossy-safe: the console reconciles the authoritative
-state from `GET /api/tasks`, so a dropped frame self-heals. `handle_task_run` forwards
+the other tabs or the console. WS telemetry is lossy-safe *because the console reconciles against
+`GET /api/tasks` in **both** directions* — that snapshot is the authoritative in-flight set (whole
+registry, under its lock, deregistered on completion), so the console adds/updates rows from it **and
+retires rows that vanish from it** (2 consecutive misses; tallied `ended` — "finished, outcome unseen"
+— rather than guessed as done/failed). Only add-and-update is not enough: a lost terminal
+`task:status` frame — dropped for a slow client, or never delivered on a half-open socket — otherwise
+strands the row as `running` forever, so the console lists tasks the scheduler has long since finished
+while every pool reads idle. Rows for WS-only producers (jobs, batch movies) never appear in the
+snapshot and are exempt from retiring. The reconciliation half is split out as the socket-free
+`_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals*
+testset (the script's entrypoint is `PROGRAM_FILE`-guarded so the suite can `include` it).
+**Chain nodes** report their outcome through a different door: a chain run emits no `task:status`
+frames, so the console attributes one from the `taskId` on the terminal `chain:node:done`/`failed`
+frame (see `docs/SCHEDULER.md` → *Event bus*). A row already retired as `ended` is *corrected* if its
+real outcome arrives late — moving the tally rather than keeping a number known to be wrong — which
+leaves `ended` meaning what it says: telemetry genuinely lost. `handle_task_run` forwards
 `queued`/`running` **and
 `cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
 cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker
 later dequeues and skips it; `done`/`failed` are held until the result is sent. The console drops its
-whole view on reconnect (a localhost drop = server restart), so stale tasks don't linger.
+whole view on reconnect (a localhost drop = server restart), so stale tasks don't linger — and a failed
+20s keepalive now tears the socket down instead of being swallowed, so a half-open connection actually
+reaches that reconnect rather than leaving the reader blocked forever on a socket that never speaks again.
 
 ---
 

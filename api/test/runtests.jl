@@ -1403,3 +1403,161 @@ end
     bad = JSON3.read(JSON3.write(Dict("allBranchLabels" => "nope")))
     @test _parse_all_branch_labels(bad) == Dict{String,Vector{String}}()
 end
+
+# ── Task console: snapshot reconciliation (the stale-"running"-row regression) ──
+# `api/task_console.jl` is run by path (`pixi run console`), never imported, so this is the only
+# automated coverage it can have: its entrypoint is guarded by `PROGRAM_FILE`, and the reconciliation
+# half is split out as the socket-free `_reconcile_snapshot!(rows)` we drive with synthetic snapshots.
+# Wrapped in a module because the script defines top-level consts (TASKS, LOCK, TALLY, …).
+#
+# The bug this pins: the console only ever ADDED rows from GET /api/tasks, and dropped one solely on a
+# terminal task:status frame — which is lossy by design (per-client drop-on-full queue in server.jl,
+# and nothing at all on a half-open socket). One missed frame stranded the row as "running" forever:
+# six tasks listed as running while every pool read idle and the scheduler held none.
+module TaskConsoleUT
+    include(joinpath(@__DIR__, "..", "task_console.jl"))
+end
+
+@testset "API: task console reconciles snapshot removals" begin
+    C = TaskConsoleUT
+    row(id; status="running", fun="segment.branching", pool="cpu", img="EaMaVq") =
+        (; id=id, status=status, fun_name=fun, pool_name=pool, image_uid=img, chain_run_id="")
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+    # retiring pushes an activity line, which STREAM_MODE prints — keep it out of the test output
+    reconcile(rows) = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+
+    # a scheduler task appears, then vanishes with NO terminal frame ever delivered
+    reset_console!()
+    reconcile([row("t1")])
+    @test haskey(C.TASKS, "t1") && C.TASKS["t1"].status == "running"
+    @test C.TASKS["t1"].in_snapshot                       # eligible for retiring
+    reconcile([])                            # miss 1 — not yet (poll/registration race)
+    @test haskey(C.TASKS, "t1")
+    reconcile([])                            # miss 2 — retire
+    @test !haskey(C.TASKS, "t1")                          # ← the row used to live here forever
+    @test C.TALLY["ended"] == 1                           # counted, and NOT guessed as done/failed
+    @test C.TALLY["done"] == 0 && C.TALLY["failed"] == 0
+
+    # a retired task must not be resurrected by a later snapshot (SEEN_TERM)
+    reconcile([row("t1")])
+    @test !haskey(C.TASKS, "t1") && C.TALLY["ended"] == 1
+
+    # a WS-only producer (job / batch movie) never appears in the snapshot → never retired by it
+    reset_console!()
+    t = C._task!("job1"); t.fun_name = "project.export"; t.pool_name = "job"; t.status = "running"
+    for _ in 1:5
+        reconcile([])
+    end
+    @test haskey(C.TASKS, "job1") && C.TALLY["ended"] == 0
+
+    # a terminal status seen IN the snapshot is counted for real, not as "ended"
+    reset_console!()
+    reconcile([row("t2")])
+    reconcile([row("t2"; status="failed")])
+    @test !haskey(C.TASKS, "t2")
+    @test C.TALLY["failed"] == 1 && C.TALLY["ended"] == 0
+
+    # a task still listed keeps its row and its miss counter resets (no drift toward retirement)
+    reset_console!()
+    reconcile([row("t3")])
+    reconcile([])                            # one miss
+    reconcile([row("t3")])                   # back in the snapshot → counter cleared
+    @test C.TASKS["t3"].misses == 0
+    reconcile([])
+    @test haskey(C.TASKS, "t3")                           # would have been retired if it hadn't reset
+end
+
+# ── Task console: a chain node's real outcome ─────────────────────────────────
+# A chain run emits NO `task:status` frames (`handle_chain_run` passes no `on_status_change`), so a
+# chain node's row can only leave the table via the snapshot-retire path — i.e. always
+# "ended / outcome unseen", never done or failed. The `taskId` now carried on every `chain:node:*`
+# frame is the correlation handle; these pin that the console uses it, and that a frame WITHOUT one
+# (skipped before submission, set-scope node, hand-fired REPL event → JSON `null`) is harmless.
+@testset "API: task console attributes chain-node outcomes" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="segment.branching",
+                                  pool_name="cpu", image_uid="EaMaVq", chain_run_id="run1")
+    feed(frame) = redirect_stdout(devnull) do        # STREAM_MODE prints; keep test output clean
+        C.handle_ws(JSON3.write(frame))
+    end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+    recon(rows) = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+
+    # node finishes → counted as DONE (not "ended"), row dropped at once
+    reset_console!()
+    recon([row("c1")])
+    feed((; type="chain:node:done", runId="run1", chainName="ch", projectUid="p",
+           imageUid="EaMaVq", nodeId="n1", fn="segment.branching", taskId="c1"))
+    @test !haskey(C.TASKS, "c1")
+    @test C.TALLY["done"] == 1 && C.TALLY["ended"] == 0
+    # …and the snapshot's retire path must not then double-count it as ended
+    recon([]); recon([])
+    @test C.TALLY["ended"] == 0 && C.TALLY["done"] == 1
+
+    # node:failed carries WHICH terminal it was — cancelled must not be counted as failed
+    reset_console!()
+    recon([row("c2")])
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1",
+           fn="segment.branching", status="cancelled", taskId="c2"))
+    @test C.TALLY["cancelled"] == 1 && C.TALLY["failed"] == 0
+    reset_console!()
+    recon([row("c3")])
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1",
+           fn="segment.branching", status="failed", taskId="c3"))
+    @test C.TALLY["failed"] == 1
+
+    # taskId absent / JSON null (skipped node, set-scope node, hand-fired event) → no crash, no tally,
+    # and the row is left for the snapshot to retire as before
+    reset_console!()
+    recon([row("c4")])
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f"))
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f",
+           taskId=nothing))
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n2", fn="f",
+           status="skipped", taskId=""))
+    @test haskey(C.TASKS, "c4")                       # untouched — nothing to correlate
+    @test sum(values(C.TALLY)) == 0
+    recon([]); recon([])
+    @test !haskey(C.TASKS, "c4") && C.TALLY["ended"] == 1   # falls back to the retire path
+
+    # a LATE terminal frame corrects an `ended` tally rather than leaving a number we know is wrong
+    # (chain frame delayed past the 2-poll retire window). It must move the count, not add one.
+    reset_console!()
+    recon([row("c6")]); recon([]); recon([])
+    @test C.TALLY["ended"] == 1
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c6"))
+    @test C.TALLY["ended"] == 0 && C.TALLY["done"] == 1        # moved, not added
+    # …and a further repeat of that frame changes nothing (no double count)
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c6"))
+    @test C.TALLY["done"] == 1 && sum(values(C.TALLY)) == 1
+    # a real outcome is NOT correctable by a later, different one — first sighting wins
+    reset_console!()
+    recon([row("c7")])
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c7"))
+    feed((; type="chain:node:failed", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f",
+           status="failed", taskId="c7"))
+    @test C.TALLY["done"] == 1 && C.TALLY["failed"] == 0
+
+    # a terminal chain frame for a task the console never saw still counts + blocks resurrection
+    reset_console!()
+    feed((; type="chain:node:done", runId="run1", imageUid="EaMaVq", nodeId="n1", fn="f", taskId="c5"))
+    @test C.TALLY["done"] == 1
+    recon([row("c5")])
+    @test !haskey(C.TASKS, "c5") && C.TALLY["done"] == 1
+end
+
+# ── Chain event → WS bridge: taskId degradation ───────────────────────────────
+# The bridge reads `task_id` through `_ev_task_id`, not `p.task_id`, because two real payloads lack a
+# usable one: a node with no task id yet (skipped before submission, set-scope/incremental nodes that
+# bypass `run_task`) carries `nothing`, and a hand-fired REPL/test event may omit the field entirely.
+# Either must degrade to "" — a bridge handler that throws would take down chain telemetry for every
+# connected client.
+@testset "API: chain bridge taskId degradation" begin
+    @test _ev_task_id((; task_id = "abc123")) == "abc123"
+    @test _ev_task_id((; task_id = nothing))  == ""       # node had no task id yet
+    @test _ev_task_id((; run_id  = "r1"))     == ""       # field absent (hand-fired event)
+    @test _ev_task_id(NamedTuple())            == ""
+    @test _ev_task_id((; task_id = "x")) isa String
+end
