@@ -87,6 +87,56 @@ class CreateMultiscalesOnDiskTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class CreateMultiscalesAxesOverrideTest(unittest.TestCase):
+    """`axes=` lets a caller declare the axes of the array it is actually storing.
+
+    Needed by any writer whose store is not the source image's shape — the branch-labels store has
+    no channel axis and can lose Z (flattenBranching) or T (integrateTime). Without the override it
+    inherited the image's axes verbatim, tagging a 3-axis array `t,c,z,y,x` and handing Y the Z
+    step. See docs/todo/SPATIAL_ANISOTROPY_PLAN.md finding A8.
+
+    The load-bearing assertion is that scale is mapped by axis NAME, not zipped positionally — a
+    positional zip is precisely how the dropped axis shifts everything after it.
+    """
+
+    def _dim_utils(self):
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        du = DimUtils(ome_types.from_xml(_OME_XML), use_channel_axis=True)
+        du.calc_image_dimensions((2, 4, 3))       # C,Y,X
+        return du
+
+    def test_dropping_the_channel_axis_keeps_yx_scales(self):
+        du = self._dim_utils()
+        arr = np.zeros((4, 3), dtype=np.uint16)   # the C axis is gone from the STORE
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "labels.zarr")
+            zu.create_multiscales(arr, path, dim_utils=du, axes=["Y", "X"],
+                                  im_chunks=(4, 3), nscales=1)
+            ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
+            self.assertEqual([a["name"] for a in ms["axes"]], ["y", "x"])
+            # Y and X keep THEIR OWN 0.5 — a positional zip would have handed Y the C entry (1.0).
+            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"], [0.5, 0.5])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_no_override_is_unchanged(self):
+        """Every existing caller passes no `axes` and must be completely unaffected."""
+        du = self._dim_utils()
+        arr = np.zeros((2, 4, 3), dtype=np.uint16)
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "img.zarr")
+            zu.create_multiscales(arr, path, dim_utils=du, im_chunks=(1, 4, 3), nscales=1)
+            ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
+            self.assertEqual([a["name"] for a in ms["axes"]], ["c", "y", "x"])
+            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"],
+                             [1.0, 0.5, 0.5])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class StreamingWritersTest(unittest.TestCase):
     """The generic streaming helpers used by the drift / AF / cellpose correction tasks:
     open_multiscales_for_writing (empty per-plane-chunked level 0 + metadata) and copy_stream

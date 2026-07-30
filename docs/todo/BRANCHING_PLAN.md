@@ -135,14 +135,33 @@ Sxx, Sxy, Syy = skimage.feature.structure_tensor(img_channel, sigma=sigma)
 
 - Algorithm: local structure tensor of the fibre channel over a box grid → per-box eigendecomposition
   → eigenvectors give the principal direction (quiver arrows), eigenvalues give the anisotropy
-  magnitude. This is what ILEE's `analyze_anisotropy_2d/3d` computes, at ~300 LOC of unmaintained
-  code with numba disabled; skimage's `structure_tensor` primitive is maintained, in-env, and 2D+3D.
+  magnitude. ~300 LOC of unmaintained ILEE code with numba disabled is replaced by skimage's
+  `structure_tensor` primitive, which is maintained, in-env, and 2D+3D.
+
+  > **CORRECTION (2026-07-29, `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` finding A1).** This bullet
+  > originally read "This is what ILEE's `analyze_anisotropy_2d/3d` computes". It is **not**.
+  > ILEE computes a **tangent tensor over the skeleton graph** (accumulate `outer(t̂,t̂)·length`
+  > over skan edges); the structure tensor measures **intensity gradients**. Their principal
+  > directions are **orthogonal**: the fibre runs along the structure tensor's *minor* eigenvector
+  > and along the tangent tensor's *major* one (verified to ~1° on synthetic fields at 0/30/45/60/
+  > 90/135°, `python/cecelia/tests/test_anisotropy_utils.py`). Always read the direction via
+  > `cecelia.utils.anisotropy_utils.fibre_orientation`, never by indexing `orientation_eigvec`.
 - Cite Li et al. *Plant Cell* 2023 (DOI + upstream URL) as the algorithmic ancestor at the
   function's docstring, per the "cite sources" rule. `THIRD_PARTY.md` gets a **skan** entry, not an
   ILEE one.
-- Output shape kept compatible with the old `uns` layout (`ilee_coor_list`, `ilee_eigval`,
-  `ilee_eigvec`, `ilee_box_total_length`, `ilee_box_anisotropy`) so existing R notebooks read
-  post-port outputs unchanged. The `ilee_summary` scalar table (occupancy, cv, skewness,
+- Output keeps the old `uns` names.
+  > **CORRECTION (2026-07-29) — both halves of this bullet were wrong, see
+  > `docs/todo/SPATIAL_ANISOTROPY_PLAN.md`.** It originally promised "existing R notebooks read
+  > post-port outputs unchanged". They do not: the eigenvalues are sorted **ascending** here vs
+  > ILEE's descending, and the eigenvector array is stored **transposed** (rows vs ILEE's columns).
+  > Shape-alike, index-incompatible. So the names were **renamed off the `ilee_` prefix** — they
+  > were claiming a lineage the arrays don't have — to `orientation_coords` / `orientation_eigval` /
+  > `orientation_eigvec` / `orientation_box_length` / `orientation_box_coherence` /
+  > `orientation_summary`, plus an `orientation_meta` block recording the layout explicitly
+  > (`eigval_order`, `eigvec_layout`, `fibre_direction`) so no reader has to guess. Note
+  > `ilee_box_anisotropy` → `orientation_box_coherence`: it is per-box *coherence*, not the
+  > per-image `anisotropy` scalar. The contract now lives in `docs/SEGMENTATION.md`.
+  The summary scalar table (occupancy, cv, skewness,
   MF_full_length, branching_act, anisotropy) is recomputed inline from skan + scipy — ~30 LOC.
 - Language: **Python**, inside `branching_run.py`. The skeleton and channel image already live in
   that process; a Julia handoff for a per-image compute would be pure overhead and no dep gets
@@ -338,14 +357,16 @@ Ship all four as one PR per the "finish feature before opening PR" rule.
    the biggest risk anymore. Fallback: sidecar + read via existing `labels` pop_type (ungated, no
    filter pops) — much cheaper, reversible later. But note that fallback kills Decision 3
    (`ensure_filter_pop!` per branch-type) which is the killer app of the whole task.
-2. **Structure-tensor output shape parity.** The old `ilee_coor_list[t, y, x, axis]` layout is
-   what R notebooks index into (`x$ilee_coor_list[1,,,1]`). Reproducing that shape from skimage's
-   output is straightforward but must be tested against a fixture with known geometry (a
-   synthetic parallel-line-field → anisotropy ≈ 1 in that direction).
+2. ~~**Structure-tensor output shape parity.**~~ **Retired 2026-07-29.** The premise — that R
+   notebooks index `x$ilee_coor_list[1,,,1]` and should keep working — does not survive the
+   correction above: the arrays are index-incompatible whatever they are called, so shape parity
+   bought nothing and the names now say `orientation_*`. The fixture-with-known-geometry half of
+   this risk WAS acted on: `test_anisotropy_utils.py` holds both estimators to synthetic fields at
+   0/30/45/60/90/135° (5° tolerance).
 3. **`skan.summarize` separator flip** is a scheduled upstream change. Pinning `separator='-'`
    defuses it, but the obs column names (`branch-type`, …) are then ours to maintain against a
    library that has moved on.
-4. **No parity of numbers with old projects.** Existing `calcExtended` outputs (`ilee_summary`,
+4. **No parity of numbers with old projects.** Existing `calcExtended` outputs (the summary table,
    the anisotropy 5-tuple) were computed by ILEE's specific box-tensor formulation with the `/3`
    bug in the 2D path. The new structure-tensor path will produce different numbers — better
    (bug-free), but not comparable pre/post. Say so in release notes.

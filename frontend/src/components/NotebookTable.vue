@@ -334,7 +334,11 @@ defineExpose({ refresh })
 .nbt-add { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .nbt-add input { flex: 0 1 240px; }
 .nbt-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-lg); }
-.nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border); }
+/* `vertical-align: middle` is the house rule for table rows (ImageTable / ProjectPanel /
+   FileBrowser all set it). Without it cells align on the FIRST BASELINE, so as soon as one cell
+   wraps — a two-line description here — every other cell sticks to the top and the row reads as
+   broken. */
+.nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border); vertical-align: middle; }
 .nbt-table th { color: var(--cc-text-dim); font-weight: 600; }
 .nbt-name { white-space: nowrap; }
 .nbt-desc input { width: 100%; }
@@ -342,8 +346,15 @@ defineExpose({ refresh })
 .nbt-muted { color: var(--cc-text-dim); font-style: italic; }
 .nbt-ver { white-space: nowrap; color: var(--cc-text-dim); }
 .nbt-actions-h { text-align: right; }
-.nbt-actions { display: flex; gap: .3rem; justify-content: flex-end; }
+/* A normal table CELL, right-aligned — same as ProjectPanel's `.col-actions`. It must NOT be
+   `display: flex`: that takes the <td> out of the table layout, so it stops sharing the row's
+   height and vertical-align, which is the other half of the ragged-row bug. `.cc-btn` is already
+   inline-flex, so the buttons sit in a row on their own; spacing via margin, not `gap`. */
+.nbt-actions { white-space: nowrap; text-align: right; }
 .nbt-actions .cc-btn { padding: .25rem .45rem; }
+/* spaces EVERY control, not just `.cc-btn` — the delete control's root is `.cc-del`
+   (ConfirmDeleteButton), so a `.cc-btn + .cc-btn` rule would leave the trash icon flush. */
+.nbt-actions > * + * { margin-left: .3rem; }
 .nbt-danger { color: #f85149; }
 .nbt-active { color: #58a6ff; }
 .nbt-empty { text-align: center; padding: 1rem; }   /* + .cc-muted */

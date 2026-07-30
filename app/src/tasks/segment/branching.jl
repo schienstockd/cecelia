@@ -45,9 +45,13 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         idx = findfirst(==(String(ch)), ch_names)
         isnothing(idx) || push!(fibre_indices, idx - 1)
     end
-    if calc_anisotropy && isempty(fibre_indices)
-        on_log("[WARN] calcAnisotropy=true but fibreChannels resolved to []; anisotropy will not be computed.")
+    # Only `anisotropySource="channel"` reads raw pixels; "skeleton"/"mask" work off the labels, so
+    # an empty fibreChannels is only a problem for the channel source.
+    aniso_source = string(get(params, "anisotropySource", "skeleton"))
+    if calc_anisotropy && aniso_source == "channel" && isempty(fibre_indices)
+        on_log("[WARN] anisotropySource=channel but fibreChannels resolved to []; anisotropy will not be computed.")
     end
+    run_anisotropy = calc_anisotropy && (aniso_source != "channel" || !isempty(fibre_indices))
 
     # Resolve input image path. Note: `value_name` here is the SEGMENTATION name (e.g. "SHG"),
     # which lives in `img.labels`. Image versions (`default`, drift-corrected, af-corrected, …)
@@ -118,11 +122,14 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
            postDilationSize     = Int(get(params, "postDilationSize", 2)),
            useBorders           = Bool(get(params, "useBorders", false)),
            flattenBranching     = Bool(get(params, "flattenBranching", false)),
-           calcAnisotropy       = calc_anisotropy && !isempty(fibre_indices),
+           integrateTime        = Bool(get(params, "integrateTime", false)),
+           integrateTimeMode    = string(get(params, "integrateTimeMode", "max")),
+           calcAnisotropy       = run_anisotropy,
            calcFlattened        = Bool(get(params, "calcFlattened", false)),
+           anisotropySource     = aniso_source,
            fibreChannels        = fibre_indices,
-           structureTensorSigma = Float64(get(params, "structureTensorSigma", 2.0)),
-           anisotropyBoxSize    = Int(get(params, "anisotropyBoxSize", 45))),
+           structureTensorSigma = Float64(get(params, "structureTensorSigma", 12.0)),
+           anisotropyBoxSize    = Int(get(params, "anisotropyBoxSize", 15))),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
@@ -148,10 +155,16 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
             mean_branch_length = Float64(get(qmeta, :meanBranchLength, 0.0))
             branch_types = Int[Int(x) for x in get(qmeta, :branchTypes, Int[])]
             findings = _branching_qc_findings(n_branches)
-            write_qc(img, "segment.branching", out_value_name, findings;
-                     metrics = Dict{String,Any}("nBranches"        => n_branches,
-                                                 "nSkeletons"       => n_skeletons,
-                                                 "meanBranchLength" => mean_branch_length))
+            metrics = Dict{String,Any}("nBranches"        => n_branches,
+                                       "nSkeletons"       => n_skeletons,
+                                       "meanBranchLength" => mean_branch_length)
+            # Only bank `anisotropy` when the pass actually ran — otherwise a structural 0.0 would
+            # enter the cohort stats and make every image that skipped it look like an outlier.
+            if run_anisotropy
+                metrics["anisotropy"] = Float64(get(qmeta, :anisotropy, 0.0))
+                on_log("[QC] anisotropy $(round(metrics["anisotropy"], digits = 3)) (1 = non-uniform).")
+            end
+            write_qc(img, "segment.branching", out_value_name, findings; metrics = metrics)
             on_log("[QC] $n_branches branch(es) across $n_skeletons skeleton(s).")
         catch e
             on_log("[QC] could not compute branching QC: $e")

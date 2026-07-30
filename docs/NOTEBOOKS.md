@@ -77,6 +77,94 @@ aggregate a `pop_df` table — **same numbers as the `/analysis` board** (both b
 the rendering differs). `nb_hist` / `nb_box` / `nb_scatter` are one-liners over AlgebraOfGraphics.
 For anything more, use AoG directly: `data(df) * mapping(...) * visual(...) |> draw`.
 
+### Refreshing after a pipeline re-run — **notebooks do NOT invalidate when data changes**
+
+This bites every notebook, so it is a convention, not a per-notebook detail.
+
+**Pluto's reactivity is over cell code, not over files.** It has no filesystem watcher, so when a
+task re-runs and rewrites an `.h5ad`/zarr, an open notebook keeps showing the **old numbers with no
+indication anything is stale** — the worst failure mode available, because the plot still renders.
+Nothing in Julia or Pluto detects this for you: `pop_df` was already called, the DataFrame is in
+memory, and no cell changed.
+
+The pattern: one **stamp cell** listing the files the notebook reads, and a bare `DATA_STAMP`
+reference at the top of every cell that reads from disk. Re-running the stamp cell (Shift+Enter)
+re-reads the timestamps and cascades to all of them.
+
+```julia
+# ⟳ RE-RUN THIS CELL after a pipeline task wrote new data.
+DATA_STAMP = let
+    _mt(f) = isfile(f) ? mtime(f) : 0.0
+    (branch = _mt(img_branch_props_path(img, "SHG")),
+     tracks = _mt(img_label_props_path(img, "T")),
+     read_at = time())     # makes the value change even if mtime granularity hides a fast rewrite
+end
+```
+
+```julia
+begin
+    DATA_STAMP          # ← the dependency that makes the refresh work; do not remove
+    df = pop_df(img, "live", ["/_tracked"]; value_name = "T")
+end
+```
+
+`pluto/notebook_template.jl` ships this (commented, with the explanation), so every notebook created
+from **Add notebook** starts with it. Generated notebooks should include it too — `docs/REPL.md`.
+
+**Why not something automatic?** Three alternatives, all worse today:
+
+| option | why not |
+|---|---|
+| A watcher that re-runs cells on file change | A pipeline task rewrites files *while* running; re-running mid-write reads a torn file. Would need write-completion events, which the task rail doesn't publish to Pluto. |
+| `PlutoUI.Button` as the trigger | Nicer UX (and would also give sliders for a timepoint), but **PlutoUI is not in `pluto/Project.toml`** — adding it means re-resolving all three manifests. A real decision, not a freebie. |
+| Restart the Pluto **server** (the Notebooks page's Restart) | Works, but kills **every** open session, and loses unsaved edits in all of them. |
+
+A **per-notebook** reset is the right fix and is buildable — Pluto exposes `GET /notebooklist` and
+`GET|POST /shutdown?id=…`. Not built yet; see `docs/TODO.md`.
+
+### Structure anisotropy — quiver, tracks, per-image scalar
+
+The `segment.branching` anisotropy pass computes a fibre-orientation field but has **no plot in the
+app** — it is figure-shaped, so it lives here. Three package accessors return tidy frames
+(`app/src/anisotropy.jl`); the contract they read is in `docs/SEGMENTATION.md`.
+
+```julia
+q = quiver_df(img; value_name = "SHG", t = 0)   # t,iy,ix,x,y,u,v,coherence,length — the arrows
+b = branch_segments(img; value_name = "SHG")    # label,x1,y1,x2,y2,branch_type — the network
+a = anisotropy_df(images(set))                  # uID,value_name,t,anisotropy,… — one row per image
+```
+
+**Tracks use `pop_df`** — there is no separate accessor, because there doesn't need to be:
+
+```julia
+tr = pop_df(img, "live", ["/_tracked"]; value_name = "T",
+            pop_cols = ["track_id", "centroid_x", "centroid_y", "centroid_t"])
+sort!(tr, [:track_id, :centroid_t])             # ALWAYS sort before a Lines mark, or it zig-zags
+```
+
+Overlaying the three (Figure 4 panel B): draw arrows from the unit `(u, v)`, tracks as `Lines`
+grouped by `track_id`, and **reverse the y axis** — image y grows downward.
+
+```julia
+f = Figure(); ax = Axis(f[1, 1]; yreversed = true, aspect = DataAspect())
+q = q[q.length .> 0, :]                          # drop boxes with no structure in them
+arrows2d!(ax, q.x, q.y, q.u .* 12, q.v .* 12; color = :white)   # NOT arrows! — deprecated
+for g in groupby(tr, :track_id); lines!(ax, g.centroid_x, g.centroid_y); end
+```
+
+Three things that are easy to get wrong:
+- **The direction is an axis, not a vector.** `(u, v)` and `(-u, -v)` are the same fibre; sign is
+  meaningless. Don't read a "flow" into it.
+- **Never index `orientation_eigvec` by hand.** The fibre is the structure tensor's **minor**
+  eigenvector — `quiver_df` is the only place that resolves that, and a hand-rolled read draws
+  every arrow 90° off while still looking like a plausible field.
+- **`anisotropy` is 0 = uniform, 1 = non-uniform**, length-weighted. Real fibrous tissue sits
+  around **0.1–0.4** — a low number is not a defect.
+
+`anisotropy_df` is long-format across images and `value_name`s, so panel D is a join against
+whatever per-image composition you computed (e.g. behaviour-state fractions from `pop_df`) on
+`uID` — the same shape the old `exp.info[SHG.anisotropy]` merge produced.
+
 ### Gotcha — `md"..."` interpolation
 
 Julia's single-quoted `md"..."` **cannot contain nested double-quotes inside `$(…)`** (e.g.
