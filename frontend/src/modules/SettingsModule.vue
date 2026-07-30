@@ -11,6 +11,8 @@ import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { fetchStorageSummary, reclaimStorage, formatBytes, type StorageSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
+import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
+import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import CcToggle from '../components/CcToggle.vue'
 
@@ -278,6 +280,15 @@ async function appRestart() {
   await appCtl.restartBackend()
   svcMsg.value = appCtl.message
   pollServices()
+}
+// Quit reports what it will kill — shutdown exits the backend without waiting for in-flight work.
+// Same builders as the sidebar footer so the two entry points can't drift.
+const quitTasks   = ref(0)
+const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
+const quitLabel   = computed(() => quitConfirmLabel(quitTasks.value))
+async function armQuit(arm: () => void) {
+  arm()
+  quitTasks.value = await runningTaskCount()
 }
 async function quitApp() {
   await appCtl.quit()
@@ -555,13 +566,13 @@ async function switchWt(path: string) {
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="arm"
+            <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="armQuit(arm)"
                     v-tooltip.top="'Stop napari, notebooks and the backend, then exit Cecelia'">
               <i class="pi pi-power-off" /> Quit
             </button>
             <template v-else>
               <button class="save-btn danger" @click="confirm"
-                      v-tooltip.top="'Confirm — stop napari, notebooks and the backend'"><i class="pi pi-power-off" /> Quit everything</button>
+                      v-tooltip.top="quitConfirm"><i class="pi pi-power-off" /> {{ quitLabel }}</button>
               <button class="save-btn ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>

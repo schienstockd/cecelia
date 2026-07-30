@@ -11,6 +11,7 @@ import CollapsibleSection from './CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
+import { runningTaskCount } from '../utils/runningTasks'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -86,15 +87,9 @@ function onBrowserSelect(paths: string[]) {
 }
 
 // Warn before exporting while analysis tasks are in flight — packing a store that's being written can
-// capture a torn snapshot. GET /api/tasks is a live view of in-flight scheduler tasks (empty = idle).
+// capture a torn snapshot. The count comes from the shared `runningTaskCount` (utils/runningTasks.ts),
+// which quit uses too — same question, one asker.
 const exportWarn = ref<{ p: { uid: string; name: string }; count: number } | null>(null)
-async function runningTaskCount(): Promise<number> {
-  try {
-    const r = await fetch('/api/tasks')
-    if (r.ok) { const t = await r.json(); return Array.isArray(t) ? t.length : 0 }
-  } catch { /* treat as idle if the check fails */ }
-  return 0
-}
 async function exportProject(p: { uid: string; name: string }) {
   if (ioBusy.value) return
   const n = await runningTaskCount()
