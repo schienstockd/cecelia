@@ -24,6 +24,7 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
+export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name

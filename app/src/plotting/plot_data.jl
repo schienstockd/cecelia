@@ -139,6 +139,9 @@ function _stats_result_dict(r)
         "pValue"          => r.p_value,
         "significance"    => r.significance,
         "methodNote"      => r.method_note,
+        # only non-empty when the user left the test on `auto` — the basis for the choice, so the UI can
+        # answer "why this test?" without re-deriving the rule (see stats.jl _auto_reason)
+        "autoReason"      => r.auto_reason,
         "comparisonPairs" => [Dict("a" => a, "b" => b, "pAdj" => p, "significance" => s)
                               for (a, b, p, s) in r.comparison_pairs],
         "letters"         => r.letters,
@@ -311,6 +314,51 @@ end
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
+# ── Boolean (0/1) measures and the "% positive" readout ───────────────────────────
+#
+# Several of the most useful spatial questions are one question: what FRACTION of a population has a
+# 0/1 property? "% of B cells in contact with a T cell" is `flow.cell.contact#flow.T_qc`; "how many T
+# cells are clustered" is `flow.cell.is.aggregate`. Both are written as 0/1 per cell, so a mean bar
+# already answers them numerically — as an unlabelled fraction between 0 and 1, which nobody reads as a
+# percentage. The `percent` chart makes it the readout it actually is.
+#
+# Deliberately a property of the DATA, not a list of blessed column names: any obs column that is 0/1
+# throughout gets the readout, so a later boolean measure needs no registration.
+
+"""True when every non-missing, finite value is 0 or 1 (and there is at least one)."""
+function _is_boolean_measure(v)::Bool
+    seen = false
+    for x in v
+        ismissing(x) && continue
+        x isa Real || return false
+        isfinite(x) || continue
+        (x == 0 || x == 1) || return false
+        seen = true
+    end
+    seen
+end
+
+"""
+    _wilson_ci(k, n; z=1.96) -> (lo, hi)
+
+Wilson score interval for a binomial proportion — Wilson, E.B. (1927) *Probable inference, the law of
+succession, and statistical inference*, JASA 22(158):209–212, doi:10.1080/01621459.1927.10502953.
+
+Used instead of the normal (Wald) interval `p ± z·√(p(1−p)/n)` because a contact/aggregate fraction is
+routinely near 0 or 1, exactly where Wald degenerates: it gives a zero-width interval at p=0 (claiming
+certainty from "no contacts observed") and reaches outside [0,1] just off the boundary. Wilson stays
+inside [0,1] and keeps width at the boundaries. Asymmetric about p̂ by construction, so the bounds are
+reported, not just a half-width.
+"""
+function _wilson_ci(k::Integer, n::Integer; z::Float64 = 1.959963984540054)
+    n <= 0 && return (NaN, NaN)
+    p = k / n
+    d = 1 + z^2 / n
+    c = (p + z^2 / (2n)) / d
+    h = (z / d) * sqrt(p * (1 - p) / n + z^2 / (4n^2))
+    (max(0.0, c - h), min(1.0, c + h))
+end
+
 function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       measure::Union{AbstractString,Nothing}, granularity::Symbol,
                       nbins::Int, normalize::Symbol, by_image::Bool,
@@ -339,6 +387,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # to per-(value_name, pop, uID) rows, then run the normal distribution builder over those per-image
     # values (series = pop, points = images) → boxplot/violin/strip/beeswarm/bar show within-pop
     # variability and compare pops. `count` keeps its per-(pop, image) bar view (handled below).
+    # remembered before the population-summary substitution below swaps in a synthetic "count"/
+    # "proportion" measure — a per-image count that happens to be all-0/1 is not a boolean MEASURE, and
+    # offering "% positive" on it would be nonsense.
+    asked_for_measure = measure !== nothing
     if measure === nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar")
         # friendly axis label (also the df column name so the builders read it) — count vs proportion
         metric_label = normalize in (:fraction, :total) ? "proportion" : "count"
@@ -359,10 +411,24 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)
     gb = group_by === nothing ? nothing : String(group_by)
     sgroups(d) = _series_groups(d; by_image=by_image, group_col=gb, collapse=collapse_series, attr_map=attr_map)
-    withgb(r) = (r["groupBy"] = (gb === nothing ? nothing : gb); r)
+    # every per-series response reports whether the measure is BOOLEAN, so the panel can offer the
+    # "% positive" chart without a second probe (it learns the measure TYPE the same way).
+    mbool = asked_for_measure && measure !== nothing && String(measure) in names(df) &&
+            _is_boolean_measure(df[!, String(measure)])
+    withgb(r) = (r["groupBy"] = (gb === nothing ? nothing : gb); r["measureBoolean"] = mbool; r)
     # detected measure type (numeric vs categorical) so the panel can offer only the applicable
     # chart types (docs/PLOTS.md §2). Auto-detection is shared with track_props (`_is_categorical_col`).
-    mtype = (measure !== nothing && String(measure) in names(df)) ?
+    #
+    # NEVER SNIFF A COLUMN WE CREATED. `_is_categorical_col` guesses from the values, and the
+    # population summary's substituted metric is a per-image COUNT — small integers, which the
+    # integer-level heuristic reads as categorical. The response then said "categorical", the panel
+    # intersected the spec's numeric charts with the categorical set, and everything except `count`
+    # (kept explicitly as measure-independent) vanished: "population summary always defaults back to
+    # count and you cannot select anything else". A synthetic metric is quantitative BY CONSTRUCTION —
+    # `asked_for_measure` is exactly "the user named this column", so it is the right gate, and it
+    # covers `proportion` and any future synthetic metric without another name to remember.
+    mtype = !asked_for_measure ? "numeric" :
+            (measure !== nothing && String(measure) in names(df)) ?
             (String(measure) in var_cols ? "numeric" :                        # var = quantitative, always
              _is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
     # RAW EXPORT: emit the tidy per-datapoint rows behind the plot — identity (uID, label/track_id,
@@ -480,6 +546,34 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
 
+    elseif chart_type == "percent"
+        # "% of this population that is positive" for a 0/1 measure — see _is_boolean_measure. This is
+        # the answer to "% of B cells in contact with a T cell" (contact#) and "how many T cells are
+        # clustered" (is.aggregate); one chart, because they are one question.
+        #
+        # `value` is the OBSERVED percentage; `lower`/`upper` are the Wilson bounds (asymmetric about it,
+        # so both are sent). `ci95` carries the wider half-width purely so the generic bar renderer and
+        # the CSV export have a single symmetric number to fall back on.
+        #
+        # No `comparisons`: a between-group test on 0/1 data is a proportion test (chi-square/Fisher),
+        # not the rank/ANOVA family `_stats_from_series` runs, and silently applying the wrong one is
+        # worse than offering none.
+        measure === nothing && error("plot_summary_data: percent needs a `measure`")
+        m = String(measure); groups = sgroups(df)
+        series = map(groups) do g
+            vals = _finite(g.sub[!, m]); n = length(vals)
+            k = count(!=(0), vals)
+            lo, hi = _wilson_ci(k, n)
+            p = n == 0 ? NaN : k / n
+            merge(base(g),
+                  Dict("value" => n == 0 ? NaN : 100p, "n" => n, "nPositive" => k,
+                       "lower" => 100lo, "upper" => 100hi,
+                       "ci95" => n == 0 ? NaN : 100 * max(hi - p, p - lo)))
+        end
+        return withgb(Dict{String,Any}("chartType" => "percent", "measure" => m, "measureType" => mtype,
+                                "granularity" => String(granularity),
+                                "valueLabel" => "% positive", "series" => series))
+
     elseif chart_type == "count"
         # # objects per series (row count) — the segmentation-integrity headline. Needs NO measure.
         # With by_image + group_by="t" each series is one (image, timepoint) bucket, so this yields
@@ -534,7 +628,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
     else
-        error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | count | boxplot)")
+        error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | percent | count | boxplot)")
     end
 end
 
@@ -728,7 +822,8 @@ end
 function _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     (value_name === nothing && _is_cluster_pop_type(pop_type) &&
         cluster_suffix !== nothing && !isempty(String(cluster_suffix))) || return value_name
-    cc = co_clustered_value_names(img, String(cluster_suffix); granularity=granularity)
+    cc = co_clustered_value_names(img, String(cluster_suffix); granularity=granularity,
+                                  family=_cluster_measure_family(pop_type))
     isempty(cc) ? value_name : first(cc)
 end
 
@@ -759,7 +854,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
     sfx = _cluster_matrix_suffix(chart_type, category)
     eff_vn = _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
-        _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity),
+        _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity,
+                                                    family=_cluster_measure_family(pop_type)),
             vn -> pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
                          pop_cols=cols, raw_channel_names=true)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
@@ -800,7 +896,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type) && !isempty(imgs)) ?
-        _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity),
+        _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity,
+                                                    family=_cluster_measure_family(pop_type)),
             vn -> pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
                          pop_cols=cols, raw_channel_names=true)) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
@@ -825,6 +922,55 @@ end
 # group read through `pop_df` with that segmentation, then `vcat`-ed into one frame. `_series_groups`
 # keys by `(uID, value_name, pop)`, so each (segmentation, pop) — and each image, when cross-image —
 # becomes its own series. Order is preserved (first appearance) for a stable series order/colouring.
+
+# ── Interaction matrix (a PRECOMPUTED, per-population-PAIR statistic) ─────────────────────────────
+#
+# The third matrix shape. `profile`/`crosstab` aggregate a `pop_df` frame; this one has no frame at all —
+# `spatialAnalysis.neighbourStats` already computed it and wrote `spatialStats/{suffix}.json`. It is a
+# population × population grid of the CODEX contact log-odds plus the permutation z/p.
+#
+# It lives here, behind the ONE aggregator, rather than in a bespoke route + component (which is what it
+# had, and what `docs/PLOTS.md` → *Hosting* forbids): the plot is then an ordinary registry spec rendered
+# by SummaryPanel/PlotChart, so it duplicates, arranges, exports and goes on the Analysis board like
+# everything else. Reads through the package's `contact_matrix` — the SAME reader MCP uses; no second
+# copy of the sidecar format.
+#
+# `value` is the log-odds (the effect size, diverging around 0). `count` carries the observed contacts so
+# a tooltip/CSV keeps the raw number, and `zScore`/`pValue` ride along per cell so significance is
+# available to the renderer without a second request.
+function _interaction_matrix(img::CciaImage; suffix::AbstractString="")
+    m = contact_matrix(img; suffix = suffix)
+    labels = String[String(b) for b in m.basis]
+    byxy = Dict{Tuple{String,String},Any}()
+    for c in m.cells; byxy[(String(c.x), String(c.y))] = c; end
+    stats = _collect_contact_stats(img)
+    idx = findfirst(s -> s.suffix == m.suffix, stats)
+    pairstat = Dict{Tuple{String,String},Any}()
+    if idx !== nothing
+        for p in stats[idx].pairs
+            pairstat[(p.popA, p.popB)] = p
+            pairstat[(p.popB, p.popA)] = p
+        end
+    end
+    cells = Any[]
+    for y in labels, x in labels
+        c = get(byxy, (x, y), nothing); c === nothing && continue
+        p = get(pairstat, (x, y), nothing)
+        push!(cells, Dict{String,Any}("x" => x, "y" => y, "value" => c.value,
+            "count" => p === nothing ? nothing : p.observed,
+            "zScore" => p === nothing ? nothing : p.zScore,
+            "pValue" => p === nothing ? nothing : p.pValue,
+            # the star ladder from the SAME function the hypothesis-test path uses (stats.jl
+            # `_significance`) — a second ladder in the renderer would be a fork waiting to disagree
+            "significance" => (p === nothing || p.pValue === nothing) ? "" : _significance(p.pValue)))
+    end
+    Dict{String,Any}("chartType" => "matrix", "matrixMode" => "interaction",
+        "xLabels" => labels, "yLabels" => labels, "cells" => cells,
+        "valueLabel" => "log-odds", "suffix" => m.suffix,
+        "suffixes" => String[String(s) for s in m.suffixes],
+        "nCells" => m.nCells, "nEdges" => m.nEdges,
+        "granularity" => "cell", "series" => Any[])
+end
 
 # group `(value_name, pop)` targets → ordered [(value_name, [pop…])]; vcat per-vn frames (cols union).
 function _targets_frame(targets, fetch_vn)::DataFrame
@@ -854,11 +1000,19 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
+                           stats_suffix::AbstractString="",
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
+    # A PRECOMPUTED per-population-PAIR statistic has no pop_df frame — it comes from the
+    # `spatialStats/{suffix}.json` sidecar. Intercept before any membership work (see _interaction_matrix).
+    chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction" &&
+        return _interaction_matrix(img; suffix = stats_suffix)
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
+    # expand_cluster_pops=false: each target IS a (segmentation, population) pair the user ticked in
+    # the picker, so a bare cluster/region path must resolve under THAT segmentation only. With the
+    # run-wide expansion on, ticking 3 region pops under `B` also plotted `T`'s (see pop_df).
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
-               raw_channel_names=(chart_type == "matrix")))
+               raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
@@ -883,11 +1037,21 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
                            attr_map::Union{Nothing,AbstractDict}=nothing,
+                           stats_suffix::AbstractString="",
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
+    # The interaction matrix belongs to ONE image's sidecar (it is a per-image statistic), so a
+    # cross-image request shows the first selected image's — never a silent pool of incomparable runs.
+    if chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction"
+        isempty(imgs) && return Dict{String,Any}(
+            "chartType" => "matrix", "matrixMode" => "interaction",
+            "xLabels" => String[], "yLabels" => String[], "cells" => Any[], "series" => Any[])
+        return _interaction_matrix(first(imgs); suffix = stats_suffix)
+    end
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
+    # see the single-image form above — a picked (segmentation, population) pair is explicit
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
-               raw_channel_names=(chart_type == "matrix")))
+               raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by,

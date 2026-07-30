@@ -86,6 +86,50 @@ class CreateMultiscalesOnDiskTest(unittest.TestCase):
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
+    def _du_cyx(self):
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        du = DimUtils(ome_types.from_xml(_OME_XML), use_channel_axis=True)
+        du.calc_image_dimensions((2, 4, 3))   # C,Y,X (size-1 T,Z dropped)
+        return du
+
+    def test_ignore_channel_drops_c_from_the_axes_too(self):
+        # `ignore_channel=True` used to affect CHUNKING only, so a labels store written from a 4-channel
+        # image declared 5 axis names for its 4-D array. Metadata that doesn't describe the array can't
+        # be used to align a napari layer (napari_utils.expand_to_axes has to reject it), which is how
+        # `branchLabels/SHG.zarr` ended up unalignable.
+        du = self._du_cyx()
+        labels = np.zeros((4, 3), dtype=np.uint32)          # the same image WITHOUT its channel axis
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "labels.zarr")
+            zu.create_multiscales(labels, path, dim_utils=du, im_chunks=[1, 4, 3],
+                                  nscales=1, ignore_channel=True)
+            ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
+            self.assertEqual([a["name"] for a in ms["axes"]], ["y", "x"])
+            self.assertEqual(len(ms["axes"]), labels.ndim)   # the invariant that matters
+            # the per-axis scale still comes from the image, looked up BY NAME — Y/X keep 0.5
+            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"], [0.5, 0.5])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_explicit_axes_win_for_a_collapsed_axis(self):
+        # only the caller knows it Z-projected (segment.branching's flattenBranching), so it says so.
+        du = self._du_cyx()
+        arr = np.zeros((4, 3), dtype=np.uint32)
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "flat.zarr")
+            zu.create_multiscales(arr, path, dim_utils=du, im_chunks=[1, 4, 3], nscales=1,
+                                  ignore_channel=True, axes=["T", "X"])
+            ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
+            self.assertEqual([a["name"] for a in ms["axes"]], ["t", "x"])
+            # scale is mapped by name off the FULL image order, so X still resolves to 0.5 and the
+            # absent T defaults to 1.0 — a filtered axes list must not shift the scale lookup
+            self.assertEqual(ms["datasets"][0]["coordinateTransformations"][0]["scale"], [1.0, 0.5])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
 
 class StreamingWritersTest(unittest.TestCase):
     """The generic streaming helpers used by the drift / AF / cellpose correction tasks:

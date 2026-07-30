@@ -212,25 +212,53 @@ function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop
     to_tree(m)
 end
 
-# cluster suffixes available in a table's obs (the `clusters.{suffix}` columns written by
-# clustPops/clustTracks) → drives the cluster pages' page-level suffix dropdown.
-_cluster_suffixes(obscols) = String[c[ncodeunits("clusters.")+1:end] for c in obscols if startswith(c, "clusters.")]
+# Run suffixes available in a table's obs, for the pop_type's own column FAMILY: `clusters.{suffix}`
+# for clust/trackclust (clustPops/clustTracks), `regions.{suffix}` for region (clustRegions). The prefix
+# is never spelled here — it comes from the single package-side decision
+# (`Cecelia._cluster_measure_prefix`, docs/todo/SPATIAL_REGIONS_PLAN.md Decision 5), which is why the
+# region page saw an EMPTY run list while `regions.immune` sat in obs: this helper used to hardcode
+# "clusters.". Drives the cluster/region pages' page-level run dropdown.
+_cluster_suffixes(obscols, pop_type = "clust") =
+    let prefix = Cecelia._cluster_measure_prefix(pop_type)
+        String[c[ncodeunits(prefix)+1:end] for c in obscols if startswith(c, prefix)]
+    end
 
-# per-suffix clustering manifest ({props}.clustfeatures.json; clustPops/clustTracks write it),
-# keyed by suffix as {features, partOf}. `features` → the heatmap offers exactly those columns;
-# `partOf` → the uIDs clustered together (mirrors old R `valuePartOf`), so cluster pops are only
-# defined for images in the run. Back-compat: pre-partOf runs stored {suffix => [features]} (a bare
-# array, no membership) — surface those as features with an empty member list.
-function _clust_manifest(props_path::AbstractString)
-    s = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
-    isfile(s) ? JSON3.read(read(s, String), Dict{String,Any}) : Dict{String,Any}()
+# per-suffix run manifest ({props}.clustfeatures.json; clustPops/clustTracks/clustRegions write it).
+# `features` → the heatmap offers exactly those columns; `partOf` → the uIDs clustered together (mirrors
+# old R `valuePartOf`), so cluster/region pops are only defined for images in the run; `labels` →
+# optional column → display-label map (region composition columns are machine names). Reads go through
+# the package's shared sidecar reader, which owns the family-qualified + legacy key layouts — the API
+# never indexes that JSON itself.
+_clust_features(props_path::AbstractString, suffixes, family) = Dict{String,Any}(
+    s => Cecelia._clustfeatures_features(props_path, s; family = family) for s in suffixes)
+# JSON3 hands back Symbol OR String keys depending on how the object was parsed, so every field read
+# goes through this. NEVER wrap it in `something(..., nothing)`: `something()` with all-nothing
+# arguments THROWS `ArgumentError("No value arguments present")`, which is exactly how
+# /api/gating/channels?popType=region started 500ing on any sidecar entry written before the `labels`
+# field existed — i.e. every image that hadn't been re-run.
+_entry_field(e, key) = e === nothing ? nothing :
+    let v = get(e, String(key), nothing)
+        v === nothing ? get(e, Symbol(key), nothing) : v
+    end
+
+function _clust_members(props_path::AbstractString, suffixes, family)
+    out = Dict{String,Any}()
+    for s in suffixes
+        e = Cecelia._clustfeatures_entry(props_path, s; family = family)
+        po = _entry_field(e, "partOf")
+        out[s] = po isa AbstractVector ? String[string(x) for x in po] : String[]
+    end
+    out
 end
-_clust_features(props_path::AbstractString) = Dict{String,Any}(
-    String(k) => (v isa AbstractVector ? v : get(v, "features", String[]))
-    for (k, v) in _clust_manifest(props_path))
-_clust_members(props_path::AbstractString) = Dict{String,Any}(
-    String(k) => (v isa AbstractVector ? String[] : get(v, "partOf", String[]))
-    for (k, v) in _clust_manifest(props_path))
+function _clust_feature_labels(props_path::AbstractString, suffixes, family)
+    out = Dict{String,Any}()
+    for s in suffixes
+        l = _entry_field(Cecelia._clustfeatures_entry(props_path, s; family = family), "labels")
+        l isa AbstractDict && !isempty(l) &&
+            (out[s] = Dict{String,Any}(String(k) => string(v) for (k, v) in l))
+    end
+    out
+end
 
 # distinct cluster IDs per suffix — the universe the pop-manager offers as tickable clusters. Clustering
 # is SET-scope, so a single image's `clusters.{suffix}` column carries only the subset of the shared
@@ -238,7 +266,8 @@ _clust_members(props_path::AbstractString) = Dict{String,Any}(
 # run's MEMBER images (`partOf`, from _clust_members) so the universe matches the pooled UMAP/heatmap.
 # A suffix with no recorded members (pre-partOf run) falls back to the primary image's own column.
 function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString, vn::AbstractString,
-                      suffixes::Vector{String}, members::AbstractDict, track::Bool)
+                      suffixes::Vector{String}, members::AbstractDict, track::Bool,
+                      pop_type::AbstractString = "clust")
     pathcache = Dict{String,Union{String,Nothing}}()   # init_object per uID isn't free; a member may back several suffixes
     member_path(u) = get!(pathcache, u) do
         mi = try init_object(project_uid, u) catch; nothing end
@@ -247,8 +276,9 @@ function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString,
         isfile(p) ? p : nothing
     end
     out = Dict{String,Any}()
+    prefix = Cecelia._cluster_measure_prefix(pop_type)   # "clusters." | "regions." — never hardcoded
     for s in suffixes
-        col = "clusters.$s"
+        col = "$(prefix)$(s)"
         paths = String[]
         for u in String.(get(members, s, String[]))
             p = member_path(u); p === nothing || push!(paths, p)
@@ -299,20 +329,24 @@ function api_gating_channels(req::HTTP.Request)
         display = get(versions, _matching_channel_version(versions, length(chans)), String[])
         tpath = img_track_props_path(img, vn)
         tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
+        pt    = get(q, "popType", "track")
+        tsfx  = _cluster_suffixes(tobs, pt)                      # trackclust runs in the track table
+        tfam  = Cecelia._cluster_measure_family(pt)
         return 200, JSON3.write((;
             columns = motility,                                  # whole-track motility (directly gateable)
             cellMeasures = cellmeas,                             # cell vars → per-track numeric aggregates
             cellObsMeasures = cellobs,                           # cell obs → per-track aggregates (HMM, …)
             channelNames = display === nothing ? String[] : display,  # relabel intensity aggregates
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
-            clusterSuffixes = _cluster_suffixes(tobs),           # trackclust runs in the track table
-            clusterFeatures = _clust_features(tpath),
-            clusterMembers  = _clust_members(tpath),             # uIDs clustered together (partOf)
+            clusterSuffixes = tsfx,
+            clusterFeatures = _clust_features(tpath, tsfx, tfam),
+            clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
+            clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
             clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, vn,
-                                _cluster_suffixes(tobs), _clust_members(tpath), true) : Dict{String,Any}(),
+                                tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
             valueName = vn,
-            popType = get(q, "popType", "track"),
+            popType = pt,
         ))
     end
     lp = label_props(img; value_name = vn)
@@ -330,25 +364,33 @@ function api_gating_channels(req::HTTP.Request)
     tpath = img_track_props_path(img, vn)
     trackObs = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
     trackColourColumns = String[c for c in trackObs if startswith(c, "clusters.")]
+    # cell-table run family for THIS pop_type: `clusters.*` for clust, `regions.*` for region. Computed
+    # once — the obs scan, the sidecar lookups and the ID universe must all agree on the family.
+    cpt   = get(q, "popType", "flow")
+    cobs  = col_names(lp; data_type = :obs)
+    csfx  = _cluster_suffixes(cobs, cpt)
+    cfam  = Cecelia._cluster_measure_family(cpt)
+    cpath = img_label_props_path(img, vn)
+    cmem  = _clust_members(cpath, csfx, cfam)
     200, JSON3.write((;
         columns = cols,
         channels = chans,
         channelNames = display === nothing ? String[] : display,
         channelNameVersions = versions,
-        obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
+        obsColumns = cobs,              # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
         # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
         # gate on (like the old R flow frame). Read/gate-eval already materialise them via as_df.
         spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes
         temporalColumns = temporal_columns(lp),          # ["centroid_t"] — groupable + a gateable time axis
-        clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
-        clusterFeatures = _clust_features(img_label_props_path(img, vn)),
-        clusterMembers  = _clust_members(img_label_props_path(img, vn)),        # uIDs clustered together (partOf)
-        clusterIds      = _cluster_ids(get(q, "projectUid", ""), img_label_props_path(img, vn), vn,
-                            _cluster_suffixes(col_names(lp; data_type = :obs)),
-                            _clust_members(img_label_props_path(img, vn)), false),
+        clusterSuffixes = csfx,         # clust runs (`clusters.*`) / region runs (`regions.*`) in the cell table
+        clusterFeatures = _clust_features(cpath, csfx, cfam),
+        clusterMembers  = cmem,         # uIDs clustered together (partOf)
+        clusterFeatureLabels = _clust_feature_labels(cpath, csfx, cfam),
+        clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, vn, csfx, cmem, false, cpt),
         valueNames = versioned_keys(img.label_props),
         valueName = vn,                 # the server-resolved value_name these columns belong to
+        popType = cpt,
     ))
 end
 
@@ -560,14 +602,17 @@ function api_plots_umap(req::HTTP.Request)
     pop_type = get(q, "popType", "clust")
     suffix   = get(q, "suffix", "default")
     pop      = get(q, "pop", ROOT)
-    umap_key = "X_umap.$suffix"; clust_col = "clusters.$suffix"
+    # the code column is the pop_type's OWN family (`clusters.{suffix}` | `regions.{suffix}`) — see
+    # `_cluster_suffixes`. Hardcoding "clusters." here left every region UMAP point uncoloured.
+    umap_key = "X_umap.$suffix"; clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
     track    = _track_grained(pop_type)
     # POOL across every segmentation that took part in this clustering run (co-clustered value_names),
     # so the UMAP shows all segments' points in the ONE shared embedding — not just the active one
     # (docs/todo/CLUSTER_POOLING_PLAN.md). An explicit `valueName` restricts to that single segmentation.
     req_vn = get(q, "valueName", "")
     vns = (!isempty(req_vn) && haskey(img.label_props, req_vn)) ? String[String(req_vn)] :
-          co_clustered_value_names(img, suffix; granularity = track ? :track : :cell)
+          co_clustered_value_names(img, suffix; granularity = track ? :track : :cell,
+                                   family = Cecelia._cluster_measure_family(pop_type))
 
     # Optional per-point POPULATION membership for colour/facet-by-population: resolve the picked pops
     # through pop_df — the canonical accessor already handles GRAIN (granularity=:track rolls a `live`
@@ -601,7 +646,10 @@ function api_plots_umap(req::HTTP.Request)
         size(xy, 1) == 0 && continue
         # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
         cdf = label_props(path) |> select_cols([clust_col]) |> as_df
-        codes = clust_col in names(cdf) ? cdf[!, clust_col] : fill(missing, nrow(cdf))
+        # `size(cdf, 1)`, not `nrow` — DataFrames is NOT imported in the api scripts, so the fallback
+        # branch used to throw `UndefVarError: nrow`. It fires exactly when the run's code column is
+        # absent (an embedding with no codes), which is how it stayed hidden until region runs hit it.
+        codes = clust_col in names(cdf) ? cdf[!, clust_col] : fill(missing, size(cdf, 1))
         keep = trues(size(xy, 1))
         if !is_root(pop)
             m = _live_map(img, vn, pop_type)

@@ -343,19 +343,31 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets')
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
-                       squeeze=False, idx_adjust=0):
+                       squeeze=False, idx_adjust=0, axes=None):
     # Write zarr v2 format so napari and zarr_data_to_list can read .zattrs directly.
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
 
-    # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes and the
-    # per-axis base scale come from dim_utils, mapped by axis NAME (letters are unique).
-    axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
+    # Build the multiscales metadata (shared builder — see multiscales_metadata). The per-axis base
+    # scale is mapped by axis NAME from the FULL image order (letters are unique), so `axes` may be any
+    # subset of it and the lookups still line up.
+    #
+    # `axes` MUST describe the array actually being written, not the source image: a store whose
+    # `.zattrs` axes disagree with its array is unreadable metadata, and downstream code that aligns a
+    # layer by axis name has to reject it (napari_utils.expand_to_axes). Two ways it drifted: labels
+    # carry no channel axis (hence `ignore_channel`, which now drops C from the metadata too — it used
+    # to only affect chunking, so `segment.branching` wrote 5 axis names for a 4-D array), and a task
+    # may collapse an axis (a Z-projection), which only the caller knows — pass `axes` explicitly then.
+    full = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
     scale_for_axis = None
-    if axes:
+    if full:
         scale_for_axis = {
             ax: (float(s) if s is not None else 1.0)
-            for ax, s in zip(axes, dim_utils.im_scale())
+            for ax, s in zip(full, dim_utils.im_scale())
         }
+    if axes is not None:
+        axes = [str(a) for a in axes]
+    else:
+        axes = [a for a in full if not (ignore_channel and str(a).upper() == 'C')]
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
 

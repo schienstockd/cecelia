@@ -322,6 +322,9 @@ class NapariState:
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
                     cache=cache,
+                    # align the layer's dims to the viewer's BY NAME (see expand_to_axes) — a store
+                    # with fewer axes than the image would otherwise have them read from the right
+                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
                 )
                 print(f"[show_labels] added {layer_name}: shape={layer.data.shape} "
                       f"scale={self._im_scale} cache={cache}", flush=True)
@@ -358,6 +361,9 @@ class NapariState:
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
                     cache=cache,
+                    # a Z-FLATTENED skeleton of a timelapse is (t,y,x) for a (t,z,y,x) image; without
+                    # the names napari renders its time axis as Z — a tower (see expand_to_axes)
+                    axes=zarr_utils.read_axes(labels_path), image_axes=self._display_axes(),
                 )
                 print(f"[show_branch_labels] added {layer_name}: shape={layer.data.shape} "
                       f"scale={self._im_scale} cache={cache}", flush=True)

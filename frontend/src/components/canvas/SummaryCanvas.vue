@@ -27,6 +27,8 @@ import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
+import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
+import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
@@ -48,6 +50,7 @@ const ckey = computed(() => props.canvasKey ?? `summary:${props.module ?? 'unive
 // + all shared data (specs/pops/attrs, compare/scope/global sel+vis) come from useSummaryData below.
 interface PanelState {
   specId: string; sel: string[]; vis: VisProps
+  popType?: string        // which population family this plot shows (specs that offer a choice)
   chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'
   groupBy?: string; smooth?: number; interval?: boolean
   matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
@@ -73,7 +76,21 @@ const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
-} = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared })
+} = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
+  // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
+  // to be board-only, on the assumption that a module page's specs all share one popType — which stopped
+  // being true once the per-poptype population summaries moved onto the Explore pages (Phenotype hosts
+  // flow + clust, Behaviour live + trackclust, Spatial region). Without it the picker falls back to
+  // `specs[0]`, and since /api/plots/definitions just walks readdir, "first" is filename order — so the
+  // page would silently offer the wrong population family for the selected plot.
+  activeSpecId: computed(() => activePanel.value?.state.specId ?? null),
+  // the active plot's chosen population family — the manager lists THAT family (one control, on the plot)
+  activePopType: computed(() => activePanel.value?.state.popType ?? null) })
+
+// Migrate canvases persisted before the four per-popType population summaries collapsed into one spec
+// with a family picker. Without this a saved panel's specId no longer resolves and the panel silently
+// renders nothing (`v-if="specById[...]"` below). Mirrors ClusterPlots' KIND_ALIASES.
+for (const p of panels.value) migrateSpecId(p.state)
 
 // global/local scope governs BOTH the eye-selection AND the visual properties (like the gating
 // PopulationManager): global = one value shared by every plot, local = the active plot's own.
@@ -85,9 +102,16 @@ const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x
 // the stats test each panel's last result actually ran (`auto` resolves it server-side from the group
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
 // it's a readout of the current result, not a setting.
-const statsNotes = ref<Record<number, string>>({})
-const activeStatsNote = computed(() => statsNotes.value[activeId.value] ?? '')
-function removePanel(id: number) { remove(id); delete statsNotes.value[id] }
+const readouts = ref<Record<number, PlotReadout>>({})
+const activeReadout = computed<PlotReadout>(() => readouts.value[activeId.value] ?? emptyReadout())
+// the active plot is PRECOMPUTED — its populations come from an analysis run, so the picker says so
+// instead of offering eye toggles that do nothing (see isPrecomputedSpec)
+const activeIsPrecomputed = computed(() => {
+  const id = activePanel.value?.state.specId
+  const spec = id ? specById.value[id] : null
+  return !!spec && isPrecomputedSpec(spec)
+})
+function removePanel(id: number) { remove(id); delete readouts.value[id] }
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
   if (scope.value === 'global') gSel.value = toggle(gSel.value, k)
@@ -197,11 +221,11 @@ watch(segPops, () => {
                         :reload-token="reloadToken" :persist-key="`${ckey}:${p.id}`"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
-                        @stats-note="statsNotes[p.id] = $event" />
+                        @readout="readouts[p.id] = $event" />
         </template>
         </div>
         <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
-                      :stats-note="activeStatsNote"
+                      :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                       @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
       </div>
     </template>

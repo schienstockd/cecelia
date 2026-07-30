@@ -1,0 +1,16 @@
+{
+  "id": "spatial_interactions",
+  "label": "Interaction matrix",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["heatmap"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "matrix": { "mode": "interaction" }
+  },
+  "scopeModes": ["per_image"],
+  "params": []
+}

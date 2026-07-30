@@ -19,6 +19,12 @@ _finite_vals(x) = Float64[Float64(v) for v in x if v isa Real && isfinite(v)]
 # wide range) exceeds it and stays numeric.
 const _MAX_CATEGORICAL_LEVELS = 20
 
+# Spatial-analysis obs columns that are quantities, not code sets — see the name-rule in
+# `_is_categorical_col`. `contact#`/`is.aggregate` are 0/1 flags whose MEAN is the fraction in
+# contact / aggregated; `min_distance#` is µm; `spatial.comp.*` is a neighbourhood fraction.
+const _SPATIAL_NUMERIC_MEASURE =
+    r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.is\.aggregate$|^spatial\.comp\.)"
+
 # Detect categorical vs numeric automatically from the decoded column — no config map (the old R
 # version used `config.yml` `parameters.labelStats`). Three cases, matching the real data:
 #   • String / non-`Real`  → categorical   — anndata `string-array`/`categorical` obs decode to
@@ -35,6 +41,15 @@ function _is_categorical_col(col, name::AbstractString="")::Bool
     # `clusters`/`clusters.{suffix}` (clustPops/clustTracks) and `regions`/`regions.{suffix}`
     # (clustRegions, spatial regions) — same rule, one check.
     (name in ("clusters", "regions") || startswith(name, "clusters.") || startswith(name, "regions.")) && return true
+    # name-rule (the other way): spatial readouts are QUANTITIES even when stored as 0/1 integers. A
+    # contact or aggregate flag is a PROPORTION once averaged over a population, and `min_distance` is
+    # µm. Without this the few-integer-levels heuristic below calls them a code set, and the plot panel
+    # then offers only count/bar and snaps the chart type to `count` — the exact failure commit 16ead1d
+    # fixed for integer morphology (`var`) columns, which is why that fix restricted the heuristic to
+    # `obs`. These ARE obs, so they need the carve-out by name.
+    # NB `contact_id#` / `aggregate.id` are deliberately NOT matched: those are label identifiers, not
+    # measures (they're also filtered out of the measure picker — see plots/obsMeasures.ts).
+    occursin(_SPATIAL_NUMERIC_MEASURE, name) && return false
     nonmissingtype(eltype(col)) <: Real || return true            # String / categorical-encoded
     vals = _finite_vals(col)
     isempty(vals) && return false

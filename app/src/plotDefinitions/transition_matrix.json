@@ -6,8 +6,11 @@
   "chartTypes": ["heatmap"],
   "whiteboardCompatible": true,
   "dataSource": {
-    "popType": "live",
-    "granularity": "cell",
+    "popTypes": [
+      { "popType": "live",       "granularity": "cell" },
+      { "popType": "track",      "granularity": "cell" },
+      { "popType": "trackclust", "granularity": "cell" }
+    ],
     "measure": "live.cell.hmm.transitions.movement",
     "measureOptions": [
       "live.cell.hmm.transitions.movement"

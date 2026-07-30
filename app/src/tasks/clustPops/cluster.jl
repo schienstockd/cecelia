@@ -31,14 +31,31 @@ end
 # the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
 # old R `attr(clustPath, "partOf") <- uIDs` + `valuePartOf`). Stored as a `{props}.clustfeatures.json`
 # sidecar next to the labelProps (cell table for clust, `__tracks` table for trackclust), keyed by
-# suffix as `{features, partOf}`; merged so multiple runs/suffixes coexist. Shared by clustPops +
-# clustTracks (read by api_gating_channels). Cluster pops can only be defined for images in `partOf`.
+# suffix as `{features, partOf, family, labels}`; merged so multiple runs/suffixes coexist. Shared by
+# clustPops + clustTracks + clustRegions (read by api_gating_channels). Cluster pops can only be
+# defined for images in `partOf`.
+#
+# `family` is the obs-column family the run wrote (`_cluster_measure_prefix` without the dot:
+# "clusters" for clustPops/clustTracks, "regions" for clustRegions). Two runs of DIFFERENT families may
+# legitimately share a suffix on one segmentation (a `clusters.immune` cell clustering and a
+# `regions.immune` region clustering are different columns) — without `family` the second write would
+# silently clobber the first's features/partOf. Absent `family` reads back as "clusters" (back-compat
+# with sidecars written before this field existed).
+#
+# `labels` optionally maps column name → display label, for runs whose feature columns are machine
+# names but whose meaning is a user-facing string (region composition: `spatial.comp.B_qc__tracked.x`
+# → "B/qc/_tracked"). Empty for the cluster tasks, whose columns are already channel/measure names
+# relabelled via the channels endpoint's nameMap.
 function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
-                                features::Vector{String}, part_of::Vector{String})
+                                features::Vector{String}, part_of::Vector{String};
+                                family::AbstractString = "clusters",
+                                labels::AbstractDict = Dict{String,String}())
     sidecar = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
     existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) : Dict{String,Any}()
     merged = Dict{String,Any}(String(k) => v for (k, v) in existing)
-    merged[suffix] = Dict{String,Any}("features" => features, "partOf" => part_of)
+    merged[_clustfeatures_key(suffix, family)] =
+        Dict{String,Any}("features" => features, "partOf" => part_of,
+                         "family" => String(family), "labels" => Dict{String,Any}(labels))
     open(sidecar, "w") do f; JSON3.pretty(f, merged); end
 end
 

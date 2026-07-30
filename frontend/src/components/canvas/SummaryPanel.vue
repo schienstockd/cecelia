@@ -17,10 +17,16 @@ import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
+import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
+import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
+import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
+         filterSeriesToPopType, isPrecomputedSpec } from '../../plots/popTypes'
+import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
+import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{
@@ -36,8 +42,8 @@ const props = defineProps<{
   vis?: VisProps                       // visual properties (log scale, legend, point size/opacity)
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
-  ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+  ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
+        statsSuffix?: string; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
@@ -45,7 +51,7 @@ const props = defineProps<{
   docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
-                           'stats-note': [string] }>()
+                           readout: [PlotReadout] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
@@ -67,11 +73,16 @@ const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — 
 // refs are NOT cleared mid-load (that would reset the user's measure pick and "cycle") — so they still
 // describe the PREVIOUS image until loadObsCols resolves. `colsReady` tells the fetch to wait for the
 // current image's columns, so it never requests the previous image's measure (see fetchData guard).
-const colsKey = () => `${props.imageUid ?? ''}|${props.series[0]?.valueName ?? ''}`
+// keyed on EVERY selected segmentation (see distinctValueNames) — ticking a second one must reload,
+// because its obs carry measures the first one doesn't have.
+const colsKey = () => `${props.imageUid ?? ''}|${distinctValueNames(ownSeries.value).join(',')}`
 const colsFor = ref('')
 const colsReady = computed(() => colsFor.value === colsKey())
-const measureOpts = computed(() => {
+const measureOpts = computed<string[]>(() => {
   const ds = props.spec.dataSource
+  // `ds.measure` is OPTIONAL (a population summary has none; a discovered-measure spec can't name one),
+  // so normalise it here and keep this list strictly string[] for every consumer below.
+  const def = ds.measure ?? ''
   // measuresFromData: offer every MORPHOLOGY measurement present — all var columns EXCEPT the
   // per-channel intensities (mean_intensity_*) — so segmentation QC lists the shape descriptors
   // (area, extent, eccentricity, solidity, axis lengths, aspect_ratio, …) it actually has, not a
@@ -82,22 +93,66 @@ const measureOpts = computed(() => {
     // QC morphology measures. New measurements no longer save bbox at all (measure_utils), but existing
     // h5ads still carry `bbox-*` — filter them here so the list stays to actual shape descriptors.
     const morph = varCols.value.filter(c => !intensity.has(c) && !STRUCTURAL_COL.test(c))
-    const rest = morph.filter(c => c !== ds.measure).sort((a, b) => a.localeCompare(b))
-    return morph.includes(ds.measure) ? [ds.measure, ...rest] : rest
+    const rest = morph.filter(c => c !== def).sort((a, b) => a.localeCompare(b))
+    return morph.includes(def) ? [def, ...rest] : rest
   }
+  // obsMeasurePatterns: measures whose NAMES embed the run and so cannot be listed in the spec — the
+  // spatial readouts (`…cell.min_distance#<target>`, `…cell.contact#<target>`, `…is.aggregate`,
+  // `spatial.comp.<basis>.<suffix>`). Discovered from the image's obs columns. Empty until the spatial
+  // tasks have run, which is why `hasMeasure` below falls back to the population-count view.
+  if (ds.obsMeasurePatterns?.length) return discoverObsMeasures(obsCols.value, ds.obsMeasurePatterns)
   // otherwise the static list, narrowed to what's actually present (avoids a 400 "column not found")
-  const all = ds.measureOptions ?? [ds.measure]
+  const all = ds.measureOptions ?? (def ? [def] : [])
   const present = new Set([...varCols.value, ...obsCols.value])
   if (!present.size) return all
   const ok = all.filter(m => present.has(m))
   return ok.length ? ok : all
 })
+// display name for a measure option — obs-discovered spatial measures show the part that VARIES
+// (the target population / region basis) rather than the family repeated on every row.
+const measureLabel = (m: string) => {
+  const p = props.spec.dataSource.obsMeasurePatterns
+  return p?.length ? obsMeasureLabel(m, p) : m
+}
 // each option reads the persisted panel state, falling back to the spec default; writing persists it.
-const measure = computed<string>({ get: () => props.ui.measure ?? props.spec.dataSource.measure, set: v => (props.ui.measure = v) })
-// a spec with NO measure is a POPULATION SUMMARY (count / proportion of each pop) — no measure picker,
+// A DISCOVERED measure has no spec default, so fall back to the first option — and drop a persisted
+// pick that is no longer present (a contact run against a different target population renames the
+// column, and requesting the old one would 400 "column not found").
+const measure = computed<string>({
+  get: () => {
+    const want = props.ui.measure ?? props.spec.dataSource.measure
+    if (want && measureOpts.value.includes(want)) return want
+    return want && !props.spec.dataSource.obsMeasurePatterns?.length ? want : (measureOpts.value[0] ?? '')
+  },
+  set: v => (props.ui.measure = v) })
+// A spec with NO measure is a POPULATION SUMMARY (count / proportion of each pop) — no measure picker,
 // and never send a measure (the backend then treats boxplot/violin/strip/bar as a per-image count
 // distribution, and count as per-image bars). See plot_data.jl _population_metric_frame.
-const hasMeasure = computed(() => !!props.spec.dataSource.measure)
+//
+// A spec with `obsMeasurePatterns` has a measure only once the data HAS one: the spatial readouts don't
+// exist until contacts / aggregates / region clustering have run. Until then this plot degrades to the
+// population-count view rather than offering a measure that would 400 — the honest empty state, and the
+// reason it must be computed from the discovered columns and not from the spec alone.
+const hasMeasure = computed(() =>
+  !!props.spec.dataSource.measure ||
+  (!!props.spec.dataSource.obsMeasurePatterns?.length && measureOpts.value.length > 0))
+
+// ── population family (pop type) ───────────────────────────────────────────────────────────────────
+// A spec may offer several families (the collapsed "Population summary"): ONE per plot, picked here and
+// persisted in the panel's `ui`. The host mirrors this into useSummaryData as `activePopType`, so the
+// population manager lists THIS family while the plot is active — one control, and the manager follows
+// it rather than carrying a competing selector of its own. Granularity comes from the chosen family
+// (cell for gated/clusters/regions, track for tracked/track-clusters), never from the spec as a whole.
+const popTypeOpts = computed(() => popTypeOptions(props.spec))
+const showPopTypePicker = computed(() => hasPopTypeChoice(props.spec))
+const popType = computed<string>({
+  get: () => resolvePopType(props.spec, props.ui.popType ?? null),
+  set: v => (props.ui.popType = v) })
+const granularity = computed(() => granularityFor(props.spec, popType.value))
+// Only the selections belonging to the plotted family. Keys are family-tagged and deliberately kept
+// across families (so switching back restores the old pick), so the panel must narrow at request time —
+// otherwise it would ask the backend for e.g. `flow` populations under `popType=clust`.
+const ownSeries = computed(() => filterSeriesToPopType(props.series, popType.value))
 // drop a persisted/selected measure that isn't available for the current data (avoids a 400 fetch).
 // Only act once columns have loaded (measuresFromData needs varCols; otherwise the transient fallback
 // list would reset the user's pick mid-load and it'd "cycle"). No-op writes are skipped by the guard.
@@ -142,17 +197,22 @@ const canStatUnit = computed(() => crossImage.value && hasMeasure.value
 const CATEGORICAL_OBS = /(\.hmm\.state\.|\.hmm\.transitions\.|\.clusters?\.|track_generation|track_state)/
 async function loadObsCols() {
   const key = colsKey()
-  const vn = props.series[0]?.valueName
-  if (!props.imageUid || !vn) { obsCols.value = []; temporalCols.value = []; colsFor.value = key; return }
+  const vns = distinctValueNames(ownSeries.value)
+  if (!props.imageUid || !vns.length) { obsCols.value = []; temporalCols.value = []; colsFor.value = key; return }
   try {
-    const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    const j = res.ok ? (await res.json() as { columns?: string[]; channels?: string[]; obsColumns?: string[]; temporalColumns?: string[] }) : {}
+    // one request per segmentation, unioned — see distinctValueNames / mergeColumnSets. Concurrent:
+    // these are small metadata reads and the panel already defers its fetch until they all land.
+    const parts = await Promise.all(vns.map(async vn => {
+      const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
+      const res = await fetch(`/api/gating/channels?${q}`)
+      return res.ok ? (await res.json() as Partial<ColumnSets>) : {}
+    }))
     if (colsKey() !== key) return          // image/segmentation switched mid-load — discard the stale response
-    varCols.value = j.columns ?? []
-    channelCols.value = j.channels ?? []
-    obsCols.value = j.obsColumns ?? []
-    temporalCols.value = j.temporalColumns ?? []
+    const merged = mergeColumnSets(parts)
+    varCols.value = merged.columns
+    channelCols.value = merged.channels
+    obsCols.value = merged.obsColumns
+    temporalCols.value = merged.temporalColumns
     colsFor.value = key
   } catch {
     if (colsKey() !== key) return
@@ -160,7 +220,7 @@ async function loadObsCols() {
     colsFor.value = key
   }
 }
-watch([() => props.imageUid, () => props.series.map(t => t.valueName).join(',')], loadObsCols, { immediate: true })
+watch([() => props.imageUid, () => distinctValueNames(ownSeries.value).join(',')], loadObsCols, { immediate: true })
 const groupByOpts = computed<string[]>(() => {
   // temporal cols live in obsm (not obs) but ARE groupable (the per-timepoint QC/consistency view),
   // so they count as "present" for spec hints alongside the discovered categorical obs columns.
@@ -199,14 +259,31 @@ const interval = computed<boolean>({ get: () => props.ui.interval ?? true, set: 
 // a preset that pins its mode (state signature / transition matrix) hides the Mode toggle, so the two
 // plot types keep distinct purposes; a generic heatmap (no pinned mode) shows the toggle.
 const specPinnedMode = computed(() => !!props.spec.dataSource.matrix?.mode)
-const matrixMode = computed<'profile' | 'crosstab'>({
+// An INTERACTION matrix is a precomputed population×population statistic read from a
+// `spatialStats/{suffix}.json` sidecar, not an aggregation of selected populations. So it needs no
+// series and no category column — what it needs is WHICH RUN, which the response reports back in
+// `suffixes` (there is no spec field for a run picker, so the data supplies the options).
+// one predicate, shared with the population picker and mirrored server-side — see isPrecomputedSpec
+const isInteraction = computed(() => isPrecomputedSpec(props.spec))
+const statsSuffix = computed<string>({
+  get: () => props.ui.statsSuffix ?? '', set: v => (props.ui.statsSuffix = v) })
+const runOptions = computed<string[]>(() => (result.value as { suffixes?: string[] } | null)?.suffixes ?? [])
+const matrixMode = computed<'profile' | 'crosstab' | 'interaction'>({
   get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
   set: v => (props.ui.matrixMode = v) })
+// which heatmap controls actually do something for the active matrix mode — ONE table (see
+// heatmapControls). The ad-hoc v-ifs it replaces rendered two INERT controls for the interaction
+// matrix: Category (the request sends `category: ''`) and Normalize (it sat in the `v-else` of a
+// profile test, so a third mode silently inherited crosstab's control). Turning either changed nothing.
+const hmCtl = computed(() => heatmapControls(matrixMode.value))
 // z-score OFF by default → per-feature 0–1 viridis (the old R heat-plot look); ON → diverging RdBu.
 const zscore = computed<boolean>({ get: () => props.ui.zscore ?? false, set: v => (props.ui.zscore = v) })
-// cell numbers: off by default for a profile signature (matches R), on for a crosstab (counts/probs).
+// cell numbers: off by default for a profile signature (matches R), on where the NUMBER is the readout
+// — a crosstab (counts/probs) and an interaction matrix (the log-odds effect size). NB the panel always
+// sends a boolean, so `buildHeatmap`'s own `??` default can never fire; this is the only default.
 const heatmapValues = computed<boolean>({
-  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab'), set: v => (props.ui.heatmapValues = v) })
+  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab' || matrixMode.value === 'interaction'),
+  set: v => (props.ui.heatmapValues = v) })
 const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
   get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
 // effective category: the user's chosen column, else the spec's pinned hint (if available), else a
@@ -243,7 +320,7 @@ const hasOpts = computed(() => groupByOpts.value.length > 0
   || canStatUnit.value
   || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
 // friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
-const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked', trend: 'trend (mean/t)', count: 'count' }
+const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked', trend: 'trend (mean/t)', count: 'count', percent: '% positive' }
 const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
@@ -272,7 +349,9 @@ const validCharts = computed<ChartType[]>(() => {
   if (timeSeries.value) return ['trend', 'count']
   const mt = result.value?.measureType
   if (!mt) return props.spec.chartTypes
-  const ok = new Set(chartsForMeasure(mt))
+  // `measureBoolean` adds `% positive` for a 0/1 measure — offered from the DATA, so the spec need only
+  // list `percent` once and it appears exactly on the measures where it means something.
+  const ok = new Set(chartsForMeasure(mt, result.value?.measureBoolean))
   // heatmap (pooled grid) and count (row count) are measure-independent — always keep them.
   const v = props.spec.chartTypes.filter(c => ok.has(c) || c === 'heatmap' || c === 'count')
   return v.length ? v : props.spec.chartTypes
@@ -293,7 +372,8 @@ function applyImageSelector(body: Record<string, unknown>) {
 async function fetchData() {
   if (fetchTimer) { clearTimeout(fetchTimer); fetchTimer = null }
   const seq = ++fetchSeq                                   // only this call may write `result` (see below)
-  if (!props.series.length) { result.value = null; return }
+  // an interaction matrix has no series — its populations are fixed by the run it reads
+  if (!isInteraction.value && !ownSeries.value.length) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
   // measuresFromData offers measures built from THIS image's columns, so a fetch fired before the new
   // image's columns have loaded would request the previous image's measure (e.g. 3D-only `euler_number`
@@ -308,13 +388,21 @@ async function fetchData() {
   // live-only; a target whose pop only exists under another popType would simply contribute no cells.
   if (chartType.value === 'heatmap') {
     try {
-      const cat = matrixCategory.value
-      if (!cat) { result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return }
-      const body: Record<string, unknown> = {
+      const cat = isInteraction.value ? '' : matrixCategory.value
+      if (!isInteraction.value && !cat) {
+        result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return
+      }
+      const body: Record<string, unknown> = isInteraction.value ? {
         projectUid: props.projectUid,
-        popType: props.series[0].popType, granularity: props.spec.dataSource.granularity,
+        popType: popType.value, granularity: granularity.value,
+        chartType: 'matrix', matrixMode: 'interaction',
+        // `suffix` names which run; '' lets the backend pick the first and report the rest
+        ...(statsSuffix.value ? { suffix: statsSuffix.value } : {}),
+      } : {
+        projectUid: props.projectUid,
+        popType: popType.value, granularity: granularity.value,
         chartType: 'matrix', matrixMode: matrixMode.value, category: cat, separator: '_',
-        series: props.series.map(t => ({ valueName: t.valueName, pop: t.pop })),
+        series: ownSeries.value.map(t => ({ valueName: t.valueName, pop: t.pop })),
         ...(matrixMode.value === 'profile'
           ? { measures: measureOpts.value, zscore: zscore.value }
           : { matrixNormalize: matrixNormalize.value }),
@@ -347,12 +435,12 @@ async function fetchData() {
     // come from the first group; mixing pop_types on a histogram can misalign bars — box/violin/bar/
     // beeswarm are per-series and unaffected. Tracked as a follow-up if it matters.)
     const byType = new Map<string, SeriesTarget[]>()
-    for (const t of props.series) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
+    for (const t of ownSeries.value) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
 
     const requests = [...byType.entries()].map(async ([pt, targets]) => {
       const body: Record<string, unknown> = {
         projectUid: props.projectUid,
-        popType: pt, granularity: props.spec.dataSource.granularity,
+        popType: pt, granularity: granularity.value,
         chartType: be.chartType,
         // count is a row count — no measure. A measure-less (population summary) spec sends none for
         // any chart, so the backend runs the per-image count/proportion distribution. Else send it.
@@ -393,7 +481,7 @@ async function fetchData() {
 // Watch STABLE primitive keys (not the series array by identity — the parent rebuilds it every render,
 // which fired spurious refetches). `timeSeries` is included because it selects the aggregation
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
-watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'),
+watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
@@ -402,11 +490,19 @@ watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('
       scheduleFetch)
 onMounted(scheduleFetch)
 
-// Which test the server ACTUALLY ran. With `auto` that's resolved from the group count (Mann-Whitney
-// for 2, Kruskal-Wallis for >2), so the picker can't show it — report it up and the shared Stats
-// options echo it under the Test select for whichever plot is active.
-const statsNote = computed(() => result.value?.comparisons?.methodNote ?? '')
-watch(statsNote, n => emit('stats-note', n), { immediate: true })
+// settings the RENDERER substituted (rotated x labels that wouldn't fit). Not persisted — a readout of
+// the current render, like the stats test. Announced rather than done silently: see autoOverride.ts.
+const autoOverrides = ref<AutoOverride[]>([])
+const overrideText = computed(() => overrideNote(autoOverrides.value))
+const overrideTip = computed(() =>
+  autoOverrides.value.map(o => overrideTooltip(o, '')).join(' · '))
+
+// Which test the server ACTUALLY ran, and WHY it chose it. With `auto` the choice is resolved
+// server-side from the group count, so the picker can show neither — report both up and the shared
+// Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
+// host can't thread the name and forget the reason.
+const readout = computed<PlotReadout>(() => readoutOf(result.value?.comparisons, autoOverrides.value))
+watch(readout, n => emit('readout', n), { immediate: true, deep: true })
 
 const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
 
@@ -415,6 +511,19 @@ const hasData = computed(() => {
   const r = result.value
   if (!r) return false
   return r.chartType === 'matrix' ? (r.cells?.length ?? 0) > 0 : r.series.length > 0
+})
+// An interaction matrix reads a `neighbourStats` run, not the ticked populations, so "no data" means
+// the run is missing — name the task that produces it rather than blaming the selection.
+const emptyMessage = computed(() => isInteraction.value
+  ? 'No interaction run yet — run "Interaction matrix" on this image.'
+  : 'No data for the selected populations.')
+// Named empty series (see emptySeriesLabels): only meaningful for a measure plot — a population summary
+// legitimately reports a zero count, and a matrix has no series.
+const emptyNote = computed(() => {
+  const r = result.value
+  if (!r || !hasMeasure.value || r.chartType === 'matrix') return ''
+  const names = emptySeriesLabels(r)
+  return names.length && names.length < r.series.length ? `No values: ${names.join(', ')}` : ''
 })
 
 // the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
@@ -471,15 +580,15 @@ function exportAs(kind: string) {
 // export cost rather than a per-render one. Mirrors fetchData's per-popType request grouping. Heatmaps
 // have no per-datapoint form, so they export their aggregated grid as before.
 async function fetchRawCsv(): Promise<string | null> {
-  if (!props.series.length) return null
+  if (!ownSeries.value.length) return null
   if (!crossImage.value && !props.imageUid) return null
   if (chartType.value === 'heatmap') return result.value ? plotDataToCsv(result.value) : null
   const byType = new Map<string, SeriesTarget[]>()
-  for (const t of props.series) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
+  for (const t of ownSeries.value) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
   const requests = [...byType.entries()].map(async ([pt, targets]) => {
     const body: Record<string, unknown> = {
       projectUid: props.projectUid,
-      popType: pt, granularity: props.spec.dataSource.granularity,
+      popType: pt, granularity: granularity.value,
       chartType: backendChart(chartType.value).chartType, raw: true,
       ...(chartType.value === 'count' || !hasMeasure.value ? {} : { measure: measure.value }),
       series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
@@ -533,10 +642,21 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
                :persist-key="persistKey" :docked="docked"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
+      <!-- which population family this plot shows; only when the spec offers a choice. The population
+           manager follows it, so this is the single control for "which pops am I looking at". -->
+      <!-- which neighbourStats run this interaction matrix shows; options come from the response -->
+      <select v-if="isInteraction && runOptions.length > 1" v-model="statsSuffix" class="sp-poptype"
+              v-tooltip.bottom="'Which interaction run to show'">
+        <option v-for="s in runOptions" :key="s" :value="s">{{ s }}</option>
+      </select>
+      <select v-if="showPopTypePicker && !isInteraction" v-model="popType" class="sp-poptype"
+              v-tooltip.bottom="'Population type'">
+        <option v-for="o in popTypeOpts" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
+      </select>
       <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid and
            for a row count) -->
       <select v-if="chartType !== 'heatmap' && chartType !== 'count' && hasMeasure" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
-        <option v-for="m in measureOpts" :key="m" :value="m">{{ m }}</option>
+        <option v-for="m in measureOpts" :key="m" :value="m">{{ measureLabel(m) }}</option>
       </select>
       <select v-if="validCharts.length > 1" v-model="chartType" class="sp-chart"
               v-tooltip.bottom="'Chart type'">
@@ -582,26 +702,26 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
                (state signature = profile, transition matrix = crosstab) pin their mode, so the two
                plots stay distinct rather than each being able to become the other. -->
           <template v-if="chartType === 'heatmap'">
-            <label v-if="!specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
+            <label v-if="hmCtl.mode && !specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
               <span>Mode</span>
               <select v-model="matrixMode">
                 <option value="profile">profile</option>
                 <option value="crosstab">crosstab</option>
               </select>
             </label>
-            <label v-if="groupByOpts.length" class="sp-pop-row cc-muted"
+            <label v-if="hmCtl.category && groupByOpts.length" class="sp-pop-row cc-muted"
                    v-tooltip.left="'Categorical column: profile columns / crosstab from_to pairs'">
               <span>Category</span>
               <select v-model="categorySel">
                 <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
               </select>
             </label>
-            <div v-if="matrixMode === 'profile'" class="sp-pop-row cc-muted"
+            <div v-if="hmCtl.zscore" class="sp-pop-row cc-muted"
                    v-tooltip.left="'Off = 0–1 per feature; on = z-score rows'">
               <span>Z-score rows</span>
               <CcToggle v-model="zscore" />
             </div>
-            <label v-else class="sp-pop-row cc-muted" v-tooltip.left="'Normalise the transition matrix'">
+            <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.left="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
                 <option value="row">row · P(to|from)</option>
@@ -610,7 +730,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
                 <option value="none">counts</option>
               </select>
             </label>
-            <div class="sp-pop-row cc-muted" v-tooltip.left="'Print the value in each cell'">
+            <div v-if="hmCtl.cellValues" class="sp-pop-row cc-muted" v-tooltip.left="'Print the value in each cell'">
               <span>Cell values</span>
               <CcToggle v-model="heatmapValues" />
             </div>
@@ -663,7 +783,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
         <div v-if="showExplode" class="sp-explode-pop" @click.stop>
           <div class="sp-explode-hd cc-muted cc-fs-xs">Measurements to plot</div>
           <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.left="'Tick to give this measure its own plot'">
-            <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ m }}
+            <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ measureLabel(m) }}
           </label>
           <div class="sp-explode-ft">
             <button class="cc-btn" type="button" @click="showExplode = false">Cancel</button>
@@ -672,6 +792,12 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
           </div>
         </div>
       </div>
+      <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
+           a setting the renderer had to substitute, and series the chosen measure has no values for. -->
+      <span v-if="overrideText" class="sp-foot-note cc-muted-warn cc-fs-2xs"
+            v-tooltip.top="overrideTip"><i class="pi pi-exclamation-triangle" /> {{ overrideText }}</span>
+      <span v-else-if="emptyNote" class="sp-foot-note cc-muted cc-fs-2xs"
+            v-tooltip.top="'This measure has no values for those series'">{{ emptyNote }}</span>
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result || exporting"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
@@ -683,19 +809,25 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
     </template>
 
     <div class="sp-body">
-      <div v-if="!series.length" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
+      <div v-if="!series.length && !isInteraction" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg sp-err cc-muted">{{ error }}</div>
-      <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">No data for the selected populations.</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" />
+      <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
+      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
+                 @auto-override="autoOverrides = $event" />
       <PlotSpinner v-if="showSpinner" label="Loading…" />
     </div>
   </CanvasPanel>
 </template>
 
 <style scoped>
+.sp-poptype { max-width: 9rem; }   /* font-size comes from the global input base — don't re-state it */
 .sp-measure { max-width: 12rem; }
 .sp-chart { font-size: var(--cc-fs-sm); max-width: 8rem; }
 .sp-export { max-width: 7rem; }
+/* footer notices sit in the panel CHROME, never in `.sp-body`: the chart is height:100% there and the
+   body is overflow:hidden, so a sibling after it is pushed out of view (which is why the first version
+   of these notes was emitted correctly and never seen). */
+.sp-foot-note { margin-left: auto; }        /* colour + size from .cc-muted / .cc-muted-warn */
 
 /* compact icon buttons (options / duplicate) */
 /* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */

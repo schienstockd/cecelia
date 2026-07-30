@@ -17,12 +17,17 @@
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
+import { needsXRotation } from './autoOverride'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
 export const CATEGORICAL_CHARTS: ChartType[] = ['frequency', 'stacked', 'stacked100']
-export const chartsForMeasure = (t: string | undefined): ChartType[] =>
-  t === 'categorical' ? CATEGORICAL_CHARTS : NUMERIC_CHARTS
+// A 0/1 measure is numeric, but its useful readout is the FRACTION positive — "% of B cells in contact
+// with a T cell", "% of T cells clustered". Offered only when the server reports the measure boolean
+// (`measureBoolean`), i.e. from the DATA, so no column-name list has to be kept in sync.
+export const chartsForMeasure = (t: string | undefined, isBoolean = false): ChartType[] =>
+  t === 'categorical' ? CATEGORICAL_CHARTS
+                      : (isBoolean ? [...NUMERIC_CHARTS, 'percent'] : NUMERIC_CHARTS)
 
 // frontend chart type → the backend aggregation it needs (several charts share one server shape)
 export function backendChart(c: ChartType): { chartType: string; rawPoints?: boolean; normalize?: boolean } {
@@ -75,6 +80,16 @@ export interface VisProps {
   colorData: boolean                         // colour points by series (else single grey) (R colorData)
   // statistics / legend
   legend: boolean                            // show the colour legend
+  // OUTER width PlotChart renders at, in px. Needed to decide whether the x tick labels fit their
+  // bands (see needsXRotation) — the builder is otherwise width-blind, since width is injected at
+  // Plot.plot() time. Absent → no auto-rotation (better one un-rotated frame than rotating a chart
+  // that had room).
+  plotWidth?: number
+  // MEASURED height of the rendered legend overlay, in px. The overlay is HTML, so its wrapped height
+  // depends on the label texts and the panel width — things this module cannot see. PlotChart measures
+  // the node and re-renders once with the real number; until then `legendTopPad` falls back to an
+  // estimate. See legendTopPad.
+  legendHeight?: number
   // layout / scale
   logScale: boolean                          // log measure axis (R scaleLog10)
   grid: boolean                              // show gridlines (R noGrid inverted; default off = classic)
@@ -108,6 +123,69 @@ export interface VisProps {
 // an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
 // scheme" (population colours aren't meaningful for e.g. HMM-state levels). Shared by the bespoke
 // cluster HMM panels so they honour the same palette knob as the generic charts.
+/**
+ * Top margin to reserve for the overlay legend and/or title, in px. ONE rule for every chart.
+ *
+ * The legend is absolutely-positioned HTML (not part of the SVG), so it consumes no layout height —
+ * which is why the plot has to leave it room explicitly. The old estimate assumed **three entries per
+ * row** and capped at three rows, and that is what made the result look arbitrary: three long labels
+ * wrap to two rows, `ceil(3/3)` reserved one, and the second row sat on the frame with nowhere to go.
+ * How many rows a legend takes depends on the label texts and the panel width, neither of which this
+ * module can see.
+ *
+ * So the estimate is only the FIRST pass. `o.legendHeight` is the measured height of the rendered
+ * node, which PlotChart supplies on a second render — exact, no assumption about entries per row. The
+ * estimate stays deliberately generous (a little empty headroom beats a clipped legend) and is only
+ * ever visible for one frame.
+ */
+export const LEGEND_GAP = 6            // breathing room between the legend and the plot frame
+export const LEGEND_ROW = 18           // one row of swatch + label at the default font size
+export const TITLE_PAD  = 34           // a title is always one line (it ellipsises)
+
+/**
+ * Which heatmap controls actually DO something, per matrix mode.
+ *
+ * The options panel decided this with a scatter of ad-hoc `v-if`s, and they were wrong for the newest
+ * mode: **Category** rendered for the interaction matrix (whose rows/columns come from a
+ * `neighbourStats` run, so the request sends `category: ''`) and the **Normalize** select rendered too,
+ * because it sat in the `v-else` of a `matrixMode === 'profile'` test — so a mode that is neither
+ * profile nor crosstab silently got crosstab's control. Both were inert: turning them changed nothing.
+ *
+ * One table, so adding a mode means answering the question once instead of auditing every `v-if`.
+ */
+export interface HeatmapControls {
+  mode: boolean          // profile ⇄ crosstab switch (only for a spec that pins no mode)
+  category: boolean      // which categorical column builds the grid
+  zscore: boolean        // profile: per-row 0–1 vs z-score display
+  normalize: boolean     // crosstab: row / col / total / counts
+  cellValues: boolean    // print the number in each cell
+}
+
+export function heatmapControls(mode: string | undefined): HeatmapControls {
+  const m = mode ?? 'profile'
+  // An interaction matrix is PRECOMPUTED (see isPrecomputedSpec): the grid, its axes and its values all
+  // come from the run, so the only thing left to choose is whether the numbers are printed.
+  if (m === 'interaction') {
+    return { mode: false, category: false, zscore: false, normalize: false, cellValues: true }
+  }
+  return { mode: true, category: true, zscore: m === 'profile', normalize: m === 'crosstab',
+           cellValues: true }
+}
+
+export function legendTopPad(
+  legendN: number,
+  o: { legend?: boolean; title?: string; legendHeight?: number },
+): number {
+  let pad = 12
+  if (o.legend && legendN > 1) {
+    pad = o.legendHeight && o.legendHeight > 0
+      ? Math.ceil(o.legendHeight) + LEGEND_GAP                       // measured — no guessing
+      : 8 + Math.min(3, Math.ceil(legendN / 3)) * LEGEND_ROW + LEGEND_GAP   // first-pass estimate
+  }
+  if (o.title) pad = Math.max(pad, TITLE_PAD)
+  return pad
+}
+
 export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: number): string[] | null {
   if (vis.palette === 'user') {
     const pal = vis.userColors.split(',').map(s => s.trim()).filter(Boolean)
@@ -121,6 +199,21 @@ export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: n
 // needed so the rotated labels aren't clipped. The base margin is per-chart (empirically fits 45°);
 // scale it with the angle (0.5×base at 0° → 1×base at 45° → 1.5×base at 90°).
 const xTickRotate = (o: { rotateXAngle?: number }) => -(o.rotateXAngle ?? 45)
+
+/**
+ * Should this chart rotate its x tick labels — the user's setting, OR because they wouldn't fit?
+ *
+ * Long category labels ("B · Meandering") overlap into an unreadable smear at the default horizontal
+ * angle. Rotating is the fix, but it changes a setting the user owns (`rotateXLabel`), so the caller
+ * ALSO reports it: `_autoRotatedX` on the returned options → PlotChart → the panel's notice. Silently
+ * overriding a control is the thing this avoids; see plots/autoOverride.ts.
+ */
+function resolveXRotation(labels: string[], o: BuildOpts): { rotate: boolean; auto: boolean } {
+  if (o.rotateXLabel) return { rotate: true, auto: false }
+  if (o.rotate) return { rotate: false, auto: false }        // flipped: categories are on Y, not X
+  const auto = needsXRotation(labels, o.plotWidth ?? 0, s => textWidth(s, o.fontSize || 11))
+  return { rotate: auto, auto }
+}
 const xRotMargin = (base: number, o: { rotateXAngle?: number }) =>
   Math.round(base * (0.5 + 0.5 * Math.abs(o.rotateXAngle ?? 45) / 45))
 
@@ -264,6 +357,11 @@ function swarmOffsets(values: number[], halfWidth = 0.26, bins?: number): number
 // numeric formatter for tooltips
 const fmt = (x: unknown) => (typeof x === 'number' && Number.isFinite(x)) ? (Math.abs(x) >= 1000 || (x !== 0 && Math.abs(x) < 0.01) ? x.toExponential(2) : x.toPrecision(4).replace(/\.?0+$/, '')) : ''
 
+// A COUNT is not a measurement: `fmt` switches to exponential at 1000, so "59190 observed contacts"
+// read as "5.92e+4" — precision notation for a number that is exact. Grouped integers instead.
+const fmtCount = (x: unknown) =>
+  (typeof x === 'number' && Number.isFinite(x)) ? Math.round(x).toLocaleString('en-US') : ''
+
 // PlotModule is the @observablehq/plot namespace (typed loosely to avoid pulling its types in).
 type PlotModule = any   // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -311,6 +409,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
     case 'stacked100': opts = frequency(Plot, r, o, keyOf, color, 'stack100'); break
     case 'bar':        opts = barChart(Plot, r, o, keyOf, color, logY); break
     case 'count':      opts = barChart(Plot, r, o, keyOf, color, logY); break   // # objects per series, drawn as bars
+    case 'percent':    opts = barChart(Plot, r, o, keyOf, color, logY); break   // % positive of a 0/1 measure
     case 'boxplot':    opts = boxplot(Plot, r, o, keyOf, color, logY); break
     case 'violin':     opts = violin(Plot, r, o, keyOf, color, logY); break
     case 'strip':      opts = strip(Plot, r, o, keyOf, color, logY); break
@@ -332,7 +431,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // applied to the built scales so we don't thread them through every builder. The MEASURE axis is Y
   // for the distribution charts (X when rotated — coord_flip); the POSITION (series) axis is the
   // other. range/label(labY) target the measure axis; labX/rotate-X-labels target the position axis.
-  const isDist = new Set<ChartType>(['boxplot', 'violin', 'strip', 'bar', 'count']).has(o.chartType)
+  const isDist = new Set<ChartType>(['boxplot', 'violin', 'strip', 'bar', 'count', 'percent']).has(o.chartType)
   const measAxis = (isDist && o.rotate) ? 'x' : 'y'
   const posAxis = measAxis === 'y' ? 'x' : 'y'
 
@@ -351,7 +450,14 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
       if (hi > lo) measDomain = [lo, hi]
     } else {
       const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : Math.min(0, ext.min))
-      const hi = Number.isFinite(uMax) ? uMax : ext.max + (ext.max - lo) * 0.05
+      // Reserve the band the stats annotations occupy. They sit ABOVE the data in DATA coordinates, so
+      // a domain derived from the data alone leaves them on (or past) the frame — which is what clipped
+      // the compact letters. `+ band` puts the topmost annotation inside the domain and one more
+      // STATS_HEADROOM gives its text room; the pixel margin below covers the glyph's own offset.
+      const band = statsBandFraction(r, o)
+      const statsTop = band > 0 ? ext.max + (ext.max - ext.min) * (band + STATS_HEADROOM) : -Infinity
+      const hi = Number.isFinite(uMax) ? uMax
+        : Math.max(ext.max + (ext.max - lo) * 0.05, statsTop)
       if (hi > lo) measDomain = [lo, hi]
     }
   } else if (hasUser && ext) {
@@ -364,12 +470,25 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   }
   opts[measAxis] = { ...(opts[measAxis] as object ?? {}), grid: o.grid,
                      ...(o.labY ? { label: o.labY } : {}), ...(measDomain ? { domain: measDomain } : {}) }
+  // the position axis carries the SERIES labels — long ones overlap unless rotated. `resolveXRotation`
+  // honours the user's setting first and otherwise rotates only when they genuinely don't fit, reporting
+  // it on `_autoRotatedX` so the panel can say a setting was adjusted (see plots/autoOverride.ts).
+  const xrot = resolveXRotation(seriesIndex(r, keyOf).labels, o)
+  ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
-                    ...(o.rotateXLabel && !o.rotate ? { tickRotate: xTickRotate(o) } : {}) }
+                    ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }
   // room for rotated x labels (else clipped by the panel border); room for series labels on Y when flipped
-  if (o.rotateXLabel && !o.rotate) opts.marginBottom = xRotMargin(76, o)
+  if (xrot.rotate) opts.marginBottom = xRotMargin(76, o)
   if (o.rotate) opts.marginLeft = 104
+  // …and PIXEL room for the stats annotation text, which is offset beyond its data coordinate (dx: 8
+  // when rotated, dy: -6 otherwise). The domain padding above puts the mark inside the plot; without
+  // this the glyph still overhangs the frame and gets clipped. On the measure axis's far side: right
+  // for a rotated (horizontal) chart, top otherwise.
+  if (isDist && statsBandFraction(r, o) > 0) {
+    if (o.rotate) opts.marginRight = Math.max(Number(opts.marginRight ?? 12), 42)
+    else opts.marginTop = Math.max(Number(opts.marginTop ?? 12), 26)
+  }
 
   // NB: the title is drawn by PlotChart as an overlay (NOT `opts.title`) — Plot's title forces an
   // HTML <figure> wrapper that re-clips the bottom axis and inherits the app's text colour.
@@ -386,10 +505,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
 
   // Reserve top headroom for the overlay legend (top-right) and/or title (top-left) so they float
   // above the data instead of covering it — the plot area starts below them.
-  let topPad = 12
-  if (o.legend && legendN > 1) topPad = 20 + Math.min(3, Math.ceil(legendN / 3)) * 22
-  if (o.title) topPad = Math.max(topPad, 34)
-  opts.marginTop = topPad
+  opts.marginTop = legendTopPad(legendN, o)
   return opts
 }
 
@@ -409,9 +525,16 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   if (!cells.length) return null
   const fg = o.darkTheme ? '#e6e6e6' : '#111'
   const bg = o.darkTheme ? '#1f2226' : 'white'
-  const profile = r.matrixMode !== 'crosstab'
+  // THREE modes, not two. `interaction` was falling into the profile branch (`!== 'crosstab'`), which
+  // per-row min-max rescales every row to [0,1] on viridis — and that destroys a LOG-ODDS matrix: the
+  // sign disappears, so association (+) and avoidance (−) get colours that only say "biggest/smallest
+  // in this row". A signed effect size has to be DIVERGING and pivoted at 0, with a symmetric domain so
+  // +0.6 and −0.6 read equally strongly. Rescaling is right for a profile (differently-scaled features
+  // per row); it is wrong for anything already on a common, signed scale.
+  const interaction = r.matrixMode === 'interaction'
+  const profile = !interaction && r.matrixMode !== 'crosstab'
   const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
-  const diverging = profile && !useMinmax   // z-score display → diverging RdBu
+  const diverging = interaction || (profile && !useMinmax)   // log-odds / z-score → diverging RdBu
   const valLabel = r.valueLabel ?? 'value'
   // per-feature (row) min-max → [0,1] (rescaleRows01, tested in utils); attach as `norm` on a COPY so
   // the fill uses it while the tooltip/label still read the original value, and r.cells is untouched.
@@ -422,10 +545,14 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // colour scale: minmax → viridis over a fixed [0,1] (no legend title, like the R heat plots);
   // z-score → diverging RdBu pivoted at 0; crosstab → sequential viridis over the data range.
   const vals = cells.map(c => c.value)
+  // symmetric about 0 so equal magnitudes of association / avoidance are equally saturated. Explicit
+  // rather than relying on Plot's diverging default, and floored so an all-zero matrix still renders.
+  const absMax = Math.max(1e-9, ...vals.map(v => Math.abs(v)))
   const colorScale: Record<string, unknown> = useMinmax
     ? { scheme: 'viridis', domain: [0, 1] }
     : diverging
-      ? { scheme: 'rdbu', pivot: 0, reverse: true, label: valLabel }
+      ? { scheme: 'rdbu', pivot: 0, reverse: true, label: valLabel,
+          ...(interaction ? { domain: [-absMax, absMax] } : {}) }
       : { scheme: 'viridis', label: valLabel, domain: [Math.min(...vals), Math.max(...vals)] }
   // contrast ink for the value text: for viridis, light cells (high end) get dark text. Cheap split
   // at the scale midpoint (good enough — the labels are a readout, not a precise encoding).
@@ -435,14 +562,22 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // profile heatmaps blank the category axis title (R uses xlab("")/ylab("")); crosstab keeps to/from.
   const xLab = r.matrixMode === 'crosstab' ? 'to' : null
   const yLab = r.matrixMode === 'crosstab' ? 'from' : null
-  const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab')
+  // on by default wherever the NUMBER is the readout: a transition rate, and a log-odds (a 2×2 or 3×3
+  // interaction matrix has room, and the effect size is what the user came for)
+  const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || interaction)
   // tile border: white (R's geom_tile colour="white") — a thin gap that reads on both the dark ground
   // and the white export; never black (that framed every cell too heavily).
   const tileStroke = '#ffffff'
-  const valFmt = (c: { value: number }) => fmt(c.value)
-  const tip = (c: { x: string; y: string; value: number; n?: number; count?: number }) =>
+  // the star ladder comes from the server (one ladder, shared with the hypothesis tests)
+  const valFmt = (c: MatrixCell) =>
+    interaction && c.significance ? `${fmt(c.value)} ${c.significance}` : fmt(c.value)
+  const tip = (c: MatrixCell) =>
     `${r.matrixMode === 'crosstab' ? `${c.y} → ${c.x}` : `${c.y} · ${c.x}`}\n${valLabel}: ${fmt(c.value)}` +
-    (c.count != null ? `\nn ${c.count}` : c.n != null ? `\nn ${c.n}` : '')
+    (c.count != null ? `\nobserved ${fmtCount(c.count)}` : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
+    // z and p were already on the wire and shown NOWHERE — the permutation test is the reason to
+    // trust the effect size, so it belongs next to it
+    (c.zScore != null ? `\nz ${fmt(c.zScore)}` : '') +
+    (c.pValue != null ? `\n${formatPValue(c.pValue)}${c.significance ? ` ${c.significance}` : ''}` : '')
   // reserve a top band for the colour-ramp legend (drawn top-right as an overlay) so it never covers
   // the top row of cells — and a touch more when a title (top-left) shares the band.
   const topPad = o.legend ? (o.title ? 44 : 38) : (o.title ? 28 : 8)
@@ -451,11 +586,15 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
   const longestYW = (r.yLabels ?? []).reduce((m, s) => Math.max(m, textWidth(String(s), o.fontSize || 11)), 0)
   const marginLeft = Math.round(Math.min(240, Math.max(40, longestYW + 12)))
+  // the column labels are population / category names — same overlap problem, same resolver. The bands
+  // start after marginLeft, so that is what's reserved.
+  const xrot = resolveXRotation((r.xLabels ?? []).map(String),
+                                { ...o, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + 60) })
   const opts: Record<string, unknown> = {
     // tight margins (R heat plots are compact — fig.height 2 × width 4)
     ...THEME, marginLeft, marginBottom: 48, marginTop: topPad, marginRight: 8,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: o.rotateXLabel ? xTickRotate(o) : 0 },
+    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: xrot.rotate ? xTickRotate(o) : 0 },
     y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
     color: colorScale,
     marks: [
@@ -470,7 +609,8 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
       Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
     ],
   }
-  if (o.rotateXLabel) opts.marginBottom = xRotMargin(72, o)
+  if (xrot.rotate) opts.marginBottom = xRotMargin(72, o)
+  ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }
   return opts
@@ -571,9 +711,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const yhi = o.logScale ? hi : hi * 1.05
   const legend = dedupLegend(color)
   const legendN = legend.domain.length
-  let topPad = 12
-  if (o.legend && legendN > 1) topPad = 20 + Math.min(3, Math.ceil(legendN / 3)) * 22
-  if (o.title) topPad = Math.max(topPad, 34)
+  const topPad = legendTopPad(legendN, o)
   const base = r.chartType === 'count' ? 'count' : (r.measure ?? 'value')
   const marks: unknown[] = []
   if (o.interval) marks.push(
@@ -669,6 +807,61 @@ function formatPValue(p: number): string {
   if (p < 0.001) return 'p < 0.001'
   const s = p.toPrecision(3).replace(/\.?0+$/, '')
   return `p = ${s}`
+}
+
+/**
+ * How far ABOVE the data the stats annotations reach, as a fraction of the DATA extent — 0 when none
+ * are drawn. Mirrors the placement in `statsMarks` below: a Compact Letter Display is ONE row at
+ * `STATS_HEADROOM`; a bracket stack is one row per shown pair, stepping by `STATS_STACK_GAP`.
+ *
+ * This exists because the annotations are positioned in DATA coordinates but the measure-axis domain
+ * was computed from the data alone (+5%). The letter therefore landed exactly on the frame and its
+ * `dx: 8` pixel offset pushed the glyph outside the plot, where it was clipped — "squished to the edge
+ * of the box". Reserving room needs both this (domain) and a pixel margin for the glyph itself.
+ *
+ * Deliberately counts pairs WITHOUT the position filter `statsMarks` applies (a pair whose group is
+ * absent from the series is dropped there): over-reserving leaves a little empty headroom, while
+ * under-reserving clips the annotation, so the generous side is the right error.
+ */
+export function statsBandFraction(
+  r: { comparisons?: ComparisonsResult },
+  o: { statsEnabled?: boolean; statsUseLetters?: boolean; statsShowNs?: boolean },
+): number {
+  if (!o.statsEnabled) return 0
+  const cmp = r.comparisons
+  if (!cmp) return 0
+  if (o.statsUseLetters && cmp.letters && cmp.letters.some(l => (l ?? '').length > 0)) {
+    return STATS_HEADROOM
+  }
+  const rows = pairsFor(cmp).filter(p => o.statsShowNs || p.significance !== 'ns').length
+  return rows > 0 ? STATS_HEADROOM + (rows - 1) * STATS_STACK_GAP : 0
+}
+
+/**
+ * Series the server returned with NOTHING to draw, by display label.
+ *
+ * A measure can be present on one segmentation and absent from another — that is the normal shape of
+ * the spatial readouts, whose names embed their target (`…min_distance#live.T_qc_tracked` exists on B's
+ * h5ad, not on T's). Plotting both populations then draws B's box and leaves T's row blank, which reads
+ * as "T isn't shown" rather than "T has no value for this measure". Naming the empty series is the
+ * difference between a bug report and an explanation.
+ *
+ * Reuses `serverStatsLabels` so the note names a series exactly the way the chart and the stats
+ * brackets do — one label derivation, not a third.
+ */
+export function emptySeriesLabels(r: Pick<PlotDataResponse, 'series'>): string[] {
+  const labels = serverStatsLabels(r.series)
+  const out: string[] = []
+  for (const s of r.series) {
+    const hasArray = (s.counts?.length ?? 0) > 0 || (s.values?.length ?? 0) > 0 || (s.points?.length ?? 0) > 0
+    // `n` is the sample size behind a summary (bar/box); a summary with n>0 has something to draw even
+    // if this chart type shows no raw points.
+    const hasSummary = (s.n ?? 0) > 0
+    if (hasArray || hasSummary) continue
+    const l = labels.get(s) ?? String(s.pop ?? '')
+    if (l && !out.includes(l)) out.push(l)
+  }
+  return out
 }
 
 /** Pairs to show — expand a 2-group omnibus into a single implicit pair when the server didn't. */
@@ -860,15 +1053,21 @@ function frequency(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
 function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                   keyOf: (s: PlotSeries) => string, color: object, logY: object) {
   const { labels, idx } = seriesIndex(r, keyOf, o.facet)
+  // a percentage has ONE error interval (the Wilson binomial CI) — the sd/sem/ci95 selector doesn't
+  // apply to it, and its bounds are asymmetric about the point estimate, so use them as sent
+  const isPct = o.chartType === 'percent'
   const errOf = (s: PlotSeries) => o.errorMetric === 'sd' ? s.sd : o.errorMetric === 'sem' ? s.sem : s.ci95
   const floor = o.nonNegative && !o.logScale
   const rows = r.series.filter(s => Number.isFinite(s.value)).map(s => {
     const k = keyOf(s), i = idx.get(k)!, e = Number.isFinite(errOf(s) as number) ? (errOf(s) as number) : 0
-    const lo = (s.value ?? 0) - e
+    const asym = isPct && Number.isFinite(s.lower) && Number.isFinite(s.upper)
+    const lo = asym ? (s.lower as number) : (s.value ?? 0) - e
+    const hi = asym ? (s.upper as number) : (s.value ?? 0) + e
     return { series: k, xi: i, xlo: i - 0.32, xhi: i + 0.32, value: s.value,
-             lo: floor ? Math.max(0, lo) : lo, hi: (s.value ?? 0) + e, n: s.n,
-             tip: o.chartType === 'count' ? `${k}\ncount ${fmt(s.value)}`
-                                          : `${k}\nmean ${fmt(s.value)}\n${o.errorMetric} ±${fmt(e)}\nn ${s.n}` }
+             lo: floor ? Math.max(0, lo) : lo, hi, n: s.n,
+             tip: o.chartType === 'count' ? `${k}\ncount ${fmtCount(s.value)}`
+                : isPct ? `${k}\n${fmt(s.value)}% positive\n95% CI ${fmt(lo)}–${fmt(hi)}\nn ${s.n}`
+                : `${k}\nmean ${fmt(s.value)}\n${o.errorMetric} ±${fmt(e)}\nn ${s.n}` }
   })
   const f = fxCh(o), a = axM(o)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
@@ -878,7 +1077,8 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
-    [a.meas]: { label: o.chartType === 'count' ? 'count' : `mean ${r.measure}`, grid: false, ...logY },
+    [a.meas]: { label: o.chartType === 'count' ? 'count'
+                     : isPct ? `% ${r.measure}` : `mean ${r.measure}`, grid: false, ...logY },
     marks: [
       Plot.rect(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.measLo]: 0, [a.measHi]: 'value', fill: 'series', title: 'tip', tip: true, ...f }),
       RuleMeas(rows, { [a.pos]: 'xi', [a.measLo]: 'lo', [a.measHi]: 'hi', stroke: 'currentColor', ...f }),   // error bar
@@ -1019,6 +1219,10 @@ export function plotDataToCsv(r: PlotDataResponse): string {
                  r.series.map(s => [...id(s), s.value, s.sd, s.sem, s.ci95, s.n]))
     case 'count':
       return tbl([...idH, 'count'], r.series.map(s => [...id(s), s.value]))
+    case 'percent':
+      // both Wilson bounds, not just the half-width — they are asymmetric about the estimate
+      return tbl([...idH, 'percent', 'ci95_lower', 'ci95_upper', 'n_positive', 'n'],
+                 r.series.map(s => [...id(s), s.value, s.lower, s.upper, s.nPositive, s.n]))
     case 'boxplot':
       return tbl([...idH, 'q1', 'median', 'q3', 'lower', 'upper', 'mean', 'n'],
                  r.series.map(s => [...id(s), s.q1, s.median, s.q3, s.lower, s.upper, s.mean, s.n]))
@@ -1031,6 +1235,12 @@ export function plotDataToCsv(r: PlotDataResponse): string {
       const cells = r.cells ?? []
       const xH = r.matrixMode === 'crosstab' ? 'to' : 'x'
       const yH = r.matrixMode === 'crosstab' ? 'from' : 'y'
+      // an interaction matrix's effect size is only interpretable WITH its permutation test — exporting
+      // the log-odds alone would strip the reason to believe it
+      if (r.matrixMode === 'interaction') {
+        return tbl([yH, xH, r.valueLabel ?? 'value', 'observed', 'z', 'p', 'significance'],
+                   cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.zScore, c.pValue, c.significance]))
+      }
       return tbl([yH, xH, r.valueLabel ?? 'value', 'n'],
                  cells.map(c => [c.y, c.x, c.value, c.count ?? c.n]))
     }

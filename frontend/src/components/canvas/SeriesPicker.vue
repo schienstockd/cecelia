@@ -15,14 +15,18 @@ import { tkey } from '../../plots/series'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
 import PopulationPanelShell from './PopulationPanelShell.vue'
+import type { PlotReadout } from '../../plots/plotReadout'
 
 const props = defineProps<{
   groups: SegmentationPops[]          // populations available, grouped by segmentation
   selected: string[]                  // selected target keys (tkey), in the current scope
   scope: 'global' | 'local'
   vis: VisProps                       // visual properties for the current scope
-  statsNote?: string                  // active plot's resolved stats test (methodNote), shown in Stats
+  readout?: PlotReadout               // active plot's last render: stats test + auto-overridden settings
   docked?: boolean                    // render in a fixed rail (Analysis board) instead of floating
+  // the active plot is PRECOMPUTED (plots/popTypes.ts isPrecomputedSpec): its populations are fixed by
+  // the analysis run it reads, so eye-selecting does nothing. Say so instead of offering dead toggles.
+  selectionUnused?: boolean
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -37,11 +41,12 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 </script>
 
 <template>
-  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked" :stats-note="statsNote"
+  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked" :readout="readout"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
-    <div v-if="!total" class="pm-empty cc-muted">No populations in the selected segmentations.</div>
-    <template v-for="grp in groups" :key="grp.valueName">
+    <div v-if="selectionUnused" class="pm-empty cc-muted">This plot's populations come from its run.</div>
+    <div v-else-if="!total" class="pm-empty cc-muted">No populations in the selected segmentations.</div>
+    <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pm-group-head">{{ grp.valueName }}</div>
       <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
            class="pm-row" :class="{ active: isLit(grp.valueName, p.path, p.popType) }"

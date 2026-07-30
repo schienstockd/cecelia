@@ -7,14 +7,21 @@
   "resource_pool": "cpu",
   "params": [
     {
+      "key": "graphSuffix",
+      "label": "Name",
+      "type": "text",
+      "default": "default",
+      "tip": "Output name → spatialGraph/<name>.h5ad"
+    },
+    {
       "key": "pops",
-      "label": "Populations",
+      "label": "Cells",
       "type": "popSelection",
       "accepts": ["live", "clust", "region", "track", "trackclust"],
       "multiple": true,
-      "acrossSegmentations": false,
+      "acrossSegmentations": true,
       "default": [],
-      "tip": "Cells to connect into a spatial neighbour graph"
+      "tip": "Cells to connect — select each segmentation's \"all\" root for a reusable graph"
     },
     {
       "key": "neighbourMethod",
@@ -33,7 +40,7 @@
       "label": "Radius (µm)",
       "type": "float",
       "min": 0,
-      "max": 1000,
+      "max": 200,
       "step": 1,
       "default": 30,
       "tip": "Neighbourhood radius in µm; also prunes Delaunay edges"
@@ -47,6 +54,13 @@
       "step": 1,
       "default": 6,
       "tip": "Number of nearest neighbours for the kNN graph"
+    },
+    {
+      "key": "perTimepoint",
+      "label": "Per timepoint",
+      "type": "bool",
+      "default": false,
+      "tip": "Link cells only within the same frame (live imaging)"
     }
   ]
 }

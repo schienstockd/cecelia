@@ -4,8 +4,10 @@
 // instead renders a BARE <svg> and floats the legend/title as an absolute overlay with the theme ink.
 // Shared here so PlotChart (generic charts) and the bespoke cluster HMM panels do it ONE way.
 //
-// The host element must be position:relative and carry the `.plot-legend-overlay` / `.plot-title-overlay`
-// CSS (top-right / top-left, `color: inherit`) — each consuming component ships those scoped styles.
+// The host element must be `position: relative` and set the ink colour; the overlay POSITIONING
+// (`.plot-legend-overlay` / `.plot-title-overlay`) is global, in `style.css`. It used to be per-component
+// scoped CSS, and the two copies had drifted apart — the layout rule belongs in one place, like the
+// builders here do.
 
 // PlotModule is the @observablehq/plot namespace (typed loosely to avoid pulling its large types in).
 type PlotModule = any   // eslint-disable-line @typescript-eslint/no-explicit-any

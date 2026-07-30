@@ -135,6 +135,24 @@ def _iterate_timepoints(labels_arr: np.ndarray, dim_utils: DimUtils):
         yield t, np.squeeze(labels_arr[tuple(sl)])
 
 
+def output_axes(stacked_ndim: int, has_time: bool, t_idx: int = 0) -> list:
+    """NGFF axis names for the skeleton store actually written, given its rank.
+
+    The store's rank is NOT the image's. `_iterate_timepoints` squeezes each frame (so a z==1 image
+    loses Z) and `flattenBranching` Z-projects (so a 3D+t image writes (t,y,x)) — either way the store
+    has fewer axes than the image it came from. Declaring the IMAGE's axes there is what left
+    `branchLabels/SHG.zarr` claiming (t,c,z,y,x) for a 4-D array and (t,y,x) stores unlabelled, and a
+    consumer can only align a layer by name if the names describe the array (napari_utils.expand_to_axes
+    rejects a mismatch, and napari then reads a (t,y,x) skeleton's time axis as Z — a tower of frames).
+    """
+    spatial = ["Z", "Y", "X"] if (stacked_ndim - (1 if has_time else 0)) == 3 else ["Y", "X"]
+    if not has_time:
+        return spatial
+    axes = list(spatial)
+    axes.insert(min(max(t_idx, 0), len(axes)), "T")
+    return axes
+
+
 def _spatial_from_endpoints(df: pd.DataFrame, n_spatial: int) -> np.ndarray:
     """Branch centroid = median of the `image-coord-src-N` / `image-coord-dst-N` endpoints.
     Preserves the old convention (`create_branching.py:368-375`) while writing through the
@@ -447,10 +465,14 @@ def run(params: dict):
     # Write the labels zarr — a fresh multiscales store (canonical create path).
     if flatten_branching or not has_time:
         stacked = skeleton_frames[0] if len(skeleton_frames) == 1 else np.stack(skeleton_frames, axis=0)
+        stacked_t_idx = 0
     else:
-        t_idx = dim_utils.dim_idx("T", ignore_channel=True)
+        stacked_t_idx = dim_utils.dim_idx("T", ignore_channel=True)
         # Re-insert time axis at the original position
-        stacked = np.stack(skeleton_frames, axis=t_idx)
+        stacked = np.stack(skeleton_frames, axis=stacked_t_idx)
+    # a single non-timeseries frame keeps no T axis even though `stack` wasn't used
+    stacked_has_time = has_time and stacked.ndim > (3 if is_3d else 2)
+    store_axes = output_axes(stacked.ndim, stacked_has_time, stacked_t_idx)
 
     log.log(f"> write labels zarr {branch_labels_out}")
     os.makedirs(os.path.dirname(branch_labels_out), exist_ok=True)
@@ -468,6 +490,8 @@ def run(params: dict):
         # legacy R store layout only; using it here writes a store no cecelia reader can open.
         ignore_channel=True,
         squeeze=False,
+        # the axes of the ARRAY, not of the image — see output_axes
+        axes=store_axes,
     )
 
     aniso_uns = None

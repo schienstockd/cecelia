@@ -10,6 +10,7 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import { useGatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
+import { useDataRefresh } from './useDataRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
@@ -33,6 +34,7 @@ export function useClusterContext(opts: {
   const clusterFeatures = ref<Record<string, string[]>>({})
   const featureFallback = ref<string[]>([])
   const nameMap = ref<Record<string, string>>({})     // raw channel column → display name
+  const featureLabels = ref<Record<string, Record<string, string>>>({})  // per-suffix: column → label
   const clusterIds = ref<Record<string, number[]>>({})     // per-suffix tickable cluster universe
   const clusterMembers = ref<Record<string, string[]>>({}) // per-suffix uids the run clustered together
   const resolvedVn = ref('default')                    // segmentation value_name the channels resolved to
@@ -59,6 +61,11 @@ export function useClusterContext(opts: {
       resolvedVn.value = d.valueName ?? 'default'
       featureFallback.value = popType.value === 'trackclust' ? (d.columns ?? []) : (d.channels ?? [])
       const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
+      // channel column → display name, PLUS the run's own recorded column → label map. Region runs
+      // cluster on composition columns (`spatial.comp.B_qc__tracked.immune`) whose meaning is a
+      // population name ("B/qc/_tracked"), so the heatmap rows need that relabelling; cluster runs
+      // record no labels and are unaffected.
+      featureLabels.value = d.clusterFeatureLabels ?? {}
       nameMap.value = Object.fromEntries(chans.map((c, i) => [c, names[i] ?? c]))
       const obs: string[] = d.cellObsMeasures ?? []
       hmmStateCols.value = obs.filter(c => c.startsWith('live.cell.hmm.state.'))
@@ -101,9 +108,23 @@ export function useClusterContext(opts: {
   }, { immediate: true })
   // reload the run/feature metadata when the image set / project / popType changes (or on enable)
   watch([projectUid, () => imageUids.value.join(','), popType, enabled], loadFeatures, { immediate: true })
+  // A task finishing on one of THESE images must also reload the run METADATA, not just the panels'
+  // data. The plots (heatmap / UMAP) each call useDataRefresh themselves, so they refetch — but this
+  // context owns the run (suffix) list, the tickable cluster/region IDs, the heatmap's feature rows and
+  // their labels, and it used to reload only when the image selection or popType changed. So re-running
+  // clustering left the page showing the OLD run list, the old ID universe and the old feature rows,
+  // with the heatmap still requesting the previous run's columns — "I re-ran it and nothing changed".
+  // Same primitive, same global autoRefreshOnTask toggle, so cluster/region pages behave like the rest.
+  useDataRefresh(() => imageUids.value, loadFeatures)
+
+  // the label map a plot should use for the CURRENT run: channel display names, overlaid with this
+  // run's own column→label map. Hosts pass this as `nameMap` so one lookup relabels both.
+  const labelMap = computed<Record<string, string>>(() =>
+    ({ ...nameMap.value, ...(featureLabels.value[suffix.value] ?? {}) }))
 
   return {
-    suffixes, clusterFeatures, featureFallback, nameMap, clusterIds, clusterMembers, resolvedVn,
+    suffixes, clusterFeatures, featureFallback, nameMap, featureLabels, labelMap,
+    clusterIds, clusterMembers, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
     runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,
   }

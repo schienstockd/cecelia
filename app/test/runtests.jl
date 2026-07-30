@@ -1268,10 +1268,19 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     @testset "Param validation — NeighbourStats" begin
         @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
         @test task_scope(NeighbourStats()) == "image"
+        # The graph parameters (method / radius / k) deliberately do NOT live here any more — they belong
+        # to the graph this task consumes (`graphSuffix` → spatialAnalysis.cellNeighbours), so a
+        # neighbourhood is defined once. `nPermutations` is the one numeric knob left to range-check.
         @test_throws ParamValidationError validate_params(
-            NeighbourStats(), Dict{String,Any}("neighbourRadius" => 5000))
+            NeighbourStats(), Dict{String,Any}("nPermutations" => -1))
         @test_throws ParamValidationError validate_params(
-            NeighbourStats(), Dict{String,Any}("nNeighbours" => 0))
+            NeighbourStats(), Dict{String,Any}("nPermutations" => 10_000_000))
+        ns_spec = JSON3.read(read(Cecelia._spec_path(NeighbourStats()), String))
+        ns_keys = Set(String(get(p, :key, "")) for p in get(ns_spec, :params, []))
+        @test "graphSuffix" in ns_keys && "nPermutations" in ns_keys
+        for gone in ("neighbourRadius", "nNeighbours", "neighbourMethod")
+            @test !(gone in ns_keys)
+        end
     end
 
     @testset "Param validation — ClustRegions" begin
@@ -1286,6 +1295,220 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test validate_params(
             ClustRegions(), Dict{String,Any}("numClusters" => 5, "resolution" => 1.0,
                                              "clusterMethod" => "leiden")) === nothing
+        # regions run ON a neighbour graph and no longer build their own, so the graph knobs moved to
+        # cellNeighbours; `perTimepoint` went with them (whether neighbourhoods are per-frame is a
+        # property of the graph, so behaviour regions come from choosing a per-timepoint graph).
+        cr_keys = Set(String(get(p, :key, ""))
+                      for p in get(JSON3.read(read(Cecelia._spec_path(ClustRegions()), String)), :params, []))
+        @test "graphSuffix" in cr_keys && "includeOther" in cr_keys
+        for gone in ("neighbourRadius", "nNeighbours", "neighbourMethod", "perTimepoint")
+            @test !(gone in cr_keys)
+        end
+    end
+
+    @testset "plot specs live on the page that EXPLORES, not the one that DEFINES" begin
+        # Where a plot lives is a product decision worth pinning, because the drift is invisible: a new
+        # pop type arrives, someone adds a `population_summary_<type>.json` pointed at the page that
+        # produced it, and every population-DEFINING page slowly grows a summary canvas it has no use
+        # for. Populations are DEFINED on gate / track / clust-cells / clust-tracks / regions, and
+        # SUMMARISED on the Explore pages. Each summary follows its pop type:
+        #     flow → phenotype ·  clust → phenotype ·  live/trackclust → behaviourAnalysis ·  region → spatialAnalysis
+        root = joinpath(dirname(dirname(pathof(Cecelia))), "src", "plotDefinitions")
+        @test isdir(root)
+        specs = Dict{String,Any}()
+        for f in readdir(root)
+            endswith(f, ".json") || continue
+            specs[f] = JSON3.read(read(joinpath(root, f), String), Dict{String,Any})
+        end
+        @test length(specs) > 5          # the walk found the registry (a floor, not a census)
+
+        # The interaction matrix is a REGISTRY plot now, not a bespoke component + route: it was the one
+        # violation of docs/PLOTS.md → *Hosting — ONE way*, which is why it sat in a fixed box below the
+        # table and couldn't be duplicated, arranged, exported or put on the Analysis board.
+        @test haskey(specs, "spatial_interactions.json")
+        @test String(specs["spatial_interactions.json"]["dataSource"]["matrix"]["mode"]) == "interaction"
+        @test String(specs["spatial_interactions.json"]["module"]) == "spatialAnalysis"
+        # …and the bespoke surface is gone for good
+        fe = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "frontend", "src")
+        @test !isfile(joinpath(fe, "modules", "spatial", "SpatialContactHeatmap.vue"))
+        @test !isfile(joinpath(fe, "utils", "contactHeatmap.ts"))
+        srv = read(joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "api", "src", "server.jl"), String)
+        @test !occursin("/api/plots/contact_matrix", srv)
+
+        # the population-DEFINING module pages carry no plot specs at all
+        DEFINING = ("clustPops", "clustTracks", "clustRegions")
+        stray = ["$f → module=$(get(s, "module", ""))" for (f, s) in specs
+                 if String(get(s, "module", "")) in DEFINING]
+        @test isempty(stray)
+
+        # There is now ONE population-summary spec offering every family, with the per-page curation in
+        # its `modules` allow-list — the four per-popType copies are gone. Pin both halves: no copies
+        # come back, and each page still offers exactly the families it should.
+        for gone in ("population_summary_clust.json", "population_summary_trackclust.json",
+                     "population_summary_tracks.json", "population_summary_region.json")
+            @test !haskey(specs, gone)
+        end
+        ps = specs["population_summary.json"]
+        @test !haskey(ps, "module")                       # multi-page specs use `modules`, not `module`
+        offered = Dict(String(k) => Set(String(x) for x in v) for (k, v) in ps["modules"])
+        @test offered["phenotype"]         == Set(["flow", "clust"])
+        @test offered["behaviourAnalysis"] == Set(["live", "track", "trackclust"])
+        @test offered["spatialAnalysis"]   == Set(["region"])
+
+        # every family a page offers must actually be declared, WITH its own granularity — the one thing
+        # that genuinely blocked a shared spec (sending the spec's single granularity asked for cell rows
+        # under a track pop type). flow/clust/region are cell-grained, live/track/trackclust track-grained.
+        pts = Dict(String(p["popType"]) => String(p["granularity"]) for p in ps["dataSource"]["popTypes"])
+        @test Set(keys(pts)) == Set(["flow", "clust", "live", "track", "trackclust", "region"])
+        @test pts["flow"] == "cell" && pts["clust"] == "cell" && pts["region"] == "cell"
+        @test pts["live"] == "track" && pts["track"] == "track" && pts["trackclust"] == "track"
+        for (_, fams) in offered, f in fams
+            @test haskey(pts, f)                          # a page can't offer an undeclared family
+        end
+
+        # BEHAVIOUR PLOTS ARE NOT LIVE-ONLY. Every one of them shipped the legacy single
+        # `popType: "live"`, so a gated-track population or a track cluster could not be plotted at all
+        # — the family picker existed but these specs never opted into it. `pop_df` has always
+        # supported `track`/`trackclust` at either granularity (`_pop_df_track_gating` expands track
+        # membership to its member cells), so this was a spec omission, not a capability gap.
+        BEHAVIOUR = ("cell_properties.json", "hmm_state_frequency.json", "state_signature.json",
+                     "transition_matrix.json", "track_measures.json")
+        for f in BEHAVIOUR
+            ds = specs[f]["dataSource"]
+            @test !haskey(ds, "popType")            # legacy single-family form is gone
+            fams = Dict(String(p["popType"]) => String(p["granularity"]) for p in ds["popTypes"])
+            @test Set(keys(fams)) == Set(["live", "track", "trackclust"])
+            # granularity is the PLOT's, not the family's: per-track measures are track-grained, the
+            # cell/HMM readouts cell-grained — and it must be the same for all three families, or one
+            # pick would silently ask for a different table than another.
+            want = f == "track_measures.json" ? "track" : "cell"
+            @test all(g == want for g in values(fams))
+        end
+
+        # A plot's family list is CURATED in its spec (not derived from the data), because "which family
+        # can this measure be sliced by" is a judgement the data can't make. The cost of curation is
+        # silent drift, and it drifted: the spatial measures plot offered Gated/Cell clusters/Regions/
+        # Tracked but not Track clusters — a family every spatial task happily accepts as input. So pin
+        # the agreement to the PRODUCING tasks' own `accepts`, via the canonical token mapping
+        # (`_accept_pop_types`) rather than a second hand-written list.
+        producing = (CellNeighbours(), NeighbourStats(), CellContacts(), ContactsMeshes(),
+                     DetectAggregates(), AggregatesMeshes(), ClustRegions())
+        accepted = Set{String}()
+        for t in producing
+            spec = JSON3.read(read(Cecelia._spec_path(t), String))
+            for p in get(spec, :params, [])
+                String(get(p, :type, "")) == "popSelection" || continue
+                acc = Cecelia._normalise_accepts(get(p, :accepts, String[]))
+                union!(accepted, Cecelia._accept_pop_types(acc))
+            end
+        end
+        @test accepted == Set(["live", "track", "clust", "trackclust", "region"])
+        spat = Dict(String(p["popType"]) => String(p["granularity"])
+                    for p in specs["spatial_cell_properties.json"]["dataSource"]["popTypes"])
+        @test isempty(setdiff(accepted, keys(spat)))   # every accepted family is offered for plotting
+        # `flow` is offered ON TOP: _normalise_accepts folds flow→live (same gate map), but the plot
+        # keeps them apart — "Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
+        @test haskey(spat, "flow")
+        # the spatial readouts are per-CELL columns, so every family is sliced at cell granularity —
+        # including the track-grained ones (pop_df expands track membership to its member cells)
+        @test all(g == "cell" for g in values(spat))
+
+        # The manager follows the ACTIVE plot's family, which needs both hosts to pass activeSpecId AND
+        # activePopType into useSummaryData. If that regresses the picker silently lists the wrong
+        # family — invisible, so pin the wiring.
+        fe = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "frontend", "src")
+        for host in ("SummaryCanvas.vue", "LayoutCanvas.vue")
+            src = read(joinpath(fe, "components", "canvas", host), String)
+            @test occursin("activeSpecId", src)
+            @test occursin("activePopType", src)
+            @test occursin("migrateSpecId", src)          # persisted canvases must not silently empty
+        end
+    end
+
+    @testset "interaction matrix aggregates with NO population targets" begin
+        # The path `api_plot_data`'s `precomputed` branch now takes. The panel sends no `series` (the
+        # matrix's rows/columns come from the neighbourStats run), so the targets vector is EMPTY — and
+        # the interception has to fire before anything touches pop_df. Previously the selector guard
+        # rejected the body outright ("pops (or series) required" on a plot with no pops to pick), so
+        # this dispatch was never exercised.
+        td = mktempdir()
+        try
+            mkpath(joinpath(td, "spatialStats"))
+            write(joinpath(td, "spatialStats", "run1.json"), """
+            {"basis":["B/qc","T/qc"],"nCells":334,"nEdges":1200,"graphSuffix":"g1",
+             "nPermutations":500,"coverage":0.9,"records":[
+              {"popA":"B/qc","popB":"B/qc","observed":120,"expected":80,"logOdds":0.48,
+               "zScore":15.8,"pValue":0.002,"significant":true,"association":"association"},
+              {"popA":"B/qc","popB":"T/qc","observed":10,"expected":33,"logOdds":-1.19,
+               "zScore":-30.4,"pValue":0.002,"significant":true,"association":"avoidance"},
+              {"popA":"T/qc","popB":"T/qc","observed":90,"expected":60,"logOdds":0.58,
+               "zScore":17.7,"pValue":0.002,"significant":true,"association":"association"}]}
+            """)
+            img = CciaImage(; dir = td)
+            r = plot_summary_data(img, "flow", Tuple{String,String}[], "matrix";
+                                  matrix_mode = "interaction", stats_suffix = "run1")
+            @test r["chartType"] == "matrix" && r["matrixMode"] == "interaction"
+            @test r["xLabels"] == ["B/qc", "T/qc"] && r["yLabels"] == r["xLabels"]
+            @test r["suffixes"] == ["run1"] && r["suffix"] == "run1"
+            @test isempty(r["series"])                       # nothing to overlay — it IS the matrix
+            # symmetric fill: 2 populations → 4 cells, the off-diagonals sharing one record
+            @test length(r["cells"]) == 4
+            by = Dict((c["x"], c["y"]) => c for c in r["cells"])
+            @test by[("B/qc", "B/qc")]["value"] == 0.48
+            @test by[("B/qc", "T/qc")]["value"] == by[("T/qc", "B/qc")]["value"] == -1.19
+            # z / p / observed ride along per cell so the renderer needs no second request
+            @test by[("B/qc", "T/qc")]["zScore"] == -30.4
+            @test by[("B/qc", "T/qc")]["pValue"] == 0.002
+            @test by[("B/qc", "T/qc")]["count"] == 10
+            # …plus the star ladder, from the SAME function the hypothesis tests use — a second ladder
+            # in the renderer would be a fork waiting to disagree
+            @test by[("B/qc", "T/qc")]["significance"] == Cecelia._significance(0.002)
+            @test by[("B/qc", "T/qc")]["significance"] == "**"
+            # the colour encoding is DIVERGING about 0, so the value must keep its sign as sent (the
+            # renderer asserts the scale; here we pin that the payload isn't pre-normalised)
+            @test by[("B/qc", "T/qc")]["value"] < 0 < by[("B/qc", "B/qc")]["value"]
+            @test r["valueLabel"] == "log-odds"
+            # an unknown suffix falls back to the first run rather than erroring
+            @test plot_summary_data(img, "flow", Tuple{String,String}[], "matrix";
+                                    matrix_mode = "interaction", stats_suffix = "nope")["suffix"] == "run1"
+            # …and with NO run at all it's an empty matrix, not a throw (the panel shows its own hint)
+            empty_img = CciaImage(; dir = mktempdir())
+            e = plot_summary_data(empty_img, "flow", Tuple{String,String}[], "matrix";
+                                  matrix_mode = "interaction")
+            @test isempty(e["cells"]) && isempty(e["xLabels"])
+        finally
+            rm(td; recursive = true, force = true)
+        end
+    end
+
+    @testset "spatial graph — path accessor + discovery" begin
+        # The graph pools ACROSS segmentations, so it is keyed by run suffix under spatialGraph/, not by
+        # value_name next to a cell table (which could not represent a cross-segmentation graph).
+        # Discovery is a directory listing, like spatialStats/ — nothing in ccid.json.
+        td = mktempdir()
+        img = CciaImage(; dir = td)
+        @test img_spatial_graph_suffixes(img) == String[]        # nothing built yet
+        @test endswith(img_spatial_graph_path(img, "run1"), joinpath("spatialGraph", "run1.h5ad"))
+        mkpath(img_spatial_graph_dir(img))
+        for s in ("run2", "run1")
+            touch(img_spatial_graph_path(img, s))
+        end
+        touch(joinpath(img_spatial_graph_dir(img), "notes.txt"))  # non-h5ad ignored
+        @test img_spatial_graph_suffixes(img) == ["run1", "run2"]     # sorted
+    end
+
+    @testset "neighbourStats QC findings" begin
+        # pure helper (docs/MODULES.md) — advisory findings only, never gates
+        ids(fs) = Set(String(f["code"]) for f in fs)
+        @test ids(Cecelia._neighbour_stats_findings(0, 0)) == Set(["spatial.no_cells"])
+        @test ids(Cecelia._neighbour_stats_findings(10, 0)) == Set(["spatial.no_edges"])
+        @test isempty(Cecelia._neighbour_stats_findings(10, 5, 1.0, 3))
+        # a graph built over far more cells than the analysis selects → the counts rest on a slice of it
+        @test "spatial.low_coverage" in ids(Cecelia._neighbour_stats_findings(10, 5, 0.02, 3))
+        @test !("spatial.low_coverage" in ids(Cecelia._neighbour_stats_findings(10, 5, 0.5, 3)))
+        # nothing beat chance → say so; -1 means the test was skipped (permutations = 0), so stay quiet
+        @test "spatial.none_significant" in ids(Cecelia._neighbour_stats_findings(10, 5, 1.0, 0))
+        @test isempty(Cecelia._neighbour_stats_findings(10, 5, 1.0, -1))
     end
 
     @testset "Param validation — CropImage" begin
@@ -3745,6 +3968,133 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
               Set(["A/TumourZone", "B/TumourZone"])
     end
 
+    @testset "bare cluster/region pops: run-wide by default, per-segmentation on request" begin
+        # A bare cluster-family ref spans every co-clustered segmentation (old-R popDT parity) — right
+        # for "show me this run's cluster", WRONG for a plot series, where the picker already offered
+        # each (segmentation, population) pair separately. Ticking 3 region pops under B plotted 6.
+        td = mktempdir()
+        lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        for vn in ("B", "T")
+            Cecelia._write_clust_features!(joinpath(lpdir, "$(vn).h5ad"), "immune",
+                                           ["spatial.comp.x.immune"], ["u1"]; family = "regions")
+        end
+        m = PopulationMap(pop_type="region", value_name="B")
+        add_pop!(m, "Population 1"; filter_measure="regions.immune", filter_fun="in", filter_values=[1])
+        save_pop_map!(m, td)
+        img = CciaImage(; dir=td)
+        img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "_active" => "B")
+
+        # default: bare ref fans out across the run's segmentations
+        @test Set(Cecelia._expand_cluster_pops(img, ["/Population 1"], "region", "B")) ==
+              Set(["B/Population 1", "T/Population 1"])
+        # explicitly value_name-prefixed refs are untouched either way
+        @test Cecelia._expand_cluster_pops(img, ["B/Population 1"], "region", "B") == ["B/Population 1"]
+        # a non-cluster pop type never expands
+        @test Cecelia._expand_cluster_pops(img, ["/gate"], "flow", "B") == ["/gate"]
+        # and pop_df exposes the opt-out the series path uses (keyword present, both forms)
+        @test :expand_cluster_pops in Base.kwarg_decl(
+            only(methods(pop_df, (CciaImage, AbstractString, Any))))
+    end
+
+    @testset "clustfeatures sidecar — families, labels, legacy layouts" begin
+        # The sidecar is keyed `{family}.{suffix}` so a cell clustering and a REGION clustering that
+        # share a suffix coexist on one segmentation instead of clobbering each other. Three historical
+        # layouts must all read back through the ONE shared reader (docs/todo/SPATIAL_REGIONS_PLAN.md).
+        @test Cecelia._cluster_measure_family("region") == "regions"
+        @test Cecelia._cluster_measure_family("clust")  == "clusters"
+        @test Cecelia._cluster_measure_family("trackclust") == "clusters"
+        @test Cecelia._clustfeatures_key("immune", "regions") == "regions.immune"
+        @test Cecelia._clustfeatures_split_key("regions.immune") == ("immune", "regions")
+        @test Cecelia._clustfeatures_split_key("clusters.a.b")   == ("a.b", "clusters")
+        @test Cecelia._clustfeatures_split_key("immune")         == ("immune", nothing)   # legacy → any family
+
+        td = mktempdir(); lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        props = joinpath(lpdir, "B.h5ad")
+
+        # two runs, SAME suffix, different families — the collision that used to silently overwrite
+        Cecelia._write_clust_features!(props, "immune", ["mean_intensity_0"], ["u1"]; family="clusters")
+        Cecelia._write_clust_features!(props, "immune", ["spatial.comp.B_qc.immune"], ["u1", "u2"];
+                                       family="regions",
+                                       labels=Dict("spatial.comp.B_qc.immune" => "B/qc"))
+        @test Cecelia._clustfeatures_features(props, "immune"; family="clusters") == ["mean_intensity_0"]
+        @test Cecelia._clustfeatures_features(props, "immune"; family="regions") == ["spatial.comp.B_qc.immune"]
+        @test Cecelia._clustfeatures_suffixes(props; family="clusters") == Set(["immune"])
+        @test Cecelia._clustfeatures_suffixes(props; family="regions")  == Set(["immune"])
+        # partOf stays per-family (the region run covered one more image)
+        e_r = Cecelia._clustfeatures_entry(props, "immune"; family="regions")
+        e_c = Cecelia._clustfeatures_entry(props, "immune"; family="clusters")
+        @test length(get(e_r, "partOf", [])) == 2 && length(get(e_c, "partOf", [])) == 1
+        @test String(get(e_r, "labels", Dict())["spatial.comp.B_qc.immune"]) == "B/qc"
+
+        # LEGACY bare-suffix entry (pre-family) matches every family, so existing data keeps working
+        legacy = joinpath(lpdir, "L.h5ad")
+        open(replace(legacy, r"\.h5ad$" => ".clustfeatures.json"), "w") do f
+            JSON3.write(f, Dict("niches" => Dict("features" => ["x"], "partOf" => ["u1"])))
+        end
+        @test Cecelia._clustfeatures_suffixes(legacy; family="regions")  == Set(["niches"])
+        @test Cecelia._clustfeatures_suffixes(legacy; family="clusters") == Set(["niches"])
+        @test Cecelia._clustfeatures_features(legacy, "niches"; family="regions") == ["x"]
+
+        # OLDEST layout: {suffix => [features]} (a bare array, no membership) normalises to the current shape
+        oldest = joinpath(lpdir, "O.h5ad")
+        open(replace(oldest, r"\.h5ad$" => ".clustfeatures.json"), "w") do f
+            JSON3.write(f, Dict("old" => ["f1", "f2"]))
+        end
+        @test Cecelia._clustfeatures_features(oldest, "old") == ["f1", "f2"]
+        @test isempty(get(Cecelia._clustfeatures_entry(oldest, "old"), "partOf", ["nonempty"]))
+
+        # absent run / absent file → empty, never a throw
+        @test Cecelia._clustfeatures_features(props, "nosuchrun"; family="regions") == String[]
+        @test Cecelia._clustfeatures_entry(joinpath(lpdir, "missing.h5ad"), "x") === nothing
+    end
+
+    @testset "spatial obs measures are NUMERIC, not integer code sets" begin
+        # A 0/1 contact/aggregate flag has few integer levels, so the generic heuristic calls it a
+        # categorical code set — and the plot panel then offers only count/bar and snaps the chart type
+        # to `count`. Commit 16ead1d fixed exactly this for integer morphology by exempting `var`
+        # columns; these are `obs`, so they need a name-rule instead.
+        flag = [0, 1, 1, 0, 1]
+        @test Cecelia._is_categorical_col(flag, "live.cell.contact#live.T_qc__tracked") == false
+        @test Cecelia._is_categorical_col(flag, "flow.cell.is.aggregate") == false
+        @test Cecelia._is_categorical_col([1, 2, 3], "live.cell.min_distance#live.T_qc") == false
+        @test Cecelia._is_categorical_col([0, 0, 1], "spatial.comp.other.immune") == false
+        # …while the IDENTIFIERS beside them stay categorical (they are label codes, not quantities)
+        @test Cecelia._is_categorical_col([3, 7, 7], "live.cell.contact_id#live.T_qc__tracked") == true
+        @test Cecelia._is_categorical_col([1, 2, 2], "live.cell.aggregate.id") == true
+        # and the existing rules are untouched
+        @test Cecelia._is_categorical_col([0, 1, 2], "regions.immune") == true
+        @test Cecelia._is_categorical_col([0, 1, 2], "clusters.default") == true
+        @test Cecelia._is_categorical_col([1.5, 2.5], "live.cell.speed") == false
+        @test Cecelia._is_categorical_col([1, 2, 3], "live.cell.hmm.state.movement") == true
+    end
+
+    @testset "region 'other' column is skipped when it would be all-zero" begin
+        # A graph built over the basis populations themselves contains nothing outside the basis, so the
+        # "other" composition column is all-zero — not a measurement, just a flat row in the heatmap.
+        # The runner drops it and flags that in the run QC; Julia must then not advertise it in the
+        # clustfeatures sidecar, or the heatmap offers a column the table doesn't have.
+        d = mktempdir()
+        p = joinpath(d, "region_qc.json")
+        @test Cecelia._region_other_all_zero(joinpath(d, "absent.json")) == false   # missing → written
+        open(p, "w") do f; JSON3.write(f, Dict("otherAllZero" => true)); end
+        @test Cecelia._region_other_all_zero(p) == true
+        open(p, "w") do f; JSON3.write(f, Dict("otherAllZero" => false)); end
+        @test Cecelia._region_other_all_zero(p) == false
+        open(p, "w") do f; JSON3.write(f, Dict("nClusters" => 3)); end                # older run, no flag
+        @test Cecelia._region_other_all_zero(p) == false
+        write(p, "{ not json")                                                        # unreadable → written
+        @test Cecelia._region_other_all_zero(p) == false
+    end
+
+    @testset "region composition column naming (one namer, Julia → Python)" begin
+        # Julia names the composition columns AND records them in the sidecar; the Python runner is
+        # handed the same list. They used to be derived independently and disagreed, so the region
+        # composition heatmap asked for columns that did not exist.
+        @test Cecelia._comp_col("B/qc/_tracked", "immune") == "spatial.comp.B_qc__tracked.immune"
+        @test Cecelia._comp_col("T cells", "x") == "spatial.comp.T_cells.x"
+        @test Cecelia._comp_col("plain", "s") == "spatial.comp.plain.s"
+    end
+
     @testset "compound filter populations (Decision 15 — AND-ed conditions)" begin
         # a user-defined filter pop combining two obs conditions in ONE pop: CD4>0.5 AND speed>5
         m = PopulationMap(pop_type="flow", value_name="B")
@@ -4810,6 +5160,87 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test length(rc0["series"]) == 1 && rc0["series"][1]["n"] == 6
     end
 
+    @testset "plot percent (% positive of a 0/1 measure)" begin
+        # "% of B cells in contact with a T cell" (`…cell.contact#…`) and "how many T cells are
+        # clustered" (`…cell.is.aggregate`) are ONE question: the fraction of a population whose 0/1
+        # measure is positive. Both were previously only reachable as a `bar` of the MEAN — an
+        # unlabelled 0..1 fraction.
+
+        # ── the detector: a property of the data, not a list of blessed column names ──
+        @test Cecelia._is_boolean_measure([0, 1, 1, 0])
+        @test Cecelia._is_boolean_measure([0.0, 1.0])
+        @test Cecelia._is_boolean_measure([1, missing, NaN, 0])      # missing/non-finite ignored
+        @test Cecelia._is_boolean_measure([0, 0, 0])                 # all-negative is still boolean
+        @test !Cecelia._is_boolean_measure([0, 1, 2])
+        @test !Cecelia._is_boolean_measure([0.0, 0.5, 1.0])
+        @test !Cecelia._is_boolean_measure(["a", "b"])               # categorical, not boolean
+        @test !Cecelia._is_boolean_measure(Float64[])                # nothing to judge
+        @test !Cecelia._is_boolean_measure([missing, NaN])
+
+        # ── Wilson score interval (Wilson 1927), against published values ──
+        lo, hi = Cecelia._wilson_ci(5, 10)
+        @test isapprox(lo, 0.23659, atol = 1e-4) && isapprox(hi, 0.76341, atol = 1e-4)
+        # the case Wald gets WRONG: 0 of 10 → Wald says [0,0] ("certainly never"), Wilson keeps width
+        lo0, hi0 = Cecelia._wilson_ci(0, 10)
+        @test lo0 == 0.0 && isapprox(hi0, 0.27753, atol = 1e-4)
+        # …and at p=1 the interval's exact upper bound IS 1 (float arithmetic lands 1 ulp short)
+        lo1, hi1 = Cecelia._wilson_ci(10, 10)
+        @test isapprox(lo1, 0.72247, atol = 1e-4) && isapprox(hi1, 1.0)
+        @test all(isnan, Cecelia._wilson_ci(0, 0))                   # no data → no interval
+        # symmetric about 0.5 (a sanity property of the interval, not of our arithmetic)
+        @test isapprox(1 - Cecelia._wilson_ci(3, 10)[2], Cecelia._wilson_ci(7, 10)[1], atol = 1e-12)
+
+        # ── the aggregation ──
+        df = DataFrame("value_name" => fill("B", 10), "pop" => fill("/qc", 10),
+                       "contact" => [1, 1, 1, 0, 0, 0, 0, 0, 0, 0])
+        r = Cecelia._summary_agg(df, "percent"; measure="contact", granularity=:cell, nbins=10,
+                                 normalize=:none, by_image=false)
+        @test r["chartType"] == "percent"
+        @test r["valueLabel"] == "% positive"
+        @test r["measureBoolean"] === true
+        s = only(r["series"])
+        @test s["value"] == 30.0 && s["n"] == 10 && s["nPositive"] == 3
+        # bounds are the Wilson ones (as percentages) and BRACKET the estimate asymmetrically
+        wl, wh = Cecelia._wilson_ci(3, 10)
+        @test isapprox(s["lower"], 100wl) && isapprox(s["upper"], 100wh)
+        @test s["lower"] < s["value"] < s["upper"]
+        @test !isapprox(s["value"] - s["lower"], s["upper"] - s["value"])   # asymmetric — hence 2 bounds
+        @test isapprox(s["ci95"], 100 * max(wh - 0.3, 0.3 - wl))            # the wider half-width
+
+        # a percent chart must NOT carry rank/ANOVA comparisons — 0/1 data needs a proportion test
+        df2 = vcat(df, DataFrame("value_name" => fill("T", 6), "pop" => fill("/qc", 6),
+                                 "contact" => [1, 1, 1, 1, 1, 0]))
+        r2 = Cecelia._summary_agg(df2, "percent"; measure="contact", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=false, stats_enabled=true)
+        @test !haskey(r2, "comparisons")
+        byvn = Dict(s["value_name"] => s for s in r2["series"])
+        @test byvn["B"]["value"] == 30.0
+        @test isapprox(byvn["T"]["value"], 500 / 6)
+
+        # an all-missing series reports no percentage rather than a spurious 0%
+        dfe = DataFrame("value_name" => fill("T", 3), "pop" => fill("/qc", 3),
+                        "contact" => [NaN, NaN, NaN])
+        se = only(Cecelia._summary_agg(dfe, "percent"; measure="contact", granularity=:cell, nbins=10,
+                                       normalize=:none, by_image=false)["series"])
+        @test isnan(se["value"]) && se["n"] == 0
+
+        # ── measureBoolean rides along on the ORDINARY charts, so the panel can offer % positive ──
+        rb = Cecelia._summary_agg(df, "bar"; measure="contact", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=false)
+        @test rb["measureBoolean"] === true
+        rn = Cecelia._summary_agg(DataFrame("value_name" => fill("B", 3), "pop" => fill("/qc", 3),
+                                            "dist" => [1.5, 20.0, 3.25]), "bar";
+                                  measure="dist", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=false)
+        @test rn["measureBoolean"] === false
+        # a POPULATION SUMMARY substitutes a synthetic per-image count; counts of 0/1 are not a boolean
+        # MEASURE, and offering "% positive" on them would be nonsense.
+        dfp = DataFrame("value_name" => ["B", "T"], "pop" => ["/qc", "/qc"], "uID" => ["i1", "i1"])
+        rp = Cecelia._summary_agg(dfp, "bar"; measure=nothing, granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test rp["measureBoolean"] === false
+    end
+
     @testset "plot count (raw + proportion normalize) — population summary" begin
         # two pops in two images; count → raw row counts; normalize=:fraction → each pop's share of
         # its image's plotted total (the population-summary plot). Deterministic frame — no fixture.
@@ -4845,6 +5276,35 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         br = Cecelia._summary_agg(df, "bar"; measure=nothing, granularity=:cell, nbins=10,
                                   normalize=:none, by_image=true)
         @test Dict(s["pop"] => s["value"] for s in br["series"])["A/p"] == 2.5
+
+        # A SYNTHETIC METRIC IS NUMERIC BY CONSTRUCTION — never sniffed.
+        #
+        # `_is_categorical_col` guesses from the values, and a per-image count is a handful of small
+        # integers, which its integer-level heuristic reads as CATEGORICAL. The panel then intersected
+        # the spec's numeric charts with the categorical set and everything except `count` (kept
+        # explicitly as measure-independent) disappeared — "population summary always defaults back to
+        # count and you cannot select anything else", on the FIRST render, since the spec's first chart
+        # is boxplot. The gate is "did the user name this column", so it covers `proportion` and any
+        # later synthetic metric with no new name to remember.
+        # backend chart names — the frontend's strip/violin both map onto `points` (backendChart)
+        for (ct, nrm) in (("boxplot", :none), ("bar", :none), ("points", :none),
+                          ("count", :none), ("bar", :fraction))
+            r = Cecelia._summary_agg(df, ct; measure=nothing, granularity=:cell, nbins=10,
+                                     normalize=nrm, by_image=true)
+            @test r["measureType"] == "numeric"
+            @test r["measureBoolean"] === false     # counts that happen to be 0/1 are not a boolean measure
+        end
+        # counts of exactly 1 are the worst case for the heuristic (a single integer level)
+        df1 = DataFrame("value_name" => ["A","A"], "pop" => ["/p","/q"], "uID" => ["x","x"])
+        @test Cecelia._summary_agg(df1, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                   normalize=:none, by_image=true)["measureType"] == "numeric"
+        # …and a REAL categorical measure is still detected as categorical (the gate must not blanket
+        # everything to numeric)
+        dfc = DataFrame("value_name" => fill("A", 4), "pop" => fill("/p", 4),
+                        "live.cell.hmm.state.movement" => [1.0, 2.0, 1.0, 2.0])
+        @test Cecelia._summary_agg(dfc, "frequency"; measure="live.cell.hmm.state.movement",
+                                   granularity=:cell, nbins=10, normalize=:none,
+                                   by_image=false)["measureType"] == "categorical"
 
         # SPLIT BY POPULATION: two tracked pops (value_names B, T) each with clusters — proportion is
         # normalised WITHIN each value_name per image, not pooled across B+T.
@@ -6446,6 +6906,71 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # before this existed. An exact allow-list, not a count — a count silently permits swapping one
     # violation for another. Before adding an entry, check whether the fact belongs in a `docs/` file:
     # that was true of every tip the sweep shortened.
+    # ── Numeric param RANGES have to be plausible ─────────────────────────────────────────────────
+    #
+    # `min`/`max` are enforced (`_validate_leaf`) and rendered as the slider's travel, so a bound that
+    # was never thought about does two things: it makes the useful part of the slider a few pixels
+    # wide, and it lets one drag start a run nobody wants. Several were plainly copy-pasted — a cell
+    # **surface distance** and a "min cells" count both ran to **1000** (a cell is ~10 µm, so 1000 µm
+    # is 100 cell diameters; an aggregate of 1000 cells is an organ), and `nPermutations` reached
+    # 100 000, hours of compute one drag away.
+    #
+    # The check is a RATIO, not a table of blessed numbers: a table would just restate the JSON and
+    # would need editing every time a default legitimately moves. `max / default` is the tell for a
+    # bound nobody chose — a sane range puts the default somewhere you can reach, so a max fifty times
+    # the default means the default is pinned to the far left of the travel. The worst honest ratio in
+    # the tree is 20 (`minCells` 5→100), so 50 leaves real headroom while catching every case above.
+    @testset "numeric param ranges are plausible" begin
+        RATIO_MAX = 50
+        # A param whose range genuinely spans orders of magnitude. Empty on purpose: before adding one,
+        # check that the DEFAULT isn't the thing that's wrong.
+        ALLOWED_WIDE = String[]
+
+        function collect_numeric!(out, params, file)
+            params isa AbstractVector || return out
+            for p in params
+                p isa AbstractDict || continue
+                fld(k) = get(p, Symbol(k), get(p, k, nothing))
+                if String(something(fld("type"), "")) in ("int", "float")
+                    push!(out, (file, String(something(fld("key"), "?")),
+                                fld("min"), fld("max"), fld("step"), fld("default")))
+                end
+                collect_numeric!(out, fld("params"), file)
+            end
+            out
+        end
+
+        nums = Tuple[]
+        each_spec() do f, spec
+            collect_numeric!(nums, get(spec, :params, nothing), f)
+        end
+        @test length(nums) > 20                      # the walk found the numeric params
+
+        # structural sanity first — these are bugs, not judgement calls
+        for (f, k, mn, mx, _, def) in nums
+            mn === nothing && continue
+            if mx !== nothing
+                @test mn <= mx || "$f/$k: min $mn > max $mx" == ""
+            end
+            if def !== nothing && def isa Real
+                @test def >= mn                                   || "$f/$k: default $def < min $mn" == ""
+                @test mx === nothing || def <= mx                 || "$f/$k: default $def > max $mx" == ""
+            end
+        end
+
+        # a step coarser than the whole range means the slider has one position
+        coarse = ["$f/$k: step $st over range $mn..$mx" for (f, k, mn, mx, st, _) in nums
+                  if st !== nothing && mn !== nothing && mx !== nothing && st > (mx - mn)]
+        @test isempty(coarse)
+
+        # …then the judgement call, as a loose bound
+        wide = ["$f/$k: max $mx is $(round(mx / def, digits = 1))× the default $def"
+                for (f, k, _, mx, _, def) in nums
+                if mx !== nothing && def isa Real && def > 0 && mx / def > RATIO_MAX &&
+                   !("$f/$k" in ALLOWED_WIDE)]
+        @test isempty(wide)
+    end
+
     @testset "task spec tips stay short" begin
         COPY_MAX = 90
         ALLOWED = String[]
@@ -6633,6 +7158,34 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test r.significance in ("*", "**", "***", "****")
             @test occursin("Mann-Whitney", r.method_note)
             @test isempty(r.comparison_pairs)   # omnibus IS the pair for 2 groups
+        end
+
+        # `auto` also has to say WHY. The UI showed the resolved test name and nothing else, so a user
+        # had no way to know the basis — and deriving the explanation in the frontend would fork the
+        # rule (change `_auto_test` and the tooltip would quietly keep claiming the old basis).
+        @testset "auto states its basis; a NAMED test states none" begin
+            two = Cecelia.run_stats(["WT" => [1.0,2,3], "KO" => [9.0,10,11]])
+            @test occursin("2 groups", two.auto_reason)
+            @test occursin("Mann-Whitney", two.auto_reason)
+            three = Cecelia.run_stats(["A" => [1.0,2,3], "B" => [9.0,10,11], "C" => [20.0,21,22]])
+            @test occursin("3 groups", three.auto_reason)
+            @test occursin("Kruskal-Wallis", three.auto_reason)
+            # both auto choices are rank-based — that's the reassurance the note has to carry, since
+            # `auto` never runs a normality check
+            @test occursin("rank-based", two.auto_reason) && occursin("rank-based", three.auto_reason)
+            # nothing was chosen for the user, so there is nothing to explain
+            @test isempty(Cecelia.run_stats(["A" => [1.0,2,3], "B" => [9.0,10,11]]; test=:ttest).auto_reason)
+            @test isempty(Cecelia.run_stats(["A" => [1.0,2,3], "B" => [9.0,10,11]]; test=:mannwhitney).auto_reason)
+            # the reason must name the test that actually ran — one rule, not two
+            for n in (2, 3, 7)
+                @test occursin(n == 2 ? "Mann-Whitney" : "Kruskal-Wallis", Cecelia._auto_reason(n))
+                @test occursin("$(n) groups", Cecelia._auto_reason(n))
+            end
+            # …and it reaches the wire under `autoReason`
+            d = Cecelia._stats_result_dict(two)
+            @test d["autoReason"] == two.auto_reason
+            @test isempty(Cecelia._stats_result_dict(
+                Cecelia.run_stats(["A" => [1.0,2,3], "B" => [9.0,10,11]]; test=:ttest))["autoReason"])
         end
 
         # Two identical groups → p ≈ 1, "ns".

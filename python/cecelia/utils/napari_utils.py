@@ -116,8 +116,96 @@ def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_nam
   return result
 
 
+def layer_ndim(data):
+  """Dimensionality of a layer's data, accepting a multiscale LIST (level 0 decides) or one array."""
+  arr = data[0] if isinstance(data, (list, tuple)) and len(data) else data
+  return len(getattr(arr, 'shape', ()) or ())
+
+
+def align_axis_vector(vec, ndim):
+  """Trim/pad a per-axis vector (``scale``, ``units``) to ``ndim`` entries, keeping the TRAILING axes.
+
+  napari requires ``len(scale) == layer.ndim`` and raises
+  ``could not broadcast input array from shape (N,) into shape (M,)`` otherwise.
+
+  This is the LAST RESORT, used only when the axis NAMES are unknown or untrustworthy — prefer
+  ``expand_to_axes``, which aligns by name. Trailing-axis trimming assumes the array's axes are the
+  image's last N, which is true for a (z,y,x) volume of a (t,z,y,x) timelapse and **false** for a
+  (t,y,x) Z-projection of one: there it hands the Z scale to the T axis. Padding with 1.0 (a no-op
+  scale) handles the reverse case rather than raising. ``None`` passes through unchanged.
+  """
+  if vec is None or not ndim:
+    return vec
+  v = list(vec)
+  if len(v) == ndim:
+    return vec
+  if len(v) > ndim:
+    return type(vec)(v[-ndim:]) if isinstance(vec, tuple) else v[-ndim:]
+  pad = [1.0] * (ndim - len(v))
+  out = pad + v
+  return type(vec)(out) if isinstance(vec, tuple) else out
+
+
+def _insert_singleton_axes(arr, positions):
+  """Insert length-1 axes at ``positions`` (ascending, in OUTPUT coordinates). Indexing with ``None``
+  works identically on numpy, dask and anything else that supports basic indexing, so this needs no
+  per-backend branch and stays lazy for a dask-backed store."""
+  at = set(positions)
+  n_out = len(getattr(arr, 'shape', ())) + len(at)
+  return arr[tuple(None if i in at else slice(None) for i in range(n_out))]
+
+
+def expand_to_axes(data, layer_axes, viewer_axes):
+  """Give a layer array every axis the viewer has, in the viewer's order, by inserting length-1 axes.
+
+  **napari aligns a layer's dimensions against the viewer's from the RIGHT.** A layer with fewer
+  dimensions than the viewer is therefore not "missing its leading axes" — its axes are *reinterpreted*
+  as the viewer's trailing ones. So a Z-projected timelapse skeleton stored as (t,y,x), added to a
+  (t,z,y,x) viewer, has its TIME axis rendered as Z: every timepoint stacked into one volume, a tower
+  of frames standing on the image. That is what `segment.branching` produced for a 3D+t SHG store
+  (``branchLabels/SHG.zarr`` = (201,544,548) over a 4-axis image), and no amount of fixing up ``scale``
+  can correct it — the dimensions themselves are misassigned.
+
+  Aligning by NAME is the fix: insert a singleton for each viewer axis the layer lacks, and the layer's
+  own axes land where they belong. A Z-projection then renders on a single Z plane, which is what it
+  physically is, and time steps with the slider.
+
+  ``layer_axes``/``viewer_axes`` are axis-name sequences (case-insensitive, e.g. ``['t','y','x']`` and
+  ``['t','z','y','x']``); ``viewer_axes`` must already EXCLUDE the channel axis (napari splits channels
+  into separate layers). Accepts a multiscale list or a single array.
+
+  Returns ``(data, ok)``. ``ok`` is False — and ``data`` comes back untouched — when the names can't be
+  trusted or used: either list missing, a rank/name mismatch (a store whose ``.zattrs`` axes don't match
+  the array it holds is exactly the case that must NOT be acted on), a layer axis absent from the
+  viewer, or axes out of the viewer's relative order. The caller then falls back to
+  ``align_axis_vector``.
+  """
+  if not layer_axes or not viewer_axes:
+    return data, False
+  lay = [str(a).lower() for a in layer_axes]
+  view = [str(a).lower() for a in viewer_axes]
+  if len(set(lay)) != len(lay) or len(set(view)) != len(view):
+    return data, False
+  if layer_ndim(data) != len(lay):
+    return data, False          # metadata does not describe this array — do not act on it
+  if len(lay) > len(view):
+    return data, False
+  try:
+    pos = [view.index(a) for a in lay]
+  except ValueError:
+    return data, False          # the layer has an axis the viewer doesn't
+  if pos != sorted(pos):
+    return data, False          # transposed relative to the viewer — an insert can't fix that
+  if len(lay) == len(view):
+    return data, True           # already aligned; nothing to insert
+  missing = [i for i in range(len(view)) if i not in set(pos)]
+  if isinstance(data, (list, tuple)):
+    return [_insert_singleton_axes(a, missing) for a in data], True
+  return _insert_singleton_axes(data, missing), True
+
+
 def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels', visible=True,
-               cache=False):
+               cache=False, axes=None, image_axes=None):
   """Add an instance/label layer (0 = background) at ``opacity`` (0.7 by default). Returns the layer.
 
   ``cache=False`` by default (napari's own default is True). napari's Labels layer, with a
@@ -130,11 +218,21 @@ def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels',
   task name → the STALE label bytes render. cache-off forces every slice to re-read from disk
   (cheap: uint32 masks, high compression, OS page cache still helps); the correctness cost of
   cache-on is catastrophic in the primary segmentation-iteration workflow. Callers can flip
-  ``cache=True`` when they know labels won't be regenerated (e.g. static viewing sessions)."""
+  ``cache=True`` when they know labels won't be regenerated (e.g. static viewing sessions).
+
+  ``axes``/``image_axes`` are the label store's and the viewer's axis names. Pass both whenever they
+  are known: a derived label store can have FEWER axes than the image (a Z-projected skeleton of a
+  timelapse), and napari reinterprets a short layer's axes as the viewer's trailing ones, which
+  silently renders time as Z. See ``expand_to_axes``; without the names we can only fix up ``scale``,
+  which does not fix the dimension assignment."""
   require_napari()
-  kw = dict(name=name, scale=scale, opacity=opacity, visible=visible, cache=bool(cache))
+  # ONE place every labels layer goes through — align here, not at each call site.
+  labels, aligned = expand_to_axes(labels, axes, image_axes)
+  nd = layer_ndim(labels)
+  kw = dict(name=name, scale=scale if aligned else align_axis_vector(scale, nd),
+            opacity=opacity, visible=visible, cache=bool(cache))
   if units is not None:
-    kw['units'] = units
+    kw['units'] = units if aligned else align_axis_vector(units, nd)
   return viewer.add_labels(labels, **kw)
 
 

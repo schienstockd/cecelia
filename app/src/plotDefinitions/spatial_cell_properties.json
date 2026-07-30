@@ -1,13 +1,25 @@
 {
   "id": "spatial_cell_properties",
-  "label": "Spatial cell properties",
+  "label": "Spatial cell measures",
   "module": "spatialAnalysis",
   "family": "summary",
-  "chartTypes": ["boxplot", "violin", "strip", "bar", "histogram", "count"],
+  "chartTypes": ["boxplot", "violin", "strip", "bar", "percent", "histogram", "count"],
   "whiteboardCompatible": true,
   "dataSource": {
-    "popType": "flow",
-    "granularity": "cell"
+    "popTypes": [
+      { "popType": "flow",       "granularity": "cell", "label": "Gated" },
+      { "popType": "clust",      "granularity": "cell", "label": "Cell clusters" },
+      { "popType": "region",     "granularity": "cell", "label": "Regions" },
+      { "popType": "live",       "granularity": "cell", "label": "Tracked" },
+      { "popType": "track",      "granularity": "cell", "label": "Tracked (gated)" },
+      { "popType": "trackclust", "granularity": "cell", "label": "Track clusters" }
+    ],
+    "obsMeasurePatterns": [
+      { "match": ".cell.min_distance#", "label": "distance to" },
+      { "match": ".cell.contact#",      "label": "contact with" },
+      { "match": ".cell.is.aggregate",  "label": "aggregated" },
+      { "match": "spatial.comp.",       "label": "composition" }
+    ]
   },
   "scopeModes": ["per_image", "summarised", "by_attr"],
   "params": [

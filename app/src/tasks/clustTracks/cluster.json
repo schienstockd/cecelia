@@ -47,7 +47,7 @@
       "key": "resolution",
       "label": "Resolution",
       "type": "float",
-      "min": 0,
+      "min": 0.05,
       "max": 5,
       "step": 0.05,
       "default": 1,

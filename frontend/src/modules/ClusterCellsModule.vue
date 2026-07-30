@@ -3,17 +3,17 @@
    • run cell clustering (clustPops.cluster) in the right-hand TaskRunner — this is SET-SCOPE
      (Leiden over the pooled set, so cluster IDs are comparable across images);
    • below the table: explore clusters (heatmap + UMAP) and define populations by ticking cluster
-     IDs into them (the `clust` pop type). [pop-manager + plots are filled in the next step]
+     IDs into them (the `clust` pop type).
 
-  Mirrors BehaviourModule (set-scope task + #plots canvas); the track counterpart is
-  ClusterTracksModule.vue (gating/tracking-style split — one page per granularity).
+  This page DEFINES populations — nothing more. Summarising them is a separate job that belongs on the
+  Explore pages, so the `clust` population summary lives on **Phenotype**, not here (the track
+  counterpart is on Behaviour, regions on Spatial). Keeping a summary canvas on each defining page
+  meant the same plot existed once per pop type, on the page where it was least useful.
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import ClusterPlots from './cluster/ClusterPlots.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
-import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustPops')
@@ -32,13 +32,6 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustPops')
     </template>
     <template #plots="{ selectedUids, selectUids }">
       <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="clust" />
-    </template>
-    <!-- population summary of the cluster pops (counts / proportion per image; boxplot/beeswarm/bar) —
-         same backbone as Phenotype/Behaviour, popType clust so it's homogeneous here -->
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Population summary" max-height="none" :storage-key="'cc-popsum-open:clustPops'">
-        <SummaryCanvas :image-uids="selectedUids" module="clustPops" />
-      </CollapsibleSection>
     </template>
   </ModuleLayout>
 </template>

@@ -68,6 +68,9 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/track',   label: 'Track',   icon: 'pi-share-alt',     tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
       { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
       { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap', tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
+      // Region clustering DEFINES populations (the `region` pop type) on the same ClusterPlots +
+      // PopulationManager as its two siblings above, so it belongs here rather than under Explore.
+      { to: '/regions',      label: 'Cluster regions', icon: 'pi-objects-column', tip: 'Cluster cells into spatial regions by neighbourhood composition, then define region populations.', requiresProject: true },
     ],
   },
   {
@@ -75,8 +78,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise populations — counts / proportion of each population across images.', requiresProject: true },
       { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar',  tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
-      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Spatial neighbourhood, contact and aggregate analysis.', requiresProject: true },
-      { to: '/regions',   label: 'Cluster regions', icon: 'pi-clone', tip: 'Cluster cells into spatial regions by neighbourhood composition (i-niches), then define region populations.', requiresProject: true },
+      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Neighbour graph, cell interactions, contacts and aggregates.', requiresProject: true },
     ],
   },
   {

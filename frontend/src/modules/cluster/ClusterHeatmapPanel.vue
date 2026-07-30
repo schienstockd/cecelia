@@ -111,8 +111,14 @@ useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on
 onMounted(load)
 // self-seed: default to the run's full feature set once known (don't clobber a user pick / an empty
 // pick the user made). Makes the panel work out-of-the-box on any host (no host-side seeding needed).
+// ALSO drop any persisted feature the run no longer has: re-running clustering can change the columns
+// (a different basis, or the "other" composition column dropped because the graph had nothing outside
+// the basis), and a stale name would be requested as a heatmap row that isn't in the table.
 watch(() => props.featureOptions, opts => {
-  if (opts.length && props.state.features === undefined) props.state.features = [...opts]
+  if (!opts.length) return
+  if (props.state.features === undefined) { props.state.features = [...opts]; return }
+  const keep = props.state.features.filter(f => opts.includes(f))
+  if (keep.length !== props.state.features.length) props.state.features = keep
 }, { immediate: true })
 
 // docked (Analysis board) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)

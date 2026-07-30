@@ -25,6 +25,8 @@ import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
+import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
+import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
@@ -141,13 +143,34 @@ const {
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
   shared: computed(() => entry.value.shared),
-  // the board is mixed-popType: point the picker at the ACTIVE summary slot's spec so it surfaces that
-  // plot's popType (each population-summary spec carries one popType — split per module page).
+  // the board is mixed-popType: point the picker at the ACTIVE summary slot so it surfaces THAT plot's
+  // population family — either the family its spec carries, or (for a spec offering a choice, like the
+  // one Population summary) the family the slot has picked.
   activeSpecId: computed(() => {
     const c = entry.value.contents[entry.value.activeIndex]
     return c && c.kind === 'summary' ? c.ref : null
   }),
+  // NB: read `state` inline rather than via the `st()` helper — that is declared below, and this
+  // computed can be evaluated during useSummaryData's own setup (temporal dead zone).
+  activePopType: computed(() => {
+    const c = entry.value.contents[entry.value.activeIndex]
+    if (!c || c.kind !== 'summary') return null
+    return ((c.state as Record<string, unknown> | undefined)?.popType as string | undefined) ?? null
+  }),
 })
+
+// Migrate boards persisted before the four per-popType population summaries collapsed into one spec: a
+// summary slot's `ref` IS the spec id, so a stale id would resolve to no spec and render an empty slot.
+for (const c of entry.value.contents) {
+  if (!c || c.kind !== 'summary') continue          // slots may be empty (null)
+  const state = (c.state ?? {}) as Record<string, unknown>
+  const s = { specId: c.ref, popType: state.popType as string | undefined }
+  if (migrateSpecId(s)) {
+    c.ref = s.specId
+    state.popType = s.popType
+    c.state = state
+  }
+}
 
 // ── slot content: active slot, add/clear, drag-swap ──────────────────────────────────────────────
 const activeContent = computed<SlotContent | null>(() => entry.value.contents[entry.value.activeIndex] ?? null)
@@ -242,8 +265,8 @@ const panelSeries = (c: SlotContent): SeriesTarget[] => panelSel(c).map(parseTke
 // the stats test each summary slot's last result actually ran (`auto` resolves it server-side from the
 // group count) — the rail shows the ACTIVE slot's, so the user can see what `auto` chose. Keyed by slot
 // index; a readout of the current result, not a persisted setting.
-const statsNotes = ref<Record<number, string>>({})
-const activeStatsNote = computed(() => statsNotes.value[entry.value.activeIndex] ?? '')
+const readouts = ref<Record<number, PlotReadout>>({})
+const activeReadout = computed<PlotReadout>(() => readouts.value[entry.value.activeIndex] ?? emptyReadout())
 
 // ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
 // the singleton gating store is driven unambiguously; only active when a cluster slot exists. ─────────
@@ -255,7 +278,7 @@ const clustSuffix = computed<string>({
   get: () => (entry.value.shared.clustSuffix as string) ?? 'default',
   set: v => (entry.value.shared.clustSuffix = v) })
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
-        featureOptions: clustFeatureOptions, nameMap: clustNameMap,
+        featureOptions: clustFeatureOptions, labelMap: clustNameMap,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot })
@@ -267,6 +290,13 @@ const panelClustHl = (c: SlotContent) => scope.value === 'global' ? clustHl.valu
 const activeClustHl = computed(() => scope.value === 'global' ? clustHl.value
   : (activeContent.value ? clustHlOf(activeContent.value) : []))
 const activeIsCluster = computed(() => isClusterSlot(activeContent.value))
+// the active slot's plot is PRECOMPUTED (its populations come from an analysis run, not the picker)
+const activeIsPrecomputed = computed(() => {
+  const c = activeContent.value
+  if (!c || c.kind !== 'summary') return false
+  const spec = specById.value[c.ref]
+  return !!spec && isPrecomputedSpec(spec)
+})
 function toggleClustHl(path: string) {
   if (scope.value === 'global') clustHl.value = toggle(clustHl.value, path)
   else if (activeContent.value) st(activeContent.value).hl = toggle(clustHlOf(activeContent.value), path)
@@ -520,7 +550,7 @@ defineExpose({ capturePage, collectCsvs })
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
-                          @stats-note="statsNotes[i] = $event" />
+                          @readout="readouts[i] = $event" />
             <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry
                  (docked, board's single cluster run); no per-plot branch -->
             <component v-else-if="entry.contents[i] && isClusterPanel(entry.contents[i]!.ref)"
@@ -570,7 +600,7 @@ defineExpose({ capturePage, collectCsvs })
                              :suffix="clustSuffix" :vis="activeVis"
                              @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
           <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
-                        :stats-note="activeStatsNote"
+                        :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
         </div>
       </div>

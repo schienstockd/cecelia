@@ -73,6 +73,81 @@ graph (Delaunay / kNN / radius), `nhood_enrichment`, `co_occurrence`, `ripley`, 
 **Julia owns** only what needs `pop_df`/gating membership: composition-vector assembly and the
 cross-poptype query (Decision 6).
 
+### Decision 17 — ONE persisted, pop-agnostic neighbour graph is the substrate (2026-07-30)
+
+Dominik: *"these neighbours could be used for regions. but also — neighbours alone could be used
+independent of regions… you can extract cell interactions from neighbours without explicitly forming
+regions. i'm a bit worried about parallel implementations here. we need to generalise."*
+
+The interim build had **two incompatible graph paradigms**: `cellNeighbours` persisted a
+single-segmentation `{vn}.spatial.h5ad` with no pop codes, which **nothing read**, while `neighbourStats`
+and `clustRegions` each rebuilt their own basis-restricted graph in-process. The audit found
+`{vn}.spatial.h5ad` had zero consumers anywhere in the codebase — Phase 2's "shared substrate" was a
+dead end.
+
+**Resolved (both calls Dominik's):**
+
+1. **The graph is pop-agnostic and persisted per run** → `spatialGraph/{suffix}.h5ad`, holding obs
+   (`valueName`, `label`[, `_t`]), `obsm['spatial']` in µm, squidpy's obsp matrices, and the build
+   parameters in `uns`. It stores **node identity only** — no population codes. Built over ALL cells of
+   the selected segmentations, so one graph serves any later population question.
+2. **Consumers REQUIRE a named graph** (`graphSuffix`), and load it. There is no build-inline fallback:
+   a fallback would be the second code path this decision exists to remove. `neighbourStats` and
+   `clustRegions` therefore **lost** `neighbourMethod`/`neighbourRadius`/`nNeighbours` — a neighbourhood
+   is defined once — and `perTimepoint` moved to the graph too (so behaviour regions, Phase 8, come from
+   choosing a per-timepoint graph rather than a per-task flag).
+3. A labelling is attached at analysis time by `spatial_utils.pop_codes_for`, joining on
+   `(valueName, label)`. Julia still resolves membership + codes via `pop_df` (Decision 6 unchanged).
+4. **Nodes outside the basis are an explicit "other" bin**, not silently dropped
+   (`neighbourhood_composition(include_other=True)`, `includeOther` param). This is correctness, not
+   completeness: without it a cell ringed by unlabelled cells is indistinguishable from one ringed by
+   basis cells. Validated on XcPcu8 — with the bin, one of three regions is *defined* by being
+   "other"-rich. Composition is computed over the whole graph but **only basis cells are clustered and
+   labelled**, so a non-basis cell never picks up a `regions.{suffix}` value.
+
+**This restores legacy, it does not invent something.** Old-R `clustRegions/kmeansClust.R:45` read the
+*persisted* neighbour table via `cciaObj$spatialDT(...)` and joined `popDT` onto it; `cellRegions.R`
+stored `neighbour_value_name`/`neighbour_label` per edge, i.e. cross-segmentation and pop-agnostic.
+Dominik confirmed: *"the previous r version also required neighbours to be run before region
+clustering."*
+
+**Consequence for plots:** cell interactions are now just a labelling of the shared graph, so an
+interaction heatmap needs no regions — which is what makes Decision 16's item 2 a first-class readout
+rather than a by-product.
+
+### Decision 18 — interactions carry a permutation test, with `n` as a parameter (2026-07-30)
+
+Dominik: *"we should implement an actual test whether the interactions you see are real. ie/ versus
+random shuffling the pops 1000 times or so"* … *"can we make n a param. i don't know if 1000 is always
+the best to choose."*
+
+Decision 1 already committed to squidpy's nulls but only the hand-written CODEX log-odds had shipped, so
+every interaction number was an effect size with no significance. Now `pairwise_contact_logodds`
+returns **observed, expected, log-odds, z-score and a two-sided empirical p** from `nPermutations`
+random relabellings (param, default 1000, `0` = skip → NaN z/p and a log line saying the log-odds are
+descriptive only).
+
+- **ONE shuffle implementation**, not squidpy's z *and* our own p from a second null. The scheme is
+  squidpy `nhood_enrichment`'s (Palla 2022) — graph and label counts fixed, only the assignment
+  shuffled — cited in the docstring.
+- **Validated against the exact combinatorial null**, which is a stronger check than a squidpy
+  cross-run: for two 4-cliques with 4+4 labels, zero cross-type contacts is reproduced by chance in
+  exactly 2 of C(8,4)=70 assignments, so p must converge on 1/35. It does (asserted in
+  `test_spatial_utils.py`).
+- `p ≥ 1/(n+1)` by the +1 correction, so p is never 0 and the floor is not mistaken for certainty.
+- **Only assigned nodes are shuffled, among themselves**: which cells fall outside the basis is a
+  property of the segmentation, not of the biology under test, so it is conditioned on.
+- **Per-timepoint graphs shuffle WITHIN a frame.** A global shuffle would migrate labels across frames
+  and destroy the per-frame composition the null must preserve — tested both ways (the same data reads
+  as significant under a global shuffle and not under a within-frame one).
+- **Stated caveat:** this is a complete-spatial-randomness-of-labels null. It preserves the graph and
+  label counts but not larger-scale tissue structure, so in strongly zoned tissue it can call weak
+  associations significant. squidpy's `nhood_enrichment` shares this limitation.
+
+Validated on XcPcu8/LUkCpP (1000 permutations, 9473-cell graph, 334 basis cells): B–B +0.58 (z=+13.0),
+T–T +0.82 (z=+16.6), B–T −5.38 (z=−24.9, 1 observed contact vs 324 expected) — the follicle/PALS
+segregation, all at the p floor.
+
 ### Decision 2 — per-cell neighbourhoods are primary; raster-window is a committed parity mode
 
 The **region label is assigned per cell** (keyed on `label`), because that is what makes the
@@ -318,6 +393,26 @@ registry + `SummaryCanvas`/cluster-heatmap framework (docs/PLOTS.md — NOT a be
 4. **Region UMAP** already produced (`obsm['X_umap.{suffix}']`) — reuse the cluster UMAP canvas.
 Mount `SummaryCanvas` on both module pages. Task #6.
 
+**AUDIT (2026-07-30) — what Decision 16 actually shipped.** Item 1 (composition heatmap) had its
+ENABLER written but never rendered: the clustfeatures sidecar recorded the basis POP NAMES while the
+Python runner wrote `spatial.comp.{sanitised}.{suffix}` columns, so the heatmap requested columns that
+did not exist and 400'd. Fixed by making Julia the single namer (`_comp_col`, passed to Python as
+`compCols` AND recorded in the sidecar) plus a `labels` map so rows still display as population names.
+Item 4 (region UMAP) 500'd twice over: `api_plots_umap` hardcoded `clusters.{suffix}` (so region codes
+were never found) and its missing-column fallback called `nrow`, which is not imported in `api/src` at
+all. Item 3 was never built — there was **no** `clustRegions` plot definition, so the region page's
+summary canvas said "No plot types available for this module yet"; added
+`population_summary_region.json`. The region run list + region-ID universe were empty for the same
+hardcoded-prefix reason (`_cluster_suffixes`, `_cluster_ids`), which is why a run named `immune` showed
+as `default` and no region population could be defined at all.
+
+**STILL OPEN on item 2 (interaction heatmap) — hosting.** `SpatialContactHeatmap.vue` +
+`GET /api/plots/contact_matrix` violate `docs/PLOTS.md` → *Hosting — ONE way* on both counts (a bespoke
+component AND a bespoke route), so it cannot be duplicated, arranged, exported by the standard path, or
+placed on the Analysis board. But the documented escape hatch — "a new data source is a new `popType` in
+`pop_df`" — does not fit: `pop_df` returns per-cell/per-track rows and an interaction matrix is
+per-population-PAIR. Needs a decision (see docs/TODO.md).
+
 **BUILT — Phase 7 (napari region colouring, d4c8ab9):** region toggle in the viewer overlay row;
 `resolve_pops`/`show_populations` were already generic over pop_type.
 **BUILT — Phase 8 (behaviour regions, e4cc6da):** `clustRegions` `perTimepoint` → per-frame
@@ -406,8 +501,13 @@ Frontend literals (`ClusterPlots.vue`, `clusterHeatmapBody.ts`, `overlayLayers.t
 that render region plots/napari (4/5/7). No central pop-type enum needed extending; gating engine filter
 membership is already column-generic.
 
-**Phase 2 — Neighbour graph (shared substrate). ✅ DONE backend (2026-07-20); Python runner unverified
-end-to-end.** `spatialAnalysis.cellNeighbours` (image-scope): Julia handler `cellNeighbours.jl` (resolves
+**Phase 2 — Neighbour graph (shared substrate). ✅ DONE + validated end-to-end (2026-07-30).**
+REBUILT per Decision 17 — the graph is now pop-agnostic, persisted to `spatialGraph/{suffix}.h5ad`, and
+is a REQUIRED input to `neighbourStats` + `clustRegions` (which no longer build graphs). Verified on
+project 4kS67f (LUkCpP + k3Tx90): graphs over all B+T cells (9473 / 16239 nodes, mean degree ~14.6),
+consumed by both downstream tasks. `img_spatial_graph_path`/`_suffixes` are the image-owned accessors;
+`spatialGraphs` on the image payload feeds a `valueNameSelection` graph picker, so no new widget.
+*Superseded description of the original attempt:* `spatialAnalysis.cellNeighbours` (image-scope): Julia handler `cellNeighbours.jl` (resolves
 value_name + optional pop subset via `pop_df` + physical sizes) + `cell_neighbours_run.py` via `run_py`
 (squidpy `spatial_neighbors` delaunay/knn/radius; scales pixel centroids → µm; writes `{vn}.spatial.h5ad`)
 + `cellNeighbours.json`. Registered (`Cecelia.jl` include, `task_registry.jl` `_spec_path`+`_fun_name_map`,

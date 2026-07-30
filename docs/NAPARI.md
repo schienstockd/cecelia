@@ -351,6 +351,33 @@ The channel axis is excluded from the scale array before passing to `viewer.add_
 
 Units are set per-layer via `layer.units` (a tuple matching the spatial axes). `viewer.scale_bar.unit = None` is intentional — setting a unit string on the scale bar is deprecated in napari 0.7.1; the layer units drive it instead.
 
+### A layer with fewer axes than the image — align BY NAME
+
+**napari aligns a layer's dimensions against the viewer's from the RIGHT.** A layer with fewer
+dimensions is therefore not "missing its leading axes" — its axes are *reinterpreted* as the viewer's
+trailing ones. A Z-projected timelapse skeleton stored as `(t,y,x)`, added to a `(t,z,y,x)` viewer, has
+its **time axis rendered as Z**: every frame stacked into one volume, a tower standing on the image.
+`scale` cannot fix this; the dimensions themselves are misassigned.
+
+So every derived store (labels, branch labels) is aligned by axis NAME, in `add_labels` — the one place
+they all pass through:
+
+```python
+napari_utils.add_labels(viewer, arrays, scale=self._im_scale, units=self._im_units,
+                        axes=zarr_utils.read_axes(labels_path),      # what the store says it is
+                        image_axes=self._display_axes())             # viewer axes, channel excluded
+```
+
+`expand_to_axes` inserts a length-1 axis for each viewer axis the store lacks (lazily — `arr[..., None]`
+keeps a dask store lazy), so a projection renders on a single Z plane, which is what it physically is.
+It **refuses** rather than guesses when the names can't be trusted: a rank/name mismatch (a store whose
+`.zattrs` axes don't describe its array), an axis the viewer doesn't have, or a transposed store. The
+caller then falls back to `align_axis_vector`, which only makes `scale` the right *length*.
+
+This depends on stores declaring truthful axes: `create_multiscales` drops the channel axis from the
+metadata under `ignore_channel=True`, and a task that collapses an axis passes `axes=` explicitly (see
+`branching_run.output_axes`). A store that lies about its axes is unusable metadata, not a hint.
+
 ---
 
 ## Channel names
