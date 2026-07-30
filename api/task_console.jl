@@ -141,40 +141,47 @@ end
 # is never retired on a one-poll race.
 const SNAPSHOT_MISSES_TO_RETIRE = 2
 
+# Pure half — takes already-parsed rows, touches no socket, so `api/test/runtests.jl` can drive it
+# with synthetic snapshots (that's the only automated coverage this script can have: it's run by path,
+# never imported, so the entrypoint at the bottom is guarded to keep `include`ing it side-effect-free).
+function _reconcile_snapshot!(rows)
+    lock(LOCK) do
+        present = Set{String}()
+        for row in rows
+            id = String(row.id)
+            push!(present, id)
+            id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
+            status = String(get(row, :status, ""))
+            if status in TERMINAL                       # finished before we saw it live → just count it
+                _note_terminal!(id, status)
+                continue
+            end
+            t = _task!(id)
+            t.fun_name     = String(get(row, :fun_name, t.fun_name))
+            t.image_uid    = String(get(row, :image_uid, t.image_uid))
+            t.pool_name    = String(get(row, :pool_name, t.pool_name))
+            t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
+            isempty(status) || (t.status = status)
+            t.in_snapshot  = true
+            t.misses       = 0
+        end
+        # retire what the scheduler no longer knows about (outcome unseen — tallied as "ended")
+        for (id, t) in collect(TASKS)
+            (t.in_snapshot && !(id in present)) || continue
+            t.misses += 1
+            t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
+            _note_terminal!(id, "ended")
+            push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
+                        col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
+        end
+    end
+    nothing
+end
+
 function refresh_snapshot!()
     try
         r = HTTP.get("$HTTP_BASE/api/tasks"; connect_timeout=2, readtimeout=3, retry=false)
-        rows = JSON3.read(String(r.body))
-        lock(LOCK) do
-            present = Set{String}()
-            for row in rows
-                id = String(row.id)
-                push!(present, id)
-                id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
-                status = String(get(row, :status, ""))
-                if status in TERMINAL                       # finished before we saw it live → just count it
-                    _note_terminal!(id, status)
-                    continue
-                end
-                t = _task!(id)
-                t.fun_name     = String(get(row, :fun_name, t.fun_name))
-                t.image_uid    = String(get(row, :image_uid, t.image_uid))
-                t.pool_name    = String(get(row, :pool_name, t.pool_name))
-                t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
-                isempty(status) || (t.status = status)
-                t.in_snapshot  = true
-                t.misses       = 0
-            end
-            # retire what the scheduler no longer knows about (outcome unseen — tallied as "ended")
-            for (id, t) in collect(TASKS)
-                (t.in_snapshot && !(id in present)) || continue
-                t.misses += 1
-                t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
-                _note_terminal!(id, "ended")
-                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
-                            col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
-            end
-        end
+        _reconcile_snapshot!(JSON3.read(String(r.body)))
         return true
     catch
         return false   # server not up yet / transient — the caller shows connection state
@@ -433,9 +440,13 @@ function run_console()
     end
 end
 
-try
-    run_console()
-catch e
-    e isa InterruptException || rethrow()
-    println("\n", col(DIM, "task console stopped."))
+# Entrypoint — only when run as a script (`pixi run console`). Guarded so the test suite can
+# `include` this file to drive `_reconcile_snapshot!` without opening a socket or a dashboard.
+if abspath(PROGRAM_FILE) == @__FILE__
+    try
+        run_console()
+    catch e
+        e isa InterruptException || rethrow()
+        println("\n", col(DIM, "task console stopped."))
+    end
 end

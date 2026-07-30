@@ -174,7 +174,10 @@ retires rows that vanish from it** (2 consecutive misses; tallied `ended` — "f
 `task:status` frame — dropped for a slow client, or never delivered on a half-open socket — otherwise
 strands the row as `running` forever, so the console lists tasks the scheduler has long since finished
 while every pool reads idle. Rows for WS-only producers (jobs, batch movies) never appear in the
-snapshot and are exempt from retiring. `handle_task_run` forwards
+snapshot and are exempt from retiring. The reconciliation half is split out as the socket-free
+`_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals*
+testset (the script's entrypoint is `PROGRAM_FILE`-guarded so the suite can `include` it).
+`handle_task_run` forwards
 `queued`/`running` **and
 `cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
 cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker

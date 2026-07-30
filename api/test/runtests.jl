@@ -1363,3 +1363,65 @@ end
     bad = JSON3.read(JSON3.write(Dict("allBranchLabels" => "nope")))
     @test _parse_all_branch_labels(bad) == Dict{String,Vector{String}}()
 end
+
+# ── Task console: snapshot reconciliation (the stale-"running"-row regression) ──
+# `api/task_console.jl` is run by path (`pixi run console`), never imported, so this is the only
+# automated coverage it can have: its entrypoint is guarded by `PROGRAM_FILE`, and the reconciliation
+# half is split out as the socket-free `_reconcile_snapshot!(rows)` we drive with synthetic snapshots.
+# Wrapped in a module because the script defines top-level consts (TASKS, LOCK, TALLY, …).
+#
+# The bug this pins: the console only ever ADDED rows from GET /api/tasks, and dropped one solely on a
+# terminal task:status frame — which is lossy by design (per-client drop-on-full queue in server.jl,
+# and nothing at all on a half-open socket). One missed frame stranded the row as "running" forever:
+# six tasks listed as running while every pool read idle and the scheduler held none.
+module TaskConsoleUT
+    include(joinpath(@__DIR__, "..", "task_console.jl"))
+end
+
+@testset "API: task console reconciles snapshot removals" begin
+    C = TaskConsoleUT
+    row(id; status="running", fun="segment.branching", pool="cpu", img="EaMaVq") =
+        (; id=id, status=status, fun_name=fun, pool_name=pool, image_uid=img, chain_run_id="")
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    # a scheduler task appears, then vanishes with NO terminal frame ever delivered
+    reset_console!()
+    C._reconcile_snapshot!([row("t1")])
+    @test haskey(C.TASKS, "t1") && C.TASKS["t1"].status == "running"
+    @test C.TASKS["t1"].in_snapshot                       # eligible for retiring
+    C._reconcile_snapshot!([])                            # miss 1 — not yet (poll/registration race)
+    @test haskey(C.TASKS, "t1")
+    C._reconcile_snapshot!([])                            # miss 2 — retire
+    @test !haskey(C.TASKS, "t1")                          # ← the row used to live here forever
+    @test C.TALLY["ended"] == 1                           # counted, and NOT guessed as done/failed
+    @test C.TALLY["done"] == 0 && C.TALLY["failed"] == 0
+
+    # a retired task must not be resurrected by a later snapshot (SEEN_TERM)
+    C._reconcile_snapshot!([row("t1")])
+    @test !haskey(C.TASKS, "t1") && C.TALLY["ended"] == 1
+
+    # a WS-only producer (job / batch movie) never appears in the snapshot → never retired by it
+    reset_console!()
+    t = C._task!("job1"); t.fun_name = "project.export"; t.pool_name = "job"; t.status = "running"
+    for _ in 1:5
+        C._reconcile_snapshot!([])
+    end
+    @test haskey(C.TASKS, "job1") && C.TALLY["ended"] == 0
+
+    # a terminal status seen IN the snapshot is counted for real, not as "ended"
+    reset_console!()
+    C._reconcile_snapshot!([row("t2")])
+    C._reconcile_snapshot!([row("t2"; status="failed")])
+    @test !haskey(C.TASKS, "t2")
+    @test C.TALLY["failed"] == 1 && C.TALLY["ended"] == 0
+
+    # a task still listed keeps its row and its miss counter resets (no drift toward retirement)
+    reset_console!()
+    C._reconcile_snapshot!([row("t3")])
+    C._reconcile_snapshot!([])                            # one miss
+    C._reconcile_snapshot!([row("t3")])                   # back in the snapshot → counter cleared
+    @test C.TASKS["t3"].misses == 0
+    C._reconcile_snapshot!([])
+    @test haskey(C.TASKS, "t3")                           # would have been retired if it hadn't reset
+end
