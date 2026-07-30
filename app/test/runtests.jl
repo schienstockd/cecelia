@@ -69,6 +69,27 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# ── Fault injection: make the scheduler's OWN error path throw ────────────────────
+# `_execute_job!` must post to `job.done` no matter what, because `run_task` is blocked in `take!` and
+# a throw escaping into the dispatcher's `Threads.@spawn` is silent — the cost is a submitter blocked
+# forever and a TaskRecord stranded at `:running` (a task the scheduler keeps reporting as in-flight
+# long after it finished). A logger is just the injection handle: it puts the throw *inside* the
+# `catch` block, which is the one window the inline handling can't cover. `catch_exceptions = false`
+# is what makes `@warn` propagate instead of reporting; only the scheduler's crash message throws, so
+# Test's own output is untouched.
+using Logging
+struct _ThrowingLogger <: Logging.AbstractLogger
+    inner::Logging.AbstractLogger
+end
+Logging.min_enabled_level(l::_ThrowingLogger) = Logging.min_enabled_level(l.inner)
+Logging.shouldlog(l::_ThrowingLogger, level, _module, group, id) =
+    Logging.shouldlog(l.inner, level, _module, group, id)
+Logging.catch_exceptions(::_ThrowingLogger) = false
+function Logging.handle_message(l::_ThrowingLogger, level, message, _module, group, id, file, line; kwargs...)
+    occursin("Unhandled error in task", string(message)) && error("logger exploded (test)")
+    Logging.handle_message(l.inner, level, message, _module, group, id, file, line; kwargs...)
+end
+
 @testset "Cecelia package smoke tests" begin
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -1875,6 +1896,36 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rlog = read_run_log(img)
         @test length(rlog) == 1
         @test String(rlog[end]["fun"]) == fun_name && String(rlog[end]["status"]) == "failed"
+        rm(proj.root; recursive=true)
+    end
+
+    # ── A job ALWAYS releases its submitter, even if the error path itself throws ──
+    # Regression: `_execute_job!` posted to `job.done` as its last statement, so any throw before that
+    # (here: the crash `@warn` itself failing) escaped into the dispatcher's fire-and-forget
+    # `Threads.@spawn` — silently. `run_task` then blocked in `take!(job.done)` FOREVER and never ran
+    # `_deregister_task!`, leaving the TaskRecord stranded at `:running`: `list_tasks()`, the GUI and
+    # the task console all keep listing a task that finished, while every pool correctly reads idle
+    # (the dispatcher's `finally` had released the slot). The post now lives in a `finally`.
+    @testset "Job posts its result even when the error path throws" begin
+        proj = create_project!(name="job-post-$(rand(1000:9999))")
+        img  = add_image!(add_set!(proj; name="s"); name="img")
+
+        tid = "jobpost$(rand(1000:9999))"
+        old = global_logger()
+        t = try
+            global_logger(_ThrowingLogger(old))
+            th = Threads.@spawn run_task(_CrashTask(), img, Dict{String,Any}(); task_id = tid)
+            timedwait(() -> istaskdone(th), 30.0)        # wait BEFORE restoring, so the throw is injected
+            th
+        finally
+            global_logger(old)                            # a failing @test must not log through it
+        end
+
+        @test istaskdone(t)                               # the whole point — this used to hang forever
+        # guarded: on a regression the task is still blocked, and a bare fetch would hang the SUITE
+        istaskdone(t) && @test fetch(t) === nothing       # aborted job → nil result, like any failure
+        # ...and the record is gone, not stranded at :running for the console/GUI to keep showing
+        @test !any(r -> r.id == tid, list_tasks())
         rm(proj.root; recursive=true)
     end
 

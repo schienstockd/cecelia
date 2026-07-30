@@ -558,8 +558,8 @@ These are easy to break accidentally:
 
 5. **Concurrency lives in the global pool, not the chain** — there is no per-run semaphore. A node
    blocks inside `run_task` on its pool's worker queue. Don't reintroduce a chain-level gate; size
-   the pool in `config.toml` instead. Slots are freed when `_execute_job!` returns (no `finally`
-   release to forget).
+   the pool in `config.toml` instead. The slot is released in the dispatcher's `finally`, so it comes
+   back even if the job dies.
 
 6. **Mark `:queued` before `run_task`, `:running` from the worker** — the node must not flip to
    `:running` until a pool worker starts it (via `on_status_change`), or `startedAt`/elapsed and the
@@ -568,6 +568,23 @@ These are easy to break accidentally:
 7. **`Threads.@spawn` not `@async`** — tasks call blocking Python subprocesses. `@async` would
    starve other images on the same thread. If you change the execution model, verify that blocking
    I/O in `_run_task` still works.
+
+8. **Every job posts to `job.done` exactly once — in a `finally`.** `run_task` is parked in
+   `take!(job.done)` and nothing else will ever wake it, and the dispatcher's `Threads.@spawn` is
+   fire-and-forget, so an exception escaping `_execute_job!` is **silent**. The cost is a submitter
+   blocked forever plus a `TaskRecord` stranded at `:running` (`_deregister_task!` never runs) — and it
+   looks like nothing is wrong, because the slot was already released: pools read idle while
+   `list_tasks()`, the GUI and the task console all keep listing a task that finished. So: anything
+   added between `_set_status!(rec, :running)` and the post is inside the guarded window, `post!`
+   replaces bare `put!` (the channel holds 1 — a second post would block), and the outer `catch` marks
+   the record `:failed` rather than leaving it `:running`. Both `Threads.@spawn`s in `_start_pool!` log
+   their exceptions for the same reason: a spawned task's error is otherwise lost, and a dispatcher that
+   dies wedges the whole pool at `:queued`. Pinned by the *"Job posts its result even when the error
+   path throws"* testset.
+
+   > The console side of this pairs with it: WS task frames are lossy by design, so the task console
+   > must reconcile `GET /api/tasks` in **both** directions — see `docs/API.md`. A row that is only ever
+   > added produces the same false "still running" readout from the opposite direction.
 
 ---
 

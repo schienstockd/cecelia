@@ -135,11 +135,25 @@ function _start_pool!(name::String, limit::Int)
     pool  = ResourcePool(name, limit, queue, 0, Threads.Condition())
     _POOLS[name] = pool
     # dispatcher: pull a job, wait for a free slot, run it on its own task (freeing the slot after).
+    # Both `try`s below are backstops for the same failure mode: an exception in a `Threads.@spawn` is
+    # SILENT (nobody fetches these tasks), so an unguarded throw either strands a submitter forever
+    # (job task) or kills the dispatcher and wedges the whole pool at `:queued` (dispatcher task).
     Threads.@spawn begin
         for job in pool.queue
-            _acquire_slot!(pool)
+            try
+                _acquire_slot!(pool)
+            catch e
+                # Never let the loop die — one job's failure must not stop the pool consuming the rest.
+                @error "Pool dispatcher could not acquire a slot — job dropped" pool = pool.name exception = (e, catch_backtrace())
+                try; put!(job.done, nothing); catch; end   # release the blocked submitter
+                continue
+            end
             Threads.@spawn try
                 _execute_job!(job)
+            catch e
+                # Unreachable while _execute_job! keeps its contract (it always posts) — logged rather
+                # than swallowed so a future regression surfaces as an error, not a hung task.
+                @error "Job task died" pool = pool.name task_id = job.id exception = (e, catch_backtrace())
             finally
                 _release_slot!(pool)
             end
@@ -298,63 +312,93 @@ struct TaskJob
     imgs::Union{Nothing,Vector{CciaImage}}   # set-scope: run `_run_task` over all images at once; nothing = single-image
 end
 
+"""
+Run one job to completion and post its result to `job.done` — **exactly once, unconditionally**.
+
+That post is the job's only contract with its submitter: `run_task` is blocked in `take!(job.done)`
+and nothing else will ever wake it. The dispatcher's `Threads.@spawn` is fire-and-forget, so a throw
+escaping this function is *silent* — and costs a permanently blocked submitter plus a `TaskRecord`
+stranded at `:running` in `_TASKS`. That leak is invisible from the outside: the pool slot was already
+released by the dispatcher's `finally`, so pools read idle while `list_tasks()` (and the task console
+and the GUI) keep listing work that finished long ago. Hence the post lives in a `finally`, and the
+`catch` exists for a throw in the *error path itself* — the task's own errors are already handled
+inline below.
+"""
 function _execute_job!(job::TaskJob)
+    # `job.done` holds 1, so posting twice would block forever — post through this, never `put!`.
+    posted = Ref(false)
+    post!(result) = (posted[] || (posted[] = true; put!(job.done, result)))
+
     rec = lock(_TASKS_LOCK) do; get(_TASKS, job.id, nothing); end
     # Skip if cancelled while queued
     if isnothing(rec) || rec.status === :cancelled
-        put!(job.done, nothing)
+        post!(nothing)
         return
     end
-    _set_status!(rec, :running)
-    # invokelatest: workers are spawned once at pool init; user-supplied callbacks
-    # may be defined in a later world (e.g. in test files or interactive sessions).
-    # set-scope job runs _run_task over the whole image vector at once; else single image.
-    job_target = isnothing(job.imgs) ? job.img : job.imgs
-    result = try
-        _run_task(job.task, job_target,
-                  merge(job.params, Dict("_task_id" => job.id));
-                  on_log      = line -> Base.invokelatest(job.on_log, line),
-                  on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),
-                  on_process  = proc -> begin
-                      @atomic rec.proc = proc
-                      # Race guard: if cancel arrived between :running and now, rec.proc
-                      # was nothing when cancel_task! ran, so the kill was skipped. Kill
-                      # here now that we hold the process handle.
-                      if is_cancelled(job.id)
-                          try; _kill_proc_tree(proc); catch; end
-                      end
-                      Base.invokelatest(job.on_process, proc)
-                  end)
-    catch e
-        bt = catch_backtrace()
-        @warn "Unhandled error in task" task_id = job.id exception = (e, bt)
-        # Also tee the crash into the per-image task log (job.on_log appends to
-        # {img._dir}/logs/{fun}.log). Without this, a Julia-side failure — e.g. one thrown before the
-        # Python subprocess even starts — leaves the task log ending mid-run with no error, invisible
-        # to `get_task_log` and to anyone debugging after the fact (the error only went to the console).
-        try
-            Base.invokelatest(job.on_log, "[ERROR] Task crashed: " * sprint(showerror, e, bt))
-        catch; end
-        nothing
-    end
-    final = is_cancelled(job.id) ? :cancelled : isnothing(result) ? :failed : :done
-    _set_status!(rec, final)
-    # append to each target image's run log — automatic run history for the image table AND the AI
-    # observer. Records BOTH :done and :failed (with status) so repeated failures are visible, not just
-    # successes; :cancelled is skipped (the user aborted — not an outcome worth logging). Never fail the
-    # task over a log write.
-    if final in (:done, :failed)
-        try
-            fn = _fun_name_from_task(job.task)
-            vn = string(get(job.params, "valueName", ""))
-            for tgt in (isnothing(job.imgs) ? [job.img] : job.imgs)
-                append_run_log!(tgt, fn, vn, string(final), job.params)
-            end
+    try
+        _set_status!(rec, :running)
+        # invokelatest: workers are spawned once at pool init; user-supplied callbacks
+        # may be defined in a later world (e.g. in test files or interactive sessions).
+        # set-scope job runs _run_task over the whole image vector at once; else single image.
+        job_target = isnothing(job.imgs) ? job.img : job.imgs
+        result = try
+            _run_task(job.task, job_target,
+                      merge(job.params, Dict("_task_id" => job.id));
+                      on_log      = line -> Base.invokelatest(job.on_log, line),
+                      on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),
+                      on_process  = proc -> begin
+                          @atomic rec.proc = proc
+                          # Race guard: if cancel arrived between :running and now, rec.proc
+                          # was nothing when cancel_task! ran, so the kill was skipped. Kill
+                          # here now that we hold the process handle.
+                          if is_cancelled(job.id)
+                              try; _kill_proc_tree(proc); catch; end
+                          end
+                          Base.invokelatest(job.on_process, proc)
+                      end)
         catch e
-            @warn "run-log append failed" task_id = job.id exception = e
+            bt = catch_backtrace()
+            @warn "Unhandled error in task" task_id = job.id exception = (e, bt)
+            # Also tee the crash into the per-image task log (job.on_log appends to
+            # {img._dir}/logs/{fun}.log). Without this, a Julia-side failure — e.g. one thrown before the
+            # Python subprocess even starts — leaves the task log ending mid-run with no error, invisible
+            # to `get_task_log` and to anyone debugging after the fact (the error only went to the console).
+            try
+                Base.invokelatest(job.on_log, "[ERROR] Task crashed: " * sprint(showerror, e, bt))
+            catch; end
+            nothing
         end
+        final = is_cancelled(job.id) ? :cancelled : isnothing(result) ? :failed : :done
+        _set_status!(rec, final)
+        # append to each target image's run log — automatic run history for the image table AND the AI
+        # observer. Records BOTH :done and :failed (with status) so repeated failures are visible, not just
+        # successes; :cancelled is skipped (the user aborted — not an outcome worth logging). Never fail the
+        # task over a log write.
+        if final in (:done, :failed)
+            try
+                fn = _fun_name_from_task(job.task)
+                vn = string(get(job.params, "valueName", ""))
+                for tgt in (isnothing(job.imgs) ? [job.img] : job.imgs)
+                    append_run_log!(tgt, fn, vn, string(final), job.params)
+                end
+            catch e
+                @warn "run-log append failed" task_id = job.id exception = e
+            end
+        end
+        post!(result)
+    catch e
+        # The task's OWN failure is handled inline above, so reaching here means the error path itself
+        # threw (a logger that propagates, a callback in an unexpected place, anything added to this
+        # window later). Record it as failed — never leave the record at :running — and let the
+        # `finally` release the submitter. Logging is guarded because a throwing logger is one of the
+        # ways to get here in the first place.
+        try
+            @error "Scheduler job aborted" task_id = job.id exception = (e, catch_backtrace())
+        catch; end
+        try; _set_status!(rec, :failed); catch; end
+    finally
+        post!(nothing)   # no-op if the success path already posted
     end
-    put!(job.done, result)
 end
 
 # ── One path: run_task ─────────────────────────────────────────────────────────
