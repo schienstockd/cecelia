@@ -24,7 +24,7 @@ Sets group images for processing. An image belongs to one set but lives independ
 {projects_dir}/{proj_uid}/
   project.json              — project manifest (set_uids list)
   lab-log.md                — append-only AI+human analysis memory (see docs/ai-assist/LAB-LOG.md)
-  .cecelia.lock             — naive write lock (see Transactions)
+  project.json.lock         — naive write lock, derived from the state file (see Transactions)
   settings/                 — per-project UI config (persisted on Save project)
     chains/{name}.json      — chain/whiteboard templates (migrated from the legacy top-level chains/)
     analysisBoards.json     — Analysis-canvas tabs + grid layouts + captured screenshots
@@ -226,9 +226,17 @@ Used by the API when it knows a UID but not whether it's a set or an image.
 
 ## Transactions and locking
 
-`with_transaction(f, proj)` holds a naive lockfile at `{proj}/.cecelia.lock` for the duration of `f()`. It polls up to 30 seconds for an existing lock to clear, then errors with the lockfile path so it can be deleted manually.
+`with_transaction(f, obj)` holds a naive lockfile for the duration of `f()`, at `state_file(obj) * ".lock"`. It polls up to 30 seconds for an existing lock to clear, then errors with the lockfile path so it can be deleted manually.
 
-This is intentionally minimal — a single file existence check, no PID or timestamp. It prevents two concurrent HTTP handlers from clobbering the same `project.json`, but it is not a distributed lock and does not protect per-image writes. See `TODO.md` for the planned move to per-image lockfiles.
+The lock path is **derived from the object's state file**, as in the old R `reactivePersistentObject.R` (`lockFile = paste0(getStateFile(), ".lock")`). So it works for any persisted object: `with_transaction(f, img)` locks that one image and nothing else. (It used to hardcode one `{proj}/.cecelia.lock`, which could only ever be project-scoped — too coarse, since it serialises unrelated images.)
+
+This is intentionally minimal — a single file existence check, no PID or timestamp. It is not a distributed lock. **The task commit sites do not call it yet**, so two concurrent read-modify-writes of one image's `ccid.json` can still lose an update; see TODO #00003. Note that this is the *lost-update* risk only — *truncation* (the unrecoverable one) is handled unconditionally by the atomic writer below.
+
+## Writing state — always atomic
+
+Every state file is written by `write_atomic` / `write_json_atomic` (`app/src/utils.jl`): serialise into a sibling temp file, then rename into place. Never `open(path, "w")` a state file — `open(..., "w")` truncates before the new bytes land, so a process death in that window (the Quit button SIGKILLs the tree, a task cancel, a crash) left a half-written file. That was unrecoverable for `ccid.json` and not confined to the image concerned: `_load_set` has no per-image guard, so **one** truncated image `ccid.json` made the whole project fail to open, every other image intact but unreachable. The `no hand-rolled state writes` testset fails on a new bare-open site.
+
+Locate the file with `state_file` rather than building the path — `state_file(obj)` for a loaded image/set/project, `state_file(meta_dir)` for a directory in hand, `state_file(proj_dir, obj_uid)` for the API layer answering from raw uids without loading the object (`obj_meta_dir` owns the `1/` segment, mirroring `img_zero_dir` for `0/`).
 
 ---
 

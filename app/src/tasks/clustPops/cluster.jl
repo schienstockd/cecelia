@@ -56,7 +56,7 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
     merged[_clustfeatures_key(suffix, family)] =
         Dict{String,Any}("features" => features, "partOf" => part_of,
                          "family" => String(family), "labels" => Dict{String,Any}(labels))
-    open(sidecar, "w") do f; JSON3.pretty(f, merged); end
+    write_json_atomic(sidecar, merged)
 end
 
 function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any};

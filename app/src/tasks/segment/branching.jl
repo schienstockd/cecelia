@@ -76,7 +76,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     ref_pops       = string(get(params, "refPops", "NONE"))
     calc_anisotropy = Bool(get(params, "calcAnisotropy", false))
 
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
@@ -215,7 +215,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
         for (k, v) in get(raw2, "branch_labels", Dict{String,Any}()))
     bl_dict[out_value_name] = [branch_zarr]
     raw2["branch_labels"] = bl_dict
-    open(ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(ccid, raw2)
 
     # QC (advisory): objective branch count + zero-branches warning
     n_branches = 0

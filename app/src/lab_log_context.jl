@@ -51,9 +51,7 @@ end
 function _write_context_state!(proj::CciaProject, state::AbstractDict)
     p = _context_state_path(proj)
     mkpath(dirname(p))
-    open(p, "w") do io
-        JSON3.write(io, state)
-    end
+    write_json_atomic(p, state)
 end
 
 # Human-readable image list, capped so a big cohort doesn't produce a wall of names.

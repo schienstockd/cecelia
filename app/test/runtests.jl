@@ -867,7 +867,10 @@ end
     # ── Lockfile (naive guard) ──────────────────────────────────────────────────
     @testset "with_transaction" begin
         proj     = create_project!(name="lock-test-$(rand(1000:9999))")
-        lockfile = joinpath(proj.root, ".cecelia.lock")
+        # the lockfile is DERIVED from the object's state file (the R `getStateFile` + ".lock" shape),
+        # not a hardcoded name — that's what makes the per-image form below possible at all
+        lockfile = Cecelia.state_file(proj) * ".lock"
+        @test lockfile == Cecelia._lock_path(proj)
 
         # happy path: returns the body value and releases the lock
         @test (with_transaction(proj) do; 42; end) == 42
@@ -877,7 +880,136 @@ end
         @test_throws ErrorException with_transaction(proj) do; error("boom"); end
         @test !isfile(lockfile)
 
+        # works for an IMAGE too, locking that image alone — different images never block each other.
+        # (TODO #00003 is wiring the task commit sites to call this; the mechanism is here.)
+        s   = add_set!(proj; name="s")
+        img = add_image!(s; name="i")
+        @test Cecelia._lock_path(img) == Cecelia.state_file(img) * ".lock"
+        @test Cecelia._lock_path(img) != Cecelia._lock_path(proj)
+        @test (with_transaction(img) do; 7; end) == 7
+        @test !isfile(Cecelia._lock_path(img))
+
         rm(proj.root; recursive=true)
+    end
+
+    # ── Durable state writes are atomic ─────────────────────────────────────────
+    # Every state file (ccid.json, project.json, sidecars, custom.toml, the lab log) is written
+    # tmp-then-rename via `write_atomic`. The failure this prevents: `open(path, "w")` truncates
+    # first, so a kill in that window (the Quit button SIGKILLs) left a half-written file — and since
+    # `_load_set` has no per-image guard, ONE truncated image ccid.json failed the WHOLE project load.
+    @testset "durable state writes are atomic" begin
+        td = mktempdir()
+
+        # a failed write leaves the PREVIOUS content intact, not a truncated file
+        p = joinpath(td, "state.json")
+        write_json_atomic(p, Dict("a" => 1))
+        before = read(p, String)
+        @test_throws ErrorException write_atomic(p) do io
+            print(io, "{\"partial\":")
+            error("killed mid-write")
+        end
+        @test read(p, String) == before          # untouched, NOT truncated
+        @test JSON3.read(read(p, String))[:a] == 1
+
+        # no temp files left behind, on success or on failure
+        @test isempty(filter(f -> occursin(".tmp.", f), readdir(td)))
+
+        # a leftover temp (from a process killed between write and rename) must NOT be picked up by
+        # sidecar discovery, which is `readdir` + `endswith(f, ".json")` in several places
+        @test !endswith(Cecelia.write_atomic(io -> print(io, "x"), joinpath(td, "probe.json")), ".tmp")
+        tmpname = "state.json.tmp.abc123"
+        @test !endswith(tmpname, ".json")
+
+        # creates a missing parent dir rather than throwing
+        deep = joinpath(td, "a", "b", "c.json")
+        write_json_atomic(deep, Dict("ok" => true))
+        @test JSON3.read(read(deep, String))[:ok] == true
+
+        # write_atomic handles non-JSON content too (TOML config, the lab-log markdown)
+        t = joinpath(td, "notes.md")
+        write_atomic(io -> print(io, "# hello"), t)
+        @test read(t, String) == "# hello"
+
+        rm(td; recursive=true)
+    end
+
+    # ── state_file: one derivation, whatever the caller holds ───────────────────
+    # The R original kept this private to the object (`getStateFile`); the port had 20+ call sites
+    # re-deriving `joinpath(obj._dir, "ccid.json")` and the API layer additionally re-spelling the
+    # `1/` metadata segment. All forms must agree.
+    @testset "state_file resolution" begin
+        proj = create_project!(name="statefile-test-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+
+        @test Cecelia.state_file(proj) == joinpath(proj.root, "project.json")
+        @test basename(Cecelia.state_file(img)) == Cecelia.STATE_FILENAME
+        @test basename(Cecelia.state_file(s))   == Cecelia.STATE_FILENAME
+
+        # object form == metadata-dir form == (project dir + uid) form
+        @test Cecelia.state_file(img) == Cecelia.state_file(img._dir)
+        @test Cecelia.state_file(img) == Cecelia.state_file(proj.root, img.uid)
+        @test Cecelia.state_file(s)   == Cecelia.state_file(proj.root, s.uid)
+        @test Cecelia.obj_meta_dir(proj.root, img.uid) == img._dir
+
+        # and the file the accessor names is the one save! actually wrote
+        @test isfile(Cecelia.state_file(img))
+
+        rm(proj.root; recursive=true)
+    end
+
+    # An unreadable state file must name the FILE. JSON3 alone says only "invalid JSON at byte
+    # position N" — raised from inside a project load, that told the user nothing actionable.
+    @testset "unreadable state file names the file" begin
+        proj = create_project!(name="corrupt-test-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+        path = Cecelia.state_file(img)
+
+        full = read(path, String)
+        write(path, full[1:cld(length(full), 2)])          # truncate, as an interrupted write would
+        err = try; load_project(proj.uid); "" catch e; sprint(showerror, e) end
+        @test occursin(path, err)                          # says WHICH file
+        @test occursin("not valid JSON", err)
+        @test occursin(".ccbundle", err)                    # and what to do about it
+
+        rm(proj.root; recursive=true)
+    end
+
+    # Detector, not advisory: a NEW bare `open(<state file>, "w")` fails here. This is how the
+    # truncating form spread to ~30 sites in the first place — the atomic pattern existed (the gating
+    # sidecar) but nothing stopped the next writer hand-rolling the unsafe one.
+    @testset "no hand-rolled state writes" begin
+        roots = [joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src")]
+        # Every write-mode `open` is an offender unless listed here WITH a reason. Deliberately an
+        # allow-list of exact call sites, not of whole files: exempting a file would let the next
+        # state write in that file slip through, which is precisely how this spread.
+        allowed = Dict(
+            # the atomic writer itself — this IS the tmp-then-rename implementation
+            "utils.jl"       => [raw"""open(tmp, "w") do io"""],
+            # transient per-run params blob handed to a Python subprocess, in the run's task dir
+            "py_runner.jl"   => [raw"""open(params_file, "w") do io"""],
+            # bundle manifest, written INTO the export staging dir that is then tarred and deleted
+            "project_io.jl"  => [raw"""open(joinpath(tmp, BUNDLE_MANIFEST), "w") do io"""],
+            # bulk image-data copy (multi-GB, chunked); not state, and the import task owns cleanup
+            "omezarr.jl"     => [raw"""open(dst, "w") do d"""],
+        )
+        offenders = String[]
+        for root in roots, (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            ok = get(allowed, f, String[])
+            for (i, line) in enumerate(eachline(joinpath(dir, f)))
+                occursin(r"""open\([^)]*,\s*"w"\)""", line) || continue
+                startswith(strip(line), "#") && continue
+                any(a -> occursin(a, line), ok) && continue
+                push!(offenders, "$f:$i: $(strip(line))")
+            end
+        end
+        if !isempty(offenders)
+            @warn "Hand-rolled write-mode open — use write_atomic/write_json_atomic, or add an " *
+                  "allow-list entry with a reason if it genuinely isn't durable state" offenders
+        end
+        @test isempty(offenders)
     end
 
     # ── Lab log (per-project append-only markdown) ──────────────────────────────

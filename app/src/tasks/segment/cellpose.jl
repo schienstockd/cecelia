@@ -45,7 +45,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
 
     value_name     = string(get(params, "valueName",     VERSIONED_DEFAULT_VAL))
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     # Resolve input image path
@@ -155,7 +155,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
         for (k, v) in get(raw2, "labels", Dict{String,Any}()))
     labels_dict[out_value_name] = label_files
     raw2["labels"] = labels_dict
-    open(ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(ccid, raw2)
 
     # QC (advisory): bank the objective per-type cell count the Python runner wrote (drift pattern).
     if isfile(qc_out_path)

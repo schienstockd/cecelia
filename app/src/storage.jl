@@ -39,7 +39,7 @@ end
 `_dir_bytes` — the expensive part (invoked on demand by the storage scan, not on every Settings open).
 """
 function image_storage(img::CciaImage)
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     isfile(ccid) || return (; active = "", versions = NamedTuple[], reclaimable = String[], reclaimableBytes = 0)
     raw = read_ccid_raw(ccid)
     fp  = get(raw, "filepath", nothing)
@@ -119,7 +119,7 @@ silently break the active image.
 """
 function remove_image_version!(img::CciaImage, value_name::String, new_default::String;
                                on_log::Function = _ -> nothing)::Union{Nothing,Tuple{Int,Bool}}
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
 
     filename = versioned_get_field(raw, "filepath", value_name)
@@ -162,7 +162,7 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
         raw["status"] = "pending"
     end
 
-    open(ccid, "w") do io; JSON3.write(io, raw); end
+    write_json_atomic(ccid, raw)
     (freed, cleared)
 end
 
@@ -180,7 +180,7 @@ function reclaim_inactive!(proj_uid::String, image_uids::AbstractVector;
     reclaimed = String[]
     for uid in image_uids
         img = init_object(proj_uid, string(uid))
-        raw = read_ccid_raw(joinpath(img._dir, "ccid.json"))
+        raw = read_ccid_raw(state_file(img))
         fp  = get(raw, "filepath", nothing)
         fp isa AbstractDict || continue
         active  = versioned_active(fp)            # the one version we keep (new_default for each drop)

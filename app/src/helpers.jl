@@ -89,6 +89,34 @@ end
 # helpers. JSON3 yields Symbol keys that make `get(d, "field", …)` silently miss (see the JSON3
 # gotcha in CLAUDE.md); this is the one place that normalizes them. Use it instead of hand-rolling
 # `Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String)))`.
-function read_ccid_raw(path::AbstractString)::Dict{String,Any}
-    Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String)))
+# The write counterpart is `write_json_atomic` (app/src/utils.jl) — read here, mutate via the
+# `versioned_*` helpers, write back there. Never `open(path, "w")` a ccid.json yourself.
+read_ccid_raw(path::AbstractString)::Dict{String,Any} =
+    Dict{String,Any}(String(k) => v for (k, v) in read_state_json(path))
+
+"""
+    read_state_json(path; as = nothing) -> parsed
+
+Read + parse a state file, **naming the file** if it doesn't parse. JSON3's own message is just
+`invalid JSON at byte position 156` — no path, raised from deep inside a project load, so it tells a
+user nothing they can act on. `_load_set` has no per-image guard, so one unreadable image ccid.json
+fails the whole project load; when that happens the message has to say which file and what to do.
+
+Pass `as` for a typed parse (`JSON3.read(s, T)`); the default is JSON3's untyped read.
+"""
+function read_state_json(path::AbstractString; as = nothing)
+    contents = read(path, String)
+    try
+        isnothing(as) ? JSON3.read(contents) : JSON3.read(contents, as)
+    catch e
+        e isa ArgumentError || rethrow()
+        # A truncated file is the signature of a write interrupted by a kill/crash. State writes go
+        # through `write_atomic` now, so this should only be reachable for a file written by an
+        # older build, a hand edit, or genuine disk corruption.
+        error("Unreadable state file: $path\n" *
+              "  It is not valid JSON ($(sprint(showerror, e))).\n" *
+              "  Most likely a write was interrupted by an older version, or the file was edited " *
+              "by hand. Restore this one file from a .ccbundle export or a backup — the rest of " *
+              "the project is intact.")
+    end
 end

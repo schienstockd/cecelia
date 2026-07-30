@@ -294,14 +294,12 @@ function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
     dir = gating_dir(task_dir)
     isdir(dir) || mkpath(dir)
     path = gating_path(task_dir, m.value_name; pop_type=m.pop_type)
-    # Write to a temp file then atomically rename, so a concurrent reader never observes a
-    # half-written (truncated) JSON. The load→mutate→save critical section is itself serialised
-    # by `_POPMAP_LOCK` in the gating API handlers (against lost updates); this guards the file.
-    tmp = path * ".tmp"
-    open(tmp, "w") do f
-        JSON3.pretty(f, to_tree(m; include_transient = false))
-    end
-    mv(tmp, path; force = true)
+    # `write_json_atomic` (app/src/utils.jl) so a concurrent reader never observes a half-written
+    # (truncated) JSON, and an interrupted write keeps the previous gates. This file was where that
+    # tmp-then-rename pattern was first written by hand; it is now the shared mechanism every state
+    # write uses. The load→mutate→save critical section is separately serialised by `_POPMAP_LOCK`
+    # in the gating API handlers (against lost updates); this guards the file itself.
+    write_json_atomic(path, to_tree(m; include_transient = false))
     m
 end
 
