@@ -4,6 +4,8 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
+import { runningTaskCount } from '../utils/runningTasks'
+import { quitConfirmTooltip } from '../utils/quitWarning'
 import ProjectPanel from './ProjectPanel.vue'
 import ConfirmButton from './ConfirmButton.vue'
 
@@ -15,6 +17,15 @@ const labLogBadgeStyle = computed(() =>
   : settings.labLogUnseenLevel === 'warn' ? { color: 'var(--cc-sev-warn)' }
   : {})
 const appCtl = useAppControlStore()
+// Quit says what it will kill: shutdown exits the backend without waiting for in-flight work, so a
+// long segmentation run would otherwise vanish on a click the user thought was harmless. The count is
+// read from the backend when the button is ARMED (not on hover) — one request per intent to quit.
+const quitTasks   = ref(0)
+const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
+async function armQuit(arm: () => void) {
+  arm()                                        // arm first: the confirm must appear immediately
+  quitTasks.value = await runningTaskCount()   // then fill in what it will cost
+}
 const customModules = useCustomModulesStore()
 const showPanel = ref(false)
 
@@ -236,13 +247,13 @@ function isNavDisabled(item: NavItem): boolean {
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="arm"
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="armQuit(arm)"
                   v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>
           <template v-else>
             <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" @click="confirm"
-                    v-tooltip.right="'Confirm quit — stops napari, notebooks and the backend'"><i class="pi pi-check" /></button>
+                    v-tooltip.right="quitConfirm"><i class="pi pi-check" /></button>
             <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
           </template>
         </ConfirmButton>

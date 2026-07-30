@@ -15,7 +15,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## Cross-cutting flows (one canonical path each — do not add a second)
 
-- **App shutdown / quit** — UI: sidebar footer + Settings only → `appControl.quit()` → `POST /api/app/shutdown` → `api_app_shutdown` → `_stop_children_for_exit()`. Two UI entry points, one store action, one endpoint. Do NOT add a third quit button. (Per-service stops — napari `/api/napari/close`, notebooks `/api/notebooks/shutdown` — are separate and legitimate.)
+- **App shutdown / quit** — UI: sidebar footer + Settings only → `appControl.quit()` → `POST /api/app/shutdown` → `api_app_shutdown` → `_stop_children_for_exit()`. Two UI entry points, one store action, one endpoint. Do NOT add a third quit button. (Per-service stops — napari `/api/napari/close`, notebooks `/api/notebooks/shutdown` — are separate and legitimate.) Both entry points warn when work is in flight via `frontend/src/utils/quitWarning.ts` (shutdown does NOT wait for running tasks), so keep the wording in that one module rather than per-site.
 - **App update** — `appControl.checkUpdate()`/`applyUpdate()` → `/api/update/check` + `/api/update/apply`. Header badge and Settings both read the one store; one handler each.
 - **Napari WebSocket (7655)** — one connector: `app/src/napari.jl` `send(v, msg)`; one bridge server: `napari/napari_bridge.py` `ws_server()`. Port constant `NAPARI_PORT` defined once in `napari.jl`.
 - **Julia ↔ Vue WebSocket (8080 `/ws`)** — one server handler: `api/src/server.jl` `handle_ws` → `sockets.jl` `handle_message`; one Vue client: `frontend/src/stores/ws.ts` (the only `new WebSocket` in the frontend). All outbound goes through `broadcast_ws`.
