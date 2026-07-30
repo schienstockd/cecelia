@@ -33,8 +33,12 @@ Parameter contract (JSON written by Julia):
   calcFlattened       - bool; run the anisotropy pass on a Z-MIP even when the labels stayed 3D
   anisotropySource    - "skeleton" | "mask" | "channel"; which array the structure tensor reads
   fibreChannels       - list[int]; 0-based channel indices, only used by source="channel"
-  structureTensorSigma- float; Gaussian integration scale of the structure tensor, px
-  anisotropyBoxSize   - int; side of the aggregation box, px
+  structureTensorSigma- float; Gaussian integration scale of the structure tensor, PIXELS
+  anisotropyBoxSize   - int; side of the aggregation box, PIXELS
+  structureTensorSigmaUm / anisotropyBoxUm / umPerPx
+                      - what the USER asked for, in um, and the factor Julia converted with. Recorded
+                        in orientation_meta for provenance; the compute uses the pixel values above,
+                        because array space is the only space these arrays have.
 """
 
 import json
@@ -433,6 +437,9 @@ def run(params: dict):
     fibre_channels       = script_utils.get_param(params, "fibreChannels", default=[]) or []
     st_sigma             = float(script_utils.get_param(params, "structureTensorSigma", default=12.0))
     aniso_box_size       = int(script_utils.get_param(params, "anisotropyBoxSize", default=15))
+    sigma_um             = script_utils.get_param(params, "structureTensorSigmaUm", default=None)
+    box_um               = script_utils.get_param(params, "anisotropyBoxUm", default=None)
+    um_per_px            = script_utils.get_param(params, "umPerPx", default=None)
     aniso_source         = str(script_utils.get_param(params, "anisotropySource", default="skeleton"))
     integrate_time       = bool(script_utils.get_param(params, "integrateTime", default=False))
     integrate_time_mode  = str(script_utils.get_param(params, "integrateTimeMode", default="max"))
@@ -620,6 +627,11 @@ def run(params: dict):
             "orientation_meta": {
                 "box_size_px":     int(aniso_box_size),
                 "sigma_px":        float(st_sigma),
+                # what the user actually set, and the factor it was converted with. A reader
+                # comparing images across a cohort wants the um, not this image's pixels.
+                "box_size_um":     float(box_um) if box_um is not None else float("nan"),
+                "sigma_um":        float(sigma_um) if sigma_um is not None else float("nan"),
+                "um_per_px":       float(um_per_px) if um_per_px is not None else float("nan"),
                 "source":          aniso_source,
                 "flattened":       bool(calc_flattened or flatten_branching),
                 "t_index":         np.asarray(aniso_t_index, dtype=np.int32),
@@ -677,6 +689,11 @@ def run(params: dict):
             "anisotropy": image_anisotropy,
             # One value per timepoint, for the per-frame view of the same measure.
             "anisotropySeries": anisotropy_series,
+            # The grid the run ACTUALLY produced, so Julia can report what the chosen spacing cost
+            # in stored bytes and warn when it dominates the sidecar. Reported, not estimated:
+            # clamping and integer box rounding both move the real number away from the request.
+            "anisoBoxes": int(np.prod(aniso_coor[0].shape[:-1])) if aniso_coor else 0,
+            "anisoFrames": len(aniso_coor),
         }, f)
 
 

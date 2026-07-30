@@ -274,6 +274,10 @@ so the task appears from its JSON alone.
 | `anisotropyBoxSize` | int 5–200, default 45 | aggregation box side for eigendecomp grid (Decision 4) |
 | ~~`calcExtended`~~ | — | renamed to `calcAnisotropy` (Decision 4) |
 | ~~`anisoRadius`~~ | — | replaced by `structureTensorSigma` + `anisotropyBoxSize` (Decision 4) |
+
+> **CORRECTION (2026-07-30).** Those two params are now **`structureTensorSigmaUm`** (7 µm) and
+> **`anisotropyBoxUm`** (5 µm) — physical, not pixels, converted per-image by the handler. New keys,
+> so a saved pixel value cannot be reread as µm. See `docs/SEGMENTATION.md` for how to choose them.
 | ~~`saveProps`~~ | — | dropped (Decision 5) |
 | ~~`saveMeshes`~~ | — | dropped (Decision 5) |
 | ~~`popType`~~ | — | subsumed by `popSelection`'s value-prefixed refs |

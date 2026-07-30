@@ -1196,19 +1196,69 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test_throws ParamValidationError validate_params(
             Branching(), Dict{String,Any}("anisotropySource" => "intensity"))
 
-        # The retuned anisotropy defaults must be the ones the plan measured (Decision 4): a silent
-        # revert to sigma=2/box=45 gives a near-random direction field (finding A2).
+        # The anisotropy scales are in MICRONS, and the keys carry `Um` for exactly that reason: a
+        # project with saved PIXEL params (sigma 2, box 45) must not have them silently reread as µm,
+        # which would be ~3 px and ~75 px. New keys mean the stale values simply do not apply.
         let spec = Cecelia._task_spec(Branching())
             bykey = Dict(String(get(p, "key", "")) => p for p in spec["params"])
-            @test bykey["structureTensorSigma"]["default"] == 12.0
-            @test bykey["anisotropyBoxSize"]["default"] == 15
+            @test haskey(bykey, "structureTensorSigmaUm") && haskey(bykey, "anisotropyBoxUm")
+            @test !haskey(bykey, "structureTensorSigma") && !haskey(bykey, "anisotropyBoxSize")
+            @test bykey["structureTensorSigmaUm"]["default"] == 7.0
+            @test bykey["anisotropyBoxUm"]["default"] == 5.0
             @test bykey["anisotropySource"]["default"] == "skeleton"
+            # every param carries a tip, and none runs past the copy budget (docs/UI.md)
+            @test all(haskey(p, "tip") for p in spec["params"])
+            @test all(length(String(p["tip"])) <= 90 for p in spec["params"])
+            @test !any(endswith(String(p["tip"]), ".") for p in spec["params"])
         end
-        # sigma is float 0.5–50 / box is int 5–200 — out of range must be rejected
         @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("structureTensorSigma" => 999.0))
+            Branching(), Dict{String,Any}("structureTensorSigmaUm" => 999.0))
         @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("anisotropyBoxSize" => 1))
+            Branching(), Dict{String,Any}("anisotropyBoxUm" => 0.1))
+    end
+
+    # ── µm → px for the anisotropy scales ─────────────────────────────────────────────────────────
+    # The user sets a PHYSICAL scale (a fibre is ~2 µm thick whatever the objective); the compute is
+    # in pixels. Getting this backwards, or letting a sub-pixel request through, produces a grid that
+    # resamples noise rather than summarising structure.
+    @testset "Anisotropy µm→px conversion" begin
+        # EaMaVq's real calibration: 0.596 µm/px
+        px, clamped = Cecelia._um_to_px(7.0, 0.596; minimum_px = 0.5)
+        @test px ≈ 7.0 / 0.596 && !clamped
+        @test round(Int, first(Cecelia._um_to_px(5.0, 0.596; minimum_px = 3))) == 8
+
+        # A coarser image needs FEWER pixels for the same physical scale — the whole point: the same
+        # setting means the same thing on both, which a pixel setting never did.
+        @test first(Cecelia._um_to_px(5.0, 1.0; minimum_px = 3)) <
+              first(Cecelia._um_to_px(5.0, 0.5; minimum_px = 3))
+
+        # Sub-minimum requests clamp AND say so, rather than silently running a different setting.
+        px2, clamped2 = Cecelia._um_to_px(0.5, 0.596; minimum_px = 3)
+        @test px2 == 3.0 && clamped2
+        @test_throws ErrorException Cecelia._um_to_px(5.0, 0.0; minimum_px = 3)
+
+        # Stored bytes scale as boxes, and boxes as 1/box² — so halving the spacing is 4x the file.
+        # This is the number behind the "what do I actually put there" tip.
+        @test Cecelia._aniso_grid_bytes(1296, 201) == 1296 * 40 * 201        # 36x36 over 201 frames
+        @test Cecelia._aniso_grid_bytes(4 * 1296, 201) == 4 * Cecelia._aniso_grid_bytes(1296, 201)
+        @test Cecelia._aniso_grid_bytes(100, 0) == Cecelia._aniso_grid_bytes(100, 1)  # static image
+
+        # Advisory only, and only past the threshold — a fine grid is a legitimate choice.
+        @test isempty(Cecelia._aniso_grid_findings(Cecelia._aniso_grid_bytes(1296, 201), 1296, 5.0))
+        big = Cecelia._aniso_grid_bytes(36_000, 201)      # ~290 MB, a ~1 µm grid on this image
+        f = Cecelia._aniso_grid_findings(big, 36_000, 1.0)
+        @test length(f) == 1 && f[1]["level"] == "warn"
+        @test f[1]["code"] == "branching.aniso_grid_large"
+        # the number lives in `detail`, per the catalog rule that prose carries no figures
+        @test occursin("289 MB", f[1]["detail"]) && occursin("36000 boxes", f[1]["detail"])
+        @test !occursin("289", f[1]["short"])
+
+        # Both branching findings come from the QC CATALOG now, not inlined at the call site
+        @test haskey(Cecelia.QC_TEXT, "branching.no_branches")
+        @test haskey(Cecelia.QC_TEXT, "branching.aniso_grid_large")
+        @test haskey(Cecelia.QC_TEXT, "branching.uncalibrated")
+        @test Cecelia._branching_qc_findings(0)[1]["short"] == "No branches found"
+        @test isempty(Cecelia._branching_qc_findings(5))
     end
 
     # Cohort QC must aggregate the per-image anisotropy readout — it is Figure 4 panel D's x-axis
