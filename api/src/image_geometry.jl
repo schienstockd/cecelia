@@ -10,13 +10,13 @@
 # drift-corrected. So a consumer that needs the extent must name a version — or accept the ACTIVE
 # one, which is what the tasks themselves run against.
 #
-# HISTORY: this was `_crop_*` inside `crop_render.jl`, private to the crop panel because that was the
-# first consumer. None of it is crop-specific (Dominik, 2026-07-30) — the crop panel just happened to
-# ask first. Pulled out here so the second consumer (the anisotropy grid-size advisory) reuses it
-# instead of growing a parallel reader. `crop_render.jl` keeps only what IS about cropping: display
-# scaling, colour specs, the RGB composite and the frame cache.
+# HISTORY: this was `_crop_*` inside the old `crop_render.jl`, private to the crop panel because that
+# was the first consumer. None of it is crop-specific (Dominik, 2026-07-30) — the crop panel just
+# happened to ask first. Pulled out here so the second consumer (the anisotropy grid-size advisory)
+# reuses it instead of growing a parallel reader. The same audit then found the RENDERER wasn't
+# crop-specific either, so that became `image_render.jl` and `crop_api.jl` is now just the two routes.
 #
-# This inherits `crop_render.jl`'s SANCTIONED, NARROW carve-out of the "one canonical image reader"
+# This inherits `image_render.jl`'s SANCTIONED, NARROW carve-out of the "one canonical image reader"
 # rule: Julia touches the zarr directly (Zarr.jl) only for lightweight metadata/preview work; Python
 # `zarr_utils` stays canonical for anything that processes data. Do not grow this into a general
 # image reader.

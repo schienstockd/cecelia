@@ -1,33 +1,38 @@
-# ── In-app crop MIP render (Julia, in-process) ──────────────────────────────────
-# Renders a coloured, z-max-projected preview of one timepoint of an OME-ZARR, for the in-app crop panel
-# (docs/todo/CROP_PANEL_PLAN.md). This is a SANCTIONED, NARROW carve-out of the "one canonical image
-# reader" rule: Julia reads the zarr directly (Zarr.jl) ONLY for this lightweight preview — Python
-# `zarr_utils` stays canonical for all processing. Do NOT grow this into a general image reader.
+# ── Server-side image preview render (Julia, in-process) ──────────────────────────
+# Renders a coloured, z-max-projected preview of one timepoint of an OME-ZARR image version: read
+# planes → per-channel contrast + colour → additive blend → PNG bytes.
+#
+# THE ONLY server-side image renderer in the codebase. If you need a thumbnail or preview, use this;
+# do not hand-roll a second compositor. It lived in the old `crop_render.jl`, named for its first consumer,
+# until an audit found essentially nothing in it was crop-specific (Dominik, 2026-07-30) — the crop
+# panel just asked first. `crop_api.jl` now holds only the crop ROUTES; the geometry helpers moved
+# out earlier to `image_geometry.jl` for the same reason.
+#
+# SANCTIONED, NARROW carve-out of the "one canonical image reader" rule: Julia reads the zarr
+# directly (Zarr.jl) ONLY for lightweight previews — Python `zarr_utils` stays canonical for anything
+# that processes data. Do NOT grow this into a general image reader.
 #
 # Gotchas handled (proven in the CROP_PANEL_PLAN spike): Zarr.jl is column-major so it presents the
-# array in REVERSED axis order; the store is one of two layouts (flat array at `/0`, or a bioformats2raw
-# series group at `/0/0`); dtype is uint8 or uint16. Colours/contrast come from the viewer's JSON
-# layer-props file (Phase 0); absent → default per-channel palette + percentile contrast.
+# array in REVERSED axis order (see `axis_dims` in image_geometry.jl); the store is one of two layouts
+# (flat array at `/0`, or a bioformats2raw series group at `/0/0`); dtype is uint8 or uint16. Colours
+# and contrast come from the viewer's JSON layer-props file; absent → default palette + percentile
+# contrast.
 
 using Zarr, JSON3, PNGFiles, ColorTypes, FixedPointNumbers
 
 # Named colormap → base RGB for the additive channel blend. The additive primaries napari uses for
 # multichannel display are linear ramps, so intensity × base-RGB reproduces them. Unknown/perceptual
 # names fall back to gray (rare for raw channels; revisit with a LUT if needed).
-const _CROP_CMAP_RGB = Dict(
+const CMAP_RGB = Dict(
     "red" => (1f0, 0f0, 0f0), "green" => (0f0, 1f0, 0f0), "blue" => (0f0, 0f0, 1f0),
     "cyan" => (0f0, 1f0, 1f0), "magenta" => (1f0, 0f0, 1f0), "yellow" => (1f0, 1f0, 0f0),
     "gray" => (1f0, 1f0, 1f0), "grey" => (1f0, 1f0, 1f0), "white" => (1f0, 1f0, 1f0),
 )
-const _CROP_DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
-
-# Image geometry (open the level-0 array, NGFF axes, axis→dim, version resolution) lives in
-# `image_geometry.jl` — it was private here (`_crop_open_level0` etc.) until a second consumer
-# appeared and showed none of it was crop-specific. This file keeps only what IS about cropping.
+const DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
 
 # Read the viewer's per-channel display specs from the JSON layer-props file (Phase 0). Returns a vector
 # of (lo, hi, cmap_name, visible) in channel order, or `nothing` if the file is missing/unreadable.
-function _crop_props_specs(props_path::AbstractString)
+function layer_display_specs(props_path::AbstractString)
     isfile(props_path) || return nothing
     try
         d = JSON3.read(read(props_path, String))
@@ -48,13 +53,13 @@ end
 
 # Pure: composite a (C, H, W) float array + per-channel (lo, hi, cmap, visible) specs → H×W RGB{N0f8}
 # via clip-to-contrast, colourise, additive blend. Unit-testable without any IO/zarr.
-function _crop_composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
+function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
     C, H, W = size(chw)
     acc = zeros(Float32, 3, H, W)
     @inbounds for c in 1:C
         lo, hi, cmap, vis = specs[c]
         vis || continue
-        base = get(_CROP_CMAP_RGB, cmap, (1f0, 1f0, 1f0))
+        base = get(CMAP_RGB, cmap, (1f0, 1f0, 1f0))
         rng = Float32(hi - lo); rng = rng == 0f0 ? 1f0 : rng
         r, gg, b = base
         for j in 1:W, i in 1:H
@@ -71,7 +76,7 @@ end
 # Render timepoint `t` (0-based) of `zarr_path` to composite-MIP PNG bytes. z is max-projected (subsampled
 # to ~≤`z_keep` planes for speed) and the frame is downsampled so its long side ≤ `max_px` (a crop
 # footprint needs no more). Colours from `props_path` (JSON) if present. Returns the PNG as a byte vector.
-function render_crop_frame(zarr_path::AbstractString, props_path::AbstractString, t::Int;
+function render_preview_frame(zarr_path::AbstractString, props_path::AbstractString, t::Int;
                            max_px::Int = 512, z_keep::Int = 12,
                            z_lo_frac::Real = 0.0, z_hi_frac::Real = 1.0)
     arr, caxes = open_level0(zarr_path)
@@ -111,11 +116,11 @@ function render_crop_frame(zarr_path::AbstractString, props_path::AbstractString
     step = max(1, cld(max(Y, X), max_px))
     step > 1 && (chw = chw[:, 1:step:Y, 1:step:X])
 
-    specs = _crop_props_specs(props_path)
+    specs = layer_display_specs(props_path)
     if specs === nothing || length(specs) < size(chw, 1)
-        specs = [percentile_spec(view(chw, c, :, :), _CROP_DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
+        specs = [percentile_spec(view(chw, c, :, :), DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
     end
-    img = _crop_composite_rgb(chw, specs)
+    img = composite_rgb(chw, specs)
 
     io = IOBuffer()
     PNGFiles.save(io, img)
@@ -133,62 +138,18 @@ function percentile_spec(plane, cmap::String)
     (lo, hi, cmap, true)
 end
 
-# ── HTTP routes (GET) ────────────────────────────────────────────────────────────
-# Resolve (projectUid, imageUid, valueName) → (zarr_path, task_dir) using the SAME ccid.json convention
-# GET /api/crop/info?projectUid=&imageUid=&valueName=&maxPx= → {nT,nZ,fullW,fullH,frameW,frameH,maxPx}
-# Dimensions the panel needs: the timepoint/slice counts for the scrubber + range sliders, the displayed
-# frame size, and the full-res size (Phase 2 maps a drawn rectangle back to full px from these).
-function api_crop_info(req::HTTP.Request)
-    q  = HTTP.queryparams(HTTP.URI(req.target))
-    vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, _, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
-    err === nothing || return 404, JSON3.write((; error = err))
-    try
-        arr, caxes = open_level0(zp)
-        d  = axis_dims(caxes, ndims(arr))
-        fx = size(arr, d["x"]); fy = size(arr, d["y"])
-        nt = haskey(d, "t") ? size(arr, d["t"]) : 1
-        nz = haskey(d, "z") ? size(arr, d["z"]) : 1
-        max_px = parse(Int, get(q, "maxPx", "512"))
-        step = max(1, cld(max(fx, fy), max_px))
-        200, JSON3.write((; nT = nt, nZ = nz, fullW = fx, fullH = fy,
-                            frameW = cld(fx, step), frameH = cld(fy, step), maxPx = max_px))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
-    end
-end
-
 # Small bounded in-memory frame cache (server-lifetime). Key includes the props-file mtime so changing
-# the viewer's colours invalidates cached frames. FIFO eviction — a crop session touches few frames.
-const _CROP_CACHE       = Dict{String,Vector{UInt8}}()
-const _CROP_CACHE_ORDER = String[]
-const _CROP_CACHE_MAX   = 256
-function _crop_cache!(key::String, produce)
-    haskey(_CROP_CACHE, key) && return _CROP_CACHE[key]
+# the viewer's colours invalidates cached frames. FIFO eviction — a preview session touches few frames.
+const _RENDER_CACHE       = Dict{String,Vector{UInt8}}()
+const _RENDER_CACHE_ORDER = String[]
+const _RENDER_CACHE_MAX   = 256
+function cached_render!(key::String, produce)
+    haskey(_RENDER_CACHE, key) && return _RENDER_CACHE[key]
     v = produce()
-    _CROP_CACHE[key] = v; push!(_CROP_CACHE_ORDER, key)
-    if length(_CROP_CACHE_ORDER) > _CROP_CACHE_MAX
-        delete!(_CROP_CACHE, popfirst!(_CROP_CACHE_ORDER))
+    _RENDER_CACHE[key] = v; push!(_RENDER_CACHE_ORDER, key)
+    if length(_RENDER_CACHE_ORDER) > _RENDER_CACHE_MAX
+        delete!(_RENDER_CACHE, popfirst!(_RENDER_CACHE_ORDER))
     end
     v
 end
 
-# GET /api/crop/frame?projectUid=&imageUid=&valueName=&t=&maxPx= → PNG bytes (coloured z-MIP of frame t).
-# Served as application/octet-stream (the byte-body path); the frontend wraps it in an image/png blob.
-function api_crop_frame(req::HTTP.Request)
-    q  = HTTP.queryparams(HTTP.URI(req.target))
-    vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
-    zp, td, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
-    err === nothing || return 404, JSON3.write((; error = err))
-    t = something(tryparse(Int, get(q, "t", "0")), 0)
-    max_px = something(tryparse(Int, get(q, "maxPx", "512")), 512)
-    zlo = clamp(something(tryparse(Float64, get(q, "zLo", "0")), 0.0), 0.0, 1.0)   # z-range fractions:
-    zhi = clamp(something(tryparse(Float64, get(q, "zHi", "1")), 1.0), 0.0, 1.0)   # project only these z
-    props = _props_path(td, zp)                       # JSON layer props (napari_api._props_path)
-    key = string(zp, "|", vn, "|", t, "|", max_px, "|", zlo, "|", zhi, "|", isfile(props) ? mtime(props) : 0.0)
-    try
-        200, _crop_cache!(key, () -> render_crop_frame(zp, props, t; max_px = max_px, z_lo_frac = zlo, z_hi_frac = zhi))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
-    end
-end

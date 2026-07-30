@@ -25,7 +25,8 @@ include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
 include("image_geometry.jl")
-include("crop_render.jl")   # builds on image_geometry.jl
+include("image_render.jl")   # builds on image_geometry.jl
+include("crop_api.jl")       # routes only; builds on both
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
