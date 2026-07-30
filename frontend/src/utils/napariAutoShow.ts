@@ -69,6 +69,67 @@ export function buildAutoShowPlan(input: AutoShowInput): AutoShowPlan {
   }
 }
 
+// ── Live previews (watch a task's output while it is still being written) ────────
+// A running task publishes the stores it is streaming into (`live_outputs` on the Julia TaskRecord,
+// surfaced by GET /api/tasks). That snapshot is the ONLY way the viewer can learn about a
+// segmentation's label store before it finishes, because `ccid.json` — the source for every labels
+// picker — is only written on success.
+
+// One in-flight task's declaration, as GET /api/tasks returns it (snake_case, matching the rest
+// of that route's payload — it predates this and the observer reads it too).
+export interface TaskListEntry {
+  id: string
+  fun_name?: string
+  image_uid?: string
+  status?: string
+  live_outputs?: { kind?: string; value_name?: string; files?: string[] }[]
+}
+
+// A label store being written right now, ready to hand to a show-labels request.
+export interface LivePreview {
+  taskId: string
+  valueName: string
+  files: string[]
+}
+
+// The cell-label stores currently being written for one image: `{valueName → files}` plus the task
+// each belongs to. Only `kind === 'labels'` is included — `branchLabels` would need the other store
+// family, and nothing declares one today (segment.branching writes its store once at the end).
+//
+// QUEUED tasks are excluded on purpose: a queued task has created nothing yet, so offering a preview
+// would resolve to a store that isn't on disk (the bridge would skip it and the row would be a dead
+// toggle). Only `running` has bytes to look at.
+export function liveLabelPreviews(
+  tasks: TaskListEntry[] | null | undefined, imageUid: string,
+): LivePreview[] {
+  if (!imageUid) return []
+  const out: LivePreview[] = []
+  const seen = new Set<string>()
+  for (const t of tasks ?? []) {
+    if (t?.image_uid !== imageUid || t?.status !== 'running') continue
+    for (const o of t.live_outputs ?? []) {
+      const valueName = o?.value_name ?? ''
+      const files = o?.files ?? []
+      // A value_name can only be written by one task at a time (they'd clobber each other), so the
+      // first declaration wins rather than producing two rows for one store.
+      if (o?.kind !== 'labels' || !valueName || !files.length || seen.has(valueName)) continue
+      seen.add(valueName)
+      out.push({ taskId: t.id, valueName, files })
+    }
+  }
+  return out.sort((a, b) => a.valueName.localeCompare(b.valueName))
+}
+
+// Throttle for the refresh that follows progress ticks. Cellpose emits one per XY tile — many per
+// second on a tiled frame — while a refresh re-reads label chunks from disk, so ticks are coalesced
+// rather than followed one-for-one. Pure so the interval is testable without a clock.
+export const PREVIEW_REFRESH_MIN_MS = 2000
+export function shouldRefreshPreview(
+  lastAtMs: number | undefined, nowMs: number, minIntervalMs: number = PREVIEW_REFRESH_MIN_MS,
+): boolean {
+  return lastAtMs === undefined || nowMs - lastAtMs >= minIntervalMs
+}
+
 // ── Autoshow claims ─────────────────────────────────────────────────────────────
 // A caller that reopens an image to reproduce a DIFFERENT view than the remembered toggles (the
 // analysis board's zoom-to-source replays a captured frame) claims that image's next open, and the

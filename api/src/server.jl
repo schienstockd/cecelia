@@ -463,6 +463,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_configure_autosave(body_bytes)
         elseif path == "/api/napari/show-labels"
             api_napari_show_labels(body_bytes)
+        elseif path == "/api/napari/refresh-labels"
+            api_napari_refresh_labels(body_bytes)
         elseif path == "/api/napari/show-populations"
             api_napari_show_populations(body_bytes)
         elseif path == "/api/napari/show-tracks"

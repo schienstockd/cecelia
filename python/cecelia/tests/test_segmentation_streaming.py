@@ -21,6 +21,7 @@ import dask.array as da
 import ome_types
 import zarr
 
+import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.segmentation_utils import SegmentationUtils, count_labels
 
@@ -155,3 +156,67 @@ if __name__ == "__main__":
                           'nuc': _fingerprint(nuc)}, default=str))
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+class MidRunReadabilityTest(unittest.TestCase):
+    """A label store must be READABLE while the run that writes it is still going — that is what the
+    napari live preview shows (`show_labels(preview=True)`).
+
+    Two properties hold it up, and both are pinned here because the preview silently breaks if either
+    changes:
+
+    1. The store exists at its FULL final shape from before the first frame, so a viewer's dask view
+       stays valid for the whole run and every refresh is a like-for-like re-read.
+    2. Only level 0 is on disk until `_finalize_label_pyramid` runs, even though `.zattrs` already
+       declares the whole pyramid. Asking for the declared depth therefore RAISES, and the preview
+       must ask for level 0 alone.
+    """
+
+    def _store(self, tmp, nscales):
+        du = DimUtils(ome_types.from_xml(_ome_xml(*_CASE_2D[0])), use_channel_axis=True)
+        du.calc_image_dimensions(_CASE_2D[1])
+        seg = _StubSeg({'taskDir': tmp, 'outputValueName': 'stub'}, du)
+        label_axes = [ax for ax in du.im_dim_order if ax != 'C']
+        label_shape = [du.im_dim[i] for i, ax in enumerate(du.im_dim_order) if ax != 'C']
+        path = os.path.join(tmp, 'labels', 'stub.zarr')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _, level0, _ = seg._open_label_store(path, label_shape, label_axes, nscales)
+        return path, level0, tuple(label_shape)
+
+    def test_level0_is_full_shape_before_any_frame_is_written(self):
+        d = tempfile.mkdtemp()
+        try:
+            path, level0, label_shape = self._store(d, 1)
+            # allocated up front: the shape a preview layer binds to never changes mid-run
+            self.assertEqual(tuple(level0.shape), label_shape)
+            arrays, _ = zarr_utils.open_zarr(path, multiscales=1, as_dask=True)
+            self.assertEqual(len(arrays), 1)
+            self.assertEqual(tuple(arrays[0].shape), label_shape)
+            # unwritten frames read as background, not as an error
+            self.assertEqual(int(np.asarray(arrays[0][0]).sum()), 0)
+
+            # write ONE frame and see it through a FRESH open, as a refresh does
+            level0[0] = np.ones(label_shape[1:], dtype=np.uint32)
+            arrays, _ = zarr_utils.open_zarr(path, multiscales=1, as_dask=True)
+            self.assertEqual(int(np.asarray(arrays[0][0]).sum()), int(np.prod(label_shape[1:])))
+            self.assertEqual(int(np.asarray(arrays[0][1]).sum()), 0)   # later frames still pending
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_declared_pyramid_depth_is_unreadable_until_finalised(self):
+        d = tempfile.mkdtemp()
+        try:
+            path, _, _ = self._store(d, 4)
+            declared = zarr_utils.read_multiscales_meta(path)['datasets']
+            self.assertEqual([x['path'] for x in declared], ['0', '1', '2', '3'])
+            # asking for the declared depth (what a normal show_labels does) cannot work yet
+            with self.assertRaises(KeyError):
+                zarr_utils.open_zarr(path, multiscales=4, as_dask=True)
+            # ...nor can the default "every declared level"
+            with self.assertRaises(KeyError):
+                zarr_utils.open_zarr(path, as_dask=True)
+            # level 0 alone is fine — this is what preview=True asks for
+            arrays, _ = zarr_utils.open_zarr(path, multiscales=1, as_dask=True)
+            self.assertEqual(len(arrays), 1)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)

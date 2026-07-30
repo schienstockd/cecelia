@@ -132,6 +132,27 @@ plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` 
 `segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
 thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
 
+### `live_outputs` (optional) — let a viewer watch the output while it's written
+
+Most tasks assemble a result and write it once, so there is nothing to look at until they finish. A task
+that instead **creates its store up front and streams into it** can declare that, and the viewer will
+offer a live preview mid-run:
+
+```julia
+live_outputs(::MySegment, params::AbstractDict) = segment_live_outputs(params)
+```
+
+The default method (`app/src/tasks/task.jl`) declares nothing, which is the right answer unless the
+output is genuinely readable while incomplete — **do not** add an overload just because a task produces
+labels. `segment.cellpose` streams frame-by-frame and overloads it; `segment.branching` builds its store
+in RAM and writes it at the end, so it doesn't.
+
+Each entry is `(kind, value_name, files)` where `kind` names the store family a viewer resolves against
+(`"labels"`, `"branchLabels"`). The scheduler records the declaration on the `TaskRecord` at submit time
+and `GET /api/tasks` publishes it; a throwing overload is caught and treated as "nothing to watch",
+because a preview must never be able to stop a task running. Full flow: `docs/SEGMENTATION.md` →
+*Previewing a running run*.
+
 ### QC — REQUIRED for every new task
 
 **Every task that produces a result must emit sensible QC.** This is a hard convention, not a

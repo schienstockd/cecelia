@@ -77,6 +77,22 @@ end
 _needs_dynamic_options(::CciaTask) = false
 _inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
 
+# ── Live outputs (watch a store while the task is still writing it) ───────────
+# What a task writes to disk *as it runs*, i.e. an output a viewer can already show before the task
+# finishes. The base method declares nothing, which is the correct answer for most tasks: an output
+# assembled in RAM and written once at the end (segment.branching's `create_multiscales`) does not
+# exist to be watched. Only a task that CREATES its store up front and streams into it overloads
+# this — `segment.cellpose` allocates each label zarr at full shape and fills it one timepoint at a
+# time (segmentation_utils.predict_from_zarr), so every completed frame is final, readable data.
+#
+# `kind` names the store family the *viewer* resolves the path against, using the same names as the
+# napari show-labels payload: "labels" → `{img._dir}/labels/`, "branchLabels" → `{img._dir}/branchLabels/`.
+# The scheduler records this on the TaskRecord at submit time so `list_tasks()` publishes it — that
+# is how the viewer learns `labels/X.zarr` is worth showing while `ccid.json` still has no `X` entry
+# (only the successful run registers one). See docs/SEGMENTATION.md → *Previewing a running run*.
+const LiveOutput = @NamedTuple{kind::String, value_name::String, files::Vector{String}}
+live_outputs(::CciaTask, ::AbstractDict)::Vector{LiveOutput} = LiveOutput[]
+
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a
 # constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream
@@ -342,6 +358,21 @@ end
 # valueName is injected as the next step's input param.  No .jl file needed for
 # composite tasks — they are declared entirely in a JSON spec with a "composite"
 # array.  Register composite specs in _COMPOSITE_SPEC_PATHS (task_registry.jl).
+#
+# **ADDING A TASK TRAIT? DECIDE HOW IT RECURSES HERE.** A composite's steps run through `_run_task`
+# directly, so they never register TaskRecords and are never consulted as tasks in their own right —
+# whatever the composite answers IS the answer. Every trait describing a task's behaviour therefore
+# needs an explicit `::CompositeTask` method that folds over `_composite_steps(task)`:
+#
+#   task_requires_axes  → union of the steps' required axes
+#   _section_keys       → union of the steps' section param keys
+#   live_outputs        → concatenation of the steps' live outputs
+#
+# Forgetting one is SILENT and looks like "the feature doesn't work for the composite" — which is
+# exactly how the live preview first shipped broken (the segmentation module page runs
+# `segment.cellposeMeasure`, not `segment.cellpose`). The shared half — reading the spec and resolving
+# step names — is `_composite_steps`; only the combiner is per-trait, and that part genuinely differs
+# (union vs concat), so it stays explicit rather than hidden behind a registry.
 
 struct CompositeTask <: CciaTask
     fun_name::String
@@ -353,15 +384,59 @@ function _spec_path(task::CompositeTask)::Union{String, Nothing}
     get(_COMPOSITE_SPEC_PATHS, task.fun_name, nothing)
 end
 
+# ── Composite step resolution — the ONE place that reads `spec["composite"]` ───
+# Six call sites used to re-derive this (the three trait recursions below, `validate_params`, and both
+# `_run_task` methods), each re-reading the spec and re-resolving step names, three of them
+# byte-identical. Returns empty for a non-composite (no `composite` key), so a caller never has to ask
+# "is this a composite" first.
+#
+# Two forms, because the difference is real:
+# * `_composite_steps` resolves to tasks and **skips** a name that doesn't resolve — what every
+#   read-only consumer (traits, validation) wants: describe what you can, don't throw while
+#   introspecting.
+# * `_composite_step_names` returns the declared names. The executor needs those for its progress log
+#   AND must **hard-fail** on one that doesn't resolve — a typo in a composite spec has to stop the run,
+#   not silently shorten it — so it resolves them itself rather than using the skipping form.
+function _composite_step_names(task::CciaTask)::Vector{String}
+    spec = _task_spec(task)
+    isnothing(spec) && return String[]
+    String[string(s) for s in get(spec, "composite", String[])]
+end
+
+function _composite_steps(task::CciaTask)::Vector{CciaTask}
+    out = CciaTask[]
+    for step in _composite_step_names(task)
+        sub = try _task_from_fun_name(step) catch; nothing end
+        isnothing(sub) || push!(out, sub)
+    end
+    out
+end
+
+# Composite: union the steps' live outputs. This is the overload that MATTERS in practice — the
+# segmentation module page runs `segment.cellposeMeasure` (cellpose → measureLabels), not
+# `segment.cellpose`, and a composite's steps run via `_run_task` directly, so they never register
+# TaskRecords of their own. Without this the composite is the only record there is and it would
+# declare nothing, leaving the most common way to start a segmentation with no preview.
+#
+# Passing the composite's params straight through is correct: composites carry no params of their own,
+# so a step's params (`outputValueName`, `models`) already sit at the top level of this same dict —
+# the same assumption `_section_keys` and the executor's `cur_params` make.
+function live_outputs(task::CompositeTask, params::AbstractDict)::Vector{LiveOutput}
+    out = LiveOutput[]
+    for sub in _composite_steps(task)
+        append!(out, live_outputs(sub, params))
+    end
+    unique(out)
+end
+
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.
 function task_requires_axes(task::CompositeTask)::Set{Symbol}
     spec = _task_spec(task)
     isnothing(spec) && return Set{Symbol}()
     axes = _axes_from_requires(get(spec, "requires", nothing))
-    for step in get(spec, "composite", String[])
-        sub = try _task_from_fun_name(string(step)) catch; nothing end
-        isnothing(sub) || union!(axes, task_requires_axes(sub))
+    for sub in _composite_steps(task)
+        union!(axes, task_requires_axes(sub))
     end
     axes
 end
@@ -392,9 +467,8 @@ function _section_keys(task::CciaTask)::Set{String}
     spec = _task_spec(task)
     ks = Set{String}()
     isnothing(spec) && return ks
-    for step in get(spec, "composite", String[])
-        sub = try _task_from_fun_name(string(step)) catch; nothing end
-        isnothing(sub) || union!(ks, _section_keys(sub))
+    for sub in _composite_steps(task)
+        union!(ks, _section_keys(sub))
     end
     for p in get(spec, "params", [])
         (p isa AbstractDict && string(get(p, "type", "")) == "section") && push!(ks, string(get(p, "key", "")))
@@ -432,10 +506,9 @@ task_scope(task::CciaTask)::String =
     (s = _task_spec(task); isnothing(s) ? "image" : string(get(s, "scope", "image")))
 
 function validate_params(task::CompositeTask, params::Dict{String,Any})
-    spec  = _task_spec(task)
-    steps = isnothing(spec) ? String[] : [string(s) for s in get(spec, "composite", String[])]
-    for step_fun_name in steps
-        sub_task = try _task_from_fun_name(step_fun_name) catch; continue; end
+    # An unresolvable step is skipped here (`_composite_steps`) and hard-errors in `_run_task`, where
+    # the run can actually be stopped — validation stays about the PARAMS.
+    for sub_task in _composite_steps(task)
         validate_params(sub_task, params)
     end
 end
@@ -445,8 +518,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     spec  = _task_spec(task)
-    steps = isnothing(spec) ? String[] :
-            [string(s) for s in get(spec, "composite", [])]
+    steps = _composite_step_names(task)   # NAMES: needed for the log + the unknown-step error below
     if isempty(steps)
         on_log("[ERROR] Composite task '$(task.fun_name)' has no steps")
         return nothing
@@ -559,8 +631,7 @@ function _run_task(task::CompositeTask, imgs::Vector{CciaImage}, params::Dict{St
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    spec  = _task_spec(task)
-    steps = isnothing(spec) ? String[] : [string(s) for s in get(spec, "composite", [])]
+    steps = _composite_step_names(task)   # NAMES: needed for the log + the unknown-step error below
     if isempty(steps)
         on_log("[ERROR] Composite task '$(task.fun_name)' has no steps")
         return nothing

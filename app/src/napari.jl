@@ -138,12 +138,17 @@ end
 
 # ── Labels ─────────────────────────────────────────────────────────────────────
 
+# `preview=true` shows a label store that is still being WRITTEN (a running segmentation) in its own
+# `({vn}) Labels (live)` layer — see the bridge's `show_labels` for what that changes (level 0 only,
+# caching forced off). A finished set and its own preview never coexist: the bridge evicts one when
+# adding the other.
 function show_labels!(v::NapariViewer;
                       value_name::String="default",
                       label_files::Vector{String}=["labels.zarr"],
                       show_labels::Bool=true,
                       show_points::Bool=false,
-                      cache::Bool=false)
+                      cache::Bool=false,
+                      preview::Bool=false)
     send(v, Dict{String,Any}(
         "type"         => "show_labels",
         "value_name"   => value_name,
@@ -151,6 +156,21 @@ function show_labels!(v::NapariViewer;
         "show_labels"  => show_labels,
         "show_points"  => show_points,
         "cache"        => cache,
+        "preview"      => preview,
+    ))
+    v
+end
+
+# Re-read an already-shown live preview layer from disk, in place. Cheap next to `show_labels!`
+# (no layer teardown, so the layer keeps its position, opacity and colour settings) and a no-op when
+# the value_name has no preview layer — which is what makes it safe to call on every progress tick.
+function refresh_labels!(v::NapariViewer;
+                         value_name::String="default",
+                         label_files::Vector{String}=["$(value_name).zarr"])
+    send(v, Dict{String,Any}(
+        "type"        => "refresh_labels",
+        "value_name"  => value_name,
+        "label_files" => label_files,
     ))
     v
 end

@@ -105,13 +105,25 @@ export interface PushLabelsOpts {
   branchLabels?: Record<string, string[]>   // {valueName → label files} → branchLabels/ store
   show: boolean
   cache: boolean
+  // `labels` names stores a task is still WRITING → show them in their own `(vn) Labels (live)` layer
+  // (level 0 only, caching forced off bridge-side). Never applies to branchLabels: those are written
+  // once, at the end of segment.branching, so there is no partial store to watch.
+  preview?: boolean
 }
 export function pushLabels(o: PushLabelsOpts): Promise<Response | undefined> {
   return _post('/api/napari/show-labels', {
     ...(o.labels       && Object.keys(o.labels).length       ? { allLabels: o.labels }             : {}),
     ...(o.branchLabels && Object.keys(o.branchLabels).length ? { allBranchLabels: o.branchLabels } : {}),
     showLabels: o.show, labelsCache: o.cache,
+    ...(o.preview ? { preview: true } : {}),
   })
+}
+
+// Re-read live-preview layers in place, without rebuilding them — the progress-tick counterpart to
+// pushLabels({preview: true}). A value_name with no preview layer is a no-op bridge-side, so this is
+// safe to fire whether or not the user still has the preview on.
+export function refreshLabels(labels: Record<string, string[]>): Promise<Response | undefined> {
+  return _post('/api/napari/refresh-labels', { allLabels: labels })
 }
 
 export interface PushTracksOpts {

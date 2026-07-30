@@ -235,17 +235,33 @@ end
 # toggle silently doing nothing. (A genuinely missing zarr is skipped bridge-side without
 # raising — see napari_bridge.show_labels — so this only fires on real load errors.)
 function _show_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}}, show::Bool;
-                           cache::Bool=false)
+                           cache::Bool=false, preview::Bool=false)
     errs = String[]
     for (vn, files) in all_labels
         try
-            show_labels!(v; value_name = vn, label_files = files, show_labels = show, cache = cache)
+            show_labels!(v; value_name = vn, label_files = files, show_labels = show, cache = cache,
+                         preview = preview)
         catch e
-            @warn "show_labels failed" value_name=vn files=files exception=(e, catch_backtrace())
+            @warn "show_labels failed" value_name=vn files=files preview=preview exception=(e, catch_backtrace())
             push!(errs, "$vn: $(sprint(showerror, e))")
         end
     end
     isempty(errs) || error("show_labels failed for: " * join(errs, "; "))
+end
+
+# Re-read live-preview layers in place — same fail-open-then-aggregate contract as _show_all_labels!,
+# because this runs off progress ticks and one broken value_name must not stop the others refreshing.
+function _refresh_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}})
+    errs = String[]
+    for (vn, files) in all_labels
+        try
+            refresh_labels!(v; value_name = vn, label_files = files)
+        catch e
+            @warn "refresh_labels failed" value_name=vn files=files exception=(e, catch_backtrace())
+            push!(errs, "$vn: $(sprint(showerror, e))")
+        end
+    end
+    isempty(errs) || error("refresh_labels failed for: " * join(errs, "; "))
 end
 
 # Skeleton-labels equivalent — same fail-open-then-aggregate contract as _show_all_labels!.
@@ -907,14 +923,41 @@ function api_napari_show_labels(body_bytes::Vector{UInt8})
     # the two payloads are independent and either may be empty.
     all_branch_labels = _parse_all_branch_labels(data)
     labels_cache = Bool(get(data, :labelsCache, false))
+    # `preview` applies to `allLabels` only: it shows a store a task is still writing, in its own
+    # layer (see show_labels! / the bridge). Branch labels are written once at the end of
+    # segment.branching, so there is never a partial branch store to preview.
+    preview = Bool(get(data, :preview, false))
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
     _with_viewer() do
         try
-            _show_all_labels!(v, all_labels, show; cache = labels_cache)
+            _show_all_labels!(v, all_labels, show; cache = labels_cache, preview = preview)
             _show_all_branch_labels!(v, all_branch_labels, show; cache = labels_cache)
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/refresh-labels ─────────────────────────────────────
+# Re-read the live-preview layers of a running task's label stores, in place. Separate from
+# show-labels because it must stay cheap: it is called on progress ticks and does no layer teardown,
+# so the preview keeps its position and display settings while the data underneath it advances.
+
+function api_napari_refresh_labels(body_bytes::Vector{UInt8})
+    data       = JSON3.read(String(body_bytes))
+    all_labels = _parse_all_labels(data)
+    isempty(all_labels) && return 200, JSON3.write((; ok = true))
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+
+    _with_viewer() do
+        try
+            _refresh_all_labels!(v, all_labels)
             200, JSON3.write((; ok = true))
         catch e
             500, JSON3.write((; error = sprint(showerror, e)))
