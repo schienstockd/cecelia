@@ -118,6 +118,14 @@ function api_logs_recent()
 end
 
 # ── Chain event → WS bridge ───────────────────────────────────────────────────
+# `taskId` is the scheduler task the node ran as — the task console correlates it with its
+# `GET /api/tasks` row to attribute the node's real outcome (a chain run emits no `task:status`
+# frames, so without it a finished node can only be reported as "outcome unseen"). Read with
+# `_ev_task_id` rather than `p.task_id`: a hand-fired event from the REPL/tests may omit the field,
+# and a node with no task id yet (skipped before submission, set-scope) carries `nothing` — both
+# must degrade to "" and never take the bridge down.
+_ev_task_id(p)::String = something(get(p, :task_id, ""), "")
+
 
 subscribe_chain_events!("node:queued", function(p)
     broadcast_ws(Dict{String,Any}(
@@ -129,6 +137,7 @@ subscribe_chain_events!("node:queued", function(p)
         "nodeId"     => p.node_id,
         "fn"         => p.fn,
         "params"     => p.params,
+        "taskId"     => _ev_task_id(p),
     ))
 end)
 
@@ -142,6 +151,7 @@ subscribe_chain_events!("node:running", function(p)
         "nodeId"     => p.node_id,
         "fn"         => p.fn,
         "params"     => p.params,
+        "taskId"     => _ev_task_id(p),
     ))
 end)
 
@@ -156,6 +166,7 @@ subscribe_chain_events!("node:done", function(p)
         "fn"         => p.fn,
         "params"     => p.params,
         "result"     => p.result,
+        "taskId"     => _ev_task_id(p),
     ))
 end)
 
@@ -169,6 +180,7 @@ subscribe_chain_events!("node:failed", function(p)
         "nodeId"     => p.node_id,
         "fn"         => p.fn,
         "status"     => p.status,
+        "taskId"     => _ev_task_id(p),
     ))
 end)
 

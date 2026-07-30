@@ -273,13 +273,21 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
                               result      = nothing,
                               params_hash = nothing)
     captured_result = Ref{Any}(nothing)
+    # The scheduler task id this node ran as, captured under the lock alongside the result. It goes out
+    # on every event so a consumer can correlate a node with its `TaskRecord` / `GET /api/tasks` row —
+    # the task console needs it to attribute a chain node's real outcome (chain runs emit no
+    # `task:status` frames, so without this a finished node can only be reported as "outcome unseen").
+    # "" when the node has no task id yet (skipped/cancelled before submission, set-scope/incremental
+    # nodes that bypass `run_task`): consumers must treat it as "no correlation available", never assume.
+    captured_task_id = Ref("")
     lock(run._lock) do
         st = run.image_states[image_uid][node_id]
         st.status = status
         isnothing(task_id)     || (st.task_id     = task_id)
         isnothing(result)      || (st.result      = result)
         isnothing(params_hash) || (st.params_hash = params_hash)
-        captured_result[] = st.result
+        captured_result[]  = st.result
+        captured_task_id[] = something(st.task_id, "")
         _save_run!(run)
     end
     # Fire events outside the lock — handlers must not re-enter run._lock
@@ -292,6 +300,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             node_id     = node_id,
             fn          = fn,
             params      = node_params,
+            task_id     = captured_task_id[],
         ))
     elseif status == :running
         _fire_chain_event!("node:running", (
@@ -302,6 +311,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             node_id     = node_id,
             fn          = fn,
             params      = node_params,
+            task_id     = captured_task_id[],
         ))
     elseif status == :done
         _fire_chain_event!("node:done", (
@@ -313,6 +323,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             fn          = fn,
             params      = node_params,
             result      = captured_result[],
+            task_id     = captured_task_id[],
         ))
     elseif status ∈ (:failed, :skipped, :cancelled)
         _fire_chain_event!("node:failed", (
@@ -323,6 +334,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             node_id     = node_id,
             fn          = fn,
             status      = string(status),
+            task_id     = captured_task_id[],
         ))
     end
 end

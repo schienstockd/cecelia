@@ -2727,7 +2727,8 @@ end
         save_chain_template!(proj, tpl)
 
         received = String[]
-        handler  = payload -> push!(received, payload.image_uid)
+        payloads = Any[]
+        handler  = payload -> (push!(received, payload.image_uid); push!(payloads, payload))
         subscribe_chain_events!("node:done", handler)
 
         run = run_chain(proj, [i.uid for i in imgs];
@@ -2737,6 +2738,17 @@ end
 
         # Both images fired node:done events
         @test Set(received) ⊇ Set(i.uid for i in imgs)
+
+        # …and every payload carries the scheduler `task_id` the node ran as, matching the state it
+        # was recorded under. This is the correlation handle the task console needs: a chain run emits
+        # no `task:status` frames, so without it a finished node can only be reported as "outcome
+        # unseen". Never `nothing` — absent ⇒ "" (see _update_node_state!).
+        for p in payloads
+            @test haskey(p, :task_id)
+            @test p.task_id isa String
+            @test p.task_id == run.image_states[p.image_uid][p.node_id].task_id
+            @test !isempty(p.task_id)                     # this node ran, so it has one
+        end
 
         # After unsubscribe, new events don't reach the handler
         n_before = length(received)

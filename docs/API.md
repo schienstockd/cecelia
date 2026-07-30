@@ -177,7 +177,11 @@ while every pool reads idle. Rows for WS-only producers (jobs, batch movies) nev
 snapshot and are exempt from retiring. The reconciliation half is split out as the socket-free
 `_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals*
 testset (the script's entrypoint is `PROGRAM_FILE`-guarded so the suite can `include` it).
-`handle_task_run` forwards
+**Chain nodes** report their outcome through a different door: a chain run emits no `task:status`
+frames, so the console attributes one from the `taskId` on the terminal `chain:node:done`/`failed`
+frame (see `docs/SCHEDULER.md` → *Event bus*). A row already retired as `ended` is *corrected* if its
+real outcome arrives late — moving the tally rather than keeping a number known to be wrong — which
+leaves `ended` meaning what it says: telemetry genuinely lost. `handle_task_run` forwards
 `queued`/`running` **and
 `cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
 cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker

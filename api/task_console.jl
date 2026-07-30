@@ -120,9 +120,23 @@ function push_log!(id::AbstractString, line::AbstractString)
 end
 
 # A task's first terminal sighting: bump its outcome tally and drop the row (kept only as a count).
+#
+# One exception to "first sighting wins": a task retired as `ended` (finished, outcome unseen) whose
+# real outcome shows up LATER — a chain node's terminal frame delayed past the retire window, or any
+# frame that arrived after the snapshot had already dropped the row. Moving the count is strictly
+# better than keeping a number we know to be wrong, and it can't double-count: the id leaves
+# ENDED_IDS as it's corrected, and every other repeat sighting still returns early.
+const ENDED_IDS = Set{String}()   # ids currently counted as "ended" — correctable, unlike a real outcome
+
 function _note_terminal!(id::AbstractString, status::AbstractString)
-    id in SEEN_TERM && return
-    push!(SEEN_TERM, id)
+    if id in SEEN_TERM
+        (id in ENDED_IDS && status != "ended" && haskey(TALLY, status)) || return
+        TALLY["ended"] -= 1                       # …and fall through to count the real outcome
+        delete!(ENDED_IDS, String(id))
+    else
+        push!(SEEN_TERM, String(id))
+        status == "ended" && push!(ENDED_IDS, String(id))
+    end
     haskey(TALLY, status) && (TALLY[status] += 1)
     delete!(TASKS, id)
 end
@@ -261,6 +275,16 @@ function handle_ws(raw::AbstractString)
                         colour = status_colour(node == "done" ? "done" :
                                                node == "failed" ? "failed" :
                                                node == "running" ? "running" : "queued"))
+            # A chain run emits NO task:status frames (handle_chain_run passes no on_status_change), so
+            # a chain node's row would otherwise only ever leave the table via the snapshot-retire path —
+            # i.e. always "ended / outcome unseen", never done or failed. `taskId` on the chain event is
+            # the correlation handle: attribute the node's real outcome to its task row here. Terminal
+            # events only; `:queued`/`:running` already come from the snapshot poll.
+            tid = let t = get(msg, :taskId, nothing); t isa AbstractString ? String(t) : "" end
+            if !isempty(tid) && node in ("done", "failed")
+                # node:failed carries which of failed/skipped/cancelled it was
+                _note_terminal!(tid, node == "done" ? "done" : String(get(msg, :status, "failed")))
+            end
 
         elseif startswith(type, "chain:run:") || type == "chain:log"
             detail = type == "chain:log" ? String(get(msg, :line, "")) :
@@ -406,6 +430,7 @@ function run_console()
                 # tasks from the previous server session would linger forever (we only ever add rows).
                 lock(LOCK) do
                     empty!(TASKS); empty!(EVENTS); empty!(LOGS); empty!(SEEN_TERM); empty!(POOLS)
+                    empty!(ENDED_IDS)
                     for k in keys(TALLY); TALLY[k] = 0; end
                 end
                 # seed the snapshot, then keep it fresh + keep the socket alive

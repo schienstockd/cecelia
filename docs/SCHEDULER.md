@@ -477,10 +477,21 @@ unsubscribe_chain_events!("node:done",  handler)
 
 | Event | Payload fields | Fired when |
 |-------|---------------|-----------|
-| `"node:queued"` | *base* = `run_id, chain_name, project_uid, image_uid, node_id, fn, params` | Node submitted to its pool, waiting for a free slot |
+| `"node:queued"` | *base* = `run_id, chain_name, project_uid, image_uid, node_id, fn, params, task_id` | Node submitted to its pool, waiting for a free slot |
 | `"node:running"` | *base* | The job acquired a slot and started (real start) |
 | `"node:done"` | *base* `+ result` | Node transitions to `:done` |
 | `"node:failed"` | *base* `− params + status` | Node transitions to `:failed`, `:skipped` or `:cancelled` (`status` carries which) |
+
+**`task_id` — the correlation handle.** The scheduler task the node ran as, captured under `run._lock`
+alongside the result. It matters because **a chain run emits no `task:status` frames at all**:
+`handle_chain_run` passes no `on_status_change`, by design — the GUI renders chain nodes from
+`chain:node:*` keyed by `runId::nodeId::imageUid`, and emitting parallel `task:status` frames would give
+every chain node a second row in the Task Manager. But chain nodes *are* registered in `_TASKS`, so they
+appear in `GET /api/tasks` and hence in the task console — which without `task_id` could only ever
+report them as "finished, outcome unseen". It is `""`, never `nothing`, when there is no task to
+correlate (skipped/cancelled before submission; set-scope and incremental nodes bypass `run_task`
+entirely) — consumers must treat that as "no correlation available". The bridge reads it through
+`_ev_task_id`, so a hand-fired REPL event that omits the field can't take chain telemetry down.
 
 **Why fired outside the lock**: handlers may need to read `run.image_states` or trigger further
 work. Re-entering `run._lock` from inside the lock would deadlock. The result is captured inside
@@ -500,7 +511,7 @@ run_chain(proj, uids; chain="my-chain")
 
 **API WebSocket bridge**: `api/src/server.jl` subscribes to **all four** events at startup and
 broadcasts each to every connected client, `chain:`-prefixed with camelCase keys:
-- `chain:node:queued`  — `{type, runId, chainName, projectUid, imageUid, nodeId, fn, params}`
+- `chain:node:queued`  — `{type, runId, chainName, projectUid, imageUid, nodeId, fn, params, taskId}`
 - `chain:node:running` — same shape
 - `chain:node:done`    — `{…, params, result}`
 - `chain:node:failed`  — `{…, status}` (which of failed/skipped/cancelled)
