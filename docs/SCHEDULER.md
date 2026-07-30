@@ -50,11 +50,22 @@ it blocks the caller until the entire chain finishes.
 
 ### Why `Threads.@spawn` (not `@async`)?
 
-Chain nodes call `run_task`, which may block on a Python subprocess. `@async` doesn't help for
-blocking I/O — it only helps I/O that yields back to the scheduler, so one blocked image would stall
-every other image sharing its thread. `Threads.@spawn` schedules each task across the thread pool,
-so a blocking node occupies one thread and the rest keep moving. (Tasks are multiplexed onto
-`--threads` OS threads — 50 images is 50 tasks, not 50 threads.)
+A **Task** is a coroutine the Julia runtime schedules; a **thread** is an OS thread it runs *on*. Both
+macros create Tasks — the difference is placement. `@async` pins its Task to the *current* thread
+(concurrency, never parallelism); `Threads.@spawn` lets the scheduler place it on any thread in the
+pool. Tasks are multiplexed onto the `-t` count (`prod` and the backend `dev.jl` spawns both pass
+`-t auto`), so 50 images means 50 Tasks over ~N threads — **not** 50 threads.
+
+A Task only occupies a thread while it is *running*; every yield point hands the thread back. Waiting
+on a subprocess is a yield point — `run_py` reads `eachline(out_pipe)` then `wait(proc)`, both
+libuv-backed — so a node blocked on cellpose costs no thread at all, and its parallelism lives in the
+OS processes rather than in Julia. What *does* hold a thread hostage is work that never yields:
+pure-Julia compute loops and `ccall`s into C (notably HDF5, hence the `_with_h5` serialisation). Under
+`@async` those run on the one shared thread and stall every other image *and* the WS accept loop —
+that, not subprocess waiting, is the reason for `Threads.@spawn`.
+
+Hence two independent ceilings: a pool's slot `limit` (the one you tune) and the thread count, which
+only bites for Julia-side non-yielding work.
 
 ---
 
@@ -583,8 +594,8 @@ make_chain(proj, "my-pipeline", [
     chain_node("importImages.omezarr"),
     chain_node("cleanupImages.cellposeCorrect"; resource_pool="gpu",
                params=Dict("model" => "cyto2")),
-    chain_node("testTasks.setTask"; scope="set"),   # picnic node — explicit, as this mock
-])                                                  # spec declares no scope of its own
+    chain_node("testTasks.setTask"),                # picnic node — "set" comes from its spec
+])
 
 # Or build manually (identical result, more control over node IDs)
 n1 = ChainNode(; id="import",  fn="importImages.omezarr")

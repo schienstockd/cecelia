@@ -1967,6 +1967,11 @@ end
         @test Cecelia._task_default_scope("behaviour.hmm")        == "set"
         @test Cecelia._task_default_scope("importImages.remove")  == "image"
         @test Cecelia._task_default_scope("nonexistent.task")     == "image"   # unknown fn → image
+        # EVERY set-scope task declares it in its own spec — including the mock, which used to rely on
+        # each chain node passing scope="set" (the one task that contradicted "the spec is the single
+        # source of truth", and it's the fixture the barrier tests are built on).
+        @test Cecelia._task_default_scope("testTasks.setTask")    == "set"
+        @test chain_node("testTasks.setTask").scope               == "set"
 
         # chain_node / ChainNode with no scope kwarg resolve from the spec …
         @test chain_node("clustTracks.cluster").scope == "set"
