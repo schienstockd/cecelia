@@ -63,8 +63,9 @@ was never wired from the API, which silently disabled it. Pools are now config-o
 
 ### Scheduler worker pools (global, config-defined)
 
-`ResourcePool` structs in `_POOLS::Dict{String, ResourcePool}` in `scheduler.jl`. Each pool owns
-exactly `limit` long-lived OS worker threads draining a shared `Channel` of `TaskJob`s. A pool
+`ResourcePool` structs in `_POOLS::Dict{String, ResourcePool}` in `scheduler.jl`. Each pool owns ONE
+persistent `Channel` of `TaskJob`s, ONE dispatcher task draining it, and a resizable budget of `limit`
+**slots** — concurrency is the slot budget, not a worker count (see *Slot-acquire model* below). A pool
 with `limit = 1` runs its jobs strictly one at a time — that is how `gpu` work is serialised.
 
 Pools are **global and persistent**, shared across every chain run and every module-page task —
@@ -131,8 +132,10 @@ pool names are accepted — no typo pools accumulating in `custom.toml`). The UI
 `PoolThrottle.vue` component — a compact 2×2 slider grid (`cpu`/`gpu`, then `io`/`network`) shown
 in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not buried in Settings.
 
-`resize_pool!` closes the old queue (in-flight + buffered jobs on the old workers still drain) and
-starts fresh workers at the new limit — so shrinking is safe, it just lets current jobs finish.
+`resize_pool!` keeps the pool's one queue and dispatcher and only changes the slot budget, so no
+queued job is ever orphaned: a raise `notify`s the dispatcher and the backlog fans out immediately;
+a lower leaves it blocked in `_acquire_slot!` until enough in-flight jobs drain. Shrinking is safe —
+it never interrupts a running job, it just stops admitting new ones until the pool is under the limit.
 
 ### Queue visibility — :queued vs :running
 
@@ -557,7 +560,7 @@ These are easy to break accidentally:
    Moving it before causes a deadlock that is non-obvious to debug.
 
 5. **Concurrency lives in the global pool, not the chain** — there is no per-run semaphore. A node
-   blocks inside `run_task` on its pool's worker queue. Don't reintroduce a chain-level gate; size
+   blocks inside `run_task` on its pool's queue. Don't reintroduce a chain-level gate; size
    the pool in `config.toml` instead. The slot is released in the dispatcher's `finally`, so it comes
    back even if the job dies.
 

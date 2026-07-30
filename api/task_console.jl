@@ -40,8 +40,7 @@ function status_colour(s::AbstractString)
     s == "cancelled" ? MAGENTA : GREY
 end
 
-const ACTIVE   = ("queued", "running")
-const TERMINAL = ("done", "failed", "cancelled")
+const TERMINAL = ("done", "failed", "cancelled")   # everything else is active (queued / running)
 
 # ── State ───────────────────────────────────────────────────────────────────────
 mutable struct TaskView
