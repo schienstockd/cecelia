@@ -54,6 +54,12 @@ mutable struct TaskView
     progress::Float64      # -1 = unknown / not reported yet
     last_log::String
     updated::DateTime
+    # Reconciliation state (see refresh_snapshot!). `in_snapshot` marks a task the /api/tasks
+    # snapshot has listed at least once — i.e. a real SCHEDULER task, so its absence from a later
+    # snapshot is meaningful. WS-only producers (jobs, batch movies) never appear in the snapshot
+    # and must never be pruned by it. `misses` counts consecutive snapshots it went missing from.
+    in_snapshot::Bool
+    misses::Int
 end
 
 const TASKS      = Dict{String,TaskView}()   # taskId => view — ACTIVE tasks only (finished ones drop out)
@@ -65,7 +71,10 @@ const MAX_LOGS   = 500
 # Finished tasks are collapsed to a COUNT, not kept as rows — the console answers "what's running now
 # and how many are done", not "show all 50". TALLY holds cumulative terminal outcomes; SEEN_TERM stops
 # a task being re-counted / re-added (by a late WS event or the snapshot poll) once it has finished.
-const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0)
+# "ended" = finished, outcome unseen: the task left the scheduler snapshot but its terminal
+# task:status frame never arrived (WS telemetry is lossy by design — see broadcast_ws). Counted
+# separately rather than guessed as done/failed, so the console never claims an outcome it didn't see.
+const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0, "ended" => 0)
 const SEEN_TERM  = Set{String}()
 
 # Live resource-pool occupancy (polled from GET /api/pools): per pool, its configured concurrency
@@ -90,7 +99,7 @@ trunc_s(s::AbstractString, n::Int) = length(s) <= n ? String(s) : String(first(s
 # Get-or-create a task view, so a WS event for a not-yet-snapshotted task still shows up.
 function _task!(id::AbstractString)
     get!(TASKS, String(id)) do
-        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now())
+        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now(), false, 0)
     end
 end
 
@@ -120,13 +129,28 @@ function _note_terminal!(id::AbstractString, status::AbstractString)
 end
 
 # ── HTTP snapshot (fills in fun_name / image / pool for in-flight tasks) ─────────
+# The snapshot is AUTHORITATIVE and complete: /api/tasks returns the scheduler's whole in-flight set
+# under its lock, and a task is deregistered the moment it finishes. So reconciliation runs BOTH ways —
+# rows are added/updated from the snapshot AND retired when they vanish from it. The retire half is what
+# makes WS telemetry genuinely lossy-safe: frames are dropped by design for a slow client (per-client
+# drop-on-full queue in server.jl) and lost outright on a half-open socket, and without this a missed
+# terminal frame stranded the row as "running" forever — the scheduler idle, the console still listing it.
+#
+# Only tasks the snapshot has ALREADY listed (`in_snapshot`) are eligible: jobs and batch movies are
+# WS-only producers that never appear there, and pruning them would delete every row they own.
+# Two consecutive misses are required so a task registered between the poll and its first WS frame
+# is never retired on a one-poll race.
+const SNAPSHOT_MISSES_TO_RETIRE = 2
+
 function refresh_snapshot!()
     try
         r = HTTP.get("$HTTP_BASE/api/tasks"; connect_timeout=2, readtimeout=3, retry=false)
         rows = JSON3.read(String(r.body))
         lock(LOCK) do
+            present = Set{String}()
             for row in rows
                 id = String(row.id)
+                push!(present, id)
                 id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
                 status = String(get(row, :status, ""))
                 if status in TERMINAL                       # finished before we saw it live → just count it
@@ -139,6 +163,17 @@ function refresh_snapshot!()
                 t.pool_name    = String(get(row, :pool_name, t.pool_name))
                 t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
                 isempty(status) || (t.status = status)
+                t.in_snapshot  = true
+                t.misses       = 0
+            end
+            # retire what the scheduler no longer knows about (outcome unseen — tallied as "ended")
+            for (id, t) in collect(TASKS)
+                (t.in_snapshot && !(id in present)) || continue
+                t.misses += 1
+                t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
+                _note_terminal!(id, "ended")
+                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
+                            col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
             end
         end
         return true
@@ -231,7 +266,7 @@ function handle_ws(raw::AbstractString)
         end
         # ping/pong and anything else are ignored.
     end
-    STREAM_MODE || render()
+    STREAM_MODE || render_throttled()
 end
 
 # ── Dashboard render (in-place redraw) ───────────────────────────────────────────
@@ -275,6 +310,7 @@ function render()
           col(DIM, " · "), col(GREEN, "$(TALLY["done"]) done"),
           col(DIM, " · "), col(RED, "$(TALLY["failed"]) failed"),
           TALLY["cancelled"] > 0 ? string(col(DIM, " · "), col(MAGENTA, "$(TALLY["cancelled"]) cancelled")) : "",
+          TALLY["ended"] > 0 ? string(col(DIM, " · "), col(GREY, "$(TALLY["ended"]) ended")) : "",
           "\n")
 
     # pools panel — configured concurrency limit vs slots in use now (+ any queued) for each pool.
@@ -324,6 +360,19 @@ function render()
 
     print(String(take!(io)))
     flush(stdout)
+    _last_render[] = Dates.now()
+end
+
+# A full-screen repaint per WS frame made the receive loop the bottleneck at task-log volume — and a
+# slow reader is exactly what makes the server drop THIS client's frames (per-client drop-on-full queue
+# in server.jl), so the console helped cause the loss it then couldn't recover from. Coalesce repaints;
+# the 2s snapshot loop always repaints, so a skipped frame is at most 2s behind.
+const RENDER_MIN_INTERVAL = Millisecond(100)
+const _last_render        = Ref(Dates.now() - Second(10))
+
+function render_throttled()
+    Dates.now() - _last_render[] < RENDER_MIN_INTERVAL && return
+    render()
 end
 
 function show_waiting(reason::AbstractString)
@@ -360,7 +409,16 @@ function run_console()
                     try sleep(2); refresh_snapshot!(); STREAM_MODE || refresh_pools!(); STREAM_MODE || render() catch end
                 end
                 @async while connected[]
-                    try sleep(20); HTTP.WebSockets.send(ws, "{\"type\":\"ping\"}") catch end
+                    try
+                        sleep(20); HTTP.WebSockets.send(ws, "{\"type\":\"ping\"}")
+                    catch
+                        # A failed keepalive means the socket is dead or half-open. Swallowing it left
+                        # the reader blocked in `for msg in ws` forever — HTTP polling kept refreshing
+                        # rows while no WS frame ever arrived again, so nothing ever reached a terminal
+                        # status. Tear it down instead: the outer loop reconnects, clears and reseeds.
+                        connected[] = false
+                        try; close(ws); catch; end
+                    end
                 end
                 for msg in ws
                     handle_ws(msg isa AbstractString ? msg : String(msg))
