@@ -117,7 +117,7 @@
     },
     {
       "key": "structureTensorSigma",
-      "label": "Structure-tensor sigma (px)",
+      "label": "Integration scale (px)",
       "type": "float",
       "min": 0.5,
       "max": 50.0,
@@ -127,13 +127,13 @@
     },
     {
       "key": "anisotropyBoxSize",
-      "label": "Anisotropy box size (px)",
+      "label": "Grid box (px)",
       "type": "int",
       "min": 5,
       "max": 200,
       "step": 1,
       "default": 15,
-      "tip": "Neighbourhood each branch's alignment is averaged over"
+      "tip": "Spacing of the orientation grid; smaller is finer but a bigger file"
     }
   ]
 }
