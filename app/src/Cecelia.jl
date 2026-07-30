@@ -217,6 +217,8 @@ export spatial_summary, contact_matrix
 export ClaudeAgent, agent_available, agent_bin_path, run_observer_turn, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
+       read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs,
+       remove_shadowing_observer_mcps,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,
        read_observer_session, record_observer_turn!, log_observer_pass!, clear_observer_session!

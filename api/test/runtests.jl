@@ -1027,9 +1027,16 @@ end
         # terminal-setup detection: which button the lab-log toolbar shows (setup vs Chat to Claude).
         # Don't assert WHICH state — it depends on the dev machine's ~/.claude.json — but `ready` must
         # mean exactly "current", since the UI treats a stale entry as not set up.
-        @test String(s.terminal.state) in Set(["missing", "stale", "current"])
+        @test String(s.terminal.state) in Set(["missing", "stale", "shadowed", "current"])
         @test s.terminal.ready isa Bool
         @test s.terminal.ready == (String(s.terminal.state) == "current")
+        # a per-folder (`local`-scope) entry overrides our user-scope one, so "registered correctly"
+        # is not the same as "the user's terminal works" — `shadowed` names the folders that break it
+        # Asserted as implications, not an equality: a shadow can coexist with a missing/stale user-scope
+        # entry, and then THAT is the headline state (setup still fixes both).
+        @test s.terminal.shadowedDirs isa JSON3.Array
+        String(s.terminal.state) == "shadowed" && @test !isempty(s.terminal.shadowedDirs)
+        isempty(s.terminal.shadowedDirs) || @test !s.terminal.ready
     end
 
     # feedback: validated before anything is spawned.
