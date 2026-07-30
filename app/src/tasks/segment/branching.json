@@ -116,24 +116,24 @@
       "tip": "Only used when Anisotropy from = channel"
     },
     {
-      "key": "structureTensorSigma",
-      "label": "Integration scale (px)",
+      "key": "structureTensorSigmaUm",
+      "label": "Smoothing scale (µm)",
       "type": "float",
       "min": 0.5,
       "max": 50.0,
       "step": 0.5,
-      "default": 12.0,
-      "tip": "Smoothing before alignment; raise it for thicker or noisier fibres"
+      "default": 7.0,
+      "tip": "Start ~7 µm, near fibre thickness; too low reads noise as structure"
     },
     {
-      "key": "anisotropyBoxSize",
-      "label": "Grid box (px)",
-      "type": "int",
-      "min": 5,
-      "max": 200,
-      "step": 1,
-      "default": 15,
-      "tip": "Spacing of the orientation grid; smaller is finer but a bigger file"
+      "key": "anisotropyBoxUm",
+      "label": "Grid spacing (µm)",
+      "type": "float",
+      "min": 0.5,
+      "max": 100.0,
+      "step": 0.5,
+      "default": 5.0,
+      "tip": "Start ~5 µm; finer is better, but halving it quadruples the file"
     }
   ]
 }

@@ -345,8 +345,8 @@ Pipeline:
    Euclidean distance, etc.), `obsm['spatial']` = median of the branch's two endpoint coordinates
    (Decision 8), `obsm['temporal']` = `centroid_t` on timeseries.
 7. **Optional** anisotropy (`calcAnisotropy`): local structure tensor via
-   `skimage.feature.structure_tensor(sigma=structureTensorSigma)`, aggregated over
-   `anisotropyBoxSize` boxes, eigendecomposed. All the maths lives in
+   `skimage.feature.structure_tensor` at the `Smoothing scale`, aggregated over `Grid spacing`
+   boxes, eigendecomposed (both params are µm — see below). All the maths lives in
    `cecelia.utils.anisotropy_utils`. Algorithmic ancestry: Li et al. 2023 (ILEE_CSK).
 
    Written into the branch sidecar's `uns`, all under one `orientation_` prefix (2D shapes shown;
@@ -384,8 +384,42 @@ Pipeline:
    (needs `fibreChannels`). The segmentation-derived sources are denoised and measure closest to
    the legacy skeleton-only estimator; `channel` is the only one that survives a bad segmentation.
 
+   **The two scales are in µm, and that is what you set.** `Smoothing scale` and `Grid spacing` are
+   physical, converted to pixels by the Julia handler using the image's own `PhysicalSizeX`. A fibre
+   is ~2 µm thick whatever objective took the picture, whereas "12 px" means something different on
+   every image — and a cohort with mixed calibration was silently incomparable before. The pixel
+   values actually used, the µm asked for, and the µm/px used to convert are all recorded in
+   `uns['orientation_meta']` (`sigma_px` / `sigma_um` / `um_per_px`, likewise for the box).
+
+   > On an image with **no pixel size**, `PhysicalSizeX` resolves to 1.0, so the µm numbers land as
+   > pixels. That is a QC `warn` (`branching.uncalibrated`), not a silent substitution.
+
+   **What to actually put there.** This is the question the params look easy to get wrong on:
+
+   | | what it controls | how to pick it | what going too low does |
+   |---|---|---|---|
+   | **Smoothing scale** (σ) | the neighbourhood the orientation is measured over | start near the **fibre thickness**, raise for thicker or noisier structures | reads pixel noise as structure — the field goes incoherent and the arrows stop agreeing with their neighbours |
+   | **Grid spacing** (box) | how finely the field is **sampled** | as fine as you want to *look* at, then check the logged size | nothing statistical, but the stored grid explodes: boxes scale as **1/box²**, so halving the spacing **quadruples** the file |
+
+   Those two failure modes are different, which is why the params are separate. Measured on EaMaVq
+   (0.596 µm/px, 201 frames), alignment is the median angle between the field and each branch's own
+   direction — lower is better:
+
+   | grid spacing | grid | alignment | stored grid |
+   |---|---|---|---|
+   | 27 µm | 12×12 | 24.3° | 1.2 MB |
+   | 9 µm | 36×36 | 16.7° | 10 MB |
+   | **5 µm** | **68×68** | **14.9°** | **37 MB** |
+   | 3 µm | 108×109 | 14.8° | 95 MB |
+   | 1.8 µm | 181×182 | 14.5° | 265 MB |
+
+   So finer genuinely *is* better here, with no noise penalty — σ already did the smoothing, and the
+   only cost is file size. Alignment flattens out below ~5 µm, which is why that is the default.
+   **The run logs the resulting grid and its size**, and warns past 100 MB
+   (`branching.aniso_grid_large`) — read that rather than guessing.
+
    **Defaults are measured, not guessed** (EaMaVq SHG, scan in
-   `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` Decision 4): `skeleton`, `sigma=12`, `box=15`. Tune on
+   `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` Decision 4): `skeleton`, σ = 7 µm, box = 5 µm. Tune σ on
    *direction contrast* (`anisotropy_utils.direction_contrast` — near-vs-far agreement), never on
    coherence and never on neighbour agreement alone: both are trivially "improved" by blurring the
    field into uselessness.

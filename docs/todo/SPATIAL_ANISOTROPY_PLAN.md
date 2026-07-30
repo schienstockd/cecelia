@@ -234,8 +234,15 @@ arrays readable without reading `branching_run.py`.
 
 ### Decision 4 — Retune to legacy parity; score on field smoothness, never on coherence
 
-**Final: `anisotropySource=skeleton`, `structureTensorSigma=12`, `anisotropyBoxSize=15`**
-(from `channel` / 2.0 / 45).
+**Final: `anisotropySource=skeleton`, σ = 12 px, box = 15 px** (from `channel` / 2.0 / 45).
+
+> **Now expressed in µm (2026-07-30, Dominik).** Pixels are not a meaningful unit to a user and made
+> a mixed-calibration cohort silently incomparable, so the params became `structureTensorSigmaUm`
+> (default **7 µm**) and `anisotropyBoxUm` (default **5 µm**) — the same settings at EaMaVq's
+> 0.596 µm/px, converted by the Julia handler. NEW KEYS deliberately: reusing the old ones would let
+> a project's saved pixel values (2, 45) be reread as µm, i.e. ~3 px and ~75 px, silently.
+> A follow-up scan showed finer is strictly better here down to ~5 µm with no noise penalty (σ does
+> the smoothing), so the only cost is file size — which the run now logs and warns on.
 
 **The objective had to be fixed first.** A2 proposed scoring on *neighbour consistency*. That is
 invalid — it is monotonically improved by blurring: σ 2 → 25 drove it 43.5° → 17.2° while coherence

@@ -24,7 +24,9 @@ include("update_api.jl")
 include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
-include("crop_render.jl")
+include("image_geometry.jl")
+include("image_render.jl")   # builds on image_geometry.jl
+include("crop_api.jl")       # routes only; builds on both
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
@@ -287,6 +289,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_plotdata(req)
         elseif path == "/api/gating/density"
             api_gating_density(req)
+        elseif path == "/api/images/geometry"
+            api_image_geometry(req)
         elseif path == "/api/crop/info"
             api_crop_info(req)
         elseif path == "/api/crop/frame"

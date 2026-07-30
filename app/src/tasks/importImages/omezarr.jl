@@ -68,6 +68,12 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
                 result["SizeC"] = isnothing(ci) ? 1 : shape[ci]
                 result["SizeT"] = isnothing(ti) ? 1 : shape[ti]
                 result["SizeZ"] = isnothing(zi) ? 1 : shape[zi]
+                # NOT SizeX/SizeY. They were added here and reverted (2026-07-30): the X/Y extent is
+                # NOT a per-image property. `filepath` is versioned, and drift correction expands the
+                # canvas (see the `output.canvas_expansion` QC finding) while a crop shrinks it — so a
+                # flat SizeX/SizeY describes the default import and silently misdescribes whichever
+                # version is actually active. A consumer that needs the frame extent must ask for a
+                # SPECIFIC version: `GET /api/images/geometry` reads it off that version's store.
             end
         end
 
