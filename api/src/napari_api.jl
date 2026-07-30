@@ -154,7 +154,7 @@ function _execute_pending_open()
     try
         # Re-resolve _active at fire time — a task may have completed between the
         # eye-button click and Napari becoming ready.
-        meta_file = joinpath(pending.proj_dir, "1", pending.image_uid, "ccid.json")
+        meta_file = state_file(pending.proj_dir, pending.image_uid)
         raw       = read_ccid_raw(meta_file)
         filename  = versioned_get_field(raw, "filepath", nothing)   # nothing → _active
         zarr_path = joinpath(pending.proj_dir, "0", pending.image_uid, string(something(filename, "")))
@@ -291,7 +291,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
     isempty(image_uid)   && return 400, JSON3.write((; error = "imageUid required"))
 
     proj_dir  = joinpath(projects_dir(), project_uid)
-    meta_file = joinpath(proj_dir, "1", image_uid, "ccid.json")
+    meta_file = state_file(proj_dir, image_uid)
     isdir(proj_dir)   || return 404, JSON3.write((; error = "Project not found: $project_uid"))
     isfile(meta_file) || return 404, JSON3.write((; error = "Image metadata not found: $image_uid"))
 

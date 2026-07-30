@@ -228,7 +228,7 @@ function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64};
         changed || return
         multiscales_new    = [ms; multiscales[2:end]...]
         raw["multiscales"] = multiscales_new
-        open(zattrs_file, "w") do io; JSON3.write(io, raw); end
+        write_json_atomic(zattrs_file, raw)
     catch e
         @warn "Could not update OME-ZARR scale metadata" zarr_path exception = e
     end
@@ -273,7 +273,7 @@ function update_ome_xml_pixels!(zarr_path::String, attrs::Dict{String,String})
                 replace(tag, r"<Pixels\b" => "<Pixels $k=\"$v\""; count = 1)
         end
         new_xml = replace(xml, m.match => tag; count = 1)
-        open(xml_file, "w") do io; write(io, new_xml); end
+        write_atomic(io -> write(io, new_xml), xml_file)
     catch e
         @warn "Could not update OME-XML Pixels attributes" zarr_path exception = e
     end
@@ -349,11 +349,11 @@ end
 # ── ccid.json helpers ─────────────────────────────────────────────────────────
 
 function _update_image_status!(img::CciaImage, status::String)
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     try
         raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
         raw["status"] = status
-        open(ccid, "w") do io; JSON3.write(io, raw); end
+        write_json_atomic(ccid, raw)
     catch e
         @warn "Could not update image status" exception = e
     end
@@ -384,7 +384,7 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       value_name::String = VERSIONED_DEFAULT_VAL,
                                       overwrite::Bool = true)
     isempty(zarr_meta) && isnothing(zarr_filename) && return
-    ccid = joinpath(img._dir, "ccid.json")
+    ccid = state_file(img)
     try
         raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
         m   = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
@@ -403,7 +403,7 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
         raw["meta"] = m
         !isnothing(zarr_filename) &&
             versioned_set_field!(raw, "filepath", zarr_filename, value_name)
-        open(ccid, "w") do io; JSON3.write(io, raw); end
+        write_json_atomic(ccid, raw)
     catch e
         @warn "Could not update image metadata" exception = e
     end

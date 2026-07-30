@@ -269,9 +269,7 @@ function set_projects_dir!(path::AbstractString)::String
     dirs = get(cfg, "dirs", Dict{String,Any}())
     dirs["projects"] = stored
     cfg["dirs"] = dirs
-    open(cfg_path, "w") do io
-        TOML.print(io, cfg)
-    end
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
     init_cecelia!()   # hot-reload: _CONF[] refreshed in place, accessors read it live (D3)
     stored
 end

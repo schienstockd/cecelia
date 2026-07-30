@@ -162,9 +162,7 @@ function api_chains_save(body_bytes::Vector{UInt8})
     dir  = _chains_dir_for_project(uid)
     mkpath(dir)
     # Write verbatim — preserves any extra fields (positions, etc.) the whiteboard added.
-    open(joinpath(dir, "$(name).json"), "w") do io
-        JSON3.write(io, tmpl)
-    end
+    write_json_atomic(joinpath(dir, "$(name).json"), tmpl)
     200, JSON3.write((; ok=true))
 end
 
@@ -577,7 +575,7 @@ function api_projects_load(body_bytes::Vector{UInt8})
     try
         raw = read_ccid_raw(meta_file)
         raw["lastOpenedAt"] = string(now())
-        open(meta_file, "w") do io; JSON3.write(io, raw); end
+        write_json_atomic(meta_file, raw)
         project["lastOpenedAt"] = raw["lastOpenedAt"]
     catch e
         @warn "Could not update lastOpenedAt" uid exception=e
@@ -649,7 +647,7 @@ function api_projects_boards(body_bytes::Vector{UInt8})
     if boards !== nothing
         try
             settings = _settings_dir_for_project(uid); mkpath(settings)
-            open(joinpath(settings, "analysisBoards.json"), "w") do io; JSON3.write(io, boards); end
+            write_json_atomic(joinpath(settings, "analysisBoards.json"), boards)
         catch e
             return 500, JSON3.write((; error=sprint(showerror, e)))
         end
@@ -672,7 +670,7 @@ function api_projects_animations(body_bytes::Vector{UInt8})
     if animations !== nothing
         try
             settings = _settings_dir_for_project(uid); mkpath(settings)
-            open(joinpath(settings, "animations.json"), "w") do io; JSON3.write(io, animations); end
+            write_json_atomic(joinpath(settings, "animations.json"), animations)
         catch e
             return 500, JSON3.write((; error=sprint(showerror, e)))
         end
@@ -757,7 +755,7 @@ function api_projects_canvases(body_bytes::Vector{UInt8})
             objdir = joinpath(projects_dir(), uid, "1", String(objUid))
             isdir(objdir) || continue   # object deleted/unknown → skip (no stray files)
             try
-                open(joinpath(objdir, "moduleCanvases.json"), "w") do io; JSON3.write(io, data); end
+                write_json_atomic(joinpath(objdir, "moduleCanvases.json"), data)
             catch e
                 @warn "Could not save module canvases" uid obj=String(objUid) exception=e
             end
@@ -806,7 +804,7 @@ function api_projects_rename(body_bytes::Vector{UInt8})
     try
         raw = read_ccid_raw(meta_file)
         raw["name"] = name
-        open(meta_file, "w") do io; JSON3.write(io, raw); end
+        write_json_atomic(meta_file, raw)
     catch
         return 500, JSON3.write((; error="Failed to write project metadata"))
     end
@@ -862,7 +860,7 @@ function api_sets_delete(body_bytes::Vector{UInt8})
     isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
 
     proj_dir      = joinpath(projects_dir(), project_uid)
-    set_meta_file = joinpath(proj_dir, "1", set_uid, "ccid.json")
+    set_meta_file = state_file(proj_dir, set_uid)
     isdir(proj_dir)       || return 404, JSON3.write((; error="Project not found"))
     isfile(set_meta_file) || return 404, JSON3.write((; error="Set not found: $set_uid"))
 
@@ -890,7 +888,7 @@ function api_images_register(body_bytes::Vector{UInt8})
     isempty(filepaths)   && return 400, JSON3.write((; error="filepaths required"))
 
     proj_dir      = joinpath(projects_dir(), project_uid)
-    set_meta_file = joinpath(proj_dir, "1", set_uid, "ccid.json")
+    set_meta_file = state_file(proj_dir, set_uid)
     isdir(proj_dir)       || return 404, JSON3.write((; error="Project not found: $project_uid"))
     isfile(set_meta_file) || return 404, JSON3.write((; error="Set not found: $set_uid"))
 
@@ -1016,7 +1014,7 @@ function api_images_meta(req::HTTP.Request)
 
     proj_dir = joinpath(projects_dir(), project_uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
-    isfile(joinpath(proj_dir, "1", image_uid, "ccid.json")) ||
+    isfile(state_file(proj_dir, image_uid)) ||
         return 404, JSON3.write((; error="Image not found: $image_uid"))
 
     obj = init_object(project_uid, image_uid)
@@ -1065,7 +1063,7 @@ function api_images_tasklog(req::HTTP.Request)
     proj_dir = joinpath(projects_dir(), project_uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
     img_dir = joinpath(proj_dir, "1", image_uid)
-    isfile(joinpath(img_dir, "ccid.json")) ||
+    isfile(state_file(img_dir)) ||
         return 404, JSON3.write((; error="Image not found: $image_uid"))
 
     logfile = joinpath(img_dir, "logs", fun * ".log")
@@ -1322,7 +1320,7 @@ function api_images_delete(body_bytes::Vector{UInt8})
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
 
     proj_dir      = joinpath(projects_dir(), project_uid)
-    set_meta_file = joinpath(proj_dir, "1", set_uid, "ccid.json")
+    set_meta_file = state_file(proj_dir, set_uid)
     isdir(proj_dir)       || return 404, JSON3.write((; error="Project not found: $project_uid"))
     isfile(set_meta_file) || return 404, JSON3.write((; error="Set not found: $set_uid"))
 
@@ -1484,7 +1482,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
 
     proj_dir = joinpath(projects_dir(), project_uid)
     task_dir = joinpath(proj_dir, "1", image_uid)
-    ccid     = joinpath(task_dir, "ccid.json")
+    ccid     = state_file(task_dir)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
     isfile(ccid)    || return 404, JSON3.write((; error="Image not found"))
 
@@ -1514,7 +1512,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
                                           if string(k) != value_name)
     raw["label_props"] = Dict{String,Any}(String(k) => v for (k, v) in label_props
                                           if string(k) != value_name)
-    open(ccid, "w") do io; JSON3.write(io, raw); end
+    write_json_atomic(ccid, raw)
 
     img = init_object(project_uid, image_uid)
     img isa CciaImage || return 200, JSON3.write((; ok = true))

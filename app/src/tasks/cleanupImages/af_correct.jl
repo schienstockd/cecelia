@@ -5,7 +5,7 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    ccid       = joinpath(img._dir, "ccid.json")
+    ccid       = state_file(img)
     raw        = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     filename = versioned_get_field(raw, "filepath", value_name)
@@ -78,7 +78,7 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
 
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
     versioned_set_field!(raw2, "filepath", out_filename, out_value_name)
-    open(ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(ccid, raw2)
 
     Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
 end

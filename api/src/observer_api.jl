@@ -40,7 +40,7 @@ end
 function _write_observer_mcp_config()::String
     cfg  = observer_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url())
     path = joinpath(ensure_config_dir(), "observer-mcp.json")   # may be a machine's first ever write
-    open(path, "w") do io; JSON3.write(io, cfg); end
+    write_json_atomic(path, cfg)
     path
 end
 

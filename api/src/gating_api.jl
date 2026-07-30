@@ -44,7 +44,7 @@ function _gating_image(project_uid::AbstractString, image_uid::AbstractString)
     isempty(project_uid) && return (nothing, _gerr(400, "projectUid required"))
     isempty(image_uid)   && return (nothing, _gerr(400, "imageUid required"))
     isdir(joinpath(projects_dir(), project_uid)) || return (nothing, _gerr(404, "Project not found: $project_uid"))
-    isfile(joinpath(projects_dir(), project_uid, "1", image_uid, "ccid.json")) ||
+    isfile(state_file(joinpath(projects_dir(), project_uid), image_uid)) ||
         return (nothing, _gerr(404, "Image not found: $image_uid"))
     obj = init_object(project_uid, image_uid)
     obj isa CciaImage || return (nothing, _gerr(404, "Not an image: $image_uid"))

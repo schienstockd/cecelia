@@ -34,7 +34,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    ccid       = joinpath(img._dir, "ccid.json")
+    ccid       = state_file(img)
     raw        = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     filename = versioned_get_field(raw, "filepath", value_name)
@@ -106,13 +106,13 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     ok || return nothing
 
     # register the written zarr + carry the source channel names onto the NEW image's ccid.json
-    new_ccid = joinpath(new_img._dir, "ccid.json")
+    new_ccid = state_file(new_img)
     raw2     = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(new_ccid, String)))
     versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
     ch_names = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
     isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
     raw2["status"] = "done"   # a crop is a complete image (zarr written) — mark it imported, not 'pending'
-    open(new_ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(new_ccid, raw2)
 
     # Carry the source's napari layer-props sidecar (per-channel colormap/contrast JSON) to the crop, so
     # it opens in napari with the same colours the user set. The crop keeps all channels in order, so the

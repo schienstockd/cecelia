@@ -13,6 +13,9 @@ function CciaProject(; uid=gen_uid(), name="")
     CciaProject(uid, name, String[], Dict{String,Any}(), "", CciaSet[])
 end
 
+"""Project state lives in `project.json` (images/sets use `ccid.json`)."""
+state_file(proj::CciaProject)::String = joinpath(proj.root, "project.json")
+
 function save!(proj::CciaProject)
     d = Dict{String,Any}(
         "uid"      => proj.uid,
@@ -20,9 +23,7 @@ function save!(proj::CciaProject)
         "set_uids" => proj.set_uids,
         "meta"     => proj.meta,
     )
-    open(joinpath(proj.root, "project.json"), "w") do f
-        JSON3.pretty(f, d)
-    end
+    write_json_atomic(state_file(proj), d)
     for s in proj._sets
         save!(s)
     end
@@ -32,7 +33,7 @@ end
 # static/live/flow distinction was dropped in favour of per-image axis gating via
 # Cecelia.task_applies). Next save! strips them from disk.
 function _load_project(root::String)::CciaProject
-    d = JSON3.read(read(joinpath(root, "project.json"), String), Dict{String,Any})
+    d = read_state_json(joinpath(root, "project.json"); as = Dict{String,Any})
     uids = String.(collect(d["set_uids"]))
     proj = CciaProject(d["uid"], d["name"],
                        uids, Dict{String,Any}(get(d, "meta", Dict())), root, CciaSet[])
@@ -166,39 +167,54 @@ function delete_set!(proj::CciaProject, set_uid::String)::CciaProject
 end
 
 # ── Lockfile / with_transaction ───────────────────────────────────────────────
-# Deliberately NAIVE guard: a single lockfile beside the project state file,
-# acquired and released by existence alone — no pid, timestamp, ownership, or
-# stale-reclaim machinery. It exists only to stop two concurrent writers from
-# clobbering the same object, which with the current per-image tasks does not
-# actually arise yet. This is NOT a distributed lock and NOT a general project
-# lock. See TODO #00003 for the planned move to per-image lockfiles wired into
-# task commit sites.
+# Deliberately NAIVE guard: a lockfile beside the object's state file, acquired and released by
+# existence alone — no pid, timestamp, ownership, or stale-reclaim machinery. It is NOT a distributed
+# lock.
 #
-# Tradeoff of staying naive: a process that dies mid-transaction leaves a stale
-# lockfile that must be removed by hand — surfaced via the timeout error below.
+# The lock path is DERIVED from `state_file(obj)`, which is how the old R
+# `reactivePersistentObject.R` did it (`lockFile = paste0(private$getStateFile(), ".lock")`). That
+# matters beyond tidiness: because the lock follows the state file, `with_transaction` works for ANY
+# persisted object, so a per-IMAGE lock is `with_transaction(f, img)` with nothing new to build. The
+# earlier version hardcoded one `.cecelia.lock` at the project root, which could only ever be
+# project-scoped — too coarse (it serialises unrelated images), which is why TODO #00003 had to
+# propose a mechanism rather than just call one.
+#
+# Still open (TODO #00003): the task commit sites don't CALL this yet, so two concurrent
+# read-modify-writes of one image's ccid.json can still lose an update. That is a separate change —
+# it alters concurrency behaviour, not just file layout. Truncation (the unrecoverable failure) is
+# handled by `write_atomic`; this is the lost-update half.
+#
+# Tradeoff of staying naive: a process that dies mid-transaction leaves a stale lockfile that must be
+# removed by hand — surfaced via the timeout error below.
 
 const _LOCK_TIMEOUT = 30   # seconds to wait for a held lock before giving up
 
-_lock_path(proj::CciaProject)::String = joinpath(proj.root, ".cecelia.lock")
+"""Lockfile for an object's naive transaction — always `state_file(obj) * ".lock"`."""
+_lock_path(obj)::String = state_file(obj) * ".lock"
 
 """
-Run `f()` while holding the project's naive lockfile; release on exit even if
-`f` throws. Waits up to `timeout` seconds for an existing lock to clear, then
-errors with a message pointing at the lockfile to delete if it is stale.
+Run `f()` while holding `obj`'s naive lockfile; release on exit even if `f` throws. Waits up to
+`timeout` seconds for an existing lock to clear, then errors with a message pointing at the lockfile
+to delete if it is stale. Works for a project, set or image — whatever `state_file` accepts.
 """
-function with_transaction(f::Function, proj::CciaProject; timeout::Int = _LOCK_TIMEOUT)
-    path     = _lock_path(proj)
+function with_transaction(f::Function, obj; timeout::Int = _LOCK_TIMEOUT)
+    path     = _lock_path(obj)
     deadline = time() + timeout
     while isfile(path)
         time() > deadline && error(
-            "Could not acquire lock on project '$(proj.name)' within $(timeout)s. " *
+            "Could not acquire lock on $(_lock_subject(obj)) within $(timeout)s. " *
             "If no other process is writing, delete a stale lockfile: $path")
         sleep(0.5)
     end
+    mkpath(dirname(path))
     touch(path)
     try
         f()
     finally
-        isfile(path) && rm(path)
+        isfile(path) && rm(path; force = true)
     end
 end
+
+_lock_subject(proj::CciaProject)::String = "project '$(proj.name)'"
+_lock_subject(s::CciaSet)::String        = "set '$(s.name)'"
+_lock_subject(img::CciaImage)::String    = "image '$(img.name)'"

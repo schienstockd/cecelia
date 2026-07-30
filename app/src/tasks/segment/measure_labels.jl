@@ -8,7 +8,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     out_value_name       = string(get(params, "outputValueName",   VERSIONED_DEFAULT_VAL))
     intensity_value_name = string(get(params, "intensityValueName", VERSIONED_DEFAULT_VAL))
     task_dir             = img._dir
-    ccid                 = joinpath(task_dir, "ccid.json")
+    ccid                 = state_file(task_dir)
     raw                  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
 
     # Resolve the intensity image path
@@ -87,7 +87,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     # value_name fallback) defaults to the most recently produced segmentation.
     lp[VERSIONED_ACTIVE_KEY] = out_value_name
     raw2["label_props"] = lp
-    open(ccid, "w") do io; JSON3.write(io, raw2); end
+    write_json_atomic(ccid, raw2)
 
     Dict{String,Any}("outputValueName" => out_value_name,
                      "labelValueName"  => out_value_name,

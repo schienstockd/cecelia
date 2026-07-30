@@ -88,7 +88,7 @@ function resolve_image_version(project_uid::AbstractString, image_uid::AbstractS
     (isempty(project_uid) || isempty(image_uid)) &&
         return (nothing, nothing, "projectUid + imageUid required")
     proj_dir = joinpath(projects_dir(), project_uid)
-    meta = joinpath(proj_dir, "1", image_uid, "ccid.json")
+    meta = state_file(proj_dir, image_uid)
     (isdir(proj_dir) && isfile(meta)) || return (nothing, nothing, "Image not found")
     raw = read_ccid_raw(meta)
     fn  = versioned_get_field(raw, "filepath", value_name)
