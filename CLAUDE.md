@@ -176,6 +176,17 @@ labeled DataFrame — one idiom, no guessing.
   is the producing task's job and uses `anndata` directly — the view wraps an *existing* file
   (read + obs-append), it does not create one. Structural changes to `X`/`var` likewise go through
   the producing Python task, not the view.
+- **Every `.h5ad` write goes through `write_h5ad_atomic`** (`python/cecelia/utils/atomic_io.py`) —
+  creating one *or* rewriting one. Never `adata.write_h5ad(final_path)`: that truncates the destination
+  before the new bytes land, and `task:cancel` kills the Python process **by design**, so a cancelled
+  clustering/tracking run could leave a truncated cell table. A truncated HDF5 is not partially
+  readable and the previous content is gone. (A half-written *new* file is bad too — discovery is a
+  directory listing, so it would be presented as a real segmentation.) The `no_bare_write_h5ad`
+  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare call. Same family for other
+  durable output: `write_json_atomic`, `write_atomic`, `atomic_path`. This is the Python counterpart of
+  Julia's `write_atomic` (#420); for a multiscales **store** the equivalent is `staged_store` (see the
+  zarr section below) — a separate helper because replacing a directory has different atomic-rename
+  mechanics than replacing a file.
 
 ---
 

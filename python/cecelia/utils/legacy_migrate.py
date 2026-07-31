@@ -106,6 +106,7 @@ def migrate_h5ad(src: str, dst: str) -> dict:
     import anndata as ad
 
     from cecelia.utils.centroid_migrate import normalise_centroids
+    from cecelia.utils.atomic_io import write_h5ad_atomic
 
     a = ad.read_h5ad(src)
     summary: dict = {"n_obs": int(a.n_obs)}
@@ -129,7 +130,7 @@ def migrate_h5ad(src: str, dst: str) -> dict:
         a.obs = a.obs.drop(columns=dropped)
     summary["dropped_obs_cols"] = dropped
 
-    a.write_h5ad(dst)
+    write_h5ad_atomic(a, dst)
     return summary
 
 

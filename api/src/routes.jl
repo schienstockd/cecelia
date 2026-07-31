@@ -32,7 +32,12 @@ function api_movies_list(req::HTTP.Request)
     movies = NamedTuple[]
     if isdir(dir)
         for name in readdir(dir)
-            (endswith(lowercase(name), ".mp4") && isfile(joinpath(dir, name))) || continue
+            # skip in-progress temps: `prepend_title_to_movie` writes `{name}.mp4.tmp.mp4` beside the
+            # real file and renames on success, and imageio needs that `.mp4` extension to pick a
+            # writer — so a run killed mid-encode leaves something a bare `.mp4` filter would list as
+            # a real movie.
+            (endswith(lowercase(name), ".mp4") && !occursin(".tmp.", name) &&
+                isfile(joinpath(dir, name))) || continue
             f = joinpath(dir, name)
             push!(movies, (; name, size=filesize(f), mtime=mtime(f)))
         end

@@ -266,6 +266,15 @@ This is also a hard rule in `CLAUDE.md` (*H5AD / cell-data access*) so it surviv
 
 ## Writing `.h5ad` — the same chain, terminal `save!`/`save()`
 
+> **All of it is atomic.** `LabelPropsView.save()` and every other `.h5ad` write route through
+> `write_h5ad_atomic` (`python/cecelia/utils/atomic_io.py`): serialise to a sibling temp, then
+> `os.replace` onto the destination. Writing in place truncates the file first, and `task:cancel`
+> kills the Python process by design — so cancelling a clustering run mid-save used to be able to
+> leave a truncated cell table, with no previous content and no partial readability (HDF5, unlike
+> JSON, gives you nothing). The temp is named `base.h5ad.tmp.<uid>` — suffix *after* the extension,
+> because discovery is a directory listing filtered by `.h5ad` and a leftover must not match.
+> Julia's counterpart is `write_atomic` (see `docs/OBJECTMODEL.md`).
+
 Writing is the mirror image of reading: you read a label-keyed DataFrame (`as_df`), you write a
 label-keyed DataFrame (`add_obs` then `save!`). One idiom, both languages, so there is a single
 way to touch H5AD storage and nothing to guess. Mirrors the old R `cciaImage` idiom
