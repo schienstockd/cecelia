@@ -462,6 +462,95 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
     return new_zarr, im_chunks
 
 
+# The axes a pyramid level halves. Shared, because anything expressed in level-0 pixels has to be
+# rescaled by the SAME rule to stay meaningful at level n — the NGFF scale (`multiscales_metadata`)
+# and the valid box (`read_valid_box`) must not each decide this for themselves.
+DOWNSAMPLED_AXES = ('X', 'Y')
+
+# ── Valid box: which part of a store is data, and which is padding ────────────────────────────
+# A task may write a canvas bigger than its data — drift correction expands to hold the whole
+# trajectory and drops each frame into a ZEROED canvas at its own offset, which on real movies
+# leaves 38–64% padding (one went from 8 z-planes to 22). Nothing in NGFF says where the data is,
+# so a consumer either reads the padding as if it were background, or hunts down whichever task
+# produced the store and re-derives its geometry.
+#
+# So it lives on the STORE, namespaced under `cecelia`, next to the pixels it describes: any
+# consumer asks `read_valid_box(path)` and gets None — meaning "all of it" — for the stores that
+# have no padding. One code path, no knowledge of the producer, and it survives a copy or export
+# in a way a QC sidecar under `1/{uid}/qc/` does not.
+#
+# Coordinates are LEVEL-0 pixels in STORE axis order; `read_valid_box(path, level=n)` rescales.
+CECELIA_ATTR = 'cecelia'
+
+
+def write_valid_box(path, axes, boxes):
+    """Record which region of ``path`` holds data. ``axes`` are the axis letters the box is given
+    on (a subset — unlisted axes are wholly valid). ``boxes`` is either one ``{axis: (start, stop)}``
+    for a static region, or ``{timepoint: {axis: (start, stop)}}`` when it moves per frame.
+
+    Level-0 pixel coordinates. Writing this is the producer's job and it should pass the SAME
+    numbers it placed the pixels with — for drift that is `correction_utils.drift_frame_slices`,
+    the call the writer itself uses, so the region a consumer skips is the region the writer left
+    empty rather than a second opinion about it."""
+    axes = [str(a).upper() for a in axes]
+    per_t = bool(boxes) and not isinstance(next(iter(boxes.values())), (list, tuple)) \
+        and all(isinstance(k, (int, np.integer)) for k in boxes)
+
+    def _one(b):
+        return [[int(b[a][0]), int(b[a][1])] for a in axes]
+
+    entry = {'axes': axes, 'perTimepoint': per_t}
+    if per_t:
+        entry['boxes'] = [_one(boxes[t]) for t in sorted(boxes)]
+    else:
+        entry['boxes'] = [_one(boxes)]
+
+    g = zarr.open_group(series_base(path), mode='a')
+    ns = dict(g.attrs.get(CECELIA_ATTR, {}))
+    ns['validBox'] = entry
+    g.attrs[CECELIA_ATTR] = ns
+    return True
+
+
+def read_valid_box(path, level=0, timepoint=None):
+    """The data region of a store as ``{axis: (start, stop)}``, or **None when the whole store is
+    valid** — which is the common case, so a consumer can treat None as "no special handling".
+
+    ``level`` rescales from the stored level-0 coordinates using the same downsampling rule as the
+    NGFF scale (`DOWNSAMPLED_AXES`): start floors, stop ceils, so the box never crops real data.
+    ``timepoint`` picks one frame of a per-frame box; omitted, a per-frame box returns the UNION
+    over all frames — the smallest region containing every frame's data.
+
+    A per-frame box is not a crop. Each frame sits at its own offset *because* the correction
+    aligned them in the shared canvas; cropping each to its own box would put them back out of
+    register. Crop to a common region or not at all. Note that the intersection across frames can
+    be empty when the drift exceeds the stack depth, which is real on this data."""
+    try:
+        g = zarr.open_group(series_base(path), mode='r')
+        entry = (g.attrs.get(CECELIA_ATTR) or {}).get('validBox')
+    except Exception:
+        return None
+    if not entry or not entry.get('boxes'):
+        return None
+
+    axes = [str(a).upper() for a in entry['axes']]
+    boxes = entry['boxes']
+    if entry.get('perTimepoint') and timepoint is not None:
+        sel = boxes[int(timepoint)]
+    elif entry.get('perTimepoint'):
+        sel = [[min(b[i][0] for b in boxes), max(b[i][1] for b in boxes)] for i in range(len(axes))]
+    else:
+        sel = boxes[0]
+
+    out = {}
+    for ax, (lo, hi) in zip(axes, sel):
+        if level and ax in DOWNSAMPLED_AXES:
+            f = 2 ** int(level)
+            lo, hi = lo // f, -(-hi // f)        # floor / ceil — never crop real data
+        out[ax] = (int(lo), int(hi))
+    return out
+
+
 def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets',
                          unit_for_axis=None):
     """Build the NGFF ``multiscales`` attr value (a 1-element list) shared by every multiscale
@@ -483,7 +572,7 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets',
         entry = {'path': str(lvl)}
         if axes and scale_for_axis is not None:
             entry['coordinateTransformations'] = [{'type': 'scale', 'scale': [
-                float(scale_for_axis.get(ax, 1.0)) * (2 ** lvl if ax in ('X', 'Y') else 1.0)
+                float(scale_for_axis.get(ax, 1.0)) * (2 ** lvl if ax in DOWNSAMPLED_AXES else 1.0)
                 for ax in axes
             ]}]
         datasets.append(entry)
