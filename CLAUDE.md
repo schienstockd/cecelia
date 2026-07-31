@@ -488,10 +488,16 @@ Frontend scope is deliberately narrow: **pure logic in `src/utils/*` only — no
 no jsdom/DOM/E2E.** Keep testable logic in plain `.ts`, not the component. Full conventions +
 rationale: [`docs/DEV.md`](docs/DEV.md) → *Tests*.
 
-Package tests live in `app/test/runtests.jl` and run fully headless — no API, WS, or Vue:
+Package tests run fully headless — no API, WS, or Vue. `app/test/runtests.jl` holds only the
+preamble (fixtures, hermetic config, shared helpers) and wraps the suite body, which lives in
+**`app/test/suite.jl`** — that is the file to add testsets to:
 ```bash
-cd app && julia --project test/runtests.jl
+pixi run test-pkg                        # -O0; see pixi.toml for why
+cd app && julia -O0 --project test/runtests.jl
 ```
+**Don't re-wrap `suite.jl` in a `begin` block or a single outer `@testset`.** One giant top-level
+expression is compiled in full before the first assertion runs — that shape cost ~90s of the
+suite's ~200s. Rationale in the `suite.jl` header.
 
 **Rule: any change to core package functionality ships with a test in the same change.**
 Core = the data model and its persistence, the versioned-variable convention, task dispatch,

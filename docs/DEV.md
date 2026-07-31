@@ -165,9 +165,10 @@ the rc-vs-release distinction, and the pre-1.0 versioning rules — live in
 Four categories, one per language layer. **All four run in CI** (`.github/workflows/ci.yml`) on every
 OS in the matrix, and each has a `pixi run` task that runs the whole suite:
 
-- **Package (headless Cecelia):** `pixi run test-pkg` (`app/test/runtests.jl`). The data model,
-  persistence, task dispatch, scheduler + chain logic. Some testsets `@test_skip` when their
-  `test-data/` fixtures are absent.
+- **Package (headless Cecelia):** `pixi run test-pkg`. The data model, persistence, task dispatch,
+  scheduler + chain logic. Some testsets `@test_skip` when their `test-data/` fixtures are absent.
+  **Add testsets to `app/test/suite.jl`**, not `runtests.jl` — the latter is just the preamble plus
+  the one aggregating `@testset` that includes the body.
 - **API adapters:** `pixi run test-api` (`api/test/runtests.jl`). Loads `server.jl` with
   `CECELIA_NO_SERVE=1` so the handlers + shared state (`_BOUND_HOST`, `_repl_on`, …) are defined
   without binding a socket, then calls handlers directly (no live server, no ports). Fixture-free.
@@ -188,6 +189,16 @@ OS in the matrix, and each has a `pixi run` task that runs the whole suite:
   the analysis env and shouldn't ship to users just for tests). Must run via `pixi run` so the env's
   `python` + `numpy`/`dask`/`zarr` resolve. First member: `test_zarr_store.py` (the `create_multiscales`
   chunk-aligned store round-trip).
+
+**Both Julia suites run at `-O0`, and the package body lives in its own file — both are compile-time
+fixes.** The suite spent the large majority of its wall clock inside the Julia compiler, not running
+assertions (measured: ~11s of actual test work in a ~200s run). Two causes, both fixed: an 8k-line
+`@testset begin … end` is a single top-level expression that Julia lowers and compiles *in full*
+before the first assertion runs (~90s), and optimising code that executes exactly once is waste
+(~2/3 of the remainder). Package suite 202s → 69s, API 67s → 42s, same assertions. `-O0` does not
+de-optimise what's under test — `Cecelia`'s methods come from the `-O2` pkgimage built at install;
+only in-session code (the test file) drops to `-O0`. If a timing-sensitive test ever turns flaky in
+CI, that flag is the first suspect.
 
 **Trap — `@testset` reseeds the global RNG, so `gen_uid()` is NOT unique across testsets.** Julia's
 `Test` seeds each testset deterministically, which means two testsets that both
