@@ -7,7 +7,7 @@ the analysis pipeline and coastal. This is their first unit coverage — it pins
   - series_base: structural bioformats2raw-series-wrapper detection (nested `0/` vs flat root),
   - read_axes / read_scale: NGFF axes + coordinateTransformations, with the OME-XML scale fallback,
   - open_as_zarr: a read-only multiscale open on both layouts,
-  - ome_xml_utils.load_ome_xml + read_pixel_unit / read_scale_from_ome_xml / read_time_increment.
+  - ox.load_ome_xml + read_pixel_unit / read_scale_from_ome_xml / read_time_increment.
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
 """
@@ -178,3 +178,71 @@ class ImageJMetadataTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OmeXmlStagedWriteTest(unittest.TestCase):
+    """OME-XML must survive being written into a STAGED store.
+
+    Regression: `zarr_utils.staged_store` writes to `<store>.ome.zarr.partial` and renames on
+    success, but the OME writers gated on `os.path.splitext(path)[1] == '.zarr'` — so every
+    write into a staging path silently did nothing. Because `save_meta_in_zarr` created the
+    `OME/` directory first, the result was an empty `OME/` dir, no error, and a task log
+    reporting success; the sidecar (pixel sizes, channel names, TimeIncrement) was simply gone
+    from every imported/corrected store.
+    """
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def _store(self, name):
+        """A minimal zarr-looking store directory."""
+        p = os.path.join(self.d, name)
+        os.makedirs(p, exist_ok=True)
+        with open(os.path.join(p, ".zgroup"), "w") as f:
+            f.write('{"zarr_format": 2}')
+        return p
+
+    def test_writes_into_a_staging_path(self):
+        staged = self._store("img.ome.zarr" + zu.STAGING_SUFFIX)
+        ox.save_meta_in_zarr(staged, omexml=ox.from_xml(_OME_XML))
+        self.assertTrue(os.path.exists(os.path.join(staged, "OME", "METADATA.ome.xml")),
+                        "OME-XML was skipped because the staging path does not end in .zarr")
+
+    def test_survives_the_rename_onto_the_final_path(self):
+        """End to end through staged_store — the shape the import task actually uses."""
+        final = os.path.join(self.d, "img.ome.zarr")
+        with zu.staged_store(final) as staging:
+            os.makedirs(staging, exist_ok=True)
+            with open(os.path.join(staging, ".zgroup"), "w") as f:
+                f.write('{"zarr_format": 2}')
+            ox.save_meta_in_zarr(staging, omexml=ox.from_xml(_OME_XML))
+        self.assertTrue(os.path.exists(os.path.join(final, "OME", "METADATA.ome.xml")))
+        # and it round-trips: the value the timestamp overlay reads
+        self.assertEqual(ox.read_time_increment(final), 30.0)
+
+    def test_change_pixel_type_also_works_on_a_staging_path(self):
+        """The same guard was copy-pasted here, so it no-opped too."""
+        staged = self._store("img.ome.zarr" + zu.STAGING_SUFFIX)
+        ox.save_meta_in_zarr(staged, omexml=ox.from_xml(_OME_XML))
+        ox.change_pixel_type(staged, "uint8")
+        self.assertEqual(ox.parse_meta(staged).images[0].pixels.type.value, "uint8")
+
+    def test_a_tiff_is_still_not_a_zarr_store(self):
+        """Non-store callers must keep no-opping rather than growing an OME/ dir."""
+        tiff = os.path.join(self.d, "plain.tiff")
+        with open(tiff, "w") as f:
+            f.write("not a store")
+        self.assertFalse(ox.is_zarr_store(tiff))
+        ox.write_ome_xml(tiff, _OME_XML)
+        self.assertFalse(os.path.exists(os.path.join(tiff, "OME")))
+
+    def test_a_skipped_write_leaves_no_empty_ome_dir(self):
+        """An empty OME/ reads as 'half written'; a skip must leave nothing behind."""
+        plain = os.path.join(self.d, "notastore.txt")
+        with open(plain, "w") as f:
+            f.write("x")
+        ox.save_meta_in_zarr(plain, omexml=ox.from_xml(_OME_XML))
+        self.assertFalse(os.path.exists(os.path.join(plain, "OME")))

@@ -259,8 +259,9 @@ class NapariState:
             ov.visible = False
             return
         t_idx = axes.index("t")
-        from cecelia.utils import ome_xml_utils
-        interval = ome_xml_utils.read_time_increment(path)   # seconds per frame, or None
+        # NGFF time-axis scale first, OME-XML fallback — one resolver, so the overlay works
+        # for stores that carry only one of the two (see zarr_utils.read_time_increment).
+        interval = zarr_utils.read_time_increment(path)      # seconds per frame, or None
         def _update(event=None):
             try:
                 step = self._viewer.dims.current_step

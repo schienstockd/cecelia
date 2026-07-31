@@ -12,6 +12,32 @@ from functools import lru_cache
 import tifffile
 from ome_types import from_xml, from_tiff, to_xml
 
+
+# Markers that identify a zarr store on disk, in either zarr format.
+_ZARR_MARKERS = ('.zgroup', '.zattrs', 'zarr.json')
+
+
+def is_zarr_store(im_path):
+  """True when `im_path` is a zarr store DIRECTORY — including a staged one.
+
+  Decided by STRUCTURE, not by file extension, matching how zarr_utils identifies stores
+  (`series_base`, `_has_multiscales`). The writers below used to test
+  `os.path.splitext(path)[1] == '.zarr'` — three copies of it — which silently skipped every
+  write into a staging path: `zarr_utils.staged_store` writes to `<store>.ome.zarr.partial`
+  and renames on success, so while the store is being written the extension is `.partial`.
+  The result was an OME directory containing no METADATA.ome.xml, no error raised, and a task
+  log reporting success; every store written that way lost its OME-XML sidecar.
+
+  A TIFF is a file, not a directory, so those callers keep no-opping as before.
+  """
+  if not os.path.isdir(im_path):
+    return False
+  if any(os.path.exists(os.path.join(im_path, m)) for m in _ZARR_MARKERS):
+    return True
+  # a store directory that exists but has no group metadata written into it yet
+  return '.zarr' in os.path.basename(im_path)
+
+
 """
 save (changed) OME XML from previous image into zarr structure
 """
@@ -57,13 +83,9 @@ def save_meta_in_zarr(
       if i == 'X':
         omexml.images[0].pixels.size_x = x
   
-  # save OME XML in zarr directory
-  # create directory
-  ome_dir = os.path.join(store_path, 'OME')
-  if os.path.exists(ome_dir) is False:
-    os.mkdir(ome_dir)
-  
-  # write back
+  # save OME XML in zarr directory. write_ome_xml creates OME/ itself, and only when it
+  # actually writes — creating it here too meant a skipped write left an empty OME directory,
+  # which reads as "half written" rather than "not written".
   write_ome_xml(store_path, omexml)
   
 """
@@ -133,7 +155,7 @@ TODO this only works on OME-ZARR for now
 """
 def write_ome_xml(im_path, omexml):
   # flip dimension order in pixels and adjust sizes
-  if os.path.splitext(im_path)[1] == ".zarr":
+  if is_zarr_store(im_path):
     ome_path = os.path.join(im_path, 'OME')
     
     if os.path.exists(ome_path) is False:
@@ -159,7 +181,7 @@ TODO this only works on OME-ZARR for now
 """
 def change_pixel_type(im_path, pixel_type = 'uint16'):
   # flip dimension order in pixels and adjust sizes
-  if os.path.splitext(im_path)[1] == ".zarr":
+  if is_zarr_store(im_path):
     omexml = parse_meta(im_path)
     
     omexml.images[0].pixels.type = pixel_type
@@ -174,7 +196,7 @@ TODO this only works on OME-ZARR for now
 """
 def switch_dim_order(im_path, dim_order = 'XYZCT'):
   # flip dimension order in pixels and adjust sizes
-  if os.path.splitext(im_path)[1] == '.zarr':
+  if is_zarr_store(im_path):
     omexml = parse_meta(im_path)
     
     # get previous order
@@ -322,15 +344,9 @@ def read_time_increment(path):
 Parse metadata from zarr file
 """
 def parse_meta(im_path):
-  omexml = None
-  
-  # get extension
-  im_ext = os.path.splitext(im_path)[1]
-  
-  # open zarr
-  if im_ext == ".zarr":
-    omexml = parse_meta_from_zarr(im_path)
-  else:
-    omexml = parse_meta_from_tiff(im_path)
-    
-  return omexml
+  # Structural, not by extension — same reason as the writers (see is_zarr_store). Dispatching
+  # on ".zarr" sent a staged store (`<store>.ome.zarr.partial`) down the TIFF branch, where
+  # ome_types raises trying to read a directory as a TIFF.
+  if is_zarr_store(im_path):
+    return parse_meta_from_zarr(im_path)
+  return parse_meta_from_tiff(im_path)
