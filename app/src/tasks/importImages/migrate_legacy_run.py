@@ -12,10 +12,10 @@ Parameter contract (JSON written by Julia):
   mode             - "copy" (default) or "symlink" for the zarr
   rscript          - Rscript to use (optional; default "Rscript")
 """
-import json
 
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.legacy_migrate import migrate_image
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -27,8 +27,7 @@ def run(params):
         rscript=params.get('rscript', 'Rscript'),
         log=lambda m: print(m, flush=True),
     )
-    with open(params['resultPath'], 'w') as f:
-        json.dump(fields, f)
+    write_json_atomic(params['resultPath'], fields)
 
 
 def main():

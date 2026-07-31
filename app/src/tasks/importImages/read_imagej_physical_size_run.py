@@ -16,10 +16,9 @@ Result JSON: {"PhysicalSizeZ": <float, µm>, "sourceUnit": <str>} or {} if there
 usable to correct (not a TIFF, no ImageJ metadata, no `spacing`, or unit already micron).
 """
 
-import json
-
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 # ImageJ calibration unit → micrometers
 _UNIT_TO_MICRON = {
@@ -55,8 +54,7 @@ def run(params):
         elif spacing is not None and factor is None:
             log.log(f'>> ImageJ unit "{unit}" has no known micron conversion, skipping')
 
-    with open(result_path, 'w') as f:
-        json.dump(result, f)
+    write_json_atomic(result_path, result)
 
 
 def main():

@@ -17,7 +17,6 @@ Parameter contract (JSON written by Julia):
 Writes `resultPath` with `{"channels": [{"index","vmin","vmax","clipLowFrac","clipHighFrac",
 "p999","trueMax","rangeSpan"}, …]}` — the Julia handler turns this into ccid meta + QC findings.
 """
-import json
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import cecelia.utils.zarr_utils as zarr_utils
@@ -25,6 +24,7 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.intensity_utils as intensity_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -87,8 +87,7 @@ def run(params):
         # the sidecar honest for any OME-XML consumer).
         ome_xml_utils.change_pixel_type(staging, 'uint8')
 
-    with open(result_path, 'w') as f:
-        json.dump({'channels': channels}, f)
+    write_json_atomic(result_path, {'channels': channels})
 
     log.progress(4, 4)
     log.log('>> done')

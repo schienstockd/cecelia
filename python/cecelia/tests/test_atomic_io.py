@@ -36,7 +36,7 @@ class AtomicWriteTest(unittest.TestCase):
     def test_json_round_trips(self):
         p = os.path.join(self.td, "qc.json")
         write_json_atomic(p, {"nCells": 42})
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             self.assertEqual(json.load(f)["nCells"], 42)
         self.assertEqual(self._leftovers(), [])
 
@@ -48,7 +48,7 @@ class AtomicWriteTest(unittest.TestCase):
             with write_atomic(p) as f:
                 f.write('{"partial":')
                 raise RuntimeError("killed mid-write")
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             self.assertEqual(json.load(f)["v"], 1)      # untouched, NOT truncated
         self.assertEqual(self._leftovers(), [])         # and no temp left behind
 
@@ -78,7 +78,7 @@ class AtomicWriteTest(unittest.TestCase):
         p = os.path.join(self.td, "base.h5ad")
         with atomic_path(p) as tmp:
             capture(tmp)
-            pathlib.Path(tmp).write_text("x")
+            pathlib.Path(tmp).write_text("x", encoding="utf-8")
         self.assertFalse(seen["tmp"].endswith(".h5ad"))
         self.assertTrue(seen["tmp"].startswith("base.h5ad.tmp."))
 
@@ -87,14 +87,29 @@ class AtomicWriteTest(unittest.TestCase):
         p = os.path.join(self.td, "sub", "x.json")
         with atomic_path(p) as tmp:
             self.assertEqual(os.path.dirname(tmp), os.path.dirname(p))
-            pathlib.Path(tmp).write_text("{}")
+            pathlib.Path(tmp).write_text("{}", encoding="utf-8")
+
+    def test_text_mode_writes_utf8_regardless_of_locale(self):
+        """`open()` defaults to the LOCALE encoding — cp1252 on Windows, where `µm` in an OME-XML
+        or a QC message is a `UnicodeEncodeError`. The helper pins UTF-8 so callers can't inherit
+        the platform's."""
+        p = os.path.join(self.td, "qc.txt")
+        with write_atomic(p) as f:
+            f.write("resolution ≥ 0.5 µm")
+        self.assertEqual(pathlib.Path(p).read_bytes().decode("utf-8"), "resolution ≥ 0.5 µm")
+
+    def test_binary_mode_is_untouched(self):
+        p = os.path.join(self.td, "raw.bin")
+        with write_atomic(p, "wb") as f:
+            f.write(b"\x00\x9d\xff")
+        self.assertEqual(pathlib.Path(p).read_bytes(), b"\x00\x9d\xff")
 
     def test_two_writers_of_one_path_get_distinct_temps(self):
         p = os.path.join(self.td, "x.json")
         with atomic_path(p) as a, atomic_path(p) as b:
             self.assertNotEqual(a, b)
-            pathlib.Path(a).write_text("{}")
-            pathlib.Path(b).write_text("{}")
+            pathlib.Path(a).write_text("{}", encoding="utf-8")
+            pathlib.Path(b).write_text("{}", encoding="utf-8")
 
 
 class AtomicH5adTest(unittest.TestCase):
@@ -146,7 +161,7 @@ class NoHandRolledWritesTest(unittest.TestCase):
             for f in (repo / root).rglob("*.py"):
                 if f.name in self.ALLOWED_FILES or "/tests/" in f.as_posix():
                     continue
-                tree = ast.parse(f.read_text())
+                tree = ast.parse(f.read_text(encoding="utf-8"))
                 for node in ast.walk(tree):
                     # `<x>.write_h5ad(...)` — the unsafe form. `write_h5ad_atomic(...)` is a plain
                     # Call with a Name func, so it never matches here.
@@ -155,6 +170,62 @@ class NoHandRolledWritesTest(unittest.TestCase):
                         offenders.append(f"{f.relative_to(repo)}:{node.lineno}")
         self.assertEqual(offenders, [], "use write_h5ad_atomic (cecelia.utils.atomic_io): "
                                         f"{offenders}")
+
+
+class TextIoDeclaresEncodingTest(unittest.TestCase):
+    """Detector: text-mode file I/O must name its encoding.
+
+    Python's default is the *locale* encoding, which is UTF-8 on Linux/macOS and **cp1252 on
+    Windows** — so a bare `open(p)` / `read_text()` is a platform-dependent bug that only ever
+    shows up on the Windows runner. It has bitten twice over: reading a source file with a `∝`
+    in it (`0x9D` is undefined in cp1252 → `UnicodeDecodeError`), and writing an OME-XML with
+    `µm` in it would fail the same way on the encode side. Everything we read and write is UTF-8.
+    """
+
+    ROOTS = ("python/cecelia", "app/src", "napari", "api", "mcp", "scripts")
+    # `atomic_io` IS the implementation — it supplies the utf-8 default via **open_kwargs
+    ALLOWED_FILES = {"atomic_io.py"}
+
+    def _repo(self):
+        return pathlib.Path(__file__).resolve().parents[3]
+
+    @staticmethod
+    def _mode(call):
+        """The literal mode of an `open(...)` call, or `None` if absent/not a literal."""
+        if len(call.args) > 1 and isinstance(call.args[1], ast.Constant):
+            return call.args[1].value
+        for kw in call.keywords:
+            if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                return kw.value.value
+        return None
+
+    def test_no_text_io_without_an_explicit_encoding(self):
+        repo = self._repo()
+        offenders = []
+        for root in self.ROOTS:
+            for f in sorted((repo / root).rglob("*.py")):
+                if f.name in self.ALLOWED_FILES:
+                    continue
+                tree = ast.parse(f.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    if {kw.arg for kw in node.keywords} & {"encoding", None}:
+                        continue          # explicit, or forwarded via **kwargs
+                    # bare `open(...)` — an attribute call (`zarr.open`, `gzip.open`) is not a
+                    # builtin text open and is left alone
+                    if isinstance(node.func, ast.Name) and node.func.id == "open":
+                        mode = self._mode(node)
+                        if mode is None or "b" not in mode:
+                            offenders.append(f"{f.relative_to(repo)}:{node.lineno} open()")
+                    elif isinstance(node.func, ast.Attribute) \
+                            and node.func.attr in ("read_text", "write_text"):
+                        offenders.append(
+                            f"{f.relative_to(repo)}:{node.lineno} {node.func.attr}()")
+        self.assertEqual(
+            offenders, [],
+            "pass encoding='utf-8' (the locale default is cp1252 on Windows):\n  "
+            + "\n  ".join(offenders))
 
 
 if __name__ == "__main__":

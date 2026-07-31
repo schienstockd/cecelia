@@ -155,7 +155,7 @@ def scan_project(src_proj: str, rscript: str = "Rscript", uids=None) -> dict:
     for p in sorted(ana1.iterdir()):
         if p.name.startswith((".", "._")) or not (p / "ccid.type").is_file():
             continue
-        if (p / "ccid.type").read_text().strip() == "CciaImage":
+        if (p / "ccid.type").read_text(encoding="utf-8").strip() == "CciaImage":
             all_uids.append(p.name)
     want = [u for u in all_uids if (uids is None or u in uids)]
 
@@ -297,7 +297,7 @@ def _store_ndim(zarr_path: str):
     for cand in (os.path.join(zarr_path, "0", "0", ".zarray"),
                  os.path.join(zarr_path, "0", ".zarray")):
         if os.path.isfile(cand):
-            with open(cand) as f:
+            with open(cand, encoding="utf-8") as f:
                 return len(json.load(f).get("shape", []))
     return None
 

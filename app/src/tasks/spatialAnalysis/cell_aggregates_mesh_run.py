@@ -9,7 +9,6 @@ for live images (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11). Meshes built o
 Membership + label-zarr path come from Julia (aggregatesMeshes.jl). Params: imPath, labelPath, labels
 (member ids), physicalSizes [sz,sy,sx], maxClusterDist (µm), minCells, popType, propsPath, qcOutPath.
 """
-import json
 
 import numpy as np
 import pandas as pd
@@ -21,6 +20,7 @@ import cecelia.utils.script_utils as script_utils
 import cecelia.utils.mesh_utils as mesh_utils
 from cecelia.utils.label_props_utils import LabelPropsView
 from cecelia.utils.dim_utils import DimUtils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def _extract_t(arr, t_axis, t):
@@ -87,8 +87,7 @@ def run(params):
     frac = float(is_agg.sum() / len(lbls)) if lbls else 0.0
     log.log(f">> aggregatesMeshes: {n_agg} aggregate(s), {int(is_agg.sum())}/{len(lbls)} cells aggregated")
     if qc_path is not None:
-        with open(qc_path, "w") as f:
-            json.dump({"nCells": len(lbls), "nAggregates": n_agg, "fracAggregated": frac}, f)
+        write_json_atomic(qc_path, {"nCells": len(lbls), "nAggregates": n_agg, "fracAggregated": frac})
 
 
 def main():

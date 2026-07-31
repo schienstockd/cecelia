@@ -15,7 +15,6 @@ Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
-import json
 
 import numpy as np
 import pandas as pd
@@ -24,6 +23,7 @@ import pandas as pd
 from cecelia.utils.label_props_utils import LabelPropsView
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.clustering_utils as clustering_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -107,8 +107,7 @@ def run(params):
     # (qc.jl). Best-effort; never fails the task. Same qcOutPath pattern as cellpose_run.py.
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
-        with open(qc_out_path, "w") as f:
-            json.dump(qc, f)
+        write_json_atomic(qc_out_path, qc)
         log.log(f">> saved cluster QC: {qc['nClusters']} clusters over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> cluster_cells done")

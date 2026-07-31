@@ -20,7 +20,6 @@ code index), graphPaths {uID: path}, graphSuffix, compCols (composition column n
 otherCol, includeOther, clusterMethod ("leiden"|"kmeans"), numClusters, resolution, createUmap,
 randomState, qcOutPath.
 """
-import json
 from collections import defaultdict
 
 import numpy as np
@@ -30,6 +29,7 @@ import pandas as pd
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.spatial_utils as spatial_utils
 import cecelia.utils.clustering_utils as clustering_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -168,8 +168,7 @@ def run(params):
 
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
-        with open(qc_out_path, "w") as f:
-            json.dump(qc, f)
+        write_json_atomic(qc_out_path, qc)
         log.log(f">> saved region QC: {qc['nClusters']} regions over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> clustRegions done")

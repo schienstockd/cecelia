@@ -86,7 +86,12 @@ def write_atomic(path, mode="w", **open_kwargs):
 
         with write_atomic(qc_path) as f:
             json.dump(payload, f)
+
+    Text mode defaults to UTF-8 — Python's default is the *locale* encoding, which on Windows is
+    cp1252 and cannot represent most of what we write (µm in an OME-XML, `≥` in a QC message).
     """
+    if "b" not in mode:
+        open_kwargs.setdefault("encoding", "utf-8")
     with atomic_path(path) as tmp:
         with open(tmp, mode, **open_kwargs) as f:
             yield f

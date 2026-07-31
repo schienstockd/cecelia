@@ -72,7 +72,7 @@ _OME_XML = """<?xml version="1.0" encoding="UTF-8"?>
 def _write_ome_xml(store):
     ome_dir = os.path.join(store, "OME")
     os.makedirs(ome_dir, exist_ok=True)
-    with open(os.path.join(ome_dir, "METADATA.ome.xml"), "w") as f:
+    with open(os.path.join(ome_dir, "METADATA.ome.xml"), "w", encoding="utf-8") as f:
         f.write(_OME_XML)
 
 
@@ -201,7 +201,7 @@ class OmeXmlStagedWriteTest(unittest.TestCase):
         """A minimal zarr-looking store directory."""
         p = os.path.join(self.d, name)
         os.makedirs(p, exist_ok=True)
-        with open(os.path.join(p, ".zgroup"), "w") as f:
+        with open(os.path.join(p, ".zgroup"), "w", encoding="utf-8") as f:
             f.write('{"zarr_format": 2}')
         return p
 
@@ -216,7 +216,7 @@ class OmeXmlStagedWriteTest(unittest.TestCase):
         final = os.path.join(self.d, "img.ome.zarr")
         with zu.staged_store(final) as staging:
             os.makedirs(staging, exist_ok=True)
-            with open(os.path.join(staging, ".zgroup"), "w") as f:
+            with open(os.path.join(staging, ".zgroup"), "w", encoding="utf-8") as f:
                 f.write('{"zarr_format": 2}')
             ox.save_meta_in_zarr(staging, omexml=ox.from_xml(_OME_XML))
         self.assertTrue(os.path.exists(os.path.join(final, "OME", "METADATA.ome.xml")))
@@ -233,7 +233,7 @@ class OmeXmlStagedWriteTest(unittest.TestCase):
     def test_a_tiff_is_still_not_a_zarr_store(self):
         """Non-store callers must keep no-opping rather than growing an OME/ dir."""
         tiff = os.path.join(self.d, "plain.tiff")
-        with open(tiff, "w") as f:
+        with open(tiff, "w", encoding="utf-8") as f:
             f.write("not a store")
         self.assertFalse(ox.is_zarr_store(tiff))
         ox.write_ome_xml(tiff, _OME_XML)
@@ -242,7 +242,7 @@ class OmeXmlStagedWriteTest(unittest.TestCase):
     def test_a_skipped_write_leaves_no_empty_ome_dir(self):
         """An empty OME/ reads as 'half written'; a skip must leave nothing behind."""
         plain = os.path.join(self.d, "notastore.txt")
-        with open(plain, "w") as f:
+        with open(plain, "w", encoding="utf-8") as f:
             f.write("x")
         ox.save_meta_in_zarr(plain, omexml=ox.from_xml(_OME_XML))
         self.assertFalse(os.path.exists(os.path.join(plain, "OME")))

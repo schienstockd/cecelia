@@ -17,11 +17,11 @@ Node resolution happens in Julia (cellNeighbours.jl). Params: segments [{valueNa
 (`labels: null` = every cell of that segmentation), graphPath, physicalSizes [sz,sy,sx], neighbourMethod,
 neighbourRadius, nNeighbours, perTimepoint, qcOutPath.
 """
-import json
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.spatial_utils as spatial_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 _EMPTY_QC = {"nCells": 0, "nEdges": 0, "meanDegree": 0.0, "isolatedFrac": 0.0}
 
@@ -63,8 +63,7 @@ def run(params):
 
 def _dump(path, payload):
     if path is not None:
-        with open(path, "w") as f:
-            json.dump(payload, f)
+        write_json_atomic(path, payload)
 
 
 def main():
