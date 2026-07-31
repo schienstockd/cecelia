@@ -46,7 +46,7 @@ export const previewApi = {
   },
   start: () => svcPost('/api/preview/start'),
   stop: (valueName?: string) => svcPost('/api/preview/stop', { valueName }),
-  run: (body: { projectUid: string; imageUid: string; valueName: string; params: object }) =>
+  run: (body: { projectUid: string; imageUid: string; valueName: string; funName: string; params: object }) =>
     svcPost('/api/preview/run', body),
 }
 

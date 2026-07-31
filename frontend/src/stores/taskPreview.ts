@@ -19,7 +19,8 @@ import { computed, ref, watch } from 'vue'
 import { previewApi } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import {
-  previewBlocker, blockerMessage, previewSummary, baseOnlyWarning, PREVIEW_DEBOUNCE_MS,
+  previewBlocker, blockerMessage, previewSummary, baseOnlyWarning, tilingWarning,
+  PREVIEW_DEBOUNCE_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker,
 } from '../utils/taskPreview'
 import { useWsStore } from './ws'
@@ -38,6 +39,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const counts   = ref<Record<string, number> | null>(null)
   const fallback2d = ref(false)
   const signal   = ref<{ hasSignal?: boolean; noSignalWhy?: string } | null>(null)
+  const tiling   = ref<{ runSeams?: Record<string, number>; blockSize?: number } | null>(null)
   const error    = ref('')
   /** true between toggle-on and the worker answering — its imports take ~18 s, so this is visible */
   const starting = ref(false)
@@ -48,6 +50,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined))
   /** a two-model run previews only its base type — say so rather than let it look complete */
   const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
+  /** a run would split this region at a tile seam; the preview segments it whole */
+  const tiled    = computed(() => tilingWarning(tiling.value?.runSeams, tiling.value?.blockSize))
   /** what the toggle shows: a run in flight, or one about to start */
   const busy    = computed(() => runState.value !== 'idle' || starting.value)
 
@@ -64,7 +68,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const scheduler = debouncedLatest<PreviewContext>(async (ctx, isCurrent) => {
     const res = await previewApi.run({
       projectUid: ctx.projectUid, imageUid: ctx.imageUid,
-      valueName: ctx.valueName, params: ctx.params ?? {},
+      valueName: ctx.valueName, funName: ctx.funName, params: ctx.params ?? {},
     })
     // Superseded while cellpose ran: the user has already moved on, so applying this would show a mask
     // for a region that is no longer on screen. The layer the backend just set is replaced by the next
@@ -75,6 +79,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     counts.value = res?.counts ?? null
     fallback2d.value = Boolean(res?.fallback2d)
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
+    tiling.value = { runSeams: res?.runSeams, blockSize: res?.blockSize }
     error.value = ''
   }, {
     wait: PREVIEW_DEBOUNCE_MS,
@@ -117,6 +122,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     counts.value = null
     fallback2d.value = false
     signal.value = null
+    tiling.value = null
     error.value = ''
     starting.value = false
     try {
@@ -144,12 +150,13 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     counts.value = null
     fallback2d.value = false
     signal.value = null
+    tiling.value = null
     void refreshStatus().then(request)
   })
 
   return {
-    enabled, pinned, runState, status, context, counts, fallback2d, signal, error, starting,
-    blocker, hint, summary, busy, baseOnly,
+    enabled, pinned, runState, status, context, counts, fallback2d, signal, tiling, error, starting,
+    blocker, hint, summary, busy, baseOnly, tiled,
     setContext, request, start, stop, toggle, refreshStatus,
     /** show the current result now, skipping the debounce (the manual "preview now" action) */
     flush: () => scheduler.flush(),

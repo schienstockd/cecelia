@@ -382,6 +382,14 @@ the image by shape alone with no `translate`. An earlier design wrote a never-pr
 it needed its own staging lifecycle and left debris the sweep's active-window heuristic then refused to
 collect. A preview is a picture, not data.
 
+**The params are prepared by the TASK, not by the worker.** A task's `_run_task` translates params
+before dispatch — cellpose resolves channel NAMES to 0-based indices and a custom model name to a
+checkpoint path. The preview sends the frontend's params, so it goes through the same translation via the
+`preview_params` hook (cellpose's overload and its own `_run_task` both call
+`cellpose_models_for_python`). Sharing `predict_slice` does NOT make the params shared — skipping this
+produced `ValueError: invalid literal for int() with base 10: 'CH3'`, and a custom checkpoint would have
+failed one step later.
+
 **Opt-in per task**, the `live_outputs` shape: `task_previewable(::CciaTask) = false` is the base, a task
 overloads it beside its struct, and there is a `CompositeTask` overload because the module page runs
 `segment.cellposeMeasure`. `GET /api/tasks/definitions` stamps it onto each spec as `previewable`.
@@ -396,6 +404,12 @@ overloads it beside its struct, and there is a `CompositeTask` overload because 
   preview shows — the warning says which case you're in. Not run because `_compute_iou_matrix` is
   quadratic: 1.8 s at 100×100 labels, **26.9 s at 400×400**, against a 0.14–0.38 s preview (see
   `docs/TODO.md` #00093 — the real pipeline pays this per timepoint too).
+- **Not tiled like the run.** `SegmentationUtils` tiles at `blockSize` and re-stitches labels split
+  across each seam; the preview segments the visible region as ONE tile. Where a seam would cross the
+  region the run's mask is two inferences plus an IoU re-join and the preview's is one, so counts and
+  boundaries near it differ — flagged as *"Run would tile this"*. The test is positional
+  (`_run_tile_seams`): the grid is anchored at the image origin, so a 600 px region inside one 1024 px
+  tile has no seam while a 300 px one straddling y=512 does.
 - **"0 cells" is qualified.** A drift-padded plane returns 0 and otherwise looks exactly like too large
   a diameter, so the worker checks `zarr_utils.read_valid_box` and reports `hasSignal`/`noSignalWhy` →
   *"No image data here"* (padding) or *"Region is blank"*.

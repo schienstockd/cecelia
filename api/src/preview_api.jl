@@ -191,6 +191,30 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 409, JSON3.write((; error = sprint(showerror, e), code = "no-region"))
     end
 
+    # Params as the TASK's Python side needs them — cellpose resolves channel names to indices and a
+    # custom model to its checkpoint path. Skipping this sent "CH3" where an int was expected. The
+    # translation dispatches on the task, so it cannot be guessed at here; a missing custom checkpoint
+    # raises with a message worth showing.
+    task = try
+        Cecelia._task_from_fun_name(String(get(data, "funName", "")))
+    catch
+        nothing
+    end
+    if task !== nothing
+        img_for_params = try
+            init_object(project_uid, image_uid)      # already validated against the open image above
+        catch e
+            return 500, JSON3.write((; error = "could not load image metadata: " * sprint(showerror, e)))
+        end
+        params = try
+            preview_params(task, params, img_for_params)
+        catch e
+            return 400, JSON3.write((;
+                error = e isa ErrorException ? e.msg : sprint(showerror, e),
+                code = "params-not-previewable"))
+        end
+    end
+
     reply = try
         _with_preview() do
             w = _preview()
@@ -222,6 +246,9 @@ function api_preview_run(body_bytes::Vector{UInt8})
         # plane returns 0 cells and otherwise looks exactly like a bad diameter
         hasSignal   = Bool(get(reply, "hasSignal", true)),
         noSignalWhy = String(get(reply, "noSignalWhy", "")),
+        # tile seams the RUN would place inside this region; the preview segments it as one tile
+        runSeams    = get(reply, "runSeams", Dict{String,Any}()),
+        blockSize   = get(reply, "blockSize", 0),
         valueName  = value_name,
     ))
 end

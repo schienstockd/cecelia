@@ -163,6 +163,34 @@ def _region_signal(im_path, bounds, tile):
     return True, ""
 
 
+def _run_tile_seams(bounds, axis_len, block_size):
+    """Tile-write boundaries the RUN would place strictly inside this region, per axis.
+
+    The preview hands the whole visible region to `predict_slice` as ONE tile. A run does not: it tiles
+    at `blockSize` and re-stitches labels split across each seam (`_create_xy_tiles` →
+    `_stitch_tile_seams`). So where a seam crosses the previewed region, the run's mask there is the
+    product of two inferences plus an IoU re-join, and the preview's is a single inference — the counts
+    and boundaries near it legitimately differ.
+
+    The test is POSITIONAL, not "is the region bigger than blockSize": the grid is anchored at the image
+    origin (`y = 0, block_size, 2*block_size, …`) and only the *write* bounds land on it (reads are
+    padded by `overlap`). A 600 px region sitting inside one 1024 px tile has no seam; a 300 px one
+    straddling y=512 has one.
+    """
+    seams = {}
+    if not block_size or block_size < 1:
+        return seams
+    for ax in ("Y", "X"):
+        if ax not in bounds:
+            continue
+        lo, hi = int(bounds[ax][0]), int(bounds[ax][1])
+        full = int(axis_len.get(ax, hi))
+        n = sum(1 for b in range(block_size, full, block_size) if lo < b < hi)
+        if n:
+            seams[ax] = n
+    return seams
+
+
 def preview(msg):
     im_path = msg["imPath"]
     task_dir = msg["taskDir"]
@@ -228,6 +256,9 @@ def preview(msg):
         # so the caller can tell "your parameters found nothing" from "there is nothing here"
         "hasSignal": has_signal,
         "noSignalWhy": no_signal_why,
+        # tile seams the RUN would place inside this region, which the preview does not reproduce
+        "runSeams": _run_tile_seams(bounds, axis_len, seg.block_size),
+        "blockSize": int(seg.block_size),
         "mask": encode_block(block),
         # where the block belongs: the full label extent and its axis names, so the receiver can
         # build a full-image-shape layer and needs no translate to line it up

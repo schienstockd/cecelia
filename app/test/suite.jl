@@ -8017,6 +8017,61 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
     end
 
+    @testset "preview params are translated the way the RUN translates them" begin
+        # THE reported bug: `preview worker: ValueError: invalid literal for int() with base 10: 'CH3'`.
+        # The frontend sends channel NAMES and a bare model name; Python wants 0-based indices and a
+        # checkpoint PATH. `_run_task` translated them inline, so the preview — which sends the
+        # frontend's params straight to the worker — sent names. Sharing `predict_slice` does not make
+        # the params shared; preparing them is the task's job, hence `preview_params`.
+        mktempdir() do dir
+            img = CciaImage(; uid = "uid1", name = "n", dir = joinpath(dir, "1", "uid1"))
+            mkpath(img._dir)
+            img.filepath["default"] = "ccidImage.ome.zarr"
+            img.im_channel_names["default"] = ["CH1", "CH2", "CH3", "CH4"]
+            save!(img)
+            raw = Cecelia.read_ccid_raw(Cecelia.state_file(img))
+
+            params = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "model" => "cyto3", "matchAs" => "base",
+                "cellChannels" => ["CH3"], "nucChannels" => String[])))
+
+            m = Cecelia.cellpose_models_for_python(params, raw)["0"]
+            @test m["cellChannels"] == [2]           # 0-based: CH3 is the third channel
+            @test m["nucChannels"] == Int[]
+            @test m["model"] == "cyto3"              # a built-in name passes through untouched
+
+            # the hook the preview calls produces the same thing, and leaves other params alone
+            got = Cecelia.preview_params(Cecelia.CellposeSegment(), params, img)
+            @test got["models"]["0"]["cellChannels"] == [2]
+            @test !haskey(params["models"]["0"], "cellChannels") ||
+                  params["models"]["0"]["cellChannels"] == ["CH3"]   # input not mutated
+
+            # idempotent: already-translated indices survive a second pass (a REPL/chain caller)
+            @test Cecelia.cellpose_models_for_python(got, raw)["0"]["cellChannels"] == [2]
+
+            # a channel the image does not have is dropped, not turned into a bogus index
+            bad = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "cellChannels" => ["CH9"], "nucChannels" => [])))
+            @test Cecelia.cellpose_models_for_python(bad, raw)["0"]["cellChannels"] == Int[]
+
+            # a missing CUSTOM checkpoint raises with a message worth showing, rather than failing
+            # deep inside cellpose — the second translation the preview used to skip
+            custom = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "model" => "no-such-model.pth", "cellChannels" => ["CH1"], "nucChannels" => [])))
+            err = try; Cecelia.cellpose_models_for_python(custom, raw); nothing
+                  catch e; e end
+            @test err isa ErrorException
+            @test occursin("no-such-model.pth", err.msg)
+
+            # and the composite delegates to its previewable step, since that is what the page runs
+            composite = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+            @test Cecelia.preview_params(composite, params, img)["models"]["0"]["cellChannels"] == [2]
+
+            # a task with no overload passes params through untouched
+            @test Cecelia.preview_params(Cecelia.MeasureLabels(), params, img) === params
+        end
+    end
+
     @testset "task_previewable is declared, and composites inherit it" begin
         # The trait replaced the frontend inferring previewability from a cellpose-shaped `models`
         # bag — right about cellpose, silently wrong about every other backend.

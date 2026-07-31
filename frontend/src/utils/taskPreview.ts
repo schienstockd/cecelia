@@ -20,6 +20,8 @@ export interface PreviewContext {
   imageUid: string
   /** output value_name for the segmentation being configured */
   valueName: string
+  /** the task's fun_name — the backend needs it to translate params the way the RUN would */
+  funName: string
   params: Record<string, unknown> | null
 }
 
@@ -133,6 +135,31 @@ export function baseOnlyWarning(params: Record<string, unknown> | null): { short
     detail: removeUnmatched
       ? 'The run also matches nuclei and drops cells without one, so it will find fewer than this'
       : 'The nucleus pass is not previewed; these base masks are what the run produces',
+  }
+}
+
+/**
+ * The tiling warning: a run would split this region at a tile seam, the preview segments it whole.
+ *
+ * `SegmentationUtils` tiles at `blockSize` and re-stitches labels split across each seam, so where a
+ * seam crosses the previewed region the run's mask is two inferences plus an IoU re-join and the
+ * preview's is one. Diameter judgement barely cares (cellpose rescales per tile identically); counts
+ * and boundaries near the seam do.
+ *
+ * The worker does the positional test (`_run_tile_seams`) — "region bigger than blockSize" is the wrong
+ * question, since the grid is anchored at the image origin: a 600 px region inside one 1024 px tile has
+ * no seam, a 300 px one straddling y=512 has one.
+ */
+export function tilingWarning(
+  seams: Record<string, number> | null | undefined,
+  blockSize?: number,
+): { short: string; detail: string } {
+  const n = Object.values(seams ?? {}).reduce((a, b) => a + (b || 0), 0)
+  if (n <= 0) return { short: '', detail: '' }
+  const px = blockSize && blockSize > 0 ? `${blockSize} px` : 'the tile size'
+  return {
+    short: 'Run would tile this',
+    detail: `The run splits at ${px} and re-stitches labels across the seam; cells near it may differ`,
   }
 }
 

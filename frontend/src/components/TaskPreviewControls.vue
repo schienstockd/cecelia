@@ -17,6 +17,7 @@ const props = defineProps<{
   projectUid: string
   imageUid: string
   valueName: string
+  funName: string
   params: Record<string, unknown> | null
   /** false for tasks with no preview support — the control hides rather than offering a dead toggle */
   previewable?: boolean
@@ -27,7 +28,7 @@ const preview = useTaskPreviewStore()
 // Keep the store's context current: a parameter edit IS a re-preview trigger (debounced in the store).
 const ctx = computed<PreviewContext>(() => ({
   projectUid: props.projectUid, imageUid: props.imageUid,
-  valueName: props.valueName, params: props.params,
+  valueName: props.valueName, funName: props.funName, params: props.params,
 }))
 watch(ctx, c => preview.setContext(c), { deep: true, immediate: true })
 onMounted(() => { void preview.refreshStatus() })
@@ -40,9 +41,12 @@ const label = computed(() => {
 </script>
 
 <template>
-  <div v-if="previewable !== false" class="preview-row">
+  <!-- `display: contents` so the buttons join the parent's `.run-row` flex directly: they can then
+       stretch to the Run button's height, while the status line below carries `flex-basis: 100%` and
+       wraps to its own row instead of squeezing Run. -->
+  <div v-if="previewable !== false" class="tp">
     <button
-      class="cc-btn cc-btn-ghost cc-btn-icon"
+      class="tp-btn cc-btn cc-btn-ghost cc-btn-icon"
       :class="{ 'cc-btn-on cc-btn-on-tint': preview.enabled }"
       :disabled="preview.busy && !preview.enabled"
       @click="preview.toggle()"
@@ -56,7 +60,7 @@ const label = computed(() => {
     <template v-if="preview.enabled">
       <!-- pin: stop chasing the view, so a result you want to compare against stays put -->
       <button
-        class="cc-btn cc-btn-ghost cc-btn-icon"
+        class="tp-btn cc-btn cc-btn-ghost cc-btn-icon"
         :class="{ 'cc-btn-on cc-btn-on-tint': preview.pinned }"
         @click="preview.pinned = !preview.pinned"
         v-tooltip.left="preview.pinned
@@ -66,6 +70,9 @@ const label = computed(() => {
         <i class="pi" :class="preview.pinned ? 'pi-lock' : 'pi-lock-open'" />
       </button>
 
+    </template>
+
+    <div v-if="preview.enabled" class="tp-status">
       <span v-if="label" class="cc-readout cc-fs-2xs">{{ label }}</span>
       <span v-if="preview.hint" class="cc-muted cc-fs-2xs">{{ preview.hint }}</span>
       <!-- the 2D fallback is a real warning, so it goes through the severity model: shape-distinct
@@ -82,11 +89,29 @@ const label = computed(() => {
         <i class="pi" :class="SEVERITY.warn.icon" />
         {{ preview.baseOnly.short }}
       </span>
-    </template>
+      <!-- a run would split this region at a tile seam and re-stitch across it; the preview segments
+           the region whole, so counts near the seam differ -->
+      <span v-if="preview.tiled.short" class="preview-warn cc-fs-2xs"
+        v-tooltip.left="preview.tiled.detail">
+        <i class="pi" :class="SEVERITY.warn.icon" />
+        {{ preview.tiled.short }}
+      </span>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.preview-row { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+/* children participate in the parent's `.run-row` flex, not in a box of our own */
+.tp { display: contents; }
+/* stretch, not a hardcoded height — Run's padding stays the single source of the row's height */
+.tp-btn { align-self: stretch; height: auto; min-width: 2.4rem; }
+/* full basis → wraps onto its own line under Run, so a long warning never narrows the Run button */
+.tp-status {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
 .preview-warn { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.2rem; }
 </style>

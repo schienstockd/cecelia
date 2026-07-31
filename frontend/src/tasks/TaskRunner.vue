@@ -355,26 +355,31 @@ const { width: sidebarWidth, onResizeStart } =
 
     <!-- ── Run + Concurrency ── -->
     <section class="runner-section run-section">
-      <button
-        class="run-btn"
-        :disabled="!canRun"
-        @click="run"
-        v-tooltip.left="canRun
-          ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s)`
-          : (activeTaskGatingReason || 'Select at least one image from the list to enable run')"
-      >
-        <i class="pi pi-play" />
-        {{ runLabel }}
-      </button>
+      <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
+           BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
+      <div class="run-row">
+        <button
+          class="run-btn"
+          :disabled="!canRun"
+          @click="run"
+          v-tooltip.left="canRun
+            ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s)`
+            : (activeTaskGatingReason || 'Select at least one image from the list to enable run')"
+        >
+          <i class="pi pi-play" />
+          {{ runLabel }}
+        </button>
 
-      <!-- Preview: run these params on the region napari is showing, before committing to a full run -->
-      <TaskPreviewControls
-        :project-uid="projectMeta.current?.uid ?? ''"
-        :image-uid="drivingImageUid"
-        :value-name="String(paramValues.valueName ?? 'default')"
-        :params="paramValues as Record<string, unknown>"
-        :previewable="canPreview"
-      />
+        <!-- Preview: run these params on the region napari is showing, before committing to a full run -->
+        <TaskPreviewControls
+          :project-uid="projectMeta.current?.uid ?? ''"
+          :image-uid="drivingImageUid"
+          :value-name="String(paramValues.valueName ?? 'default')"
+          :fun-name="taskDef?.fun_name ?? ''"
+          :params="paramValues as Record<string, unknown>"
+          :previewable="canPreview"
+        />
+      </div>
 
       <div class="pool-row" v-if="pools.length > 0">
         <span class="pool-label cc-muted cc-fs-xs"
@@ -540,8 +545,12 @@ const { width: sidebarWidth, onResizeStart } =
 
 /* run */
 .run-section { flex-shrink: 0; }
+/* Run + Preview on one line. `stretch` is what makes the preview buttons match Run's height without
+   either side hardcoding a number — so a change to Run's padding can't silently desync them. */
+.run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
 .run-btn {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;

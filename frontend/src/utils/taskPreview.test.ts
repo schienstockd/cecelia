@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewSummary, FALLBACK_2D_WARN,
-  baseOnlyWarning,
+  baseOnlyWarning, tilingWarning,
   type PreviewContext, type PreviewStatus,
 } from './taskPreview'
 
 const ctx = (over: Partial<PreviewContext> = {}): PreviewContext => ({
-  projectUid: 'p', imageUid: 'img1', valueName: 'A',
+  projectUid: 'p', imageUid: 'img1', valueName: 'A', funName: 'segment.cellpose',
   params: { models: { m1: { matchAs: 'base' } } },
   ...over,
 })
@@ -134,6 +134,41 @@ describe('baseOnlyWarning', () => {
       expect(w.detail).not.toMatch(/\.$/)
       expect(w.detail).not.toMatch(/may vary/i)
     }
+  })
+})
+
+describe('tilingWarning', () => {
+  it('says nothing when no seam crosses the region', () => {
+    // The common case: the visible region sits inside one tile, so the preview IS the run here
+    expect(tilingWarning(null, 512).short).toBe('')
+    expect(tilingWarning({}, 512).short).toBe('')
+    expect(tilingWarning({ Y: 0, X: 0 }, 512).short).toBe('')
+  })
+
+  it('warns when the run would split the region', () => {
+    const w = tilingWarning({ X: 1 }, 512)
+    expect(w.short).toBe('Run would tile this')
+    expect(w.detail).toMatch(/512 px/)          // the number belongs in the detail
+    expect(w.detail).toMatch(/re-stitches/)     // what actually differs, not "may vary"
+  })
+
+  it('warns on a seam in either axis, and on several', () => {
+    expect(tilingWarning({ Y: 1 }, 512).short).not.toBe('')
+    expect(tilingWarning({ Y: 2, X: 1 }, 512).short).not.toBe('')
+  })
+
+  it('degrades without a blockSize rather than printing undefined', () => {
+    expect(tilingWarning({ X: 1 }).detail).toMatch(/the tile size/)
+    expect(tilingWarning({ X: 1 }, 0).detail).toMatch(/the tile size/)
+    expect(tilingWarning({ X: 1 }).detail).not.toMatch(/undefined|NaN/)
+  })
+
+  it('keeps to the house budget', () => {
+    const w = tilingWarning({ X: 1 }, 512)
+    expect(w.short.split(' ').length).toBeLessThanOrEqual(4)
+    expect(w.detail.split(' ').length).toBeLessThanOrEqual(20)
+    expect(w.detail).not.toMatch(/\.$/)
+    expect(w.detail).not.toMatch(/may vary/i)
   })
 })
 

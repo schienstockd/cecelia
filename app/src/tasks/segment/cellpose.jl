@@ -32,9 +32,83 @@ end
 live_outputs(::CellposeSegment, params::AbstractDict) = segment_live_outputs(params)
 
 # The task preview runs this task's own compute over the visible region — the worker calls
-# `CellposeUtils.predict_slice`, the same method the full run uses, so a preview cannot drift from the
-# thing it is previewing. See `task_previewable` in task.jl.
+# `CellposeUtils.predict_slice`, the same method the full run uses. See `task_previewable` in task.jl.
 task_previewable(::CellposeSegment) = true
+
+# Cellpose's built-in model names. Anything outside this set is treated as a *custom* checkpoint name
+# and resolved via `cellpose_model_path` into a file path the Python runner loads with
+# `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model` (its
+# `os.path.isfile(model_type)` branch is the pickup point). See TODO #00087.
+const BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
+
+"""
+    cellpose_models_for_python(params, raw; on_log) -> Dict
+
+The `models` bag as the PYTHON side needs it: channel names resolved to 0-based indices, and a custom
+model name resolved to its checkpoint path. Raises `ErrorException` with a user-facing message when a
+custom checkpoint is missing — cellpose would otherwise fail deep inside the runner with a far less
+useful one.
+
+**Shared by the run and the task preview, and it has to be.** The frontend sends channel NAMES
+(`"CH3"`) and a bare model name; Python expects indices and a path. This translation used to live inline
+in `_run_task`, so the preview — which sends the frontend's params straight to the worker — hit
+`ValueError: invalid literal for int() with base 10: 'CH3'`, and a custom model would have failed the
+same way one step later. "The preview calls the same `predict_slice`" is only true of the compute; the
+params reaching it are the task's to prepare, so preparing them is a task-level hook
+(`preview_params`), not something the worker or the API can reasonably guess at.
+
+`raw` is the image's ccid dict. Channel names come from the **default** version deliberately: a
+corrected variant inherits them by versioned fallback and may carry no list of its own.
+"""
+function cellpose_models_for_python(params::AbstractDict, raw::AbstractDict;
+                                    on_log::Function = _ -> nothing)::Dict{String,Any}
+    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
+    ch_names = channel_names_raw isa AbstractVector ?
+               collect(String, channel_names_raw) : String[]
+
+    models_json = get(params, "models", nothing)
+    out = Dict{String,Any}()
+    isnothing(models_json) && return out
+
+    for (k, v) in models_json
+        m = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
+        for field in ("cellChannels", "nucChannels")
+            raw_chs = get(m, field, [])
+            idx_chs = Int[]
+            for ch in raw_chs
+                # already an index (a REPL/test caller, or a re-translated dict) → keep it
+                if ch isa Integer
+                    push!(idx_chs, Int(ch))
+                    continue
+                end
+                idx = findfirst(==(String(ch)), ch_names)
+                isnothing(idx) || push!(idx_chs, idx - 1)
+            end
+            m[field] = idx_chs
+        end
+        model_name = String(get(m, "model", ""))
+        if !isempty(model_name) && !(model_name in BUILTIN_CELLPOSE_MODELS) && !isfile(model_name)
+            path = cellpose_model_path(model_name)
+            isnothing(path) && error(
+                "Custom cellpose model '$model_name' not found at " *
+                "$(joinpath(cellpose_models_dir(), model_name)). Place the checkpoint there or " *
+                "select a built-in model.")
+            on_log("[INFO] Custom model: $model_name → $path")
+            m["model"] = path
+        end
+        out[String(k)] = m
+    end
+    out
+end
+
+# The preview sends the FRONTEND's params, so they need the same preparation the run does before
+# Python sees them (see `cellpose_models_for_python`). Without this the worker gets channel names where
+# it expects indices.
+function preview_params(::CellposeSegment, params::AbstractDict, img::CciaImage)::Dict{String,Any}
+    out = Dict{String,Any}(String(k) => v for (k, v) in params)
+    out["models"] = cellpose_models_for_python(params, read_ccid_raw(state_file(img)))
+    out
+end
 
 function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
@@ -62,49 +136,11 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
         return nothing
     end
 
-    # Channel names → 0-based indices for cellChannels / nucChannels
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
-
-    # Cellpose's built-in model names. Anything outside this set is treated as a *custom*
-    # checkpoint name and resolved via `cellpose_model_path` into a file path the Python runner
-    # loads with `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model`
-    # (its `os.path.isfile(model_type)` branch is the pickup point). See TODO #00087.
-    BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
-
-    models_json      = get(params, "models", nothing)
-    models_converted = Dict{String,Any}()
-    if !isnothing(models_json)
-        for (k, v) in models_json
-            m = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
-            for field in ("cellChannels", "nucChannels")
-                raw_chs = get(m, field, [])
-                idx_chs = Int[]
-                for ch in raw_chs
-                    ch_str = String(ch)
-                    idx = findfirst(==(ch_str), ch_names)
-                    isnothing(idx) || push!(idx_chs, idx - 1)
-                end
-                m[field] = idx_chs
-            end
-            # Custom-model resolution: only intercept names that AREN'T built-ins. Missing file
-            # → clear error before dispatch (cellpose would otherwise fail deep inside the runner
-            # with a less useful message). Built-in names pass through unchanged.
-            model_name = String(get(m, "model", ""))
-            if !isempty(model_name) && !(model_name in BUILTIN_CELLPOSE_MODELS)
-                path = cellpose_model_path(model_name)
-                if isnothing(path)
-                    on_log("[ERROR] Custom cellpose model '$model_name' not found at " *
-                           "$(joinpath(cellpose_models_dir(), model_name)). Place the checkpoint " *
-                           "there or select a built-in model.")
-                    return nothing
-                end
-                on_log("[INFO] Custom model: $model_name → $path")
-                m["model"] = path
-            end
-            models_converted[String(k)] = m
-        end
+    models_converted = try
+        cellpose_models_for_python(params, raw; on_log = on_log)
+    catch e
+        on_log("[ERROR] $(e isa ErrorException ? e.msg : sprint(showerror, e))")
+        return nothing
     end
 
     on_log("[INFO] Input:  $im_path")

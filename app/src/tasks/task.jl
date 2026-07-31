@@ -111,6 +111,22 @@ live_outputs(::CciaTask, ::AbstractDict)::Vector{LiveOutput} = LiveOutput[]
 # the segmentation module page runs `segment.cellposeMeasure`, not `segment.cellpose`.
 task_previewable(::CciaTask)::Bool = false
 
+"""
+    preview_params(task, params, img) -> Dict
+
+The task's params as its OWN Python side needs them, for a preview. The base method passes them through.
+
+Why this exists: a task's `_run_task` typically *translates* params before dispatch — cellpose resolves
+channel NAMES to 0-based indices and a custom model name to a checkpoint path. The preview sends the
+frontend's params straight to the worker, so without this hook it sends names where Python expects
+indices (`ValueError: invalid literal for int() with base 10: 'CH3'`). The compute being shared
+(`predict_slice`) does not make the params shared; preparing them is the task's job, so it dispatches on
+the task rather than being guessed at by the worker or the API. Raise from an overload to refuse a
+preview with a user-facing message (a missing custom checkpoint).
+"""
+preview_params(::CciaTask, params::AbstractDict, ::CciaImage)::AbstractDict = params
+
+
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a
 # constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream
@@ -454,6 +470,17 @@ end
 # not veto it.
 task_previewable(task::CompositeTask)::Bool =
     any(task_previewable, _composite_steps(task))
+
+# Composite: the previewable step owns the translation. Params are shared across a composite's steps
+# (they sit flat in one dict — see `live_outputs(::CompositeTask, …)`), so the first step that can be
+# previewed is the one whose Python will consume them.
+function preview_params(task::CompositeTask, params::AbstractDict, img::CciaImage)::AbstractDict
+    for sub in _composite_steps(task)
+        task_previewable(sub) && return preview_params(sub, params, img)
+    end
+    params
+end
+
 
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.
