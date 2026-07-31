@@ -18,6 +18,8 @@ import os
 import re
 
 import anndata as ad
+
+from cecelia.utils.atomic_io import write_h5ad_atomic
 import numpy as np
 import pandas as pd
 
@@ -339,7 +341,10 @@ class LabelPropsView:
                 if r is not None:
                     full[r] = row
             self.adata.obsm[key] = full
-        self.adata.write_h5ad(self.filepath)
+        # atomic: this rewrites the WHOLE cell table in place, and `task:cancel` kills this
+        # process by design — a truncated .h5ad is not partially readable and the previous
+        # content is gone. See atomic_io.py.
+        write_h5ad_atomic(self.adata, self.filepath)
         self._pending_obs = None
         self._pending_drop = None
         self._pending_obsm = None

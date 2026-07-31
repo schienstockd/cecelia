@@ -34,6 +34,7 @@ from btrack import config as btrack_config
 from btrack import utils as btrack_utils
 
 import cecelia.utils.label_props_utils as label_props_utils
+from cecelia.utils.atomic_io import write_h5ad_atomic
 
 # btrack Track.to_dict() fields we keep (per-timepoint rows; ID == btrack track number)
 _TRACK_COLS = ("ID", "parent", "root", "state", "generation", "t", "label_id")
@@ -245,6 +246,6 @@ def write_track_props(params: dict, log):
     adata.uns["cecelia_table"] = "tracks"   # marks this h5ad as a per-track table
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    adata.write_h5ad(out_path)
+    write_h5ad_atomic(adata, out_path)
     log.log(f">> wrote {n_tracks} tracks ({n_meas} measures) -> {out_path}")
     return out_path

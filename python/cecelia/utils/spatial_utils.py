@@ -177,8 +177,10 @@ def save_graph(adata, obs_df, path, meta=None):
     if meta:
         for k, v in meta.items():
             adata.uns[k] = v
+    from cecelia.utils.atomic_io import write_h5ad_atomic
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    adata.write_h5ad(path)
+    write_h5ad_atomic(adata, path)
     return path
 
 

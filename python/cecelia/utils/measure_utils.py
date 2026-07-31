@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import skimage.measure as skmeas
 import skimage.filters as skfilt
+from cecelia.utils.atomic_io import write_h5ad_atomic
 import anndata as ad
 
 from cecelia.utils.label_props_utils import skimage_centroid_axis_names
@@ -388,7 +389,7 @@ class MeasureUtils:
         out_dir = os.path.join(self.task_dir, 'labelProps')
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f'{self.output_value_name}.h5ad')
-        adata.write_h5ad(out_path)
+        write_h5ad_atomic(adata, out_path)
         return out_path
 
     # ── helpers ───────────────────────────────────────────────────────────────

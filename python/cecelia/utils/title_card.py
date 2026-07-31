@@ -196,6 +196,10 @@ def prepend_title_to_movie(movie_path, content, *, duration_sec=3.0):
     card = render_card_frame(content, width, height)
     n = title_frame_count(fps, duration_sec)
 
+    # The temp deliberately KEEPS the `.mp4` extension — imageio infers the writer format from it, so
+    # the sibling-suffix scheme `atomic_io` uses (`x.mp4.tmp.ab12`) can't be used here. That means a
+    # leftover from a killed run WOULD match a naive `*.mp4` directory listing, so `/api/movies`
+    # filters `.tmp.` names out. See cecelia/utils/atomic_io.py for the general rule.
     tmp = movie_path + ".tmp.mp4"
     # macro_block_size=1 keeps the card + source frames at their exact (even) dimensions — no resize,
     # so the appended source frames always match the writer's frame size.

@@ -20,6 +20,7 @@ import sys
 import anndata as ad
 
 from cecelia.utils.centroid_migrate import normalise_centroids
+from cecelia.utils.atomic_io import write_h5ad_atomic
 
 
 def _labelprops_files(root):
@@ -33,7 +34,7 @@ def convert_file(path, apply=False):
     a = ad.read_h5ad(path)
     a, changes = normalise_centroids(a)
     if changes and apply:
-        a.write_h5ad(path)
+        write_h5ad_atomic(a, path)
     return changes
 
 

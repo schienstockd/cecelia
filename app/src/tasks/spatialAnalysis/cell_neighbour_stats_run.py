@@ -16,13 +16,12 @@ Membership + basis codes come from Julia (neighbourStats.jl). Params: graphPath,
 segments [{valueName, labels, popCodes}], basis (population names ↔ code index), statsPath,
 nPermutations, randomState, qcOutPath.
 """
-import json
-import os
 
 import numpy as np
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.atomic_io import write_json_atomic
 import cecelia.utils.spatial_utils as spatial_utils
 
 
@@ -85,12 +84,13 @@ def run(params):
             })
 
     if stats_path is not None:
-        os.makedirs(os.path.dirname(stats_path), exist_ok=True)
-        with open(stats_path, "w") as f:
-            json.dump({"basis": list(basis), "nCells": m["nCells"], "nEdges": n_pair_edges,
-                       "graphSuffix": graph_sfx, "graph": meta,
-                       "nPermutations": n_perm, "coverage": coverage,
-                       "records": records}, f, indent=1)
+        # atomic: this is a DURABLE sidecar, and discovery is a directory listing filtered by `.json`
+        # (`app/src/ai/spatial.jl`), so a half-written file would be picked up as a real stats result
+        write_json_atomic(stats_path,
+                          {"basis": list(basis), "nCells": m["nCells"], "nEdges": n_pair_edges,
+                           "graphSuffix": graph_sfx, "graph": meta,
+                           "nPermutations": n_perm, "coverage": coverage,
+                           "records": records}, indent=1)
         log.log(f">> wrote {stats_path}: {len(records)} population pairs over {n_pair_edges} contacts")
     if n_perm > 0:
         log.log(f">> {n_sig}/{len(records)} pair(s) differ from chance at p<0.05 ({n_perm} permutations)")
@@ -105,9 +105,10 @@ def run(params):
 
 
 def _dump(path, obj):
+    # the per-run QC handoff (task_run_dir), not durable — but one write idiom per file, so it uses the
+    # same helper as the durable sidecar above rather than sitting next to it as a second way
     if path is not None:
-        with open(path, "w") as f:
-            json.dump(obj, f)
+        write_json_atomic(path, obj)
 
 
 def main():

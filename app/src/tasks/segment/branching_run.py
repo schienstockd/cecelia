@@ -41,7 +41,6 @@ Parameter contract (JSON written by Julia):
                         because array space is the only space these arrays have.
 """
 
-import json
 import os
 
 import anndata as ad
@@ -50,6 +49,7 @@ import pandas as pd
 import skan
 import skimage.morphology
 import skimage.segmentation
+from cecelia.utils.atomic_io import write_h5ad_atomic, write_json_atomic
 
 import cecelia.utils.anisotropy_utils as aniso
 import cecelia.utils.script_utils as script_utils
@@ -416,7 +416,7 @@ def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_
             adata.uns[k] = v
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    adata.write_h5ad(out_path)
+    write_h5ad_atomic(adata, out_path)
 
 
 def run(params: dict):
@@ -682,23 +682,23 @@ def run(params: dict):
     branch_types = sorted({int(v) for v in paths_df["branch-type"].unique()}) \
         if "branch-type" in paths_df.columns and len(paths_df) else []
 
-    with open(qc_out_path, "w") as f:
-        json.dump({
-            "nBranches": int(len(paths_df)),
-            "nSkeletons": int(n_skeletons_total),
-            "meanBranchLength": mean_branch_length,
-            "branchTypes": branch_types,
-            # The per-image structure readout. 0.0 when the anisotropy pass didn't run — Julia only
-            # banks the metric when calcAnisotropy was on, so a zero never reaches the cohort stats.
-            "anisotropy": image_anisotropy,
-            # One value per timepoint, for the per-frame view of the same measure.
-            "anisotropySeries": anisotropy_series,
-            # The grid the run ACTUALLY produced, so Julia can report what the chosen spacing cost
-            # in stored bytes and warn when it dominates the sidecar. Reported, not estimated:
-            # clamping and integer box rounding both move the real number away from the request.
-            "anisoBoxes": int(np.prod(aniso_coor[0].shape[:-1])) if aniso_coor else 0,
-            "anisoFrames": len(aniso_coor),
-        }, f)
+    # one write idiom per file: the per-run QC handoff uses the same helper as the .h5ad above
+    write_json_atomic(qc_out_path, {
+        "nBranches": int(len(paths_df)),
+        "nSkeletons": int(n_skeletons_total),
+        "meanBranchLength": mean_branch_length,
+        "branchTypes": branch_types,
+        # The per-image structure readout. 0.0 when the anisotropy pass didn't run — Julia only
+        # banks the metric when calcAnisotropy was on, so a zero never reaches the cohort stats.
+        "anisotropy": image_anisotropy,
+        # One value per timepoint, for the per-frame view of the same measure.
+        "anisotropySeries": anisotropy_series,
+        # The grid the run ACTUALLY produced, so Julia can report what the chosen spacing cost
+        # in stored bytes and warn when it dominates the sidecar. Reported, not estimated:
+        # clamping and integer box rounding both move the real number away from the request.
+        "anisoBoxes": int(np.prod(aniso_coor[0].shape[:-1])) if aniso_coor else 0,
+        "anisoFrames": len(aniso_coor),
+    })
 
 
 def main():
