@@ -103,15 +103,30 @@ git push -u origin feat/<short-slug>
 
 ## CI
 
-Every push/PR runs `.github/workflows/ci.yml` (smoke: fresh checkout → `pixi install` →
-`julia … instantiate` → **package tests** → API tests → **Python tests** → MCP tests → frontend build →
-**frontend tests (Vitest)** → server serves `/api/health` + the frontend). It runs the
-**full chain as a matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
+Every push/PR runs `.github/workflows/ci.yml` — a smoke test from a fresh checkout, as **three
+parallel jobs per OS**, split by what each needs installed:
+
+| job | installs | runs |
+|---|---|---|
+| `julia` | pixi + Julia + depot cache | **package tests** (the long pole) |
+| `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend |
+| `python` | pixi only | **Python tests** → MCP tests |
+
+Jobs run concurrently, so wall-clock is the longest job, not the sum. It runs as a
+**matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
 platform-specific install/build/boot failure is caught in CI rather than by a tester — e.g. a PyPI
 dep with no macOS wheel falling back to a source build (TODO #00062). The repo is public, so
 GitHub-hosted runners are free on all OSes (no minute metering — the multipliers only bill private
 repos). All steps run under `bash` (Git Bash on the Windows runner). Keep it green before requesting
 a merge. See `docs/SHIPPING.md` for the release pipeline.
+
+**Adding a job is not free — it costs cache budget.** The Pixi env and the Julia depot are both
+cached and share GitHub's **10 GB per-repo budget**, which the three pixi caches alone fill to
+~6.4 GB. `julia-actions/cache` keys on the job name, so every *Julia-using* job adds one ~100 MB
+depot cache per run per OS (today: 2 jobs × 3 OSes = 6). Over-splitting evicts the depot caches
+before pixi's — pixi's are touched by every job and survive — which silently restores the ~200 s
+precompile that #430 removed. Keep suites that need no Julia in the `python` job, and read the
+budget note at the top of `ci.yml` before adding a cache or a fourth job.
 
 > **A PR with no checks is not a passing PR.** `pull_request` is intentionally left **unfiltered** so
 > a *stacked* PR — one whose base is another feature branch, not `main` — still runs. It used to be
