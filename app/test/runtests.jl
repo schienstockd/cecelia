@@ -7587,6 +7587,14 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 lp = joinpath(proj.root, "1", "img1", "labelProps"); mkpath(lp)
                 write(joinpath(lp, "base.h5ad"), "hdf-bytes")
                 write(joinpath(proj.root, ".cecelia.lock"), "")
+                # staging debris from a cancelled run. Matches neither `_is_store_dir` (no `.zarr`
+                # suffix) nor the skip list, so the mirror walker used to RECURSE and copy every
+                # chunk in as a loose file — gigabytes of unusable bytes in the bundle.
+                deb = joinpath(proj.root, "0", "img1", "data.ome.zarr" * Cecelia.STORE_STAGING_SUFFIX, "0")
+                mkpath(deb); write(joinpath(deb, "0.0"), "half-written")
+                sup = joinpath(proj.root, "1", "img1", "labels",
+                               "labels.zarr" * Cecelia.STORE_SUPERSEDED_SUFFIX)
+                mkpath(sup); write(joinpath(sup, ".zgroup"), "{}")
                 # a notebook with the uid hardcoded — the one place copy/reidentify must rewrite
                 mkpath(joinpath(proj.root, "notebooks"))
                 write(joinpath(proj.root, "notebooks", "nb.jl"), "proj = load_project(\"$uid\")\n")
@@ -7599,6 +7607,12 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test isfile(joinpath(bundle, "1", "img1", "labels", "labels.zarr.tar"))
                 @test !any(endswith(n, ".zarr") for (_, ds, _) in walkdir(bundle) for n in ds)  # packed, not unpacked
                 @test !ispath(joinpath(bundle, ".cecelia.lock"))                                # lock skipped
+                # staging debris excluded entirely — neither packed nor mirrored as loose chunks
+                @test !any(any(s -> endswith(n, s), Cecelia.STORE_TMP_SUFFIXES)
+                           for (_, ds, _) in walkdir(bundle) for n in ds)
+                @test !occursin("half-written",
+                                join((read(joinpath(r, f), String) for (r, _, fs) in walkdir(bundle)
+                                      for f in fs if filesize(joinpath(r, f)) < 4096), "\n"))
                 @test isempty(export_project(uid; out_dir = out))                               # refuses existing bundle
 
                 rm(proj.root; recursive = true)                                                 # drop, then restore from bundle

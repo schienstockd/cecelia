@@ -25,7 +25,15 @@ const PACKED_STORE_EXT = ".tar"
 
 # Dir suffixes never bundled: the lockfile is machine-local, and rechunk/pack backups + our own temp
 # dirs are throwaway (and often huge).
-const _SKIP_DIR_SUFFIXES = (".bak.ome.zarr", ".rechunk_tmp", ".export_tmp", ".import_tmp")
+#
+# STORE_TMP_SUFFIXES (`.partial`/`.superseded`) must be in here, and not just because the debris is
+# worthless. A staging store matches NEITHER `_is_store_dir` (it doesn't end in `.zarr`) nor the skip
+# list, so `_mirror_tree!` used to RECURSE into it and `cp` every chunk file individually into the
+# bundle — a cancelled cellpose run on a long movie would silently add gigabytes of unusable loose
+# files to the export (and the import would restore them). Same root cause as the extension-dispatch
+# bug in `open_as_zarr`: a store identified by its name stops being recognised the moment it's staged.
+const _SKIP_DIR_SUFFIXES = (".bak.ome.zarr", ".rechunk_tmp", ".export_tmp", ".import_tmp",
+                            STORE_TMP_SUFFIXES...)
 const _SKIP_FILES        = (".cecelia.lock",)
 
 # Concurrency for parallel pack/unpack. Modest by default — too many concurrent readers thrash even an
