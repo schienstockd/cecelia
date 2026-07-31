@@ -49,6 +49,18 @@ on:
   pull_request:
   workflow_dispatch:
 
+# `actions: write` is what lets `julia-actions/cache` PRUNE its old entries. Without it the delete
+# step fails ("Failed to delete N existing caches on ref …") and every run's depot caches simply
+# accumulate: the key carries the run id, so nothing is ever overwritten. With two Julia jobs × 3
+# OSes that is ~600 MB per run against a 10 GB repo cap the pixi caches already fill to ~6.4 GB —
+# it reached the cap the first day. At the cap GitHub evicts least-recently-used, which lands on the
+# depot caches (pixi's are touched by every job and stay warm) and silently restores the ~200 s
+# precompile #430 removed. `contents: read` is spelled out because naming any permission drops the
+# rest to none.
+permissions:
+  contents: read
+  actions: write
+
 defaults:
   run:
     shell: bash   # Git Bash on the Windows runner → `&`, curl, seq, sleep work everywhere
