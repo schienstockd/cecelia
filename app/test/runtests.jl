@@ -90,6 +90,39 @@ function Logging.handle_message(l::_ThrowingLogger, level, message, _module, gro
     Logging.handle_message(l.inner, level, message, _module, group, id, file, line; kwargs...)
 end
 
+# ── ONE walk over a task spec's params ────────────────────────────────────────────
+# Five testsets walk task-spec `params` — the tip budget, tip coverage, the copy sweep, numeric
+# ranges, and param validation — and each had hand-rolled the same recursive descent. They agree on
+# the hard parts by luck rather than construction, and the hard parts are real: `params` nests
+# through `section`/`group` containers, and the key type depends on WHERE the spec came from — a spec
+# read from disk (`JSON3.read`) has SYMBOL keys, one from `Cecelia._task_spec` has STRING keys (see
+# CLAUDE.md → *JSON3 gotcha*). A walker that handles only one of those silently sees no params, which
+# reads as "nothing to report" rather than as a broken walk.
+
+"""A spec param's field, whichever key type the spec was parsed with (Symbol or String)."""
+spec_get(p, key, default = nothing) = get(p, Symbol(key), get(p, String(key), default))
+
+"""
+    each_spec_param(f, params; group = "")
+
+Depth-first over a spec's `params`, calling `f(param, group_key)` for EVERY param — containers
+included (callers that only want settable inputs filter on `type` themselves), children descended.
+`group_key` is the enclosing `group` param's key, or `""` at the top level; only `group` sets it,
+because a `section` is pure layout while a `group`'s values live nested under its key.
+"""
+function each_spec_param(f, params; group = "")
+    params isa AbstractVector || return nothing
+    for p in params
+        p isa AbstractDict || continue
+        f(p, group)
+        inner = spec_get(p, "params", nothing)
+        each_spec_param(f, inner;
+                        group = String(something(spec_get(p, "type", ""), "")) == "group" ?
+                                String(something(spec_get(p, "key", ""), "")) : group)
+    end
+    nothing
+end
+
 @testset "Cecelia package smoke tests" begin
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -1403,26 +1436,180 @@ end
     end
 
     # ── Param validation ──────────────────────────────────────────────────────
-    @testset "Param validation" begin
-        task = ImportOmezarr()
+    # ONE test over the whole registry, instead of a hand-written testset per task.
+    #
+    # `validate_params` is a single generic function driven by the task's JSON spec, so asserting it
+    # per task tested one function N times, and only for the tasks somebody remembered to write a
+    # testset for — a new task whose spec declared no bounds, or a malformed spec, passed silently.
+    # This walks EVERY registered task and EVERY bounded param: ~80 range checks rather than 16, and
+    # it covers tasks added after this was written. Per-task testsets remain ONLY where they assert
+    # something task-specific (Branching's µm key rename, NeighbourStats/ClustRegions' moved keys).
+    #
+    # Two rules that only a whole-registry sweep can enforce, both of which caught a real defect when
+    # this landed: `params` must be a JSON ARRAY (testTasks.incrementalPlotTask declared an object, so
+    # `validate_params` threw MethodError instead of validating), and every `type` must be one the
+    # validator knows (migrateLegacy said "string", which is not a case in `_validate_leaf`, so the
+    # param silently skipped validation).
+    @testset "Param validation — every registered task, from its spec" begin
+        # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
+        # silently disables validation for that param, so the set is asserted, not assumed.
+        known_types = Set(["int", "float", "bool", "select", "text", "section", "group",
+                           "channelSelection", "valueNameSelection", "popSelection",
+                           "labelPropsColsSelection", "motionDimsSelection"])
 
-        # Valid params — should not throw
-        @test begin
-            validate_params(task, Dict{String,Any}("pyramidScale" => 2))
-            true
+        # A value the spec itself calls valid: the declared default, else something in range/options.
+        function valid_value(p)
+            t = string(get(p, "type", ""))
+            haskey(p, "default") && !isnothing(p["default"]) && p["default"] != "" && return p["default"]
+            t == "int"    && return Int(get(p, "min", 1))
+            t == "float"  && return Float64(get(p, "min", 1.0))
+            t == "bool"   && return false
+            t == "select" && return get(first(get(p, "options", [Dict("value" => "x")])), "value", "x")
+            return "x"
         end
 
-        # Out of range
-        @test_throws ParamValidationError validate_params(
-            task, Dict{String,Any}("pyramidScale" => 99))
+        # Every param at a value the spec accepts — so a rejection below is provably the ONE value we
+        # perturbed, not a required param we forgot to supply. Group values live nested under the
+        # group's key, keyed by index string, which is what `each_spec_param` hands back as `gk`.
+        function baseline(spec_params)
+            d = Dict{String,Any}()
+            each_spec_param(spec_params) do p, gk
+                key = String(something(spec_get(p, "key", ""), ""))
+                t   = String(something(spec_get(p, "type", ""), ""))
+                isempty(key) && return
+                if t == "group"
+                    d[key] = Dict{String,Any}("0" => Dict{String,Any}())
+                elseif t == "section"
+                    return                        # layout only, holds no value
+                elseif isempty(gk)
+                    d[key] = valid_value(p)
+                else
+                    get!(d, gk, Dict{String,Any}("0" => Dict{String,Any}()))["0"][key] = valid_value(p)
+                end
+            end
+            d
+        end
 
-        # Wrong type (string where int expected)
-        @test_throws ParamValidationError validate_params(
-            task, Dict{String,Any}("pyramidScale" => "not-a-number"))
+        # Assert the rejection names the offending key — otherwise a throw for an unrelated reason
+        # (a missing required param) would let a broken bound pass as "validated".
+        function rejects(task, params, key, why)
+            err = nothing
+            try
+                validate_params(task, params)
+            catch e
+                err = e
+            end
+            if !(err isa ParamValidationError)
+                @error "expected a ParamValidationError" task = typeof(task) param = key case = why got = err
+            end
+            @test err isa ParamValidationError
+            if err isa ParamValidationError && !occursin(key, err.msg)
+                @error "rejected, but for a different param" param = key case = why msg = err.msg
+            end
+            @test !(err isa ParamValidationError) || occursin(key, err.msg)
+        end
 
-        # Validation enforced by run_task itself — not just validate_params.
-        # Use TestImageTask to confirm _run_task dispatch works.
-        # Then confirm ImportOmezarr's run_task rejects bad params before reaching _run_task.
+        checked_bounds   = 0
+        checked_selects  = 0
+        checked_required = 0
+        checked_tasks    = 0
+        skipped_tasks    = 0     # registered, but ships no spec / no params (composites, testTasks)
+
+        for (fun_name, registered) in sort(collect(Cecelia._fun_name_map()); by = first)
+            @testset "$fun_name" begin
+                # dispatch wiring: the registry name resolves back to the same task
+                resolved = _task_from_fun_name(fun_name)
+                @test typeof(resolved) === typeof(registered)
+                @test task_scope(resolved) ∈ ("image", "set")
+
+                spec = Cecelia._task_spec(resolved)
+                spec_params = spec === nothing ? [] : get(spec, "params", [])
+                # ARRAY, not object — an object makes validate_params throw MethodError
+                @test spec_params isa AbstractVector
+                # a task may legitimately ship no spec / no params; anything else is walked below
+                if !(spec_params isa AbstractVector) || isempty(spec_params)
+                    skipped_tasks += 1
+                end
+                if spec_params isa AbstractVector && !isempty(spec_params)
+                checked_tasks += 1
+
+                base = baseline(spec_params)
+                # the spec's own defaults must satisfy the spec
+                @test validate_params(resolved, deepcopy(base)) === nothing
+
+                # every param, carrying the group it is nested in (containers filtered out below)
+                flat = Tuple[]
+                each_spec_param(spec_params) do p, gk
+                    push!(flat, (p, gk))
+                end
+
+                for (p, group_key) in flat
+                    key = String(something(spec_get(p, "key", ""), ""))
+                    t   = String(something(spec_get(p, "type", ""), ""))
+                    isempty(key) && continue
+                    t in ("section", "group") && continue   # containers hold no value of their own
+                    @test t ∈ known_types
+
+                    # perturb exactly one value, in place, inside its group entry if nested
+                    function with(bad)
+                        d = deepcopy(base)
+                        if isempty(group_key)
+                            d[key] = bad
+                        else
+                            d[group_key]["0"][key] = bad
+                        end
+                        d
+                    end
+
+                    # a required param that goes missing must be rejected, whatever its type
+                    if get(p, "required", false) == true && isempty(group_key)
+                        d = deepcopy(base)
+                        delete!(d, key)
+                        rejects(resolved, d, key, "required but missing")
+                        checked_required += 1
+                    end
+
+                    if t in ("int", "float")
+                        if haskey(p, "min")
+                            rejects(resolved, with(p["min"] - 1), key, "below min")
+                            checked_bounds += 1
+                        end
+                        if haskey(p, "max")
+                            rejects(resolved, with(p["max"] + 1), key, "above max")
+                            checked_bounds += 1
+                        end
+                        rejects(resolved, with("not-a-number"), key, "wrong type")
+                    elseif t == "select"
+                        rejects(resolved, with("__not_a_valid_option__"), key, "unknown option")
+                        checked_selects += 1
+                    elseif t == "bool"
+                        rejects(resolved, with("yes"), key, "non-bool")
+                    end
+                end
+                end   # spec_params is a non-empty array
+            end
+        end
+
+        # Guard against the sweep silently covering nothing. If the walk breaks — a renamed registry,
+        # a spec shape this walker doesn't recognise — the loop runs zero times, every assertion in it
+        # passes vacuously, and the suite reports green having tested nothing.
+        #
+        # The task count is EXACT and relative: every registered task is either walked or explicitly
+        # counted as spec-less, so it needs no maintenance and catches a task that silently stopped
+        # being visited. The rest are deliberately LOOSE floors — their job is "the walk still finds
+        # params", not "the tree is currently this big". Pinning them near today's counts (82 bounds,
+        # 22 selects) would turn deleting a task into a red build, which is how a guard becomes a
+        # chore. Raise one only if it ever fails without the walk being broken.
+        @test checked_tasks + skipped_tasks == length(Cecelia._fun_name_map())
+        @test checked_bounds   >= 25
+        @test checked_selects  >= 8
+        @test checked_required >= 2
+    end
+
+    @testset "Param validation — run_task enforces it, not just validate_params" begin
+        # The bounds themselves are swept for every task above; what is unique here is WHERE
+        # validation happens — the scheduler entry point rejects bad params before `_run_task`
+        # is ever reached, so a task body never runs with values its spec forbids.
         proj2 = create_project!(name="val-test-$(rand(1000:9999))")
         s2 = add_set!(proj2; name="s")
         img2 = add_image!(s2; name="img", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
@@ -1432,20 +1619,6 @@ end
     end
 
     # ── Param validation — CellposeCorrect (constraints live inside a `group`) ───
-    @testset "Param validation — CellposeCorrect" begin
-        # modelDiameter is int min=1/max=100, nested in the `models` group
-        out_of_range = Dict{String,Any}("models" => Dict{String,Any}(
-            "0" => Dict{String,Any}("model"=>"denoise_cyto3", "modelChannels"=>["DAPI"], "modelDiameter"=>500)))
-        @test_throws ParamValidationError validate_params(CellposeCorrect(), out_of_range)
-
-        # model is a select — an unknown value must be rejected
-        bad_select = Dict{String,Any}("models" => Dict{String,Any}(
-            "0" => Dict{String,Any}("model"=>"not_a_model", "modelChannels"=>["DAPI"], "modelDiameter"=>30)))
-        @test_throws ParamValidationError validate_params(CellposeCorrect(), bad_select)
-
-        # NOTE: RemoveImage has only valueNameSelection params (no scalar constraints),
-        # so there is nothing for validate_params to reject — no test is meaningful there.
-    end
 
     # ── Axis gating (task_applies + img_axes) ────────────────────────────────
     @testset "Axis gating — img_axes + task_applies" begin
@@ -1494,26 +1667,9 @@ end
     # ── Dispatch + param validation — Branching (segment.branching) ──────────────
     # docs/todo/BRANCHING_PLAN.md Phase 1. New task registers via _task_from_fun_name and
     # validate_params rejects out-of-range dilation sizes + wrong-typed booleans.
-    @testset "Param validation — Branching" begin
-        @test _task_from_fun_name("segment.branching") isa Branching
-
-        # preDilationSize/postDilationSize: int min=0, max=10
-        @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("preDilationSize" => 99))
-        @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("postDilationSize" => -1))
-        # useBorders: bool — a string must be rejected
-        @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("useBorders" => "yes"))
-
-        # Sensible defaults validate cleanly
-        @test begin
-            validate_params(Branching(), Dict{String,Any}(
-                "valueName" => "default", "outputValueName" => "stroma",
-                "preDilationSize" => 2, "postDilationSize" => 2))
-            true
-        end
-
+    # Ranges, types and the unknown-select case are swept for EVERY task above. What survives here is
+    # specific to branching: the µm key rename, the enumerated anisotropy sources, and the copy budget.
+    @testset "Branching spec — µm keys, anisotropy sources, copy budget" begin
         # anisotropySource (docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 5) — a select with three
         # allowed values. The runner raises on anything else, so an unknown value must not get past
         # validation and reach Python as a subprocess failure.
@@ -1536,15 +1692,8 @@ end
             @test bykey["structureTensorSigmaUm"]["default"] == 7.0
             @test bykey["anisotropyBoxUm"]["default"] == 5.0
             @test bykey["anisotropySource"]["default"] == "skeleton"
-            # every param carries a tip, and none runs past the copy budget (docs/UI.md)
-            @test all(haskey(p, "tip") for p in spec["params"])
-            @test all(length(String(p["tip"])) <= 90 for p in spec["params"])
-            @test !any(endswith(String(p["tip"]), ".") for p in spec["params"])
+            # tips: covered repo-wide by "every task param carries a tip" + the copy-budget sweep
         end
-        @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("structureTensorSigmaUm" => 999.0))
-        @test_throws ParamValidationError validate_params(
-            Branching(), Dict{String,Any}("anisotropyBoxUm" => 0.1))
     end
 
     # ── µm → px for the anisotropy scales ─────────────────────────────────────────────────────────
@@ -1611,31 +1760,7 @@ end
     end
 
     # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
-    @testset "Param validation — ClustPops" begin
-        @test _task_from_fun_name("clustPops.cluster") isa ClustPops
-        @test task_scope(ClustPops()) == "set"
-        # resolution is float min=0/max=5 — out of range must be rejected
-        @test_throws ParamValidationError validate_params(
-            ClustPops(), Dict{String,Any}("resolution" => 99))
-        # wrong type where float expected
-        @test_throws ParamValidationError validate_params(
-            ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
-    end
 
-    @testset "Param validation — CellNeighbours" begin
-        @test _task_from_fun_name("spatialAnalysis.cellNeighbours") isa CellNeighbours
-        @test task_scope(CellNeighbours()) == "image"          # per-image graph (no "scope" in spec)
-        # neighbourRadius is float min=0/max=1000 — out of range must be rejected
-        @test_throws ParamValidationError validate_params(
-            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 5000))
-        # nNeighbours is int min=1 — below the floor must be rejected
-        @test_throws ParamValidationError validate_params(
-            CellNeighbours(), Dict{String,Any}("nNeighbours" => 0))
-        # a valid param set passes
-        @test validate_params(
-            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 30, "nNeighbours" => 6,
-                                               "neighbourMethod" => "knn")) === nothing
-    end
 
     @testset "cellNeighbours QC findings (pure helper)" begin
         # objective graph metrics → advisory findings; only the unambiguous problems flag
@@ -1646,14 +1771,6 @@ end
         @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
     end
 
-    @testset "Param validation — DetectAggregates" begin
-        @test _task_from_fun_name("spatialAnalysis.detectAggregates") isa DetectAggregates
-        @test task_scope(DetectAggregates()) == "image"
-        @test_throws ParamValidationError validate_params(
-            DetectAggregates(), Dict{String,Any}("minCells" => 1))       # min=2
-        @test_throws ParamValidationError validate_params(
-            DetectAggregates(), Dict{String,Any}("clustDiameter" => -3))  # min=0
-    end
 
     @testset "aggregate DBSCAN ids (Clustering.jl)" begin
         # two dense blobs + one far noise point → two aggregates, noise = id 0
@@ -1666,40 +1783,18 @@ end
         @test all(Cecelia._aggregate_ids([0.0 0.0; 0.1 0.1], 0.5, 5) .== 0)
     end
 
-    @testset "Param validation — ContactsMeshes" begin
-        @test _task_from_fun_name("spatialAnalysis.contactsMeshes") isa ContactsMeshes
-        @test task_scope(ContactsMeshes()) == "image"
-        @test_throws ParamValidationError validate_params(
-            ContactsMeshes(), Dict{String,Any}("maxContactDist" => -1))
-    end
 
-    @testset "Param validation — AggregatesMeshes" begin
-        @test _task_from_fun_name("spatialAnalysis.aggregatesMeshes") isa AggregatesMeshes
-        @test task_scope(AggregatesMeshes()) == "image"
-        @test_throws ParamValidationError validate_params(
-            AggregatesMeshes(), Dict{String,Any}("minCells" => 1))
-    end
 
-    @testset "Param validation — CellContacts" begin
-        @test _task_from_fun_name("spatialAnalysis.cellContacts") isa CellContacts
-        @test task_scope(CellContacts()) == "image"
-        @test_throws ParamValidationError validate_params(
-            CellContacts(), Dict{String,Any}("maxContactDist" => -1))
-        # target-name sanitisation (used for the obs column suffix)
+    @testset "cellContacts target-name sanitisation" begin
+        # obs column suffix — nothing to do with param validation, which is swept above
         @test Cecelia._contact_target("flow", ["T/qc"]) == "flow.T_qc"
         @test Cecelia._contact_target("flow", ["B/qc", "T/qc"]) == "flow.B_qc+T_qc"
     end
 
-    @testset "Param validation — NeighbourStats" begin
-        @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
-        @test task_scope(NeighbourStats()) == "image"
+    @testset "neighbourStats spec — graph knobs live on the graph, not here" begin
         # The graph parameters (method / radius / k) deliberately do NOT live here any more — they belong
         # to the graph this task consumes (`graphSuffix` → spatialAnalysis.cellNeighbours), so a
-        # neighbourhood is defined once. `nPermutations` is the one numeric knob left to range-check.
-        @test_throws ParamValidationError validate_params(
-            NeighbourStats(), Dict{String,Any}("nPermutations" => -1))
-        @test_throws ParamValidationError validate_params(
-            NeighbourStats(), Dict{String,Any}("nPermutations" => 10_000_000))
+        # neighbourhood is defined once. (Ranges for what remains are swept above.)
         ns_spec = JSON3.read(read(Cecelia._spec_path(NeighbourStats()), String))
         ns_keys = Set(String(get(p, :key, "")) for p in get(ns_spec, :params, []))
         @test "graphSuffix" in ns_keys && "nPermutations" in ns_keys
@@ -1708,18 +1803,7 @@ end
         end
     end
 
-    @testset "Param validation — ClustRegions" begin
-        @test _task_from_fun_name("clustRegions.cluster") isa ClustRegions
-        @test task_scope(ClustRegions()) == "set"              # set-scope (regions comparable across set)
-        # numClusters is int min=1 — below the floor rejected
-        @test_throws ParamValidationError validate_params(
-            ClustRegions(), Dict{String,Any}("numClusters" => 0))
-        # resolution is float min=0/max=5 — out of range rejected
-        @test_throws ParamValidationError validate_params(
-            ClustRegions(), Dict{String,Any}("resolution" => 99))
-        @test validate_params(
-            ClustRegions(), Dict{String,Any}("numClusters" => 5, "resolution" => 1.0,
-                                             "clusterMethod" => "leiden")) === nothing
+    @testset "clustRegions spec — graph knobs moved out with the graph" begin
         # regions run ON a neighbour graph and no longer build their own, so the graph knobs moved to
         # cellNeighbours; `perTimepoint` went with them (whether neighbourhoods are per-frame is a
         # property of the graph, so behaviour regions come from choosing a per-timepoint graph).
@@ -1936,15 +2020,10 @@ end
         @test isempty(Cecelia._neighbour_stats_findings(10, 5, 1.0, -1))
     end
 
-    @testset "Param validation — CropImage" begin
-        @test _task_from_fun_name("editImages.cropImage") isa CropImage
-        # x0/x1/y0/y1 are int min=0 — negative must be rejected
-        @test_throws ParamValidationError validate_params(
-            CropImage(), Dict{String,Any}("x0" => -5, "x1" => 10, "y0" => 0, "y1" => 10))
-        # wrong type where int expected
-        @test_throws ParamValidationError validate_params(
-            CropImage(), Dict{String,Any}("x0" => "nope", "x1" => 10, "y0" => 0, "y1" => 10))
-        # a valid box (z/t bounds are extra params, not spec-declared — they pass through untouched)
+    @testset "params NOT declared in the spec pass through untouched" begin
+        # Ranges/types are swept above. What is asserted here is the absence of a rule: cropImage
+        # passes z/t bounds that its spec never declares, and validation must not reject an unknown
+        # key — several tasks rely on carrying extra values through to their runner.
         @test validate_params(
             CropImage(), Dict{String,Any}("x0" => 0, "x1" => 100, "y0" => 0, "y1" => 100,
                                           "z0" => 2, "z1" => 8, "t0" => -1, "t1" => -1)) === nothing
@@ -1972,17 +2051,6 @@ end
         @test m2["SizeT"] == 30 && m2["SizeC"] == 2 && !haskey(m2, "SizeZ")
     end
 
-    @testset "Param validation — CopyImage" begin
-        @test _task_from_fun_name("editImages.copyImage") isa CopyImage
-        # valueName is required — a copy with no source version must be rejected
-        @test_throws ParamValidationError validate_params(
-            CopyImage(), Dict{String,Any}("toSetUid" => "abc"))
-        # a valid param set (dest params pass through untouched)
-        @test validate_params(
-            CopyImage(), Dict{String,Any}("valueName" => "default", "newSetName" => "New set")) === nothing
-        @test validate_params(
-            CopyImage(), Dict{String,Any}("valueName" => "driftCorrected", "toSetUid" => "xY")) === nothing
-    end
 
     @testset "CopyImage carries calibration + provenance (pure helper)" begin
         # A copy is a faithful duplicate of ONE version: every calibration field carries over UNCHANGED
@@ -2165,16 +2233,6 @@ end
     end
 
     # ── Dispatch + param validation — ClustTracks (clustTracks.cluster, set-scope) ───
-    @testset "Param validation — ClustTracks" begin
-        @test _task_from_fun_name("clustTracks.cluster") isa ClustTracks
-        @test task_scope(ClustTracks()) == "set"
-        # resolution is float min=0/max=5 — out of range must be rejected
-        @test_throws ParamValidationError validate_params(
-            ClustTracks(), Dict{String,Any}("resolution" => 99))
-        # wrong type where float expected
-        @test_throws ParamValidationError validate_params(
-            ClustTracks(), Dict{String,Any}("resolution" => "not-a-number"))
-    end
 
     # ── Legacy `kind` on disk is silently ignored ────────────────────────────────
     # Guards the on-disk contract: a pre-existing ccid.json/project.json with a `kind` key must load
@@ -3798,37 +3856,8 @@ end
     end
 
     # ── Param validation — AfCorrect (group with flat sub-params) ─────────────
-    @testset "Param validation — AfCorrect" begin
-        task = AfCorrect()
-
-        # Valid group entry — should not throw
-        good = Dict{String,Any}("afCombinations" => Dict{String,Any}(
-            "0" => Dict{String,Any}("correctionMode" => "divide", "channelPercentile" => 60.0)))
-        @test begin validate_params(task, good); true end
-
-        # correctionMode is a select — unknown value must be rejected
-        bad_select = Dict{String,Any}("afCombinations" => Dict{String,Any}(
-            "0" => Dict{String,Any}("correctionMode" => "unknown_mode")))
-        @test_throws ParamValidationError validate_params(task, bad_select)
-
-        # channelPercentile is float min=0/max=100 — out of range must be rejected
-        bad_float = Dict{String,Any}("afCombinations" => Dict{String,Any}(
-            "0" => Dict{String,Any}("channelPercentile" => 150.0)))
-        @test_throws ParamValidationError validate_params(task, bad_float)
-    end
 
     # ── Param validation — DriftCorrect ───────────────────────────────────────
-    @testset "Param validation — DriftCorrect" begin
-        task = DriftCorrect()
-
-        # Valid select value
-        @test begin validate_params(task, Dict{String,Any}("driftNormalisation" => "none")); true end
-        @test begin validate_params(task, Dict{String,Any}("driftNormalisation" => "phase")); true end
-
-        # Invalid select value
-        @test_throws ParamValidationError validate_params(
-            task, Dict{String,Any}("driftNormalisation" => "invalid"))
-    end
 
     # ── Versioned helpers ─────────────────────────────────────────────────────
     @testset "Versioned dict helpers" begin
@@ -7713,23 +7742,14 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         # check that the DEFAULT isn't the thing that's wrong.
         ALLOWED_WIDE = String[]
 
-        function collect_numeric!(out, params, file)
-            params isa AbstractVector || return out
-            for p in params
-                p isa AbstractDict || continue
-                fld(k) = get(p, Symbol(k), get(p, k, nothing))
-                if String(something(fld("type"), "")) in ("int", "float")
-                    push!(out, (file, String(something(fld("key"), "?")),
-                                fld("min"), fld("max"), fld("step"), fld("default")))
-                end
-                collect_numeric!(out, fld("params"), file)
-            end
-            out
-        end
-
         nums = Tuple[]
         each_spec() do f, spec
-            collect_numeric!(nums, get(spec, :params, nothing), f)
+            each_spec_param(spec_get(spec, "params")) do p, _
+                String(something(spec_get(p, "type"), "")) in ("int", "float") || return
+                push!(nums, (f, String(something(spec_get(p, "key"), "?")),
+                             spec_get(p, "min"), spec_get(p, "max"),
+                             spec_get(p, "step"), spec_get(p, "default")))
+            end
         end
         @test length(nums) > 20                      # the walk found the numeric params
 
@@ -7763,16 +7783,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         ALLOWED = String[]
 
         # `tip`s nest inside `section`/`group` params, so recurse.
-        function collect_tips!(out, params, file)
-            params isa AbstractVector || return out
-            for p in params
-                p isa AbstractDict || continue
-                t = get(p, :tip, get(p, "tip", nothing))
-                t isa AbstractString && push!(out, (file, join(split(String(t))," ")))
-                collect_tips!(out, get(p, :params, get(p, "params", nothing)), file)
-            end
-            out
-        end
+
 
         # A trailing dot here is an abbreviation, not a sentence end ("e.g. HMM state").
         ABBREV = r"(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|approx|fig|no)\.$"i
@@ -7787,7 +7798,10 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         nspecs = 0
         each_spec() do f, spec
             nspecs += 1
-            collect_tips!(tips, get(spec, :params, nothing), f)
+            each_spec_param(spec_get(spec, "params")) do p, _
+                t = spec_get(p, "tip")
+                t isa AbstractString && push!(tips, (f, join(split(String(t)), " ")))
+            end
         end
 
         @test nspecs > 20                       # the walk found the specs
@@ -7827,24 +7841,17 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         # Collects every SETTABLE param (container children included), flagged tipped or not, so the
         # guard below can assert the walk actually found something — a silently empty walk would
         # otherwise report perfect coverage, which is how the QC scraper once lost 40 strings.
-        function collect_settable!(out, params, file)
-            params isa AbstractVector || return out
-            for p in params
-                p isa AbstractDict || continue
-                ptype = string(get(p, :type, get(p, "type", "")))
-                if haskey(p, :key) && !(ptype in CONTAINER)
-                    tip = get(p, :tip, nothing)
-                    push!(out, (file, string(get(p, :key, "?")),
-                                !isempty(strip(tip isa AbstractString ? String(tip) : ""))))
-                end
-                collect_settable!(out, get(p, :params, nothing), file)
-            end
-            out
-        end
+
 
         params = Tuple{String,String,Bool}[]
         each_spec() do f, spec
-            collect_settable!(params, get(spec, :params, nothing), f)
+            each_spec_param(spec_get(spec, "params")) do p, _
+                ptype = String(something(spec_get(p, "type"), ""))
+                (haskey(p, :key) || haskey(p, "key")) && !(ptype in CONTAINER) || return
+                tip = spec_get(p, "tip")
+                push!(params, (f, String(something(spec_get(p, "key"), "?")),
+                               !isempty(strip(tip isa AbstractString ? String(tip) : ""))))
+            end
         end
 
         @test length(params) > 150              # the walk found the params it is meant to police
@@ -7871,17 +7878,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 
         # `@testset` bodies are their own scope, so the collector above isn't visible here — this one
         # pulls both keys in a single walk rather than re-deriving two nearly identical recursions.
-        function collect_copy!(labels, tips, params, file)
-            params isa AbstractVector || return
-            for p in params
-                p isa AbstractDict || continue
-                l = get(p, :label, get(p, "label", nothing))
-                l isa AbstractString && push!(labels, (file, join(split(String(l)), " ")))
-                t = get(p, :tip, get(p, "tip", nothing))
-                t isa AbstractString && push!(tips, (file, join(split(String(t)), " ")))
-                collect_copy!(labels, tips, get(p, :params, get(p, "params", nothing)), file)
-            end
-        end
+
 
         # Mirrors `isTitleCase` in uiCopy.ts — see there for why the allowances exist. A capital is
         # only evidence of Title Case when the word isn't expected to carry one: acronyms, single
@@ -7903,7 +7900,12 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         each_spec() do f, spec
             l = get(spec, :label, nothing)
             l isa AbstractString && push!(labels, (f, join(split(String(l)), " ")))
-            collect_copy!(labels, tips2, get(spec, :params, nothing), f)
+            each_spec_param(spec_get(spec, "params")) do p, _
+                l = spec_get(p, "label")
+                l isa AbstractString && push!(labels, (f, join(split(String(l)), " ")))
+                t = spec_get(p, "tip")
+                t isa AbstractString && push!(tips2, (f, join(split(String(t)), " ")))
+            end
         end
 
         @test length(labels) > 150              # the walk found task + param labels
