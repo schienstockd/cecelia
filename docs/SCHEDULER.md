@@ -592,6 +592,44 @@ These are easy to break accidentally:
    > must reconcile `GET /api/tasks` in **both** directions — see `docs/API.md`. A row that is only ever
    > added produces the same false "still running" readout from the opposite direction.
 
+### Terminal outcomes are banked for replay (`recent_tasks`)
+
+A unit of work on the WS task rail announces how it ENDED exactly once, in one frame — and that frame is
+droppable by design (per-client drop-on-full queue in `server.jl`). Nothing survived it: a task is
+deregistered the instant it finishes, so `list_tasks()` can only say what is in flight, and a background
+job was never in that registry at all. A client that missed the frame could never learn the outcome — the
+task console counted every such run as "finished, outcome unseen" (`0 done · 17 ended` for nine images
+that all succeeded) and the browser left the task pinned at `running`.
+
+So terminal frames are kept, in `app/src/tasks/task_outcomes.jl`: a bounded log (`_OUTCOME_CAP` = 500)
+written by `record_task_outcome!`, read by `recent_tasks(; since)` → `GET /api/tasks/recent`. A consumer
+that missed the live frame **reconstructs it** from there — same shape, same handlers, no second code
+path (`api/task_console.jl`, `frontend/src/utils/taskReconcile.ts`).
+
+- **Written at the rail's status SINKS, not by the producers.** A terminal outcome reaches a client
+  through exactly two carriers, and both bank it: `ws_status` (`api/src/sockets.jl`) for `task:status`,
+  and the `node:done`/`node:failed` chain-event subscribers (`api/src/server.jl`) for `chain:node:*`.
+  Sinks, not producers, is what makes coverage automatic — scheduler tasks, background jobs
+  (`pool="job"`) and batch movies (`pool="viewer"`) all reach `ws_status`, so a new producer needs no
+  extra thought. Banking in the scheduler's `_deregister_task!` instead (where this started) covers only
+  *that* producer and leaves a dropped project-export frame stranding its row forever. **Both carriers
+  are needed:** a chain run passes no `on_status_change`, so a chain node never reaches `ws_status` at
+  all — banking only there left every chain node unrecoverable. **Two carriers, two banks, no more.**
+  `record_task_outcome!` no-ops on a non-terminal status (and on `"skipped"`, which never ran), so a sink
+  hands over every status unfiltered and the terminal test exists in exactly one place.
+- **A consequence, and the right one:** a REPL `run_task` banks nothing — no client to recover, no server
+  to serve the route. This is a reporting aid for the rail, not task state.
+- **One row per task id**, re-appended on repeat. Both repeats are real: a cancel is announced twice
+  (immediately from `on_status_change`, then as the final status), and `task:restart` reuses the id for a
+  new run whose outcome must supersede the old one.
+- **`image_uids` is carried** — a set-scope task's full member list exists *only* on that frame, and a
+  replay without it invalidates the representative image's plots alone.
+- **`since` is inclusive**, so a poller always re-reads its own newest entry; two units finishing in the
+  same millisecond would otherwise let a poll landing between them drop the second forever. Consumers
+  de-duplicate by task id, which they must anyway.
+- **Not run history.** Fixed size, in memory, gone on restart. Durable per-image history is
+  `append_run_log!` → `GET /api/tasks/history`.
+
 ---
 
 ## REPL API

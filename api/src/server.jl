@@ -157,7 +157,14 @@ subscribe_chain_events!("node:running", function(p)
     ))
 end)
 
+# A terminal outcome reaches a client through exactly TWO carriers, and BOTH bank it for replay
+# (`record_task_outcome!`) — a chain run emits no `task:status` at all (`handle_chain_run` passes no
+# `on_status_change`), so `ws_status` never sees a chain node and banking only there would leave every
+# chain node unrecoverable. Keyed by the node's scheduler task id, which is what a consumer correlates a
+# chain row against. `status` on node:failed may be "skipped" (never ran, no task id) — not a terminal
+# task status, so `record_task_outcome!` ignores it. See `app/src/tasks/task_outcomes.jl`.
 subscribe_chain_events!("node:done", function(p)
+    record_task_outcome!(_ev_task_id(p), "done"; image_uid=p.image_uid, fun=p.fn)
     broadcast_ws(Dict{String,Any}(
         "type"       => "chain:node:done",
         "runId"      => p.run_id,
@@ -173,6 +180,7 @@ subscribe_chain_events!("node:done", function(p)
 end)
 
 subscribe_chain_events!("node:failed", function(p)
+    record_task_outcome!(_ev_task_id(p), p.status; image_uid=p.image_uid, fun=p.fn)
     broadcast_ws(Dict{String,Any}(
         "type"       => "chain:node:failed",
         "runId"      => p.run_id,
@@ -227,6 +235,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_tasklog(req)
         elseif path == "/api/tasks/history"
             api_tasks_history(req)
+        elseif path == "/api/tasks/recent"
+            api_tasks_recent(req)
         elseif path == "/api/qc/cohort"
             api_qc_cohort(req)
         elseif path == "/api/qc/cohort/runs"

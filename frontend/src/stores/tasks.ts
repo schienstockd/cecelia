@@ -24,6 +24,11 @@ export interface TaskEntry {
   chainRunId?:   string
   chainNodeId?:  string
   chainName?:    string
+  // The SCHEDULER task id this row ran as. Same as `id` for a client-dispatched task (we mint the id and
+  // send it), but a chain row is keyed by a synthetic `runId::nodeId::imageUid`, so its backend id is
+  // only knowable from the `taskId` the chain frames carry. Needed to match a row against a backend
+  // outcome (`utils/taskReconcile.ts`); undefined = no correlation available, never assume `id`.
+  backendTaskId?: string
 }
 
 export const useTaskStore = defineStore('tasks', () => {
@@ -126,6 +131,7 @@ export const useTaskStore = defineStore('tasks', () => {
     chainName?: string
     status: TaskStatus
     projectUid: string
+    taskId?: string
   }) {
     const syntheticId = `${opts.runId}::${opts.nodeId}::${opts.imageUid}`
     const existing = tasks.value.find(t => t.id === syntheticId)
@@ -133,6 +139,8 @@ export const useTaskStore = defineStore('tasks', () => {
       // Update label/imageName on later events if they're now resolved
       if (opts.label    && existing.label     === (opts.fn.split('.').pop() ?? opts.fn)) existing.label     = opts.label
       if (opts.imageName && existing.imageName === opts.imageUid) existing.imageName = opts.imageName
+      // …same for the scheduler task id: :queued may arrive before the node has one
+      if (opts.taskId) existing.backendTaskId = opts.taskId
       setStatus(syntheticId, opts.status)
       return existing
     }
@@ -156,6 +164,7 @@ export const useTaskStore = defineStore('tasks', () => {
       chainRunId:  opts.runId,
       chainNodeId: opts.nodeId,
       chainName:   opts.chainName,
+      backendTaskId: opts.taskId || undefined,
     }
     tasks.value.unshift(entry)
     return entry

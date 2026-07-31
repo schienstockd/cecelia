@@ -2614,6 +2614,61 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── A terminal task-rail frame is banked for replay ────────────────────────
+    # Regression (the "0 done · 17 ended" console, and a project export stuck at "running"): the frame
+    # announcing HOW a unit of work ended is its only carrier and the server drops frames for a slow
+    # client BY DESIGN, so a client that missed it could never find out. `record_task_outcome!` keeps it.
+    # Banked from `ws_status` (see api/test) — the rail's one status sink, so background jobs and batch
+    # movies are covered too, not just scheduler tasks. Here: the log's own contract.
+    @testset "Task outcome log" begin
+        empty!(Cecelia._OUTCOMES)
+        rec!(id, status; kw...) = record_task_outcome!(id, status; kw...)
+
+        rec!("o1", "done"; image_uid="img1", fun="segment.cellpose", pool="gpu")
+        rec!("o2", "failed"; image_uid="img2", fun="project:export", pool="job")
+        rec!("o3", "cancelled"; image_uid="img3")
+        rows = recent_tasks()
+        @test [r.id for r in rows] == ["o1", "o2", "o3"]              # oldest → newest
+        @test [r.status for r in rows] == ["done", "failed", "cancelled"]
+        let o1 = first(rows)
+            @test o1.fun_name == "segment.cellpose" && o1.pool_name == "gpu"
+            @test o1.image_uid == "img1" && o1.image_uids == String[]
+            @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", o1.finished_at)
+        end
+
+        # a non-terminal status is NOT an outcome — the one call site hands over every status frame, so
+        # banking "running" here would report work that is still going as finished.
+        rec!("live", "queued"); rec!("live", "running")
+        @test !any(r -> r.id == "live", recent_tasks())
+
+        # a set-scope task's FULL member list survives: it exists only on this frame, and a replay
+        # without it invalidates the representative image's plots only (docs/API.md).
+        rec!("set1", "done"; image_uid="a", image_uids=["a", "b", "c"])
+        @test only(filter(r -> r.id == "set1", recent_tasks())).image_uids == ["a", "b", "c"]
+
+        # ONE row per task id. Both repeats are real: a cancel is announced twice (immediately, then as
+        # the final status), and task:restart reuses the id for a new run that must supersede the old.
+        rec!("o1", "done"); rec!("o1", "done")
+        @test count(r -> r.id == "o1", recent_tasks()) == 1
+        rec!("o2", "done")                                            # restarted → new outcome wins
+        @test only(filter(r -> r.id == "o2", recent_tasks())).status == "done"
+        @test last(recent_tasks()).id == "o2"                         # …and re-appended, still in order
+
+        # `since` is INCLUSIVE, so a poll always re-reads its own newest entry (two units finishing in
+        # the same millisecond must not let the second fall through the gap).
+        newest = last(recent_tasks()).finished_at
+        @test any(r -> r.finished_at == newest, recent_tasks(; since = newest))
+        @test isempty(recent_tasks(; since = "9999-01-01T00:00:00.000Z"))
+        @test length(recent_tasks(; since = "")) == length(recent_tasks())
+
+        # bounded: a reporting tail for live clients, never run history (that's the on-disk run log)
+        for i in 1:(Cecelia._OUTCOME_CAP + 50); rec!("cap$i", "done"); end
+        @test length(Cecelia._OUTCOMES) == Cecelia._OUTCOME_CAP
+        @test last(recent_tasks()).id == "cap$(Cecelia._OUTCOME_CAP + 50)"   # newest kept
+        @test !any(r -> r.id == "o1", recent_tasks())                        # oldest evicted
+        empty!(Cecelia._OUTCOMES)
+    end
+
     @testset "Run log records status (done + failed)" begin
         proj = create_project!(name="rl-status-$(rand(1000:9999))")
         img  = add_image!(add_set!(proj; name="s"); name="img")
