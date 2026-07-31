@@ -187,11 +187,33 @@ def read_axes(path):
     return [ax["name"] for ax in axes] if axes else None
 
 
+def read_axis_units(path):
+    """NGFF ``axes[].unit`` keyed by axis name (e.g. ``{'t': 'second', 'x': 'micrometer'}``), or
+    None. Axes without a unit are omitted, so a caller can fall back per axis."""
+    ms = read_multiscales_meta(path)
+    axes = ms.get("axes", [])
+    units = {ax["name"]: ax["unit"] for ax in axes if ax.get("unit")}
+    return units or None
+
+
 # NGFF axis-type by name; unit-abbreviation → NGFF (UDUNITS) name napari/read_ome_metadata expect.
 _NGFF_AXIS_TYPE = {'t': 'time', 'c': 'channel', 'z': 'space', 'y': 'space', 'x': 'space'}
 _NGFF_UNIT = {'µm': 'micrometer', 'um': 'micrometer', 'nm': 'nanometer', 'mm': 'millimeter',
               's': 'second', 'ms': 'millisecond', 'min': 'minute',
               'micrometer': 'micrometer', 'second': 'second'}
+
+
+def ngff_axis_entry(name, unit=None):
+    """One NGFF ``axes`` entry: ``name`` + ``type`` (+ ``unit``, mapped to its UDUNITS name).
+
+    The single place that decides an axis entry's shape, shared by the writer that creates a store
+    (`multiscales_metadata`) and the one that annotates an existing store (`set_ngff_axes`), so a
+    migrated store and a freshly written one describe their axes identically."""
+    nm = str(name).lower()
+    entry = {"name": nm, "type": _NGFF_AXIS_TYPE.get(nm, "space")}
+    if unit:
+        entry["unit"] = _NGFF_UNIT.get(unit, unit)
+    return entry
 
 
 def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
@@ -225,12 +247,7 @@ def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
     except Exception:
         return False
 
-    axes = []
-    for nm in axis_names:
-        ax = {"name": nm, "type": _NGFF_AXIS_TYPE.get(nm, "space")}
-        u = (units or {}).get(nm)
-        u and ax.update(unit=_NGFF_UNIT.get(u, u))
-        axes.append(ax)
+    axes = [ngff_axis_entry(nm, (units or {}).get(nm)) for nm in axis_names]
 
     new_datasets = []
     for lvl, d in enumerate(datasets):
@@ -418,7 +435,8 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
     return new_zarr, im_chunks
 
 
-def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets'):
+def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets',
+                         unit_for_axis=None):
     """Build the NGFF ``multiscales`` attr value (a 1-element list) shared by every multiscale
     writer — the image writer (`create_multiscales`) and the label writer
     (`segmentation_utils._write_labels_zarr`). One place that decides the datasets/axes/scale
@@ -429,6 +447,8 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets')
     ``scale_for_axis``: maps an axis letter → base physical scale (missing → 1.0). None → omit
     ``coordinateTransformations``. XY axes are downsampled by ``2**level``; all other axes keep
     the base scale.
+    ``unit_for_axis``: maps an axis letter → unit string for the NGFF ``axes`` entry (e.g.
+    ``{'T': 's', 'Z': 'um'}``). Missing/None → the axis gets ``type`` but no ``unit``.
     ``keyword``: the datasets key (``'datasets'``)."""
     axes = list(axes or [])
     datasets = []
@@ -442,8 +462,12 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets')
         datasets.append(entry)
     ms_entry = {keyword: datasets}
     if axes:
-        ms_entry['axes'] = [{'name': ax.lower()} for ax in axes]
+        # `type` (and `unit` where known) per the NGFF axes spec. Without them a reader gets a
+        # bare number and cannot tell seconds from micrometres — napari then labels every axis
+        # with the spatial unit, so a correct time scale would still render as "10 um".
+        ms_entry['axes'] = [ngff_axis_entry(ax, (unit_for_axis or {}).get(ax)) for ax in axes]
     return [ms_entry]
+
 
 
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
@@ -471,14 +495,22 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     else:
         axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
     scale_for_axis = None
+    unit_for_axis = None
     if axes and dim_utils is not None:
         # Map by axis NAME off dim_utils' OWN order — never zip against the (possibly overridden)
         # `axes` list positionally, or a store that dropped an axis inherits its neighbours' scales.
         src = {ax: (float(s) if s is not None else 1.0)
                for ax, s in zip(dim_utils.im_dim_order, dim_utils.im_scale())}
         scale_for_axis = {ax: src.get(ax, 1.0) for ax in axes}
+        # Units alongside the scale, so a reader can tell 10 seconds from 10 micrometres.
+        # Spatial units come from the existing per-axis accessor (not one unit assumed for all);
+        # T uses the OME TimeIncrementUnit.
+        unit_for_axis = {ax.upper(): u for ax, u in dim_utils.im_physical_units().items()}
+        if dim_utils.is_timeseries():
+            unit_for_axis['T'] = dim_utils.im_time_increment_unit()
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
-        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
+        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
+        unit_for_axis=unit_for_axis)
 
     if isinstance(im_array, dask.array.core.Array):
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
