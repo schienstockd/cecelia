@@ -39,7 +39,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     value_name     = string(get(params, "valueName",     VERSIONED_DEFAULT_VAL))
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
     ccid = state_file(img)
-    raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+    raw  = read_ccid_raw(ccid)
 
     # Resolve input image path
     filename = versioned_get_field(raw, "filepath", value_name)

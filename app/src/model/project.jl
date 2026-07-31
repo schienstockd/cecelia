@@ -166,55 +166,153 @@ function delete_set!(proj::CciaProject, set_uid::String)::CciaProject
     proj
 end
 
-# ── Lockfile / with_transaction ───────────────────────────────────────────────
-# Deliberately NAIVE guard: a lockfile beside the object's state file, acquired and released by
-# existence alone — no pid, timestamp, ownership, or stale-reclaim machinery. It is NOT a distributed
-# lock.
+# ── Transactions ──────────────────────────────────────────────────────────────
+# `with_transaction(f, obj)` serialises writes to ONE object's state file. Two layers, because the
+# two collision modes are genuinely different problems:
 #
-# The lock path is DERIVED from `state_file(obj)`, which is how the old R
-# `reactivePersistentObject.R` did it (`lockFile = paste0(private$getStateFile(), ".lock")`). That
-# matters beyond tidiness: because the lock follows the state file, `with_transaction` works for ANY
-# persisted object, so a per-IMAGE lock is `with_transaction(f, img)` with nothing new to build. The
-# earlier version hardcoded one `.cecelia.lock` at the project root, which could only ever be
-# project-scoped — too coarse (it serialises unrelated images), which is why TODO #00003 had to
-# propose a mechanism rather than just call one.
+#   1. In-process, between THREADS — a per-state-file `ReentrantLock`. This is the collision we
+#      actually have: the scheduler runs task functions as `Threads.@spawn` inside one server
+#      process, so two tasks touching one image race with each other and nothing else.
+#   2. Between PROCESSES — the lockfile beside the state file, as the old R
+#      `reactivePersistentObject.R` did it (`lockFile = paste0(getStateFile(), ".lock")`). Advisory
+#      only, but a REPL session (docs/REPL.md) writing to a project the server also has open is a
+#      real scenario here.
 #
-# Still open (TODO #00003): the task commit sites don't CALL this yet, so two concurrent
-# read-modify-writes of one image's ccid.json can still lose an update. That is a separate change —
-# it alters concurrency behaviour, not just file layout. Truncation (the unrecoverable failure) is
-# handled by `write_atomic`; this is the lost-update half.
+# The lockfile alone was not enough, and not just incomplete — **wrong for layer 1**. `isfile` then
+# `touch` is a time-of-check/time-of-use race: two threads both see no file, both touch it, both
+# proceed. So the lab-log writes it already guarded were never actually serialised against a
+# concurrent same-process writer. The ReentrantLock closes that, and is the correct primitive for
+# threads (the lockfile can't be, at any level of care, without an atomic create).
 #
-# Tradeoff of staying naive: a process that dies mid-transaction leaves a stale lockfile that must be
-# removed by hand — surfaced via the timeout error below.
+# `ReentrantLock` also makes nesting SAFE. That matters now that task commits take a transaction:
+# a commit reached from inside another transaction on the same object would otherwise sit on its own
+# lockfile until the timeout and then fail. Re-entering on the same thread is now free.
+#
+# The lock path is derived from `state_file(obj)`, so a transaction works for ANY persisted object
+# and per-image locking is just `with_transaction(f, img)` — different images never block each other.
+# (It used to hardcode one `.cecelia.lock` at the project root, which could only ever be
+# project-scoped: too coarse to be worth calling, which is why nothing called it.)
 
-const _LOCK_TIMEOUT = 30   # seconds to wait for a held lock before giving up
+const _LOCK_TIMEOUT = 30    # seconds to wait for another PROCESS's lockfile before giving up
+# A transaction now wraps only the short read-modify-write of a state file (see `commit_state!`) —
+# milliseconds, never a bf2raw/cellpose run. So a lockfile older than this cannot be a live holder;
+# it is a process that died mid-commit, and waiting on it forever would brick every later task on
+# that image behind a hidden file. Reclaiming it is safe precisely BECAUSE the critical section is
+# short — this would not be a sound assumption if the lock spanned the computation, which is what the
+# original R design did.
+const _LOCK_STALE_AFTER = 120   # seconds
 
-"""Lockfile for an object's naive transaction — always `state_file(obj) * ".lock"`."""
+"""Lockfile for an object's transaction — always `state_file(obj) * ".lock"`."""
 _lock_path(obj)::String = state_file(obj) * ".lock"
 
-"""
-Run `f()` while holding `obj`'s naive lockfile; release on exit even if `f` throws. Waits up to
-`timeout` seconds for an existing lock to clear, then errors with a message pointing at the lockfile
-to delete if it is stale. Works for a project, set or image — whatever `state_file` accepts.
-"""
-function with_transaction(f::Function, obj; timeout::Int = _LOCK_TIMEOUT)
-    path     = _lock_path(obj)
+# One ReentrantLock per state-file path. Bounded by the number of distinct objects touched in a
+# session (tens), so it is never pruned.
+const _TXN_LOCKS       = Dict{String,ReentrantLock}()
+const _TXN_LOCKS_GUARD = ReentrantLock()
+
+_txn_lock(path::AbstractString)::ReentrantLock =
+    lock(_TXN_LOCKS_GUARD) do
+        get!(() -> ReentrantLock(), _TXN_LOCKS, String(path))
+    end
+
+"""Whether a lockfile that old must be abandoned. Pure, so the rule is testable without faking mtimes."""
+_lock_abandoned(lock_mtime::Real, now::Real = time())::Bool = now - lock_mtime > _LOCK_STALE_AFTER
+
+# Re-entry depth per lock path. Only the OUTERMOST transaction touches the lockfile: a
+# `ReentrantLock` lets the same thread back in, but the lockfile knows nothing about who created it,
+# so a nested call would sit waiting on its own outer call's file until the timeout. (It did — the
+# reentrancy testset caught exactly that.) Mutated only under `_TXN_LOCKS_GUARD`.
+const _TXN_DEPTH = Dict{String,Int}()
+
+function _txn_depth!(path::AbstractString, delta::Int)::Int
+    lock(_TXN_LOCKS_GUARD) do
+        d = get(_TXN_DEPTH, String(path), 0) + delta
+        d <= 0 ? delete!(_TXN_DEPTH, String(path)) : (_TXN_DEPTH[String(path)] = d)
+        d
+    end
+end
+
+# Wait for another process's lockfile to clear, then claim it. Reclaims one that is clearly abandoned.
+function _claim_lockfile!(path::AbstractString, obj, timeout::Int)
     deadline = time() + timeout
     while isfile(path)
+        if _lock_abandoned(mtime(path))
+            @warn "Reclaiming an abandoned state lockfile (a process died mid-commit)" path
+            rm(path; force = true)
+            break
+        end
         time() > deadline && error(
             "Could not acquire lock on $(_lock_subject(obj)) within $(timeout)s. " *
             "If no other process is writing, delete a stale lockfile: $path")
-        sleep(0.5)
+        sleep(0.2)
     end
     mkpath(dirname(path))
     touch(path)
-    try
-        f()
-    finally
-        isfile(path) && rm(path; force = true)
+end
+
+"""
+Run `f()` while holding `obj`'s transaction; release on exit even if `f` throws. Works for a project,
+set or image — anything `state_file` accepts — and locks that object alone.
+
+Reentrant: re-entering for the same object on the same thread is free (only the outermost call takes
+the lockfile), so a nested commit can't deadlock. Waits up to `timeout` seconds for another process's
+lockfile, reclaiming one that is clearly abandoned (older than `_LOCK_STALE_AFTER`), then errors
+naming the file to delete.
+"""
+function with_transaction(f::Function, obj; timeout::Int = _LOCK_TIMEOUT)
+    path = _lock_path(obj)
+    # layer 1: threads in THIS process. Held across the lockfile dance too, so two local threads
+    # never even race to create the file.
+    lock(_txn_lock(path)) do
+        outermost = _txn_depth!(path, 1) == 1
+        try
+            outermost && _claim_lockfile!(path, obj, timeout)
+            try
+                f()
+            finally
+                outermost && isfile(path) && rm(path; force = true)
+            end
+        finally
+            _txn_depth!(path, -1)
+        end
+    end
+end
+
+"""
+    commit_state!(f, obj)
+
+Read `obj`'s state file, hand the raw dict to `f` to mutate, and write it back — the whole
+read-modify-write inside one transaction. THE way a task registers its output.
+
+This exists because every task hand-rolled the sequence (re-read `ccid.json`, poke a field, write),
+which is a lost update whenever two of them touch one image: both read the old dict, and the second
+write drops the first's field. Registering an output must be atomic against a concurrent registration,
+not merely against a torn file (that part is `write_json_atomic`'s job).
+
+Locks the COMMIT, not the computation — deliberately unlike the R original, which held its lock
+across the whole load→compute→save span and so could sit on a stale lock for minutes. Do the long
+work first, then commit:
+
+```julia
+ok = run_py(...)          # unlocked: minutes of cellpose
+ok || return nothing
+commit_state!(img) do raw # locked: milliseconds
+    versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+end
+```
+"""
+function commit_state!(f::Function, obj)
+    with_transaction(obj) do
+        path = state_file(obj)
+        raw  = read_ccid_raw(path)
+        f(raw)
+        write_json_atomic(path, raw)
+        raw
     end
 end
 
 _lock_subject(proj::CciaProject)::String = "project '$(proj.name)'"
 _lock_subject(s::CciaSet)::String        = "set '$(s.name)'"
 _lock_subject(img::CciaImage)::String    = "image '$(img.name)'"
+# a metadata dir, for the API-layer callers that commit without loading the object
+_lock_subject(meta_dir::AbstractString)::String = "object at $(meta_dir)"

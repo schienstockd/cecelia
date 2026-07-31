@@ -246,7 +246,7 @@ end
 # (`private$getStateFile()`) and everything — save, load, and the `.lock` — derived from it. That
 # encapsulation was lost in the port: 20+ call sites each re-derived `joinpath(obj._dir, STATE_FILENAME)`
 # and threaded the string around, and `_lock_path` invented its OWN name (`.cecelia.lock`) instead of
-# deriving from the state file, which is why per-image locking (TODO #00003) had nothing to hang off.
+# deriving from the state file, which is why per-image locking had no mechanism to hang off.
 #
 # So: ask for the state file, never build the path. `state_file` is the single derivation — one generic
 # with a method per form a caller actually has (loaded object / metadata dir / project dir + uid), so

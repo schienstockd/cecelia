@@ -438,8 +438,8 @@ end
 function write_metadata_qc!(img::CciaImage)
     ccid = state_file(img)
     isfile(ccid) || return
-    raw      = JSON3.read(read(ccid, String))
-    meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, :meta, Dict{String,Any}()))
+    raw      = read_ccid_raw(ccid)
+    meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     findings = vcat(metadata_qc_findings(meta), rescale_qc_findings(meta))
 
     metrics = import_metrics(meta)

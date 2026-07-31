@@ -1507,12 +1507,16 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
         isfile(h5ad_path) && rm(h5ad_path)
     end
 
-    # Update ccid.json
-    raw["labels"]      = Dict{String,Any}(String(k) => v for (k, v) in labels_dict
-                                          if string(k) != value_name)
-    raw["label_props"] = Dict{String,Any}(String(k) => v for (k, v) in label_props
-                                          if string(k) != value_name)
-    write_json_atomic(ccid, raw)
+    # Commit under the image's lock, and only now — the deletes above can be a multi-GB label store,
+    # which must not be held under it. Re-derive from the FRESH raw inside the transaction so a
+    # concurrent task's registration isn't clobbered (`raw` above is only used to find what to delete).
+    commit_state!(task_dir) do fresh
+        for field in ("labels", "label_props")
+            entries = get(fresh, field, Dict{String,Any}())
+            fresh[field] = Dict{String,Any}(String(k) => v for (k, v) in entries
+                                            if string(k) != value_name)
+        end
+    end
 
     img = init_object(project_uid, image_uid)
     img isa CciaImage || return 200, JSON3.write((; ok = true))

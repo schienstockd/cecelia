@@ -596,8 +596,10 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   was a fixed identity camera. That whole class of bug is gone with the GPU layer.
 - **Still no interactive pan/zoom.** The layers redraw on any `viewExtents` change, so the plumbing is
   there, but no wheel/drag handler is wired to change the extents (the canvas-level zoom in
-  `useCanvasZoom` is a CSS transform over the whole panel, a different thing). `docs/TODO.md` #00003
-  tracks re-enabling it and still describes the removed regl camera — re-scope it before picking it up.
+  `useCanvasZoom` is a CSS transform over the whole panel, a different thing). Tracked in
+  `docs/FUTURE.md` → *Interactive pan/zoom on the gating plots* — re-scope before picking it up, as the
+  original write-up still described the removed regl camera. (It cited `docs/TODO.md` #00003, which was
+  a duplicate id; the real #00003 was per-image commit locking, now done.)
 - **Active panel + manager link.** `GatingPlots` tracks an `activePanel` index (orange border
   via `.panel.active`); clicking a panel activates it; the active panel watches `selectedPop`
   and sets its parent so the manager selection "shows up on the plot".

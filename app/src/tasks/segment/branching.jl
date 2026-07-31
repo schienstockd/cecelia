@@ -77,7 +77,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     calc_anisotropy = Bool(get(params, "calcAnisotropy", false))
 
     ccid = state_file(img)
-    raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+    raw  = read_ccid_raw(ccid)
 
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
     # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a
@@ -209,13 +209,13 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
 
     # Register the branch labels zarr in ccid.json under `branch_labels` — NOT `labels`. Decision 6:
     # branch labels get their own registry so the generic labels picker never lists them.
-    raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-    bl_dict = Dict{String,Vector{String}}(
-        String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-        for (k, v) in get(raw2, "branch_labels", Dict{String,Any}()))
-    bl_dict[out_value_name] = [branch_zarr]
-    raw2["branch_labels"] = bl_dict
-    write_json_atomic(ccid, raw2)
+    commit_state!(img) do raw
+        bl_dict = Dict{String,Vector{String}}(
+            String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
+            for (k, v) in get(raw, "branch_labels", Dict{String,Any}()))
+        bl_dict[out_value_name] = [branch_zarr]
+        raw["branch_labels"] = bl_dict
+    end
 
     # QC (advisory): objective branch count + zero-branches warning
     n_branches = 0

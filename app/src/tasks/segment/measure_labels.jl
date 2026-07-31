@@ -9,7 +9,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     intensity_value_name = string(get(params, "intensityValueName", VERSIONED_DEFAULT_VAL))
     task_dir             = img._dir
     ccid                 = state_file(task_dir)
-    raw                  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+    raw                  = read_ccid_raw(ccid)
 
     # Resolve the intensity image path
     im_filename = versioned_get_field(raw, "filepath", intensity_value_name)
@@ -79,15 +79,15 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         on_log("[QC] could not compute measure QC: $e")
     end
 
-    raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-    lp   = Dict{String,String}(String(k) => string(v)
-                               for (k, v) in get(raw2, "label_props", Dict{String,Any}()))
-    lp[out_value_name] = h5ad_filename
-    # the segmentation just measured becomes the active label_props version, so gating (and any
-    # value_name fallback) defaults to the most recently produced segmentation.
-    lp[VERSIONED_ACTIVE_KEY] = out_value_name
-    raw2["label_props"] = lp
-    write_json_atomic(ccid, raw2)
+    commit_state!(img) do raw
+        lp = Dict{String,String}(String(k) => string(v)
+                                 for (k, v) in get(raw, "label_props", Dict{String,Any}()))
+        lp[out_value_name] = h5ad_filename
+        # the segmentation just measured becomes the active label_props version, so gating (and any
+        # value_name fallback) defaults to the most recently produced segmentation.
+        lp[VERSIONED_ACTIVE_KEY] = out_value_name
+        raw["label_props"] = lp
+    end
 
     Dict{String,Any}("outputValueName" => out_value_name,
                      "labelValueName"  => out_value_name,
