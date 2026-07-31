@@ -187,6 +187,30 @@ def read_axes(path):
     return [ax["name"] for ax in axes] if axes else None
 
 
+def read_time_increment(path):
+    """Seconds per frame for a store: the NGFF time-axis scale first, falling back to the
+    OME-XML ``TimeIncrement``. None when neither is available or there is no time axis.
+
+    Mirrors `read_scale`, which prefers NGFF and falls back to OME-XML — one resolver, so a
+    caller does not have to know which of the two sources a given store happens to carry.
+    `ome_xml_utils.read_time_increment` remains the raw OME-XML reader underneath.
+
+    Only a time axis in seconds is taken from NGFF; any other unit falls through to OME-XML
+    rather than being silently misinterpreted as seconds."""
+    axes = read_axes(path)
+    scale = read_scale(path)
+    if axes and scale is not None and len(axes) == len(scale):
+        low = [a.lower() for a in axes]
+        if 't' in low:
+            unit = (read_axis_units(path) or {}).get('t')
+            if unit in (None, 'second', 's'):
+                t_scale = scale[low.index('t')]
+                if t_scale and float(t_scale) > 0:
+                    return float(t_scale)
+    from cecelia.utils import ome_xml_utils     # lazy: see read_scale
+    return ome_xml_utils.read_time_increment(path)
+
+
 def read_axis_units(path):
     """NGFF ``axes[].unit`` keyed by axis name (e.g. ``{'t': 'second', 'x': 'micrometer'}``), or
     None. Axes without a unit are omitted, so a caller can fall back per axis."""
