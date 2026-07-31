@@ -37,6 +37,12 @@ from cecelia.utils.cellpose_utils import CellposeUtils
 from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.segmentation_utils import count_labels
 
+# Timepoints read for the whole-image normalisation statistic. Measured on `EaMaVq` (201 frames,
+# single-level): exact = 30.6 s, 20 frames = 3.3 s, and the resulting mask counts were IDENTICAL at
+# every budget down to 2 frames (the window itself moves ~3% at 20, ~35% at 2). 20 keeps the statistic
+# stable and the wait short. Runs stay EXACT — see `_compute_norm_params(max_frames=…)`.
+NORM_FRAMES = 20
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
 _AXES = ("X", "Y", "Z", "T")
@@ -85,7 +91,8 @@ class PreviewState:
                tuple(sorted(int(c) for c in model_params.get("nucChannels", []))),
                model_params.get("normalise"))
         if key not in self._norm:
-            self._norm[key] = seg._compute_norm_params(levels, model_params)
+            self._norm[key] = seg._compute_norm_params(
+                levels, model_params, max_frames=NORM_FRAMES)
         return self._norm[key]
 
 

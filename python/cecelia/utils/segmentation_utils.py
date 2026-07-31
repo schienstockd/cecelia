@@ -268,8 +268,38 @@ class SegmentationUtils:
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 
-    def _compute_norm_params(self, im_dat, model_params):
+    def _subsample_time(self, darr, max_frames):
+        """Evenly stride the time axis down to at most `max_frames` frames; identity when that isn't
+        needed or possible. A no-op for a single-timepoint image (a large tiled mosaic), which is why
+        subsampling can't hurt the case that most depends on a global window."""
+        if not max_frames or max_frames < 1:
+            return darr
+        t_idx = self.dim_utils.dim_idx('T')
+        if t_idx is None or darr.shape[t_idx] <= max_frames:
+            return darr
+        stride = -(-darr.shape[t_idx] // max_frames)      # ceil → at most max_frames frames
+        sl = [slice(None)] * darr.ndim
+        sl[t_idx] = slice(0, None, stride)
+        return darr[tuple(sl)]
+
+    def _compute_norm_params(self, im_dat, model_params, max_frames=None):
         """Per-channel percentile clipping range for scale-to-whole normalisation.
+
+        Why scale-to-whole exists at all: on a large TILED image, per-tile normalisation gives each
+        tile its own window and the segmentation comes out **patchy** — visibly inconsistent from tile
+        to tile. A global window is the fix. (It sometimes also helps intravital, and sometimes not —
+        which is why `normaliseToWhole` is a user option, `segmentationOptions/normaliseToWhole`.)
+
+        ``max_frames`` — read at most this many TIMEPOINTS (evenly strided) instead of all of them.
+        Opt-in, default None = exact, because this function also serves real runs and silently
+        changing their statistic would change existing results. The **preview** passes it: the exact
+        statistic costs ~28 s on a single-level timelapse (measured, `EaMaVq` 201 × 20 × 544 × 548,
+        ~2.4 GB read), which is the entire latency of a preview whose inference is 0.35 s.
+
+        Subsampling trades only TEMPORAL coverage — every frame it reads is read in full, so spatial
+        coverage is untouched. That is what makes it safe for the case that most needs a global window:
+        a large tiled mosaic is typically a single timepoint, so the stride is 1 and the result is
+        exact. It degrades only on timelapses, where consecutive frames are highly redundant.
 
         Scale-to-whole is required — a per-tile/per-frame window would swing with local brightness
         and give inconsistent masks — so the percentile is GLOBAL. Two ways to get it without a
@@ -291,6 +321,7 @@ class SegmentationUtils:
             # bounded streaming histogram over the (single, full-res) level
             level = im_dat[0]
             darr = level if isinstance(level, da.Array) else da.from_array(level)
+            darr = self._subsample_time(darr, max_frames)
             hists = intensity_utils.channel_histograms(darr, c_idx, channels=channels)
             for ch, hist in zip(channels, hists):
                 hist = hist.copy()
