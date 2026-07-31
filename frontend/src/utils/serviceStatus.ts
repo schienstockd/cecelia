@@ -12,6 +12,13 @@ export function napariState(s: { alive?: boolean; starting?: boolean } | null | 
   return s.alive ? 'running' : 'stopped'
 }
 
+/** GET /api/preview/status → { alive, starting, … } — same shape as napari's, so same reducer.
+ *
+ *  Worth a service row of its own even though the toggle lives on the task page: a warm cellpose model
+ *  holds GPU memory, and the task page's toggle is only reachable while you are ON that page with a
+ *  previewable task selected. Without a row here, a preview left on has no off switch at all. */
+export const previewState = napariState
+
 /** GET /api/notebooks/status → { running, starting, … } */
 export function notebooksState(s: { running?: boolean; starting?: boolean } | null | undefined): ServiceState {
   if (!s) return 'stopped'

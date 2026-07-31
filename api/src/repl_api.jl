@@ -120,7 +120,8 @@ function api_diagnostics(::HTTP.Request)
         replAvailable = _repl_available(),  # toggle on AND loopback-bound → console usable
         dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
         napariPort    = Cecelia.NAPARI_PORT,  # child-service ports, surfaced so the panel shows which
-        notebooksPort = NOTEBOOKS_PORT,       # ports Cecelia occupies (backend `port` is above)
+        previewPort   = Cecelia.PREVIEW_PORT, # ports Cecelia occupies (backend `port` is above), so the
+        notebooksPort = NOTEBOOKS_PORT,       # "don't bind other services here" list stays complete
     ))
 end
 

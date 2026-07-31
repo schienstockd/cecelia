@@ -102,8 +102,28 @@ data.
 
 Cancellation is a SIGKILL, so nothing cleans up: the `.partial` directory survives. That is the
 intended trade (the alternative is deleting the user's data to tidy up) and it is invisible — nothing
-in `ccid.json` names it. Settings → Data patches → **Remove leftover staging stores** is the broom
-(`cecelia.utils.store_sweep`).
+in `ccid.json` names it. Settings → Data patches → **Remove leftover stores** is the broom
+(`cecelia.utils.store_sweep`), and Settings → Storage reports the bytes on Scan so it announces itself
+rather than waiting to be found.
+
+**The sweep detects structurally, not by name**, because a name list only ever covers the writers
+someone remembered. `*.partial`/`*.superseded` catches everything that opted into `staged_store` — AF,
+drift, cellpose-correct, crop, rescale. **Import does not opt in**: on the 16-bit path
+`bf2raw_out == zarr_out`, so bioformats2raw writes straight to the FINAL name and a cancel leaves a
+half-written store called `ccidImage.ome.zarr` — which a name-based sweep actively *skipped* as a real
+store — plus `ccidImage.16bit.tmp.ome.zarr` and `_stage_src` (a full local copy of the source, often
+the biggest of the three). So on top of the name fast path:
+
+| `why` | Test |
+|---|---|
+| `unregistered` | a store in a store location no `ccid.json` entry names (a cancelled import is unregistered *by construction* — registration is the last thing a successful run does) |
+| `incomplete` | `.zattrs` declares levels 0..N, fewer exist on disk — catches a truncated store even at a registered path (the `KeyError: '1'` case) |
+| `scratch` | import scratch (`_stage_src`) — neither a store nor suffixed |
+
+Two guard rails, because a sweep that deletes the wrong directory is worse than the disk it reclaims:
+the orphan check is scoped to **store locations only** (`0/`, `labels/`, `branchLabels/` — `data/`,
+`qc/`, `gating/` and `labelProps/` are legitimately unregistered and deleting them would take the
+user's analysis), and an unreadable `ccid.json` reports **nothing** rather than everything.
 
 ---
 
@@ -333,6 +353,58 @@ at a time: adding the finished set evicts its own preview, and vice versa (`_LAB
 `layer.data` from a fresh view in place — throttled to one read per 2 s, since cellpose emits a tick per
 XY tile. The toggle is deliberately **not** persisted: it describes a store that exists only while one
 task runs, so restoring it later would produce a dead toggle for a layer the bridge can only skip.
+
+### Previewing params BEFORE a run (the task preview)
+
+A different thing from the section above, and the two are easy to confuse. *That* preview watches a run
+that is already going. **This one runs no task at all**: it executes the segmentation's own compute over
+the one region napari is showing, so params can be judged in under a second instead of by waiting out a
+full run and looking at the result. Full design + every measured number:
+[`docs/todo/TASK_PREVIEW_PLAN.md`](todo/TASK_PREVIEW_PLAN.md).
+
+| | Live preview (above) | Task preview (here) |
+|---|---|---|
+| What it shows | a run in progress | what a run *would* produce |
+| Runs when | a task is running | on demand, no task submitted |
+| Layer | `({vn}) Labels (live)` | `({vn}) Preview` |
+| Backed by | the run's staging store | nothing — an in-memory block |
+| Scope | whole image, as it fills | ONE z-plane of the visible region |
+
+**Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
+napari bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
+segmentation would not be a preview). Resident because a process that can segment costs **17.7 s** of
+imports before it can answer: fatal per preview, irrelevant once. It calls `CellposeUtils.predict_slice`
+— the same method the full run uses — so a preview cannot drift from the thing it previews.
+
+**Nothing is written to disk.** The worker returns the mask block (`cecelia.utils.block_transfer`) and
+the bridge builds a full-label-extent lazy array with that block placed in it, so the layer aligns with
+the image by shape alone with no `translate`. An earlier design wrote a never-promoted scratch store;
+it needed its own staging lifecycle and left debris the sweep's active-window heuristic then refused to
+collect. A preview is a picture, not data.
+
+**Opt-in per task**, the `live_outputs` shape: `task_previewable(::CciaTask) = false` is the base, a task
+overloads it beside its struct, and there is a `CompositeTask` overload because the module page runs
+`segment.cellposeMeasure`. `GET /api/tasks/definitions` stamps it onto each spec as `previewable`.
+
+**What it does NOT tell you** — all three surfaced in the UI rather than left to be discovered:
+- **One z-plane.** A visible z-stack costs ~89 s with no shortcut (cellpose rescales to a canonical
+  diameter, so cost tracks CELLS, not pixels — a coarser pyramid level buys only 2.5× for 16× fewer
+  voxels). In 3D display mode it previews the current plane and says so: *"2D preview only — diameter,
+  boundaries and splitting match the run; counts and z-extents will not (no z-stitching)"*.
+- **Base model only.** The nucleus pass and `_match_nuc_cyto` don't run. With `removeUnmatched` the
+  matching *deletes* base labels that found no nucleus, so the run finds **fewer** cells than the
+  preview shows — the warning says which case you're in. Not run because `_compute_iou_matrix` is
+  quadratic: 1.8 s at 100×100 labels, **26.9 s at 400×400**, against a 0.14–0.38 s preview (see
+  `docs/TODO.md` #00093 — the real pipeline pays this per timepoint too).
+- **"0 cells" is qualified.** A drift-padded plane returns 0 and otherwise looks exactly like too large
+  a diameter, so the worker checks `zarr_utils.read_valid_box` and reports `hasSignal`/`noSignalWhy` →
+  *"No image data here"* (padding) or *"Region is blank"*.
+
+**It never guesses which image it is looking at.** `GET /api/preview/status` exposes the open image, and
+`/api/preview/run` *checks* the caller's `imageUid` rather than using it to select — mismatches are 409s.
+The region and the pixels come from the same store by construction, because a drift-corrected store is
+padded larger than its source and pairing one's region with the other's pixels would silently preview
+the wrong area.
 
 ---
 

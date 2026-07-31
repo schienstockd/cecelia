@@ -25,6 +25,21 @@ Browser ──HTTP──▶ Julia server (8080)
 
 **Consequence:** every napari API call must happen on the Qt main thread. The QTimer drain is the only safe path. Never call napari APIs from the asyncio thread.
 
+**The bridge also talks back.** Two events are pushed from the viewer to the server (`POST
+/api/napari/event`), because the viewer is the only thing that knows they happened:
+
+| Event | Fired by | Consumed by |
+|---|---|---|
+| `cellSelection` | drawing on the `Cell selection` Shapes layer | gating / linked brushing → flow plots |
+| `viewChanged` | `dims.current_step` + `camera` (zoom/center) + `ndisplay` | the task preview re-previews the region now on screen (relayed to the frontend as the `napari:view-changed` WS frame) |
+
+`viewChanged` is **coalesced bridge-side** (`_VIEW_EVENT_COALESCE_S`, 150 ms) as well as in the frontend,
+and both matter: a single pan emits camera events continuously, so without the bridge timer the
+frontend's debounce would collapse hundreds of HTTP posts into one preview *after* the flood had already
+been sent. The listener is attached only while a `({vn}) Preview` layer exists — added by
+`show_task_preview`, detached when it is removed **and** by `open_image` (whose `layers.clear()` removes
+the layer while the listener, being bound to dims/camera, would otherwise survive it).
+
 ### Discrete-GPU rendering (hybrid graphics)
 
 On a Linux machine with hybrid graphics (NVIDIA "on-demand" / PRIME, or AMD/Intel), apps render on
