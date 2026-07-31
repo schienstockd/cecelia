@@ -143,7 +143,51 @@ emit **advisory** findings about the output it produced.
 - **First producer:** `cleanupImages.driftCorrect` — persists the applied per-frame drift and flags a
   large inter-frame jump (`drift.jump`) or abnormal XY canvas growth (`drift.canvas_expansion`).
 
+(Where the data *is*, as opposed to how good it is, is not a QC concern — see
+*Valid box* below.)
+
 Full design + phased plan: [`docs/todo/QC_PLAN.md`](todo/QC_PLAN.md).
+
+---
+
+## Valid box — which part of a store is data
+
+A task may write a canvas larger than its data. Drift correction expands the canvas to hold the
+whole trajectory and drops each frame into a **zeroed** canvas at that frame's own offset, so the
+rest is padding — 38–64% on real movies here, one going from 8 z-planes to 22. NGFF has no way to
+say where the data is, so without this a consumer either treats padding as background (it will skew
+any background estimate, and it borders real signal) or pays to process it.
+
+**One question, one answer, on the store.** `zarr_utils.write_valid_box` / `read_valid_box`, under a
+namespaced `cecelia` attr next to the pixels:
+
+```python
+box = zarr_utils.read_valid_box(path)                  # None  → the whole store is valid
+box = zarr_utils.read_valid_box(path, timepoint=t)     # {'Z': (5, 13), 'Y': …, 'X': …}
+box = zarr_utils.read_valid_box(path, level=1)         # rescaled to that pyramid level
+```
+
+Design points, each of which was a candidate mistake:
+
+- **On the store, not in the producer's QC sidecar.** QC is advisory and task-scoped; a consumer
+  would have to know *which* task padded and where its JSON lives. This is a property of the data,
+  so it travels with a copy or an export.
+- **`None` means "all valid",** which is every store that never padded. That is what lets a
+  consumer have one code path instead of special-casing drift output.
+- **The producer passes the numbers it placed the pixels with** — for drift,
+  `correction_utils.drift_frame_slices`, the call the writer itself uses. Not a second derivation
+  that can disagree. (Same discipline as *Calibration — three copies, one stamp* in `CLAUDE.md`.)
+- **Level-0 coordinates,** rescaled on read by the same `DOWNSAMPLED_AXES` rule the NGFF scale uses;
+  start floors and stop ceils so a level never crops real data.
+- **Only drift correction writes one today.** Deliberately not a plugin framework: the generality
+  that pays is on the *read* side, where every consumer benefits, not the write side, where there
+  is one producer.
+
+**Two traps.** The box is per timepoint, and each frame sits at its own offset *because* the
+correction aligned them in the shared canvas — cropping each frame to its own box puts them back out
+of register. Crop to a common region or not at all. And the intersection across all timepoints can
+be **empty**, which is not hypothetical: it is true for 4 of the 9 movies in `kSUFux`, where the
+z-drift exceeded the 8-plane stack depth.
 
 ---
 

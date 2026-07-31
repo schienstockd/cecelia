@@ -83,6 +83,15 @@ def run(params):
         # disagree. See zarr_utils.write_calibration.
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # Which part of the expanded canvas is data. Drift drops each frame into a ZEROED canvas at
+        # its own offset, so most of this store is padding (8 z-planes in a 22-plane canvas on the
+        # worst movie here). Recorded on the STORE so any consumer asks one question —
+        # `read_valid_box` — instead of knowing drift produced it and re-deriving the geometry. The
+        # numbers come from the same call that placed the pixels.
+        zarr_utils.write_valid_box(
+            staging, dim_utils.spatial_axis(),
+            correction_utils.drift_frame_origins(im_dat[0].shape, dim_utils, shifts))
+
     # Persist the APPLIED drift so it's inspectable and drives QC (the Julia task reads this, computes
     # findings, and writes the qc/ sidecar). shifts is [T, ndim] per-frame deltas; axes are Z,Y,X (3D)
     # or Y,X (2D). See docs/todo/QC_PLAN.md.
