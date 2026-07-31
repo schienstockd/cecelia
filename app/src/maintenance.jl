@@ -23,6 +23,15 @@ const MAINTENANCE_PATCHES = MaintenancePatch[
         "the centroid-axis change. Dry-run lists what would change; Apply writes.",
         "tasks/importImages/convert_centroid_names_run.py",
     ),
+    MaintenancePatch(
+        "store-debris",
+        "Remove leftover staging stores",
+        "Delete `*.partial` / `*.superseded` store directories left by cancelled or crashed runs. " *
+        "They hold no registered data and nothing in the UI can see them, so they just occupy disk. " *
+        "Run it with no tasks in flight — a store still being written is reported and skipped, but " *
+        "that check is time-based, not authoritative. Dry-run lists what it found; Apply deletes.",
+        "utils/store_sweep.py",
+    ),
 ]
 
 maintenance_patches()::Vector{MaintenancePatch} = MAINTENANCE_PATCHES

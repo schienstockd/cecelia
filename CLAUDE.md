@@ -190,6 +190,7 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 | Need | Use |
 |---|---|
 | Open an OME-ZARR (image **or** labels) as a level list | `zarr_utils.open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
+| **Write** a store (image version, label set) | `with zarr_utils.staged_store(final_path) as staging:` — then `create_multiscales`/`open_multiscales_for_writing` on `staging`, never on `final_path` |
 | Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
 | NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
 | OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
@@ -204,6 +205,13 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 - **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
   producing task's job, via `zarr_utils.create_multiscales` (or the segmentation writer), not a
   hand-rolled `zarr.open(..., 'w')`.
+- **Never write a store at its final path — stage it.** `staged_store` is the store-level twin of
+  `write_atomic`: a writer that opens the final path destroys the previous store up front and then
+  fills it over minutes, so a cancelled re-run leaves `ccid.json` pointing at a truncated store — and
+  on a single-level store the missing frames read as **zeros, with no error**, which downstream
+  measurement and tracking consume happily. Enforced by the `store staging convention` tests
+  (`python/cecelia/tests/test_store_staging_convention.py`); rationale in `docs/SEGMENTATION.md` →
+  *Stores are written staged, never in place*.
 
 ---
 

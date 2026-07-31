@@ -50,20 +50,24 @@ def run(params):
 
     log.progress(1, 3)
     log.log(f'>> write cropped image: {im_out_path}')
-    zarr_utils.create_multiscales(
-        cropped, im_out_path,
-        dim_utils=dim_utils,          # scale/axes are per-pixel — unchanged by cropping
-        reference_zarr=im_dat[0],
-        nscales=len(im_dat),
-    )
+    # Staged: the store lands on its final path only once it is complete, metadata included, so
+    # cancelling this task can't leave a registered image version truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(im_out_path) as staging:
+        zarr_utils.create_multiscales(
+            cropped, staging,
+            dim_utils=dim_utils,          # scale/axes are per-pixel — unchanged by cropping
+            reference_zarr=im_dat[0],
+            nscales=len(im_dat),
+        )
 
-    log.progress(2, 3)
-    log.log('>> save OME-XML metadata')
-    ome_xml_utils.save_meta_in_zarr(
-        im_out_path, im_path,
-        changed_shape=cropped.shape,   # SizeX/Y/Z/T shrink; PhysicalSize*/TimeIncrement carry over
-        dim_utils=dim_utils,
-    )
+        log.progress(2, 3)
+        log.log('>> save OME-XML metadata')
+        ome_xml_utils.save_meta_in_zarr(
+            staging, im_path,
+            changed_shape=cropped.shape,   # SizeX/Y/Z/T shrink; PhysicalSize*/TimeIncrement carry over
+            dim_utils=dim_utils,
+        )
 
     log.progress(3, 3)
     log.log('>> done')

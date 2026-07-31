@@ -57,7 +57,19 @@ class _StubSeg(SegmentationUtils):
         return masks
 
 
-def _run(tmp, sizes, arr_shape):
+class _FailingSeg(_StubSeg):
+    """Same stub, but dies partway through the run — a task that fails mid-stream."""
+
+    fail_after = 2
+
+    def predict_slice(self, tile, model_params, norm_params=None):
+        self._n = getattr(self, '_n', 0) + 1
+        if self._n > self.fail_after:
+            raise RuntimeError('segmentation died mid-run')
+        return super().predict_slice(tile, model_params, norm_params)
+
+
+def _run(tmp, sizes, arr_shape, cls=_StubSeg):
     du = DimUtils(ome_types.from_xml(_ome_xml(*sizes)), use_channel_axis=True)
     du.calc_image_dimensions(arr_shape)
     shape = tuple(du.im_dim)
@@ -79,7 +91,7 @@ def _run(tmp, sizes, arr_shape):
             '1': {'matchAs': 'nuc',  'nucChannels': [1]},
         },
     }
-    seg = _StubSeg(params, du)
+    seg = cls(params, du)
     counts = seg.predict_from_zarr([im0])
 
     labels_dir = os.path.join(tmp, 'labels')
@@ -114,6 +126,37 @@ class PredictFromZarrTest(unittest.TestCase):
         self.assertEqual(counts, {'base': 24, 'nuc': 24})
         self.assertEqual(_fingerprint(base), gold)
         self.assertEqual(_fingerprint(nuc), gold)
+
+
+class FailedRerunTest(unittest.TestCase):
+    """Re-running a value_name that is ALREADY registered and then failing must leave the existing
+    labels exactly as they were (docs/SEGMENTATION.md → *Stores are written staged*).
+
+    Before staging, the writer `rmtree`d the target and streamed into it, so this left ccid.json
+    advertising a store with most of its frames missing. These stores are SINGLE-LEVEL — the case
+    with no error at all: the missing frames read as zeros, and measurement/tracking silently
+    produced numbers from a partial segmentation.
+    """
+
+    def test_registered_labels_survive_a_failed_rerun(self):
+        d = tempfile.mkdtemp()
+        try:
+            _, base, nuc = _run(d, *_CASE_2D)
+            before = (_fingerprint(base), _fingerprint(nuc))
+
+            with self.assertRaises(RuntimeError):
+                _run(d, *_CASE_2D, cls=_FailingSeg)
+
+            labels_dir = os.path.join(d, 'labels')
+            again = tuple(_fingerprint(zarr.open_group(os.path.join(labels_dir, name), mode='r')['0'][:])
+                          for name in ('stub.zarr', 'stub_nuc.zarr'))
+            self.assertEqual(again, before, 'a failed re-run damaged the registered labels')
+
+            leftover = [n for n in os.listdir(labels_dir)
+                        if n.endswith((zarr_utils.STAGING_SUFFIX, zarr_utils.SUPERSEDED_SUFFIX))]
+            self.assertEqual(leftover, [], 'staging debris left behind after an unwound failure')
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class ComputeNormParamsStreamingTest(unittest.TestCase):

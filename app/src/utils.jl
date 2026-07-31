@@ -30,6 +30,31 @@ gen_uid(n::Int=UID_LENGTH) = String(rand(UID_CHARS, n))
 # portable fsync and process death is the realistic case, so rename-level is the honest depth here
 # rather than a durability claim we can't back.
 
+# ── Staged store writes — the same idea, one directory up ─────────────────────
+# A STORE (a label zarr, an image version) has the same failure mode as a state file, only stretched
+# over minutes: a writer that opens its final path in write mode destroys the previous store up front
+# and then fills it frame by frame, so a cancelled re-run leaves `ccid.json` advertising a store that
+# is now partial — and on a single-level store the missing frames read as ZEROS, with no error at all.
+#
+# The mechanism lives on the Python side, where the writers are: `zarr_utils.staged_store` streams
+# into a staging sibling and renames it into place only once the store is complete. Julia needs the
+# two suffixes for its own reasons — declaring which store a live preview should watch
+# (`segment_live_outputs`) and sweeping debris left by a killed run (`maintenance.jl`) — so they are
+# mirrored here. Keep them in step with `STAGING_SUFFIX`/`SUPERSEDED_SUFFIX` in
+# python/cecelia/utils/zarr_utils.py; there is no shared constant across the two languages.
+const STORE_STAGING_SUFFIX = ".partial"
+const STORE_SUPERSEDED_SUFFIX = ".superseded"
+const STORE_TMP_SUFFIXES = (STORE_STAGING_SUFFIX, STORE_SUPERSEDED_SUFFIX)
+
+"""
+    staging_store_path(path) -> String
+
+The staging sibling `zarr_utils.staged_store` writes `path` through while a task is filling it. The
+one place Julia spells this out — a live preview has to name the in-progress store *before* the run
+starts, so the name has to be derived, not discovered.
+"""
+staging_store_path(path::AbstractString) = string(path, STORE_STAGING_SUFFIX)
+
 """
     write_atomic(f, path) -> path
 

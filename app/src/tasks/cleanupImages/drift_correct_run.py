@@ -59,21 +59,25 @@ def run(params):
     # front (shape known from the shifts), fill it per-timepoint, then build the pyramid from disk.
     out_shape, _ = correction_utils.drift_correct_shape(im_dat[0], dim_utils, shifts)
     out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
-    group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
-        im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
-    correction_utils.drift_correct_im(
-        im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0)
+    # Staged: the store lands on its final path only once it is complete, metadata included, so
+    # cancelling this task can't leave a registered image version truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(im_correction_path) as staging:
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            staging, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
+        correction_utils.drift_correct_im(
+            im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0)
 
-    log.progress(3, 4)
-    log.log(f'>> build pyramid + save: {im_correction_path}')
-    zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
+        log.progress(3, 4)
+        log.log(f'>> build pyramid + save: {im_correction_path}')
+        zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
 
-    log.log('>> save OME-XML metadata')
-    ome_xml_utils.save_meta_in_zarr(
-        im_correction_path, im_path,
-        changed_shape=out_shape,
-        dim_utils=dim_utils,
-    )
+        log.log('>> save OME-XML metadata')
+        ome_xml_utils.save_meta_in_zarr(
+            staging, im_path,
+            changed_shape=out_shape,
+            dim_utils=dim_utils,
+        )
 
     # Persist the APPLIED drift so it's inspectable and drives QC (the Julia task reads this, computes
     # findings, and writes the qc/ sidecar). shifts is [T, ndim] per-frame deltas; axes are Z,Y,X (3D)

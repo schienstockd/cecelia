@@ -245,5 +245,105 @@ class MultiscalesMetadataTest(unittest.TestCase):
         self.assertEqual(ms[0]['datasets'], [{'path': '0'}, {'path': '1'}])
 
 
+def _write_store(path, value, nscales=2, shape=(2, 8, 6)):
+    """Write a small complete 2-level store filled with `value`; return the level-0 array."""
+    arr = np.full(shape, value, dtype=np.uint32)
+    g = zarr.open_group(path, mode='w', zarr_format=2)
+    g.attrs['multiscales'] = zu.multiscales_metadata(
+        ['T', 'Y', 'X'], nscales, scale_for_axis={'T': 1.0, 'Y': 1.0, 'X': 1.0})
+    g.create_array('0', shape=shape, chunks=(1,) + shape[1:], dtype=np.uint32)[:] = arr
+    for lvl in range(1, nscales):
+        ds = arr[:, ::2 ** lvl, ::2 ** lvl]
+        g.create_array(str(lvl), shape=ds.shape, chunks=(1,) + ds.shape[1:],
+                       dtype=np.uint32)[:] = ds
+    return arr
+
+
+def _levels(path):
+    return set(zarr.open_group(path, mode='r').array_keys())
+
+
+class StagedStoreTest(unittest.TestCase):
+    """`staged_store` — a store write must never leave a REGISTERED store partial.
+
+    See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+
+    The failure this pins used to be silent: the writers opened the final path in mode 'w' (after an
+    `rmtree`), so re-running an already-registered value_name and then cancelling left ccid.json
+    advertising a store missing most of its frames. On a single-level store the unwritten frames read
+    as zeros with no error at all, and measurement/tracking happily consumed them.
+    """
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.final = os.path.join(self.d, 'labels', 'X.zarr')
+        os.makedirs(os.path.dirname(self.final), exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_clean_write_lands_at_final_path_and_leaves_no_staging(self):
+        with zu.staged_store(self.final) as staging:
+            self.assertNotEqual(staging, self.final, 'must not write the final path directly')
+            self.assertFalse(os.path.exists(self.final), 'final path written before completion')
+            expected = _write_store(staging, 7)
+
+        self.assertTrue(os.path.isdir(self.final))
+        self.assertFalse(os.path.exists(self.final + zu.STAGING_SUFFIX))
+        self.assertFalse(os.path.exists(self.final + zu.SUPERSEDED_SUFFIX))
+        self.assertTrue(np.array_equal(zarr.open_group(self.final, mode='r')['0'][:], expected))
+
+    def test_killed_run_leaves_a_registered_store_complete(self):
+        # This IS the bug. Enter the context and abandon it without unwinding — a SIGKILL runs no
+        # `finally`, so anything that survives only because of cleanup code would be a false pass.
+        expected = _write_store(self.final, 3, nscales=2)
+
+        cm = zu.staged_store(self.final)
+        staging = cm.__enter__()
+        _write_store(staging, 9, nscales=1)          # a half-finished re-run: level 0 only
+        del cm                                        # no __exit__, no promote
+
+        self.assertEqual(_levels(self.final), {'0', '1'}, 'registered store lost a pyramid level')
+        self.assertTrue(np.array_equal(zarr.open_group(self.final, mode='r')['0'][:], expected),
+                        'registered store was overwritten by an incomplete run')
+
+    def test_exception_drops_staging_and_keeps_previous_store(self):
+        expected = _write_store(self.final, 4)
+
+        with self.assertRaises(RuntimeError):
+            with zu.staged_store(self.final) as staging:
+                _write_store(staging, 9, nscales=1)
+                raise RuntimeError('task failed')
+
+        self.assertFalse(os.path.exists(self.final + zu.STAGING_SUFFIX))
+        self.assertTrue(np.array_equal(zarr.open_group(self.final, mode='r')['0'][:], expected))
+
+    def test_stale_staging_from_a_previous_kill_is_cleaned_on_entry(self):
+        stale = self.final + zu.STAGING_SUFFIX
+        _write_store(stale, 1, nscales=1)
+
+        with zu.staged_store(self.final) as staging:
+            self.assertEqual(staging, stale)
+            self.assertFalse(os.path.exists(staging), 'stale staging debris was not cleared')
+            _write_store(staging, 5)
+
+        self.assertTrue(np.array_equal(
+            zarr.open_group(self.final, mode='r')['0'][:], np.full((2, 8, 6), 5, dtype=np.uint32)))
+
+    def test_promote_replaces_a_previous_store_entirely(self):
+        _write_store(self.final, 4, nscales=2)
+        with zu.staged_store(self.final) as staging:
+            _write_store(staging, 8, nscales=1)      # fewer levels than the store it replaces
+
+        # No level '1' left over from the old store — a rename, not a merge.
+        self.assertEqual(_levels(self.final), {'0'})
+        self.assertTrue(np.array_equal(
+            zarr.open_group(self.final, mode='r')['0'][:], np.full((2, 8, 6), 8, dtype=np.uint32)))
+
+    def test_promote_without_a_staging_store_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            zu.promote_store(self.final + zu.STAGING_SUFFIX, self.final)
+
+
 if __name__ == "__main__":
     unittest.main()

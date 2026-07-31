@@ -46,11 +46,18 @@ property of the backend, not of segmentation (`segment.branching` assembles its 
 writes it once at the end, so it has nothing to watch and correctly declares nothing).
 
     live_outputs(::MySegment, params::AbstractDict) = segment_live_outputs(params)
+
+The declared `files` are the STAGING stores (`{vn}.zarr.partial`), not the final ones. A run writes
+through `zarr_utils.staged_store`, so while it is going the final path either doesn't exist yet or —
+on a re-run — still holds the PREVIOUS segmentation, and a preview aimed there would quietly show the
+old labels while the new ones are being computed. `value_name` is carried separately so the viewer
+still names the layer `({vn})`, which is what the recolour and layer-eviction logic match on.
 """
 function segment_live_outputs(params::AbstractDict)::Vector{LiveOutput}
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
+    label_files = segment_label_files(out_value_name, get(params, "models", nothing))
     LiveOutput[(kind = "labels", value_name = out_value_name,
-                files = segment_label_files(out_value_name, get(params, "models", nothing)))]
+                files = staging_store_path.(label_files))]
 end
 
 """

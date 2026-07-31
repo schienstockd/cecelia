@@ -15,8 +15,10 @@ import zarr
 import tifffile
 import dask.array as da
 import dask
+import contextlib
 import os
 import shutil
+import time
 import numpy as np
 from copy import copy
 
@@ -271,6 +273,110 @@ def read_scale(path):
         import cecelia.utils.ome_xml_utils as ome_xml_utils
         return ome_xml_utils.read_scale_from_ome_xml(path, axes)
     return None
+
+
+# ── Staged store writing ──────────────────────────────────────────────────────
+#
+# The store-level counterpart to `write_atomic`/`write_json_atomic` in app/src/utils.jl. Those exist
+# because a truncating write-mode open on a STATE FILE leaves a half-written file if the process dies
+# mid-write; the same is true of a STORE, only worse, because a store is filled over minutes:
+# open-mode-'w'-then-stream destroys the previous contents up front, so a cancelled re-run of an
+# already-registered value_name leaves ccid.json advertising a store that is now partial. On a
+# multi-level image the next read raises `KeyError: '1'`; on a SINGLE-level one there is no error at
+# all — unwritten frames read as zeros and downstream measurement/tracking silently produce numbers
+# from a partial segmentation.
+#
+# So: never write a final store path directly. Write into a staging sibling and rename it into place
+# once the store is complete. A cancelled run then leaves the previous store untouched and its own
+# staging dir behind as recognisable garbage.
+
+STAGING_SUFFIX = '.partial'      # in progress, safe to delete
+SUPERSEDED_SUFFIX = '.superseded'  # the old store, mid-promote; safe to delete
+# Julia's maintenance sweep needs these two names too — see `_STORE_TMP_SUFFIXES` in
+# app/src/maintenance.jl. Keep them in step; there is no shared constant across the languages.
+
+
+@contextlib.contextmanager
+def staged_store(final_path):
+    """Yield a staging path to write a multiscales store into, then rename it onto ``final_path``.
+
+        with zarr_utils.staged_store(out_path) as staging:
+            group, level0, chunks = zarr_utils.open_multiscales_for_writing(staging, ...)
+            ...stream frames into level0...
+            zarr_utils.write_multiscale_pyramid(group, level0, ...)
+        # out_path now exists, complete, and was never partial
+
+    Use this for EVERY write of a store the object model can point at (a label store, an image
+    version). See the block comment above for why.
+
+    Cancellation is a SIGTERM/SIGKILL from the scheduler (`_kill_tree`), which runs no `finally`
+    block — deliberately fine here: the staging dir survives as garbage and the real store is
+    untouched, which is the entire point. A Python-level exception (a genuine task failure) does
+    unwind, and drops the staging dir on the way out."""
+    staging = final_path + STAGING_SUFFIX
+
+    # A staging dir here is debris from a previously killed run — the same self-healing the old
+    # rmtree-the-target did, just aimed at garbage instead of at the user's data.
+    if os.path.exists(staging):
+        shutil.rmtree(staging)
+
+    try:
+        yield staging
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    promote_store(staging, final_path)
+
+
+def promote_store(staging_path, final_path):
+    """Rename a completed staging store onto its final path, replacing any previous store.
+
+    Called for you by ``staged_store``. The old store is renamed aside FIRST and only deleted once
+    the new one is in place, so the window in which ``final_path`` doesn't exist is two renames
+    wide rather than however long an `rmtree` of a multi-GB store takes. If the process dies inside
+    that window, the leftover is a `.superseded` sibling and the failure is a missing file — loud,
+    not silent zeros."""
+    if not os.path.isdir(staging_path):
+        raise FileNotFoundError(
+            f'nothing to promote — staging store missing: {staging_path}')
+
+    superseded = final_path + SUPERSEDED_SUFFIX
+    if os.path.exists(superseded):
+        shutil.rmtree(superseded)
+
+    had_previous = os.path.exists(final_path)
+    if had_previous:
+        _rename_store(final_path, superseded)
+
+    try:
+        _rename_store(staging_path, final_path)
+    except BaseException:
+        # Put the previous store back rather than leaving the object model pointing at nothing.
+        if had_previous and not os.path.exists(final_path):
+            _rename_store(superseded, final_path)
+        raise
+
+    if had_previous:
+        shutil.rmtree(superseded, ignore_errors=True)
+
+
+def _rename_store(src, dest):
+    """``os.rename`` for a store directory, retrying briefly on a Windows sharing violation.
+
+    On Windows renaming a directory fails with PermissionError while any handle inside it is open,
+    and a store being promoted can legitimately be open elsewhere — the napari live preview reads
+    the in-progress label store while the run finishes it. Handles there are per-chunk and
+    short-lived, so a moment's wait clears it; without the retry a transient reader would fail a
+    whole segmentation run at the last step. No-op on POSIX, which renames regardless."""
+    for attempt in range(4):
+        try:
+            os.rename(src, dest)
+            return
+        except PermissionError:
+            if attempt == 3:
+                raise
+            time.sleep(0.25)
 
 
 def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks=None,

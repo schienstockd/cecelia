@@ -65,28 +65,32 @@ def run(params):
     # front (channel count = C + one per inverse), fill per-channel, then build the pyramid.
     out_shape = correction_utils.af_correction_output_shape(im_dat[0], dim_utils, af_combinations)
     out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
-    group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
-        im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
-    correction_utils.af_correct_image(
-        im_dat[0], af_combinations,
-        dim_utils=dim_utils,
-        logfile_utils=log,
-        apply_gaussian=apply_gaussian,
-        apply_gaussian_to_others=apply_gaussian_to_others,
-        use_dask=False,
-        out=level0,
-    )
+    # Staged: the store lands on its final path only once it is complete, metadata included, so
+    # cancelling this task can't leave a registered image version truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(im_correction_path) as staging:
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            staging, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
+        correction_utils.af_correct_image(
+            im_dat[0], af_combinations,
+            dim_utils=dim_utils,
+            logfile_utils=log,
+            apply_gaussian=apply_gaussian,
+            apply_gaussian_to_others=apply_gaussian_to_others,
+            use_dask=False,
+            out=level0,
+        )
 
-    log.progress(2, 3)
-    log.log(f'>> build pyramid + save: {im_correction_path}')
-    zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
+        log.progress(2, 3)
+        log.log(f'>> build pyramid + save: {im_correction_path}')
+        zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
 
-    log.log('>> save OME-XML metadata')
-    ome_xml_utils.save_meta_in_zarr(
-        im_correction_path, im_path,
-        changed_shape=out_shape,
-        dim_utils=dim_utils,
-    )
+        log.log('>> save OME-XML metadata')
+        ome_xml_utils.save_meta_in_zarr(
+            staging, im_path,
+            changed_shape=out_shape,
+            dim_utils=dim_utils,
+        )
 
     log.progress(3, 3)
     log.log('>> done')
