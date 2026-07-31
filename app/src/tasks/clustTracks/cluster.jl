@@ -166,5 +166,5 @@ function pops_value_name(pops::Vector{String}, img::CciaImage)::String
         idx = findfirst('/', p)
         idx === nothing || return p[1:idx-1]
     end
-    string(get(img.label_props, "_active", "default"))
+    resolve_value_name(img)
 end

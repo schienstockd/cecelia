@@ -215,7 +215,7 @@ end
 # measure type of a var column is always numeric; only an obs measure defers to detection. This is the
 # structural rule that replaces the old R `config.yml parameters.labelStats` per-column map.
 function _var_measure_set(img::CciaImage, value_name)::Set{String}
-    vn = something(value_name, get(img.label_props, "_active", "default"))
+    vn = resolve_value_name(img, value_name)
     try
         Set(String.(col_names(label_props(img; value_name=vn); data_type=:vars)))
     catch

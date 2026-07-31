@@ -1,5 +1,7 @@
 struct CellposeCorrect <: CciaTask end
 
+# QC-EXEMPT: cellpose denoising is perceptual — CLAUDE.md's named example of a task with genuinely
+# no objective signal. There is no ground truth to score the restored image against.
 function _run_task(task::CellposeCorrect, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,

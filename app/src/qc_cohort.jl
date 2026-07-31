@@ -27,6 +27,10 @@ const _COHORT_MAD0_REL = 0.5
 # cohort pass so a caller need only name the (fun, value_name) to aggregate. A second producer just
 # adds an entry here.
 const COHORT_METRICS = Dict{String,Vector{String}}(
+    # a legacy migration: how many segmentations came across. Cohort-comparable because a batch of
+    # legacy images migrated together should carry comparable segmentation counts — one that came
+    # across with far fewer is a migration that half-failed rather than a biological difference.
+    "importImages.migrateLegacy" => ["nSegmentations"],
     "segment.cellpose"           => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
     # skeleton branching per image (docs/todo/BRANCHING_PLAN.md): nBranches is the primary count;

@@ -135,6 +135,40 @@ img_value_names(img::CciaImage; field::Symbol = :label_props)::Vector{String} =
 img_has_value_name(img::CciaImage, value_name::AbstractString; field::Symbol = :label_props)::Bool =
     String(value_name) in img_value_names(img; field = field)
 
+"""
+    resolve_value_name(img, value_name = nothing) -> String
+
+The segmentation to act on: the caller's `value_name` when given, else the image's **active** one.
+Every accessor that takes an optional `value_name` resolves it here.
+
+This is the `defaultOnly = TRUE` half of R's `valueNames(x, valueType, defaultOnly)` on `cciaImage`;
+`img_value_names` is the list half.
+
+R took the field as a parameter (`x`) because in R **every** registry was versioned with an active
+key. This port is narrower, and by *type* rather than by decision: `filepath`, `label_props` and
+`imChannelNames` map to `String`/`Any` values and can hold an `_active` entry, but `labels` and
+`branch_labels` are `Dict{String,Vector{String}}` — a `String` active marker does not fit the value
+type at all. So they carry no active pointer, and this resolver is `label_props`-only rather than
+field-parameterised; a generic version would silently return `"default"` for them (or stringify a
+vector). Today that works out because a segmentation's label store and props table share one
+value_name, so `label_props`' pointer serves both, and branch labels — which can exist with no
+`label_props` entry — are enumerated from disk by `img_branch_value_names` instead. Making `labels`
+genuinely versioned would be a `ccid.json` shape change, not a refactor.
+
+R's third parameter, `valueType`, has no counterpart on purpose. It regex-matched a `.cl`/`.branch`
+**suffix** on the name (its own comment: *"TODO this should be better"*); the port replaced that with
+separate registries — branch labels live in `branch_labels` and are enumerated from disk by
+`img_branch_value_names` (see Decision 6 there for why that distinction is load-bearing).
+
+Nine call sites used to spell this out inline as
+`something(value_name, get(img.label_props, "_active", "default"))` — hardcoding both the `_active`
+key and the `"default"` fallback that `VERSIONED_ACTIVE_KEY`/`VERSIONED_DEFAULT_VAL` exist to name,
+and re-deriving `versioned_active` by hand. Image-owned and pop_type-neutral, so it lives here rather
+than in gating, where most of the copies had accumulated.
+"""
+resolve_value_name(img::CciaImage, value_name = nothing)::String =
+    something(value_name, versioned_active(img.label_props))
+
 # Per-track table suffix. A tracked segmentation gets a companion `.h5ad` holding ONE row per
 # track (track measures in X/var, lineage in obs) alongside the per-cell labelProps. The double
 # underscore keeps it distinct from a segmentation literally named "{x}_tracks" and marks the
