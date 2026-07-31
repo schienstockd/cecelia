@@ -116,6 +116,15 @@ jobs:
       - name: Cache Julia depot
         uses: julia-actions/cache@v3
 
+      # `julia-instantiate` runs `Pkg.resolve()`, which needs the General registry and does NOT
+      # install one — it errors with "no registries have been installed". In the old single job this
+      # was invisible: the server-env `Pkg.instantiate()` ran first and bootstrapped the registry as
+      # a side effect. This job doesn't do that, so on a cold depot (a new cache key, an eviction)
+      # resolve had nothing to resolve against. Explicit and idempotent — a no-op once the depot
+      # cache restores registries — rather than relying on step order in another job.
+      - name: Ensure the General registry
+        run: julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General")'
+
       - name: Instantiate Julia (package env)
         run: pixi run julia-instantiate
 
