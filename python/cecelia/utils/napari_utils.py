@@ -116,6 +116,48 @@ def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_nam
   return result
 
 
+def preview_region_from_corners(corners, factors, axes, ndisplay=2):
+    """A viewer's visible extent → the task-preview region contract, in **level-0 pixels**.
+
+    ``corners``: napari's ``layer.corner_pixels``, shape (2, ndim) — ``[min, max]`` in the layer's own
+    DATA coordinates at its current ``data_level``. ``factors``: that level's row of
+    ``layer.downsample_factors``. ``axes``: the layer's axis letters in order (channel already
+    dropped), e.g. ``['t','z','y','x']``.
+
+    Returns ``{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int|None, "t": int|None, "ndisplay": int}``.
+
+    Pure, and separated from the bridge because two conversions here are silently wrong if fumbled and
+    neither is visible in the result:
+
+    * corner_pixels is at ``data_level``, **not level 0** — a zoomed-out viewer reports small numbers
+      that must be scaled up, or the preview segments the top-left corner of the image.
+    * corner_pixels bounds are **inclusive**; the contract is half-open — so +1 before scaling, or the
+      preview quietly drops its last row and column.
+
+    A dimension that isn't displayed (z in 2D mode, t always) has min == max, which IS the current
+    index — so the same array gives both the visible box and the current plane, with no second
+    coordinate system to reconcile.
+    """
+    corners = np.asarray(corners)
+    factors = np.asarray(factors, dtype=float)
+    if corners.ndim != 2 or corners.shape[0] != 2:
+        raise ValueError(f"corner_pixels must be (2, ndim), got {corners.shape}")
+    if corners.shape[1] != len(axes) or len(factors) != len(axes):
+        raise ValueError(
+            f"axes {list(axes)} do not match corners {corners.shape} / factors {len(factors)}")
+
+    out = {"xy": {}, "z": None, "t": None, "ndisplay": int(ndisplay)}
+    for i, ax in enumerate(axes):
+        ax = str(ax).upper()
+        lo = int(np.floor(corners[0][i] * factors[i]))
+        if ax in ("Y", "X"):
+            hi = int(np.ceil((corners[1][i] + 1) * factors[i]))   # inclusive → half-open
+            out["xy"][ax] = [max(0, lo), hi]
+        elif ax in ("Z", "T"):
+            out[ax.lower()] = max(0, lo)
+    return out
+
+
 def layer_ndim(data):
   """Dimensionality of a layer's data, accepting a multiscale LIST (level 0 decides) or one array."""
   arr = data[0] if isinstance(data, (list, tuple)) and len(data) else data

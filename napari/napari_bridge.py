@@ -588,6 +588,37 @@ class NapariState:
 
     # ── Populations (linked brushing with the flow plots) ─────────────────────
 
+    def preview_region(self):
+        """What the viewer is currently looking at, as the task-preview region contract.
+
+        Returns `{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int, "t": int, "ndisplay": int}` in
+        **level-0 pixels**. The worker turns that into the region it computes
+        (`slice_utils.preview_region_bounds`) — this only reports, it doesn't decide.
+
+        Everything comes from `layer.corner_pixels`, deliberately, rather than from `viewer.dims`:
+        corner_pixels is in the layer's own DATA coordinates, so there is no world/scale conversion to
+        get wrong, and for a non-displayed dimension its min and max collapse to the current index —
+        which is exactly the z/t point we need. One source, no second coordinate system.
+
+        Two conversions that are easy to get silently wrong, so they are explicit here:
+        * corner_pixels is at `data_level`, not level 0 → multiply by that level's downsample factor.
+        * corner_pixels bounds are INCLUSIVE; the region contract is half-open → +1 before scaling,
+          or the preview quietly loses its last row and column.
+        """
+        layer = next((l for l in self._viewer.layers if isinstance(l, napari.layers.Image)), None)
+        if layer is None:
+            raise RuntimeError("no image layer open — nothing to preview")
+
+        axes = self._display_axes()                     # e.g. ['t','z','y','x'], channel dropped
+        factors = (np.asarray(layer.downsample_factors)[layer.data_level]
+                   if getattr(layer, "multiscale", False) else np.ones(len(axes)))
+        # the level scaling + inclusive→half-open conversion live in napari_utils, where they are
+        # unit-tested without needing a viewer
+        out = napari_utils.preview_region_from_corners(
+            layer.corner_pixels, factors, axes, ndisplay=self._viewer.dims.ndisplay)
+        print(f"[preview_region] level={getattr(layer, 'data_level', 0)} {out}", flush=True)
+        return out
+
     def _display_axes(self):
         """Non-channel image axes, in display order (e.g. ['t','z','y','x'])."""
         if not self._axes:
@@ -1606,6 +1637,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
 
         elif t == "capture_view_state":
             return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}
+
+        elif t == "preview_region":
+            return {"type": "ok", "cmd": t, "region": state.preview_region()}
 
         elif t == "apply_view_state":
             return {"type": "ok", "cmd": t,

@@ -129,7 +129,7 @@ export launch!, close!, restart!, send
 export open_image!, show_labels!, show_branch_labels!, refresh_labels!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!
-export capture_view_state, apply_view_state!
+export capture_view_state, apply_view_state!, preview_region
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
 # `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
