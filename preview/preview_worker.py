@@ -1,0 +1,243 @@
+"""Resident preview worker — runs a task's real compute over one visible region, on demand.
+
+A runtime process, like `napari/napari_bridge.py` and `mcp/` (not part of the `cecelia` IO library).
+It exists for one measured reason: the fixed cost of a Python process that can segment is **17.7 s**
+(11.7 s `import cecelia.utils` + 5.7 s `import cellpose` + 0.2 s model construction), which is fatal
+per preview and irrelevant once. Staying resident pays it at toggle-on. Model construction is cheap
+enough that warm *models* are a minor bonus, not the point — see
+docs/todo/TASK_PREVIEW_PLAN.md (Decision 8).
+
+What it does NOT do:
+
+* **No second cellpose implementation.** It calls `CellposeUtils.predict_slice`, the same method the
+  full run uses, so a preview cannot drift from the thing it is previewing.
+* **No 3D.** One z-plane, always. A visible z-stack costs ~90 s with no shortcut available
+  (downsampling doesn't help — cellpose rescales to a canonical diameter, so cost tracks CELLS, not
+  pixels), and that is not a preview. In 3D display mode it previews the current plane and reports
+  `fallback2d` so the caller can say so.
+* **No real data.** Output goes to a `*.partial` scratch store (`staged_store(scratch=True)`) that is
+  never promoted, so nothing in `ccid.json` can name it and the `store-debris` patch sweeps it.
+
+Protocol: one JSON message per connection, same shape as the napari bridge.
+    {"type": "ping"}     -> {"type": "ok"}
+    {"type": "preview", ...} -> {"type": "ok", "counts": …, "region": …, "fallback2d": bool}
+"""
+import asyncio
+import json
+import os
+import traceback
+
+import numpy as np
+import zarr
+
+import cecelia.utils.ome_xml_utils as ome_xml_utils
+import cecelia.utils.slice_utils as slice_utils
+import cecelia.utils.zarr_utils as zarr_utils
+from cecelia.utils.cellpose_utils import CellposeUtils
+from cecelia.utils.dim_utils import DimUtils
+from cecelia.utils.segmentation_utils import count_labels
+
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
+_AXES = ("X", "Y", "Z", "T")
+
+
+class PreviewState:
+    """Everything worth keeping between previews. Opening the image and reading its OME-XML is the
+    other per-invocation cost a resident process removes."""
+
+    def __init__(self):
+        self._images = {}        # im_path → (levels, dim_utils)
+        self._model_cache = {}   # shared with each CellposeUtils instance (see `segmenter`)
+        self._norm = {}          # (im_path, channels, normalise) → norm params
+
+    def image(self, im_path):
+        if im_path not in self._images:
+            levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+            dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
+            dim_utils.calc_image_dimensions(levels[0].shape)
+            self._images[im_path] = (levels, dim_utils)
+        return self._images[im_path]
+
+    def segmenter(self, params, dim_utils):
+        """A fresh `CellposeUtils` per preview — params change every time, and that is the point —
+        but carrying the loaded-model dict across, so switching a threshold doesn't reload a model."""
+        seg = CellposeUtils(params, dim_utils)
+        seg._model_cache = self._model_cache
+        return seg
+
+    def norm_params(self, seg, levels, im_path, model_params):
+        """Whole-image percentile ranges, cached — **the** thing that makes a second preview fast.
+
+        Measured on `EaMaVq` (201 × 20 × 544 × 548): `_compute_norm_params` takes **24 s**, because
+        scale-to-whole is global by definition and it streams a histogram over the entire level. That
+        dwarfs the ~0.5 s of inference it feeds, so paying it per preview would make the tuning loop
+        pointless.
+
+        It only depends on the image, the channels read, and the `normalise` percentile — none of
+        which are what you tune. Diameter, thresholds, filters and `stitchThreshold` all reuse it, so
+        the first preview on an image is slow and every subsequent one is not. Changing a channel or
+        the percentile correctly misses the cache."""
+        if not seg.normalise_to_whole:
+            return None
+        key = (im_path,
+               tuple(sorted(int(c) for c in model_params.get("cellChannels", []))),
+               tuple(sorted(int(c) for c in model_params.get("nucChannels", []))),
+               model_params.get("normalise"))
+        if key not in self._norm:
+            self._norm[key] = seg._compute_norm_params(levels, model_params)
+        return self._norm[key]
+
+
+STATE = PreviewState()
+
+
+def _axis_lengths(dim_utils):
+    out = {}
+    for ax in _AXES:
+        if dim_utils.dim_idx(ax) is not None:
+            out[ax] = int(dim_utils.dim_val(ax))
+    return out
+
+
+def _axis_indices(dim_utils, exclude=()):
+    """Axis letter → array axis index. `exclude` drops an axis and shifts the ones after it, which is
+    how the label store's axes relate to the image's (labels have no channel axis)."""
+    order = [ax for ax in dim_utils.im_dim_order if ax not in exclude]
+    return {ax: (order.index(ax) if ax in order else None) for ax in (*_AXES, "C")}
+
+
+def _as_cyx(cropped, dim_utils):
+    """The cropped block → `[C, Y, X]`, which is what `predict_slice` takes for a 2D tile.
+
+    T and Z are size 1 by construction (one timepoint, one plane), so dropping them is a reshape, not
+    a projection — nothing is averaged or lost."""
+    order = list(dim_utils.im_dim_order)
+    kept = [ax for ax in order if ax not in ("T", "Z")]
+    arr = cropped.reshape([s for ax, s in zip(order, cropped.shape) if ax not in ("T", "Z")])
+    if "C" in kept:
+        return np.moveaxis(arr, kept.index("C"), 0)
+    return arr[np.newaxis, ...]
+
+
+def _open_scratch_level0(staging, label_shape, label_axes, seg):
+    """Create (or reuse) the full-shape level-0 array in the scratch store.
+
+    Full image shape, written sparsely: zarr only materialises touched chunks, so this costs bytes,
+    not the store's nominal size — and a full-shape store means the preview layer lines up with the
+    image with no translate. Reused across previews so a viewer's lazy view stays valid; only the
+    region written changes. Chunking comes from the real label writer's own helper so a preview store
+    is laid out exactly like a run's."""
+    group = zarr.open_group(staging, mode="a", zarr_format=2)
+    if "multiscales" not in group.attrs:
+        # scale by axis NAME off dim_utils' own order — never zipped positionally against label_axes,
+        # which has dropped C (the A8 bug: a store that drops an axis inherits its neighbour's scale)
+        full = dict(zip(seg.dim_utils.im_dim_order, seg.dim_utils.im_scale()))
+        group.attrs["multiscales"] = zarr_utils.multiscales_metadata(
+            label_axes, 1,
+            scale_for_axis={ax: float(full.get(ax) or 1.0) for ax in label_axes})
+    shape = tuple(int(x) for x in label_shape)
+    if "0" in set(group.array_keys()):
+        level0 = group["0"]
+        if tuple(level0.shape) == shape:
+            return level0
+        del group["0"]                      # the image changed under us — start over
+    return group.create_array(
+        "0", shape=shape, chunks=seg._label_chunks(shape, label_axes),
+        dtype=seg.LABEL_DTYPE)
+
+
+def preview(msg):
+    im_path = msg["imPath"]
+    task_dir = msg["taskDir"]
+    value_name = str(msg.get("outputValueName", "preview"))
+    region = msg.get("region") or {}
+    params = dict(msg.get("params") or {})
+    models = params.get("models") or {}
+    if not models:
+        raise ValueError("no models in preview params")
+
+    levels, dim_utils = STATE.image(im_path)
+    axis_len = _axis_lengths(dim_utils)
+
+    bounds, fallback2d = slice_utils.preview_region_bounds(
+        region.get("xy") or {}, region.get("z"), region.get("t"),
+        axis_len, ndisplay=int(region.get("ndisplay", 2)))
+    if "X" not in bounds or "Y" not in bounds:
+        raise ValueError(f"empty preview region: {region.get('xy')!r}")
+
+    # `SegmentationUtils.__init__` requires taskDir/outputValueName — it is built to own its output
+    # store. The preview never lets it write (we do that, into the scratch store), but the contract
+    # still has to be satisfied.
+    seg = STATE.segmenter(
+        {**params, "taskDir": task_dir, "outputValueName": value_name}, dim_utils)
+    img_slices = slice_utils.crop_slice_tuple(
+        levels[0].ndim, _axis_indices(dim_utils), bounds)
+    tile = _as_cyx(zarr_utils.fortify(levels[0][img_slices]), dim_utils)
+
+    label_axes = [ax for ax in dim_utils.im_dim_order if ax != "C"]
+    label_shape = [axis_len[ax] if ax in axis_len else 1 for ax in label_axes]
+    label_slices = slice_utils.crop_slice_tuple(
+        len(label_axes), _axis_indices(dim_utils, exclude=("C",)), bounds)
+
+    counts = {}
+    labels_dir = os.path.join(task_dir, "labels")
+    os.makedirs(labels_dir, exist_ok=True)
+    final = os.path.join(labels_dir, f"{value_name}.zarr")
+
+    with zarr_utils.staged_store(final, scratch=True) as staging:
+        level0 = _open_scratch_level0(staging, label_shape, label_axes, seg)
+        for key in sorted(models.keys()):
+            model_params = models[key]
+            match_as = str(model_params.get("matchAs", "base"))
+            if match_as != "base":
+                continue            # one type per preview: it is the primary you are judging
+            # Whole-image intensity statistics, applied to the crop: percentiles over the visible
+            # region alone would normalise differently from the run, so the preview would show a
+            # result the run cannot reproduce. Per MODEL and only when the run would do it, matching
+            # `predict_from_zarr`. Cached across previews — see `PreviewState.norm_params`.
+            norm_params = STATE.norm_params(seg, levels, im_path, model_params)
+            masks = seg.predict_slice(tile, model_params, norm_params)
+            block = tuple(len(range(*s.indices(d)))
+                          for s, d in zip(label_slices, level0.shape))
+            level0[label_slices] = np.reshape(
+                np.asarray(masks, dtype=level0.dtype), block)
+            counts[match_as] = count_labels(masks)
+
+    return {
+        "counts": counts,
+        "region": {ax: list(v) for ax, v in bounds.items()},
+        "fallback2d": fallback2d,
+        "store": os.path.basename(final) + zarr_utils.STAGING_SUFFIX,
+        "valueName": value_name,
+    }
+
+
+def execute_command(msg):
+    kind = msg.get("type", "")
+    if kind == "ping":
+        return {"type": "ok"}
+    if kind == "preview":
+        return {"type": "ok", **preview(msg)}
+    raise ValueError(f"unknown command: {kind!r}")
+
+
+async def handle(ws):
+    async for raw in ws:
+        try:
+            reply = execute_command(json.loads(raw))
+        except Exception as e:                       # never let one bad request kill the worker
+            traceback.print_exc()
+            reply = {"type": "error", "msg": f"{type(e).__name__}: {e}"}
+        await ws.send(json.dumps(reply))
+
+
+async def main():
+    import websockets
+    async with websockets.serve(handle, HOST, PORT):
+        print(f"preview worker ready on ws://{HOST}:{PORT}", flush=True)
+        await asyncio.Future()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

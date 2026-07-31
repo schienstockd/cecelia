@@ -43,9 +43,20 @@ Previewability is a property of a task's *compute*, not of a category:
 
 1. **The real compute, on a bounded region.** No approximation — the point is to judge the params you are
    about to run, so an approximation would answer a different question.
-2. **The region is the current napari view in XY, the whole z-stack in Z, the current timepoint in T**
-   (Dominik, 2026-07-31). Viewing one plane of a stack still previews the stack: cellpose 3D needs the
-   volume, and a single-plane preview of a 3D run would show something the run won't reproduce.
+2. **The region is the current napari view in XY, ONE z-plane, the current timepoint** (Dominik,
+   2026-07-31, revised the same day once the numbers came in). The first version of this decision previewed
+   the whole z-stack, on the grounds that a single-plane preview shows something the run won't reproduce.
+   That is true, and it costs ~90 s (Decision 8) with no trick available to reduce it — so **3D previews are
+   dropped**: they are not previews.
+
+   **If the viewer is in 3D display mode (`dims.ndisplay == 3`), the preview silently falls back to the
+   current z-plane and says so** — it does not refuse, and it does not quietly pretend to be a 3D result.
+
+   What the fallback actually costs, stated precisely because "approximate" is useless to a user: the real
+   run is `do_3D=False` + `stitch_threshold`, i.e. **2D per plane, then stitched across z**
+   (`cellpose_utils.py:121-134`). A one-plane preview runs the identical per-plane inference, so
+   **diameter, boundaries and splitting are faithful**; what is missing is stitching, so **object counts and
+   z-extents will differ from the run**. The warning should say that, not "results may vary".
 3. **Output is an unpromoted staging store at FULL image shape**, filled only in the previewed region.
    - Full shape means the layer aligns with the image for free; a crop-shaped layer renders at the origin
      and needs a translate.
@@ -87,9 +98,66 @@ Previewability is a property of a task's *compute*, not of a category:
    (segmentation, AF) and three once coastal denoise lands — so this decision depends on the widened scope.
    Precedent exists (`mcp/`, a non-viewer resident Python service), as do the
    lifecycle primitives (`_kill_listeners_on_port`, `jobs.jl:70`, how `stop-napari` works).
-8. **The worker holds warm models**, keyed by what identifies them (model type + device). Model
-   construction, not inference, is expected to dominate per-preview latency — that is the whole reason the
-   worker is resident rather than a subprocess per preview.
+8. **The worker is resident to amortise IMPORTS, not model loading** (measured 2026-07-31, RTX 2000 Ada
+   Laptop 8 GB, `cyto2`). An earlier draft of this decision said model construction would dominate. It
+   doesn't — it is essentially free:
+
+   | Fixed cost, per process | |
+   |---|---|
+   | `import cecelia.utils` | **11.7 s** |
+   | `import cellpose` (pulls torch) | 5.7 s |
+   | `CellposeModel(cyto2)` construction | **0.2 s** |
+   | total | **17.7 s** |
+
+   17.7 s per invocation is fatal for an interactive loop, so the worker stays resident — but it pays that
+   once at toggle-on, and holding *models* warm is a minor extra (`CellposeUtils._model_cache` already does
+   it within a process).
+
+   **Inference cost is proportional to CELLS, not pixels** — which kills the obvious optimisations. At a
+   fixed diameter it looks like ~2 µs/voxel (512² plane 0.47 s, 1024² plane 2.2 s, 20×512² 9.7 s,
+   40×1024² 89 s), but that is a coincidence of holding the diameter constant:
+
+   | Region | Voxels | Time | µs/voxel |
+   |---|---|---|---|
+   | level 0: 40 × 1024², diam 17 px | 41.9 M | 90.1 s | 2.15 |
+   | level 1: 40 × 512², diam 8.5 px | 10.5 M | 37.7 s | 3.60 |
+   | level 2: 40 × 256², diam 4.25 px | 2.6 M | **35.9 s** | 13.69 |
+
+   **16× fewer voxels buys only 2.5× less time.** Cellpose rescales internally to a canonical ~30 px
+   diameter, so a scaled-down diameter makes it *upscale*: at level 2, diam 4.25 → a 7× upscale, and a 256²
+   tile becomes ~1800² internally. Downsampling and diameter-scaling cancel. So:
+
+   - **Previewing at napari's displayed pyramid level is NOT a shortcut** (an earlier draft claimed cost
+     would "track the screen, not the image" — measured false).
+   - **`batch_size` is not a shortcut either**: 88.4 s at the default 8, and slightly *worse* at 16/32/64.
+   - **Z-depth is the whole problem.** 40 planes = 40× the cells, and nothing changes that arithmetic.
+
+   What is left is the only thing that was ever going to work — **do less, and show it sooner**:
+
+   | | |
+   |---|---|
+   | 1 plane at level 0 | **2.36 s** |
+   | 1 plane at level 1 | **0.95 s** |
+
+   So the preview segments **the plane you are looking at**, and nothing else (Decision 2).
+
+   **Measured end-to-end on real data** (`EaMaVq`, 201 × 20 × 544 × 548 driftCorrected, cyto2, 10 µm,
+   stitch 0.2, T-cell channel — the configuration `SEG_QUALITY_PLAN.md` benchmarked):
+
+   | | |
+   |---|---|
+   | first preview on an image | **27.5 s** — of which 24 s is `_compute_norm_params` |
+   | second preview, diameter 10 → 12 | **0.30 s** |
+
+   The tuning loop is therefore **sub-second**, and the one-off cost is the whole-image normalisation
+   statistic. That is cached per (image, channels, `normalise` percentile) — none of which are what you
+   tune — so it is paid once per image and never again while you sweep diameter/thresholds/filters.
+
+   Two things worth knowing about that 24 s: it is **specific to single-level stores**.
+   `_compute_norm_params` reads the statistic off the smallest pyramid level when there is one, but a
+   drift/AF-corrected store has only level 0, so it streams all 1.2 B voxels — and corrected stores are
+   the normal segmentation input. And it cannot be cheapened by subsampling without changing the
+   statistic, which would make the preview disagree with the run (Decision 5). See *Open questions*.
 9. **One adder for preview layers, both kinds.** Labels previews can reuse `_show_label_stores`; **image**
    previews (AF now, denoise later) have no equivalent and must not grow into a second near-copy. `docs/NAPARI.md`
    records that the label adder had already drifted into two copies before it was consolidated — don't
@@ -154,7 +222,16 @@ denoising *inside* AF correction, not the cellpose denoise task.)
   WS server and no firewall consideration, and `jobs.jl` already tracks process handles. Leaning port for
   consistency — but the subprocess is genuinely simpler, and this is worth deciding once, deliberately,
   since three modalities will depend on it.
-- **Model load latency** — measure it. It decides whether the worker holds several models at once
+- **Is a 25 s first preview acceptable?** It is one-off per image (then 0.3 s/iteration), and it buys
+  exactly matching the run's normalisation. Options if not: warm it at toggle-on so the wait is
+  attributable rather than surprising; or offer `normaliseToWhole=false` for previewing, which is faster
+  but then the preview is NOT what the run produces — the thing Decision 5 exists to prevent.
+- **An empty region reads as "0 cells", which is misleading.** Drift correction pads the canvas (and the
+  padding moves per timepoint — at t=0 on `EaMaVq`, z 0–6 is dead space), so a preview aimed there
+  segments an all-zero tile and honestly reports nothing found. Distinguish "no signal in this region"
+  from "no cells found": the tile's own max is enough to tell them apart, and the wrong one sends someone
+  hunting for a parameter problem that isn't there.
+- **Model load latency** — measured, not a factor (0.2 s). It decides whether the worker holds several models at once
   (segmentation + denoise, if someone toggles between them) or one at a time.
 - **Does `predict_slice` work on an arbitrary crop** outside the tiling/stitching loop that normally calls
   it?

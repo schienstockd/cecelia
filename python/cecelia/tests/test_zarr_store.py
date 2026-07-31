@@ -510,6 +510,41 @@ class StagedStoreTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             zu.promote_store(self.final + zu.STAGING_SUFFIX, self.final)
 
+    # ── scratch mode: the task preview's store (never real data) ──────────────
+
+    def test_scratch_never_promotes(self):
+        with zu.staged_store(self.final, scratch=True) as staging:
+            _write_store(staging, 3)
+        self.assertFalse(os.path.exists(self.final), 'a scratch store must never become real data')
+        self.assertTrue(os.path.isdir(self.final + zu.STAGING_SUFFIX))
+
+    def test_scratch_keeps_an_existing_store_so_a_viewer_can_hold_it(self):
+        # a preview layer holds a lazy view of this path; clearing it between previews would
+        # invalidate the layer, so the store persists and is overwritten in place
+        with zu.staged_store(self.final, scratch=True) as staging:
+            _write_store(staging, 1, nscales=1)
+        first = staging
+        with zu.staged_store(self.final, scratch=True) as staging2:
+            self.assertEqual(staging2, first)
+            g = zarr.open_group(staging2, mode='r+')
+            self.assertIn('0', set(g.array_keys()), 'the previous scratch store was cleared')
+            g['0'][0] = 9                              # overwrite one plane, as a re-preview does
+        arr = zarr.open_group(first, mode='r')['0'][:]
+        self.assertTrue((arr[0] == 9).all())
+        self.assertTrue((arr[1] == 1).all(), 'untouched planes should survive a re-preview')
+
+    def test_scratch_does_not_disturb_a_registered_store_of_the_same_name(self):
+        expected = _write_store(self.final, 4)
+        with zu.staged_store(self.final, scratch=True) as staging:
+            _write_store(staging, 9, nscales=1)
+        self.assertTrue(np.array_equal(zarr.open_group(self.final, mode='r')['0'][:], expected))
+
+    def test_scratch_debris_is_swept_like_any_other(self):
+        # no separate cleanup path: it is a *.partial dir, so the store-debris patch collects it
+        with zu.staged_store(self.final, scratch=True) as staging:
+            _write_store(staging, 2, nscales=1)
+        self.assertTrue(staging.endswith(zu.STAGING_SUFFIX))
+
 
 if __name__ == "__main__":
     unittest.main()

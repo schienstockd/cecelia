@@ -341,7 +341,7 @@ SUPERSEDED_SUFFIX = '.superseded'  # the old store, mid-promote; safe to delete
 
 
 @contextlib.contextmanager
-def staged_store(final_path):
+def staged_store(final_path, scratch=False):
     """Yield a staging path to write a multiscales store into, then rename it onto ``final_path``.
 
         with zarr_utils.staged_store(out_path) as staging:
@@ -356,12 +356,21 @@ def staged_store(final_path):
     Cancellation is a SIGTERM/SIGKILL from the scheduler (`_kill_tree`), which runs no `finally`
     block — deliberately fine here: the staging dir survives as garbage and the real store is
     untouched, which is the entire point. A Python-level exception (a genuine task failure) does
-    unwind, and drops the staging dir on the way out."""
+    unwind, and drops the staging dir on the way out.
+
+    ``scratch=True`` — for a store that is written to be LOOKED AT and never becomes real data (the
+    task preview). It changes two things: the staging store is **never promoted**, and an existing one
+    is **kept and written into** rather than cleared. Keeping it matters for the viewer: a preview
+    layer holds a lazy view of this path, so deleting and recreating the store between previews would
+    invalidate the layer and lose its display settings; overwriting a region in place lets a refresh
+    be a like-for-like re-read. It stays a `*.partial` path, so it remains invisible to `ccid.json` and
+    the `store-debris` sweep collects it. See docs/todo/TASK_PREVIEW_PLAN.md (Decision 3)."""
     staging = final_path + STAGING_SUFFIX
 
     # A staging dir here is debris from a previously killed run — the same self-healing the old
-    # rmtree-the-target did, just aimed at garbage instead of at the user's data.
-    if os.path.exists(staging):
+    # rmtree-the-target did, just aimed at garbage instead of at the user's data. A scratch store is
+    # the exception: it is deliberately long-lived across previews.
+    if os.path.exists(staging) and not scratch:
         shutil.rmtree(staging)
 
     try:
@@ -370,7 +379,8 @@ def staged_store(final_path):
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    promote_store(staging, final_path)
+    if not scratch:
+        promote_store(staging, final_path)
 
 
 def promote_store(staging_path, final_path):
