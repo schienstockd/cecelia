@@ -142,6 +142,16 @@ class DimUtils:
       axis_unit = self.omexml.images[0].pixels.physical_size_z_unit.value
     return axis_unit.replace('µ', 'u') if axis_unit is not None else default
 
+  def im_time_increment(self, default = None):
+    """Frame interval from the OME metadata (``Pixels.TimeIncrement``), or default."""
+    return self.omexml.images[0].pixels.time_increment if self.is_timeseries() else default
+
+  def im_time_increment_unit(self, default = 's'):
+    """Unit for `im_time_increment` — OME's ``TimeIncrementUnit``, e.g. 's'."""
+    unit = self.omexml.images[0].pixels.time_increment_unit
+    unit = getattr(unit, 'value', unit)
+    return unit if unit is not None else default
+
   def im_scale(self, dims = list(), as_dict = False, upper = True):
     size_x = self.omexml.images[0].pixels.physical_size_x
     size_y = self.omexml.images[0].pixels.physical_size_y
@@ -153,6 +163,13 @@ class DimUtils:
 
     if self.is_3D():
       im_scale[self.dim_idx('Z')] = size_z
+
+    # T carries a physical scale too (the frame interval). Without this the axis keeps the
+    # 1.0 from ones_like, which propagates all the way to the NGFF coordinateTransformations
+    # written at import — and napari then shows frame indices instead of elapsed time, even
+    # though TimeIncrement was read from the file and is sitting in the image metadata.
+    if self.is_timeseries():
+      im_scale[self.dim_idx('T')] = self.im_time_increment()
 
     im_scale = [x if x is not None else 1 for x in im_scale]
 

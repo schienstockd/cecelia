@@ -244,6 +244,30 @@ class MultiscalesMetadataTest(unittest.TestCase):
         self.assertNotIn('axes', ms[0])
         self.assertEqual(ms[0]['datasets'], [{'path': '0'}, {'path': '1'}])
 
+    def test_axes_carry_ngff_type_and_unit(self):
+        """Without `type`/`unit` a reader gets a bare number and cannot tell seconds from
+        micrometres — napari then labels the time axis with the spatial unit."""
+        ms = zu.multiscales_metadata(
+            ['T', 'C', 'Z', 'Y', 'X'], 1,
+            scale_for_axis={'T': 10.0, 'C': 1.0, 'Z': 5.0, 'Y': 0.5, 'X': 0.5},
+            unit_for_axis={'T': 's', 'Z': 'um', 'Y': 'um', 'X': 'um'})
+        axes = ms[0]['axes']
+        self.assertEqual([a['type'] for a in axes],
+                         ['time', 'channel', 'space', 'space', 'space'])
+        # abbreviations map to the UDUNITS names napari expects; channel takes no unit
+        self.assertEqual(axes[0]['unit'], 'second')
+        self.assertEqual(axes[2]['unit'], 'micrometer')
+        self.assertNotIn('unit', axes[1])
+        # the frame interval reaches the transform rather than defaulting to 1.0
+        self.assertEqual(ms[0]['datasets'][0]['coordinateTransformations'][0]['scale'][0], 10.0)
+
+    def test_axis_entry_builder_is_shared_with_set_ngff_axes(self):
+        """One builder decides an axis entry's shape, so a migrated store and a freshly
+        written one describe their axes identically (cecelia rule: no duplicated logic)."""
+        self.assertEqual(zu.ngff_axis_entry('t', 's'),
+                         {'name': 't', 'type': 'time', 'unit': 'second'})
+        self.assertEqual(zu.ngff_axis_entry('c'), {'name': 'c', 'type': 'channel'})
+
 
 def _write_store(path, value, nscales=2, shape=(2, 8, 6)):
     """Write a small complete 2-level store filled with `value`; return the level-0 array."""

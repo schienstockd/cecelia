@@ -138,8 +138,16 @@ class NapariState:
                 self._im_scale = [s for i, s in enumerate(full_scale)
                                   if i != self._channel_axis]
         if self._im_scale is not None:
+            # Per-axis units, not one unit repeated. The time axis is seconds, the spatial axes
+            # micrometres; labelling them all with the pixel unit renders a correct frame
+            # interval as "10 um". Prefer the NGFF `axes[].unit` written at import and fall back
+            # to the OME pixel unit for stores written before that existed.
             unit = ome_xml_utils.read_pixel_unit(path)
-            self._im_units = tuple(unit for _ in self._im_scale)
+            ngff_units = zarr_utils.read_axis_units(path) or {}
+            self._im_units = tuple(
+                ngff_units.get(ax.lower()) or unit
+                for i, ax in enumerate(self._axes) if i != self._channel_axis
+            )
 
         # Delegate the actual layer creation to the SHARED generic helper (cecelia.utils.napari_utils,
         # which coastal mirrors): per-channel colormaps, additive blending, contrast-from-sample and the
