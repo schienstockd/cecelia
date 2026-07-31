@@ -311,6 +311,13 @@ baked into the conda env at build time — see **Building installers**.
 `cellpose == 3.1.1.2`. **v4 dropped denoise support, and denoising cannot be excised from v3.**
 Bumping to 4.x breaks the denoise path. (INSTALL.md's old `4.2.1.1` table entry was wrong.)
 
+**This is a dead end, not a preference.** Cellpose denoise is unmaintained upstream and phased out in
+v4, so there is no version of cellpose to migrate the denoise path *to* — the exit is `coastal`
+replacing it (see `docs/todo/SEG_QUALITY_PLAN.md`, and coastal's own `DENOISE_PLAN.md`). Two things
+follow for anyone touching this code: don't invest in refactoring cellpose denoise for its own sake,
+and when a replacement lands, put it behind a backend seam the way segmentation has one
+(`SegmentationUtils.predict_slice`) rather than swapping one hard-coded engine for another.
+
 ### PyTorch is platform-gated
 The cu124 wheel index carries only Linux/Windows wheels, so `torch`/`torchvision` are declared in
 `[target.linux-64.*]` / `[target.win-64.*]` with that index and in `[target.osx-arm64.*]` from the

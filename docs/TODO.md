@@ -171,9 +171,11 @@ The live preview (`docs/SEGMENTATION.md` → *Previewing a running run*) lets yo
 writes; it does not let you judge params on a couple of timepoints *before* committing to a full run,
 which is the loop that actually matters when you're guessing at diameter/threshold. Design, corrected
 premises (the R `seedDetectPreview` previewed a *different algorithm* — seed detection for backends
-feijoa doesn't have) and a phased build sequence: [`docs/todo/SEG_PREVIEW_PLAN.md`](todo/SEG_PREVIEW_PLAN.md).
-Pairs with [`docs/todo/SEG_QUALITY_PLAN.md`](todo/SEG_QUALITY_PLAN.md), which measures param quality
-objectively rather than visually.
+feijoa doesn't have) and a phased build sequence: [`docs/todo/TASK_PREVIEW_PLAN.md`](todo/TASK_PREVIEW_PLAN.md).
+Scope is wider than segmentation: denoise and AF correction have the same judge-at-the-end problem and no
+preview at all, so it is planned as ONE mechanism with three consumers. Pairs with
+[`docs/todo/SEG_QUALITY_PLAN.md`](todo/SEG_QUALITY_PLAN.md), which measures param quality objectively
+rather than visually.
 
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
