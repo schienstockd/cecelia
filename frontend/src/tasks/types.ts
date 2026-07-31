@@ -48,6 +48,11 @@ export interface TaskDef {
                           // the whiteboard Live view auto-shows a QC thumbnail linked to this node
   requires?: { axes?: string[] }  // task-applicability gate: axis codes the image must carry (e.g. ["T"]);
                                   // absent = applies to any image. See utils/taskGating.ts + docs/MODULES.md.
+  previewable?: boolean   // can the task preview run this task's compute over the visible region?
+                          // DECLARED in Julia (`task_previewable`, tasks/task.jl) and stamped onto the
+                          // spec by the definitions route — never inferred from the params here, which
+                          // is what this replaced: sniffing for a cellpose-shaped `models` bag was
+                          // right about cellpose and silently wrong about every other backend.
 }
 
 export type ParamValues = Record<string, unknown>

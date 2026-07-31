@@ -31,6 +31,11 @@ end
 # see `segment_live_outputs` in segmentation.jl and `live_outputs` in task.jl.
 live_outputs(::CellposeSegment, params::AbstractDict) = segment_live_outputs(params)
 
+# The task preview runs this task's own compute over the visible region — the worker calls
+# `CellposeUtils.predict_slice`, the same method the full run uses, so a preview cannot drift from the
+# thing it is previewing. See `task_previewable` in task.jl.
+task_previewable(::CellposeSegment) = true
+
 function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,

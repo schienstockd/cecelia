@@ -37,7 +37,7 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test !isempty(String(d.julia))
     @test haskey(d, :replAvailable) && haskey(d, :loopback) && haskey(d, :replEnabled)
     # service ports surfaced for the System panel
-    @test d.port > 0 && d.napariPort == 7655 && d.notebooksPort == 7660
+    @test d.port > 0 && d.napariPort == 7655 && d.previewPort == 7656 && d.notebooksPort == 7660
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
@@ -484,6 +484,27 @@ end
     onstamp = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
     @test (_sysimage_status() == "ready") ==
           (isfile(_sysimage_path()) && _stamp_matches(onstamp, string(VERSION), _manifest_hash()))
+end
+
+@testset "API: task definitions carry the previewable trait" begin
+    # The trait is declared in Julia beside the task and STAMPED onto the spec here, rather than written
+    # into the JSON (which is the param spec — a capability of the compute doesn't belong in it, and two
+    # copies could disagree). The frontend reads this instead of sniffing the params for a
+    # cellpose-shaped `models` bag.
+    st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=segment"))
+    @test st == 200
+    specs = JSON3.read(body).segment
+    by_fun = Dict(String(s.fun_name) => s for s in specs if haskey(s, :fun_name))
+
+    # every spec gets the key, so the frontend never has to treat "absent" as a third state
+    for s in specs
+        haskey(s, :fun_name) && @test haskey(s, :previewable)
+    end
+    @test by_fun["segment.cellpose"].previewable == true
+    # the composite the module page actually runs — the #421 trap
+    @test by_fun["segment.cellposeMeasure"].previewable == true
+    # and a task the worker can't run says so
+    @test by_fun["segment.measureLabels"].previewable == false
 end
 
 @testset "API: task preview never guesses which image is open" begin

@@ -92,17 +92,18 @@ const paramValues = ref<ParamValues>({})
 // last-used default rather than any single image's record.
 const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
 
-// Can this task be previewed? Gated on the params actually carrying a cellpose `models` bag with a
-// base entry — the only compute the worker knows how to run.
+// Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
+// stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
+// line beside its struct — no list here to go stale. Composites resolve through their own overload, so
+// `segment.cellposeMeasure` (what this page actually runs) reports true.
 //
-// This is INTERIM. Previewability should be a declared trait on the task (the `live_outputs` shape,
-// including a CompositeTask overload — docs/todo/TASK_PREVIEW_PLAN.md Decision 4), surfaced through
-// GET /api/tasks like `live_outputs` is. That trait is not built yet. Inferring from the params is
-// still better than a hardcoded fun_name list here, which would go stale the moment a task is added,
-// but it does mean a future previewable task that isn't cellpose-shaped won't light up until the trait
-// exists. Exactly one image must be selected: the preview shows ONE region of ONE image.
+// Two live conditions on top of the declared capability: exactly one image selected, because the preview
+// shows ONE region of ONE image; and the params must currently carry a base model, because that is the
+// only thing the worker can run and sending it nothing would be an error rather than a preview.
 const canPreview = computed(() =>
-  drivingImageUid.value !== '' && hasPreviewableModel(paramValues.value as Record<string, unknown>))
+  (taskDef.value?.previewable ?? false) &&
+  drivingImageUid.value !== '' &&
+  hasPreviewableModel(paramValues.value as Record<string, unknown>))
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is

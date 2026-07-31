@@ -8079,6 +8079,32 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
         end
 
+        @testset "task_previewable is declared, and composites inherit it" begin
+            # The trait replaced the frontend inferring previewability from a cellpose-shaped `models`
+            # bag — right about cellpose, silently wrong about every other backend.
+            @test Cecelia.task_previewable(Cecelia.CellposeSegment())
+
+            # Default is FALSE: a task says nothing unless the worker can actually run it.
+            for t in (Cecelia.MeasureLabels(), Cecelia.DriftCorrect(), Cecelia.ImportOmezarr())
+                @test !Cecelia.task_previewable(t)
+            end
+
+            # THE overload that matters: the segmentation module page runs the composite, not
+            # segment.cellpose. This is how the live preview shipped broken in #421.
+            composite = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+            @test composite isa Cecelia.CompositeTask
+            @test Cecelia.task_previewable(composite)
+            # `any`, not `all` — measureLabels has nothing to preview but must not veto the segmentation
+            @test any(Cecelia.task_previewable, Cecelia._composite_steps(composite))
+            @test !all(Cecelia.task_previewable, Cecelia._composite_steps(composite))
+
+            # every registered task answers without throwing — the definitions route stamps this onto
+            # every spec, so one bad overload would otherwise break the whole task picker
+            for (fun, task) in Cecelia._fun_name_map()
+                @test Cecelia.task_previewable(task) isa Bool
+            end
+        end
+
         # The staging mechanism itself lives in `zarr_utils.staged_store` (Python, where the writers
         # are). Julia mirrors the two suffixes to name the in-progress store a preview watches and to
         # sweep debris a killed run leaves. Nothing connects the two at runtime, so pin them together

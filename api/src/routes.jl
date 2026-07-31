@@ -249,6 +249,24 @@ function api_task_definitions(req::HTTP.Request)
         Cecelia._inject_dynamic_options!(spec, fun_map[fn])
     end
 
+    # Stamp the task-preview trait onto each spec. Declared in Julia beside the task
+    # (`task_previewable`, task.jl) and stamped here rather than written into the JSON, because the JSON
+    # is the PARAM spec — a capability of the compute doesn't belong in it, and duplicating it there
+    # would let the two disagree. The frontend reads `previewable` instead of guessing from the params.
+    # Composites resolve through their own overload, so `segment.cellposeMeasure` reports true.
+    for specs in values(raw), spec in specs
+        fn = string(get(spec, "fun_name", ""))
+        haskey(fun_map, fn) || continue
+        spec["previewable"] = try
+            Cecelia.task_previewable(fun_map[fn])
+        catch e
+            # a task's own overload must never take the whole picker down (same guard as
+            # `_live_outputs_for`): report not-previewable and carry on
+            @warn "task_previewable failed" fun=fn exception=e
+            false
+        end
+    end
+
     # Build fun_name → spec lookup so composite tasks can pull params from their steps.
     by_fun = Dict{String, Any}()
     for specs in values(raw)

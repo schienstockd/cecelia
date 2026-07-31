@@ -93,6 +93,24 @@ _inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
 const LiveOutput = @NamedTuple{kind::String, value_name::String, files::Vector{String}}
 live_outputs(::CciaTask, ::AbstractDict)::Vector{LiveOutput} = LiveOutput[]
 
+# ── Previewable (run this task's real compute over one visible region, on demand) ──────────────
+# Whether the task preview can run this task: the resident worker (`preview/preview_worker.py`) executes
+# the task's OWN compute over the region napari is showing, so params can be judged before committing to
+# a full run. See docs/todo/TASK_PREVIEW_PLAN.md.
+#
+# A DECLARED trait rather than something inferred, for the same reason as `live_outputs`: the property
+# belongs to the task's compute, not to tasks in general. The frontend previously sniffed the params for
+# a cellpose-shaped `models` bag, which is honest about cellpose and silently wrong about everything
+# else — a denoise or AF-correction preview (the point of generalising this) could never light up.
+#
+# `false` is the correct answer for most tasks and the base method says so. A task overloads this only
+# when the worker actually knows how to run it — today that is the cellpose family, because
+# `CellposeUtils.predict_slice` is a real seam the worker calls rather than a reimplementation.
+#
+# NEEDS A CompositeTask OVERLOAD, below. This is exactly how the live preview shipped broken in #421:
+# the segmentation module page runs `segment.cellposeMeasure`, not `segment.cellpose`.
+task_previewable(::CciaTask)::Bool = false
+
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a
 # constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream
@@ -428,6 +446,14 @@ function live_outputs(task::CompositeTask, params::AbstractDict)::Vector{LiveOut
     end
     unique(out)
 end
+
+# Composite: previewable if ANY step is. Same reasoning as `live_outputs` above, and the same trap —
+# `segment.cellposeMeasure` is what the segmentation page actually runs, so without this the most common
+# way to start a segmentation would report itself unpreviewable. `any`, not `all`: the preview shows one
+# step's output (the segmentation), and the measurement step that follows has nothing to preview but must
+# not veto it.
+task_previewable(task::CompositeTask)::Bool =
+    any(task_previewable, _composite_steps(task))
 
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.
