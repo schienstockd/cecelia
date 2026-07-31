@@ -1280,7 +1280,7 @@ class NapariState:
         # atomic write (tmp + os.replace) so a crash/kill never leaves a half-written props file —
         # the image always reopens in a valid remembered state.
         tmp = filepath + ".tmp"
-        with open(tmp, "w") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(props, f)
             f.flush()
             os.fsync(f.fileno())
@@ -1288,7 +1288,7 @@ class NapariState:
 
     def load_layer_props(self, filepath: str):
         if os.path.exists(filepath):
-            with open(filepath) as f:
+            with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
         else:
             # One-time migration of a pre-JSON pickle (same dict shape) → rewrite as JSON, then use it.
@@ -1302,7 +1302,7 @@ class NapariState:
                 data = pickle.load(f)
             try:
                 tmp = filepath + ".tmp"
-                with open(tmp, "w") as f:
+                with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(data, f)
                 os.replace(tmp, filepath)
             except Exception:

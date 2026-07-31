@@ -69,7 +69,7 @@ def script_params():
     if args.params is None or not os.path.exists(args.params):
         return None
 
-    with open(args.params, 'r') as f:
+    with open(args.params, 'r', encoding='utf-8') as f:
         params = json.load(f)
 
     os.remove(args.params)

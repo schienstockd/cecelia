@@ -8,10 +8,10 @@ Parameter contract (JSON written by Julia):
   rscript          - Rscript to use (optional; default "Rscript")
   imageUids        - optional list to restrict the scan
 """
-import json
 
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.legacy_migrate import scan_project
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -21,8 +21,7 @@ def run(params):
         rscript=params.get('rscript', 'Rscript'),
         uids=params.get('imageUids'),
     )
-    with open(params['resultPath'], 'w') as f:
-        json.dump(manifest, f)
+    write_json_atomic(params['resultPath'], manifest)
     log.log(f"[INFO] Scanned {manifest.get('n_images', 0)} image(s) in {params['sourceProjectDir']}")
 
 

@@ -12,7 +12,6 @@ imPath (for dims), aLabelPath / bLabelPath (label zarrs), aLabels / bLabels (mem
 physicalSizes [sz,sy,sx], maxContactDist (µm), target (obs-column suffix), popType, propsPath (A's
 labelProps to write), qcOutPath.
 """
-import json
 
 import numpy as np
 import pandas as pd
@@ -24,6 +23,7 @@ import cecelia.utils.script_utils as script_utils
 import cecelia.utils.mesh_utils as mesh_utils
 from cecelia.utils.label_props_utils import LabelPropsView
 from cecelia.utils.dim_utils import DimUtils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def _extract_t(arr, t_axis, t):
@@ -96,9 +96,8 @@ def run(params):
     n_contact = int(np.nansum(contact))
     log.log(f">> contactsMeshes: {n_contact}/{len(labels)} A cells contact {target} (≤{max_dist}µm)")
     if qc_path is not None:
-        with open(qc_path, "w") as f:
-            json.dump({"nCellsA": len(labels), "nContacts": n_contact,
-                       "fracInContact": (n_contact / len(labels)) if labels else 0.0}, f)
+        write_json_atomic(qc_path, {"nCellsA": len(labels), "nContacts": n_contact,
+                                   "fracInContact": (n_contact / len(labels)) if labels else 0.0})
 
 
 def main():

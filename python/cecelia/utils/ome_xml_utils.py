@@ -162,7 +162,9 @@ def write_ome_xml(im_path, omexml):
       os.makedirs(ome_path)
     
     # write to file
-    ome_xml_file = open(os.path.join(ome_path, 'METADATA.ome.xml'), 'w')
+    # UTF-8 explicitly: OME-XML declares itself UTF-8 and routinely carries µm; the locale default
+    # (cp1252 on Windows) would raise UnicodeEncodeError writing exactly that.
+    ome_xml_file = open(os.path.join(ome_path, 'METADATA.ome.xml'), 'w', encoding='utf-8')
     
     if isinstance(omexml, str):
       ome_xml_file.write(omexml)
@@ -273,7 +275,7 @@ def _parse_ome_xml_cached(xml_path, _mtime):
   bridge) parses each store's metadata at most once; a rewrite (new mtime) invalidates the entry.
   ome-types is already imported at module top, so the pydantic model-build cost is paid on the
   first parse regardless."""
-  with open(xml_path) as f:
+  with open(xml_path, encoding='utf-8') as f:
     return from_xml(f.read())
 
 

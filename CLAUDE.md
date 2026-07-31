@@ -321,6 +321,13 @@ use the named helper, don't re-derive the platform branch inline:
 - **Path separators** — always `joinpath()`, never string-concatenate paths.
 - **`[PROGRESS]` line endings** — `eachline()` already strips `\r\n` on Windows, no special-casing
   needed.
+- **Python text I/O — always pass `encoding="utf-8"`.** Python's default is the *locale* encoding:
+  UTF-8 here, **cp1252 on Windows**. Everything we read and write is UTF-8 (params JSON from Julia,
+  OME-XML carrying `µm`, our own sources), so a bare `open(p)` / `Path.read_text()` is a Windows-only
+  crash that passes every local run — it broke CI reading a source file containing `∝` (UTF-8 `0x9D`
+  is undefined in cp1252). For durable output use `write_json_atomic`/`write_atomic`
+  (`python/cecelia/utils/atomic_io.py`), which default to UTF-8. The `TextIoDeclaresEncodingTest`
+  detector in `python/cecelia/tests/test_atomic_io.py` fails on a new bare text open.
 
 Launcher logic for all of the above lives in `pixi.toml` tasks (`dev`/`prod`/`frontend`/`napari`/
 `stop`), not shell scripts — add a `[target.<platform>.tasks]` override for OS-specific commands

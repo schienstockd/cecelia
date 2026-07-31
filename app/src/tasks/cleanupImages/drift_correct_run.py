@@ -14,14 +14,13 @@ Parameter contract (JSON written by Julia):
   driftNormalisation - "phase" | "none"  (passed to skimage phase_cross_correlation)
 """
 
-import json
-
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.correction_utils as correction_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -86,14 +85,13 @@ def run(params):
     if qc_out_path:
         n_axes = int(shifts.shape[1]) if shifts.ndim == 2 else len(shifts)
         axes = ['Z', 'Y', 'X'] if n_axes == 3 else ['Y', 'X']
-        with open(qc_out_path, 'w') as f:
-            json.dump({
-                'dimOrder':    ''.join(dim_utils.im_dim_order),
-                'sourceShape': [int(x) for x in im_dat[0].shape],
-                'outputShape': [int(x) for x in out_shape],
-                'shiftAxes':   axes,
-                'shifts':      [[float(v) for v in row] for row in shifts],
-            }, f)
+        write_json_atomic(qc_out_path, {
+            'dimOrder':    ''.join(dim_utils.im_dim_order),
+            'sourceShape': [int(x) for x in im_dat[0].shape],
+            'outputShape': [int(x) for x in out_shape],
+            'shiftAxes':   axes,
+            'shifts':      [[float(v) for v in row] for row in shifts],
+        })
         log.log(f'>> saved drift/QC trajectory: {qc_out_path}')
 
     log.progress(4, 4)
