@@ -131,6 +131,10 @@ export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!
 export capture_view_state, apply_view_state!
 
+# ── Task preview (resident worker) ────────────────────────────────────────────
+# `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
+export PreviewWorker, PREVIEW_PORT, preview_alive, preview_request, preview_value_name
+
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")
 include("utils.jl")
@@ -197,6 +201,9 @@ include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")
 include("napari.jl")
+# Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
+# `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).
+include("preview.jl")
 # Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)
 # + py_runner.jl (run_py/task_run_dir).
 include("maintenance.jl")

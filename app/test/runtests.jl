@@ -8131,6 +8131,54 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("not.a.composite"), params))
         end
 
+        # The preview worker's request shape. The worker owns the region DECISION (one z-plane,
+        # clamping, the 2D fallback — tested in python/cecelia/tests/test_preview_region.py); Julia
+        # only resolves which image version to read and where the scratch store goes. Both halves are
+        # pinned so they can't drift into disagreeing about the contract.
+        @testset "preview_request resolves the same image version a run would" begin
+            mktempdir() do dir
+                img = CciaImage(; uid = "uid1", name = "n", dir = joinpath(dir, "1", "uid1"))
+                img.filepath["default"]   = "ccidImage.ome.zarr"
+                img.filepath["corrected"] = "ccidDriftCorrected.ome.zarr"
+
+                region = Dict("xy" => Dict("X" => [0, 512], "Y" => [0, 512]),
+                              "z" => 8, "t" => 0, "ndisplay" => 2)
+
+                # reads the version named by the task's OWN valueName — a preview of a corrected
+                # image must not silently segment the original
+                req = Cecelia.preview_request(
+                    img, Dict("valueName" => "corrected", "models" => Dict()), region)
+                @test req["type"] == "preview"
+                @test endswith(req["imPath"], joinpath("0", "uid1", "ccidDriftCorrected.ome.zarr"))
+                @test req["taskDir"] == img._dir
+                @test req["region"]["z"] == 8
+
+                # default falls back to the primary version, like the task does
+                req_default = Cecelia.preview_request(img, Dict("models" => Dict()), region)
+                @test endswith(req_default["imPath"], "ccidImage.ome.zarr")
+
+                # an unknown valueName is an error, not a silent segmentation of the wrong image
+                @test_throws ErrorException Cecelia.preview_request(
+                    img, Dict("valueName" => "nope", "models" => Dict()), region)
+            end
+        end
+
+        @testset "a preview's value_name can never collide with a real segmentation" begin
+            @test Cecelia.preview_value_name("T") == "T__preview"
+            @test Cecelia.preview_value_name("T") != "T"
+            # and its store is the scratch/staging path, so nothing in ccid.json can name it
+            @test Cecelia.staging_store_path("$(Cecelia.preview_value_name("T")).zarr") ==
+                  "T__preview.zarr.partial"
+        end
+
+        @testset "the preview worker gets its own port" begin
+            # a second resident process must not collide with the napari bridge (7655) or Pluto (7660)
+            @test Cecelia.PREVIEW_PORT != Cecelia.NAPARI_PORT
+            @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
+            # not alive until launched — `preview_alive` must never report true for a null process
+            @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
+        end
+
         @testset "img_labels_path resolves registered and in-progress stores" begin
             mktempdir() do dir
                 img = CciaImage(; uid = "uid1", name = "name1", dir = joinpath(dir, "1", "uid1"))
