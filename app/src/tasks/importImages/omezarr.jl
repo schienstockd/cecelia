@@ -35,15 +35,40 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
 end
 
 """
-Read OME-ZARR metadata (axes, shape, channel names, physical pixel sizes) produced by
-bioformats2raw. bioformats2raw wraps arrays in a series group: multiscales in zarr/0/.zattrs.
+Directory whose `.zattrs` carries the NGFF `multiscales` — the bioformats2raw series wrapper
+(`zarr/0`) or, for a flat `create_multiscales` store, `zarr` itself. Julia mirror of Python's
+`zarr_utils.series_base`; the ONE place on this side that decides the layout, so a reader or a
+writer can't quietly understand only one of the two (CLAUDE.md → **OME-ZARR dual-format**).
+
+Detection is STRUCTURAL — does `0/.zattrs` actually carry a `multiscales` attr — not the path
+suffix, because both layouts have a `0/` child: a group in the series layout, the level-0 ARRAY
+(whose `.zattrs` is `{}`) in the flat one.
+"""
+function series_base(zarr_path::AbstractString)::String
+    series = joinpath(zarr_path, "0")
+    zattrs = joinpath(series, ".zattrs")
+    isfile(zattrs) || return String(zarr_path)
+    try
+        ms = get(JSON3.read(read(zattrs, String)), :multiscales, nothing)
+        (isnothing(ms) || isempty(ms)) || return series
+    catch
+        # unreadable/!JSON → treat as "not the series wrapper" and fall back to the root
+    end
+    String(zarr_path)
+end
+
+"""
+Read OME-ZARR metadata (axes, shape, channel names, physical pixel sizes). Handles BOTH layouts
+via `series_base` — bioformats2raw's series wrapper (multiscales in `zarr/0/.zattrs`) and the flat
+`create_multiscales` store the 8-bit import / crop write (multiscales at the root).
 Returns a flat Dict with keys SizeC, SizeT, SizeZ, optionally channel_names, and the physical
 scale per axis (PhysicalSizeX/Y/Z µm/px, TimeIncrement s/frame) from the level-0 NGFF
 coordinate transform — read here so `img_physical_sizes` is a pure-Julia `meta` lookup.
 """
 function read_ome_metadata(zarr_path::String)::Dict{String,Any}
     result = Dict{String,Any}()
-    zattrs_file = joinpath(zarr_path, "0", ".zattrs")
+    base        = series_base(zarr_path)
+    zattrs_file = joinpath(base, ".zattrs")
     isfile(zattrs_file) || return result
 
     try
@@ -58,7 +83,7 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
         datasets   = get(ms, :datasets, [])
         level_path = isempty(datasets) ? "0" : string(get(first(datasets), :path, "0"))
 
-        zarray_file = joinpath(zarr_path, "0", level_path, ".zarray")
+        zarray_file = joinpath(base, level_path, ".zarray")
         if isfile(zarray_file)
             zarray = JSON3.read(read(zarray_file, String))
             shape  = collect(Int, get(zarray, :shape, []))
@@ -159,7 +184,11 @@ must write the unit here too or a later `resync_ome_meta!` re-read wouldn't see 
 function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64};
                            units::Dict{String,String} = Dict{String,String}())
     (isempty(updates) && isempty(units)) && return
-    zattrs_file = joinpath(zarr_path, "0", ".zattrs")
+    # BOTH layouts (`series_base`) — the 8-bit import and the crop write a FLAT store, so hardcoding
+    # the series `0/.zattrs` here silently no-opped for them: the OME-XML half of the sync landed and
+    # the NGFF half didn't, leaving a store whose t axis said `unit: second, scale: 1.0` while its
+    # OME-XML said `TimeIncrement="10.0"`. napari prefers the NGFF value → "0:00:01" per frame.
+    zattrs_file = joinpath(series_base(zarr_path), ".zattrs")
     isfile(zattrs_file) || return
     try
         raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(zattrs_file, String)))
@@ -302,8 +331,8 @@ copies: the NGFF `.zattrs` scale + axis units (`update_ome_scale!`) and the OME-
 This is the one place both `ImportOmezarr` (materialising its ImageJ Z-spacing fix + DeltaT time
 fallback) and `api_images_meta_set` (a user edit) funnel through, so napari always renders the SAME
 calibration ccid.json / `img_physical_sizes` already compute with — otherwise the two diverge (the
-viewer showing the raw spacing / "t = N" while analysis uses the corrected number). `zarr_path` must
-be the `"default"` (bioformats2raw) zarr — the only layout these writers understand
+viewer showing the raw spacing / "t = N" while analysis uses the corrected number). `zarr_path` is
+the `"default"` zarr in EITHER layout — series or flat, resolved by `series_base`
 (CLAUDE.md → OME-ZARR dual-format).
 """
 function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
@@ -378,11 +407,16 @@ const _OME_DERIVED_META_KEYS = (
 #          ImageJ-TIFF Z auto-fix, both of which live only in ccid.json and are NOT reproducible by
 #          re-reading the zarr — a plain overwrite would silently revert them. Channel names are
 #          likewise left untouched (the user may have renamed them).
+#
+# Returns the resulting `meta` dict as committed (empty when nothing was written), so a caller can
+# act on the merged result without re-deriving the merge rule — `resync_ome_meta!` needs it to push
+# the same values back into the zarr.
 function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       zarr_filename::Union{String,Nothing} = nothing,
                                       value_name::String = VERSIONED_DEFAULT_VAL,
-                                      overwrite::Bool = true)
-    isempty(zarr_meta) && isnothing(zarr_filename) && return
+                                      overwrite::Bool = true)::Dict{String,Any}
+    merged = Dict{String,Any}()
+    isempty(zarr_meta) && isnothing(zarr_filename) && return merged
     try
         commit_state!(img) do raw
             m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
@@ -399,12 +433,14 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                 end
             end
             raw["meta"] = m
+            merged = m
             !isnothing(zarr_filename) &&
                 versioned_set_field!(raw, "filepath", zarr_filename, value_name)
         end
     catch e
         @warn "Could not update image metadata" exception = e
     end
+    merged
 end
 
 """
@@ -421,13 +457,18 @@ and its result — a corrected `PhysicalSizeZ` + `PhysicalSizeZ_raw` marker — 
 ccid.json). Overwriting would silently revert both that auto-fix and any human correction back to
 bioformats2raw's raw value; fill-only makes resync safe to run on any image, corrected or not.
 
-Deliberately reads the `VERSIONED_DEFAULT_VAL` ("default") zarr — the original bioformats2raw
-output — rather than whichever version is currently `active`. Downstream tasks (drift/AF
-correction, cellpose correction) write their own zarr with a plain NGFF layout that has no `unit`
-on its axes and no OME-XML sidecar with calibration; `read_ome_metadata` only understands the
-bioformats2raw nested-series layout, so pointing this at an `active` post-processing output
-silently found nothing. Physical size/timing are acquisition properties anyway — unaffected by
-which processed variant happens to be active for viewing.
+Deliberately reads the `VERSIONED_DEFAULT_VAL` ("default") zarr — the import output — rather than
+whichever version is currently `active`: physical size/timing are ACQUISITION properties, and the
+default is the one store the importer syncs its corrections into (`sync_zarr_calibration!`). A
+post-processing output (drift/AF/cellpose) is a derived copy, and pointing this at it would make
+the answer depend on which variant happens to be selected for viewing.
+
+Then pushes the merged result back the OTHER way (`sync_zarr_calibration!`), so resync converges the
+two copies instead of only reading one of them. ccid.json is the authoritative side — it holds the
+human corrections and the values analysis computes with — and a zarr that disagrees is exactly the
+divergence `sync_zarr_calibration!` exists to prevent. Without this, an image whose ccid `meta` is
+right but whose store is stale (e.g. an import whose NGFF write was skipped) had no repair path
+short of re-importing: the metadata editor only syncs fields the user actually re-types.
 
 Returns `false` (no-op) when the default zarr path is missing or has no usable metadata.
 """
@@ -436,7 +477,8 @@ function resync_ome_meta!(img::CciaImage)::Bool
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     zarr_meta = read_ome_metadata(zarr_path)
     isempty(zarr_meta) && return false
-    _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
+    merged = _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
+    has_calibration_meta(merged) && sync_zarr_calibration!(zarr_path, merged)
     write_metadata_qc!(img)     # recompute calibration QC from the refreshed meta
     true
 end

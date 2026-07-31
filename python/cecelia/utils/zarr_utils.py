@@ -195,15 +195,18 @@ def read_time_increment(path):
     caller does not have to know which of the two sources a given store happens to carry.
     `ome_xml_utils.read_time_increment` remains the raw OME-XML reader underneath.
 
-    Only a time axis in seconds is taken from NGFF; any other unit falls through to OME-XML
-    rather than being silently misinterpreted as seconds."""
+    Only a time axis EXPLICITLY in seconds is taken from NGFF. A unit-less t axis is a placeholder,
+    not a reading — every writer defaults that scale to 1.0 when the interval is unknown — so it
+    falls through to OME-XML rather than being reported as "1 second per frame"; so does any other
+    unit, rather than being silently misinterpreted as seconds. Same gate as the Julia side
+    (`omezarr.jl::read_ome_metadata`)."""
     axes = read_axes(path)
     scale = read_scale(path)
     if axes and scale is not None and len(axes) == len(scale):
         low = [a.lower() for a in axes]
         if 't' in low:
             unit = (read_axis_units(path) or {}).get('t')
-            if unit in (None, 'second', 's'):
+            if unit in ('second', 's'):
                 t_scale = scale[low.index('t')]
                 if t_scale and float(t_scale) > 0:
                     return float(t_scale)
@@ -530,7 +533,12 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         # Spatial units come from the existing per-axis accessor (not one unit assumed for all);
         # T uses the OME TimeIncrementUnit.
         unit_for_axis = {ax.upper(): u for ax, u in dim_utils.im_physical_units().items()}
-        if dim_utils.is_timeseries():
+        # Only when the interval is actually KNOWN. Without a TimeIncrement the t scale falls back
+        # to 1.0, and stamping a unit on that turns a placeholder into a claim of "1 second/frame" —
+        # `im_time_increment_unit()` defaults to 's' even when there is no increment at all. Readers
+        # on both sides (`read_time_increment`, Julia `read_ome_metadata`) gate on the unit being
+        # present precisely so an unknown interval stays visibly unknown.
+        if dim_utils.is_timeseries() and dim_utils.im_time_increment() is not None:
             unit_for_axis['T'] = dim_utils.im_time_increment_unit()
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,

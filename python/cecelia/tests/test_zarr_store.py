@@ -87,6 +87,50 @@ class CreateMultiscalesOnDiskTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+_OME_XML_TIMELAPSE = _OME_XML.replace(
+    'SizeT="1"', 'SizeT="3"').replace(
+    '<Channel ID="Channel:0:0"', '{extra}<Channel ID="Channel:0:0"')
+
+
+class TimeAxisUnitTest(unittest.TestCase):
+    """A `unit` on the t axis is a CLAIM that the frame interval is known.
+
+    Every writer falls the t scale back to 1.0 when there is no `TimeIncrement`, and
+    `im_time_increment_unit()` returns 's' by default whether or not one was found — so stamping
+    the unit unconditionally turned "we don't know" into "1 second per frame". Both readers gate on
+    the unit being present (`read_time_increment` here, `read_ome_metadata` on the Julia side), and
+    that gate only works if the writer keeps the placeholder unit-less.
+    """
+
+    def _write(self, xml, shape, dims):
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        du = DimUtils(ome_types.from_xml(xml), use_channel_axis=True)
+        du.calc_image_dimensions(shape)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        path = os.path.join(d, "img.ome.zarr")
+        zu.create_multiscales(da.from_array(np.zeros(shape, dtype=np.uint16), chunks=shape),
+                              path, dim_utils=du, nscales=1)
+        ms = zarr.open_group(path, mode="r").attrs["multiscales"][0]
+        return path, {a["name"]: a for a in ms["axes"]}
+
+    def test_unknown_interval_leaves_the_t_axis_unit_less(self):
+        xml = _OME_XML_TIMELAPSE.format(extra="")           # timelapse, but no TimeIncrement
+        path, axes = self._write(xml, (3, 2, 4, 3), "TCYX")
+        self.assertIn("t", axes)
+        self.assertNotIn("unit", axes["t"])
+        # …so the resolver reports "unknown" rather than the 1.0 placeholder
+        self.assertIsNone(zu.read_time_increment(path))
+
+    def test_known_interval_writes_the_unit_and_is_read_back(self):
+        xml = _OME_XML_TIMELAPSE.format(extra="").replace(
+            'SizeT="3"', 'SizeT="3" TimeIncrement="10.0" TimeIncrementUnit="s"')
+        path, axes = self._write(xml, (3, 2, 4, 3), "TCYX")
+        self.assertEqual(axes["t"].get("unit"), "second")
+        self.assertEqual(zu.read_time_increment(path), 10.0)
+
+
 class CreateMultiscalesAxesOverrideTest(unittest.TestCase):
     """`axes=` lets a caller declare the axes of the array it is actually storing.
 

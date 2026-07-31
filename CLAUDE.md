@@ -600,24 +600,36 @@ Two layouts coexist — the reader handles both:
 | bioformats2raw | Series wrapper: data at `zarr/0/[level]` | `zarr/0/.zattrs` |
 | `create_multiscales()` | Flat: data at `zarr/[level]` | root `.zattrs` |
 
-Detection is **structural** in `zarr_utils.py` → `series_base` (checks whether `path/0` carries a
-`multiscales` attr, not the `.ome.zarr` suffix); `zarr_data_to_list` resolves through it, so
-`open_as_zarr`/`open_zarr` handle both layouts. Never assume one format — always go through the
-readers (see *Image / OME-ZARR access — always go through `zarr_utils`* above).
+Detection is **structural** — does `path/0` carry a `multiscales` attr, not what the path ends in.
+Both layouts have a `0/` child (a group in one, the level-0 *array* in the other), so the suffix
+tells you nothing. One resolver per language, and everything goes through it:
 
-**Exception, and a trap:** `read_ome_metadata` (`app/src/tasks/importImages/omezarr.jl`) does **not**
-do this detection — it hardcodes the bioformats2raw nested layout (`zarr/0/.zattrs`), because it
-only ever needs to read the *original import's* calibration metadata (`PhysicalSize*`,
-`TimeIncrement*`). Downstream processed variants (drift/AF-correct, cellpose-correct) write the
-**flat** layout — multiscales at the *root* `.zattrs` — so this reader, looking at `zarr/0/.zattrs`,
-finds nothing there. (Those variants *do* carry calibration — `create_multiscales` writes the
-`.zattrs` scale and `save_meta_in_zarr` writes an `OME/METADATA.ome.xml` sidecar; they only omit
-the NGFF axis `unit`. So napari renders them correctly; it's specifically `read_ome_metadata`'s
-nested-layout assumption that can't read them.) Pointing this reader at whichever zarr is currently
-`active` therefore silently returns nothing (this bit `resync_ome_meta!` once: it originally read
-`img_filepath(img)` and quietly no-opped on any image with a processed variant active). Any caller
-of `read_ome_metadata` must resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` — the `"default"`
-zarr — never the active one.
+| Language | Resolver |
+|---|---|
+| Python | `zarr_utils.py` → `series_base` (used by `zarr_data_to_list`/`open_as_zarr`/`open_zarr`) |
+| Julia | `app/src/tasks/importImages/omezarr.jl` → `series_base` (used by `read_ome_metadata`, `update_ome_scale!`) |
+
+Never assume one format, and never hand-roll the check — always go through the readers (see
+*Image / OME-ZARR access — always go through `zarr_utils`* above).
+
+**The trap this cost us twice:** hardcoding `zarr/0/.zattrs`. For a flat store that path *exists*
+(the level-0 array's own, empty `.zattrs`), so the code doesn't error — it finds no `multiscales`
+and returns silently. First it made `resync_ome_meta!` a no-op on any image with a processed
+variant active; then it made `sync_zarr_calibration!` land only its OME-XML half on the 8-bit
+import + crop outputs, leaving a store whose XML said `TimeIncrement="10.0"` while its NGFF t axis
+said `scale: 1.0` — and napari, which prefers NGFF, rendered 1 s/frame.
+
+Callers of `read_ome_metadata` should still resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` —
+the `"default"` zarr, not the active one. That is no longer a layout limitation: physical size and
+timing are acquisition properties, and the default is the store the importer syncs its corrections
+into, so reading a processed variant would make the answer depend on what happens to be selected
+for viewing.
+
+**A `unit` on the t axis means the interval is KNOWN.** Every writer falls the t scale back to 1.0
+when there is no `TimeIncrement`, so a unit-less t scale is a placeholder, not a reading. Writers
+must not stamp a unit on it (`create_multiscales`), and readers must not trust one without it
+(`zarr_utils.read_time_increment`, Julia `read_ome_metadata`) — otherwise "we don't know" silently
+becomes "1 second per frame".
 
 ---
 
