@@ -1287,6 +1287,32 @@ For task results, the `task:result` message updates `img.filepaths[valueName]` i
 
 Full WS message-type reference is in `ARCHITECTURE.md`.
 
+### A dropped terminal frame is recovered, not tolerated
+
+**Every frame reaches listeners through one function — `dispatch(data)` in `stores/ws.ts`.** `onmessage`
+just parses and calls it. That matters because a task's terminal frame (`task:status` done/failed, or
+`chain:node:done`/`failed` for a whiteboard node) is the ONE frame carrying its outcome, and the server
+drops frames for a slow client **by design** (per-client drop-on-full queue — `docs/API.md`). Lose it and
+the store pinned the task at `running` forever *and* silently skipped everything hanging off completion:
+the image status, `bumpDataVersion` (so plots never auto-refresh), `refreshImageMeta`, the napari reload,
+the observer's completion watch. Five listeners, one missing frame.
+
+So while this tab has work in flight, the ws store polls `GET /api/tasks/recent` (the rail's banked terminal
+frames — every producer, jobs and batch movies included) and **re-emits the frame that went missing**
+through that same `dispatch`. The reconstruction lives in `utils/taskReconcile.ts`. Rules worth keeping:
+
+- **Rebuild the carrier the socket would have used**, not a stand-in: a chain run emits no `task:status`
+  at all, so a chain node is recovered as `chain:node:*`. Swapping carriers would be a behaviour change.
+- **A chain row is keyed by a synthetic `runId::nodeId::imageUid`**, so matching goes through
+  `backendTaskId` (the `taskId` the chain frames carry) while addressing uses the store id.
+- **Only act on an outcome the server can NAME.** A task that vanished without one (the backend restarted
+  under us) is left alone — never guess a completion.
+- **A late real frame for a recovered task is swallowed** (`recovered` set, keyed by scheduler task id):
+  re-running the side effects would refetch plots, reload napari, and double-count an observer attempt.
+- Adding a new completion listener needs none of this — subscribe with `ws.on` as usual and a recovered
+  frame reaches you like any other. Do **not** add a second poller; `taskReconcile.ts` owns
+  `/api/tasks/recent` and `utils/runningTasks.ts` owns `/api/tasks`.
+
 ---
 
 ## Data freshness — task-refresh (no per-plot reload buttons)

@@ -20,7 +20,20 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # Without it those show a BLANK pool in the task console. NOT a real scheduler pool (no slot budget) —
 # purely a label so they read as intentional instead of floating unattributed. The frontend ignores
 # both extra fields.
-ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="") = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids, fun=fun, pool=pool))
+#
+# THE rail's status sink — and therefore the one place a terminal outcome is banked for replay
+# (`record_task_outcome!`, `app/src/tasks/task_outcomes.jl`; a no-op for queued/running). This frame is
+# the only carrier of "how did it end" and it is droppable, so without the bank a client that missed it
+# could never find out: the task console reported a whole successful batch as "outcome unseen", and the
+# browser left the task pinned at `running`. Banking HERE rather than in the scheduler is what makes that
+# true for every producer — background jobs and batch movies never enter the scheduler's registry at all.
+# Emit a terminal frame from anywhere and it is recoverable; don't add a second bank.
+function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="")
+    record_task_outcome!(task_id, status;
+                         image_uid=uid, image_uids=image_uids, fun=fun, pool=pool)
+    _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid,
+                       imageUids=image_uids, fun=fun, pool=pool))
+end
 ws_result(_ws, task_id, uid, meta)     = _broadcast_task((; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 
 ws_progress(_ws, task_id, fraction::Float64) =

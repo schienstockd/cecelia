@@ -18,6 +18,10 @@ Snapshot of tasks currently known to the scheduler (queued or running) as named 
 Deregistered on completion, so this is a live view of in-flight work only — nothing terminal.
 `status` is stringified for JSON. Mirrors `list_pools()`; read-only reporting, no control.
 
+For how a task that has LEFT this snapshot ended, see `recent_tasks()` (`tasks/task_outcomes.jl`) —
+this one cannot answer that, and inferring an outcome from a row's absence is how the task console
+came to report every finished task as "outcome unseen".
+
 `live_outputs` carries the stores the task is streaming into right now (usually empty — see
 `live_outputs` in task.jl). This snapshot is therefore also the answer to "what can I watch while it
 runs?", which is how the napari viewer offers a preview of a segmentation before `ccid.json` knows
