@@ -60,37 +60,6 @@ Related, and a bigger decision: **`PlutoUI` is not in `pluto/Project.toml`**. Ad
 `Button` (an in-notebook refresh) *and* sliders for a timepoint, but costs a re-resolve of all three
 manifests. Decide that separately.
 
-**#00003** — **Per-image lockfiles wired into task commit sites**
-The *mechanism* now exists: `with_transaction(f, obj)` (in `model/project.jl`) takes any persisted
-object and locks `state_file(obj) * ".lock"`, so `with_transaction(f, img)` already gives a
-per-image lock. What remains is **wiring it into the task commit sites** — nothing calls it yet, so
-two concurrent read-modify-writes of the *same* image's `ccid.json` can still lose an update (e.g. a
-set-level operation fanning out over images that overlap).
-
-Scope note: this is the *lost-update* half only. Truncation — the unrecoverable failure, where an
-interrupted write left a half-written `ccid.json` and took the whole project load down with it — is
-handled unconditionally by `write_atomic` and needs no lock.
-
-Recommended approach (better than the original R, which held the lock across the whole
-load→compute→save span):
-- **Per-image lockfile, co-located with state:** `with_transaction(f, img::CciaImage)` — done, and
-  derived from `state_file(img)` exactly as R's `lockFile` derived from `getStateFile()`. Different
-  images never block each other.
-- **Lock the commit, not the computation.** The original held the lock across the whole
-  transaction; instead acquire it *only* around the final read-modify-write of `ccid.json`
-  (reread → merge task result → write → release), leaving the long bf2raw/cellpose run
-  lock-free. This is the key improvement: minimal contention, no multi-minute stale-lock
-  window if a process dies mid-run.
-- **Wiring:** factor each task's metadata commit (the `versioned_set_field!` + write block in
-  `importImages/omezarr.jl`, `importImages/remove.jl`, `cleanupImages/cellpose_correct.jl`)
-  into a small `_commit_ccid!(img) do raw … end` helper that wraps the RMW in
-  `with_transaction(img)`. Tasks read/compute freely; only the commit is serialised.
-- Keep it naive (existence-based) as today; per-image scope already shrinks the stale-lock
-  blast radius to a single image.
-
-Deferred: with only per-image tasks today, this collision does not occur in practice — implement
-when a set-level mutating task lands.
-
 **#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
 Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
 launcher (done), and the update path (`pixi run update` done; in-app button pending) — rewrite

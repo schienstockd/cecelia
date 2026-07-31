@@ -56,7 +56,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     ccid       = state_file(img)
-    raw        = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+    raw        = read_ccid_raw(ccid)
 
     filename = versioned_get_field(raw, "filepath", value_name)
     if isnothing(filename)
@@ -118,13 +118,12 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
 
     # register the copied zarr as `default` + carry the source channel names onto the new image's ccid.
     # Derived data is intentionally NOT carried — a copy starts clean (drop labels/pops/gating).
-    new_ccid = state_file(new_img)
-    raw2     = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(new_ccid, String)))
-    versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
     ch_names = versioned_get_field(raw, "imChannelNames", value_name)
-    isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
-    raw2["status"] = "done"   # a copy is a complete image (zarr written) — imported, not 'pending'
-    write_json_atomic(new_ccid, raw2)
+    commit_state!(new_img) do raw2
+        versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
+        isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
+        raw2["status"] = "done"   # a copy is a complete image (zarr written) — imported, not 'pending'
+    end
 
     # carry the source version's napari layer-props sidecar (per-channel colormap/contrast) so the copy
     # opens with the same colours. Best-effort (only if the source was opened with autosave). Same 1:1

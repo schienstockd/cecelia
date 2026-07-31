@@ -107,9 +107,9 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         end
     end
 
-    raw2 = read_ccid_raw(ccid)
-    versioned_set_field!(raw2, "filepath", out_filename, out_value_name)
-    write_json_atomic(ccid, raw2)
+    commit_state!(img) do raw
+        versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+    end
 
     Dict{String,Any}("valueName" => out_value_name, "filename" => out_filename)
 end

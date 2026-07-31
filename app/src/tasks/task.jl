@@ -531,8 +531,8 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
     ccid       = state_file(img)
     pre_keys   = Set{String}()
     if !isnothing(out_vn) && isfile(ccid)
-        raw0 = JSON3.read(read(ccid, String))
-        fp0  = get(raw0, :filepath, nothing)
+        raw0 = read_ccid_raw(ccid)
+        fp0  = get(raw0, "filepath", nothing)
         if fp0 isa AbstractDict
             for k in keys(fp0)
                 sk = string(k)
@@ -599,9 +599,10 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
     if !isnothing(out_vn) && result isa AbstractDict && isfile(ccid)
         out_filename = string(get(result, "filename", ""))
         if !isempty(out_filename)
-            raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-            fp   = get(raw2, "filepath", nothing)
-            if fp isa AbstractDict
+            registered = false
+            commit_state!(img) do raw2
+                fp = get(raw2, "filepath", nothing)
+                fp isa AbstractDict || return
                 fp2 = Dict{String,Any}(String(k) => v for (k, v) in fp)
                 # Remove intermediate entries added by sub-tasks (not in pre-snapshot, not canonical)
                 for k in collect(keys(fp2))
@@ -613,9 +614,9 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
                 fp2[out_vn] = out_filename
                 fp2[VERSIONED_ACTIVE_KEY] = out_vn
                 raw2["filepath"] = fp2
-                write_json_atomic(ccid, raw2)
-                on_log("[INFO] Composite output registered as '$out_vn' → $out_filename")
+                registered = true
             end
+            registered && on_log("[INFO] Composite output registered as '$out_vn' → $out_filename")
             result = Dict{String,Any}("valueName" => out_vn, "filename" => out_filename)
         end
     end

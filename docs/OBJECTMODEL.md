@@ -226,11 +226,34 @@ Used by the API when it knows a UID but not whether it's a set or an image.
 
 ## Transactions and locking
 
-`with_transaction(f, obj)` holds a naive lockfile for the duration of `f()`, at `state_file(obj) * ".lock"`. It polls up to 30 seconds for an existing lock to clear, then errors with the lockfile path so it can be deleted manually.
+`with_transaction(f, obj)` serialises writes to ONE object's state file, and `commit_state!(f, obj)` is what tasks actually call: read `ccid.json`, mutate the raw dict, write it back — the whole read-modify-write inside the transaction.
 
-The lock path is **derived from the object's state file**, as in the old R `reactivePersistentObject.R` (`lockFile = paste0(getStateFile(), ".lock")`). So it works for any persisted object: `with_transaction(f, img)` locks that one image and nothing else. (It used to hardcode one `{proj}/.cecelia.lock`, which could only ever be project-scoped — too coarse, since it serialises unrelated images.)
+The lock path is **derived from the object's state file**, as in the old R `reactivePersistentObject.R` (`lockFile = paste0(getStateFile(), ".lock")`). So it works for any persisted object: `with_transaction(f, img)` locks that one image and nothing else. (It used to hardcode one `{proj}/.cecelia.lock`, which could only ever be project-scoped — too coarse to be worth calling, which is why nothing called it.)
 
-This is intentionally minimal — a single file existence check, no PID or timestamp. It is not a distributed lock. **The task commit sites do not call it yet**, so two concurrent read-modify-writes of one image's `ccid.json` can still lose an update; see TODO #00003. Note that this is the *lost-update* risk only — *truncation* (the unrecoverable one) is handled unconditionally by the atomic writer below.
+**Two layers, because there are two different collisions:**
+
+| Layer | Guards against | Mechanism |
+|---|---|---|
+| in-process | two scheduler threads (`Threads.@spawn`) on one image — the collision we actually have | a `ReentrantLock` per state-file path |
+| cross-process | a REPL session writing to a project the server also has open | the `.lock` file beside the state file |
+
+The lockfile alone was not merely incomplete for the in-process case, it was **wrong**: `isfile` then `touch` is a time-of-check/time-of-use race, so two threads both see no file, both create it, and both proceed. The `ReentrantLock` closes that; a lockfile cannot, without an atomic create.
+
+Reentrancy matters now that task commits take a transaction: only the **outermost** call touches the lockfile, so a commit reached from inside another transaction on the same object doesn't sit waiting on its own outer call's file. (It did, until the reentrancy test caught it.)
+
+**Abandoned lockfiles are reclaimed** after `_LOCK_STALE_AFTER` (120s). That's safe only because a transaction wraps the short commit and never the computation — no legitimate holder is ever that old — and the alternative is worse: a process dying mid-commit would otherwise brick every later task on that image behind a hidden file. Locking the commit rather than the whole load→compute→save span is a deliberate departure from the R original, which could sit on a stale lock for minutes.
+
+**Lock the commit, not the computation.** Long work (bf2raw, cellpose, a multi-GB delete) runs unlocked; only the final registration is serialised:
+
+```julia
+ok = run_py(...)            # unlocked: minutes
+ok || return nothing
+commit_state!(img) do raw   # locked: milliseconds
+    versioned_set_field!(raw, "filepath", out_filename, out_value_name)
+end
+```
+
+`write_json_atomic` and the transaction solve *different* halves and both are needed: atomicity stops a **torn file**, the transaction stops a **lost update** (two tasks both read the old dict; the second write drops the first's field — each write individually intact, just built on stale data).
 
 ## Writing state — always atomic
 
