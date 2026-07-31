@@ -15,6 +15,28 @@ name: CI
 # Deliberately heavy (installs the real analysis env incl. torch cu124 on Linux/Windows), so the
 # Pixi env is cached on pixi.lock (per platform). fail-fast is off so one OS failing still reports
 # the others. Runs on pushes/PRs to main and on demand.
+#
+# ── THREE JOBS PER OS, NOT ONE ────────────────────────────────────────────────────────────────
+# The work after setup used to run in series — package tests, API tests, Python tests, frontend
+# build, server health — so wall-clock was their SUM even though nothing depended on anything else.
+# Jobs run concurrently (the OS matrix already proved that), so splitting turns the sum into the
+# max. On Windows, the slowest runner: ~12.3 min → the length of the package suite alone.
+#
+# The split is by WHAT EACH JOB NEEDS TO INSTALL, not by tidiness — every job repeats ~110s of
+# setup, so more jobs is not automatically faster:
+#
+#   julia   — pixi + Julia + depot cache.  The package suite (the long pole, ~324s on Windows).
+#   server  — pixi + Julia + Node.         Everything that needs the api env or a built frontend.
+#   python  — pixi ONLY.                   Python + MCP suites; no Julia, so no depot cache either.
+#
+# Keeping `python` Julia-free is deliberate and load-bearing for the cache budget: `julia-actions/cache`
+# keys on the job name, so every Julia-using job adds one ~100 MB depot cache PER RUN per OS. Two
+# Julia jobs × 3 OSes = 6/run; adding a third would be 9/run against a 10 GB repo cap that the pixi
+# caches already fill to ~6.4 GB. Evictions there land on the depot caches (pixi's are touched every
+# run and survive), which would silently bring back the 200s precompile that #430 removed.
+#
+# All four test categories still run on every OS — that requirement is unchanged, they are just
+# distributed across jobs rather than stacked in one.
 
 # `pull_request` is deliberately NOT filtered to `[main]`. With that filter a STACKED pr — one whose
 # base is another feature branch — matched no trigger and got **zero checks**, which reads as
@@ -27,33 +49,55 @@ on:
   pull_request:
   workflow_dispatch:
 
+# `actions: write` is what lets `julia-actions/cache` PRUNE its old entries. Without it the delete
+# step fails ("Failed to delete N existing caches on ref …") and every run's depot caches simply
+# accumulate: the key carries the run id, so nothing is ever overwritten. With two Julia jobs × 3
+# OSes that is ~600 MB per run against a 10 GB repo cap the pixi caches already fill to ~6.4 GB —
+# it reached the cap the first day. At the cap GitHub evicts least-recently-used, which lands on the
+# depot caches (pixi's are touched by every job and stay warm) and silently restores the ~200 s
+# precompile #430 removed. `contents: read` is spelled out because naming any permission drops the
+# rest to none.
+permissions:
+  contents: read
+  actions: write
+
 defaults:
   run:
     shell: bash   # Git Bash on the Windows runner → `&`, curl, seq, sleep work everywhere
 
 jobs:
-  smoke:
-    name: ${{ matrix.os }} — install → build → server health
+  # ── Julia package tests ───────────────────────────────────────────────────────────────────────
+  # app/test/runtests.jl — the data model, ccid.json round-trip, versioned fields, task dispatch,
+  # param validation, the gating engine, config/path resolution. The longest single step in CI, so
+  # it gets a job to itself and defines the critical path.
+  #
+  # This suite used to run nowhere but a dev machine, which is how Windows-only path bugs shipped:
+  # `Sys.which` never finding `claude.cmd`, `Base.expanduser` being a no-op on Windows, `python3` not
+  # existing there. Those fixes are asserted by `iswin`-parameterised helpers precisely so a Windows
+  # runner can check them — it has to run here for that to mean anything. Fixture-dependent testsets
+  # self-skip (`have_fixture`), so a CI checkout without test-data/ still passes.
+  julia:
+    name: ${{ matrix.os }} — Julia package tests
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         # macos-latest is arm64 (M-series) — the exact osx-arm64 target the workspace builds for.
         #
-        # `cpu_target` is what makes the depot cache below reusable. Julia compiles package images to
+        # `cpu_target` is what makes the depot cache reusable. Julia compiles package images to
         # NATIVE code and validates them against the running CPU, and GitHub's x86 runner pools are
         # heterogeneous — a cache built on a Zen 3 machine is rejected wholesale on the next runner
         # ("Unable to find compatible target in cached code image. Target 0 (znver3): Rejecting this
         # target due to use of runtime-disabled features"), so Windows re-precompiled all 166 deps on
         # every run despite a healthy 261 MB cache hit. A multiversioned target emits a portable
-        # baseline alongside the fast paths, which is how official Julia binaries ship.
+        # baseline alongside the fast paths, which is how official Julia binaries ship. macOS keeps
+        # `native`: that fleet is uniform Apple Silicon and already gets cache hits.
         #
-        # macOS keeps `native`: that fleet is uniform Apple Silicon and already gets cache hits, so
-        # there is nothing to buy and multiversioning would only cost image size.
-        #
-        # NOTE: this env var participates in the cache key (include-matrix), so changing it starts a
-        # fresh cache rather than silently restoring images built for the old target.
+        # NOTE: this participates in the cache key (include-matrix), so changing it starts a fresh
+        # cache rather than silently restoring images built for the old target. Repeated in the
+        # `server` job below — GitHub has no matrix reuse without a reusable workflow, and inlining
+        # the value as an expression would drop it from the cache key.
         include:
           - os: ubuntu-latest
             cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
@@ -66,7 +110,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Installs Pixi and materialises the default environment from pixi.lock (cached per platform).
       - name: Install Pixi + Python env
         uses: prefix-dev/setup-pixi@v0
         with:
@@ -79,27 +122,67 @@ jobs:
         with:
           version: '1.12'
 
+      # Caches the Julia depot, above all its `compiled/` precompilation cache. Uncached, every run
+      # re-precompiled the whole graph and threw it away (~5 min on Windows). See the cpu_target note
+      # above for why caching alone was not enough.
+      - name: Cache Julia depot
+        uses: julia-actions/cache@v3
+
+      # `julia-instantiate` runs `Pkg.resolve()`, which needs the General registry and does NOT
+      # install one — it errors with "no registries have been installed". In the old single job this
+      # was invisible: the server-env `Pkg.instantiate()` ran first and bootstrapped the registry as
+      # a side effect. This job doesn't do that, so on a cold depot (a new cache key, an eviction)
+      # resolve had nothing to resolve against. Explicit and idempotent — a no-op once the depot
+      # cache restores registries — rather than relying on step order in another job.
+      - name: Ensure the General registry
+        run: julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General")'
+
+      - name: Instantiate Julia (package env)
+        run: pixi run julia-instantiate
+
+      - name: Package tests
+        run: pixi run test-pkg
+
+  # ── API tests + frontend + the server actually booting ────────────────────────────────────────
+  # Everything that needs the *server* env (api/, which path-sources Cecelia from app/) or a built
+  # frontend. Grouped because they share that instantiate and the Node install.
+  server:
+    name: ${{ matrix.os }} — API + frontend + server health
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
+          - os: windows-latest
+            cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
+          - os: macos-latest
+            cpu_target: "native"
+    env:
+      JULIA_CPU_TARGET: ${{ matrix.cpu_target }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      - name: Install Julia
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+
       - name: Install Node
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      # Cache the Julia depot — above all its `compiled/` precompilation cache, which is the single
-      # biggest cost in this workflow. Uncached, every run re-precompiled the whole graph from
-      # scratch and threw it away: "166 dependencies successfully precompiled in 243 seconds" on
-      # Windows (181s on Linux), plus another ~60s for the package env — ~5 of the Windows job's
-      # 17.6 minutes, on every run, forever.
-      #
-      # The key is workflow+job+matrix+OS, NOT a manifest hash, so it restores the most recent cache
-      # for this job and re-saves an updated one each run. A manifest change therefore costs one
-      # partial re-precompile rather than a full cold miss. Julia validates cache entries itself,
-      # so a stale entry can only cost time, never correctness.
-      #
-      # BUDGET: GitHub caps a repo at 10 GB and evicts least-recently-used. The three pixi caches
-      # already sit at ~9 GB, so these depots WILL push past the cap and something gets evicted.
-      # If the pixi caches start missing (watch `Install Pixi + Python env` — 30-75s warm), the knob
-      # is `cache-artifacts: false`: artifact downloads are only ~25s of the step, while `compiled/`
-      # is the ~300s that matters. Check with `gh cache list`.
       - name: Cache Julia depot
         uses: julia-actions/cache@v3
 
@@ -108,35 +191,10 @@ jobs:
       - name: Instantiate Julia (server env)
         run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
 
-      # Julia PACKAGE tests (app/test/runtests.jl) — the data model, ccid.json round-trip, versioned
-      # fields, task dispatch, param validation, the gating engine, config/path resolution. Needs app/
-      # instantiated in its own right (the step above instantiates api/, which only path-SOURCES
-      # Cecelia). This is the largest suite and used to run nowhere but a dev machine, which is how
-      # Windows-only path bugs shipped: `Sys.which` never finding `claude.cmd`, `Base.expanduser`
-      # being a no-op on Windows, `python3` not existing there. Those fixes are asserted by
-      # `iswin`-parameterised helpers precisely so a Windows runner can check them — it has to run here
-      # for that to mean anything. Fixture-dependent testsets self-skip (`have_fixture`), so a CI
-      # checkout without test-data/ still passes.
-      - name: Instantiate Julia (package env)
-        run: pixi run julia-instantiate
-
-      - name: Package tests
-        run: pixi run test-pkg
-
       # API-layer unit tests: load the handlers with CECELIA_NO_SERVE (no socket) and exercise them
       # directly. Fixture-free, so it runs on every OS in the matrix.
       - name: API tests
         run: pixi run test-api
-
-      # Python analysis-env tests (unittest-discovered python/cecelia/tests/*) — e.g. the zarr writer
-      # regression. Runs in the Pixi env (needs numpy/dask/zarr); fixture-free.
-      - name: Python tests
-        run: pixi run test-py
-
-      # MCP observer client tests (mcp/tests/*) — allow-list + URL/body building, HTTP mocked. Stdlib
-      # only; no server needed.
-      - name: MCP tests
-        run: pixi run test-mcp
 
       - name: Build frontend
         working-directory: frontend
@@ -176,3 +234,33 @@ jobs:
           echo "== / (server-served frontend) =="
           curl -fsS -o /dev/null -w "%{http_code} %{content_type}\n" http://localhost:8080/
           pixi run stop || true
+
+  # ── Python + MCP ──────────────────────────────────────────────────────────────────────────────
+  # Needs the Pixi env and NOTHING else — no Julia, and therefore no Julia depot cache (see the
+  # budget note at the top). The cheapest job by a wide margin.
+  python:
+    name: ${{ matrix.os }} — Python + MCP tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      # Python analysis-env tests (unittest-discovered python/cecelia/tests/*) — e.g. the zarr writer
+      # regression and the UTF-8 text-I/O detector. Runs in the Pixi env; fixture-free.
+      - name: Python tests
+        run: pixi run test-py
+
+      # MCP observer client tests (mcp/tests/*) — allow-list + URL/body building, HTTP mocked. Stdlib
+      # only; no server needed.
+      - name: MCP tests
+        run: pixi run test-mcp
