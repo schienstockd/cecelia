@@ -275,12 +275,30 @@ because side notes in a conversation do not survive it:
 | A one-shot preview is invisible the moment you move z — reads as broken | must re-run on view change, debounced, with a visible state |
 | An empty region and bad params both report "0 cells" | distinguish them from the tile's own max |
 | A preview's scratch store accumulated with nothing owning it | **removed the store entirely** (Decision 3) |
-| `store_sweep` cannot see import debris (`ccidImage.ome.zarr` written in place, `*.16bit.tmp.ome.zarr`, `_stage_src`) | its own item — the "run the sweep occasionally" model depends on it |
+| `store_sweep` matches NAMES, so it only sees writers that opted into `staged_store` — import writes straight to the final name and slips through | its own item: detect incompleteness structurally (unregistered store, or declared-but-absent pyramid levels), not by name |
 | The Settings cleanup needs to announce itself, not be knowledge | report leftover bytes in the existing storage box |
 | 8 of 21 planes on a drift-corrected image are empty and every task processes them | `docs/TODO.md` **#00090** — pipeline-wide, not preview-specific |
 | The preview only handles the `base` model type, so a nuc+cyto run is not what the run produces | stated limitation, to fix or surface |
 | Nothing exposes which image the viewer has open, so out-of-band callers guess (I guessed wrong three times) | the API status route |
 | The worker is a fourth resident process with no pixi task, service-panel entry, or `stop` wiring | operational surface |
+
+## Verified facts worth not re-deriving (2026-07-31)
+
+Measured, not assumed. Each of these cost a real experiment:
+
+| Fact | Number / result |
+|---|---|
+| Fixed cost of a process that can segment | **17.7 s** (11.7 imports `cecelia.utils` + 5.7 `cellpose` + 0.2 model) |
+| Whole-image normalisation statistic, single-level 201×20×544×548 | **27.6 s** exact; **3.3 s** at a 20-frame budget |
+| Mask counts, exact vs strided statistic | **identical** at 50/20/10/5/2 frames (window moves ~3% at 20, ~35% at 2) |
+| Inference, warm | 0.35 s per 1024² plane; **~2 µs per canonical voxel** |
+| Cost scales with CELLS, not pixels | 16× fewer voxels (level 2 + scaled diameter) buys only **2.5×** — cellpose rescales to a canonical ~30 px diameter |
+| `batch_size` | no help: 88.4 s at 8, slightly **worse** at 16/32/64 |
+| Full z-stack preview, 40×1024² | **89 s** — why 3D previews are dropped |
+| Lazy full-shape dask array, one plane assigned | **6.9 MB** peak RAM for a nominally **4.8 GB** array |
+| Sparse zarr store, full shape | 908 B empty, 5 KB after one 512×512 region |
+| End-to-end in the live viewer | first preview ~10 s, then **0.14–0.38 s** per parameter change |
+| bioformats2raw with a `.ome.zarr.partial` output | **works** — exit 0, valid store; only our own `open_as_zarr` breaks on it |
 
 ## Related
 
