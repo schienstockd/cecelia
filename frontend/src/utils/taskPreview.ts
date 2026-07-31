@@ -102,16 +102,64 @@ export const FALLBACK_2D_WARN = {
 } as const
 
 /**
+ * The base-model-only warning, for a run that declares a second (nucleus) model.
+ *
+ * The worker previews only `matchAs: "base"`, so the nucleus pass and the IoU matching step
+ * (`_match_nuc_cyto`) do not run — which means for a two-model segmentation the preview is not what the
+ * run produces. That has to be SAID, since the whole point of previewing real compute is that you can
+ * trust it.
+ *
+ * Why not just preview both and match? Measured 2026-07-31 on one 590² plane: `_compute_iou_matrix`
+ * takes **1.8 s at 100×100 labels and 26.9 s at 400×400** — it is quadratic in cell count. A warm
+ * preview is 0.14–0.38 s, so matching would cost 5×–100× the entire preview and get worse the more
+ * cells there are. Honest and fast beats complete and unusable. (That cost is also paid per timepoint
+ * by every real nuc+cyto RUN — see TODO #00093.)
+ *
+ * `removeUnmatched` changes the advice, so it changes the text: with it on, matching DELETES base labels
+ * that found no nucleus, so the run genuinely finds fewer cells than the preview shows. With it off the
+ * base mask is untouched and only the nucleus layer is missing.
+ */
+export function baseOnlyWarning(params: Record<string, unknown> | null): { short: string; detail: string } {
+  const models = (params as { models?: unknown } | null)?.models
+  if (!models || typeof models !== 'object') return { short: '', detail: '' }
+  const others = Object.values(models as Record<string, unknown>).filter(m => {
+    const ma = (m as { matchAs?: unknown } | null)?.matchAs
+    return ma !== undefined && ma !== null && ma !== '' && ma !== 'base'
+  })
+  if (others.length === 0) return { short: '', detail: '' }
+  const removeUnmatched = Boolean((params as { removeUnmatched?: unknown }).removeUnmatched)
+  return {
+    short: 'Base model only',
+    detail: removeUnmatched
+      ? 'The run also matches nuclei and drops cells without one, so it will find fewer than this'
+      : 'The nucleus pass is not previewed; these base masks are what the run produces',
+  }
+}
+
+/**
  * What a finished preview says about itself. `cells === 0` is genuinely ambiguous — no signal in the
  * region, or a parameter that finds nothing — so it must NOT be reported as "no cells found" alone.
  */
 export function previewSummary(
   counts: Record<string, number> | null,
   fallback2d: boolean,
+  signal?: { hasSignal?: boolean; noSignalWhy?: string },
 ): { cells: number | null; text: string; warn: string; warnDetail: string } {
   const cells = counts && typeof counts.base === 'number' ? counts.base : null
-  const warn = fallback2d ? FALLBACK_2D_WARN.short : ''
-  const warnDetail = fallback2d ? FALLBACK_2D_WARN.detail : ''
+  let warn = fallback2d ? FALLBACK_2D_WARN.short : ''
+  let warnDetail = fallback2d ? FALLBACK_2D_WARN.detail : ''
+
+  // A zero that means "there is nothing here" must never read as "your parameters found nothing" —
+  // on a drift-corrected stack a padded plane returns 0 cells and looks exactly like too large a
+  // diameter, so the user retunes against a region that could never produce a mask (TODO #00090).
+  // The 2D-fallback warning yields to this one: no point explaining z-stitching for an empty region.
+  if (cells === 0 && signal && signal.hasSignal === false) {
+    warn = signal.noSignalWhy === 'padding' ? 'No image data here' : 'Region is blank'
+    warnDetail = signal.noSignalWhy === 'padding'
+      ? 'This part of the corrected stack is padding, not data — move to a plane with signal'
+      : 'Every pixel in view is zero — check the channel, or move to where there is signal'
+  }
+
   if (cells === null) return { cells: null, text: '', warn, warnDetail }
   return { cells, text: cells === 1 ? '1 cell' : `${cells} cells`, warn, warnDetail }
 }

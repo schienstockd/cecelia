@@ -75,6 +75,13 @@ const label = computed(() => {
         <i class="pi" :class="SEVERITY.warn.icon" />
         {{ preview.summary.warn }}
       </span>
+      <!-- a two-model run previews only its base type, so the mask on screen is not what the run
+           produces — shown whenever the params declare a nucleus model, result or not -->
+      <span v-if="preview.baseOnly.short" class="preview-warn cc-fs-2xs"
+        v-tooltip.left="preview.baseOnly.detail">
+        <i class="pi" :class="SEVERITY.warn.icon" />
+        {{ preview.baseOnly.short }}
+      </span>
     </template>
   </div>
 </template>

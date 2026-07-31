@@ -157,10 +157,40 @@ image roughly **38% of the GPU time produces nothing**, and measurement/tracking
 planes too. Surfaced by the task preview, where aiming at a padded plane returns "0 cells" and looks
 exactly like a parameter problem (see `docs/todo/TASK_PREVIEW_PLAN.md`).
 
-Worth quantifying before acting: whether skipping all-zero planes is safe for stitching (`stitch_threshold`
-links labels ACROSS z, so dropping interior planes would be wrong — but these are leading/trailing) and
-whether the win generalises or is specific to how much drift a movie has. A cheap first step is QC: record
-the empty-plane count per corrected image, which makes the cost visible without changing any behaviour.
+**The mechanism now exists — #435 landed `zarr_utils.read_valid_box`**, so a consumer can ask which part
+of a store is data instead of re-deriving it, per timepoint, at any pyramid level, with `None` meaning
+"all valid" for every store that never padded. That replaces this item's original suggestion (record an
+empty-plane COUNT as QC): counting only made the cost visible, the box lets a task act on it. It also
+works on a store that is still staged (verified) — so a producer can write the box during its own run.
+
+What is left is the consuming decision, which the box does not make for you:
+- **Is skipping safe for stitching?** `stitch_threshold` links labels ACROSS z, so dropping interior
+  planes would be wrong. The empty planes here are leading/trailing, which is the safe case — but that
+  needs to be checked rather than assumed, per image.
+- **Do NOT crop to the box.** #435 documents two traps that apply directly: the box is per timepoint and
+  each frame sits at its own offset *because* the correction aligned them in a shared canvas, so cropping
+  per frame puts them back out of register — and the intersection across timepoints is EMPTY on four of
+  the nine `kSUFux` movies (z-drift exceeded the 8-plane stack). The box is for masking statistics and
+  skipping known-empty work, not for cropping.
+- **Does the win generalise**, or is it specific to how much drift a movie has?
+
+**#00093** — **`_compute_iou_matrix` is quadratic in cell count, and every nuc+cyto run pays it per frame**
+`SegmentationUtils._compute_iou_matrix` (`python/cecelia/utils/segmentation_utils.py`) compares every
+cyto label against every nuc label with a **full-plane boolean op per pair** — `len(a) × len(b)` array
+comparisons. Measured 2026-07-31 on one 590×590 plane: **1.8 s at 100×100 labels, 26.9 s at 400×400**.
+It's called from `_match_nuc_cyto` once **per timepoint**, so a 201-frame two-model movie with ~400
+cells/frame spends on the order of **90 minutes** just re-assigning label IDs.
+
+Found while deciding whether the task preview could afford to run the matching step (it can't — that is
+why the preview is base-model-only and says so; `docs/todo/TASK_PREVIEW_PLAN.md`). But the cost is paid
+by the real pipeline too, which is the part worth fixing.
+
+The fix is standard and O(pixels) rather than O(labels²): one co-occurrence histogram over the paired
+label maps — `np.bincount(a.ravel() * (b.max() + 1) + b.ravel())` (or `scipy.sparse.coo_matrix`) gives
+every pairwise intersection in a single pass, and the union follows from per-label totals. Same IoU
+numbers, so the existing `match_threshold`/`removeUnmatched` behaviour is unchanged — which means it can
+be pinned by asserting the new implementation matches the current one on a fixture before swapping it
+(the same oracle trick #435 used for the drift refactor).
 
 **#00092** — **Export an image version as OME-TIFF**
 Nothing in the codebase writes a TIFF today (no `tifffile.imwrite` anywhere). The need is figures:

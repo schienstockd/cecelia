@@ -121,6 +121,10 @@ class NapariState:
         self._labels_orig_cmap = {}
         self._colcol_cache = {}
         self._sel_ctx = None
+        # `layers.clear()` just removed the preview layer, but the view listener is attached to
+        # dims/camera and would survive it — left on, it keeps posting "the view moved" for a preview
+        # that no longer exists, and the frontend would re-request against the newly opened image.
+        self._detach_view_listener()
 
         # open the store + read its geometry through the shared cecelia readers (the same code the
         # analysis pipeline uses) — one implementation of "open an OME-ZARR, read its axes/scale".

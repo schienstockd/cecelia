@@ -130,6 +130,39 @@ def _as_cyx(cropped, dim_utils):
     return arr[np.newaxis, ...]
 
 
+def _region_signal(im_path, bounds, tile):
+    """Does this region contain image data at all? `(has_signal, why)`.
+
+    "0 cells" is ambiguous and the ambiguity is expensive: on a drift-corrected stack, aiming at a
+    padded plane returns 0 cells and looks EXACTLY like a diameter that is too large, so the user
+    retunes parameters against a region that could never produce a mask (see TODO #00090, which this
+    was measured on).
+
+    Two checks, authoritative first:
+
+    * **The valid box** (`zarr_utils.read_valid_box`, #435) — the producer recorded which part of the
+      store is data rather than padding, per timepoint. This is a fact, not an inference, and it is the
+      case that actually bites. `None` means the store never padded, which is most of them.
+    * **All-zero pixels** — the fallback for a store with no box (an unpadded region can still be
+      genuinely black: a channel with no signal here, or outside the specimen).
+    """
+    try:
+        t_lo = int(bounds["T"][0]) if "T" in bounds else None
+        box = zarr_utils.read_valid_box(im_path, timepoint=t_lo)
+    except Exception:
+        box = None                      # no box, unreadable, or an older store — fall through
+    if box:
+        for ax, (lo, hi) in box.items():
+            if ax not in bounds:
+                continue
+            r_lo, r_hi = int(bounds[ax][0]), int(bounds[ax][1])
+            if r_hi <= int(lo) or r_lo >= int(hi):        # region lies wholly outside the data
+                return False, "padding"
+    if not np.any(tile):
+        return False, "blank"
+    return True, ""
+
+
 def preview(msg):
     im_path = msg["imPath"]
     task_dir = msg["taskDir"]
@@ -186,10 +219,15 @@ def preview(msg):
     if block is None:
         raise ValueError("no base model in preview params")
 
+    has_signal, no_signal_why = _region_signal(im_path, bounds, tile)
+
     return {
         "counts": counts,
         "region": {ax: list(v) for ax, v in bounds.items()},
         "fallback2d": fallback2d,
+        # so the caller can tell "your parameters found nothing" from "there is nothing here"
+        "hasSignal": has_signal,
+        "noSignalWhy": no_signal_why,
         "mask": encode_block(block),
         # where the block belongs: the full label extent and its axis names, so the receiver can
         # build a full-image-shape layer and needs no translate to line it up

@@ -218,6 +218,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
         counts     = get(reply, "counts", Dict{String,Any}()),
         region     = get(reply, "region", Dict{String,Any}()),
         fallback2d = Bool(get(reply, "fallback2d", false)),
+        # lets the UI tell "your parameters found nothing" from "there is nothing here" — a padded
+        # plane returns 0 cells and otherwise looks exactly like a bad diameter
+        hasSignal   = Bool(get(reply, "hasSignal", true)),
+        noSignalWhy = String(get(reply, "noSignalWhy", "")),
         valueName  = value_name,
     ))
 end

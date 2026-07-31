@@ -19,7 +19,7 @@ import { computed, ref, watch } from 'vue'
 import { previewApi } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import {
-  previewBlocker, blockerMessage, previewSummary, PREVIEW_DEBOUNCE_MS,
+  previewBlocker, blockerMessage, previewSummary, baseOnlyWarning, PREVIEW_DEBOUNCE_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker,
 } from '../utils/taskPreview'
 import { useWsStore } from './ws'
@@ -37,6 +37,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const context  = ref<PreviewContext | null>(null)
   const counts   = ref<Record<string, number> | null>(null)
   const fallback2d = ref(false)
+  const signal   = ref<{ hasSignal?: boolean; noSignalWhy?: string } | null>(null)
   const error    = ref('')
   /** true between toggle-on and the worker answering — its imports take ~18 s, so this is visible */
   const starting = ref(false)
@@ -44,7 +45,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const blocker = computed<PreviewBlocker | null>(
     () => previewBlocker(context.value, status.value, { enabled: enabled.value, pinned: pinned.value }))
   const hint    = computed(() => error.value || blockerMessage(blocker.value))
-  const summary = computed(() => previewSummary(counts.value, fallback2d.value))
+  const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined))
+  /** a two-model run previews only its base type — say so rather than let it look complete */
+  const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
   /** what the toggle shows: a run in flight, or one about to start */
   const busy    = computed(() => runState.value !== 'idle' || starting.value)
 
@@ -71,6 +74,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     starting.value = false
     counts.value = res?.counts ?? null
     fallback2d.value = Boolean(res?.fallback2d)
+    signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
     error.value = ''
   }, {
     wait: PREVIEW_DEBOUNCE_MS,
@@ -112,6 +116,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     scheduler.cancel()               // drop pending + supersede in flight, so no late mask lands
     counts.value = null
     fallback2d.value = false
+    signal.value = null
     error.value = ''
     starting.value = false
     try {
@@ -130,11 +135,21 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // the view while the user is on another page (the worker and the layer both outlive the panel).
   const ws = useWsStore()
   ws.on('napari:view-changed', () => { request() })
-  ws.on('napari:opened', () => { void refreshStatus().then(request) })
+  ws.on('napari:opened', () => {
+    // Opening an image calls `layers.clear()` bridge-side, so the preview layer is gone. Clear the
+    // readout with it — otherwise it keeps reporting "42 cells" for a mask nobody can see, which is
+    // worse than reporting nothing. The worker stays warm on purpose (that is what it is for); a new
+    // preview is requested below if the params still apply to what is now open.
+    scheduler.cancel()
+    counts.value = null
+    fallback2d.value = false
+    signal.value = null
+    void refreshStatus().then(request)
+  })
 
   return {
-    enabled, pinned, runState, status, context, counts, fallback2d, error, starting,
-    blocker, hint, summary, busy,
+    enabled, pinned, runState, status, context, counts, fallback2d, signal, error, starting,
+    blocker, hint, summary, busy, baseOnly,
     setContext, request, start, stop, toggle, refreshStatus,
     /** show the current result now, skipping the debounce (the manual "preview now" action) */
     flush: () => scheduler.flush(),
