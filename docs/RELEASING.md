@@ -74,7 +74,21 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 
 - `0.1.x` — "works end-to-end for me" (current state). Patch bumps ride the heartbeat.
 - `0.2`, `0.3` — something **substantial** lands (e.g. clustering, behaviour hardening).
-- `1.0.0` — R-parity **and** a couple of external people use it without hand-holding.
+- `1.0.0` — the module functions **this** work needs are in, and a couple of external people use it
+  without hand-holding.
+
+> **1.0 is not R-parity, and deliberately so.** This used to read "R-parity and a couple of external
+> people…", which set a bar nobody wants to clear: the old R app carries ~75 module functions across
+> flow-cytometry import and gating sets, pixel/object classification, N2V model training, signal-peak
+> analysis, HPC dispatch, and seven segmentation backends. This stack has ~25 and covers the spine —
+> import → segment → track → measure → gate → behaviour → cluster → spatial — plus a good deal the R
+> version never had (QC + cohort QC, chains, the analysis canvas, notebooks, the MCP observer, project
+> bundles). Chasing the remaining count would mean porting things the maintainer does not use.
+>
+> So the 1.0 bar is **fitness for the science being done with it**, not feature-count equivalence, and
+> a missing R function is a request-driven port (or a deliberate non-goal in `docs/FUTURE.md`) rather
+> than a debt against 1.0. If a specific absent capability ever blocks real work, that's a TODO item
+> on its own merits.
 
 **Hard blocker before *any* external handoff:** a root `LICENSE` (GPL-3-or-later) + third-party
 acknowledgements (celltrackR GPL-2) — TODO #00060. Fine to skip for personal rc's; required the moment

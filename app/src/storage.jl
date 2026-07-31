@@ -148,21 +148,25 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
         on_log("[INFO] File '$filename' not found on disk — clearing metadata only.")
     end
 
-    versioned_set_field!(raw, "filepath", nothing, value_name)   # deletes the entry (resets _active)
-    fp = raw["filepath"]::Dict{String,Any}
-    fp[VERSIONED_ACTIVE_KEY] = new_default
+    # Commit under the image's lock — and only now. The `rm` above can be a multi-GB zarr, so holding
+    # the lock across it would serialise unrelated work on this image for minutes for no benefit; the
+    # commit re-reads inside the lock, so it also picks up anything written while the delete ran.
+    cleared = false
+    commit_state!(img) do raw
+        versioned_set_field!(raw, "filepath", nothing, value_name)   # deletes the entry (resets _active)
+        fp = raw["filepath"]::Dict{String,Any}
+        fp[VERSIONED_ACTIVE_KEY] = new_default
 
-    # un-import only when the primary is gone AND nothing else remains (see docstring)
-    cleared = value_name == VERSIONED_DEFAULT_VAL && isempty(versioned_keys(fp))
-    if cleared
-        versioned_set_field!(raw, "imChannelNames", nothing, VERSIONED_DEFAULT_VAL)
-        m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
-        for key in ("SizeC", "SizeT", "SizeZ"); delete!(m, key); end
-        raw["meta"]   = m
-        raw["status"] = "pending"
+        # un-import only when the primary is gone AND nothing else remains (see docstring)
+        cleared = value_name == VERSIONED_DEFAULT_VAL && isempty(versioned_keys(fp))
+        if cleared
+            versioned_set_field!(raw, "imChannelNames", nothing, VERSIONED_DEFAULT_VAL)
+            m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
+            for key in ("SizeC", "SizeT", "SizeZ"); delete!(m, key); end
+            raw["meta"]   = m
+            raw["status"] = "pending"
+        end
     end
-
-    write_json_atomic(ccid, raw)
     (freed, cleared)
 end
 

@@ -42,7 +42,7 @@ export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
-export with_transaction
+export with_transaction, commit_state!
 
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────────
 export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categorical_obs, n_obs

@@ -349,11 +349,10 @@ end
 # ── ccid.json helpers ─────────────────────────────────────────────────────────
 
 function _update_image_status!(img::CciaImage, status::String)
-    ccid = state_file(img)
     try
-        raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-        raw["status"] = status
-        write_json_atomic(ccid, raw)
+        commit_state!(img) do raw
+            raw["status"] = status
+        end
     catch e
         @warn "Could not update image status" exception = e
     end
@@ -384,26 +383,25 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       value_name::String = VERSIONED_DEFAULT_VAL,
                                       overwrite::Bool = true)
     isempty(zarr_meta) && isnothing(zarr_filename) && return
-    ccid = state_file(img)
     try
-        raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-        m   = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
-        if overwrite
-            for k in _OME_DERIVED_META_KEYS
-                delete!(m, k)
+        commit_state!(img) do raw
+            m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
+            if overwrite
+                for k in _OME_DERIVED_META_KEYS
+                    delete!(m, k)
+                end
             end
-        end
-        for (k, v) in zarr_meta
-            if k == "channel_names"
-                overwrite && versioned_set_field!(raw, "imChannelNames", collect(String, v))
-            elseif overwrite || !haskey(m, k)
-                m[k] = v
+            for (k, v) in zarr_meta
+                if k == "channel_names"
+                    overwrite && versioned_set_field!(raw, "imChannelNames", collect(String, v))
+                elseif overwrite || !haskey(m, k)
+                    m[k] = v
+                end
             end
+            raw["meta"] = m
+            !isnothing(zarr_filename) &&
+                versioned_set_field!(raw, "filepath", zarr_filename, value_name)
         end
-        raw["meta"] = m
-        !isnothing(zarr_filename) &&
-            versioned_set_field!(raw, "filepath", zarr_filename, value_name)
-        write_json_atomic(ccid, raw)
     catch e
         @warn "Could not update image metadata" exception = e
     end

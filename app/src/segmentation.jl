@@ -68,28 +68,28 @@ Record a completed run's label zarrs in the image's `ccid.json` `labels` dict
 it happens only on success — which is exactly why an in-progress store needs `live_outputs` to be
 discoverable at all.
 
-Reads and rewrites `ccid.json` in place rather than going through `save!`, because the running task
-holds a `CciaImage` loaded before the run and saving the whole object would clobber any field a
+Rewrites `ccid.json` in place rather than going through `save!`, because the running task holds a
+`CciaImage` loaded before the run and saving the whole object would clobber any field a
 concurrently-running task on the same image has since written.
 
-Goes through the three canonical state helpers, never a hand-rolled equivalent: `state_file` to locate
-`ccid.json` (never join the filename), `read_ccid_raw` to read it, and `write_json_atomic` to write it.
-That last one matters here specifically — a truncating write-mode open that dies mid-write leaves a
-half-written `ccid.json`, and `_load_set` has no per-image guard, so ONE truncated file makes the WHOLE
-project fail to open with every other image intact but unreachable. See #420. (Phrased without the
-literal call form on purpose: the `no hand-rolled state writes` detector greps source lines, and only
-skips `#` comments — a docstring naming the pattern would read as an offender.)
+Goes through `commit_state!` (`model/project.jl`), which does that read-modify-write **inside the
+image's transaction** — the completion of the same thought. Rewriting in place instead of `save!`
+narrows the clobber to one field, but two concurrent registrations still both read the old `labels`
+dict and the second write drops the first's entry; the transaction is what makes registering an output
+atomic against a concurrent registration. It also gets `write_json_atomic` (so a write killed
+mid-flight can't leave a half-written `ccid.json` — with no per-image guard in `_load_set`, ONE such
+file makes the WHOLE project fail to open, every other image intact but unreachable; see #420) and
+`state_file`, so the filename is never joined at a call site.
 """
 function register_label_files!(img::CciaImage, out_value_name::AbstractString,
                               label_files::Vector{String})
-    ccid = state_file(img)
-    raw  = read_ccid_raw(ccid)
-    labels_dict = Dict{String, Vector{String}}(
-        String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
-        for (k, v) in get(raw, "labels", Dict{String,Any}()))
-    labels_dict[String(out_value_name)] = label_files
-    raw["labels"] = labels_dict
-    write_json_atomic(ccid, raw)
+    commit_state!(img) do raw
+        labels_dict = Dict{String, Vector{String}}(
+            String(k) => (v isa AbstractVector ? collect(String, v) : [string(v)])
+            for (k, v) in get(raw, "labels", Dict{String,Any}()))
+        labels_dict[String(out_value_name)] = label_files
+        raw["labels"] = labels_dict
+    end
     label_files
 end
 

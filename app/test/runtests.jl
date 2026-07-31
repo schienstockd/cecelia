@@ -880,14 +880,99 @@ end
         @test_throws ErrorException with_transaction(proj) do; error("boom"); end
         @test !isfile(lockfile)
 
-        # works for an IMAGE too, locking that image alone — different images never block each other.
-        # (TODO #00003 is wiring the task commit sites to call this; the mechanism is here.)
-        s   = add_set!(proj; name="s")
-        img = add_image!(s; name="i")
+        # works for an IMAGE too, locking that image alone — different images never block each other
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+        img2 = add_image!(s; name="i2")
         @test Cecelia._lock_path(img) == Cecelia.state_file(img) * ".lock"
         @test Cecelia._lock_path(img) != Cecelia._lock_path(proj)
+        @test Cecelia._lock_path(img) != Cecelia._lock_path(img2)
         @test (with_transaction(img) do; 7; end) == 7
         @test !isfile(Cecelia._lock_path(img))
+
+        # REENTRANT: a commit reached from inside another transaction on the SAME object must not
+        # deadlock. Before the in-process lock this sat on its own lockfile until the timeout.
+        @test (with_transaction(img) do
+                   with_transaction(img) do; 9; end
+               end) == 9
+        @test !isfile(Cecelia._lock_path(img))
+
+        # ANOTHER PROCESS's fresh lockfile is respected — we wait, then fail naming the file
+        touch(Cecelia._lock_path(img))
+        err = try; with_transaction(img; timeout = 1) do; 1; end; "" catch e; sprint(showerror, e) end
+        @test occursin(Cecelia._lock_path(img), err)
+        @test occursin("stale lockfile", err)
+        rm(Cecelia._lock_path(img); force = true)
+
+        # ...but an ABANDONED one (process died mid-commit) is reclaimed rather than blocking every
+        # later task on that image behind a hidden file. Safe only because a transaction now wraps the
+        # short commit, never the computation — so nothing legitimate is ever this old.
+        @test !Cecelia._lock_abandoned(time())                                   # fresh → keep waiting
+        @test  Cecelia._lock_abandoned(time() - Cecelia._LOCK_STALE_AFTER - 1)   # abandoned → reclaim
+
+        rm(proj.root; recursive=true)
+    end
+
+    # ── commit_state!: registering an output is atomic against a concurrent registration ────────
+    # THE lost-update bug (was TODO #00003). Every task used to hand-roll re-read → poke → write, so
+    # two tasks finishing on one image both read the old dict and the second write dropped the first's
+    # field. `write_json_atomic` alone does NOT fix this — each write is individually intact; the
+    # second is simply built on stale data.
+    @testset "commit_state! wraps the read-modify-write in the transaction" begin
+        proj = create_project!(name="commit-test-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+
+        # basic read-modify-write, persisted
+        commit_state!(img) do raw
+            raw["status"] = "done"
+        end
+        @test read_ccid_raw(Cecelia.state_file(img))["status"] == "done"
+
+        # The RMW must happen INSIDE the transaction — that is the whole mechanism, and it is what
+        # makes a concurrent registration wait instead of reading stale data. Asserted directly and
+        # deterministically: while the body runs, this object's lockfile is held.
+        #
+        # This replaces a thread-interleaving test that did not work. It spawned two tasks and relied on
+        # the scheduler to interleave them so one would read stale `labels`; standalone it did (one
+        # registration was lost), but inside the suite the second task simply wasn't scheduled during the
+        # first's sleep, so it passed with the lock REMOVED. A concurrency test whose failure depends on
+        # scheduler luck is worse than none — it reads as coverage. Mutual exclusion itself is covered
+        # deterministically by the `with_transaction` testset above (lockfile held, foreign lock
+        # respected, reentrancy, abandoned-lock reclaim).
+        held = false
+        commit_state!(img) do raw
+            held = isfile(Cecelia._lock_path(img))     # false if the RMW isn't wrapped
+            raw["labels"] = Dict{String,Any}("segA" => ["segA.zarr"])
+        end
+        @test held
+        @test !isfile(Cecelia._lock_path(img))         # ...and released afterwards
+        @test haskey(read_ccid_raw(Cecelia.state_file(img))["labels"], "segA")
+
+        # a nested commit on the same object still completes (reentrancy through commit_state!, not just
+        # with_transaction) and both mutations land
+        commit_state!(img) do raw
+            raw["note"] = "outer"
+            commit_state!(img) do inner
+                inner["status"] = "inner-done"
+            end
+        end
+        fresh = read_ccid_raw(Cecelia.state_file(img))
+        @test fresh["note"] == "outer"
+
+        # the lock is released on a throwing body, and the file keeps its previous content
+        @test_throws ErrorException commit_state!(img) do raw
+            raw["status"] = "clobbered"
+            error("boom")
+        end
+        @test !isfile(Cecelia._lock_path(img))
+        @test read_ccid_raw(Cecelia.state_file(img))["status"] == "done"
+
+        # a metadata-dir form for the API layer, which commits without loading the object
+        commit_state!(img._dir) do raw
+            raw["note"] = "by dir"
+        end
+        @test read_ccid_raw(Cecelia.state_file(img))["note"] == "by dir"
 
         rm(proj.root; recursive=true)
     end
