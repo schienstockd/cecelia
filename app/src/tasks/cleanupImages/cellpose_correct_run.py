@@ -120,6 +120,11 @@ def run(params):
             staging, im_path,
             dim_utils=dim_utils,
         )
+        # Both on-disk copies of the calibration, from one derivation — the NGFF scale/units
+        # and the OME-XML <Pixels> attrs. `save_meta_in_zarr` copies the source sidecar
+        # verbatim, so without this the two are written from different sources and can
+        # disagree. See zarr_utils.write_calibration.
+        zarr_utils.write_calibration(staging, dim_utils)
 
     log.log('>> done')
 

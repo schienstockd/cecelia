@@ -148,6 +148,22 @@ class OmeXmlReaderTest(unittest.TestCase):
     def test_time_increment_seconds(self):
         self.assertEqual(ox.read_time_increment(self.store), 30.0)
 
+    def test_resolver_ignores_a_unit_less_t_scale(self):
+        # This store's t axis has scale 1.0 and NO unit — the "interval unknown" placeholder every
+        # writer emits. Trusting it reported 1 s/frame; the resolver must fall through to OME-XML.
+        self.assertIsNone(zu.read_axis_units(self.store))
+        self.assertEqual(zu.read_time_increment(self.store), 30.0)
+
+    def test_resolver_prefers_a_united_t_scale_over_ome_xml(self):
+        p = _make_flat_store(os.path.join(self.d, "united.ome.zarr"))
+        _write_ome_xml(p)
+        g = zarr.open_group(p, mode="a")
+        ms = g.attrs["multiscales"]
+        ms[0]["axes"] = [dict(a, **({"unit": "second"} if a["name"] == "t" else {})) for a in ms[0]["axes"]]
+        ms[0]["datasets"][0]["coordinateTransformations"][0]["scale"] = [12.0] + SCALE[1:]
+        g.attrs["multiscales"] = ms
+        self.assertEqual(zu.read_time_increment(p), 12.0)   # NGFF wins when it actually says seconds
+
 
 class ImageJMetadataTest(unittest.TestCase):
     def setUp(self):

@@ -6446,13 +6446,18 @@ end
 
     # ── Physical-size / timing metadata (import review, edit, resync) ──────────────
     # All fixtures are synthetic temp zarrs (no real data) — these functions are pure
-    # readers/writers over the bioformats2raw nested layout (`zarr/0/.zattrs`, `zarr/OME`).
+    # readers/writers over BOTH on-disk layouts (CLAUDE.md → OME-ZARR dual-format).
     @testset "OME metadata read/edit/resync" begin
-        # Build a minimal bioformats2raw-shaped zarr: `0/.zattrs` (multiscales) + optional
-        # `0/0/.zarray` (shape → SizeC/T/Z) + optional `OME/METADATA.ome.xml` (planes).
+        # Build a minimal zarr in either layout, plus optional `.zarray` (shape → SizeC/T/Z) and
+        # `OME/METADATA.ome.xml` (planes).
+        #   :series (bioformats2raw) — multiscales in `0/.zattrs`, level-0 array at `0/0`
+        #   :flat   (create_multiscales) — multiscales at the ROOT `.zattrs`, level-0 array at `0`,
+        #           whose own `.zattrs` is `{}`. That empty file is the point: both layouts have a
+        #           `0/` child, so only its CONTENT tells them apart.
         function make_zarr(dir; axes, level_scales, units = Dict{String,String}(),
-                           shape = nothing, planes = nothing)
-            mkpath(joinpath(dir, "0"))
+                           shape = nothing, planes = nothing, layout = :series)
+            base = layout === :series ? joinpath(dir, "0") : dir
+            mkpath(base)
             ax_objs = map(axes) do a
                 o = Dict{String,Any}("name" => a,
                     "type" => a in ("x", "y", "z") ? "space" : (a == "t" ? "time" : "channel"))
@@ -6465,10 +6470,14 @@ end
                         for i in eachindex(level_scales)]
             zattrs = Dict{String,Any}("multiscales" =>
                 [Dict{String,Any}("axes" => ax_objs, "datasets" => datasets)])
-            open(joinpath(dir, "0", ".zattrs"), "w") do io; JSON3.write(io, zattrs); end
+            open(joinpath(base, ".zattrs"), "w") do io; JSON3.write(io, zattrs); end
+            if layout === :flat
+                mkpath(joinpath(dir, "0"))
+                write(joinpath(dir, "0", ".zattrs"), "{}")   # level-0 ARRAY, no multiscales
+            end
             if !isnothing(shape)
-                mkpath(joinpath(dir, "0", "0"))
-                open(joinpath(dir, "0", "0", ".zarray"), "w") do io
+                mkpath(joinpath(base, "0"))
+                open(joinpath(base, "0", ".zarray"), "w") do io
                     JSON3.write(io, Dict{String,Any}("shape" => shape))
                 end
             end
@@ -6613,6 +6622,131 @@ end
             end
         end
 
+        # ── flat (create_multiscales) layout: the 8-bit import + crop write one ──
+        # Regression: these readers/writers hardcoded the series `0/.zattrs`. For a flat store that
+        # path exists too (the level-0 array's own, empty `.zattrs`), so every one of them found no
+        # multiscales and returned silently. `sync_zarr_calibration!` then landed its OME-XML half
+        # and dropped its NGFF half — a store claiming `TimeIncrement="10.0"` in XML and
+        # `t: {unit: second, scale: 1.0}` in NGFF, which napari renders as 1 s/frame.
+        @testset "flat layout (create_multiscales)" begin
+            mktempdir() do d
+                make_zarr(d; layout = :flat, axes = ["t", "z", "y", "x"],
+                          level_scales = [[1.0, 5.0, 0.5, 0.5]], shape = [180, 8, 4, 4],
+                          units = Dict("t" => "second", "z" => "micrometer",
+                                       "y" => "micrometer", "x" => "micrometer"))
+                @test Cecelia.series_base(d) == d                       # not the `0/` array
+                m = read_ome_metadata(d)
+                @test m["SizeT"] == 180 && m["SizeZ"] == 8              # .zarray found at `0/`
+                @test m["PhysicalSizeZ"] == 5.0
+                @test m["TimeIncrement"] == 1.0                         # the placeholder, pre-sync
+
+                Cecelia.sync_zarr_calibration!(d, Dict{String,Any}(
+                    "TimeIncrement" => 10.0, "TimeIncrementUnit" => "second"))
+                @test read_ome_metadata(d)["TimeIncrement"] == 10.0     # NGFF half now lands
+                z = JSON3.read(read(joinpath(d, ".zattrs"), String))
+                @test z[:multiscales][1][:datasets][1][:coordinateTransformations][1][:scale][1] == 10.0
+                @test read(joinpath(d, "0", ".zattrs"), String) == "{}" # array attrs untouched
+            end
+            # series layout still resolves to `0/` — the discriminator is the multiscales attr
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "y", "x"], level_scales = [[2.5, 0.5, 0.5]],
+                          units = Dict("t" => "second"))
+                @test Cecelia.series_base(d) == joinpath(d, "0")
+            end
+            @test Cecelia.series_base(joinpath(tempdir(), "nope-$(rand(UInt32))")) isa String
+        end
+
+        # ── Cross-language: the Julia and Python calibration stamps must agree ──
+        # Calibration lives in two on-disk copies (NGFF `.zattrs`, OME-XML `<Pixels>`) and has two
+        # writers that cannot call each other: Python `zarr_utils.write_calibration` (used by every
+        # task runner) and Julia `sync_zarr_calibration!` (the importer + metadata editor). Each
+        # therefore carries its own unit table and its own idea of which axis gets what. This is the
+        # only thing that stops them drifting: same stale store, one stamped by each, byte-compared.
+        @testset "calibration writers agree across languages" begin
+            pyroot  = joinpath(dirname(dirname(@__DIR__)), "python")
+            haspy   = success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
+                                              "PYTHONPATH" => pyroot);
+                                       stdout = devnull, stderr = devnull))
+            if !haspy
+                @test_skip "analysis-env Python (ome_types/zarr/dask) not importable"
+            else
+                mktempdir() do d
+                    a, b = joinpath(d, "py.ome.zarr"), joinpath(d, "jl.ome.zarr")
+                    script = joinpath(d, "fixture.py")
+                    write(script, """
+import sys, numpy as np, dask.array as da, ome_types, zarr
+import cecelia.utils.zarr_utils as zu, cecelia.utils.ome_xml_utils as ox
+from cecelia.utils.dim_utils import DimUtils
+XML = '''<?xml version="1.0" encoding="UTF-8"?>
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
+  <Image ID="Image:0" Name="x"><Pixels ID="Pixels:0" DimensionOrder="XYZCT" Type="uint16"
+    SizeT="3" SizeC="2" SizeZ="5" SizeY="4" SizeX="3"
+    PhysicalSizeX="0.5" PhysicalSizeXUnit="\\u00b5m" PhysicalSizeY="0.5" PhysicalSizeYUnit="\\u00b5m"
+    PhysicalSizeZ="2.0" PhysicalSizeZUnit="\\u00b5m" TimeIncrement="10.0" TimeIncrementUnit="s">
+    <Channel ID="Channel:0:0" SamplesPerPixel="1"/><Channel ID="Channel:0:1" SamplesPerPixel="1"/>
+    <MetadataOnly/></Pixels></Image></OME>'''
+SHAPE = (3, 2, 5, 4, 3)
+du = DimUtils(ome_types.from_xml(XML), use_channel_axis=True)
+du.calc_image_dimensions(SHAPE)
+for p in sys.argv[1:3]:
+    zu.create_multiscales(da.from_array(np.zeros(SHAPE, dtype=np.uint16), chunks=SHAPE),
+                          p, dim_utils=du, nscales=2)
+    # Reproduce the shipped bug on BOTH stores: NGFF t back to the unit-less 1.0 placeholder and a
+    # sidecar carrying someone else's numbers, exactly what a half-landed sync left behind.
+    g = zarr.open_group(p, mode='a'); ms = g.attrs['multiscales']
+    ms[0]['axes'] = [{k: v for k, v in ax.items() if not (ax['name'] == 't' and k == 'unit')}
+                     for ax in ms[0]['axes']]
+    for ds in ms[0]['datasets']:
+        ds['coordinateTransformations'][0]['scale'][0] = 1.0
+    g.attrs['multiscales'] = ms
+    stale = ome_types.from_xml(XML)
+    stale.images[0].pixels.physical_size_z = 99.0
+    stale.images[0].pixels.time_increment  = 99.0
+    ox.write_ome_xml(p, stale)
+zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store only
+""")
+                    @test success(pipeline(addenv(`python $script $a $b`, "PYTHONPATH" => pyroot);
+                                           stdout = devnull, stderr = devnull))
+
+                    # the JULIA stamp, same calibration, on the second store
+                    Cecelia.sync_zarr_calibration!(b, Dict{String,Any}(
+                        "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5, "PhysicalSizeZ" => 2.0,
+                        "PhysicalSizeUnit" => "micrometer",
+                        "TimeIncrement" => 10.0, "TimeIncrementUnit" => "second"))
+
+                    # NGFF half — identical axes (incl. units) and identical per-level scales.
+                    # Compared field-by-field, not as raw JSON: the two writers emit the same keys in
+                    # different ORDER, which is meaningless to every reader.
+                    za, zb = (JSON3.read(read(joinpath(p, ".zattrs"), String))[:multiscales][1]
+                              for p in (a, b))
+                    axkey(ms) = [(string(get(ax, :name, "")), string(get(ax, :type, "")),
+                                  string(get(ax, :unit, ""))) for ax in ms[:axes]]
+                    sckey(ms) = [(string(get(d, :path, "")),
+                                  collect(Float64, first(d[:coordinateTransformations])[:scale]))
+                                 for d in ms[:datasets]]
+                    @test axkey(za) == axkey(zb)
+                    @test sckey(za) == sckey(zb)
+                    # …and it is the RIGHT answer, not merely the same wrong one
+                    @test read_ome_metadata(a)["TimeIncrement"] == 10.0
+                    @test read_ome_metadata(a)["PhysicalSizeZ"] == 2.0
+
+                    # OME-XML half — same <Pixels> calibration attrs from both stamps
+                    for attr in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ",
+                                 "PhysicalSizeZUnit", "TimeIncrement", "TimeIncrementUnit")
+                        vals = map((a, b)) do p
+                            tag = match(r"<Pixels\b[^>]*>",
+                                        read(joinpath(p, "OME", "METADATA.ome.xml"), String)).match
+                            m = match(Regex(attr * "=\"([^\"]*)\""), tag)
+                            isnothing(m) ? nothing : m.captures[1]
+                        end
+                        @test vals[1] == vals[2] != nothing
+                    end
+                    @test occursin("TimeIncrement=\"10.0\"",
+                                   read(joinpath(a, "OME", "METADATA.ome.xml"), String))
+                end
+            end
+        end
+
         # ── _merge_zarr_meta_into_ccid!: overwrite=true is authoritative; false is fill-only ──
         @testset "merge fill-only vs overwrite" begin
             proj = create_project!(name = "meta-merge-$(rand(1000:9999))")
@@ -6638,7 +6772,7 @@ end
             rm(proj.root; recursive = true)
         end
 
-        # ── resync_ome_meta! end-to-end: fill-only backfill never reverts a correction ──
+        # ── resync_ome_meta! end-to-end: fill-only into ccid, then push the merge back to the zarr ──
         @testset "resync_ome_meta! fill-only" begin
             proj = create_project!(name = "meta-resync-$(rand(1000:9999))")
             s    = add_set!(proj; name = "set")
@@ -6660,6 +6794,37 @@ end
             @test r.meta["PhysicalSizeZ_raw"] == 0.6                 # marker survives
             @test r.meta["PhysicalSizeUnit"] == "micrometer"         # genuinely-missing field filled
             @test r.meta["PhysicalSizeX"] == 0.5
+            # …and the ccid-only correction is pushed BACK into the store, so the two agree
+            @test read_ome_metadata(zdir)["PhysicalSizeZ"] == 3.0
+            rm(proj.root; recursive = true)
+        end
+
+        # ── resync_ome_meta! repairs a flat store whose NGFF calibration never landed ──
+        # The shipped case: the 8-bit import wrote a flat store, `sync_zarr_calibration!` silently
+        # skipped its NGFF half, and the store ended up disagreeing with its own OME-XML. ccid.json
+        # has the right number, so resync is the repair path — no re-import.
+        @testset "resync_ome_meta! repairs a stale flat store" begin
+            proj = create_project!(name = "meta-flat-$(rand(1000:9999))")
+            s    = add_set!(proj; name = "set")
+            img  = add_image!(s; name = "img", meta = Dict{String,Any}(
+                "TimeIncrement" => 10.0, "TimeIncrementUnit" => "second",
+                "PhysicalSizeUnit" => "micrometer"))
+
+            zdir = joinpath(img_zero_dir(img), "img.ome.zarr")
+            make_zarr(zdir; layout = :flat, axes = ["t", "y", "x"],
+                      level_scales = [[1.0, 0.5, 0.5]], shape = [180, 8, 8],
+                      units = Dict("t" => "second", "x" => "micrometer", "y" => "micrometer"),
+                      planes = [(z = 0, t = 1, dt = 0.0, unit = "s")])
+            img.filepath["default"]            = "img.ome.zarr"
+            img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+            save!(img)
+
+            @test read_ome_metadata(zdir)["TimeIncrement"] == 1.0     # stale placeholder, pre-repair
+            @test resync_ome_meta!(init_object(proj.uid, img.uid))
+            @test read_ome_metadata(zdir)["TimeIncrement"] == 10.0    # NGFF now matches ccid
+            @test occursin("TimeIncrement=\"10.0\"",
+                           read(joinpath(zdir, "OME", "METADATA.ome.xml"), String))
+            @test init_object(proj.uid, img.uid).meta["TimeIncrement"] == 10.0  # ccid untouched
             rm(proj.root; recursive = true)
         end
     end

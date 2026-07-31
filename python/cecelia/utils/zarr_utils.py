@@ -195,15 +195,18 @@ def read_time_increment(path):
     caller does not have to know which of the two sources a given store happens to carry.
     `ome_xml_utils.read_time_increment` remains the raw OME-XML reader underneath.
 
-    Only a time axis in seconds is taken from NGFF; any other unit falls through to OME-XML
-    rather than being silently misinterpreted as seconds."""
+    Only a time axis EXPLICITLY in seconds is taken from NGFF. A unit-less t axis is a placeholder,
+    not a reading — every writer defaults that scale to 1.0 when the interval is unknown — so it
+    falls through to OME-XML rather than being reported as "1 second per frame"; so does any other
+    unit, rather than being silently misinterpreted as seconds. Same gate as the Julia side
+    (`omezarr.jl::read_ome_metadata`)."""
     axes = read_axes(path)
     scale = read_scale(path)
     if axes and scale is not None and len(axes) == len(scale):
         low = [a.lower() for a in axes]
         if 't' in low:
             unit = (read_axis_units(path) or {}).get('t')
-            if unit in (None, 'second', 's'):
+            if unit in ('second', 's'):
                 t_scale = scale[low.index('t')]
                 if t_scale and float(t_scale) > 0:
                     return float(t_scale)
@@ -494,6 +497,112 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets',
 
 
 
+def calibration_for_axes(dim_utils, axes):
+    """``(scale_for_axis, unit_for_axis)`` for a store's axes — the ONE derivation of "what physical
+    calibration do these axes carry", shared by every NGFF writer (`create_multiscales`,
+    `open_multiscales_for_writing`). ``(None, None)`` when there is nothing to say.
+
+    Both were previously derived inline, twice, and the copies had already drifted: the streaming
+    writer omitted units entirely, so every drift/AF/cellpose-corrected store shipped a unit-less
+    t axis and depended on the OME-XML fallback to render its timestamp at all.
+
+    Scale is mapped by axis NAME off ``dim_utils``' OWN order — never zipped positionally against
+    ``axes``, which the caller may have overridden (a label store drops C; branching can drop Z or
+    T), or a store that dropped an axis inherits its neighbours' scales.
+
+    The t axis gets a ``unit`` only when the interval is actually KNOWN. Without a ``TimeIncrement``
+    the t scale falls back to 1.0, and stamping a unit on that turns a placeholder into a claim of
+    "1 second per frame" — `im_time_increment_unit()` returns 's' by default whether or not one was
+    found. Readers on both sides (`read_time_increment`, Julia `read_ome_metadata`) gate on the unit
+    being present precisely so an unknown interval stays visibly unknown.
+    """
+    if not axes or dim_utils is None:
+        return None, None
+    axes = [str(a).upper() for a in axes]
+    src = {ax: (float(s) if s is not None else 1.0)
+           for ax, s in zip(dim_utils.im_dim_order, dim_utils.im_scale())}
+    scale_for_axis = {ax: src.get(ax, 1.0) for ax in axes}
+    # Spatial units from the per-axis accessor (not one unit assumed for all); T from OME's
+    # TimeIncrementUnit, and only when there is an increment to attach it to.
+    unit_for_axis = {ax.upper(): u for ax, u in dim_utils.im_physical_units().items()}
+    if dim_utils.is_timeseries() and dim_utils.im_time_increment() is not None:
+        unit_for_axis['T'] = dim_utils.im_time_increment_unit()
+    return scale_for_axis, unit_for_axis
+
+
+# NGFF/dim_utils unit vocabulary → the abbreviation OME-XML uses. The Julia side keeps its own copy
+# (`omezarr.jl::_OME_XML_UNIT`) because it cannot call in here; the cross-language golden test
+# (app/test/runtests.jl → "calibration writers agree across languages") is what keeps them equal.
+_OME_XML_UNIT = {'micrometer': 'µm', 'um': 'µm', 'µm': 'µm', 'nanometer': 'nm', 'nm': 'nm',
+                 'millimeter': 'mm', 'mm': 'mm', 'second': 's', 's': 's',
+                 'millisecond': 'ms', 'ms': 'ms', 'minute': 'min', 'min': 'min'}
+
+
+def write_calibration(path, dim_utils, axes=None):
+    """Stamp a store's physical calibration into BOTH of its on-disk copies — the NGFF ``.zattrs``
+    (per-level ``scale`` + axis ``unit``s) and the OME-XML ``<Pixels>`` attributes — from ONE
+    derivation (`calibration_for_axes`). Returns True if anything was written.
+
+    THE point of this function is that the two copies cannot be written apart. They are read by
+    different consumers — napari and coastal read NGFF, every Python task reads OME-XML through
+    `DimUtils` — and each was previously written by a different call from a different source: the
+    NGFF one from `dim_utils`, the OME-XML one copied verbatim from the source store by
+    `save_meta_in_zarr`. Nothing checked that they agreed, and repeatedly they did not: a store
+    shipped `TimeIncrement="10.0"` in XML against a `1.0` NGFF t scale, and napari picked the NGFF
+    one. Call this after the pixels and the OME-XML sidecar are in place.
+
+    Idempotent, and safe on a store created by any writer: the NGFF axes/levels are read back off
+    disk rather than assumed, and everything else in the ``multiscales`` entry (``version``,
+    ``name``, …) is preserved. A store with no OME-XML sidecar (a label store) just gets the NGFF
+    half.
+
+    ``dim_utils`` is the authority for what the calibration IS — so this writes what the task could
+    see. A value only the importer can derive (the per-plane DeltaT interval, an ImageJ Z fix) is
+    applied afterwards by the Julia side through `sync_zarr_calibration!`, which is the same stamp
+    against the same two copies.
+    """
+    ms = read_multiscales_meta(path)
+    store_axes = [str(a['name']).upper() for a in ms.get('axes', [])]
+    if not store_axes and axes:
+        store_axes = [str(a).upper() for a in axes]
+    if not store_axes or dim_utils is None:
+        return False
+
+    scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, store_axes)
+
+    # NGFF half. Rebuild via the shared builder (so the per-level X/Y downsampling rule lives in one
+    # place, not a third copy of it) and merge over the entry already on disk, keeping its extra keys.
+    keyword = 'datasets' if 'datasets' in ms else next(
+        (k for k, v in ms.items() if isinstance(v, list) and v and isinstance(v[0], dict)
+         and 'path' in v[0]), 'datasets')
+    nscales = len(ms.get(keyword, [])) or 1
+    built = multiscales_metadata(store_axes, nscales, scale_for_axis=scale_for_axis,
+                                 keyword=keyword, unit_for_axis=unit_for_axis)[0]
+    g = zarr.open_group(series_base(path), mode='a')
+    g.attrs['multiscales'] = [{**ms, **built}]
+
+    # OME-XML half — only the calibration attrs; the rest of the sidecar (channels, planes) is the
+    # source's and stays untouched.
+    from cecelia.utils import ome_xml_utils     # lazy: see read_scale
+    omexml = ome_xml_utils.load_ome_xml(path)
+    if omexml is None:
+        return True
+    px = omexml.images[0].pixels
+    for ax, attr in (('X', 'physical_size_x'), ('Y', 'physical_size_y'), ('Z', 'physical_size_z')):
+        if ax not in scale_for_axis:
+            continue
+        setattr(px, attr, float(scale_for_axis[ax]))
+        unit = _OME_XML_UNIT.get(unit_for_axis.get(ax))
+        unit and setattr(px, f'{attr}_unit', unit)
+    # T only when the interval is known — same gate as the NGFF unit (see calibration_for_axes);
+    # writing the 1.0 placeholder here would re-create the divergence from the other direction.
+    if 'T' in scale_for_axis and unit_for_axis.get('T'):
+        px.time_increment = float(scale_for_axis['T'])
+        px.time_increment_unit = _OME_XML_UNIT.get(unit_for_axis['T'], 's')
+    ome_xml_utils.write_ome_xml(path, omexml)
+    return True
+
+
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
@@ -511,27 +620,14 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     # Write zarr v2 format so napari and zarr_data_to_list can read .zattrs directly.
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
 
-    # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes and the
-    # per-axis base scale come from dim_utils, mapped by axis NAME (letters are unique) — unless
-    # the caller declared the stored array's axes explicitly.
+    # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes come from
+    # dim_utils unless the caller declared the stored array's own; the calibration those axes carry
+    # comes from the shared derivation (see calibration_for_axes).
     if axes is not None:
         axes = [str(a).upper() for a in axes]
     else:
         axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
-    scale_for_axis = None
-    unit_for_axis = None
-    if axes and dim_utils is not None:
-        # Map by axis NAME off dim_utils' OWN order — never zip against the (possibly overridden)
-        # `axes` list positionally, or a store that dropped an axis inherits its neighbours' scales.
-        src = {ax: (float(s) if s is not None else 1.0)
-               for ax, s in zip(dim_utils.im_dim_order, dim_utils.im_scale())}
-        scale_for_axis = {ax: src.get(ax, 1.0) for ax in axes}
-        # Units alongside the scale, so a reader can tell 10 seconds from 10 micrometres.
-        # Spatial units come from the existing per-axis accessor (not one unit assumed for all);
-        # T uses the OME TimeIncrementUnit.
-        unit_for_axis = {ax.upper(): u for ax, u in dim_utils.im_physical_units().items()}
-        if dim_utils.is_timeseries():
-            unit_for_axis['T'] = dim_utils.im_time_increment_unit()
+    scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, axes)
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
         unit_for_axis=unit_for_axis)
@@ -635,18 +731,16 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     the whole T×C×Z×Y×X image — the drift / AF / cellpose correction tasks used to allocate the
     entire corrected image in RAM (and OOM on large time-lapses). Metadata and chunking mirror the
     dask branch of ``create_multiscales`` exactly, so the resulting store is byte-for-byte the same
-    layout — only the fill is streamed."""
+    layout — only the fill is streamed. Both derive their calibration from `calibration_for_axes`,
+    which is what makes "exactly" true: this writer used to derive its own, without units, so the
+    corrected stores it produces carried a unit-less t axis and leant on the OME-XML fallback."""
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
 
     axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
-    scale_for_axis = None
-    if axes:
-        scale_for_axis = {
-            ax: (float(s) if s is not None else 1.0)
-            for ax, s in zip(axes, dim_utils.im_scale())
-        }
+    scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, axes)
     multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
-        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
+        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
+        unit_for_axis=unit_for_axis)
 
     pchunks = plane_chunks(tuple(shape), dim_utils)
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,

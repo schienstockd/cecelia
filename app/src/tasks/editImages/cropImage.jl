@@ -70,11 +70,12 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     t0 = Int(get(params, "t0", -1)); t1 = Int(get(params, "t1", -1))
 
     # Inherit the source image's calibration onto the crop (SizeC/T/Z, PhysicalSize*, TimeIncrement).
-    # `read_ome_metadata` can't re-derive it here — it hardcodes the bioformats2raw nested `0/.zattrs`
-    # layout, but a crop is written FLAT by `create_multiscales` (multiscales at the ROOT `.zattrs`; see
-    # the OME-ZARR dual-format trap in CLAUDE.md) — so carry it from the source's ccid `meta`, the same
-    # source→crop pattern already used for `imChannelNames` below. Without this the crop's ccid had NO
-    # calibration, so the metadata dialog showed "—" and the strip timestamp had no Δt to draw.
+    # Carried from the source's ccid `meta` — the same source→crop pattern used for `imChannelNames`
+    # below — rather than re-derived from the crop's own store: the crop is written before the box is
+    # applied to the metadata, and a human correction on the source lives only in ccid anyway. Without
+    # this the crop's ccid had NO calibration, so the metadata dialog showed "—" and the strip
+    # timestamp had no Δt to draw. (`read_ome_metadata` does now read the crop's flat layout too —
+    # see the OME-ZARR dual-format section in CLAUDE.md — but ccid stays the authoritative source.)
     src_meta  = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     crop_meta = Dict{String,Any}(
         "crop_source_uid"        => img.uid,
