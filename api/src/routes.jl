@@ -438,6 +438,17 @@ function api_tasks_list(_req)
     200, JSON3.write(list_tasks())
 end
 
+# Terminal outcomes of recently finished tasks (reporting only). The companion to /api/tasks: that
+# one answers "what is in flight", this one "how did the ones that left it end". A poller needs both
+# because the WS `task:status` frame carrying the outcome is dropped for a slow client by design —
+# without this the console can only report "finished, outcome unseen". `since` (a previous poll's
+# newest `finished_at`) returns just the newer entries. NOT run history — that is
+# /api/tasks/history, on disk and permanent.
+function api_tasks_recent(req)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    200, JSON3.write(recent_tasks(; since = get(q, "since", "")))
+end
+
 # ── Filesystem browser ────────────────────────────────────────────────────────
 
 # FS_ROOT: OPTIONAL sandbox. Empty (the default) = browse the whole filesystem — required to reach

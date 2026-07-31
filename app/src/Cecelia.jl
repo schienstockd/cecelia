@@ -107,7 +107,8 @@ export CopyImage
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
 export run_task, run_tasks
-export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks, pool_status
+export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks,
+       recent_tasks, record_task_outcome!, pool_status
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
 export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
@@ -200,6 +201,7 @@ include("storage.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
+include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
 include("napari.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the

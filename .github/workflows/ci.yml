@@ -220,13 +220,27 @@ jobs:
       - name: Start server and verify health + frontend serving
         run: |
           set -uo pipefail
-          pixi run prod > server.log 2>&1 &
+          t0=$(date +%s)
+          # Stamp each line as it arrives. The server's own logger prints no timestamp, so plain
+          # redirection records WHAT it logged but not WHEN — useless for splitting the boot.
+          ( pixi run prod 2>&1 | while IFS= read -r line; do
+              printf '%s %s\n' "$(date +%H:%M:%S)" "$line"
+            done ) > server.log &
           # Wait up to ~5 min for the API (first request JIT-compiles the handler; slower on
           # Windows/macOS runners than the warm Linux one).
-          for i in $(seq 1 150); do
+          for i in $(seq 1 300); do
             curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
-            sleep 2
+            sleep 1
           done
+          # ATTRIBUTION, not decoration. This poll loop is the single slowest step in the job, and it
+          # is silent — so a slow boot arrives as one opaque number with no way to tell Julia
+          # startup/load/compile apart from first-request JIT. `server.log` carries the timestamped
+          # "CeceliaAPI starting" line, which splits exactly that, so print it on SUCCESS too (it was
+          # already dumped on failure). Same lesson as #430: measure where the time goes before
+          # trying to move it.
+          echo "== boot =="
+          echo "wall to first healthy response: $(( $(date +%s) - t0 ))s"
+          cat server.log
           echo "== /api/health =="
           curl -fsS http://localhost:8080/api/health \
             || { echo "server never became healthy"; cat server.log; exit 1; }

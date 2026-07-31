@@ -84,6 +84,7 @@ Settings → Debug console UI shows a note to this effect.
 | GET | `/api/images/geometry?projectUid&imageUid&valueName?` | frame extent of ONE image **version** — `{sizeX,sizeY,sizeZ,sizeT,valueName}`, read off that version's zarr (metadata only, no pixels). Omit `valueName` for the **active** version, which is what a task runs against. **Ask this rather than storing a size on the image**: the extent is version-dependent — drift correction expands the canvas (`output.canvas_expansion`), a crop shrinks it — so EaMaVq is 512×512 as imported and 544×548 corrected. Implemented in `api/src/image_geometry.jl`, which also backs `/api/crop/*`. |
 | GET | `/api/images/tasklog?projectUid&imageUid&fun` | raw task log for one `fun` on one image — reads `{img._dir}/logs/{fun}.log` (written by the scheduler's `_wrap_log_with_file`). `{projectUid, imageUid, fun, exists, content[, bytes]}`; `exists:false`+`""` when never run. `fun` is filename-sanitised (rejects `/`,`\`,`..`). Read-only; backs the observer's `get_task_log`. |
 | GET | `/api/tasks/history?projectUid[&limit]` | recent task runs across **all** images, newest first: `{count, history:[{imageUid,imageName,status,runStatus,fun,valueName,at,params}]}` — aggregates each image's `runlog.json`. `status` = the image's current status; `runStatus` = that run's outcome (`"done"`/`"failed"` — failures are recorded too so repeated failures are visible; legacy entries → `"done"`). `params` = the params that run used (the tuning trail; `{}` on legacy entries) — lets the observer suggest a param adjustment on an outlier. `limit` default 100. Read-only; backs the observer's `get_task_history`. |
+| GET | `/api/tasks/recent[?since]` | the banked terminal frames of recently finished task-rail work, oldest → newest: `[{id,status,fun_name,pool_name,image_uid,image_uids,finished_at}]` (`recent_tasks()`, a bounded in-memory log — see `docs/SCHEDULER.md`). The companion to `/api/tasks`: that answers *what is in flight*, this *how the ones that left it ended*. Exists because the terminal `task:status` frame is dropped for a slow client by design, so a client needs a lossy-safe way to learn the outcome (see the WS section below). Written at the rail's two status *sinks* — `ws_status` and the `chain:node:done`/`failed` bridge — so it covers **every** producer: scheduler tasks, chain nodes, background jobs (`pool="job"`), batch movies (`pool="viewer"`). `image_uids` = every image the unit touched (a set-scope task's full member list, which exists only on that frame). `since` = a previous poll's newest `finished_at`, **inclusive** (two units finishing in the same millisecond must not fall through the gap — de-duplicate by `id`). Not run history: that is `/api/tasks/history`, on disk and permanent. Read-only. |
 | GET | `/api/storage/summary?projectUid` | Settings **storage box** (`api/src/storage_api.jl`). Walks every image store (expensive — the frontend calls it on a "Scan" button, not on open) + `diskstat`: `{diskTotal, diskAvailable, imageBytes, reclaimableBytes, reclaimable:[{imageUid,name,setUid,bytes,activeVersion,versions:[{valueName,bytes}]}]}` (`imageBytes` = image OME-ZARR versions only, NOT labels/other task-dir data). `reclaimable` = one entry per image with freeable versions — every version EXCEPT the active one (`reclaimable_versions`), incl. the original `default`; biggest first. |
 | POST | `/api/storage/reclaim` | `{projectUid, imageUids:[…]}` → free every NON-active version of each image, keeping only the active one (shared `reclaim_inactive!` / `remove_image_version!`; the active version is never touched, so its channel names/dims survive). `{ok, freedBytes, reclaimed:[uid]}`; images with nothing to reclaim are skipped. `400` empty `imageUids`. |
 | GET | `/api/movies?projectUid` | list the project's rendered `.mp4`s under `{project}/movies/` for the **Movies** player (`/movies`, `MoviesModule.vue`): `{movies:[{name,size,mtime}]}`, newest-first. Empty list (not 404) when the folder doesn't exist yet. Bytes are streamed separately by `/api/movies/file`. |
@@ -189,11 +190,31 @@ a row. The reconciliation half is split out as the socket-free
 `_reconcile_snapshot!(rows)` and pinned by the *API: task console reconciles snapshot removals* and
 *ignores post-mortem log frames* testsets (the script's entrypoint is `PROGRAM_FILE`-guarded so the
 suite can `include` it).
+**The outcome itself is polled, not streamed** — `GET /api/tasks/recent`. Retiring a vanished row
+keeps the *table* honest but says nothing about how the task ENDED, and the outcome had exactly one
+carrier: the terminal `task:status` frame, which the paragraph above drops on purpose. So a single
+missed frame per task was permanent, and nine images that all succeeded read **`0 done · 17 ended`**.
+Terminal frames are therefore banked for replay as they are emitted (`record_task_outcome!` inside
+`ws_status`, `docs/SCHEDULER.md` → *Terminal outcomes are banked for replay*), the console polls that log
+beside the snapshot each tick — outcomes first, so a task is never retired as unseen while the server can
+still name it — and `_note_terminal!` de-duplicates whichever of the two arrives second. WS still drives
+the *live feel*; HTTP makes the numbers true. The first poll after connecting is a **prime** pass: the log
+predates the console, so those ids are marked seen without a tally and the counters keep meaning "since
+you started looking". Pinned by *API: task console counts outcomes without the WS frame*.
+
+**The browser does the same, and recovers the frame rather than the number** — the ws store polls the same
+route while this tab has work in flight and re-emits the missing frame through its one `dispatch` path, so
+all five completion listeners fire as they would have. `docs/UI.md` → *A dropped terminal frame is
+recovered, not tolerated*.
+
 **Chain nodes** report their outcome through a different door: a chain run emits no `task:status`
 frames, so the console attributes one from the `taskId` on the terminal `chain:node:done`/`failed`
 frame (see `docs/SCHEDULER.md` → *Event bus*). A row already retired as `ended` is *corrected* if its
 real outcome arrives late — moving the tally rather than keeping a number known to be wrong — which
-leaves `ended` meaning what it says: telemetry genuinely lost. `handle_task_run` forwards
+leaves `ended` meaning what it says: telemetry genuinely lost. That correction applies to **every**
+door, which was itself the second half of the `0 done` bug: `handle_task_run`'s late frames returned
+early on `SEEN_TERM` *before* reaching it, so only chain frames could ever correct an `ended` and a
+late `done` was simply discarded. `handle_task_run` forwards
 `queued`/`running` **and
 `cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
 cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker

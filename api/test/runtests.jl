@@ -1817,6 +1817,155 @@ end
     @test !haskey(C.TASKS, "c5") && C.TALLY["done"] == 1
 end
 
+# ── Task console: the done counter must not depend on the WS stream ───────────
+# The reported bug: nine images ran and finished, and the console read "0 done · 17 ended". The
+# terminal `task:status` frame is the ONE frame per task that carries the outcome, and the server
+# drops frames for a slow client by design (per-client drop-on-full queue in server.jl) — so every
+# lost or late frame became a permanent "finished, outcome unseen".
+#
+# Two independent halves, one per failure mode:
+#   1. a LATE frame (it did arrive, after the snapshot had already retired the row) was DISCARDED —
+#      `handle_ws` returned on `id in SEEN_TERM` before reaching the ended→outcome correction, which
+#      made that correction unreachable from the task:status path (only chain frames could use it).
+#   2. a LOST frame can now be recovered at all: the outcome is polled from GET /api/tasks/recent.
+@testset "API: task console counts outcomes without the WS frame" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="cleanupImages.driftCorrect",
+                                  pool_name="io", image_uid="EaMaVq", chain_run_id="")
+    rec(id, status, ts) = (; id=id, status=status, finished_at=ts,
+                             fun_name="cleanupImages.driftCorrect", pool_name="io",
+                             image_uid="EaMaVq", image_uids=String[])
+    feed(frame)  = redirect_stdout(devnull) do; C.handle_ws(JSON3.write(frame)) end
+    recon(rows)  = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    recent(rows; prime=false) = redirect_stdout(devnull) do
+        C._apply_recent!(JSON3.read(JSON3.write(rows)); prime = prime)
+    end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.LOGS);
+                        empty!(C.ENDED_IDS); C.RECENT_SINCE[] = "";
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    # ── 1. a late terminal task:status frame corrects the "ended" it was retired as ──
+    reset_console!()
+    recon([row("t1")]); recon([]); recon([])
+    @test C.TALLY["ended"] == 1 && C.TALLY["done"] == 0
+    feed((; type="task:status", taskId="t1", status="done", imageUid="EaMaVq",
+           fun="cleanupImages.driftCorrect"))
+    @test C.TALLY["done"] == 1 && C.TALLY["ended"] == 0     # ← was silently discarded
+    @test sum(values(C.TALLY)) == 1                          # moved, not added
+    feed((; type="task:status", taskId="t1", status="done", imageUid="EaMaVq"))
+    @test C.TALLY["done"] == 1                               # repeat frame changes nothing
+    # a real outcome still can't be overwritten by a later, different one
+    feed((; type="task:status", taskId="t1", status="failed", imageUid="EaMaVq"))
+    @test C.TALLY["done"] == 1 && C.TALLY["failed"] == 0
+
+    # ── 2. the frame never arrives at all → the outcome poll supplies it ──
+    reset_console!()
+    recon([row("t2")])
+    recent([rec("t2", "done", "2026-07-31T04:50:20.100Z")])
+    @test !haskey(C.TASKS, "t2") && C.TALLY["done"] == 1     # counted with no WS frame at all
+    recon([]); recon([])
+    @test C.TALLY["ended"] == 0 && C.TALLY["done"] == 1      # …and not re-retired as unseen
+
+    # …and it corrects a row already retired as "ended" (poll landed after the retire)
+    reset_console!()
+    recon([row("t3")]); recon([]); recon([])
+    @test C.TALLY["ended"] == 1
+    recent([rec("t3", "failed", "2026-07-31T04:51:00.000Z")])
+    @test C.TALLY["failed"] == 1 && C.TALLY["ended"] == 0
+
+    # a whole batch: every task finishes, not one terminal frame gets through → all counted
+    reset_console!()
+    ids = ["b$i" for i in 1:9]
+    recon([row(i) for i in ids])
+    @test length(C.TASKS) == 9
+    recent([rec(i, "done", "2026-07-31T04:5$(n):00.000Z") for (n, i) in enumerate(ids)])
+    @test C.TALLY["done"] == 9 && C.TALLY["ended"] == 0 && isempty(C.TASKS)
+
+    # ── `since` bookkeeping: newest wins, and a re-served row is not double-counted ──
+    reset_console!()
+    recent([rec("s1", "done", "2026-07-31T04:00:00.000Z"),
+            rec("s2", "done", "2026-07-31T05:00:00.000Z")])
+    @test C.RECENT_SINCE[] == "2026-07-31T05:00:00.000Z"
+    recent([rec("s2", "done", "2026-07-31T05:00:00.000Z")])   # inclusive bound re-serves it
+    @test C.TALLY["done"] == 2
+
+    # ── the prime pass: outcomes that predate this console session are NOT counted ──
+    # (the ring holds up to 500; crediting the session with work it never watched would be a lie)
+    reset_console!()
+    recent([rec("old1", "done", "2026-07-30T01:00:00.000Z"),
+            rec("old2", "failed", "2026-07-30T02:00:00.000Z")]; prime = true)
+    @test sum(values(C.TALLY)) == 0
+    @test C.RECENT_SINCE[] == "2026-07-30T02:00:00.000Z"      # …but we resume from after them
+    recent([rec("old2", "failed", "2026-07-30T02:00:00.000Z")])
+    @test sum(values(C.TALLY)) == 0                           # primed ids stay uncounted
+    recent([rec("new1", "done", "2026-07-30T03:00:00.000Z")])
+    @test C.TALLY["done"] == 1                                # anything after it counts normally
+
+    # a task still IN FLIGHT is never touched by the poll (nothing to report yet)
+    reset_console!()
+    recon([row("live")])
+    recent(Any[])
+    @test haskey(C.TASKS, "live") && C.TASKS["live"].status == "running"
+end
+
+# The route the poll above reads. `since` must reach `recent_tasks` (an unparsed one would re-serve
+# the whole ring every 2s), and a missing param must mean "everything", not an error.
+@testset "API: /api/tasks/recent" begin
+    get_recent(q = "") = JSON3.read(api_tasks_recent(HTTP.Request("GET", "/api/tasks/recent$q"))[2])
+    @test api_tasks_recent(HTTP.Request("GET", "/api/tasks/recent"))[1] == 200
+    @test get_recent() isa JSON3.Array                       # no `since` → the whole ring
+    @test isempty(get_recent("?since=9999-01-01T00:00:00.000Z"))
+    @test get_recent("?since=") == get_recent()              # blank is "everything", not a filter
+end
+
+# ── Every terminal frame is banked, whoever emitted it ────────────────────────
+# `ws_status` is the rail's ONE status sink, so banking the outcome there (rather than in the scheduler,
+# where it started) is what makes recovery universal: background jobs (project export/import, data
+# patches — `pool="job"`) and batch movies (`pool="viewer"`) never enter the scheduler's registry at all,
+# so a dropped `done` frame used to strand their row with nothing able to correct it. These pin that the
+# bank is fed by the sink and not by the producer.
+@testset "API: ws_status banks every producer's outcome" begin
+    empty!(Cecelia._OUTCOMES)
+    banked(id) = filter(r -> r.id == id, recent_tasks())
+
+    # a background job — the case that was previously uncoverable
+    ws_status(nothing, "job-1", "done", "EaMaVq"; fun="project:export", pool="job")
+    @test only(banked("job-1")).status    == "done"
+    @test only(banked("job-1")).pool_name == "job"
+    @test only(banked("job-1")).fun_name  == "project:export"
+
+    # a batch movie (napari/viewer producer)
+    ws_status(nothing, "movie-1", "failed", "EaMaVq"; fun="movie:batch", pool="viewer")
+    @test only(banked("movie-1")).status == "failed"
+
+    # a scheduler task, incl. a set-scope run's full member list (only ever present on this frame)
+    ws_status(nothing, "task-9", "done", "a"; image_uids=["a", "b"], fun="behaviour.hmm")
+    @test only(banked("task-9")).image_uids == ["a", "b"]
+
+    # in-flight statuses are not outcomes — the sink hands over every frame, terminal or not
+    ws_status(nothing, "task-live", "queued", "EaMaVq"; fun="segment.cellpose")
+    ws_status(nothing, "task-live", "running", "EaMaVq"; fun="segment.cellpose")
+    @test isempty(banked("task-live"))
+    ws_status(nothing, "task-live", "cancelled", "EaMaVq"; fun="segment.cellpose")
+    @test only(banked("task-live")).status == "cancelled"     # …until it ends
+
+    # the frame still goes out to clients — banking must not replace broadcasting
+    cap = Channel{String}(8)
+    key = gensym("test-outcome")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    try
+        ws_status(nothing, "task-bc", "done", "EaMaVq"; fun="segment.cellpose")
+        @test isready(cap)
+        let f = JSON3.read(take!(cap))
+            @test f.type == "task:status" && f.taskId == "task-bc" && f.status == "done"
+        end
+        @test only(banked("task-bc")).status == "done"
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+    end
+    empty!(Cecelia._OUTCOMES)
+end
+
 # ── Chain event → WS bridge: taskId degradation ───────────────────────────────
 # The bridge reads `task_id` through `_ev_task_id`, not `p.task_id`, because two real payloads lack a
 # usable one: a node with no task id yet (skipped before submission, set-scope/incremental nodes that
@@ -1874,9 +2023,128 @@ end
         f = fire("node:queued", (; run_id="r1", chain_name="ch", project_uid="p", image_uid="EaMaVq",
                                   node_id="n3", fn="f", params=Dict{String,Any}()))
         @test String(f.taskId) == ""
+
+        # ── the bridge is the SECOND carrier of a terminal outcome, and banks it too ──
+        # A chain run emits no `task:status` at all, so `ws_status` never sees a chain node: banking only
+        # there left every chain node unrecoverable (a dropped `chain:node:done` = a row stuck at running
+        # with nothing able to correct it, and the console back to "outcome unseen"). Keyed by the node's
+        # scheduler task id — what a consumer correlates a chain row against.
+        empty!(Cecelia._OUTCOMES)
+        banked(id) = filter(r -> r.id == id, recent_tasks())
+        fire("node:queued", base); fire("node:running", base)
+        @test isempty(banked("tid123"))                       # in-flight is not an outcome
+        fire("node:done", (; base..., result=nothing))
+        @test only(banked("tid123")).status   == "done"
+        @test only(banked("tid123")).fun_name == "segment.branching"
+        @test only(banked("tid123")).image_uid == "EaMaVq"
+
+        fire("node:failed", (; base..., task_id="tid456", status="cancelled"))
+        @test only(banked("tid456")).status == "cancelled"     # not flattened to "failed"
+
+        # a SKIPPED node never ran: no task id, and "skipped" is not a terminal task status
+        fire("node:failed", (; base..., task_id=nothing, node_id="n9", status="skipped"))
+        @test isempty(filter(r -> r.status == "skipped", recent_tasks()))
+        @test isempty(banked(""))
+        empty!(Cecelia._OUTCOMES)
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, :probe); end
         close(q)
+    end
+end
+
+# ── END-TO-END: a real producer reaches the API layer's sinks ─────────────────
+# THE SEAM BOTH SUITES USED TO STUB, from both directions. `app/test` runs a real `run_chain` and asserts
+# the fired events carry a real `task_id` (producer → event bus) but has no API layer attached; the
+# testsets above exercise the real bridge, `ws_status` and console with HAND-BUILT payloads (sink side)
+# but nothing ever ran. So every claim of the form "when a real task finishes, the API layer does Y" was
+# unasserted — and that is exactly where a regression hid: moving the outcome bank to `ws_status` silently
+# un-banked every chain node, because a chain run passes no `on_status_change` and so never reaches
+# `ws_status` at all. Both suites stayed green. These tests run the REAL producers with nothing mocked.
+#
+# Cheap because `server.jl` gates only `start()` on `CECELIA_NO_SERVE` — the `subscribe_chain_events!`
+# handlers ran at include time, so the bridge is live in this process.
+@testset "API: real producers reach the WS sinks" begin
+    # capture client: broadcast_ws enqueues a serialised frame per registered client (as above)
+    cap = Channel{String}(512)
+    key = gensym("test-e2e")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    frames() = (fs = []; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    banked(id) = filter(r -> r.id == id, recent_tasks())
+    empty!(Cecelia._OUTCOMES)
+
+    try
+        proj = create_project!(name="api-e2e")
+        s    = add_set!(proj; name="set-A")
+        imgs = [add_image!(s; name="img-$i") for i in 1:2]
+        for img in imgs; img.status = "done"; save!(img); end
+
+        # ── 1. chain node: producer → event bus → bridge → bank + broadcast ──
+        # The regression this pins. A chain node's outcome travels ONLY as chain:node:done, so the bank
+        # has to be fed from the bridge; keyed by the node's real scheduler task id, which is what a
+        # client correlates its (synthetically-keyed) chain row against.
+        save_chain_template!(proj, ChainTemplate(
+            "e2e-chain",
+            [ChainNode(id="n1", fn="testTasks.imageTask",
+                       params=Dict{String,Any}("message"=>"e2e"))],
+            ChainEdge[]))
+        frames()
+        run = run_chain(proj, [i.uid for i in imgs]; chain="e2e-chain", on_log=_->nothing)
+
+        node_ids = [run.image_states[i.uid]["n1"].task_id for i in imgs]
+        @test all(!isnothing, node_ids) && all(!isempty, node_ids)
+        for tid in node_ids
+            @test only(banked(tid)).status   == "done"      # ← was empty: nothing fed the bank
+            @test only(banked(tid)).fun_name == "testTasks.imageTask"
+        end
+        let fs = frames()
+            @test count(f -> String(f.type) == "chain:node:done", fs) == 2   # …and still broadcast
+            # every terminal frame the client saw is replayable from the log — the whole invariant
+            for f in fs
+                String(f.type) == "chain:node:done" || continue
+                @test !isempty(banked(String(f.taskId)))
+            end
+        end
+        # a chain node emits NO task:status (handle_chain_run passes no on_status_change) — the premise
+        # the bridge-side bank exists for. If this ever fails, the second bank may be redundant.
+        @test !any(f -> String(f.type) == "task:status", frames())
+
+        # ── 2. module task: handle_task_run → run_task → ws_status → bank ──
+        empty!(Cecelia._OUTCOMES); frames()
+        tid = "e2e-image-task"
+        handle_task_run(nothing, JSON3.read(JSON3.write((;
+            taskId=tid, funName="testTasks.imageTask", params=Dict("message"=>"e2e"),
+            imageUid=imgs[1].uid, projectUid=proj.uid, setUid=s.uid, poolName=""))))
+        @test timedwait(() -> !isempty(banked(tid)), 30.0) === :ok
+        @test only(banked(tid)).status    == "done"
+        @test only(banked(tid)).image_uid == imgs[1].uid
+        let fs = filter(f -> String(f.type) == "task:status", frames())
+            @test any(f -> String(f.status) == "done", fs)          # the live frame went out too
+            @test String(last(fs).taskId) == tid
+        end
+
+        # ── 3. set-scope task: the real frame's image_uids, unfabricated ──
+        # Every other test hands `image_uids` in by hand, so nothing checked that a real set run actually
+        # reports all its members — and a replayed frame missing them refreshes the representative
+        # image's plots only, leaving every other member's stale.
+        empty!(Cecelia._OUTCOMES); frames()
+        stid = "e2e-set-task"
+        handle_task_run(nothing, JSON3.read(JSON3.write((;
+            taskId=stid, funName="testTasks.setTask", params=Dict("message"=>"e2e-set"),
+            imageUid="", imageUids=[i.uid for i in imgs], projectUid=proj.uid,
+            setUid=s.uid, poolName=""))))
+        @test timedwait(() -> !isempty(banked(stid)), 30.0) === :ok
+        @test only(banked(stid)).status == "done"
+        @test Set(only(banked(stid)).image_uids) == Set(i.uid for i in imgs)   # ← all members, banked
+        @test only(banked(stid)).image_uid == first(imgs).uid                   # …plus the representative
+        let f = last(filter(x -> String(x.type) == "task:status", frames()))
+            @test Set(String.(f.imageUids)) == Set(i.uid for i in imgs)         # …and on the live frame
+        end
+
+        rm(proj.root; recursive=true)
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        close(cap)
+        empty!(Cecelia._OUTCOMES)
     end
 end
 

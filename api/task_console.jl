@@ -3,8 +3,10 @@
 # Connects to the running API server's WebSocket (/ws) for the live
 # task:* / chain:* event stream, and polls GET /api/tasks for the in-flight
 # snapshot (which fills in fun_name / image / pool that the WS stream alone
-# doesn't carry) plus GET /api/pools for live per-pool occupancy (limit vs
-# running + queued). REPORTING ONLY — it never sends task:run / task:cancel /
+# doesn't carry), GET /api/tasks/recent for how the tasks that left it ENDED
+# (the counters come from there — WS is lossy, see refresh_recent!), plus
+# GET /api/pools for live per-pool occupancy (limit vs running + queued).
+# REPORTING ONLY — it never sends task:run / task:cancel /
 # chain:* control messages, so it is safe to run alongside the GUI.
 #
 #   pixi run console                 # live dashboard (default; needs a TTY)
@@ -72,9 +74,11 @@ const MAX_LOGS   = 500
 # Finished tasks are collapsed to a COUNT, not kept as rows — the console answers "what's running now
 # and how many are done", not "show all 50". TALLY holds cumulative terminal outcomes; SEEN_TERM stops
 # a task being re-counted / re-added (by a late WS event or the snapshot poll) once it has finished.
-# "ended" = finished, outcome unseen: the task left the scheduler snapshot but its terminal
-# task:status frame never arrived (WS telemetry is lossy by design — see broadcast_ws). Counted
-# separately rather than guessed as done/failed, so the console never claims an outcome it didn't see.
+# "ended" = finished, outcome unseen: the task left the scheduler snapshot, its terminal task:status
+# frame never arrived (WS telemetry is lossy by design — see broadcast_ws) AND the server's outcome
+# log couldn't name it either (`refresh_recent!`). Counted separately rather than guessed as
+# done/failed, so the console never claims an outcome it didn't see. It should now be RARE — before
+# the outcome poll existed, one dropped frame per task made it the only number that ever moved.
 const TALLY      = Dict{String,Int}("done" => 0, "failed" => 0, "cancelled" => 0, "ended" => 0)
 const SEEN_TERM  = Set{String}()
 
@@ -124,24 +128,36 @@ end
 # A task's first terminal sighting: bump its outcome tally and drop the row (kept only as a count).
 #
 # One exception to "first sighting wins": a task retired as `ended` (finished, outcome unseen) whose
-# real outcome shows up LATER — a chain node's terminal frame delayed past the retire window, or any
-# frame that arrived after the snapshot had already dropped the row. Moving the count is strictly
-# better than keeping a number we know to be wrong, and it can't double-count: the id leaves
-# ENDED_IDS as it's corrected, and every other repeat sighting still returns early.
+# real outcome shows up LATER — over HTTP from `GET /api/tasks/recent`, or from a terminal frame that
+# arrived after the snapshot had already dropped the row. Moving the count is strictly better than
+# keeping a number we know to be wrong, and it can't double-count: the id leaves ENDED_IDS as it's
+# corrected, and every other repeat sighting still returns early.
 const ENDED_IDS = Set{String}()   # ids currently counted as "ended" — correctable, unlike a real outcome
 
-function _note_terminal!(id::AbstractString, status::AbstractString)
+# Returns what it did, so a caller can report an outcome the live stream never delivered:
+#   :counted   — first terminal sighting, tallied
+#   :corrected — was tallied "ended", now moved to its real outcome
+#   :ignored   — a repeat sighting of an outcome already counted
+function _note_terminal!(id::AbstractString, status::AbstractString)::Symbol
+    outcome = :counted
     if id in SEEN_TERM
-        (id in ENDED_IDS && status != "ended" && haskey(TALLY, status)) || return
+        (id in ENDED_IDS && status != "ended" && haskey(TALLY, status)) || return :ignored
         TALLY["ended"] -= 1                       # …and fall through to count the real outcome
         delete!(ENDED_IDS, String(id))
+        outcome = :corrected
     else
         push!(SEEN_TERM, String(id))
         status == "ended" && push!(ENDED_IDS, String(id))
     end
     haskey(TALLY, status) && (TALLY[status] += 1)
     delete!(TASKS, id)
+    outcome
 end
+
+# Mark a task finished-and-counted WITHOUT tallying it — for outcomes that predate this console
+# session (see `refresh_recent!`'s prime pass). Keeps them out of the counters while still
+# suppressing a later re-count.
+_seen_only!(id::AbstractString) = push!(SEEN_TERM, String(id))
 
 # ── HTTP snapshot (fills in fun_name / image / pool for in-flight tasks) ─────────
 # The snapshot is AUTHORITATIVE and complete: /api/tasks returns the scheduler's whole in-flight set
@@ -178,12 +194,12 @@ function _reconcile_snapshot!(rows)
         for row in rows
             id = String(row.id)
             push!(present, id)
-            id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
             status = String(get(row, :status, ""))
             if status in TERMINAL                       # finished before we saw it live → just count it
-                _note_terminal!(id, status)
+                _note_terminal!(id, status)             # (a repeat sighting is ignored in there)
                 continue
             end
+            id in SEEN_TERM && continue                 # already finished + counted — don't resurrect
             t = _task!(id)
             t.fun_name     = String(get(row, :fun_name, t.fun_name))
             t.image_uid    = String(get(row, :image_uid, t.image_uid))
@@ -224,6 +240,59 @@ function refresh_snapshot!()
     end
 end
 
+# ── Outcome poll (GET /api/tasks/recent → how the tasks that left the snapshot ended) ─────────────
+# The done/failed/cancelled TALLY must not depend on the WS stream: the terminal `task:status` frame
+# is dropped for a slow client by design (per-client drop-on-full queue in server.jl) and lost outright
+# on a half-open socket — and it is the ONE frame per task that carries the outcome, so losing it made
+# a whole successful batch read "0 done · N ended". This poll is the lossy-safe channel for it: the
+# server keeps a bounded log of terminal frames (`recent_tasks`), so a missed frame costs at most
+# a couple of seconds of latency, not the count. Banked from `ws_status` — the rail's one status sink — so
+# it covers background jobs and batch movies too, not just scheduler tasks.
+#
+# WS still drives the live feel (an outcome shows the instant it happens); this is the backstop that
+# makes the numbers true, and `_note_terminal!` de-duplicates whichever arrives second.
+const RECENT_SINCE = Ref("")   # newest finished_at seen — polls ask only for the tail after it
+
+# Pure half — same split as `_reconcile_snapshot!`, so the tests can drive it with synthetic rows.
+#
+# `prime` = the first pass after connecting: the ring holds tasks that finished BEFORE this console
+# existed. Counting those would credit the session with work it never watched, so they're recorded as
+# seen-and-counted without a tally — the counters stay "since you started looking".
+function _apply_recent!(rows; prime::Bool = false)
+    lock(LOCK) do
+        for row in rows
+            id = String(get(row, :id, "")); isempty(id) && continue
+            ts = String(get(row, :finished_at, ""))
+            ts > RECENT_SINCE[] && (RECENT_SINCE[] = ts)
+            prime && (_seen_only!(id); continue)
+            status = String(get(row, :status, ""))
+            # Report only what the live stream never delivered — a frame that already arrived is
+            # ignored here and was announced when it landed.
+            if _note_terminal!(id, status) != :ignored
+                push_event!("status", string(col(BOLD, short(id)), " ",
+                            col(status_colour(status), status),
+                            col(DIM, " (outcome poll)"));
+                            colour = status_colour(status))
+            end
+        end
+    end
+    nothing
+end
+
+function refresh_recent!(; prime::Bool = false)
+    try
+        since = HTTP.escapeuri(RECENT_SINCE[])
+        r = HTTP.get("$HTTP_BASE/api/tasks/recent?since=$since";
+                     connect_timeout=2, readtimeout=3, retry=false, status_exception=false)
+        # An older server has no such route — degrade to WS-only counting rather than erroring.
+        r.status == 200 || return false
+        _apply_recent!(JSON3.read(String(r.body)); prime = prime)
+        return true
+    catch
+        return false
+    end
+end
+
 # ── Pool occupancy snapshot (GET /api/pools → limit + running + queued per pool) ──
 function refresh_pools!()
     try
@@ -248,8 +317,20 @@ function handle_ws(raw::AbstractString)
     type = String(get(msg, :type, ""))
     lock(LOCK) do
         if type == "task:status"
-            id = String(get(msg, :taskId, "")); (isempty(id) || id in SEEN_TERM) && return
+            id = String(get(msg, :taskId, "")); isempty(id) && return
             status = String(get(msg, :status, ""))
+            # Already finished and counted? Then this is a repeat sighting — with ONE exception, which
+            # is why the check can't just `return` here as it used to: a task the snapshot retired as
+            # "ended" whose real terminal frame turns up afterwards. Dropping that frame is what made
+            # the ended→real-outcome correction in `_note_terminal!` unreachable from this path, so a
+            # late `done` was discarded and the run stayed counted as "outcome unseen" forever.
+            if id in SEEN_TERM
+                status in TERMINAL && _note_terminal!(id, status) === :corrected &&
+                    push_event!("status", string(col(BOLD, short(id)), " ",
+                                col(status_colour(status), status), col(DIM, " (late frame)"));
+                                colour = status_colour(status))
+                return
+            end
             # Non-scheduler producers (batch movies, jobs) carry fun/pool on the event itself — they
             # never hit the /api/tasks snapshot, so without this their rows show a blank function AND a
             # blank pool ("floating in space"). Prefer the event's values; fall back to the snapshot's.
@@ -462,14 +543,19 @@ function run_console()
                 # tasks from the previous server session would linger forever (we only ever add rows).
                 lock(LOCK) do
                     empty!(TASKS); empty!(EVENTS); empty!(LOGS); empty!(SEEN_TERM); empty!(POOLS)
-                    empty!(ENDED_IDS)
+                    empty!(ENDED_IDS); RECENT_SINCE[] = ""
                     for k in keys(TALLY); TALLY[k] = 0; end
                 end
-                # seed the snapshot, then keep it fresh + keep the socket alive
+                # seed the snapshot, then keep it fresh + keep the socket alive. The prime pass fast-
+                # forwards past outcomes that predate this connection without counting them.
+                refresh_recent!(; prime = true)
                 refresh_snapshot!(); STREAM_MODE || refresh_pools!()
                 STREAM_MODE || render()
                 @async while connected[]
-                    try sleep(2); refresh_snapshot!(); STREAM_MODE || refresh_pools!(); STREAM_MODE || render() catch end
+                    # outcomes BEFORE the snapshot: learn how a task ended in the same poll that
+                    # notices it left the in-flight set, so it is never retired as "outcome unseen"
+                    # while the server can still say what happened.
+                    try sleep(2); refresh_recent!(); refresh_snapshot!(); STREAM_MODE || refresh_pools!(); STREAM_MODE || render() catch end
                 end
                 @async while connected[]
                     try
