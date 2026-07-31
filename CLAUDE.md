@@ -625,11 +625,40 @@ timing are acquisition properties, and the default is the store the importer syn
 into, so reading a processed variant would make the answer depend on what happens to be selected
 for viewing.
 
-**A `unit` on the t axis means the interval is KNOWN.** Every writer falls the t scale back to 1.0
-when there is no `TimeIncrement`, so a unit-less t scale is a placeholder, not a reading. Writers
-must not stamp a unit on it (`create_multiscales`), and readers must not trust one without it
-(`zarr_utils.read_time_increment`, Julia `read_ome_metadata`) — otherwise "we don't know" silently
-becomes "1 second per frame".
+---
+
+## Calibration — three copies, one stamp
+
+Physical calibration (`PhysicalSize*`, `TimeIncrement`, and their units) is stored **three times**,
+because three consumers need it in three formats. That is fine. What is not fine is writing them
+from different sources — every calibration bug so far has been one copy landing and its partner
+silently not.
+
+| Copy | Consumer | Written by |
+|---|---|---|
+| `ccid.json` `meta` | all Julia analysis, via `img_physical_sizes` | `_merge_zarr_meta_into_ccid!`, `api_images_meta_set` |
+| NGFF `.zattrs` scale + axis units | napari, coastal (`read_scale`/`read_time_increment`) | `zarr_utils.write_calibration` |
+| OME-XML `<Pixels>` | every Python task, via `DimUtils` | `zarr_utils.write_calibration` |
+
+**Rules:**
+
+1. **`ccid.json` is authoritative.** It holds the human corrections and the numbers analysis
+   computes with. The two store copies are derived; when they disagree with ccid, they are wrong.
+2. **One stamp writes both store copies.** `zarr_utils.write_calibration(store, dim_utils)` writes
+   the NGFF `.zattrs` *and* the OME-XML `<Pixels>` from one derivation
+   (`zarr_utils.calibration_for_axes`). Every task runner calls it after the pixels and the sidecar
+   are in place. Never write one copy on its own.
+3. **Julia mirrors it for values Python cannot see** — the per-plane DeltaT interval, the ImageJ Z
+   fix. `sync_zarr_calibration!` is the same stamp against the same two copies, and
+   `resync_ome_meta!` re-applies it from ccid, which is the repair path for a stale store (no
+   re-import). The two implementations cannot call each other, so they each carry a unit table;
+   `app/test/runtests.jl` → *"calibration writers agree across languages"* stamps one fixture with
+   each and compares. **If you touch either stamp, that test is the contract.**
+4. **A `unit` on the t axis means the interval is KNOWN.** Every writer falls the t scale back to
+   1.0 when there is no `TimeIncrement`, so a unit-less t scale is a placeholder, not a reading.
+   Writers must not stamp a unit on it, and readers must not trust one without it
+   (`read_time_increment`, Julia `read_ome_metadata`) — otherwise "we don't know" silently becomes
+   "1 second per frame".
 
 ---
 

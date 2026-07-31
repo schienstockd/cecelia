@@ -130,6 +130,104 @@ class TimeAxisUnitTest(unittest.TestCase):
         self.assertEqual(axes["t"].get("unit"), "second")
         self.assertEqual(zu.read_time_increment(path), 10.0)
 
+    def test_streaming_writer_matches_create_multiscales(self):
+        """`open_multiscales_for_writing` is what drift/AF/cellpose correction write through. It
+        derived its own calibration and omitted units, so every corrected store shipped a unit-less
+        t axis — the divergence its own docstring said could not happen."""
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        xml = _OME_XML_TIMELAPSE.format(extra="").replace(
+            'SizeT="3"', 'SizeT="3" TimeIncrement="10.0" TimeIncrementUnit="s"')
+        du = DimUtils(ome_types.from_xml(xml), use_channel_axis=True)
+        du.calc_image_dimensions((3, 2, 4, 3))
+
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        a = os.path.join(d, "batch.ome.zarr")
+        zu.create_multiscales(da.from_array(np.zeros((3, 2, 4, 3), dtype=np.uint16),
+                                            chunks=(3, 2, 4, 3)), a, dim_utils=du, nscales=1)
+        b = os.path.join(d, "stream.ome.zarr")
+        zu.open_multiscales_for_writing(b, (3, 2, 4, 3), np.uint16, du, nscales=1)
+
+        self.assertEqual(zarr.open_group(a, mode="r").attrs["multiscales"],
+                         zarr.open_group(b, mode="r").attrs["multiscales"])
+        self.assertEqual(zu.read_time_increment(b), 10.0)
+
+
+class WriteCalibrationTest(unittest.TestCase):
+    """`write_calibration` stamps BOTH on-disk copies from one derivation.
+
+    The failure it removes: `create_multiscales` wrote the NGFF scale from `dim_utils` while
+    `save_meta_in_zarr` copied the OME-XML verbatim from the SOURCE store, so the two came from
+    different places and nothing reconciled them.
+    """
+
+    def _store(self, xml, shape=(3, 2, 4, 3), sidecar=True):
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        from cecelia.utils import ome_xml_utils as ox
+        du = DimUtils(ome_types.from_xml(xml), use_channel_axis=True)
+        du.calc_image_dimensions(shape)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        path = os.path.join(d, "img.ome.zarr")
+        zu.create_multiscales(da.from_array(np.zeros(shape, dtype=np.uint16), chunks=shape),
+                              path, dim_utils=du, nscales=1)
+        if sidecar:
+            # a STALE sidecar, as if copied from a source with different calibration
+            stale = ome_types.from_xml(xml)
+            stale.images[0].pixels.physical_size_x = 99.0
+            stale.images[0].pixels.time_increment = 99.0
+            ox.write_ome_xml(path, stale)
+        return path, du
+
+    def test_reconciles_a_stale_sidecar_to_the_ngff_values(self):
+        from cecelia.utils import ome_xml_utils as ox
+        xml = _OME_XML_TIMELAPSE.format(extra="").replace(
+            'SizeT="3"', 'SizeT="3" TimeIncrement="10.0" TimeIncrementUnit="s"')
+        path, du = self._store(xml)
+        self.assertEqual(ox.load_ome_xml(path).images[0].pixels.physical_size_x, 99.0)
+
+        self.assertTrue(zu.write_calibration(path, du))
+        px = ox.load_ome_xml(path).images[0].pixels
+        self.assertEqual(px.physical_size_x, 0.5)
+        self.assertEqual(px.time_increment, 10.0)
+        # both copies now say the same thing, whichever a consumer happens to read
+        self.assertEqual(zu.read_time_increment(path), 10.0)
+        self.assertEqual(ox.read_time_increment(path), 10.0)
+        self.assertEqual(ox.read_scale_from_ome_xml(path, ["t", "c", "y", "x"])[3], 0.5)
+
+    def test_unknown_interval_is_not_stamped_into_the_xml_either(self):
+        """The gate has to hold on both sides — writing the 1.0 placeholder into `<Pixels>` would
+        re-create the divergence from the other direction."""
+        from cecelia.utils import ome_xml_utils as ox
+        path, du = self._store(_OME_XML_TIMELAPSE.format(extra=""))   # no TimeIncrement
+        zu.write_calibration(path, du)
+        self.assertEqual(ox.load_ome_xml(path).images[0].pixels.time_increment, 99.0)  # left alone
+        self.assertIsNone(zu.read_axis_units(path).get("t"))
+
+    def test_no_sidecar_still_writes_the_ngff_half(self):
+        xml = _OME_XML_TIMELAPSE.format(extra="").replace(
+            'SizeT="3"', 'SizeT="3" TimeIncrement="10.0" TimeIncrementUnit="s"')
+        path, du = self._store(xml, sidecar=False)
+        self.assertTrue(zu.write_calibration(path, du))
+        self.assertEqual(zu.read_time_increment(path), 10.0)
+
+    def test_idempotent_and_preserves_other_multiscales_keys(self):
+        xml = _OME_XML_TIMELAPSE.format(extra="").replace(
+            'SizeT="3"', 'SizeT="3" TimeIncrement="10.0" TimeIncrementUnit="s"')
+        path, du = self._store(xml, sidecar=False)
+        g = zarr.open_group(path, mode="a")
+        ms = g.attrs["multiscales"]; ms[0]["version"] = "0.4"; ms[0]["name"] = "keep me"
+        g.attrs["multiscales"] = ms
+
+        zu.write_calibration(path, du)
+        first = zarr.open_group(path, mode="r").attrs["multiscales"]
+        zu.write_calibration(path, du)
+        self.assertEqual(first, zarr.open_group(path, mode="r").attrs["multiscales"])
+        self.assertEqual(first[0]["version"], "0.4")
+        self.assertEqual(first[0]["name"], "keep me")
+
 
 class CreateMultiscalesAxesOverrideTest(unittest.TestCase):
     """`axes=` lets a caller declare the axes of the array it is actually storing.

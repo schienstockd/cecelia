@@ -86,6 +86,11 @@ def run(params):
         # it to match the data we just wrote (downstream reads dtype from the zarr array, but keep
         # the sidecar honest for any OME-XML consumer).
         ome_xml_utils.change_pixel_type(staging, 'uint8')
+        # Both on-disk copies of the calibration, from one derivation — the NGFF scale/units
+        # and the OME-XML <Pixels> attrs. `save_meta_in_zarr` copies the source sidecar
+        # verbatim, so without this the two are written from different sources and can
+        # disagree. See zarr_utils.write_calibration.
+        zarr_utils.write_calibration(staging, dim_utils)
 
     with open(result_path, 'w') as f:
         json.dump({'channels': channels}, f)

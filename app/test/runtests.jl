@@ -6656,6 +6656,97 @@ end
             @test Cecelia.series_base(joinpath(tempdir(), "nope-$(rand(UInt32))")) isa String
         end
 
+        # ── Cross-language: the Julia and Python calibration stamps must agree ──
+        # Calibration lives in two on-disk copies (NGFF `.zattrs`, OME-XML `<Pixels>`) and has two
+        # writers that cannot call each other: Python `zarr_utils.write_calibration` (used by every
+        # task runner) and Julia `sync_zarr_calibration!` (the importer + metadata editor). Each
+        # therefore carries its own unit table and its own idea of which axis gets what. This is the
+        # only thing that stops them drifting: same stale store, one stamped by each, byte-compared.
+        @testset "calibration writers agree across languages" begin
+            pyroot  = joinpath(dirname(dirname(@__DIR__)), "python")
+            haspy   = success(pipeline(addenv(`python -c "import ome_types, zarr, dask, cecelia"`,
+                                              "PYTHONPATH" => pyroot);
+                                       stdout = devnull, stderr = devnull))
+            if !haspy
+                @test_skip "analysis-env Python (ome_types/zarr/dask) not importable"
+            else
+                mktempdir() do d
+                    a, b = joinpath(d, "py.ome.zarr"), joinpath(d, "jl.ome.zarr")
+                    script = joinpath(d, "fixture.py")
+                    write(script, """
+import sys, numpy as np, dask.array as da, ome_types, zarr
+import cecelia.utils.zarr_utils as zu, cecelia.utils.ome_xml_utils as ox
+from cecelia.utils.dim_utils import DimUtils
+XML = '''<?xml version="1.0" encoding="UTF-8"?>
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
+  <Image ID="Image:0" Name="x"><Pixels ID="Pixels:0" DimensionOrder="XYZCT" Type="uint16"
+    SizeT="3" SizeC="2" SizeZ="5" SizeY="4" SizeX="3"
+    PhysicalSizeX="0.5" PhysicalSizeXUnit="\\u00b5m" PhysicalSizeY="0.5" PhysicalSizeYUnit="\\u00b5m"
+    PhysicalSizeZ="2.0" PhysicalSizeZUnit="\\u00b5m" TimeIncrement="10.0" TimeIncrementUnit="s">
+    <Channel ID="Channel:0:0" SamplesPerPixel="1"/><Channel ID="Channel:0:1" SamplesPerPixel="1"/>
+    <MetadataOnly/></Pixels></Image></OME>'''
+SHAPE = (3, 2, 5, 4, 3)
+du = DimUtils(ome_types.from_xml(XML), use_channel_axis=True)
+du.calc_image_dimensions(SHAPE)
+for p in sys.argv[1:3]:
+    zu.create_multiscales(da.from_array(np.zeros(SHAPE, dtype=np.uint16), chunks=SHAPE),
+                          p, dim_utils=du, nscales=2)
+    # Reproduce the shipped bug on BOTH stores: NGFF t back to the unit-less 1.0 placeholder and a
+    # sidecar carrying someone else's numbers, exactly what a half-landed sync left behind.
+    g = zarr.open_group(p, mode='a'); ms = g.attrs['multiscales']
+    ms[0]['axes'] = [{k: v for k, v in ax.items() if not (ax['name'] == 't' and k == 'unit')}
+                     for ax in ms[0]['axes']]
+    for ds in ms[0]['datasets']:
+        ds['coordinateTransformations'][0]['scale'][0] = 1.0
+    g.attrs['multiscales'] = ms
+    stale = ome_types.from_xml(XML)
+    stale.images[0].pixels.physical_size_z = 99.0
+    stale.images[0].pixels.time_increment  = 99.0
+    ox.write_ome_xml(p, stale)
+zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store only
+""")
+                    @test success(pipeline(addenv(`python $script $a $b`, "PYTHONPATH" => pyroot);
+                                           stdout = devnull, stderr = devnull))
+
+                    # the JULIA stamp, same calibration, on the second store
+                    Cecelia.sync_zarr_calibration!(b, Dict{String,Any}(
+                        "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5, "PhysicalSizeZ" => 2.0,
+                        "PhysicalSizeUnit" => "micrometer",
+                        "TimeIncrement" => 10.0, "TimeIncrementUnit" => "second"))
+
+                    # NGFF half — identical axes (incl. units) and identical per-level scales.
+                    # Compared field-by-field, not as raw JSON: the two writers emit the same keys in
+                    # different ORDER, which is meaningless to every reader.
+                    za, zb = (JSON3.read(read(joinpath(p, ".zattrs"), String))[:multiscales][1]
+                              for p in (a, b))
+                    axkey(ms) = [(string(get(ax, :name, "")), string(get(ax, :type, "")),
+                                  string(get(ax, :unit, ""))) for ax in ms[:axes]]
+                    sckey(ms) = [(string(get(d, :path, "")),
+                                  collect(Float64, first(d[:coordinateTransformations])[:scale]))
+                                 for d in ms[:datasets]]
+                    @test axkey(za) == axkey(zb)
+                    @test sckey(za) == sckey(zb)
+                    # …and it is the RIGHT answer, not merely the same wrong one
+                    @test read_ome_metadata(a)["TimeIncrement"] == 10.0
+                    @test read_ome_metadata(a)["PhysicalSizeZ"] == 2.0
+
+                    # OME-XML half — same <Pixels> calibration attrs from both stamps
+                    for attr in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ",
+                                 "PhysicalSizeZUnit", "TimeIncrement", "TimeIncrementUnit")
+                        vals = map((a, b)) do p
+                            tag = match(r"<Pixels\b[^>]*>",
+                                        read(joinpath(p, "OME", "METADATA.ome.xml"), String)).match
+                            m = match(Regex(attr * "=\"([^\"]*)\""), tag)
+                            isnothing(m) ? nothing : m.captures[1]
+                        end
+                        @test vals[1] == vals[2] != nothing
+                    end
+                    @test occursin("TimeIncrement=\"10.0\"",
+                                   read(joinpath(a, "OME", "METADATA.ome.xml"), String))
+                end
+            end
+        end
+
         # ── _merge_zarr_meta_into_ccid!: overwrite=true is authoritative; false is fill-only ──
         @testset "merge fill-only vs overwrite" begin
             proj = create_project!(name = "meta-merge-$(rand(1000:9999))")
