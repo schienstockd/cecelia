@@ -116,27 +116,33 @@ def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_nam
   return result
 
 
-def preview_region_from_corners(corners, factors, axes, ndisplay=2):
+def preview_region_from_corners(corners, factors, axes, ndisplay=2, current_step=None):
     """A viewer's visible extent → the task-preview region contract, in **level-0 pixels**.
 
     ``corners``: napari's ``layer.corner_pixels``, shape (2, ndim) — ``[min, max]`` in the layer's own
     DATA coordinates at its current ``data_level``. ``factors``: that level's row of
     ``layer.downsample_factors``. ``axes``: the layer's axis letters in order (channel already
-    dropped), e.g. ``['t','z','y','x']``.
+    dropped), e.g. ``['t','z','y','x']``. ``current_step``: ``viewer.dims.current_step``, aligned with
+    ``axes`` — the DATA index per dimension.
 
     Returns ``{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int|None, "t": int|None, "ndisplay": int}``.
 
-    Pure, and separated from the bridge because two conversions here are silently wrong if fumbled and
-    neither is visible in the result:
+    **Two different sources, deliberately, and this is the part that bit us:**
+
+    * The visible XY box comes from ``corner_pixels``.
+    * The current plane/timepoint comes from ``current_step``. It CANNOT come from corner_pixels: for a
+      dimension that isn't being displayed, napari leaves corner_pixels at ``[0, 0]`` rather than the
+      slider position. An earlier version of this function read z/t off corner_pixels on the assumption
+      that min == max == the current index; on a live viewer sitting at t=44, z=9 it returned t=0, z=0
+      and previewed drift-correction padding. (The unit test that "confirmed" the assumption built a
+      fresh layer, whose step is 0 anyway — 0 == 0 proved nothing. Hence the live-viewer test below.)
+
+    Two conversions on the XY box are also silently wrong if fumbled, and invisible in the result:
 
     * corner_pixels is at ``data_level``, **not level 0** — a zoomed-out viewer reports small numbers
       that must be scaled up, or the preview segments the top-left corner of the image.
     * corner_pixels bounds are **inclusive**; the contract is half-open — so +1 before scaling, or the
       preview quietly drops its last row and column.
-
-    A dimension that isn't displayed (z in 2D mode, t always) has min == max, which IS the current
-    index — so the same array gives both the visible box and the current plane, with no second
-    coordinate system to reconcile.
     """
     corners = np.asarray(corners)
     factors = np.asarray(factors, dtype=float)
@@ -145,16 +151,22 @@ def preview_region_from_corners(corners, factors, axes, ndisplay=2):
     if corners.shape[1] != len(axes) or len(factors) != len(axes):
         raise ValueError(
             f"axes {list(axes)} do not match corners {corners.shape} / factors {len(factors)}")
+    step = list(current_step) if current_step is not None else None
+    if step is not None and len(step) != len(axes):
+        raise ValueError(f"current_step {step} does not match axes {list(axes)}")
 
     out = {"xy": {}, "z": None, "t": None, "ndisplay": int(ndisplay)}
     for i, ax in enumerate(axes):
         ax = str(ax).upper()
-        lo = int(np.floor(corners[0][i] * factors[i]))
         if ax in ("Y", "X"):
+            lo = int(np.floor(corners[0][i] * factors[i]))
             hi = int(np.ceil((corners[1][i] + 1) * factors[i]))   # inclusive → half-open
             out["xy"][ax] = [max(0, lo), hi]
         elif ax in ("Z", "T"):
-            out[ax.lower()] = max(0, lo)
+            # the slider, NOT corner_pixels (see above). No step given → fall back to the corner, which
+            # is right only for a viewer that has never been moved.
+            idx = step[i] if step is not None else corners[0][i]
+            out[ax.lower()] = max(0, int(idx))
     return out
 
 

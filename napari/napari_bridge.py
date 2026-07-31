@@ -614,8 +614,13 @@ class NapariState:
                    if getattr(layer, "multiscale", False) else np.ones(len(axes)))
         # the level scaling + inclusive→half-open conversion live in napari_utils, where they are
         # unit-tested without needing a viewer
+        # z/t come from the SLIDER, not from corner_pixels — napari leaves corner_pixels at [0, 0]
+        # for a dimension it isn't displaying, so reading the plane off it previews whatever is at
+        # index 0 (on a drift-corrected stack, that is padding).
         out = napari_utils.preview_region_from_corners(
-            layer.corner_pixels, factors, axes, ndisplay=self._viewer.dims.ndisplay)
+            layer.corner_pixels, factors, axes,
+            ndisplay=self._viewer.dims.ndisplay,
+            current_step=self._viewer.dims.current_step)
         print(f"[preview_region] level={getattr(layer, 'data_level', 0)} {out}", flush=True)
         return out
 
