@@ -30,6 +30,26 @@ export const napariApi = {
   close: () => svcPost('/api/napari/close'),
 }
 
+/**
+ * Task-preview worker (port 7656) — the resident process that runs a task's real compute over the
+ * region the viewer is showing.
+ *
+ * `status` is the ONE way to learn which image the viewer has open: the backend tracks it, and a caller
+ * that guesses instead acts on an image the user is not looking at. `run` deliberately passes
+ * `imageUid` for the backend to CHECK, not to select — a mismatch is a 409, never a silent switch.
+ */
+export const previewApi = {
+  status: async (): Promise<any> => {
+    const res = await fetch('/api/preview/status')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  start: () => svcPost('/api/preview/start'),
+  stop: (valueName?: string) => svcPost('/api/preview/stop', { valueName }),
+  run: (body: { projectUid: string; imageUid: string; valueName: string; params: object }) =>
+    svcPost('/api/preview/run', body),
+}
+
 /** Per-project observer session: the assistant session id + cumulative token totals. */
 export interface ObserverPass {
   at: string

@@ -18,6 +18,8 @@ import { taskGatingReason } from '../utils/taskGating'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import TaskPreviewControls from '../components/TaskPreviewControls.vue'
+import { hasPreviewableModel } from '../utils/taskPreview'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -89,6 +91,18 @@ const paramValues = ref<ParamValues>({})
 // single config applied to ALL selected images, so with several selected we show the set-level
 // last-used default rather than any single image's record.
 const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
+
+// Can this task be previewed? Gated on the params actually carrying a cellpose `models` bag with a
+// base entry — the only compute the worker knows how to run.
+//
+// This is INTERIM. Previewability should be a declared trait on the task (the `live_outputs` shape,
+// including a CompositeTask overload — docs/todo/TASK_PREVIEW_PLAN.md Decision 4), surfaced through
+// GET /api/tasks like `live_outputs` is. That trait is not built yet. Inferring from the params is
+// still better than a hardcoded fun_name list here, which would go stale the moment a task is added,
+// but it does mean a future previewable task that isn't cellpose-shaped won't light up until the trait
+// exists. Exactly one image must be selected: the preview shows ONE region of ONE image.
+const canPreview = computed(() =>
+  drivingImageUid.value !== '' && hasPreviewableModel(paramValues.value as Record<string, unknown>))
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
@@ -351,6 +365,15 @@ const { width: sidebarWidth, onResizeStart } =
         <i class="pi pi-play" />
         {{ runLabel }}
       </button>
+
+      <!-- Preview: run these params on the region napari is showing, before committing to a full run -->
+      <TaskPreviewControls
+        :project-uid="projectMeta.current?.uid ?? ''"
+        :image-uid="drivingImageUid"
+        :value-name="String(paramValues.valueName ?? 'default')"
+        :params="paramValues as Record<string, unknown>"
+        :previewable="canPreview"
+      />
 
       <div class="pool-row" v-if="pools.length > 0">
         <span class="pool-label cc-muted cc-fs-xs"
