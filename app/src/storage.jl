@@ -99,6 +99,12 @@ function project_storage_summary(proj_uid::String)::Dict{String,Any}
         "imageBytes"       => image_bytes,   # image stores only (see above) — not the whole project dir
         "reclaimableBytes" => total_reclaim,
         "reclaimable"      => reclaimable,
+        # Leftovers a cancelled/crashed run abandoned: staging dirs, import scratch, unregistered and
+        # truncated stores. Distinct from `reclaimable` above — that is real data the user could choose
+        # to drop, this is bytes nothing can reach. Reported here so the cleanup ANNOUNCES itself
+        # instead of waiting to be discovered in Data patches; freed by the `store-debris` patch, which
+        # uses this same detector.
+        "debris"           => store_debris_summary(proj),
     )
 end
 

@@ -17,6 +17,27 @@ export interface StorageSummary {
   imageBytes: number   // image OME-ZARR stores only — not labels/labelProps/other task-dir data
   reclaimableBytes: number
   reclaimable: ReclaimableImage[]
+  /** Bytes nothing can reach: leftovers a cancelled/crashed run abandoned (staging dirs, import
+   *  scratch, unregistered or truncated stores). DISTINCT from `reclaimable`, which is real data the
+   *  user could choose to drop. Freed by the `store-debris` data patch, which uses the same detector
+   *  (`store_sweep.summarise`), so the number here is what that patch would actually free. */
+  debris?: StorageDebris
+}
+
+export interface StorageDebris {
+  count: number
+  bytes: number
+  /** items a sweep would report but NOT delete — a store touched recently enough to look in-flight */
+  activeSkipped: number
+  byWhy: Record<string, number>
+}
+
+/** One short line for the storage box, or '' when there is nothing to say. The box should ANNOUNCE
+ *  leftover bytes rather than wait to be discovered in Data patches — but say nothing when clean. */
+export function debrisLine(d: StorageDebris | null | undefined): string {
+  if (!d || d.count <= 0) return ''
+  const what = d.count === 1 ? '1 leftover item' : `${d.count} leftover items`
+  return `${what} · ${formatBytes(d.bytes)}`
 }
 
 /** Human-readable size. Binary units (1024); one decimal below 100, integer above. */

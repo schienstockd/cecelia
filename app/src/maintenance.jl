@@ -25,14 +25,46 @@ const MAINTENANCE_PATCHES = MaintenancePatch[
     ),
     MaintenancePatch(
         "store-debris",
-        "Remove leftover staging stores",
-        "Delete `*.partial` / `*.superseded` store directories left by cancelled or crashed runs. " *
-        "They hold no registered data and nothing in the UI can see them, so they just occupy disk. " *
+        "Remove leftover stores",
+        "Delete store directories left by cancelled or crashed runs: `*.partial`/`*.superseded` " *
+        "staging dirs, import scratch (`_stage_src`), stores no `ccid.json` entry names, and stores " *
+        "whose metadata declares more pyramid levels than exist on disk. Detection is structural, " *
+        "not by name — a cancelled import writes a half-finished store at the FINAL name, so a name " *
+        "list would miss it. Nothing in the UI can see any of it, so it just occupies disk. " *
         "Run it with no tasks in flight — a store still being written is reported and skipped, but " *
         "that check is time-based, not authoritative. Dry-run lists what it found; Apply deletes.",
         "utils/store_sweep.py",
     ),
 ]
+
+"""
+    store_debris_summary(proj) -> Dict
+
+Counts + bytes the `store-debris` patch would free, without deleting anything. Runs the SAME detector
+the patch runs (`store_sweep.summarise` via `run_py`), rather than re-counting `*.partial` names in
+Julia — that second implementation would under-report exactly the cases structural detection exists
+for (a cancelled import writes a half-finished store at its FINAL name).
+
+Spawning Python makes this cost a subprocess, which is why it belongs to the on-demand storage Scan and
+not to anything that runs on page open. Returns an empty summary on any failure: the storage box is
+advisory, and a broken sweep must not fail the scan the user actually asked for.
+"""
+function store_debris_summary(proj::CciaProject)::Dict{String,Any}
+    empty = Dict{String,Any}("count" => 0, "bytes" => 0, "activeSkipped" => 0, "byWhy" => Dict())
+    run_dir = task_run_dir(proj.root)
+    result  = joinpath(run_dir, "store_debris.$(string(rand(UInt32); base = 16)).result.json")
+    try
+        ok = run_py("utils/store_sweep.py", (; root = proj.root, resultPath = result), run_dir)
+        (ok && isfile(result)) || return empty
+        Dict{String,Any}(String(k) => v for (k, v) in
+                         pairs(JSON3.read(read(result, String), Dict{String,Any})))
+    catch e
+        @warn "Could not summarise store debris" exception = e
+        empty
+    finally
+        rm(result; force = true)
+    end
+end
 
 maintenance_patches()::Vector{MaintenancePatch} = MAINTENANCE_PATCHES
 function maintenance_patch(id::AbstractString)::Union{MaintenancePatch,Nothing}
