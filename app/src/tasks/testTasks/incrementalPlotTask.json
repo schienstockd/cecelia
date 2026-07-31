@@ -1,8 +1,24 @@
 {
   "fun_name": "testTasks.incrementalPlotTask",
+  "task": "incrementalPlotTask",
+  "label": "Test incremental plot task",
   "resource_pool": "cpu",
-  "params": {
-    "label": { "type": "text", "default": "incremental plot" },
-    "debounce_ms": { "type": "int", "default": 500, "min": 0, "max": 10000 }
-  }
+  "params": [
+    {
+      "key": "label",
+      "label": "Log label",
+      "type": "text",
+      "default": "incremental plot",
+      "tip": "Text written to the task log"
+    },
+    {
+      "key": "debounce_ms",
+      "label": "Debounce (ms)",
+      "type": "int",
+      "default": 500,
+      "min": 0,
+      "max": 10000,
+      "tip": "Delay before the incremental plot redraws"
+    }
+  ]
 }

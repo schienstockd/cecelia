@@ -20,7 +20,7 @@
     {
       "key": "rscript",
       "label": "Rscript path (optional)",
-      "type": "string",
+      "type": "text",
       "default": "",
       "tip": "Rscript that reads the legacy ccid.rds; blank = the import default"
     }
