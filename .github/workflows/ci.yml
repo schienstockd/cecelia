@@ -40,7 +40,29 @@ jobs:
       fail-fast: false
       matrix:
         # macos-latest is arm64 (M-series) — the exact osx-arm64 target the workspace builds for.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        #
+        # `cpu_target` is what makes the depot cache below reusable. Julia compiles package images to
+        # NATIVE code and validates them against the running CPU, and GitHub's x86 runner pools are
+        # heterogeneous — a cache built on a Zen 3 machine is rejected wholesale on the next runner
+        # ("Unable to find compatible target in cached code image. Target 0 (znver3): Rejecting this
+        # target due to use of runtime-disabled features"), so Windows re-precompiled all 166 deps on
+        # every run despite a healthy 261 MB cache hit. A multiversioned target emits a portable
+        # baseline alongside the fast paths, which is how official Julia binaries ship.
+        #
+        # macOS keeps `native`: that fleet is uniform Apple Silicon and already gets cache hits, so
+        # there is nothing to buy and multiversioning would only cost image size.
+        #
+        # NOTE: this env var participates in the cache key (include-matrix), so changing it starts a
+        # fresh cache rather than silently restoring images built for the old target.
+        include:
+          - os: ubuntu-latest
+            cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
+          - os: windows-latest
+            cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
+          - os: macos-latest
+            cpu_target: "native"
+    env:
+      JULIA_CPU_TARGET: ${{ matrix.cpu_target }}
     steps:
       - uses: actions/checkout@v5
 
@@ -61,6 +83,25 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+
+      # Cache the Julia depot — above all its `compiled/` precompilation cache, which is the single
+      # biggest cost in this workflow. Uncached, every run re-precompiled the whole graph from
+      # scratch and threw it away: "166 dependencies successfully precompiled in 243 seconds" on
+      # Windows (181s on Linux), plus another ~60s for the package env — ~5 of the Windows job's
+      # 17.6 minutes, on every run, forever.
+      #
+      # The key is workflow+job+matrix+OS, NOT a manifest hash, so it restores the most recent cache
+      # for this job and re-saves an updated one each run. A manifest change therefore costs one
+      # partial re-precompile rather than a full cold miss. Julia validates cache entries itself,
+      # so a stale entry can only cost time, never correctness.
+      #
+      # BUDGET: GitHub caps a repo at 10 GB and evicts least-recently-used. The three pixi caches
+      # already sit at ~9 GB, so these depots WILL push past the cap and something gets evicted.
+      # If the pixi caches start missing (watch `Install Pixi + Python env` — 30-75s warm), the knob
+      # is `cache-artifacts: false`: artifact downloads are only ~25s of the step, while `compiled/`
+      # is the ~300s that matters. Check with `gh cache list`.
+      - name: Cache Julia depot
+        uses: julia-actions/cache@v3
 
       # Instantiate the *server* project (api → pulls Cecelia from ../app). This precompiles
       # everything the server loads (incl. PythonCall/CondaPkg on first use — see TODO #00056).
