@@ -57,7 +57,32 @@ Previewability is a property of a task's *compute*, not of a category:
    (`cellpose_utils.py:121-134`). A one-plane preview runs the identical per-plane inference, so
    **diameter, boundaries and splitting are faithful**; what is missing is stitching, so **object counts and
    z-extents will differ from the run**. The warning should say that, not "results may vary".
-3. **Output is an unpromoted staging store at FULL image shape**, filled only in the previewed region.
+3. **The preview never touches disk. The worker returns the mask block; the viewer wraps it in a lazy
+   full-shape array** (Dominik, 2026-07-31: *"for preview specifically I would expect this to be removed
+   after preview finishes"*).
+
+   This reverses the store-based version below, and it reverses it back to something like the plan's
+   FIRST draft — with the piece that was missing then. The original objection to "no store" was that a
+   task cannot hand napari an array. True, but the worker is not on the task rail, and the amount of data
+   is one plane. The objection that killed the crop-shaped-array idea was that it needs a `translate` to
+   line up with the image. Also avoidable:
+
+       arr = da.zeros(full_label_shape, dtype=uint32, chunks=…)   # lazy, virtual
+       arr[t:t+1, z:z+1] = mask_block                             # only the previewed plane
+
+   Measured 2026-07-31: **6.9 MB peak RAM** to build that graph for a `(201, 20, 544, 548)` uint32 array
+   — nominally **4.8 GB**. Full shape, so it aligns with the image with no translate; lazy, so the zeros
+   cost nothing; and **nothing exists on disk to clean up**.
+
+   What this deletes: `staged_store(scratch=True)`, the whole question of who owns a preview's store, and
+   the lifecycle task that came with it. The store-based version accumulated one `*.partial` directory per
+   previewed image, invisible to `ccid.json`, forever — and worse, `store_sweep`'s 5-minute
+   active-window heuristic *refuses* to remove a store that was just previewed, so the Settings patch
+   could not clean it either. The sweep is a fine general broom once people know it is there; it is the
+   wrong answer for something that should never have been left behind.
+
+   (Superseded, kept because the reasoning is instructive:) *Output is an unpromoted staging store at FULL
+   image shape*, filled only in the previewed region.
    - Full shape means the layer aligns with the image for free; a crop-shaped layer renders at the origin
      and needs a translate.
    - The cost is negligible because zarr only materialises written chunks — measured 2026-07-31: a
@@ -237,6 +262,25 @@ denoising *inside* AF correction, not the cellpose denoise task.)
   it?
 - **One preview layer that replaces itself, or one per attempt?** Comparing attempt A with B is the actual
   job, which argues for keeping the previous one — but then eviction and naming need thought.
+
+## Observations from live testing (2026-07-31) — all tracked, none of them dropped
+
+Testing against Dominik's running viewer produced findings that unit tests could not have, listed here
+because side notes in a conversation do not survive it:
+
+| Observation | Where it went |
+|---|---|
+| The current plane came from `corner_pixels`, which napari pins at `[0, 0]` for a non-displayed dim — every preview segmented padding | **fixed** (`cefb254`), regression test uses the live numbers |
+| The test "confirming" that used a fresh layer, so it compared 0 to 0 and could not fail | test now says so; the lesson is a saved memory, not a repo item |
+| A one-shot preview is invisible the moment you move z — reads as broken | must re-run on view change, debounced, with a visible state |
+| An empty region and bad params both report "0 cells" | distinguish them from the tile's own max |
+| A preview's scratch store accumulated with nothing owning it | **removed the store entirely** (Decision 3) |
+| `store_sweep` cannot see import debris (`ccidImage.ome.zarr` written in place, `*.16bit.tmp.ome.zarr`, `_stage_src`) | its own item — the "run the sweep occasionally" model depends on it |
+| The Settings cleanup needs to announce itself, not be knowledge | report leftover bytes in the existing storage box |
+| 8 of 21 planes on a drift-corrected image are empty and every task processes them | `docs/TODO.md` **#00090** — pipeline-wide, not preview-specific |
+| The preview only handles the `base` model type, so a nuc+cyto run is not what the run produces | stated limitation, to fix or surface |
+| Nothing exposes which image the viewer has open, so out-of-band callers guess (I guessed wrong three times) | the API status route |
+| The worker is a fourth resident process with no pixi task, service-panel entry, or `stop` wiring | operational surface |
 
 ## Related
 

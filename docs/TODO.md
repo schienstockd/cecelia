@@ -146,6 +146,22 @@ preview at all, so it is planned as ONE mechanism with three consumers. Pairs wi
 [`docs/todo/SEG_QUALITY_PLAN.md`](todo/SEG_QUALITY_PLAN.md), which measures param quality objectively
 rather than visually.
 
+**#00090** — **A third of a drift-corrected stack can be empty, and every task still processes it**
+Measured 2026-07-31 on `k3Tx90` (project `kSUFux`… actually `4kS67f`, 201×20×544×548): drift correction
+expands the canvas and pads with zeros, and on that image **z 0–2 and z 16–20 are all-zero across every
+channel** — 8 of 21 planes. `EaMaVq` is the same (z 0–6 empty at t=0). The padding also MOVES per
+timepoint, since the shift differs per frame.
+
+Nothing downstream knows. A cellpose run segments all 21 planes including the 8 empty ones, so on this
+image roughly **38% of the GPU time produces nothing**, and measurement/tracking then carry the empty
+planes too. Surfaced by the task preview, where aiming at a padded plane returns "0 cells" and looks
+exactly like a parameter problem (see `docs/todo/TASK_PREVIEW_PLAN.md`).
+
+Worth quantifying before acting: whether skipping all-zero planes is safe for stitching (`stitch_threshold`
+links labels ACROSS z, so dropping interior planes would be wrong — but these are leading/trailing) and
+whether the win generalises or is specific to how much drift a movie has. A cheap first step is QC: record
+the empty-plane count per corrected image, which makes the cost visible without changing any behaviour.
+
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener
