@@ -15,12 +15,15 @@ What it does NOT do:
   (downsampling doesn't help — cellpose rescales to a canonical diameter, so cost tracks CELLS, not
   pixels), and that is not a preview. In 3D display mode it previews the current plane and reports
   `fallback2d` so the caller can say so.
-* **No real data.** Output goes to a `*.partial` scratch store (`staged_store(scratch=True)`) that is
-  never promoted, so nothing in `ccid.json` can name it and the `store-debris` patch sweeps it.
+* **Nothing on disk.** The mask block is RETURNED (`cecelia.utils.block_transfer`), not written. An
+  earlier design wrote a never-promoted scratch store and let the bridge open it; that put throwaway
+  bytes in the user's project tree, needed its own staging + sweep lifecycle, and left debris to
+  accumulate whenever a preview didn't finish cleanly. A preview is a picture, not data.
 
 Protocol: one JSON message per connection, same shape as the napari bridge.
     {"type": "ping"}     -> {"type": "ok"}
-    {"type": "preview", ...} -> {"type": "ok", "counts": …, "region": …, "fallback2d": bool}
+    {"type": "preview", ...} -> {"type": "ok", "counts": …, "region": …, "fallback2d": bool,
+                                 "mask": {shape/dtype/data}, "labelShape": …, "labelAxes": …}
 """
 import asyncio
 import json
@@ -28,11 +31,11 @@ import os
 import traceback
 
 import numpy as np
-import zarr
 
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
+from cecelia.utils.block_transfer import encode_block
 from cecelia.utils.cellpose_utils import CellposeUtils
 from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.segmentation_utils import count_labels
@@ -127,33 +130,6 @@ def _as_cyx(cropped, dim_utils):
     return arr[np.newaxis, ...]
 
 
-def _open_scratch_level0(staging, label_shape, label_axes, seg):
-    """Create (or reuse) the full-shape level-0 array in the scratch store.
-
-    Full image shape, written sparsely: zarr only materialises touched chunks, so this costs bytes,
-    not the store's nominal size — and a full-shape store means the preview layer lines up with the
-    image with no translate. Reused across previews so a viewer's lazy view stays valid; only the
-    region written changes. Chunking comes from the real label writer's own helper so a preview store
-    is laid out exactly like a run's."""
-    group = zarr.open_group(staging, mode="a", zarr_format=2)
-    if "multiscales" not in group.attrs:
-        # scale by axis NAME off dim_utils' own order — never zipped positionally against label_axes,
-        # which has dropped C (the A8 bug: a store that drops an axis inherits its neighbour's scale)
-        full = dict(zip(seg.dim_utils.im_dim_order, seg.dim_utils.im_scale()))
-        group.attrs["multiscales"] = zarr_utils.multiscales_metadata(
-            label_axes, 1,
-            scale_for_axis={ax: float(full.get(ax) or 1.0) for ax in label_axes})
-    shape = tuple(int(x) for x in label_shape)
-    if "0" in set(group.array_keys()):
-        level0 = group["0"]
-        if tuple(level0.shape) == shape:
-            return level0
-        del group["0"]                      # the image changed under us — start over
-    return group.create_array(
-        "0", shape=shape, chunks=seg._label_chunks(shape, label_axes),
-        dtype=seg.LABEL_DTYPE)
-
-
 def preview(msg):
     im_path = msg["imPath"]
     task_dir = msg["taskDir"]
@@ -174,8 +150,8 @@ def preview(msg):
         raise ValueError(f"empty preview region: {region.get('xy')!r}")
 
     # `SegmentationUtils.__init__` requires taskDir/outputValueName — it is built to own its output
-    # store. The preview never lets it write (we do that, into the scratch store), but the contract
-    # still has to be satisfied.
+    # store. A preview never writes one (the mask block is returned instead), so these only satisfy
+    # the constructor's contract; nothing in the preview path resolves them to a real path.
     seg = STATE.segmenter(
         {**params, "taskDir": task_dir, "outputValueName": value_name}, dim_utils)
     img_slices = slice_utils.crop_slice_tuple(
@@ -188,34 +164,40 @@ def preview(msg):
         len(label_axes), _axis_indices(dim_utils, exclude=("C",)), bounds)
 
     counts = {}
-    labels_dir = os.path.join(task_dir, "labels")
-    os.makedirs(labels_dir, exist_ok=True)
-    final = os.path.join(labels_dir, f"{value_name}.zarr")
+    block = None
+    block_shape = tuple(len(range(*s.indices(d)))
+                        for s, d in zip(label_slices, label_shape))
+    for key in sorted(models.keys()):
+        model_params = models[key]
+        match_as = str(model_params.get("matchAs", "base"))
+        if match_as != "base":
+            continue            # one type per preview: it is the primary you are judging
+        # Whole-image intensity statistics, applied to the crop: percentiles over the visible
+        # region alone would normalise differently from the run, so the preview would show a
+        # result the run cannot reproduce. Per MODEL and only when the run would do it, matching
+        # `predict_from_zarr`. Cached across previews — see `PreviewState.norm_params`.
+        norm_params = STATE.norm_params(seg, levels, im_path, model_params)
+        masks = seg.predict_slice(tile, model_params, norm_params)
+        # reshaped to the LABEL block shape (T/Z restored as length-1 axes) so the receiver can place
+        # it at `region` with no knowledge of how the tile was flattened for inference
+        block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
+        counts[match_as] = count_labels(masks)
 
-    with zarr_utils.staged_store(final, scratch=True) as staging:
-        level0 = _open_scratch_level0(staging, label_shape, label_axes, seg)
-        for key in sorted(models.keys()):
-            model_params = models[key]
-            match_as = str(model_params.get("matchAs", "base"))
-            if match_as != "base":
-                continue            # one type per preview: it is the primary you are judging
-            # Whole-image intensity statistics, applied to the crop: percentiles over the visible
-            # region alone would normalise differently from the run, so the preview would show a
-            # result the run cannot reproduce. Per MODEL and only when the run would do it, matching
-            # `predict_from_zarr`. Cached across previews — see `PreviewState.norm_params`.
-            norm_params = STATE.norm_params(seg, levels, im_path, model_params)
-            masks = seg.predict_slice(tile, model_params, norm_params)
-            block = tuple(len(range(*s.indices(d)))
-                          for s, d in zip(label_slices, level0.shape))
-            level0[label_slices] = np.reshape(
-                np.asarray(masks, dtype=level0.dtype), block)
-            counts[match_as] = count_labels(masks)
+    if block is None:
+        raise ValueError("no base model in preview params")
 
     return {
         "counts": counts,
         "region": {ax: list(v) for ax, v in bounds.items()},
         "fallback2d": fallback2d,
-        "store": os.path.basename(final) + zarr_utils.STAGING_SUFFIX,
+        "mask": encode_block(block),
+        # where the block belongs: the full label extent and its axis names, so the receiver can
+        # build a full-image-shape layer and needs no translate to line it up
+        "labelShape": [int(x) for x in label_shape],
+        "labelAxes": list(label_axes),
+        # NOT the scale: the receiver already holds the image's, and `add_labels` aligns a
+        # fewer-axis layer to the viewer BY NAME from `labelAxes`. Sending a second copy would be a
+        # second source of truth for calibration — which is how the A8 axis/scale mismatch happened.
         "valueName": value_name,
     }
 

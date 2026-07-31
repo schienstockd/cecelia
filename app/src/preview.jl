@@ -90,29 +90,86 @@ exactly the image version the run would.
 the decision of what that becomes (`preview_region_bounds`): one z-plane, clamped to the image, with
 a 2D fallback flagged when the viewer is in 3D. Julia does not second-guess it — one place decides.
 
-The output value_name is suffixed so a preview can never collide with a real segmentation's store,
-and it lands in a `*.partial` scratch store that is never promoted.
+The output value_name is the REAL one, unsuffixed. It used to be suffixed (`X__preview`) to keep a
+scratch store from colliding with the segmentation's own; there is no store now, so the suffix would
+only stop the preview layer from sharing a stem with `({vn}) Labels` — which is exactly what makes the
+two evict each other instead of stacking.
 """
 function preview_request(img::CciaImage, params::AbstractDict, region::AbstractDict;
                          value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
     in_value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     im_path = img_filepath(img, in_value_name)
     isnothing(im_path) && error("no image filepath for valueName='$in_value_name'")
+    preview_request(im_path, img._dir, params, region; value_name = value_name)
+end
+
+"""
+    preview_request(im_path, task_dir, params, region; value_name) -> Dict
+
+The explicit-paths form. The API layer uses this with the store the VIEWER currently has open, rather
+than re-resolving from `ccid.json`: the region comes from that same open layer's `corner_pixels`, so
+resolving the pixels independently could pair a region with a differently-shaped version of the image
+(a drift-corrected store is padded larger than its source) and silently preview the wrong area. One
+store supplies both, or neither.
+
+The API separately refuses to preview at all when the open version isn't the one the task would read —
+see `api/src/preview_api.jl`. That check is what makes this pairing safe rather than merely consistent.
+"""
+function preview_request(im_path::AbstractString, task_dir::AbstractString,
+                         params::AbstractDict, region::AbstractDict;
+                         value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
     Dict{String,Any}(
         "type"            => "preview",
-        "imPath"          => im_path,
-        "taskDir"         => img._dir,
-        "outputValueName" => preview_value_name(value_name),
+        "imPath"          => String(im_path),
+        "taskDir"         => String(task_dir),
+        "outputValueName" => String(value_name),
         "region"          => Dict{String,Any}(String(k) => v for (k, v) in region),
         "params"          => Dict{String,Any}(String(k) => v for (k, v) in params),
     )
 end
 
 """
-    preview_value_name(value_name) -> String
+    preview_show_command(reply; value_name) -> Dict
 
-The scratch value_name a preview writes under. Suffixed, so its store can never be confused with the
-real one for the same segmentation — and so the viewer can name the layer distinctly from a running
-run's live preview.
+The napari command that renders a worker reply. Julia is a PASS-THROUGH for the mask here: it moves an
+opaque payload from one resident process to the other and never decodes it (see
+`cecelia.utils.block_transfer` for the codec — one implementation, both Python ends).
+
+Kept as a pure function of the reply so the wiring is testable without either process running, and so
+the field names are asserted in one place rather than discovered at runtime.
 """
-preview_value_name(value_name::AbstractString)::String = string(value_name, "__preview")
+function preview_show_command(reply::AbstractDict;
+                              value_name::AbstractString = VERSIONED_DEFAULT_VAL,
+                              api_url::Union{AbstractString,Nothing} = nothing)::Dict{String,Any}
+    for key in ("mask", "labelShape", "labelAxes")
+        haskey(reply, key) || error("preview reply is missing '$key'")
+    end
+    cmd = Dict{String,Any}(
+        "type"        => "show_task_preview",
+        "value_name"  => String(get(reply, "valueName", value_name)),
+        "mask"        => reply["mask"],
+        "label_shape" => reply["labelShape"],
+        "label_axes"  => reply["labelAxes"],
+        "region"      => get(reply, "region", Dict{String,Any}()),
+        "show"        => true,
+    )
+    # where the viewer posts "the view moved" back to. Only sent with a SHOWN preview, so the viewer
+    # listens exactly while something is chasing the view (see `_attach_view_listener`).
+    api_url === nothing || (cmd["api_url"] = String(api_url))
+    cmd
+end
+
+"""
+    show_task_preview!(v::NapariViewer, reply; value_name) -> NapariViewer
+
+Send a worker reply to the viewer. `hide_task_preview!` removes the layer — toggling the preview off,
+or a preview that found nothing, both go through it.
+"""
+show_task_preview!(v::NapariViewer, reply::AbstractDict;
+                   value_name::AbstractString = VERSIONED_DEFAULT_VAL,
+                   api_url::Union{AbstractString,Nothing} = nothing) =
+    (send(v, preview_show_command(reply; value_name = value_name, api_url = api_url)); v)
+
+hide_task_preview!(v::NapariViewer; value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
+    (send(v, Dict{String,Any}("type" => "show_task_preview",
+                              "value_name" => String(value_name), "show" => false)); v)

@@ -8174,15 +8174,45 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 # an unknown valueName is an error, not a silent segmentation of the wrong image
                 @test_throws ErrorException Cecelia.preview_request(
                     img, Dict("valueName" => "nope", "models" => Dict()), region)
+
+                # the explicit-paths form: what the API uses, with the store the VIEWER has open, so
+                # the pixels and the region can't come from differently-shaped versions
+                direct = Cecelia.preview_request(
+                    "/somewhere/open.ome.zarr", "/somewhere/meta",
+                    Dict("valueName" => "corrected", "models" => Dict()), region;
+                    value_name = "B")
+                @test direct["imPath"] == "/somewhere/open.ome.zarr"   # NOT re-resolved from ccid
+                @test direct["taskDir"] == "/somewhere/meta"
+                @test direct["outputValueName"] == "B"
+                @test direct["region"]["z"] == 8
             end
         end
 
-        @testset "a preview's value_name can never collide with a real segmentation" begin
-            @test Cecelia.preview_value_name("T") == "T__preview"
-            @test Cecelia.preview_value_name("T") != "T"
-            # and its store is the scratch/staging path, so nothing in ccid.json can name it
-            @test Cecelia.staging_store_path("$(Cecelia.preview_value_name("T")).zarr") ==
-                  "T__preview.zarr.partial"
+        @testset "a preview reply becomes a viewer command without Julia decoding it" begin
+            # Julia is a pass-through: the mask payload moves worker → viewer untouched (the codec
+            # lives in cecelia.utils.block_transfer, used by both Python ends).
+            payload = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
+            reply = Dict("mask" => payload, "labelShape" => [10, 5, 64, 64],
+                         "labelAxes" => ["T", "Z", "Y", "X"],
+                         "region" => Dict("T" => [3, 4], "Z" => [1, 2],
+                                          "Y" => [0, 4], "X" => [0, 4]),
+                         "valueName" => "A", "counts" => Dict("base" => 7))
+            cmd = Cecelia.preview_show_command(reply)
+            @test cmd["type"] == "show_task_preview"
+            @test cmd["mask"] === payload            # not re-encoded, not copied
+            @test cmd["label_shape"] == [10, 5, 64, 64]
+            @test cmd["label_axes"] == ["T", "Z", "Y", "X"]
+            @test cmd["show"] == true
+            # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
+            # `({vn}) Labels` evict each other in the viewer instead of stacking
+            @test cmd["value_name"] == "A"
+            @test !occursin("__preview", cmd["value_name"])
+
+            # a reply missing the block is a fault, not a layer showing nothing
+            for missing_key in ("mask", "labelShape", "labelAxes")
+                broken = filter(p -> first(p) != missing_key, reply)
+                @test_throws ErrorException Cecelia.preview_show_command(broken)
+            end
         end
 
         @testset "the preview worker gets its own port" begin

@@ -74,6 +74,13 @@ Previewability is a property of a task's *compute*, not of a category:
    — nominally **4.8 GB**. Full shape, so it aligns with the image with no translate; lazy, so the zeros
    cost nothing; and **nothing exists on disk to clean up**.
 
+   **Built 2026-07-31.** The codec is `cecelia.utils.block_transfer` (`encode_block`/`decode_block`/
+   `place_block_lazy`) — ONE implementation shared by both Python ends, because a hand-rolled encode on
+   the worker and decode in the bridge is the drift this repo keeps paying for. Julia is a pure
+   pass-through (`preview_show_command`): it moves the opaque payload from worker to viewer and never
+   decodes it. The viewer end is `napari_bridge.show_task_preview`, holding the `Preview` slot in the
+   `labels` layer family so it and `({vn}) Labels`/`Labels (live)` evict each other rather than stack.
+
    What this deletes: `staged_store(scratch=True)`, the whole question of who owns a preview's store, and
    the lifecycle task that came with it. The store-based version accumulated one `*.partial` directory per
    previewed image, invisible to `ccid.json`, forever — and worse, `store_sweep`'s 5-minute
@@ -299,6 +306,14 @@ Measured, not assumed. Each of these cost a real experiment:
 | Sparse zarr store, full shape | 908 B empty, 5 KB after one 512×512 region |
 | End-to-end in the live viewer | first preview ~10 s, then **0.14–0.38 s** per parameter change |
 | bioformats2raw with a `.ome.zarr.partial` output | **works** — exit 0, valid store; only our own `open_as_zarr` breaks on it |
+| Label-plane transfer, 590² uint32 / 676 cells (1.39 MB) | zlib-1 → **66 KB in 2.8 ms**; zlib-6 → 29 KB in 7.9 ms |
+| Realistic dense 2048² mask, 41 616 cells | **1.29 MB** on the wire — over the `websockets` 1 MiB default, hence the explicit `max_size` |
+| Full-extent lazy array: zeros+setitem vs `da.pad` | **8.4k tasks vs 93k** for `(201,21,544,548)` — and pad won't let us pick the chunking |
+| A 1.29 MB reply through `send` (HTTP.jl WS) → re-serialised → decoded in Python | **1.3 s**, 41 616 labels intact |
+
+**T and Z must be chunked to 1** in that lazy array (`block_transfer._PLANE_AXES`). A chunk is dask's
+atomic unit, so a chunk spanning T/Z would materialise the whole 4.8 GB volume to draw one plane — the
+lazy array's cheapness is a property of the chunking, not of `da.full`.
 
 ## Related
 
