@@ -86,7 +86,7 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
                      cell_measures=String[], categorical=String[], numeric=String[],
                      include_motility::Bool=true,
                      quantiles::Tuple{Float64,Float64}=(0.95, 0.05))::DataFrame
-    vn = something(value_name, get(img.label_props, "_active", "default"))
+    vn = resolve_value_name(img, value_name)
     cell_measures = String.(collect(cell_measures))
     categorical   = String.(collect(categorical))
     numeric       = String.(collect(numeric))
@@ -154,7 +154,7 @@ Cheap: reads only the obs column list, not the data. A track-grained view (`pop_
 first" instead of erroring or showing an empty plot.
 """
 function is_tracked(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing)::Bool
-    vn = something(value_name, get(img.label_props, "_active", "default"))
+    vn = resolve_value_name(img, value_name)
     lp = label_props(img; value_name=vn)
     isfile(lp.path) || return false
     "track_id" in col_names(lp; data_type=:obs)

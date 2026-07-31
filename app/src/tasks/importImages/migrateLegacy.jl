@@ -15,6 +15,24 @@ _to_str_any(o) = Dict{String,Any}(String(k) => (v isa AbstractString ? String(v)
 # JSON3 object {vn => [fn,...]} → Dict{String,Vector{String}} (labels)
 _to_labels(o) = Dict{String,Vector{String}}(String(k) => String.(collect(v)) for (k, v) in pairs(o))
 
+"""
+    migrate_qc_findings(value_names) -> Vector
+
+Advisory findings for a legacy migration. Pure (no image, no IO) so the rule is unit-tested — the same
+shape as `segment_qc_findings`.
+
+Only the unambiguous bad case is a finding: an image that migrated with **no segmentation**. That is
+the silent failure — the task reports success, the image appears in the table, and every downstream
+page is simply empty — so it is worth a badge rather than a log line nobody reads.
+"""
+function migrate_qc_findings(value_names::AbstractVector)
+    isempty(value_names) ?
+        [qc_finding("warn", "migrate.no_segmentation", "No segmentation migrated",
+            "The legacy image came across without a cell table, so gating, plots and tracking will " *
+            "be empty. Check the source project still has its labelProps, then re-run the migration.")] :
+        Dict{String,Any}[]
+end
+
 function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -63,5 +81,20 @@ function _run_task(task::MigrateLegacy, img::CciaImage, params::Dict{String,Any}
     rm(result_file; force = true)
 
     on_log("[INFO] Migrated $(src_uid): $(length(img.label_props) > 0 ? join(value_names(img.label_props), ", ") : "no segmentation")")
+
+    # QC (advisory): the objective signal a migration has is how much came across. A legacy image that
+    # migrates with NO segmentation is the silent-failure case — the import "succeeded", the image
+    # appears, and every downstream page is empty — so it gets the one warn finding.
+    try
+        vns      = value_names(img.label_props)
+        findings = migrate_qc_findings(vns)
+        write_qc(img, "importImages.migrateLegacy", VERSIONED_DEFAULT_VAL, findings;
+                 metrics = Dict{String,Any}("nSegmentations" => length(vns),
+                                            "nChannels"      => length(versioned_keys(img.im_channel_names))))
+        isempty(findings) || on_log("[QC] $(length(findings)) finding(s) — see the image's QC badge.")
+    catch e
+        on_log("[QC] could not compute migration QC: $e")
+    end
+
     Dict{String,Any}("uid" => img.uid, "segmentations" => value_names(img.label_props))
 end

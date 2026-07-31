@@ -1,5 +1,9 @@
 struct AfCorrect <: CciaTask end
 
+# QC-EXEMPT: autofluorescence subtraction is perceptual, like the denoise above, so nothing here is
+# scored today. NOTE this is the weakest of the exemptions: over-subtraction has a plausible
+# objective signal (the fraction of pixels clipped to zero), but the Python runner does not report
+# it, so plumbing one is a change to the task rather than a comment. Revisit if AF tuning bites.
 function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,

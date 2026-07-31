@@ -1,5 +1,7 @@
 struct RemoveImage <: CciaTask end
 
+# QC-EXEMPT: this deletes a registered version. There is no output to score, and the image's own
+# QC is recomputed by whatever next writes it — the sanctioned "genuinely no objective signal" case.
 function _run_task(task::RemoveImage, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,

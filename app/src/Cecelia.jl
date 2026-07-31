@@ -24,13 +24,14 @@ export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
-export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
+export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name, resolve_value_name
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, write_module_fun_params!
 export state_file, obj_meta_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
+export migrate_qc_findings
 export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!

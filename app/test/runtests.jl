@@ -1022,6 +1022,48 @@ end
     # The R original kept this private to the object (`getStateFile`); the port had 20+ call sites
     # re-deriving `joinpath(obj._dir, "ccid.json")` and the API layer additionally re-spelling the
     # `1/` metadata segment. All forms must agree.
+    # ── resolve_value_name: the `defaultOnly` half of R's cciaImage$valueNames ──────────────────
+    # Nine call sites hand-rolled `something(value_name, get(img.label_props, "_active", "default"))`,
+    # hardcoding the `_active` key and the `"default"` fallback that VERSIONED_ACTIVE_KEY /
+    # VERSIONED_DEFAULT_VAL exist to name. One resolver now, so the fallback rule lives in one place.
+    @testset "resolve_value_name" begin
+        proj = create_project!(name="rvn-test-$(rand(1000:9999))")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+
+        # no label_props at all → the versioned default, never an error
+        @test resolve_value_name(img) == VERSIONED_DEFAULT_VAL
+
+        # an explicit value_name always wins, even when an active one exists
+        img.label_props = Dict{String,String}("A" => "A.h5ad", "B" => "B.h5ad",
+                                             VERSIONED_ACTIVE_KEY => "B")
+        @test resolve_value_name(img, "A") == "A"
+        @test resolve_value_name(img)      == "B"        # else the active one
+
+        # falls back to the versioned default when nothing is marked active
+        img.label_props = Dict{String,String}("A" => "A.h5ad")
+        @test resolve_value_name(img) == VERSIONED_DEFAULT_VAL
+
+        # agrees with the underlying helper it replaced, and with the list accessor's view
+        img.label_props = Dict{String,String}("A" => "A.h5ad", VERSIONED_ACTIVE_KEY => "A")
+        @test resolve_value_name(img) == versioned_active(img.label_props)
+        @test resolve_value_name(img) in img_value_names(img)
+
+        rm(proj.root; recursive=true)
+    end
+
+    # Migration QC: only the silent-failure case is a finding — an image that migrates with no cell
+    # table looks successful and leaves every downstream page empty.
+    @testset "migrate_qc_findings" begin
+        @test isempty(migrate_qc_findings(["A"]))
+        @test isempty(migrate_qc_findings(["A", "B"]))
+        f = migrate_qc_findings(String[])
+        @test length(f) == 1
+        @test f[1]["level"] == "warn"
+        @test f[1]["code"]  == "migrate.no_segmentation"
+        @test occursin("re-run", lowercase(f[1]["long"]))   # the long text says what to DO
+    end
+
     @testset "state_file resolution" begin
         proj = create_project!(name="statefile-test-$(rand(1000:9999))")
         s    = add_set!(proj; name="s")

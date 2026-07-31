@@ -408,7 +408,7 @@ function co_clustered_value_names(img::CciaImage, suffix::AbstractString;
         p = granularity === :track ? img_track_props_path(img, v) : img_label_props_path(img, v)
         String(suffix) in _clustfeatures_suffixes(p; family=family) && push!(out, v)
     end
-    isempty(out) ? String[String(get(img.label_props, "_active", "default"))] : out
+    isempty(out) ? String[resolve_value_name(img)] : out
 end
 
 # The cluster-style pop types: each is a filter on a per-run `{prefix}{suffix}` obs column written by a
@@ -884,7 +884,7 @@ segmentation isn't tracked. The pop picker uses this to decide whether to offer 
 """
 function has_ungated_tracks(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing)::Bool
     is_tracked(img; value_name=value_name) || return false
-    vn = something(value_name, get(img.label_props, "_active", "default"))
+    vn = resolve_value_name(img, value_name)
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
     "track_id" in names(cell) || return false
     tracked = Set{Any}()
@@ -1404,7 +1404,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     granularity in (:cell, :track) ||
         error("pop_df: granularity must be :cell or :track (got :$granularity)")
     # value_name=nothing → active segmentation key (same resolution as label_props(img))
-    resolved_vn = something(value_name, get(img.label_props, "_active", "default"))
+    resolved_vn = resolve_value_name(img, value_name)
     # cluster pops are GLOBAL to a run → a bare ref spans all co-clustered segmentations (R popDT
     # parity); value_name-prefixed refs are untouched. No-op for non-cluster pop_types.
     #
@@ -1644,7 +1644,7 @@ function pop_df_multi(img::CciaImage, pops; granularity::Symbol=:cell,
                       value_name::Union{AbstractString,Nothing}=nothing,
                       unique_labels::Bool=true,
                       restrict_to::Union{AbstractString,Nothing}=nothing, kwargs...)::DataFrame
-    resolved_vn = something(value_name, get(img.label_props, "_active", "default"))
+    resolved_vn = resolve_value_name(img, value_name)
     frames = DataFrame[]
     for (pt, refs) in _group_pops_by_type(img, pops, resolved_vn)
         d = pop_df(img, pt, refs; value_name=resolved_vn, granularity=granularity,
@@ -1700,7 +1700,7 @@ selection → `"flow"`.
 """
 function pop_namespace(img::CciaImage, pops; value_name::Union{AbstractString,Nothing}=nothing)::String
     isempty(pops) && return "flow"
-    resolved_vn = something(value_name, get(img.label_props, "_active", "default"))
+    resolved_vn = resolve_value_name(img, value_name)
     for ref in pops
         vn, path = _split_pop_ref(ref, resolved_vn)
         occursin("_tracked", path) && return "live"
