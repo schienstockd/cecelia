@@ -1948,6 +1948,102 @@ end
     end
 end
 
+# ── END-TO-END: a real producer reaches the API layer's sinks ─────────────────
+# THE SEAM BOTH SUITES USED TO STUB, from both directions. `app/test` runs a real `run_chain` and asserts
+# the fired events carry a real `task_id` (producer → event bus) but has no API layer attached; the
+# testsets above exercise the real bridge, `ws_status` and console with HAND-BUILT payloads (sink side)
+# but nothing ever ran. So every claim of the form "when a real task finishes, the API layer does Y" was
+# unasserted — and that is exactly where a regression hid: moving the outcome bank to `ws_status` silently
+# un-banked every chain node, because a chain run passes no `on_status_change` and so never reaches
+# `ws_status` at all. Both suites stayed green. These tests run the REAL producers with nothing mocked.
+#
+# Cheap because `server.jl` gates only `start()` on `CECELIA_NO_SERVE` — the `subscribe_chain_events!`
+# handlers ran at include time, so the bridge is live in this process.
+@testset "API: real producers reach the WS sinks" begin
+    # capture client: broadcast_ws enqueues a serialised frame per registered client (as above)
+    cap = Channel{String}(512)
+    key = gensym("test-e2e")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    frames() = (fs = []; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    banked(id) = filter(r -> r.id == id, recent_tasks())
+    empty!(Cecelia._OUTCOMES)
+
+    try
+        proj = create_project!(name="api-e2e")
+        s    = add_set!(proj; name="set-A")
+        imgs = [add_image!(s; name="img-$i") for i in 1:2]
+        for img in imgs; img.status = "done"; save!(img); end
+
+        # ── 1. chain node: producer → event bus → bridge → bank + broadcast ──
+        # The regression this pins. A chain node's outcome travels ONLY as chain:node:done, so the bank
+        # has to be fed from the bridge; keyed by the node's real scheduler task id, which is what a
+        # client correlates its (synthetically-keyed) chain row against.
+        save_chain_template!(proj, ChainTemplate(
+            "e2e-chain",
+            [ChainNode(id="n1", fn="testTasks.imageTask",
+                       params=Dict{String,Any}("message"=>"e2e"))],
+            ChainEdge[]))
+        frames()
+        run = run_chain(proj, [i.uid for i in imgs]; chain="e2e-chain", on_log=_->nothing)
+
+        node_ids = [run.image_states[i.uid]["n1"].task_id for i in imgs]
+        @test all(!isnothing, node_ids) && all(!isempty, node_ids)
+        for tid in node_ids
+            @test only(banked(tid)).status   == "done"      # ← was empty: nothing fed the bank
+            @test only(banked(tid)).fun_name == "testTasks.imageTask"
+        end
+        let fs = frames()
+            @test count(f -> String(f.type) == "chain:node:done", fs) == 2   # …and still broadcast
+            # every terminal frame the client saw is replayable from the log — the whole invariant
+            for f in fs
+                String(f.type) == "chain:node:done" || continue
+                @test !isempty(banked(String(f.taskId)))
+            end
+        end
+        # a chain node emits NO task:status (handle_chain_run passes no on_status_change) — the premise
+        # the bridge-side bank exists for. If this ever fails, the second bank may be redundant.
+        @test !any(f -> String(f.type) == "task:status", frames())
+
+        # ── 2. module task: handle_task_run → run_task → ws_status → bank ──
+        empty!(Cecelia._OUTCOMES); frames()
+        tid = "e2e-image-task"
+        handle_task_run(nothing, JSON3.read(JSON3.write((;
+            taskId=tid, funName="testTasks.imageTask", params=Dict("message"=>"e2e"),
+            imageUid=imgs[1].uid, projectUid=proj.uid, setUid=s.uid, poolName=""))))
+        @test timedwait(() -> !isempty(banked(tid)), 30.0) === :ok
+        @test only(banked(tid)).status    == "done"
+        @test only(banked(tid)).image_uid == imgs[1].uid
+        let fs = filter(f -> String(f.type) == "task:status", frames())
+            @test any(f -> String(f.status) == "done", fs)          # the live frame went out too
+            @test String(last(fs).taskId) == tid
+        end
+
+        # ── 3. set-scope task: the real frame's image_uids, unfabricated ──
+        # Every other test hands `image_uids` in by hand, so nothing checked that a real set run actually
+        # reports all its members — and a replayed frame missing them refreshes the representative
+        # image's plots only, leaving every other member's stale.
+        empty!(Cecelia._OUTCOMES); frames()
+        stid = "e2e-set-task"
+        handle_task_run(nothing, JSON3.read(JSON3.write((;
+            taskId=stid, funName="testTasks.setTask", params=Dict("message"=>"e2e-set"),
+            imageUid="", imageUids=[i.uid for i in imgs], projectUid=proj.uid,
+            setUid=s.uid, poolName=""))))
+        @test timedwait(() -> !isempty(banked(stid)), 30.0) === :ok
+        @test only(banked(stid)).status == "done"
+        @test Set(only(banked(stid)).image_uids) == Set(i.uid for i in imgs)   # ← all members, banked
+        @test only(banked(stid)).image_uid == first(imgs).uid                   # …plus the representative
+        let f = last(filter(x -> String(x.type) == "task:status", frames()))
+            @test Set(String.(f.imageUids)) == Set(i.uid for i in imgs)         # …and on the live frame
+        end
+
+        rm(proj.root; recursive=true)
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        close(cap)
+        empty!(Cecelia._OUTCOMES)
+    end
+end
+
 # api/src runs in `Main` with `using Cecelia`, so it can only call Cecelia functions UNQUALIFIED if
 # they are EXPORTED. Miss an export and the code loads fine, the route registers fine, and the call
 # dies at runtime with `UndefVarError: f not defined in Main` — which is exactly how the live-preview
