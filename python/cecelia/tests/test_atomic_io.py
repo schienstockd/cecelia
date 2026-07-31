@@ -89,6 +89,21 @@ class AtomicWriteTest(unittest.TestCase):
             self.assertEqual(os.path.dirname(tmp), os.path.dirname(p))
             pathlib.Path(tmp).write_text("{}", encoding="utf-8")
 
+    def test_text_mode_writes_utf8_regardless_of_locale(self):
+        """`open()` defaults to the LOCALE encoding — cp1252 on Windows, where `µm` in an OME-XML
+        or a QC message is a `UnicodeEncodeError`. The helper pins UTF-8 so callers can't inherit
+        the platform's."""
+        p = os.path.join(self.td, "qc.txt")
+        with write_atomic(p) as f:
+            f.write("resolution ≥ 0.5 µm")
+        self.assertEqual(pathlib.Path(p).read_bytes().decode("utf-8"), "resolution ≥ 0.5 µm")
+
+    def test_binary_mode_is_untouched(self):
+        p = os.path.join(self.td, "raw.bin")
+        with write_atomic(p, "wb") as f:
+            f.write(b"\x00\x9d\xff")
+        self.assertEqual(pathlib.Path(p).read_bytes(), b"\x00\x9d\xff")
+
     def test_two_writers_of_one_path_get_distinct_temps(self):
         p = os.path.join(self.td, "x.json")
         with atomic_path(p) as a, atomic_path(p) as b:
