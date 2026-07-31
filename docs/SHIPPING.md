@@ -379,6 +379,41 @@ code-execution surface, so the secret guards against other local sites/processes
 the URLs. Do not bind it to a public host. Launched/stopped like napari: `pixi run notebooks` (port
 7660) / `pixi run stop-notebooks`, and the app launches it via `POST /api/notebooks/launch`.
 
+### Shipping precompiled Julia code — the CPU target is a fourth axis
+
+**Anything precompiled on OUR machine and run on a USER's must set `JULIA_CPU_TARGET`.** Applies to
+both kinds of precompiled Julia code — a PackageCompiler sysimage and a populated depot
+(`~/.julia/compiled`).
+
+The sysimage above is described as tied to *platform/arch + Julia + package versions*, and its stamp
+records two of those (`{"julia": …, "manifest": …}`), with platform/arch implicit in a per-platform
+bundle. There is a fourth axis nothing records: the **CPU microarchitecture**. Julia compiles to
+native code and validates it against the running processor, so an image built on one machine is
+rejected wholesale by a different one — silently, as a full recompile rather than an error:
+
+```
+Rejecting cache file ...\compiled\v1.12\Combinatorics\AwRuT_nmcDc.ji
+  Reasons = "Unable to find compatible target in cached code image.
+             Target 0 (znver3): Rejecting this target due to use of runtime-disabled features"
+```
+
+That is from CI, where restoring a cached depot across GitHub's heterogeneous Windows runners threw
+away a healthy 261 MB cache and re-precompiled all 166 dependencies every run.
+`.github/workflows/ci.yml` fixes it with a multiversioned target — a portable baseline emitted
+alongside the fast paths, which is how official Julia binaries ship.
+
+**Today the installed app is safe by construction, not by design.** `install.sh` runs
+`Pkg.instantiate()` on the target machine, and `deps.so` is built on demand by *Enable fast plots*,
+so every user's precompiled code is compiled on the CPU that will run it — which is why a Windows
+user pays precompilation once at install and never again. Nothing currently ships prebuilt.
+
+**The trigger to watch is TODO #00070** (build the `-full` sysimage per platform in CI and ship it
+in the bundle). The moment that lands, or the constructor bundle carries a warmed depot, a
+`native`-compiled artifact would be rejected on any user whose CPU differs from the build
+machine's — recompiling on first run, or on *every* launch if the bundle is read-only, with nothing
+in the logs that reads as an error. Build such artifacts with a multiversioned `JULIA_CPU_TARGET`,
+and extend `sysimage_stamp.jl` to record it so a mismatch is detected rather than silently absorbed.
+
 ---
 
 ## Roadmap
