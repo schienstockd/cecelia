@@ -16,6 +16,7 @@ Cecelia.load_custom_modules!()
 include("sockets.jl")
 include("routes.jl")
 include("napari_api.jl")
+include("preview_api.jl")   # task preview; reads the open image from napari_api
 include("observer_api.jl")
 include("gating_api.jl")
 include("plotting_api.jl")
@@ -279,6 +280,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_status(req)
         elseif path == "/api/napari/gpu"
             api_napari_gpu_get(req)
+        elseif path == "/api/preview/status"
+            api_preview_status(req)
         elseif path == "/api/notebooks"
             api_notebooks_list(req)
         elseif path == "/api/notebooks/content"
@@ -481,6 +484,12 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_stop_selection(body_bytes)
         elseif path == "/api/napari/event"
             api_napari_event(body_bytes)
+        elseif path == "/api/preview/start"
+            api_preview_start(body_bytes)
+        elseif path == "/api/preview/stop"
+            api_preview_stop(body_bytes)
+        elseif path == "/api/preview/run"
+            api_preview_run(body_bytes)
         elseif path == "/api/gating/pop/add"
             api_gating_pop_add(body_bytes)
         elseif path == "/api/gating/pop/set-gate"
