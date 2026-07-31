@@ -72,8 +72,14 @@ def shifts_summary(shifts, cumulative=True, is_3D=True):
     return {'max': max_shifts, 'min': min_shifts, 'sum': max_shifts + min_shifts}
 
 
+def _as_shape(array_or_shape):
+    """Accept either an array or a plain shape tuple. Lets the geometry helpers below be used
+    post-hoc — from a QC sidecar, say — without opening the store they describe."""
+    return tuple(getattr(array_or_shape, 'shape', array_or_shape))
+
+
 def correction_im_shape(image_array, dim_utils, shifts_sum):
-    new_shape = list(image_array.shape)
+    new_shape = list(_as_shape(image_array))
     if dim_utils.is_3D():
         new_shape[dim_utils.dim_idx('Z')] += abs(shifts_sum['sum'][0])
         new_shape[dim_utils.dim_idx('Y')] += abs(shifts_sum['sum'][1])
@@ -113,6 +119,80 @@ def drift_correct_shape(input_array, dim_utils, shifts):
     return drift_im_shape_round, first_im_pos
 
 
+def drift_frame_slices(input_array, dim_utils, shifts, timepoints=None):
+    """Where each timepoint's pixels LAND in the expanded canvas: ``{t: tuple(slice per axis)}``.
+
+    Drift correction writes every frame into a ZEROED canvas at a per-frame offset, so these
+    slices are also the answer to "which part of a corrected store is data and which is padding".
+    That matters because the expansion is not small — a 30-minute 8-plane movie here came out
+    22 planes deep, i.e. 64% zeros — and a downstream consumer that does not know the box pays
+    for all of it.
+
+    Pure shape arithmetic; touches no pixels, so it can be replayed later from nothing but the
+    source shape and the shifts a run recorded. `drift_correct_im` places its frames with this,
+    and the QC sidecar persists its output — one implementation, so the padding a consumer skips
+    is exactly the padding the writer left.
+
+    ``input_array`` may be an array or a plain shape tuple. ``timepoints`` must start at 0 and be
+    consecutive: the offset ACCUMULATES across frames (``shifts`` are per-frame deltas), so a
+    subset would silently mis-place everything after the first gap — the same constraint the
+    writer's loop has always had.
+    """
+    shifts = np.asarray(shifts)
+    canvas_shape, first_im_pos = drift_correct_shape(input_array, dim_utils, shifts)
+    src_shape = list(_as_shape(input_array))
+    src_shape[dim_utils.dim_idx('T')] = 1
+    tp_shape = list(canvas_shape)
+    tp_shape[dim_utils.dim_idx('T')] = 1
+    if timepoints is None:
+        timepoints = range(dim_utils.dim_val('T'))
+
+    out = {}
+    slices = list(first_im_pos)
+    for i in timepoints:
+        if i > 0:
+            slices = [slice(y.start + shifts[i - 1, j], y.stop + shifts[i - 1, j], 1)
+                      for j, y in enumerate(slices)]
+
+        new_slices = [slice(None)] * len(canvas_shape)
+        for j, y in enumerate(dim_utils.spatial_axis()):
+            new_slices[dim_utils.dim_idx(y)] = slice(
+                round(slices[j].start), round(slices[j].stop), 1)
+
+        # Clamp exactly as the writer does: rounding can leave the destination window a pixel off
+        # the source, and a frame at the very start/end of the drift can run past the canvas edge.
+        # `slice.indices` is what numpy itself applies, so this measures the real destination size.
+        dest = [len(range(*sl.indices(tp_shape[k]))) for k, sl in enumerate(new_slices)]
+        if dest != src_shape:
+            adj = list(new_slices)
+            for j, y in enumerate([d - s for d, s in zip(dest, src_shape)]):
+                if y > 0:
+                    adj[j] = slice(adj[j].start + y, adj[j].stop, 1)
+                elif y < 0:
+                    if adj[j].start - y >= 0:
+                        adj[j] = slice(adj[j].start + y, adj[j].stop, 1)
+                    elif adj[j].stop + y < canvas_shape[j]:
+                        adj[j] = slice(adj[j].start, adj[j].stop + y, 1)
+            new_slices = adj
+        out[i] = tuple(new_slices)
+    return out
+
+
+def drift_frame_origins(input_array, dim_utils, shifts, timepoints=None):
+    """`drift_frame_slices` reduced to what a consumer usually wants: per timepoint, the
+    ``{axis: [start, stop]}`` of the occupied box on each SPATIAL axis, as plain ints.
+
+    JSON-friendly, so a run can record it (see the drift QC sidecar) and anything reading that
+    store later — coastal, a viewer — can skip the padding without re-deriving the geometry or
+    reading a single voxel."""
+    axes = list(dim_utils.spatial_axis())
+    return {
+        t: {ax: [int(sl[dim_utils.dim_idx(ax)].start), int(sl[dim_utils.dim_idx(ax)].stop)]
+            for ax in axes}
+        for t, sl in drift_frame_slices(input_array, dim_utils, shifts, timepoints).items()
+    }
+
+
 def drift_correct_im(
         input_array, dim_utils, phase_shift_channel,
         timepoints=None, drift_corrected_path=None,
@@ -127,7 +207,7 @@ def drift_correct_im(
             upsample_factor=upsample_factor,
         )
 
-    drift_im_shape_round, first_im_pos = drift_correct_shape(input_array, dim_utils, shifts)
+    drift_im_shape_round, _ = drift_correct_shape(input_array, dim_utils, shifts)
 
     # The writer owns byte order (zarr_utils.native_dtype): when `out` is a pre-created native store
     # we match it; the out=None numpy path returns source-order and create_multiscales makes it native.
@@ -143,28 +223,15 @@ def drift_correct_im(
     tp_shape[dim_utils.dim_idx('T')] = 1
     tp_shape = tuple(tp_shape)
 
-    slices = list(first_im_pos)
+    # Where each frame lands. Shape arithmetic only, so it is computed up front and shared with
+    # every other consumer of this store (the QC sidecar records it) instead of living inline here
+    # — see drift_frame_slices.
+    frame_slices = drift_frame_slices(input_array, dim_utils, shifts, timepoints)
 
     for i in timepoints:
-        if i > 0:
-            new_slices = []
-            for j, y in enumerate(slices):
-                new_slices.append(slice(
-                    y.start + shifts[i - 1, j],
-                    y.stop + shifts[i - 1, j],
-                    1,
-                ))
-            slices = new_slices
-
-        new_slices = [slice(None)] * len(drift_im_shape_round)
+        new_slices = frame_slices[i]
         im_slices = [slice(None)] * len(drift_im_shape_round)
-
-        for j, y in enumerate(dim_utils.spatial_axis()):
-            new_slices[dim_utils.dim_idx(y)] = slice(
-                round(slices[j].start), round(slices[j].stop), 1)
-
         im_slices[dim_utils.dim_idx('T')] = slice(i, i + 1, 1)
-        new_slices = tuple(new_slices)
         im_slices = tuple(im_slices)
 
         if i % 10 == 0:
@@ -172,20 +239,6 @@ def drift_correct_im(
 
         src = zarr_utils.fortify(input_array[im_slices])
         new_image = np.zeros(tp_shape, dtype=result_dtype)
-
-        if new_image[new_slices].shape != src.shape:
-            dif_dim = [x - y for x, y in zip(new_image[new_slices].shape, src.shape)]
-            adj = list(new_slices)
-            for j, y in enumerate(dif_dim):
-                if y > 0:
-                    adj[j] = slice(adj[j].start + y, adj[j].stop, 1)
-                elif y < 0:
-                    if adj[j].start - y >= 0:
-                        adj[j] = slice(adj[j].start + y, adj[j].stop, 1)
-                    elif adj[j].stop + y < result.shape[j]:
-                        adj[j] = slice(adj[j].start, adj[j].stop + y, 1)
-            new_slices = tuple(adj)
-
         new_image[new_slices] = src
         result[im_slices] = new_image
 
