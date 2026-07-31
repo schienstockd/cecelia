@@ -162,6 +162,24 @@ links labels ACROSS z, so dropping interior planes would be wrong — but these 
 whether the win generalises or is specific to how much drift a movie has. A cheap first step is QC: record
 the empty-plane count per corrected image, which makes the cost visible without changing any behaviour.
 
+**#00092** — **Export an image version as OME-TIFF**
+Nothing in the codebase writes a TIFF today (no `tifffile.imwrite` anywhere). The need is figures:
+people render in **Imaris** rather than napari, and Imaris reads OME-TIFF, not our zarr stores. The
+`.ccbundle` export is a different thing entirely (whole-project archive, tar-per-store, for moving a
+project between machines).
+
+This is a **write** path, so it's unaffected by `open_as_zarr` dropping its TIFF *reader* — an export
+reads the store through the canonical reader and writes out.
+
+Worth settling when it's built:
+- **OME-TIFF, not plain TIFF** — otherwise pixel size / channel names / time increment don't survive
+  into Imaris and the figure scale bar is wrong. We already hold all of it (`ome_xml_utils`).
+- **What to export**: which image *version* (versioned-field picker, like every other task), which
+  channels, and whether a z-MIP / single timepoint is enough — a full `201×21×4×544×548` uint16 movie
+  is ~9.7 GB as one file, which needs the BigTIFF flag and may not be what anyone wants.
+- **Where it lands**: not inside the project tree (it's an artefact, not data), so it wants a
+  destination picker like `default_export_dir()`. Task rail + progress, staged output.
+
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener

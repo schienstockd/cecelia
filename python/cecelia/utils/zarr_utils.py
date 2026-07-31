@@ -3,16 +3,20 @@ Zarr I/O utilities for OME-ZARR and plain zarr stores.
 
 Handles opening, reading, and writing zarr arrays with support for:
   - OME-ZARR multiscale groups (bioformats2raw output)
-  - Plain TIFF files via tifffile's aszarr interface
+  - Flat multiscales stores (our own `create_multiscales` output — images and label sets)
   - Dask-backed lazy loading for large images
   - Multiscale pyramid creation with power-of-two downsampling
 
-All paths that end in .ome.zarr are opened via the OME series group wrapper
-(series index 0).  Other .zarr paths are opened directly.
+Zarr stores only. Source formats (TIFF, …) are converted by the import task (bioformats2raw) before
+anything here reads a pixel; reading a source file's *metadata* lives in `ome_xml_utils`.
+
+Stores are identified STRUCTURALLY, never by file extension — a bioformats2raw series wrapper is told
+from a flat store by its `multiscales` attr (`series_base`), and a store is told from a non-store by
+its zarr group metadata (`is_zarr_store`). Extension dispatch breaks on a staged store, whose path
+ends in `.partial` while it is being written.
 """
 
 import zarr
-import tifffile
 import dask.array as da
 import dask
 import contextlib
@@ -26,24 +30,34 @@ import cecelia.utils.slice_utils as slice_utils
 
 
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
-    im_ext = os.path.splitext(im_path)[1]
-    if im_ext == ".zarr":
-        im_data, zarr_group_info = open_zarr(im_path, multiscales=multiscales, as_dask=as_dask, mode=mode)
-    else:
-        im_data, zarr_group_info = open_image_as_zarr(im_path, multiscales=multiscales, as_dask=as_dask)
-    return im_data, zarr_group_info
+    """Open a zarr store — an image version or a label set — as a list of pyramid levels.
+
+    Stores ONLY. Whether `im_path` is a store is decided STRUCTURALLY (`is_zarr_store`: a directory
+    carrying zarr group metadata), never by file extension — extension dispatch was the fifth copy of
+    the `splitext(path)[1] == '.zarr'` test that #428 replaced in `ome_xml_utils`, and it failed the
+    same way: `staged_store` writes to `<store>.ome.zarr.partial`, whose extension is `.partial`, so a
+    staged store fell through to the TIFF branch and raised `IsADirectoryError`. The preview worker and
+    the store sweep both have to read a store before it is promoted.
+
+    There used to be a TIFF branch here (`open_image_as_zarr` → `tifffile.imread(..., aszarr=True)`).
+    It was removed because nothing needs it: every pixel read in the app happens *after*
+    bioformats2raw has converted the source to OME-ZARR, so the only paths reaching this function are
+    stores. The TIFF branch had in fact been raising for every input — tifffile refuses to build its
+    zarr bridge against the pinned zarr 3.x — which is the strongest available evidence that it had no
+    callers. Reading TIFF *metadata* is unaffected and still lives in `ome_xml_utils`
+    (`read_imagej_metadata`, `parse_meta_from_tiff`), used on the source file at import time.
+    """
+    # lazy: ome_xml_utils owns the one structural store predicate (same idiom as read_scale below)
+    from cecelia.utils import ome_xml_utils
+    if not ome_xml_utils.is_zarr_store(im_path):
+        raise ValueError(
+            f'not a zarr store: {im_path!r}. open_as_zarr reads stores only — convert a source '
+            'image with the import task (bioformats2raw) first.')
+    return open_zarr(im_path, multiscales=multiscales, as_dask=as_dask, mode=mode)
 
 
 def open_zarr(zarr_path, mode='r', multiscales=None, as_dask=False):
     zarr_data, zarr_group_info = zarr_data_to_list(zarr_path, multiscales=multiscales, mode=mode)
-    if as_dask is True:
-        zarr_data = zarr_data_to_dask(zarr_data)
-    return zarr_data, zarr_group_info
-
-
-def open_image_as_zarr(filepath, multiscales=None, as_dask=False):
-    store = tifffile.imread(filepath, aszarr=True)
-    zarr_data, zarr_group_info = zarr_data_to_list(store, multiscales=multiscales)
     if as_dask is True:
         zarr_data = zarr_data_to_dask(zarr_data)
     return zarr_data, zarr_group_info
@@ -341,7 +355,7 @@ SUPERSEDED_SUFFIX = '.superseded'  # the old store, mid-promote; safe to delete
 
 
 @contextlib.contextmanager
-def staged_store(final_path, scratch=False):
+def staged_store(final_path):
     """Yield a staging path to write a multiscales store into, then rename it onto ``final_path``.
 
         with zarr_utils.staged_store(out_path) as staging:
@@ -358,19 +372,16 @@ def staged_store(final_path, scratch=False):
     untouched, which is the entire point. A Python-level exception (a genuine task failure) does
     unwind, and drops the staging dir on the way out.
 
-    ``scratch=True`` — for a store that is written to be LOOKED AT and never becomes real data (the
-    task preview). It changes two things: the staging store is **never promoted**, and an existing one
-    is **kept and written into** rather than cleared. Keeping it matters for the viewer: a preview
-    layer holds a lazy view of this path, so deleting and recreating the store between previews would
-    invalidate the layer and lose its display settings; overwriting a region in place lets a refresh
-    be a like-for-like re-read. It stays a `*.partial` path, so it remains invisible to `ccid.json` and
-    the `store-debris` sweep collects it. See docs/todo/TASK_PREVIEW_PLAN.md (Decision 3)."""
+    There is deliberately no "write a store to look at and never promote it" mode. The task preview
+    briefly had one (`scratch=True`); it was removed when the preview stopped writing to disk at all
+    and started returning the mask block instead (`cecelia.utils.block_transfer`). Anything staged here
+    is on its way to becoming real data.
+    """
     staging = final_path + STAGING_SUFFIX
 
     # A staging dir here is debris from a previously killed run — the same self-healing the old
-    # rmtree-the-target did, just aimed at garbage instead of at the user's data. A scratch store is
-    # the exception: it is deliberately long-lived across previews.
-    if os.path.exists(staging) and not scratch:
+    # rmtree-the-target did, just aimed at garbage instead of at the user's data.
+    if os.path.exists(staging):
         shutil.rmtree(staging)
 
     try:
@@ -379,8 +390,7 @@ def staged_store(final_path, scratch=False):
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    if not scratch:
-        promote_store(staging, final_path)
+    promote_store(staging, final_path)
 
 
 def promote_store(staging_path, final_path):
