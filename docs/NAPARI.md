@@ -325,6 +325,12 @@ Tasks that produce corrected images write their own OME-ZARR via `create_multisc
 
 The flat layout (`zarr/0/`, `zarr/1/`, … at the root, not inside a `0/` series wrapper) is what `create_multiscales` produces. `_series_base` detects this correctly.
 
+**Always write through `zarr_utils.staged_store`.** Never point a writer at the final store path: it
+streams into a `{name}.partial` sibling that is renamed into place only when the store is complete, so a
+cancelled run leaves the previous store intact instead of a half-filled one advertised by `ccid.json`.
+Enforced by `python/cecelia/tests/test_store_staging_convention.py`; rationale in
+`docs/SEGMENTATION.md` → *Stores are written staged, never in place*.
+
 ---
 
 ## Dask vs zarr loading (`asDask` toggle)
@@ -565,8 +571,13 @@ the preview needed a third. Add a new label family by calling that helper, not b
 | `branchLabels` | `Branches` |
 
 A store holds **at most one** of its family's suffixes at a time — the adder evicts the siblings — so a
-finished set replaces its own live preview, and a re-run's preview replaces the finished layer whose
-store that re-run has just deleted.
+finished set replaces its own live preview and vice versa.
+
+The suffix is prefixed by a **stem**, and that stem is the `value_name`, never the on-disk filename
+(`_label_layer_stem`). A preview reads a `.partial` staging path, so naming the layer after the file
+would both break the `({vn})` prefix that `colour_labels` targets and stop the finished layer from
+evicting the preview — they would no longer share a stem. Multi-type runs still get one layer per file
+(`X_nuc.zarr` → `X_nuc`); the stem is per file, just not per on-disk name.
 
 ### Live preview of a store being written (`preview=True`)
 
@@ -576,8 +587,13 @@ layer. It forces **level 0 only** (the store declares its full pyramid in `.zatt
 is to see changed bytes). `refresh_labels` then re-reads it in place by reassigning `layer.data` from a
 fresh view — cheap, no layer teardown, so the layer keeps its position and display settings — and is a
 no-op for a value_name with no preview layer. Shape is stable by construction: the store is allocated at
-its full final shape before the first frame. Full rationale + the discovery path:
-`docs/SEGMENTATION.md` → *Previewing a running run*.
+its full final shape before the first frame.
+
+Both read the run's **staging** store (`{vn}.zarr.partial`), which callers pass in via `label_files` from
+the task's `live_outputs`; on a re-run the final path still holds the previous segmentation until the run
+completes, so aiming there would show stale labels. That store is renamed away the moment the run
+finishes, so `refresh_labels` tolerates it vanishing mid-refresh and skips rather than raising. Full
+rationale + the discovery path: `docs/SEGMENTATION.md` → *Previewing a running run*.
 
 ---
 

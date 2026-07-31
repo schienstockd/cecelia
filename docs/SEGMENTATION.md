@@ -85,6 +85,26 @@ Shape = image shape without the C axis. dtype = uint32.
 
 The OME-ZARR metadata includes `axes` (lowercase, no C) and per-level `coordinateTransformations` with physical scale from OME-XML (Y/X scale doubled at each pyramid level).
 
+### Stores are written staged, never in place
+
+A run does not write `{outputValueName}.zarr` directly. It streams into a `{outputValueName}.zarr.partial`
+sibling and that is renamed onto the final path only once the pyramid is complete — the
+`zarr_utils.staged_store` idiom, which every store writer in the codebase uses (see the *Image /
+OME-ZARR access* rule in `CLAUDE.md`).
+
+The reason is specific to re-running a value_name that is **already registered**. The writer used to
+`rmtree` its target and then fill it over minutes, so cancelling that re-run left `ccid.json`
+advertising a store with most of its frames missing. On a multi-level image the next read raised
+`KeyError: '1'`; on a **single-level** one — drift/AF/cellpose-corrected output, i.e. the common case —
+there was no error at all: the unwritten frames read as zeros and `segment.measureLabels` and tracking
+produced numbers from a partial segmentation. Staging makes a cancelled run a no-op on the previous
+data.
+
+Cancellation is a SIGKILL, so nothing cleans up: the `.partial` directory survives. That is the
+intended trade (the alternative is deleting the user's data to tidy up) and it is invisible — nothing
+in `ccid.json` names it. Settings → Data patches → **Remove leftover staging stores** is the broom
+(`cecelia.utils.store_sweep`).
+
 ---
 
 ## Python class hierarchy
@@ -287,7 +307,14 @@ Declaring it is opt-in per task, because writing-as-you-go is a property of the 
 while `segment.branching` assembles its store in RAM and writes it once at the end, so it correctly
 declares nothing.
 
-Two things differ from a normal labels layer, both forced bridge-side rather than trusted to the caller:
+The preview reads the run's **staging** store, not the final path — see *Stores are written staged*
+above. This matters on a re-run: until the run completes the final path still holds the PREVIOUS
+segmentation, so a preview aimed there would quietly show the old labels while the new ones are being
+computed. `live_outputs` therefore declares the `.partial` filenames while carrying the plain
+`value_name` alongside them, because the viewer names the layer from the value_name (`({vn})` is what
+the recolour and layer-eviction logic match on), not from the file.
+
+Three things differ from a normal labels layer, all forced bridge-side rather than trusted to the caller:
 
 - **Level 0 only.** A label store declares its whole pyramid in `.zattrs` when created, but levels 1…N
   only exist after `_finalize_label_pyramid` runs at the end. Asking for the image's level count
@@ -296,6 +323,9 @@ Two things differ from a normal labels layer, both forced bridge-side rather tha
 - **Caching off.** The point is to see bytes that changed, and napari's `cachey` would serve the old
   ones (see `napari_utils.add_labels` on why dask task names make that cache dangerous for re-run
   labels specifically).
+- **A refresh may find the store gone.** The finishing run renames the staging store onto the final
+  path, so a throttled refresh tick can lose the race. `refresh_labels` treats that as benign and skips
+  — the run has just finished and the task-finished handler is about to swap in the real layer.
 
 The preview layer is namespaced `({vn}) Labels (live)` and a store holds at most one layer of its family
 at a time: adding the finished set evicts its own preview, and vice versa (`_LABEL_SUFFIXES` in

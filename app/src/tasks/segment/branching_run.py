@@ -595,17 +595,21 @@ def run(params: dict):
     # `ignore_channel=False` because these chunks already have no C to pop.
     store_axes = _store_axes(dim_utils.im_dim_order, has_time, is_3d)
     store_chunks = zarr_utils.plane_chunks(stacked.shape)   # store_axes always end …Y, X
-    zarr_utils.create_multiscales(
-        stacked, branch_labels_out,
-        dim_utils=dim_utils,
-        axes=store_axes,
-        im_chunks=store_chunks,
-        nscales=1,
-        # `datasets` (the default) is what `zarr_data_to_list` reads. `keyword='labels'` was for a
-        # legacy R store layout only; using it here writes a store no cecelia reader can open.
-        ignore_channel=False,
-        squeeze=False,
-    )
+    # Staged: the store lands on its final path only once complete, so cancelling this task can't
+    # leave a registered branch-label set truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(branch_labels_out) as staging:
+        zarr_utils.create_multiscales(
+            stacked, staging,
+            dim_utils=dim_utils,
+            axes=store_axes,
+            im_chunks=store_chunks,
+            nscales=1,
+            # `datasets` (the default) is what `zarr_data_to_list` reads. `keyword='labels'` was for
+            # a legacy R store layout only; using it here writes a store no cecelia reader can open.
+            ignore_channel=False,
+            squeeze=False,
+        )
 
     aniso_uns = None
     image_anisotropy = 0.0

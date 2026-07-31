@@ -314,8 +314,8 @@ class NapariState:
         self._invalidate_colcol_cache(value_name)
 
         for label_filename in label_files:
-            # name by the value_name (drop the ".zarr") → "(C) Labels", not "(C.zarr) Labels"
-            stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
+            # name by the value_name → "(C) Labels", never "(C.zarr) Labels" or the staging path
+            stem = _label_layer_stem(label_filename)
             layer_name = f"({stem}) {suffix}"
             if not show:
                 _remove_layer(self._viewer, layer_name)
@@ -379,7 +379,15 @@ class NapariState:
         * **Caching off.** The whole point is to see bytes that changed since the last look, and
           napari's cachey would serve the old ones (see `napari_utils.add_labels` on why dask task
           names make that cache dangerous for re-run labels specifically).
+
+        A preview also reads the run's STAGING store, not the final path — during a re-run the final
+        path still holds the PREVIOUS segmentation until the run completes, so pointing the preview
+        there would quietly show the old labels while the new ones are computed. Callers normally
+        pass `label_files` from the task's `live_outputs` declaration, which already names the
+        staging stores; the fallback below matches it.
         """
+        if preview and label_files is None:
+            label_files = [f"{value_name}.zarr{zarr_utils.STAGING_SUFFIX}"]
         self._show_label_stores(
             "labels", "Labels (live)" if preview else "Labels",
             value_name, label_files, show_labels,
@@ -396,21 +404,30 @@ class NapariState:
         frame is written — so this is always a like-for-like swap, and cheap enough to call on every
         progress tick. A value_name with no preview layer is a silent no-op (the user turned it off,
         or the run finished and the real layer took over).
+
+        Reads the run's STAGING store (see `show_labels`), which the finishing run RENAMES onto the
+        final path — so the store can disappear between this refresh deciding to read it and actually
+        reading it. That race is expected and benign: the run has just finished, and the task-finished
+        handler is about to replace this layer with the real one. Never let it raise.
         """
         if self._task_dir is None:
             raise RuntimeError("call set_task_dir before refresh_labels")
         if label_files is None:
-            label_files = [f"{value_name}.zarr"]
+            label_files = [f"{value_name}.zarr{zarr_utils.STAGING_SUFFIX}"]
 
         for label_filename in label_files:
-            stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
-            layer_name = f"({stem}) Labels (live)"
+            layer_name = f"({_label_layer_stem(label_filename)}) Labels (live)"
             if layer_name not in self._viewer.layers:
                 continue
             labels_path = self._label_store_path("labels", label_filename)
             if not os.path.exists(labels_path):
                 continue
-            arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=1, as_dask=True)
+            try:
+                arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=1, as_dask=True)
+            except Exception as e:
+                # promoted out from under us mid-refresh — see the docstring
+                print(f"[refresh_labels] skip {layer_name}: {e}", flush=True)
+                continue
             if not arrays:
                 continue
             self._viewer.layers[layer_name].data = arrays[0]
@@ -1404,6 +1421,24 @@ _LABEL_SUFFIXES = {
     "labels":       ("Labels", "Labels (live)"),
     "branchLabels": ("Branches",),
 }
+
+
+def _label_layer_stem(label_filename: str) -> str:
+    """Layer-name stem for a label store filename — the value_name the store belongs to.
+
+    The layer name must NOT be the bare filename, because a store still being written by a running
+    task lives at a STAGING path (`X.zarr.partial`, see `zarr_utils.staged_store`). Naming the layer
+    after that file would break two things at once: `colour_labels` targets a layer by its `({vn})`
+    prefix, and adding the finished `({vn}) Labels` layer evicts the preview only when both share a
+    stem. Multi-type runs keep their own layers (`X_nuc.zarr` → `X_nuc`) — the stem is per FILE, just
+    not per on-disk name.
+    """
+    name = label_filename
+    for suffix in (zarr_utils.STAGING_SUFFIX, zarr_utils.SUPERSEDED_SUFFIX):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    return name[:-5] if name.endswith(".zarr") else name
 
 
 def _remove_layer(viewer: napari.Viewer, name: str):

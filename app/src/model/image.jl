@@ -85,11 +85,15 @@ img_labels_dir(img::CciaImage)::String = joinpath(img._dir, "labels")
 """
 Absolute path to a segmentation labels zarr for a value_name — resolves the registered filename
 from `img.labels`, falling back to the conventional `{value_name}.zarr` when the value_name isn't
-registered yet. That fallback is load-bearing, not defensive: a segmentation run creates its store
-*before* it registers anything in `ccid.json` (registration happens only on success), so this is
-also the path of a store currently being written. Image-owned + pop_type-neutral, exactly like
-`img_label_props_path`; a `labels` value_name can carry SEVERAL files (base + nuc), so use
-`img.labels[vn]` directly when you need all of them.
+registered yet (registration happens only on success, so an unregistered name is normal).
+
+This is where a FINISHED store lives. It is **not** where a run in progress is writing: that goes to
+a staging sibling and is renamed here on completion (`zarr_utils.staged_store`), which is why
+cancelling a re-run can no longer truncate a registered set. Use `staging_store_path` for the
+in-progress path — `segment_live_outputs` is the caller that needs it.
+
+Image-owned + pop_type-neutral, exactly like `img_label_props_path`; a `labels` value_name can carry
+SEVERAL files (base + nuc), so use `img.labels[vn]` directly when you need all of them.
 """
 function img_labels_path(img::CciaImage, value_name::AbstractString="default")::String
     filenames = get(img.labels, String(value_name), String[])

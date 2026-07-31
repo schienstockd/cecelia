@@ -16,6 +16,15 @@ Usage (run in the analysis env, e.g. ``pixi run python``):
 
 Only FLAT corrected stores (numeric level arrays at the group root, i.e. our correction output) are
 touched; bioformats2raw originals (a nested series group) are skipped — they're already pyramided.
+
+**Writes here do NOT use `zarr_utils.staged_store`, deliberately** — it is the canonical write-to-a-
+staging-path-then-rename helper every TASK writer uses (see docs/SEGMENTATION.md →
+*Stores are written staged, never in place*), and this script's two
+temp-then-rename paths are similar but not the same: without `--replace` the rename target is a NEW
+name (`*.rechunked.ome.zarr`), and with it the original is RETAINED as `*.bak.ome.zarr` where
+`staged_store` deletes the superseded copy. Neither temp can be named by a `ccid.json`, so the
+truncated-registered-store failure staging exists to prevent cannot happen here. Exempted by name in
+`python/cecelia/tests/test_store_staging_convention.py`.
 """
 import argparse
 import os

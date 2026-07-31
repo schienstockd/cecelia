@@ -166,48 +166,14 @@ port is incomplete without it. 🔹 needs-input
 
 ## Backlog
 
-**#00091** — **A cancelled run leaves a half-written zarr store — and can corrupt a REGISTERED one**
-The store-level counterpart to the `ccid.json` truncation fixed in #420: `open(path, "w")` truncates a
-state file, `rmtree`-then-stream truncates a store. Two distinct problems:
-
-1. **Orphans.** A cancelled/failed segmentation leaves `labels/{vn}.zarr` that no `ccid.json` mentions —
-   invisible, uncounted disk. Self-healing only if that value_name is ever re-run.
-2. **Silent corruption of a registered set** (the serious one). `_open_label_store`
-   (`segmentation_utils.py:495`) `shutil.rmtree`s the target *before* streaming, so re-running a
-   value_name that is ALREADY registered and then cancelling leaves `ccid.json` still advertising it
-   while the store is partial. On a multi-level image the next read raises `KeyError: '1'` (visible); on
-   a **single-level** image (drift/AF/cellpose-corrected output — very common) there is **no error**:
-   unwritten frames read as zeros, so `segment.measureLabels` and tracking produce results from a
-   partial segmentation. Same hole in the IMAGE writers — `zarr_utils.py:298` and
-   `open_multiscales_for_writing(mode='w')` — so a cancelled drift/AF correct can do this too.
-
-**Fix: stage-then-rename**, the zarr analogue of `write_atomic`. Stream into a sibling
-`{vn}.zarr.partial.{uid}`, then `rmtree` the final + rename on `_finalize_label_pyramid`. A failed re-run
-then leaves the good store untouched, and a leftover staging dir is recognisably garbage. Do labels and
-the image writers in one pass — one idiom, not two.
-
-**Interaction to design around:** the napari bridge derives a layer's name from the store's FILE STEM
-(`_show_label_stores`), so a staging filename would render `(X.partial.abc123) Labels (live)` and break
-the `({vn})` prefix that `colour_labels` targets. The live preview points at the in-progress store, so it
-must be handed the staging path while still displaying the value_name — decouple the layer name from the
-filename (`LiveOutput` already carries `value_name` separately from `files`).
-
-**Cheap partial step if the full fix slips:** incompleteness is exactly detectable — declared pyramid
-levels > levels on disk (pinned by `MidRunReadabilityTest` in `test_segmentation_streaming.py`). Surface
-that as QC so an incomplete registered store warns instead of silently feeding downstream, and sweep
-orphans via a `MaintenancePatch` (dry-run then apply — the existing pattern, don't add a mechanism).
-
-
 **#00089** — **Parameter-tuning preview for segmentation (the other kind of preview)**
 The live preview (`docs/SEGMENTATION.md` → *Previewing a running run*) lets you watch a real run as it
-writes. That is not the same thing as the R version's `seedDetectPreview`, which ran a **cheap version of
-the algorithm on a timepoint sub-range** and pushed the result into napari so you could judge parameters
-*before* committing to a full run — the more useful loop when you're guessing at diameter/threshold.
-Worth porting as a proper task (`preview: true` param, or a `segment.previewParams` task) rather than the
-R mechanism itself: that worked by shipping Python source strings over the WS to `viewer$execute` +
-a generic `napari_utils.show_preview(variable)`, which this codebase deliberately replaced with typed
-per-purpose bridge commands. The R sources are in `old-R-shiny-version/inst/modules/sources/segment/`
-(`seedDetectPreview.R`, plus 8 backends worth of param sets).
+writes; it does not let you judge params on a couple of timepoints *before* committing to a full run,
+which is the loop that actually matters when you're guessing at diameter/threshold. Design, corrected
+premises (the R `seedDetectPreview` previewed a *different algorithm* — seed detection for backends
+feijoa doesn't have) and a phased build sequence: [`docs/todo/SEG_PREVIEW_PLAN.md`](todo/SEG_PREVIEW_PLAN.md).
+Pairs with [`docs/todo/SEG_QUALITY_PLAN.md`](todo/SEG_QUALITY_PLAN.md), which measures param quality
+objectively rather than visually.
 
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not

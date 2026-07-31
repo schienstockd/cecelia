@@ -102,6 +102,10 @@ The phases below are kept as the historical record of how we got here.
   (`coastal.denoise`, already clean on coastal main) remains valuable on its own but non-urgent.
 
 ## Related / parked
+- **Parameter preview** ([`SEG_PREVIEW_PLAN.md`](SEG_PREVIEW_PLAN.md)) — the *visual* inner loop: run the
+  real params over a couple of timepoints and look. Complementary, not a substitute: this plan exists
+  because looking is what missed 87–92% over-segmentation in the first place, so the preview should
+  report the same QC-pass metric rather than inventing a second one.
 - **Temporal denoise** (`coastal` B1/B2/B3) — PARKED; needs a design discussion (naive N2N over-smooths
   the punctae; cellpose already preserves them). See `coastal docs/todo/B1_EXPERIMENT_LOG.md`.
 - **coastal install story** — dev-only, cecelia would track `main` or pin an rc (Decision 8); a real

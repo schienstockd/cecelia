@@ -65,23 +65,27 @@ def run(params):
     log.progress(2, 4)
     log.log(f'>> rescale to 8-bit and write: {out_path}')
     rescaled = intensity_utils.rescale_stack_to_uint8(level0, c_idx, ranges)
-    zarr_utils.create_multiscales(
-        rescaled, out_path,
-        dim_utils=dim_utils,
-        nscales=nscales,
-    )
+    # Staged: the store lands on its final path only once it is complete, metadata included, so
+    # cancelling this task can't leave a registered image version truncated.
+    # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
+    with zarr_utils.staged_store(out_path) as staging:
+        zarr_utils.create_multiscales(
+            rescaled, staging,
+            dim_utils=dim_utils,
+            nscales=nscales,
+        )
 
-    log.progress(3, 4)
-    log.log('>> save OME-XML metadata (pixel type → uint8)')
-    ome_xml_utils.save_meta_in_zarr(
-        out_path, im_path,
-        changed_shape=level0.shape,
-        dim_utils=dim_utils,
-    )
-    # save_meta_in_zarr copies the source OME-XML verbatim, so Type still reads uint16 — correct it
-    # to match the data we just wrote (downstream reads dtype from the zarr array, but keep the
-    # sidecar honest for any OME-XML consumer).
-    ome_xml_utils.change_pixel_type(out_path, 'uint8')
+        log.progress(3, 4)
+        log.log('>> save OME-XML metadata (pixel type → uint8)')
+        ome_xml_utils.save_meta_in_zarr(
+            staging, im_path,
+            changed_shape=level0.shape,
+            dim_utils=dim_utils,
+        )
+        # save_meta_in_zarr copies the source OME-XML verbatim, so Type still reads uint16 — correct
+        # it to match the data we just wrote (downstream reads dtype from the zarr array, but keep
+        # the sidecar honest for any OME-XML consumer).
+        ome_xml_utils.change_pixel_type(staging, 'uint8')
 
     with open(result_path, 'w') as f:
         json.dump({'channels': channels}, f)

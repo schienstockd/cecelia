@@ -7771,6 +7771,23 @@ end
             @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
         end
 
+        # The staging mechanism itself lives in `zarr_utils.staged_store` (Python, where the writers
+        # are). Julia mirrors the two suffixes to name the in-progress store a preview watches and to
+        # sweep debris a killed run leaves. Nothing connects the two at runtime, so pin them together
+        # here — silent drift would aim the preview at a path no writer ever creates.
+        @testset "store staging suffixes match the Python side" begin
+            py = read(joinpath(dirname(dirname(@__DIR__)), "python", "cecelia", "utils",
+                               "zarr_utils.py"), String)
+            m_staging    = match(r"^STAGING_SUFFIX\s*=\s*'([^']+)'"m, py)
+            m_superseded = match(r"^SUPERSEDED_SUFFIX\s*=\s*'([^']+)'"m, py)
+            @test !isnothing(m_staging)
+            @test !isnothing(m_superseded)
+            @test m_staging.captures[1]    == Cecelia.STORE_STAGING_SUFFIX
+            @test m_superseded.captures[1] == Cecelia.STORE_SUPERSEDED_SUFFIX
+            @test Cecelia.staging_store_path(joinpath("labels", "X.zarr")) ==
+                  joinpath("labels", "X.zarr.partial")
+        end
+
         @testset "live_outputs is opt-in per task" begin
             params = Dict{String,Any}("outputValueName" => "X",
                                       "models" => Dict("0" => Dict("matchAs" => "base"),
@@ -7778,8 +7795,16 @@ end
             lo = Cecelia.live_outputs(Cecelia.CellposeSegment(), params)
             @test length(lo) == 1
             @test lo[1].kind == "labels"
+            # value_name is the REGISTERED name, unsuffixed — the viewer names the layer `({vn})`
+            # from it, and that prefix is what colour_labels and layer eviction match on.
             @test lo[1].value_name == "X"
-            @test lo[1].files == ["X.zarr", "X_nuc.zarr"]
+            # ...but the files are the STAGING stores. A run writes through `staged_store`, so while
+            # it is going the final path either doesn't exist or (on a re-run) still holds the
+            # PREVIOUS segmentation — a preview aimed there would show stale labels. Asserted as
+            # literals so changing the suffix has to be a deliberate edit here too.
+            @test lo[1].files == ["X.zarr.partial", "X_nuc.zarr.partial"]
+            @test lo[1].files ==
+                  Cecelia.staging_store_path.(Cecelia.segment_label_files("X", params["models"]))
             # falls back to the default value_name like the task itself does
             @test Cecelia.live_outputs(Cecelia.CellposeSegment(),
                                        Dict{String,Any}())[1].value_name == Cecelia.VERSIONED_DEFAULT_VAL
@@ -7804,7 +7829,7 @@ end
                                       "models" => Dict("0" => Dict("matchAs" => "base")))
             lo = Cecelia.live_outputs(Cecelia.CompositeTask("segment.cellposeMeasure"), params)
             @test length(lo) == 1
-            @test lo[1] == (kind = "labels", value_name = "X", files = ["X.zarr"])
+            @test lo[1] == (kind = "labels", value_name = "X", files = ["X.zarr.partial"])
 
             # a composite of non-streaming steps still declares nothing
             @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("cleanupImages.afDriftCorrect"), params))
@@ -7819,8 +7844,27 @@ end
                 @test Cecelia.img_labels_dir(img) == joinpath(img._dir, "labels")
                 # registered → the recorded filename (first of the set)
                 @test Cecelia.img_labels_path(img, "A") == joinpath(img._dir, "labels", "A.zarr")
-                # NOT registered → the convention, which is also where a running task is writing
+                # NOT registered → the convention. This is where a FINISHED store lands; a run in
+                # progress writes to the staging sibling and is renamed here on completion.
                 @test Cecelia.img_labels_path(img, "X") == joinpath(img._dir, "labels", "X.zarr")
+                @test Cecelia.staging_store_path(Cecelia.img_labels_path(img, "X")) ==
+                      joinpath(img._dir, "labels", "X.zarr.partial")
+            end
+        end
+
+        # A patch with a bad script path fails only when a user clicks Apply, so resolve every
+        # registered one the same way `run_py` does. Nothing else covers maintenance.jl.
+        @testset "every maintenance patch resolves to a script on disk" begin
+            repo = dirname(dirname(@__DIR__))
+            patches = Cecelia.maintenance_patches()
+            @test !isempty(patches)
+            @test length(unique(p.id for p in patches)) == length(patches)
+            for p in patches
+                path = startswith(p.script, "tasks/") ?
+                       joinpath(repo, "app", "src", p.script) :
+                       joinpath(repo, "python", "cecelia", p.script)
+                @test isfile(path)
+                @test !isnothing(Cecelia.maintenance_patch(p.id))
             end
         end
     end
