@@ -1363,6 +1363,11 @@ end
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
+    # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
+    # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image
+    # versions. NOT the ccid.json spelling (`filepath`, singular) nor the R version's (`imFilepath`).
+    known_value_name_fields = Set(["filepaths", "labels", "spatialGraphs"])
+
     # A value the spec itself calls valid: the declared default, else something in range/options.
     function valid_value(p)
         t = string(get(p, "type", ""))
@@ -1455,6 +1460,17 @@ end
                 isempty(key) && continue
                 t in ("section", "group") && continue   # containers hold no value of their own
                 @test t ∈ known_types
+
+                # A `valueNameSelection`'s `field` names a CciaImage field the FRONTEND reads
+                # (`VALUE_NAME_FIELDS` in frontend/src/tasks/paramValues.ts). Same failure mode as an
+                # unknown `type`: nothing errors, the widget just quietly degrades. Four tasks carried
+                # the R version's `imFilepath`, which matched no branch, so they stopped preselecting
+                # the image's ACTIVE version — and the form pointed at a version the viewer wasn't
+                # showing while cellpose (field absent) pointed at the right one.
+                if t == "valueNameSelection"
+                    fld = spec_get(p, "field", nothing)
+                    fld === nothing || @test String(fld) ∈ known_value_name_fields
+                end
 
                 # perturb exactly one value, in place, inside its group entry if nested
                 function with(bad)

@@ -71,3 +71,48 @@ export function missingParamKeys(def: TaskDef, payload: ParamValues): string[] {
   }
   return want.filter(k => !keys.has(k) || payload[k] === undefined)
 }
+
+// ── valueNameSelection: which image field, and which name to preselect ─────────────────────────────
+//
+// A `valueNameSelection` param reads its options from ONE field of the image, named by `param.field`.
+// The names are the frontend's own `CciaImage` field names (stores/project.ts) — `filepaths`, `labels`,
+// `spatialGraphs` — NOT the ccid.json spelling (`filepath`, singular) and not the R version's
+// (`imFilepath`), both of which have been used in task JSON by mistake.
+//
+// THE BUG THIS REPLACES: the auto-select preferred the image's ACTIVE version only when field was
+// absent or the string `'filepath'`. Nothing declared `'filepath'` — four image-version tasks
+// (afCorrect, driftCorrect, cropImage, copyImage) declared `imFilepath` — so all four silently took the
+// "just pick the first option" branch and did NOT preselect the version the viewer has open, while
+// cellpose (field absent) did. Same widget, two behaviours, no error. `FIELD_IS_IMAGE_VERSION` is now
+// an explicit set, and `isKnownValueNameField` lets the suite reject an unrecognised name at source
+// rather than having it degrade quietly.
+
+/** Every `field` a `valueNameSelection` param may name. */
+export const VALUE_NAME_FIELDS = ['filepaths', 'labels', 'spatialGraphs'] as const
+export type ValueNameField = typeof VALUE_NAME_FIELDS[number]
+
+/** Fields that hold IMAGE VERSIONS — the ones where the active version is the right default. */
+const FIELD_IS_IMAGE_VERSION = new Set<string>(['filepaths'])
+
+/** `field` omitted means image versions: the common case, and what most task JSON relies on. */
+export const DEFAULT_VALUE_NAME_FIELD: ValueNameField = 'filepaths'
+
+export function isKnownValueNameField(field: string | undefined): boolean {
+  return field === undefined || (VALUE_NAME_FIELDS as readonly string[]).includes(field)
+}
+
+/**
+ * Which name to select when the image selection changes.
+ *
+ * For image versions, the ACTIVE version — it is what the viewer shows and what a run with no explicit
+ * choice would read, so anything else silently previews/segments a version the user isn't looking at.
+ * For other fields (label sets, spatial graphs) there is no "active", so the first option.
+ */
+export function preferredValueName(
+  available: string[], field: string | undefined, activeValueName?: string | null,
+): string {
+  const first = available[0] ?? 'default'
+  const wantsActive = field === undefined || FIELD_IS_IMAGE_VERSION.has(field)
+  const preferred = wantsActive ? (activeValueName ?? first) : first
+  return available.includes(preferred) ? preferred : first
+}
