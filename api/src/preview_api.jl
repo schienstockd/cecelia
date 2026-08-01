@@ -23,15 +23,27 @@ _with_preview(f) = lock(f, _preview_lock)
 
 _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
 
+"""
+`(reachable, protocol)` for a worker — protocol 1 when it answers but names none, which is what every
+worker built before the handshake existed does.
+"""
+function _preview_ping(w::PreviewWorker)
+    try
+        reply = send(w, Dict("type" => "ping"))
+        (true, Int(get(reply, "protocol", 1)))
+    catch
+        (false, 0)
+    end
+end
+
+# Alive means USABLE, not merely listening: a worker running older code answers a ping perfectly well
+# and then fails the actual request (see PREVIEW_PROTOCOL). Treating a mismatch as not-alive is what
+# makes `_ensure_preview!` replace it.
 function _preview_worker_alive()::Bool
     w = _preview_ref[]
     w === nothing && return false
-    try
-        send(w, Dict("type" => "ping"))
-        true
-    catch
-        false
-    end
+    ok, protocol = _preview_ping(w)
+    ok && protocol == PREVIEW_PROTOCOL
 end
 
 """
@@ -40,7 +52,9 @@ flight — the caller reports `starting` rather than blocking, because the worke
 and cellpose imports before it can answer (that cost is the whole reason it is resident).
 
 Adopts a worker already listening on the port, like `_ensure_viewer!` — one that survived a backend
-restart is still perfectly good, and a second process on the port would just fail to bind.
+restart is still perfectly good, and a second process on the port would just fail to bind. It is adopted
+only when its `PREVIEW_PROTOCOL` matches: a worker running older code pings fine and then fails the real
+request, so a mismatch is STOPPED and replaced rather than trusted.
 """
 function _ensure_preview!()::Bool
     lock(_preview_lock) do
@@ -48,13 +62,18 @@ function _ensure_preview!()::Bool
         _preview_starting[] && return false
         if _preview_ref[] === nothing
             probe = PreviewWorker()
-            try
-                send(probe, Dict("type" => "ping"))
+            ok, protocol = _preview_ping(probe)
+            if ok && protocol == PREVIEW_PROTOCOL
                 _preview_ref[] = probe
                 @info "Adopted existing preview worker on port $(probe.port)"
                 return true
-            catch
-                # none running — launch one
+            elseif ok
+                @warn "Replacing preview worker: it speaks protocol $protocol, this backend needs " *
+                      "$PREVIEW_PROTOCOL (its code predates a change to the reply shape or the " *
+                      "previewable tasks)"
+                try; close!(probe); catch e
+                    @warn "Could not stop the stale preview worker" exception = e
+                end
             end
         end
         @info "Launching preview worker..."

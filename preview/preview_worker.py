@@ -21,9 +21,15 @@ What it does NOT do:
   accumulate whenever a preview didn't finish cleanly. A preview is a picture, not data.
 
 Protocol: one JSON message per connection, same shape as the napari bridge.
-    {"type": "ping"}     -> {"type": "ok"}
-    {"type": "preview", ...} -> {"type": "ok", "counts": …, "region": …, "fallback2d": bool,
-                                 "mask": {shape/dtype/data}, "labelShape": …, "labelAxes": …}
+    {"type": "ping"}     -> {"type": "ok", "protocol": PROTOCOL}
+    {"type": "preview", ...} -> {"type": "ok", "layers": [{kind, name, block, shape, axes}, …],
+                                 "region": …, "fallback2d": bool, plus per-task fields}
+
+`PROTOCOL` exists because a running worker is ADOPTED, not relaunched, when the backend restarts — that
+is deliberate (a warm worker survives a Revise restart, which is most of its value) but it means stale
+worker code otherwise outlives every restart. It presented as a bare "Preview failed": a worker from
+before the AF backend existed ignored `funName`, fell through to the segmentation path, and raised
+"no models in preview params". Bump this whenever the reply shape or the backend set changes.
 """
 import asyncio
 import json
@@ -54,6 +60,11 @@ NORM_FRAMES = 20
 #: be made cheap. Runs stay exact: they pass no stride.
 AF_PREVIEW_STRIDE = (2, 4)
 
+#: Reply-shape + backend-set version. The backend refuses to adopt a worker that doesn't match and
+#: relaunches instead — see `_ensure_preview!`. 1: single `mask` field, cellpose only.
+#: 2: `layers` list with per-layer kind, cellpose + AF correction.
+PROTOCOL = 2
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
 _AXES = ("X", "Y", "Z", "T")
@@ -64,18 +75,36 @@ class PreviewState:
     other per-invocation cost a resident process removes."""
 
     def __init__(self):
-        self._images = {}        # im_path → (levels, dim_utils)
+        self._images = {}        # im_path → (dask levels, dim_utils)
+        self._images_zarr = {}   # im_path → plain zarr levels (see image_zarr)
         self._model_cache = {}   # shared with each CellposeUtils instance (see `segmenter`)
         self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
         self._af = {}            # (im_path, channel, af channels, method) → AF stats
 
     def image(self, im_path):
+        """The image as DASK levels. Kept lazy because cellpose's whole-image normalisation
+        (`_compute_norm_params` → `channel_histograms`) streams an entire channel: with a plain zarr
+        handle that materialises the channel in RAM, which is the OOM the streaming rework removed."""
         if im_path not in self._images:
             levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
             dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
             dim_utils.calc_image_dimensions(levels[0].shape)
             self._images[im_path] = (levels, dim_utils)
         return self._images[im_path]
+
+    def image_zarr(self, im_path):
+        """The same image as plain ZARR levels, for a reader that works one frame at a time.
+
+        Not the same handle as `image` on purpose, and not a blanket flip of it. AF's derivation reads
+        `fortify(arr[slice])` per frame — bounded either way — and measured on a real store the dask
+        handle costs **9.3×** on exactly that access pattern (`af_correct_image` 278.7 s → 30.1 s),
+        because each slice rebuilds and executes a graph. Cellpose's normalisation needs the opposite
+        (see `image`), so both handles exist. Opening a second one is metadata-only.
+        """
+        if im_path not in self._images_zarr:
+            levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
+            self._images_zarr[im_path] = levels
+        return self._images_zarr[im_path]
 
     def segmenter(self, params, dim_utils):
         """A fresh `CellposeUtils` per preview — params change every time, and that is the point —
@@ -128,7 +157,8 @@ class PreviewState:
         key = (im_path, int(channel_idx), tuple(sorted(int(d) for d in division_channels)), method)
         if key not in self._af:
             self._af[key] = correction_utils.af_division_stats(
-                levels[0], dim_utils, int(channel_idx), [int(d) for d in division_channels],
+                self.image_zarr(im_path)[0], dim_utils,
+                int(channel_idx), [int(d) for d in division_channels],
                 background_method=method, spatial_stride=AF_PREVIEW_STRIDE)
         return self._af[key]
 
@@ -432,7 +462,7 @@ def preview(msg):
 def execute_command(msg):
     kind = msg.get("type", "")
     if kind == "ping":
-        return {"type": "ok"}
+        return {"type": "ok", "protocol": PROTOCOL, "backends": sorted(_BACKENDS)}
     if kind == "preview":
         return {"type": "ok", **preview(msg)}
     raise ValueError(f"unknown command: {kind!r}")

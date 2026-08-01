@@ -134,7 +134,7 @@ export capture_view_state, apply_view_state!, preview_region
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
 # `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
-export PreviewWorker, PREVIEW_PORT, preview_alive, preview_request
+export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
 export preview_show_command, show_task_preview!, hide_task_preview!
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed

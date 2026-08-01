@@ -16,6 +16,15 @@
 # to be done here and a second variant would be the bug.
 
 const PREVIEW_PORT   = 7656
+
+# Reply-shape + backend-set version the backend expects, mirroring `preview_worker.PROTOCOL`. A running
+# worker is ADOPTED rather than relaunched on a backend restart — deliberate, since a warm worker
+# surviving a Revise restart is most of its value — but that means stale worker code otherwise outlives
+# every restart. It presented as a bare "Preview failed": a worker predating the AF backend ignored
+# `funName`, fell through to the segmentation path and raised "no models in preview params", with
+# nothing anywhere reporting that the process was old. Bump BOTH sides together whenever the reply shape
+# or the set of previewable tasks changes.
+const PREVIEW_PROTOCOL = 2
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
