@@ -11,9 +11,11 @@ of GB, so we cannot materialise a channel to sort it. A single streamed `bincoun
 stats QC needs — all from one pass. The rescale itself is returned as a lazy dask array so
 `create_multiscales` writes it chunk-by-chunk with bounded memory.
 
-Default window is the channel's TRUE [min, max] (lo=0 / hi=100 percentile): nothing is clipped, and
-the (narrow) signal fills the full 0–255 range instead of collapsing into the first few codes the
-way a blind cast from [0, 65535] would. See docs/todo/IMPORT_RESCALE_PLAN.md.
+Default window is the channel's min to its OUTLIER-REJECTED max (lo=0 / hi=100 percentile): nothing
+real is clipped, and the (narrow) signal fills the full 0–255 range instead of collapsing into the
+first few codes the way a blind cast from [0, 65535] would. The upper bound is deliberately not the
+literal brightest voxel — one hot pixel there sets the window for the whole channel in a conversion
+that cannot be undone. See `robust_hist_max` and docs/todo/IMPORT_RESCALE_PLAN.md.
 """
 import numpy as np
 
@@ -77,8 +79,21 @@ def hist_percentile(hist, pct):
     return int(np.searchsorted(cdf, target))
 
 
-def robust_hist_max(hist, min_count):
+#: Floor and fraction for `robust_hist_max`'s default count threshold. The floor is what keeps a small
+#: or synthetic histogram behaving exactly as a true max did — nothing reaches the threshold, so it
+#: falls back — while a real image (millions of voxels) rejects a one-voxel hot pixel.
+ROBUST_MAX_MIN_FRAC = 1e-6
+ROBUST_MAX_MIN_FLOOR = 64
+
+
+def robust_hist_max(hist, min_count=None, min_frac=ROBUST_MAX_MIN_FRAC,
+                    min_floor=ROBUST_MAX_MIN_FLOOR):
     """Highest value that at least ``min_count`` voxels attain — an **outlier-rejected maximum**.
+
+    ``min_count=None`` derives it as ``max(min_floor, total * min_frac)``, which is what makes this a
+    drop-in replacement for a true max: a fraction of the total is scale-free across image sizes, and
+    the floor means a histogram too small to have a meaningful tail falls back to the true max rather
+    than to something arbitrary.
 
     The true max (``nonzero(hist)[-1]``) is decided by a single voxel, which makes it useless as a
     rescale ceiling: measured on a real 181-frame movie, the top six occupied bins held **exactly one
@@ -103,6 +118,8 @@ def robust_hist_max(hist, min_count):
     ceiling above the derived background.
     """
     h = np.asarray(hist)
+    if min_count is None:
+        min_count = max(int(min_floor), int(int(h.sum()) * float(min_frac)))
     ok = np.nonzero(h >= int(min_count))[0]
     if ok.size:
         return int(ok[-1])
@@ -169,18 +186,31 @@ def background_threshold(hist, method='triangle', ignore_zero=True):
     return float(threshold_otsu(hist=(h, np.arange(h.size))))
 
 
-def range_from_hist(hist, lo_pct=0.0, hi_pct=100.0):
+def range_from_hist(hist, lo_pct=0.0, hi_pct=100.0, robust=True):
     """
     `(vmin, vmax)` window from a channel histogram.
 
-    lo_pct<=0 → true min (first non-empty value); hi_pct>=100 → true max (last non-empty value) —
-    the "just take the highest value" default. Otherwise the respective percentile.
+    lo_pct<=0 → true min (first non-empty value); hi_pct>=100 → the **outlier-rejected** max
+    (`robust_hist_max`). Otherwise the respective percentile.
+
+    That upper default is deliberately not the literal last occupied bin. This is the live default path
+    for every 16→8-bit import — `rescaleFixedMax` is 0 (off) unless someone sets it — and a single hot
+    pixel there decides the window for the whole channel, permanently, in a destructive conversion.
+    Both #440's own measurement ("pinning the top of the window to a saturated 12-bit pixel so the real
+    signal used only ~15% of the range") and the AF work found the same failure independently.
+
+    `robust=False` restores the literal true max for a caller that genuinely wants the extremum. A
+    histogram too small to have a meaningful tail falls back to it anyway — see the floor on
+    `robust_hist_max` — so synthetic and tiny cases are unchanged.
     """
     nz = np.nonzero(hist)[0]
     if nz.size == 0:
         return 0.0, 0.0
     vmin = int(nz[0]) if lo_pct <= 0.0 else hist_percentile(hist, lo_pct)
-    vmax = int(nz[-1]) if hi_pct >= 100.0 else hist_percentile(hist, hi_pct)
+    if hi_pct >= 100.0:
+        vmax = robust_hist_max(hist) if robust else int(nz[-1])
+    else:
+        vmax = hist_percentile(hist, hi_pct)
     return float(vmin), float(vmax)
 
 
@@ -189,7 +219,11 @@ def channel_ranges(hists, lo_pct=0.0, hi_pct=100.0, fixed=None):
     rescale window is chosen.
 
     ``fixed=(lo, hi)`` uses that SAME window for every channel and, being absolute, for every image.
-    Otherwise each channel gets its own percentile window (``range_from_hist``).
+    Otherwise each channel gets its own percentile window (``range_from_hist``) — whose upper bound at
+    ``hi_pct >= 100`` is an outlier-rejected max, not the literal brightest voxel. The two solve
+    different halves of the same problem and both are needed: ``fixed`` buys comparability between
+    channels and images, which no per-image estimate can; the robust max stops one hot pixel deciding
+    the window, which ``fixed`` only avoids while someone remembers to set it (it is off by default).
 
     A per-channel percentile window is the right default for viewing — it gives each channel the
     full 8-bit range. It is the wrong one whenever intensities have to be compared *between*
