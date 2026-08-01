@@ -35,6 +35,11 @@ def run(params):
     nscales     = int(params.get('nscales', 1))
     low_pct     = float(params.get('lowPercentile', 0.0))
     high_pct    = float(params.get('highPercentile', 100.0))
+    # An absolute window, in RAW units, shared by every channel and every image. Overrides the
+    # percentiles when set (fixedMax > fixedMin). See intensity_utils.channel_ranges.
+    fixed_min   = float(params.get('fixedMin', 0.0))
+    fixed_max   = float(params.get('fixedMax', 0.0))
+    fixed       = (fixed_min, fixed_max) if fixed_max > fixed_min else None
     result_path = params['resultPath']
 
     log.progress(0, 4)
@@ -49,10 +54,14 @@ def run(params):
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim} (channel axis={c_idx})')
 
     log.progress(1, 4)
-    log.log(f'>> compute per-channel intensity window over the stack '
-            f'(low={low_pct}%, high={high_pct}%)')
+    log.log('>> compute intensity window over the stack ' + (
+        f'(FIXED [{fixed_min:.0f}, {fixed_max:.0f}], shared by all channels)' if fixed
+        else f'(per channel, low={low_pct}%, high={high_pct}%)'))
+    # Histograms are computed either way — with a fixed window they no longer choose it, but
+    # clip_stats still reports how much of each channel it actually clips, which is the number
+    # that tells you whether the window was set sensibly.
     hists  = intensity_utils.channel_histograms(level0, c_idx)
-    ranges = [intensity_utils.range_from_hist(h, low_pct, high_pct) for h in hists]
+    ranges = intensity_utils.channel_ranges(hists, low_pct, high_pct, fixed=fixed)
 
     channels = []
     for i, (h, (vmin, vmax)) in enumerate(zip(hists, ranges)):
