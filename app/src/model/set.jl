@@ -95,6 +95,53 @@ function image_by_uid(s::CciaSet; uid::AbstractString)::Union{CciaImage,Nothing}
     isnothing(idx) ? nothing : s._images[idx]
 end
 
+# ── Reference image ───────────────────────────────────────────────────────────────────────────────
+#
+# One image per set, nominated by the user as REPRESENTATIVE of the set. It is a property of the set,
+# deliberately not of any task: the first consumer is the 8-bit import (deriving one intensity window
+# for the whole set from the reference, so channels and images stay comparable), but "process this
+# set the way this image says" is a shape that recurs — a normalisation baseline, a gating template,
+# a parameter sweep's anchor. Any of those reads the same field instead of inventing its own.
+#
+# Why a nominated image rather than a derived value: the alternative is asking the user for a number
+# (`rescaleFixedMax = 1500`), which they can only get by eyeballing a histogram. Picking "this movie
+# looks typical" is a judgement they can actually make. The consuming task derives the number.
+#
+# Unset is the normal state and must stay usable — a consumer falls back to its per-image behaviour.
+
+const REFERENCE_IMAGE_KEY = "referenceImage"
+
+"""
+    reference_image_uid(s::CciaSet) -> Union{String,Nothing}
+
+The set's reference image uid, or `nothing` when none is set **or when the nominated image is no
+longer in the set** (deleted, moved) — a caller gets one answer for "there is no usable reference"
+rather than having to re-check membership itself.
+"""
+function reference_image_uid(s::CciaSet)::Union{String,Nothing}
+    uid = get(s.meta, REFERENCE_IMAGE_KEY, nothing)
+    uid isa AbstractString || return nothing
+    String(uid) in s.image_uids ? String(uid) : nothing
+end
+
+"""
+    set_reference_image!(s::CciaSet, uid) -> CciaSet
+
+Nominate `uid` as the set's reference, or clear it with `nothing`. Errors if the image is not in the
+set — a reference pointing outside it is a bug, not a state to persist.
+"""
+function set_reference_image!(s::CciaSet, uid::Union{AbstractString,Nothing})::CciaSet
+    if isnothing(uid) || isempty(uid)
+        delete!(s.meta, REFERENCE_IMAGE_KEY)
+    else
+        String(uid) in s.image_uids ||
+            error("set_reference_image!: $uid is not in set $(s.uid)")
+        s.meta[REFERENCE_IMAGE_KEY] = String(uid)
+    end
+    save!(s)
+    s
+end
+
 """
 Delete an image from the set: removes its data dir ({proj}/0/{uid}) and metadata
 dir ({proj}/1/{uid}) from disk, drops it from the set manifest, and persists the set.

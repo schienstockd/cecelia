@@ -175,6 +175,35 @@ async function saveNote(img: CciaImage, val: string) {
   }
 }
 
+// ── Reference image ───────────────────────────────────────────────────────────
+// One image per set, nominated by the user as representative. It is a SET property, not a task
+// param: the 8-bit import derives its shared intensity window from it, so every image in the set
+// lands in one intensity space. The user picks it because they are the one who knows which movie
+// looks like what they usually see — the alternative is asking for a raw intensity number, which
+// only someone eyeballing a histogram can answer.
+function isReference(img: CciaImage) {
+  return project.sets.find(s => s.uid === props.setUid)?.referenceImage === img.uid
+}
+
+async function toggleReference(img: CciaImage) {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  const set = project.sets.find(s => s.uid === props.setUid)
+  const prev = set?.referenceImage ?? null
+  const next = prev === img.uid ? null : img.uid          // clicking the current star clears it
+  project.setReferenceImage(props.setUid, next)           // reflect immediately
+  try {
+    const res = await fetch('/api/sets/reference', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, setUid: props.setUid, imageUid: next ?? '' }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+  } catch (e) {
+    project.setReferenceImage(props.setUid, prev)         // revert on failure
+    log.error(`Failed to set reference image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  }
+}
+
 // ── Include / exclude ─────────────────────────────────────────────────────────
 // Excluded images stay visible but greyed, can't be selected, and are skipped by every run.
 const NOTE_KEY = '__note'
@@ -765,6 +794,13 @@ onUnmounted(stopResize)
               v-tooltip.right="qcFor(img)!.long">
               <i class="pi pi-flag" /> QC
             </span>
+            <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isReference(img) }"
+              @click.stop="toggleReference(img)"
+              v-tooltip.right="isReference(img)
+                ? 'Reference image for this set — click to clear'
+                : 'Set as the set\'s reference image (the representative one others are matched to)'">
+              <i :class="isReference(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
+            </button>
             <span v-if="isExcluded(img)" class="excl-badge"
               v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
               <i class="pi pi-ban" /> Excluded
@@ -1082,6 +1118,12 @@ th:hover .resize-handle::after { opacity: 1; }
    palette); the shape-distinct triangle icon carries the meaning, colour is secondary. */
 .warn-icon-btn { color: var(--cc-sev-warn); }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .warn-icon-btn:hover { filter: brightness(1.2); }
+
+/* Reference-image star — a SET-level nomination, so exactly one row shows it filled. Dim until
+   hovered when unset, so eight unset stars don't compete with the QC and exclusion badges. */
+.ref-star { opacity: .25; }
+.ref-star:hover { opacity: .7; }
+.ref-star.on { opacity: 1; color: var(--cc-accent); }
 
 /* QC badge — advisory "output looks off" flag (non-metadata findings; distinct from the calibration
    warning icon). Uses the canonical severity tokens. */

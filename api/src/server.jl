@@ -370,6 +370,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_projects_delete(body_bytes)
         elseif path == "/api/sets/create"
             api_sets_create(body_bytes)
+        elseif path == "/api/sets/reference"
+            api_sets_reference_set(body_bytes)
         elseif path == "/api/sets/delete"
             api_sets_delete(body_bytes)
         elseif path == "/api/images/register"
