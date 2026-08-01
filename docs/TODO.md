@@ -135,17 +135,6 @@ port is incomplete without it. 🔹 needs-input
 
 ## Backlog
 
-**#00089** — **Parameter-tuning preview for segmentation (the other kind of preview)**
-The live preview (`docs/SEGMENTATION.md` → *Previewing a running run*) lets you watch a real run as it
-writes; it does not let you judge params on a couple of timepoints *before* committing to a full run,
-which is the loop that actually matters when you're guessing at diameter/threshold. Design, corrected
-premises (the R `seedDetectPreview` previewed a *different algorithm* — seed detection for backends
-feijoa doesn't have) and a phased build sequence: [`docs/todo/TASK_PREVIEW_PLAN.md`](todo/TASK_PREVIEW_PLAN.md).
-Scope is wider than segmentation: denoise and AF correction have the same judge-at-the-end problem and no
-preview at all, so it is planned as ONE mechanism with three consumers. Pairs with
-[`docs/todo/SEG_QUALITY_PLAN.md`](todo/SEG_QUALITY_PLAN.md), which measures param quality objectively
-rather than visually.
-
 **#00090** — **A third of a drift-corrected stack can be empty, and every task still processes it**
 Measured 2026-07-31 on `k3Tx90` (project `kSUFux`… actually `4kS67f`, 201×20×544×548): drift correction
 expands the canvas and pads with zeros, and on that image **z 0–2 and z 16–20 are all-zero across every

@@ -12,6 +12,11 @@
 > *feasible now* — `Zarr.jl` reads/writes zarr pixels (v2+v3) — gated only on building cecelia's own
 > multiscale pixel-I/O layer on it (watch item W1: an implementation task, not an ecosystem gap,
 > whose payoff is consolidation only).
+>
+> **This is a dated snapshot, not a living doc** (see the watchlist for that). One row has since gone
+> stale and is marked in place: `af_correct` no longer has the filter/denoise features whose missing
+> Julia drop-ins were its caveat (#437 deleted them), which retired watch item **W4** entirely. Read a
+> row's "Julia packages" column against today's code before acting on it.
 
 End goal: Julia owns all computation except Napari. Default to Julia unless there is a concrete
 blocker; do not port anything that creates a net complexity increase.
@@ -81,7 +86,7 @@ handoffs — not because they liberate the codebase from Python.
 | File | Classification | Reason | Julia packages (if PORT_JULIA) |
 |---|---|---|---|
 | `cleanupImages/drift_correct_run.py` | **PORT_JULIA** | Pure FFT phase cross-correlation registration + array shift. No DL, no Napari, no Python-only lib. Cleanest first candidate. | `SubpixelRegistration.jl` (direct port of skimage `phase_cross_correlation`), `FFTW.jl`, `Statistics`, `Images.jl`, `Zarr.jl` (I/O plumbing) |
-| `cleanupImages/af_correct_run.py` | **PORT_JULIA** (core) | Percentile background subtraction + rescale/clip + median/Gaussian filter — pure array/morphology. **Caveat:** two *optional, default-off* features have no drop-in: `rolling_ball` (no Julia pkg) and `denoise_wavelet`/`denoise_tv_chambolle` (thresholding hand-port). Gate those behind their ports; port the mandatory path now. | `ImageFiltering.jl`, `ImageMorphology.jl`, `Statistics`/`StatsBase.jl`, `Images.jl`, `Wavelets.jl` (optional, hand-port shrink); `rolling_ball` = port algorithm |
+| `cleanupImages/af_correct_run.py` | **PORT_JULIA** (core) | Percentile background subtraction + rescale/clip + median/Gaussian filter — pure array/morphology. **Caveat:** two *optional, default-off* features have no drop-in: `rolling_ball` (no Julia pkg) and `denoise_wavelet`/`denoise_tv_chambolle` (thresholding hand-port). Gate those behind their ports; port the mandatory path now. **[superseded — see the watchlist]** | `ImageFiltering.jl`, `ImageMorphology.jl`, `Statistics`/`StatsBase.jl`, `Images.jl`, `Wavelets.jl` (optional, hand-port shrink); `rolling_ball` = port algorithm |
 | `cleanupImages/cellpose_correct_run.py` | **KEEP_PYTHON** | `cellpose.denoise.DenoiseModel` + torch DL inference. cellpose pinned v3.1.1.2 for `DenoiseModel`. | — |
 | `clustPops/cluster_run.py` | **KEEP_PYTHON** | scanpy + leidenalg + UMAP/PAGA Leiden pipeline. Porting risks divergent cluster labels vs the R engine for little benefit. | — |
 | `clustTracks/cluster_run.py` | **KEEP_PYTHON** | Track analogue of clustPops; same scanpy/leidenalg engine. | — |

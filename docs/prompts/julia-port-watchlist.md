@@ -31,7 +31,7 @@
 | Numeric `obs` **write** (`save!`) | ✅ **Julia-native** | Done. Julia writes float64 obs directly via `HDF5.jl`. |
 | Track measures (celltrackR subset) | ✅ **Julia-native** | Done (`track_measures.jl`). |
 | **`drift_correct`** | 🟡 **Portable now — needs I/O layer built** | Compute ports cleanly (`SubpixelRegistration.jl`). Requires building cecelia's OME-ZARR pixel-I/O layer on **Zarr.jl** (which exists) — an implementation task, **not** an ecosystem blocker. See **W1**. |
-| **`af_correct`** (core) | 🟡 **Portable now — needs I/O layer built** | Compute ports (`ImageFiltering.jl`/`ImageMorphology.jl`). Same **W1** I/O-layer build. Optional features also need **W4**. |
+| **`af_correct`** | 🟡 **Portable now — needs I/O layer built** | Same **W1** I/O-layer build, and now the *whole* task rather than a core-plus-options split: #437 deleted the filter toolbox (median/gaussian/rolling-ball/wavelet), so what remains is a histogram, a threshold, and per-voxel arithmetic — no image-morphology dependency at all. **W4 is retired.** |
 | `cellpose_correct`, `cellpose` (segment) | 🔴 **KEEP_PYTHON** | cellpose + torch DL. No Julia equivalent — see Do-Not-Port. |
 | `bayesian_tracking` | 🔴 **KEEP_PYTHON** | btrack (C++/Python). No Julia equivalent. |
 | `clustPops` / `clustTracks` (Leiden) | 🔴 **KEEP_PYTHON** | scanpy/leidenalg/UMAP/PAGA/ComBat/Harmony. **Blocked on: no mature Julia stack.** Watch item **W2**. |
@@ -93,13 +93,16 @@ Recheck these periodically. When one lands (and is mature), the linked item(s) a
   hull via `Quickhull.jl`, descriptors, KD-tree neighbours via `NearestNeighbors.jl`, 3D Delaunay
   via `TetGen.jl`) **is** feasible in Julia today — only collision is the hard gap.
 
-### W4 — Minor `af_correct` optional-feature gaps
-- **Unlocks:** the *optional, default-off* AF features (mandatory AF path is fine once W1 lands).
-- **Gap:** no Julia `rolling_ball` background subtraction; no `denoise_wavelet` (BayesShrink/
-  VisuShrink) or `denoise_tv_chambolle` (Wavelets.jl exists but the shrink/TV variants need
-  hand-porting).
-- **Watch for:** an ImageJ-style rolling-ball package; wavelet/TV denoise in the Julia image stack.
-  Low priority (features are off by default).
+### W4 — ~~Minor `af_correct` optional-feature gaps~~ — **RETIRED 2026-08-01**
+Watched for a Julia `rolling_ball` and a `denoise_wavelet`/`denoise_tv_chambolle` drop-in, for AF's
+optional default-off filters. **#437 deleted those filters**, so there is nothing left to unblock — the
+watch item outlived the feature it was watching for. Kept as a stub rather than deleted because the
+numbering is cited above.
+
+Worth noting *why*, since it generalises: those parameters existed to fit individual datasets and were
+never revisited, and rule 1 above ("only port what the framework actually uses") already said not to
+port them. Simplifying the task upstream removed the dependency instead of finding a package for it —
+usually the cheaper move when a watch item is gated on optional behaviour nobody relies on.
 
 ---
 
