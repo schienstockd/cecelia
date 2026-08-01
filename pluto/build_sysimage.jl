@@ -3,7 +3,8 @@
 #   pixi run notebooks-sysimage
 #
 # Deps-only (Locked #6): bakes the stable heavy stack — Makie/CairoMakie + AoG + DataFrames + HDF5 +
-# HTTP — but NOT Cecelia, so Revise still hot-reloads Cecelia in dev. For RELEASE, a full sysimage
+# HTTP — but NOT Cecelia, so workers load Cecelia from source and pick up app/src edits. For RELEASE,
+# a full sysimage
 # (Cecelia included) is built in the packaging flow (docs/SHIPPING.md).
 #
 # Cost (Phase 0, Linux): ~10 min to build, ~1.4 GB on disk. One-time. deps.so is git-ignored.
@@ -17,5 +18,5 @@ create_sysimage(
     sysimage_path = joinpath(@__DIR__, "deps.so"),
     precompile_execution_file = joinpath(@__DIR__, "precompile_workload.jl"),
 )
-write_sysimage_stamp(@__DIR__)   # record Julia + Manifest versions so a later update can detect staleness
+write_sysimage_stamp(@__DIR__, "deps")   # Julia + Manifest (staleness) + which recipe built it
 @info "sysimage built" path = joinpath(@__DIR__, "deps.so")

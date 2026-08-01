@@ -34,7 +34,18 @@ launch_browser = get(ENV, "CECELIA_PLUTO_BROWSER", "true") == "true"
 include(joinpath(@__DIR__, "sysimage_stamp.jl"))
 sysimg = joinpath(@__DIR__, "deps.so")
 compiler = if sysimage_fresh(@__DIR__)
-    @info "Pluto workers will use the deps sysimage (fast first plot)" sysimg
+    # Say WHICH image, not just that there is one. Both recipes write this same path, and a `full`
+    # image has Cecelia baked in at BUILD time — so app/src edits never reach notebook workers, not
+    # even a freshly spawned one, until the image is rebuilt. Correct for a release, wrong for dev,
+    # and it used to be invisible: this line always claimed "deps". (Measured: with a full image a
+    # brand-new session returns the build-time definition while the source on disk says otherwise,
+    # and `pathof(Cecelia)` still points at the source, so nothing gives it away.)
+    variant = sysimage_variant(@__DIR__)
+    if variant == "full"
+        @warn "Pluto workers will use the FULL sysimage — Cecelia is baked in at build time, so changes to app/src will NOT reach notebooks (not even in a fresh worker) until it is rebuilt. Correct for a release; in dev rebuild deps-only with: pixi run notebooks-sysimage" sysimg
+    else
+        @info "Pluto workers will use the $(variant == "deps" ? "deps" : "(unstamped)") sysimage (fast first plot)" sysimg variant
+    end
     Pluto.Configuration.CompilerOptions(sysimage = sysimg)
 else
     isfile(sysimg) ?

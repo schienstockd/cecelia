@@ -144,6 +144,20 @@ function _stamp_matches(stamp::Union{String,Nothing}, julia::AbstractString, man
     end
 end
 
+# Which recipe built the on-disk image: "deps", "full", or "unknown" (no stamp, unreadable, or a
+# stamp written before the field existed). Reads one more field out of the JSON `_stamp_matches`
+# already parses. Mirrors `sysimage_variant` in pluto/sysimage_stamp.jl — the same hand-sync noted
+# above; folding the two together is tracked separately.
+function _stamp_variant(stamp::Union{String,Nothing})::String
+    stamp === nothing && return "unknown"
+    try
+        v = String(get(JSON3.read(stamp), :variant, ""))
+        v in ("deps", "full") ? v : "unknown"
+    catch
+        "unknown"
+    end
+end
+
 # Pure classifier (testable, no IO): given whether deps.so exists, its stamp contents (or nothing),
 # whether a build is running, whether the last build errored, and the current Julia + Manifest hash →
 # one of: "ready" (fresh image), "stale" (image exists but built for a different Julia/package set —
@@ -176,9 +190,16 @@ function _ensure_sysimage_build!()::String
         p = _nb_build_proc[]
         (p !== nothing && process_running(p)) && return "building"
 
+        # Rebuild LIKE FOR LIKE. This always built the deps recipe, so a release shipping a FULL image
+        # (Cecelia + CeceliaNb baked in) would silently downgrade to deps the first time it went stale
+        # and the user pressed Rebuild: plots stay fast, but the first `pop_df` is slow again, with no
+        # error to explain it. The stamp now records which recipe was there, so match it. Absent or
+        # pre-variant stamp → deps, which is the safe default and what a first run has always built.
         pluto_root   = _pluto_root()
-        build_script = joinpath(pluto_root, "build_sysimage.jl")
-        isfile(build_script) || error("pluto/build_sysimage.jl not found at $build_script")
+        onstamp      = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
+        script_name  = _stamp_variant(onstamp) == "full" ? "build_sysimage_full.jl" : "build_sysimage.jl"
+        build_script = joinpath(pluto_root, script_name)
+        isfile(build_script) || error("pluto/$script_name not found at $build_script")
         _pluto_env_ready() || error("The notebook environment is not set up. $_SETUP_HINT")
 
         julia_exe = joinpath(Sys.BINDIR, Base.julia_exename())

@@ -2079,3 +2079,63 @@ end
     isempty(missing_exports) ||
         @info "not exported from Cecelia but called unqualified in api/src" missing_exports
 end
+
+# ── Notebook sysimage: which recipe built the image ───────────────────────────────
+# Deliberately at the END of this file rather than beside the `API: notebooks sysimage status`
+# testset it belongs with: #437 inserts ~104 lines at line 486, exactly there, and a flat testset
+# suite does not care about order. Move it back up once that has landed.
+@testset "sysimage stamp records which recipe built the image" begin
+    # Both builders write the SAME pluto/deps.so by design, but the deps-only one EXCLUDES Cecelia so
+    # Revise can hot-reload it while -full bakes Cecelia in. Without a variant they are identical on
+    # disk, so a -full build on a dev machine silently froze Cecelia in notebook workers while
+    # launch.jl still logged "deps sysimage". These are the pure halves of that fix.
+    include(joinpath(@__DIR__, "..", "..", "pluto", "sysimage_stamp.jl"))
+
+    d = mktempdir()
+    write(joinpath(d, "Manifest.toml"), "dummy")
+    touch(joinpath(d, "deps.so"))
+
+    write_sysimage_stamp(d, "deps")
+    @test sysimage_variant(d) == "deps"
+    @test sysimage_fresh(d)
+    write_sysimage_stamp(d, "full")
+    @test sysimage_variant(d) == "full"
+    @test sysimage_fresh(d)                        # variant must not affect staleness
+    write_sysimage_stamp(d)                        # default is the safe one
+    @test sysimage_variant(d) == "deps"
+    @test_throws ArgumentError write_sysimage_stamp(d, "bogus")
+
+    # An image stamped BEFORE `variant` existed must keep working — reported honestly as unknown
+    # rather than mislabelled "deps", and crucially still FRESH (no forced ~10 min rebuild).
+    write(joinpath(d, "deps.so.stamp"),
+          "{\"julia\":\"$(VERSION)\",\"manifest\":\"$(string(hash("dummy")))\"}")
+    @test sysimage_variant(d) == "unknown"
+    @test sysimage_fresh(d)
+
+    rm(joinpath(d, "deps.so.stamp"))
+    @test sysimage_variant(d) == "unknown"
+    @test !sysimage_fresh(d)
+
+    # The stamp is read by TWO hand-synced implementations (pluto/sysimage_stamp.jl writes it,
+    # api/src/notebooks_api.jl's _stamp_matches reads it). A field added on one side must not break
+    # the other — that divergence is the standing risk this file's classifier tests sit next to.
+    full = "{\"julia\":\"1.11\",\"manifest\":\"abc\",\"variant\":\"full\"}"
+    @test _classify_sysimage(true, full, false, false, "1.11", "abc") == "ready"
+    @test _classify_sysimage(true, full, false, false, "1.10", "abc") == "stale"
+
+    # The API reads the variant to rebuild LIKE FOR LIKE. Getting "unknown" wrong in the unreadable /
+    # pre-variant / absent cases is what would silently downgrade a release's full image to deps.
+    @test _stamp_variant(full) == "full"
+    @test _stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\",\"variant\":\"deps\"}") == "deps"
+    @test _stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\"}") == "unknown"   # pre-variant stamp
+    @test _stamp_variant("{\"variant\":\"bogus\"}") == "unknown"                     # unrecognised
+    @test _stamp_variant("not json at all")         == "unknown"
+    @test _stamp_variant(nothing)                   == "unknown"                     # absent → first run
+
+    # …and the two readers must agree on the same bytes, since they are hand-synced across envs.
+    for v in ("deps", "full")
+        d2 = mktempdir(); write(joinpath(d2, "Manifest.toml"), "x"); touch(joinpath(d2, "deps.so"))
+        write_sysimage_stamp(d2, v)
+        @test _stamp_variant(read(joinpath(d2, "deps.so.stamp"), String)) == sysimage_variant(d2) == v
+    end
+end
