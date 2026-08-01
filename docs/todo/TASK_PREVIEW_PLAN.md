@@ -304,6 +304,9 @@ because side notes in a conversation do not survive it:
 | The same nesting hit three readers, none of which errored | `preview_params_for_run` (backend, also covers the chain path) + `previewParams` in TaskRunner (frontend). `normaliseToWhole` diverged the *compute* when set to false; `removeUnmatched` made the base-model warning always show its milder wording |
 | It kept previewing without the thunderbolt being pressed | `enabled`/`pinned` are session-only now — carve-out documented in docs/MODULES.md so it isn't "fixed" back |
 
+| The preview showed raw cellpose output — `_post_process` is only called from the run's frame loop, so `minCellSize`/`labelExpansion`/`labelErosion` changed nothing you could see | `post_process` (now public, two callers) applied to the previewed plane, **crop-aware** via `real_border`: clearing only at genuine image edges, clipped labels exempt from the size filter |
+| The cheap version of that (2 lines, no edge awareness) was costed and rejected | it would make `clearTouchingBorder` delete most cells when zoomed in and need a permanent "Edge cells may drop" warning to excuse it. ~45 extra lines to delete the caveat instead of surfacing it |
+
 **A silent default is the failure mode to design against here.** Every bug in the two live passes was
 the same shape: the preview sent params in a *slightly* different form than the run, and Python's
 `params.get(k, default)` filled the gap without complaint. `"CH3"` was the lucky one — it raised. The

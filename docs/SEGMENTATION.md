@@ -422,6 +422,22 @@ overloads it beside its struct, and there is a `CompositeTask` overload because 
   a diameter, so the worker checks `zarr_utils.read_valid_box` and reports `hasSignal`/`noSignalWhy` →
   *"No image data here"* (padding) or *"Region is blank"*.
 
+**The label modifications DO run** — `post_process` (erosion, expansion, the size filter, border
+clearing) is applied to the previewed plane, so tuning `minCellSize` or `labelExpansion` changes what
+you see. It is the run's own method, called with `la_t=None, T=1` (the whole-array branch the run uses
+per frame), and the count is taken *after* it so the readout matches the mask.
+
+It is **crop-aware**, which is the part that needed designing rather than plumbing. Two steps read the
+array edge as the image edge, and on a visible region it usually isn't — both errors showing fewer
+cells than the run produces: `clearTouchingBorder` would clear every cell at the crop edge (worse the
+more you zoom in), and the size filter would judge a cell on its *clipped* pixel count. The worker
+passes `real_border` (derived from the region bounds vs the axis lengths), so clearing happens only at
+genuine image edges and clipped labels are exempt from the size filter. `real_border=None` — what the
+run passes — is exactly the old behaviour, pinned by tests on both sides. Residuals: `labelExpansion`
+stays approximate at a crop edge (fixing it needs a halo, which would change what the preview reads for
+an edge-only cosmetic difference), and `clearDepth` needs a stack so a one-plane preview can never
+apply it — covered by the 2D warning.
+
 **It never guesses which image it is looking at.** `GET /api/preview/status` exposes the open image, and
 `/api/preview/run` *checks* the caller's `imageUid` rather than using it to select — mismatches are 409s.
 The region and the pixels come from the same store by construction, because a drift-corrected store is

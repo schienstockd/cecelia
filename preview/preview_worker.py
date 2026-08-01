@@ -130,6 +130,23 @@ def _as_cyx(cropped, dim_utils):
     return arr[np.newaxis, ...]
 
 
+def _real_image_edges(bounds, axis_len):
+    """Which of the crop's Y/X faces are the IMAGE edge, not just where the user stopped looking.
+
+    `SegmentationUtils.post_process` needs this to avoid two crop artefacts that both show FEWER cells
+    than the run produces: clearing every cell at the crop edge, and size-filtering a cell on its
+    clipped pixel count. See that method's docstring.
+    """
+    out = {}
+    for ax in ("Y", "X"):
+        if ax not in bounds:
+            continue
+        lo, hi = int(bounds[ax][0]), int(bounds[ax][1])
+        full = int(axis_len.get(ax, hi))
+        out[ax] = (lo <= 0, hi >= full)
+    return out
+
+
 def _region_signal(im_path, bounds, tile):
     """Does this region contain image data at all? `(has_signal, why)`.
 
@@ -239,9 +256,18 @@ def preview(msg):
         # `predict_from_zarr`. Cached across previews — see `PreviewState.norm_params`.
         norm_params = STATE.norm_params(seg, levels, im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params)
+        # The label modifications the RUN applies after inference — erosion, expansion, the size
+        # filter, border clearing. Without this the preview showed raw cellpose output, so tuning
+        # `minCellSize` or `labelExpansion` changed nothing you could see. `la_t=None, T=1` is the
+        # whole-array branch the run uses per frame; `is_3d=False` because a preview is one z-plane
+        # (so `clearDepth`, which needs a stack, can never apply here — the 2D warning covers that).
+        # `real_border` keeps it honest about being a CROP: see `post_process`.
+        masks = seg.post_process(masks, ["Y", "X"], None, 1, False,
+                                 real_border=_real_image_edges(bounds, axis_len))
         # reshaped to the LABEL block shape (T/Z restored as length-1 axes) so the receiver can place
         # it at `region` with no knowledge of how the tile was flattened for inference
         block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
+        # counted AFTER post-processing, so the readout matches the mask on screen
         counts[match_as] = count_labels(masks)
 
     if block is None:
