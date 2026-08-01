@@ -8469,6 +8469,15 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # an unknown kind is refused rather than passed on for the viewer to guess at
         @test_throws ErrorException Cecelia.preview_show_command(
             merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
+
+        # `source` (the viewer layer a corrected channel derives from, so the bridge can mirror its
+        # colormap) rides through untouched and is OPTIONAL — Julia neither requires it nor interprets
+        # it. Required here would break the one thing the pass-through exists to allow: the two Python
+        # ends evolving the payload without this file learning every field.
+        sourced = merge(reply, Dict("layers" => Any[merge(layers[2], Dict("source" => "nuc-GFP"))]))
+        @test Cecelia.preview_show_command(sourced)["layers"][1]["source"] == "nuc-GFP"
+        @test Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[layers[2]])))["layers"][1] === layers[2]
     end
 
     @testset "a composite says which steps it does not preview" begin
