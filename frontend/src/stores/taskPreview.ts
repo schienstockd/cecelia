@@ -20,6 +20,7 @@ import { previewApi, type SvcError } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import {
   previewBlocker, previewNotice, previewSummary, baseOnlyWarning, tilingWarning,
+  compositeWarning,
   PREVIEW_DEBOUNCE_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker,
 } from '../utils/taskPreview'
@@ -51,6 +52,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const fallback2d = ref(false)
   const signal   = ref<{ hasSignal?: boolean; noSignalWhy?: string } | null>(null)
   const tiling   = ref<{ runSeams?: Record<string, number>; blockSize?: number } | null>(null)
+  /** composite steps the preview does not run, from the backend (each step's own label) */
+  const notPreviewed = ref<Array<{ label?: string; fun?: string }>>([])
   const error    = ref('')
   /** the backend's machine-readable refusal reason — what the notice's severity/label switch on */
   const errorCode = ref('')
@@ -63,6 +66,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     fallback2d.value = false
     signal.value = null
     tiling.value = null
+    notPreviewed.value = []
   }
 
   const blocker = computed<PreviewBlocker | null>(
@@ -75,6 +79,21 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
   /** a run would split this region at a tile seam; the preview segments it whole */
   const tiled    = computed(() => tilingWarning(tiling.value?.runSeams, tiling.value?.blockSize))
+  /** a composite runs more steps than it previews */
+  const composite = computed(() => compositeWarning(notPreviewed.value))
+  /**
+   * Every "the run will not look exactly like this" caveat, in one list.
+   *
+   * Collected here rather than as four near-identical spans in the component: they are the same kind of
+   * statement, they render identically, and a fifth (this one) made the duplication the obvious thing
+   * to remove rather than extend.
+   */
+  const warnings = computed(() => [
+    { short: summary.value.warn, detail: summary.value.warnDetail },
+    baseOnly.value,
+    tiled.value,
+    composite.value,
+  ].filter(w => w.short))
   /** what the toggle shows: a run in flight, or one about to start */
   const busy    = computed(() => runState.value !== 'idle' || starting.value)
 
@@ -103,6 +122,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     fallback2d.value = Boolean(res?.fallback2d)
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
     tiling.value = { runSeams: res?.runSeams, blockSize: res?.blockSize }
+    notPreviewed.value = Array.isArray(res?.notPreviewed) ? res.notPreviewed : []
     error.value = ''
     errorCode.value = ''
   }, {
@@ -195,7 +215,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   return {
     enabled, pinned, runState, status, context, counts, fallback2d, signal, tiling,
     error, errorCode, starting,
-    blocker, notice, summary, busy, baseOnly, tiled,
+    blocker, notice, summary, busy, baseOnly, tiled, composite, warnings, notPreviewed,
     setContext, request, start, stop, toggle, refreshStatus,
     /** show the current result now, skipping the debounce (the manual "preview now" action) */
     flush: () => scheduler.flush(),

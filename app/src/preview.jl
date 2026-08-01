@@ -96,11 +96,13 @@ only stop the preview layer from sharing a stem with `({vn}) Labels` — which i
 two evict each other instead of stacking.
 """
 function preview_request(img::CciaImage, params::AbstractDict, region::AbstractDict;
-                         value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
+                         value_name::AbstractString = VERSIONED_DEFAULT_VAL,
+                         fun_name::AbstractString = "")::Dict{String,Any}
     in_value_name = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     im_path = img_filepath(img, in_value_name)
     isnothing(im_path) && error("no image filepath for valueName='$in_value_name'")
-    preview_request(im_path, img._dir, params, region; value_name = value_name)
+    preview_request(im_path, img._dir, params, region;
+                    value_name = value_name, fun_name = fun_name)
 end
 
 """
@@ -117,8 +119,9 @@ see `api/src/preview_api.jl`. That check is what makes this pairing safe rather 
 """
 function preview_request(im_path::AbstractString, task_dir::AbstractString,
                          params::AbstractDict, region::AbstractDict;
-                         value_name::AbstractString = VERSIONED_DEFAULT_VAL)::Dict{String,Any}
-    Dict{String,Any}(
+                         value_name::AbstractString = VERSIONED_DEFAULT_VAL,
+                         fun_name::AbstractString = "")::Dict{String,Any}
+    req = Dict{String,Any}(
         "type"            => "preview",
         "imPath"          => String(im_path),
         "taskDir"         => String(task_dir),
@@ -126,32 +129,51 @@ function preview_request(im_path::AbstractString, task_dir::AbstractString,
         "region"          => Dict{String,Any}(String(k) => v for (k, v) in region),
         "params"          => Dict{String,Any}(String(k) => v for (k, v) in params),
     )
+    # which compute to run. The worker dispatches on it (`preview_worker._BACKENDS`) because the params
+    # alone cannot say: a `models` bag means cellpose and an `afCombinations` bag means AF correction,
+    # and inferring the task from the shape of its params is exactly the guess `task_previewable`
+    # exists to replace.
+    isempty(fun_name) || (req["funName"] = String(fun_name))
+    req
 end
 
 """
     preview_show_command(reply; value_name) -> Dict
 
-The napari command that renders a worker reply. Julia is a PASS-THROUGH for the mask here: it moves an
-opaque payload from one resident process to the other and never decodes it (see
+The napari command that renders a worker reply. Julia is a PASS-THROUGH for the pixels here: it moves
+opaque payloads from one resident process to the other and never decodes them (see
 `cecelia.utils.block_transfer` for the codec — one implementation, both Python ends).
 
+A reply carries a LIST of layers, each with its own `kind` — `labels` for a segmentation mask, `image`
+for a corrected channel. One task can produce several: AF correction returns one image layer per
+corrected channel, so they can sit beside the originals and be flipped between. The alternative, a
+single mask field plus a type flag, could not express that.
+
 Kept as a pure function of the reply so the wiring is testable without either process running, and so
-the field names are asserted in one place rather than discovered at runtime.
+the field names are asserted in one place rather than discovered at runtime — including that every
+`kind` is one the viewer knows how to build.
 """
 function preview_show_command(reply::AbstractDict;
                               value_name::AbstractString = VERSIONED_DEFAULT_VAL,
                               api_url::Union{AbstractString,Nothing} = nothing)::Dict{String,Any}
-    for key in ("mask", "labelShape", "labelAxes")
-        haskey(reply, key) || error("preview reply is missing '$key'")
+    layers = get(reply, "layers", nothing)
+    (layers isa AbstractVector && !isempty(layers)) ||
+        error("preview reply has no 'layers'")
+    for (i, l) in enumerate(layers)
+        l isa AbstractDict || error("preview layer $i is not a dict")
+        for key in ("kind", "name", "block", "shape", "axes")
+            haskey(l, key) || error("preview layer $i is missing '$key'")
+        end
+        kind = String(l["kind"])
+        kind in ("labels", "image") ||
+            error("preview layer $i has unknown kind '$kind' (expected labels or image)")
     end
     cmd = Dict{String,Any}(
-        "type"        => "show_task_preview",
-        "value_name"  => String(get(reply, "valueName", value_name)),
-        "mask"        => reply["mask"],
-        "label_shape" => reply["labelShape"],
-        "label_axes"  => reply["labelAxes"],
-        "region"      => get(reply, "region", Dict{String,Any}()),
-        "show"        => true,
+        "type"       => "show_task_preview",
+        "value_name" => String(get(reply, "valueName", value_name)),
+        "layers"     => layers,
+        "region"     => get(reply, "region", Dict{String,Any}()),
+        "show"       => true,
     )
     # where the viewer posts "the view moved" back to. Only sent with a SHOWN preview, so the viewer
     # listens exactly while something is chasing the view (see `_attach_view_listener`).

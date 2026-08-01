@@ -32,6 +32,7 @@ import traceback
 
 import numpy as np
 
+import cecelia.utils.correction_utils as correction_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
@@ -46,6 +47,13 @@ from cecelia.utils.segmentation_utils import count_labels
 # stable and the wait short. Runs stay EXACT — see `_compute_norm_params(max_frames=…)`.
 NORM_FRAMES = 20
 
+#: `(z, xy)` stride for AF's global values. Two full passes over a 181-frame movie cost 148 s; at
+#: (2, 4) the same derivation costs 24 s and gave an IDENTICAL ceiling plus identical background
+#: levels on real data. Safe only because the ceiling is a count-thresholded max — subsampling a true
+#: max is biased low by construction, which is exactly why the percentile window it replaced could not
+#: be made cheap. Runs stay exact: they pass no stride.
+AF_PREVIEW_STRIDE = (2, 4)
+
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
 _AXES = ("X", "Y", "Z", "T")
@@ -58,7 +66,8 @@ class PreviewState:
     def __init__(self):
         self._images = {}        # im_path → (levels, dim_utils)
         self._model_cache = {}   # shared with each CellposeUtils instance (see `segmenter`)
-        self._norm = {}          # (im_path, channels, normalise) → norm params
+        self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
+        self._af = {}            # (im_path, channel, af channels, method) → AF stats
 
     def image(self, im_path):
         if im_path not in self._images:
@@ -97,6 +106,31 @@ class PreviewState:
             self._norm[key] = seg._compute_norm_params(
                 levels, model_params, max_frames=NORM_FRAMES)
         return self._norm[key]
+
+    def af_stats(self, im_path, levels, dim_utils, channel_idx, division_channels, method):
+        """AF's global values — both background levels and the output ceiling — cached.
+
+        The AF analogue of `norm_params`, and the same bargain. Measured on `zolIMa/ldYr8J`
+        (181 × 4 × 31 × 1024²): deriving these costs **148 s** because it is two full passes over the
+        movie, against **5-7 ms** to correct one visible plane with them. So the first preview of an
+        image is slow and every one after it is instant.
+
+        The key is what the values actually depend on: the image, the channel pair, and the background
+        method. Nothing else — so switching the method correctly misses the cache, and moving the view
+        correctly hits it.
+
+        `AF_PREVIEW_STRIDE` is the one concession to the cold start, and it is safe for a specific
+        reason: the ceiling is a COUNT-thresholded max, not a true max, so it survives subsampling
+        (measured identical at z::2 / xy::4 / both, at 24 s instead of 148 s), and the two background
+        levels are interior thresholds that never moved. A true max could not be subsampled at all —
+        that was the whole problem with the percentile window this replaced.
+        """
+        key = (im_path, int(channel_idx), tuple(sorted(int(d) for d in division_channels)), method)
+        if key not in self._af:
+            self._af[key] = correction_utils.af_division_stats(
+                levels[0], dim_utils, int(channel_idx), [int(d) for d in division_channels],
+                background_method=method, spatial_stride=AF_PREVIEW_STRIDE)
+        return self._af[key]
 
 
 STATE = PreviewState()
@@ -208,93 +242,191 @@ def _run_tile_seams(bounds, axis_len, block_size):
     return seams
 
 
-def preview(msg):
-    im_path = msg["imPath"]
-    task_dir = msg["taskDir"]
-    value_name = str(msg.get("outputValueName", "preview"))
-    region = msg.get("region") or {}
-    params = dict(msg.get("params") or {})
-    models = params.get("models") or {}
+class PreviewContext:
+    """Everything a preview backend needs, computed once by `preview` before it dispatches.
+
+    The split exists so each task's compute is the ONLY thing that varies: opening the image, turning
+    the viewer's region into bounds, and cropping are identical whether you are previewing a
+    segmentation or a correction, and previously they were welded to cellpose.
+    """
+
+    __slots__ = ('im_path', 'task_dir', 'value_name', 'params', 'levels', 'dim_utils',
+                 'axis_len', 'bounds', 'fallback2d')
+
+    def __init__(self, im_path, task_dir, value_name, params, levels, dim_utils,
+                 axis_len, bounds, fallback2d):
+        self.im_path, self.task_dir, self.value_name = im_path, task_dir, value_name
+        self.params, self.levels, self.dim_utils = params, levels, dim_utils
+        self.axis_len, self.bounds, self.fallback2d = axis_len, bounds, fallback2d
+
+    def crop(self):
+        """The visible region of the image, all channels, as `[C, Y, X]`."""
+        sl = slice_utils.crop_slice_tuple(
+            self.levels[0].ndim, _axis_indices(self.dim_utils), self.bounds)
+        return _as_cyx(zarr_utils.fortify(self.levels[0][sl]), self.dim_utils)
+
+    def block_geometry(self):
+        """`(axes, full_shape, block_shape)` for a channel-less block covering this region — what the
+        receiver needs to place it in a full-extent layer with no translate."""
+        axes = [ax for ax in self.dim_utils.im_dim_order if ax != 'C']
+        full = [self.axis_len[ax] if ax in self.axis_len else 1 for ax in axes]
+        sl = slice_utils.crop_slice_tuple(
+            len(axes), _axis_indices(self.dim_utils, exclude=('C',)), self.bounds)
+        shape = tuple(len(range(*x.indices(d))) for x, d in zip(sl, full))
+        return axes, [int(x) for x in full], shape
+
+    def channel_names(self):
+        """Channel names from the OME-XML, so a layer can be named after the channel it corrects."""
+        try:
+            px = ome_xml_utils.parse_meta(self.im_path).images[0].pixels
+            return [c.name or f'ch{i}' for i, c in enumerate(px.channels)]
+        except Exception:
+            return []
+
+
+def _layer(kind, name, block, axes, full_shape):
+    """One layer for the viewer to build. `kind` decides Labels vs Image on the receiving end."""
+    return {'kind': kind, 'name': name, 'block': encode_block(block),
+            'shape': [int(x) for x in full_shape], 'axes': list(axes)}
+
+
+def _preview_cellpose(ctx):
+    """Segment the visible region with the task's own `predict_slice` + `post_process`."""
+    models = ctx.params.get('models') or {}
     if not models:
-        raise ValueError("no models in preview params")
-
-    levels, dim_utils = STATE.image(im_path)
-    axis_len = _axis_lengths(dim_utils)
-
-    bounds, fallback2d = slice_utils.preview_region_bounds(
-        region.get("xy") or {}, region.get("z"), region.get("t"),
-        axis_len, ndisplay=int(region.get("ndisplay", 2)))
-    if "X" not in bounds or "Y" not in bounds:
-        raise ValueError(f"empty preview region: {region.get('xy')!r}")
+        raise ValueError('no models in preview params')
 
     # `SegmentationUtils.__init__` requires taskDir/outputValueName — it is built to own its output
-    # store. A preview never writes one (the mask block is returned instead), so these only satisfy
-    # the constructor's contract; nothing in the preview path resolves them to a real path.
+    # store. A preview never writes one (the block is returned instead), so these only satisfy the
+    # constructor's contract; nothing in the preview path resolves them to a real path.
     seg = STATE.segmenter(
-        {**params, "taskDir": task_dir, "outputValueName": value_name}, dim_utils)
-    img_slices = slice_utils.crop_slice_tuple(
-        levels[0].ndim, _axis_indices(dim_utils), bounds)
-    tile = _as_cyx(zarr_utils.fortify(levels[0][img_slices]), dim_utils)
+        {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
+    tile = ctx.crop()
+    axes, full_shape, block_shape = ctx.block_geometry()
 
-    label_axes = [ax for ax in dim_utils.im_dim_order if ax != "C"]
-    label_shape = [axis_len[ax] if ax in axis_len else 1 for ax in label_axes]
-    label_slices = slice_utils.crop_slice_tuple(
-        len(label_axes), _axis_indices(dim_utils, exclude=("C",)), bounds)
-
-    counts = {}
-    block = None
-    block_shape = tuple(len(range(*s.indices(d)))
-                        for s, d in zip(label_slices, label_shape))
+    counts, block = {}, None
     for key in sorted(models.keys()):
         model_params = models[key]
-        match_as = str(model_params.get("matchAs", "base"))
-        if match_as != "base":
+        match_as = str(model_params.get('matchAs', 'base'))
+        if match_as != 'base':
             continue            # one type per preview: it is the primary you are judging
         # Whole-image intensity statistics, applied to the crop: percentiles over the visible
         # region alone would normalise differently from the run, so the preview would show a
-        # result the run cannot reproduce. Per MODEL and only when the run would do it, matching
-        # `predict_from_zarr`. Cached across previews — see `PreviewState.norm_params`.
-        norm_params = STATE.norm_params(seg, levels, im_path, model_params)
+        # result the run cannot reproduce. Cached across previews — see `PreviewState.norm_params`.
+        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params)
         # The label modifications the RUN applies after inference — erosion, expansion, the size
-        # filter, border clearing. Without this the preview showed raw cellpose output, so tuning
-        # `minCellSize` or `labelExpansion` changed nothing you could see. `la_t=None, T=1` is the
-        # whole-array branch the run uses per frame; `is_3d=False` because a preview is one z-plane
-        # (so `clearDepth`, which needs a stack, can never apply here — the 2D warning covers that).
-        # `real_border` keeps it honest about being a CROP: see `post_process`.
-        masks = seg.post_process(masks, ["Y", "X"], None, 1, False,
-                                 real_border=_real_image_edges(bounds, axis_len))
-        # reshaped to the LABEL block shape (T/Z restored as length-1 axes) so the receiver can place
-        # it at `region` with no knowledge of how the tile was flattened for inference
+        # filter, border clearing. `la_t=None, T=1` is the whole-array branch the run uses per frame;
+        # `is_3d=False` because a preview is one z-plane (so `clearDepth` can never apply — the 2D
+        # warning covers that). `real_border` keeps it honest about being a CROP: see `post_process`.
+        masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
+                                 real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
-        # counted AFTER post-processing, so the readout matches the mask on screen
         counts[match_as] = count_labels(masks)
 
     if block is None:
-        raise ValueError("no base model in preview params")
+        raise ValueError('no base model in preview params')
 
-    has_signal, no_signal_why = _region_signal(im_path, bounds, tile)
-
+    has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
     return {
-        "counts": counts,
-        "region": {ax: list(v) for ax, v in bounds.items()},
-        "fallback2d": fallback2d,
-        # so the caller can tell "your parameters found nothing" from "there is nothing here"
-        "hasSignal": has_signal,
-        "noSignalWhy": no_signal_why,
+        'counts': counts,
+        'hasSignal': has_signal,
+        'noSignalWhy': why,
         # tile seams the RUN would place inside this region, which the preview does not reproduce
-        "runSeams": _run_tile_seams(bounds, axis_len, seg.block_size),
-        "blockSize": int(seg.block_size),
-        "mask": encode_block(block),
-        # where the block belongs: the full label extent and its axis names, so the receiver can
-        # build a full-image-shape layer and needs no translate to line it up
-        "labelShape": [int(x) for x in label_shape],
-        "labelAxes": list(label_axes),
-        # NOT the scale: the receiver already holds the image's, and `add_labels` aligns a
-        # fewer-axis layer to the viewer BY NAME from `labelAxes`. Sending a second copy would be a
-        # second source of truth for calibration — which is how the A8 axis/scale mismatch happened.
-        "valueName": value_name,
+        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
+        'blockSize': int(seg.block_size),
+        'layers': [_layer('labels', 'Preview', block, axes, full_shape)],
     }
+
+
+def _preview_af(ctx):
+    """AF-correct the visible region, one Image layer per corrected channel.
+
+    The whole reason this is possible in a fraction of a second: `af_division_stats` computes the two
+    background levels and the output ceiling over the WHOLE image — 148 s on a 181-frame movie — and
+    they are cached here, while `af_correct_frame` is pure per-voxel arithmetic on the crop. Those
+    globals are exactly what must NOT come from the visible region: derive them from a crop and the
+    preview is normalised differently from the run, which is the one thing it exists to rule out.
+
+    Outputs an IMAGE, not labels, so the reply carries `kind: 'image'` per layer and the receiver adds
+    them beside the originals for A/B comparison.
+    """
+    combos = {int(k): v for k, v in (ctx.params.get('afCombinations') or {}).items()}
+    if not combos:
+        raise ValueError('no channel combinations in preview params')
+    method = str(ctx.params.get('backgroundMethod', 'triangle'))
+
+    tile = ctx.crop()                       # [C, Y, X]
+    axes, full_shape, block_shape = ctx.block_geometry()
+    names = ctx.channel_names()
+    out_dtype = ctx.levels[0].dtype
+    layers, stats_out = [], {}
+
+    for ch in sorted(combos):
+        div = [int(d) for d in (combos[ch].get('divisionChannels') or [])]
+        if not div:
+            continue
+        stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, div, method)
+        # the same summary the run uses across several AF references (`_af_correction_slab`)
+        corr_slab = np.max(np.stack([tile[d] for d in div], axis=0), axis=0)
+        corrected = correction_utils.af_correct_frame(tile[ch], corr_slab, stats, out_dtype)
+        # to the channel-less block shape (T/Z restored as length-1) so the receiver can place it at
+        # `region` without knowing how the crop was flattened — same contract as the labels path
+        block = np.reshape(corrected, block_shape)
+        label = names[ch] if ch < len(names) else f'ch{ch}'
+        layers.append(_layer('image', f'{label} AF', block, axes, full_shape))
+        stats_out[str(ch)] = {'background': stats.val1, 'afBackground': stats.val2,
+                              'ceiling': stats.c_max}
+
+    if not layers:
+        raise ValueError('no combination names a division channel')
+
+    has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
+    return {'hasSignal': has_signal, 'noSignalWhy': why,
+            'derived': stats_out, 'layers': layers}
+
+
+#: fun_name → the compute that previews it. A task absent here is not previewable, which the Julia
+#: side already declares via `task_previewable` — this is the other half of the same statement.
+_BACKENDS = {
+    'segment.cellpose': _preview_cellpose,
+    'segment.cellposeMeasure': _preview_cellpose,
+    'cleanupImages.afCorrect': _preview_af,
+    'cleanupImages.afDriftCorrect': _preview_af,
+}
+
+
+def preview(msg):
+    im_path = msg['imPath']
+    task_dir = msg['taskDir']
+    value_name = str(msg.get('outputValueName', 'preview'))
+    region = msg.get('region') or {}
+    params = dict(msg.get('params') or {})
+    fun_name = str(msg.get('funName', 'segment.cellpose'))
+
+    backend = _BACKENDS.get(fun_name)
+    if backend is None:
+        raise ValueError(f'no preview backend for {fun_name!r}; '
+                         f'known: {sorted(_BACKENDS)}')
+
+    levels, dim_utils = STATE.image(im_path)
+    axis_len = _axis_lengths(dim_utils)
+    bounds, fallback2d = slice_utils.preview_region_bounds(
+        region.get('xy') or {}, region.get('z'), region.get('t'),
+        axis_len, ndisplay=int(region.get('ndisplay', 2)))
+    if 'X' not in bounds or 'Y' not in bounds:
+        raise ValueError(f'empty preview region: {region.get("xy")!r}')
+
+    ctx = PreviewContext(im_path, task_dir, value_name, params, levels, dim_utils,
+                         axis_len, bounds, fallback2d)
+    out = backend(ctx)
+    out.setdefault('hasSignal', True)
+    out.setdefault('noSignalWhy', '')
+    out['region'] = {ax: list(v) for ax, v in bounds.items()}
+    out['fallback2d'] = fallback2d
+    out['valueName'] = value_name
+    out['funName'] = fun_name
+    return out
 
 
 def execute_command(msg):

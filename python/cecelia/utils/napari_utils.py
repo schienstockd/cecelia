@@ -97,17 +97,39 @@ def set_contrast_from_sample(layer, low_pct=1.0, high_pct=99.9, min_valid=100):
 
 
 def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_names=None,
-              colormaps=None, contrast=True, blending='additive', visible=True):
+              colormaps=None, contrast=True, blending='additive', visible=True,
+              name=None, axes=None, image_axes=None, image_shape=None, cache=None):
   """Add a (possibly multi-channel) image — one layer per channel via ``channel_axis``, per-channel
   ``colormaps``, additive ``blending``, and (optionally) contrast from a middle sample. Returns the
-  added layer, or the list of per-channel layers when ``channel_axis`` is set."""
+  added layer, or the list of per-channel layers when ``channel_axis`` is set.
+
+  ``axes``/``image_axes``/``image_shape`` align a layer whose axes are a SUBSET of the viewer's, exactly
+  as ``add_labels`` does and for the same reason — napari reinterprets a short layer's axes as the
+  viewer's trailing ones, which silently renders time as Z. The task preview needs this: its block is
+  channel-less ``[T, Z, Y, X]`` while the image layers it sits beside include C. See ``expand_to_axes``.
+
+  ``name`` overrides the derived layer name, for a layer that is not simply "the image" — a corrected
+  channel from an AF preview, say, which has to be distinguishable from the raw channel beside it.
+  ``cache=False`` forces every slice to re-read, which matters when consecutive layers of the same
+  shape hold DIFFERENT data (see the note on ``add_labels``).
+  """
   require_napari()
-  kw = dict(channel_axis=channel_axis, name=image_layer_name(channel_names, channel_axis),
+  if axes is not None or image_axes is not None:
+    data, aligned = expand_to_axes(data, axes, image_axes, viewer_shape=image_shape)
+    if not aligned:
+      nd = layer_ndim(data)
+      scale = align_axis_vector(scale, nd)
+      if units is not None:
+        units = align_axis_vector(units, nd)
+  kw = dict(channel_axis=channel_axis,
+            name=name if name is not None else image_layer_name(channel_names, channel_axis),
             colormap=colormaps, scale=scale, visible=visible)
   if units is not None:
     kw['units'] = units
   if blending is not None:
     kw['blending'] = blending
+  if cache is not None:
+    kw['cache'] = bool(cache)
   result = viewer.add_image(data, **kw)
   if contrast:
     for layer in (result if isinstance(result, list) else [result]):

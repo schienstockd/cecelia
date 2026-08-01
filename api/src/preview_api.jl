@@ -224,7 +224,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
             w = _preview()
             w === nothing && error("preview worker is not running")
             send(w, preview_request(open_image.zarrPath, open_image.taskDir, params, region;
-                                    value_name = value_name))
+                                    value_name = value_name,
+                                    fun_name = String(get(data, "funName", ""))))
         end
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
@@ -253,6 +254,11 @@ function api_preview_run(body_bytes::Vector{UInt8})
         # tile seams the RUN would place inside this region; the preview segments it as one tile
         runSeams    = get(reply, "runSeams", Dict{String,Any}()),
         blockSize   = get(reply, "blockSize", 0),
+        # values the task DERIVED for this image rather than took from params (AF: the two background
+        # levels and the output ceiling), so the UI can show what it chose
+        derived     = get(reply, "derived", Dict{String,Any}()),
+        # for a composite, the steps this preview does not run — the run does more than you see
+        notPreviewed = task === nothing ? Dict{String,Any}[] : preview_steps_not_previewed(task),
         valueName  = value_name,
     ))
 end

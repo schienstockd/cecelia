@@ -192,6 +192,29 @@ export function baseOnlyWarning(params: Record<string, unknown> | null): { short
 }
 
 /**
+ * The composite warning: the run does more steps than the preview shows.
+ *
+ * A composite previews its FIRST previewable step and silently skips the rest — correct, since the
+ * alternative is previewing nothing, but a skipped step can change what the previewed one means.
+ * `afDriftCorrect` is the case that forced this: it previews AF and skips drift correction, which
+ * expands the canvas and shifts every frame, so the geometry on screen is not the geometry the run
+ * produces. Labels come from the backend (each step's own spec) rather than being mapped here, so the
+ * message names steps the way the rest of the UI does and a new composite needs no frontend change.
+ */
+export function compositeWarning(
+  notPreviewed: ReadonlyArray<{ label?: string; fun?: string }> | null | undefined,
+): { short: string; detail: string } {
+  const names = (notPreviewed ?? [])
+    .map(s => (s?.label || s?.fun || '').trim())
+    .filter(Boolean)
+  if (names.length === 0) return { short: '', detail: '' }
+  return {
+    short: names.length === 1 ? `${names[0]} not previewed` : 'Later steps not previewed',
+    detail: `The run also applies ${names.join(', ')} — the result on screen is before that`,
+  }
+}
+
+/**
  * The tiling warning: a run would split this region at a tile seam, the preview segments it whole.
  *
  * `SegmentationUtils` tiles at `blockSize` and re-stitches labels split across each seam, so where a

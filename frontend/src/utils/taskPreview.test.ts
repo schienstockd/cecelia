@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
-  FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning,
+  FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   type PreviewContext, type PreviewStatus,
 } from './taskPreview'
 
@@ -118,6 +118,40 @@ describe('the params these readers get must be flat', () => {
   it('still detects a previewable model either way, because models is not section-nested', () => {
     expect(hasPreviewableModel(NESTED)).toBe(true)
     expect(hasPreviewableModel(FLAT)).toBe(true)
+  })
+})
+
+describe('compositeWarning', () => {
+  // afDriftCorrect is the case that forced this: it previews AF and skips drift correction, which
+  // expands the canvas and shifts every frame — so the geometry on screen is not the run's.
+  it('names the step the run does and the preview does not', () => {
+    const w = compositeWarning([{ fun: 'cleanupImages.driftCorrect', label: 'Drift correction' }])
+    expect(w.short).toBe('Drift correction not previewed')
+    expect(w.detail).toContain('Drift correction')
+    expect(w.detail).toContain('before that')
+  })
+
+  it('stays short when several steps are skipped, and names them in the detail', () => {
+    const w = compositeWarning([{ label: 'Drift correction' }, { label: 'Measure labels' }])
+    expect(w.short).toBe('Later steps not previewed')
+    expect(w.short.split(' ').length).toBeLessThanOrEqual(4)
+    expect(w.detail).toContain('Drift correction, Measure labels')
+  })
+
+  it('says nothing for a plain task', () => {
+    for (const v of [null, undefined, []]) {
+      expect(compositeWarning(v)).toEqual({ short: '', detail: '' })
+    }
+  })
+
+  it('falls back to the fun_name when the backend sent no label', () => {
+    expect(compositeWarning([{ fun: 'cleanupImages.driftCorrect' }]).short)
+      .toBe('cleanupImages.driftCorrect not previewed')
+  })
+
+  it('ignores entries with neither label nor fun rather than rendering blanks', () => {
+    expect(compositeWarning([{}, { label: '  ' }, { label: 'Drift correction' }]).short)
+      .toBe('Drift correction not previewed')
   })
 })
 

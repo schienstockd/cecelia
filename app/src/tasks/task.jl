@@ -127,6 +127,44 @@ preview with a user-facing message (a missing custom checkpoint).
 preview_params(::CciaTask, params::AbstractDict, ::CciaImage)::AbstractDict = params
 
 """
+    preview_steps_not_previewed(task) -> Vector{Dict{String,Any}}
+
+For a COMPOSITE, the steps a preview does not run — `[{fun, label}, …]`, empty for a plain task.
+
+`preview_params` delegates to the FIRST previewable step, so a composite previews one step and the
+others silently do not happen. That is correct (the alternative is previewing nothing) but it must be
+SAID, because a skipped step can change what the previewed one even means: `afDriftCorrect` previews AF
+and skips drift correction, which expands the canvas and shifts every frame — so the geometry on screen
+is not the geometry the run produces. Labels come from each step's own spec so the message names them
+the way the UI does, rather than showing a `fun_name`.
+"""
+function preview_steps_not_previewed(task::CciaTask)::Vector{Dict{String,Any}}
+    spec = _task_spec(task)
+    isnothing(spec) && return Dict{String,Any}[]
+    steps = get(spec, "composite", nothing)
+    steps isa AbstractVector || return Dict{String,Any}[]
+    names = String[String(s) for s in steps]
+    length(names) <= 1 && return Dict{String,Any}[]
+
+    _task_of(n) = try _task_from_fun_name(n) catch; nothing end
+    previewed = findfirst(n -> begin
+        t = _task_of(n)
+        t !== nothing && task_previewable(t)
+    end, names)
+    isnothing(previewed) && return Dict{String,Any}[]
+
+    out = Dict{String,Any}[]
+    for (i, n) in enumerate(names)
+        i == previewed && continue
+        t = _task_of(n)
+        s = t === nothing ? nothing : _task_spec(t)
+        label = (s !== nothing && haskey(s, "label")) ? String(s["label"]) : n
+        push!(out, Dict{String,Any}("fun" => n, "label" => label))
+    end
+    out
+end
+
+"""
     preview_params_for_run(task, params, img) -> Dict{String,Any}
 
 Params prepared **exactly as a real run would prepare them**: `section` sub-params lifted to the top

@@ -58,6 +58,19 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
     af_combos
 end
 
+# AF correction is previewable: the worker runs `af_correct_frame` — the run's own per-voxel
+# arithmetic — over the visible region, using globals derived from the whole image and cached
+# (`PreviewState.af_stats`). See `task_previewable` in task.jl.
+task_previewable(::AfCorrect) = true
+
+# The preview sends the FRONTEND's params, so `divisionChannels` arrive as channel NAMES. Same hook and
+# same reason as cellpose's: sharing the compute does not make the params shared.
+function preview_params(::AfCorrect, params::AbstractDict, img::CciaImage)::Dict{String,Any}
+    out = Dict{String,Any}(String(k) => v for (k, v) in params)
+    out["afCombinations"] = af_combinations_for_python(params, read_ccid_raw(state_file(img)))
+    out
+end
+
 """
     af_qc_findings(per_channel) -> (findings, worst)
 

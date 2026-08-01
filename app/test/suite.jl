@@ -8318,29 +8318,103 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     end
 
     @testset "a preview reply becomes a viewer command without Julia decoding it" begin
-        # Julia is a pass-through: the mask payload moves worker → viewer untouched (the codec
-        # lives in cecelia.utils.block_transfer, used by both Python ends).
-        payload = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
-        reply = Dict("mask" => payload, "labelShape" => [10, 5, 64, 64],
-                     "labelAxes" => ["T", "Z", "Y", "X"],
+        # Julia is a pass-through: the blocks move worker → viewer untouched (the codec lives in
+        # cecelia.utils.block_transfer, used by both Python ends).
+        #
+        # A reply carries a LIST of layers, each with its own `kind`, because one task can preview
+        # several things: AF correction returns one image layer per corrected channel so they sit
+        # beside the originals to be flipped against. A single mask field plus a type flag — which is
+        # what this was — could not express that.
+        mask = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
+        img  = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u2", "data" => "eJxjYGBgAAAABAAC")
+        layers = [
+            Dict("kind" => "labels", "name" => "Preview", "block" => mask,
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+            Dict("kind" => "image", "name" => "nuc-GFP AF", "block" => img,
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+        ]
+        reply = Dict("layers" => layers,
                      "region" => Dict("T" => [3, 4], "Z" => [1, 2],
                                       "Y" => [0, 4], "X" => [0, 4]),
                      "valueName" => "A", "counts" => Dict("base" => 7))
         cmd = Cecelia.preview_show_command(reply)
         @test cmd["type"] == "show_task_preview"
-        @test cmd["mask"] === payload            # not re-encoded, not copied
-        @test cmd["label_shape"] == [10, 5, 64, 64]
-        @test cmd["label_axes"] == ["T", "Z", "Y", "X"]
+        @test cmd["layers"] === layers                      # not re-encoded, not copied
+        @test cmd["layers"][1]["block"] === mask
         @test cmd["show"] == true
         # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
         # `({vn}) Labels` evict each other in the viewer instead of stacking
         @test cmd["value_name"] == "A"
         @test !occursin("__preview", cmd["value_name"])
 
-        # a reply missing the block is a fault, not a layer showing nothing
-        for missing_key in ("mask", "labelShape", "labelAxes")
-            broken = filter(p -> first(p) != missing_key, reply)
-            @test_throws ErrorException Cecelia.preview_show_command(broken)
+        # no layers at all is a fault, not a viewer showing nothing
+        @test_throws ErrorException Cecelia.preview_show_command(
+            filter(p -> first(p) != "layers", reply))
+        @test_throws ErrorException Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[])))
+
+        # a layer missing any of its geometry is a fault too — caught HERE rather than as a Python
+        # traceback in the viewer, which is the point of validating in the pass-through
+        for missing_key in ("kind", "name", "block", "shape", "axes")
+            broken_layer = filter(p -> first(p) != missing_key, layers[1])
+            @test_throws ErrorException Cecelia.preview_show_command(
+                merge(reply, Dict("layers" => Any[broken_layer])))
+        end
+
+        # an unknown kind is refused rather than passed on for the viewer to guess at
+        @test_throws ErrorException Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
+    end
+
+    @testset "a composite says which steps it does not preview" begin
+        # `preview_params` delegates to the FIRST previewable step, so a composite previews one step
+        # and the others silently do not happen. Correct — the alternative is previewing nothing — but
+        # it has to be said, because a skipped step can change what the previewed one means:
+        # afDriftCorrect previews AF and skips drift correction, which expands the canvas and shifts
+        # every frame, so the geometry on screen is not the geometry the run produces.
+        af_drift = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
+        skipped = Cecelia.preview_steps_not_previewed(af_drift)
+        @test length(skipped) == 1
+        @test skipped[1]["fun"] == "cleanupImages.driftCorrect"
+        @test skipped[1]["label"] == "Drift correction"      # the spec's own label, not a fun_name
+
+        # the segmentation composite likewise: measurement is not previewed
+        seg = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+        @test [x["fun"] for x in Cecelia.preview_steps_not_previewed(seg)] == ["segment.measureLabels"]
+
+        # a plain task skips nothing, and neither does a non-composite previewable one
+        for fn in ("segment.cellpose", "cleanupImages.afCorrect", "cleanupImages.driftCorrect")
+            @test isempty(Cecelia.preview_steps_not_previewed(Cecelia._task_from_fun_name(fn)))
+        end
+    end
+
+    @testset "AF correction is previewable, with its own param translation" begin
+        @test Cecelia.task_previewable(Cecelia.AfCorrect())
+        mktempdir() do dir
+            img = CciaImage(; uid = "af1", name = "n", dir = joinpath(dir, "1", "af1"))
+            mkpath(img._dir)
+            img.filepath["default"] = "ccidImage.ome.zarr"
+            img.im_channel_names["default"] = ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
+            save!(img)
+
+            # the real saved shape from a live project: channel NAMES, including one ("CH4") that is
+            # not in this image's channel list at all — it resolves to nothing, exactly as the run does
+            params = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+                "divisionChannels" => ["CH4", "CD169-Kat"],
+                "quotientChannel"  => ["mem-TOM"])))
+            out = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), params, img)
+            # quotientChannel re-keys the combination to the channel being corrected (mem-TOM → 2)
+            @test collect(keys(out["afCombinations"])) == ["2"]
+            @test out["afCombinations"]["2"]["divisionChannels"] == [3]
+            @test !haskey(out["afCombinations"]["2"], "quotientChannel")
+
+            # idempotent: already-translated indices survive a second pass (a chain or REPL caller)
+            again = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), out, img)
+            @test again["afCombinations"]["2"]["divisionChannels"] == [3]
+
+            # and the composite delegates to AF, since that is the step it can preview
+            comp = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
+            @test Cecelia.preview_params_for_run(comp, params, img)["afCombinations"]["2"]["divisionChannels"] == [3]
         end
     end
 

@@ -76,6 +76,7 @@ class NapariState:
         # set when open_image is called
         self._im_data = None          # list[dask array], one per multiscale level
         self._im_scale = None         # scale without channel axis, e.g. [z, y, x] µm
+        self._preview_layers = set()   # layer names the task preview added (see _remove_preview_layers)
         self._im_units = None         # unit tuple matching _im_scale axes, e.g. ('µm','µm','µm')
         self._axes = None             # ['t','c','z','y','x']
         self._channel_axis = None     # int index into im_data shape
@@ -542,55 +543,97 @@ class NapariState:
                             # event for this same region try again rather than dedupe the retry away
         self._last_posted_region = region
 
-    def show_task_preview(self, value_name: str = "default", mask: dict = None,
-                          label_shape: list = None, label_axes: list = None,
+    def show_task_preview(self, value_name: str = "default", layers: list = None,
                           region: dict = None, show: bool = True, api_url: str = None):
-        """Show one region's task preview as an IN-MEMORY labels layer.
+        """Show one region's task preview as IN-MEMORY layers.
 
         The counterpart to `_show_label_stores`, and deliberately not routed through it: there is no
-        store. The preview worker computes one plane's mask and returns the block itself
-        (`cecelia.utils.block_transfer`), which lands here as a full-label-extent lazy array with that
-        one block filled in — so the layer aligns with the image by shape alone, no `translate`, and
-        nothing is written to the user's project.
+        store. The worker computes one plane and returns the blocks themselves
+        (`cecelia.utils.block_transfer`), which land here as full-extent lazy arrays with that one block
+        filled in — so each layer aligns with the image by shape alone, no `translate`, and nothing is
+        written to the user's project.
 
-        The layer takes the `Preview` slot in the `labels` family, so it evicts (and is evicted by)
-        `({vn}) Labels` and `({vn}) Labels (live)`: all three are the same value_name's segmentation,
-        and stacking them would show one set of labels on top of another. `show=False` (or a preview
-        that produced nothing) removes it.
+        A reply carries a LIST, because one task can preview several things:
+
+        * ``kind="labels"`` — a segmentation mask. Takes the `Preview` slot in the `labels` family, so
+          it evicts (and is evicted by) `({vn}) Labels` and `({vn}) Labels (live)`: all three are the
+          same value_name's segmentation, and stacking them would show one mask over another.
+        * ``kind="image"`` — a corrected channel, e.g. from AF correction. Added as an Image layer named
+          after the channel it corrects (`(default) nuc-GFP AF`) so it sits beside the original and can
+          be toggled against it — comparing corrected to raw IS the judgement being made, so they have
+          to coexist rather than evict each other.
+
+        `show=False` (or a preview that produced nothing) removes every layer this has added.
         """
         stem = value_name
-        layer_name = f"({stem}) {_PREVIEW_SUFFIX}"
-        if not show or not mask:
-            _remove_layer(self._viewer, layer_name)
+        if not show or not layers:
+            self._remove_preview_layers(stem)
             # stop reporting view changes: nothing is chasing the view any more
             self._detach_view_listener()
             return
-        if not label_shape or not label_axes:
-            raise ValueError("show_task_preview needs labelShape and labelAxes")
 
-        block = block_transfer.decode_block(mask)
-        data = block_transfer.place_block_lazy(
-            block, label_shape, list(label_axes), region or {})
+        # replace the previous preview wholesale: a parameter change can alter which channels a task
+        # even outputs, so leaving stale layers behind would show a mix of two parameter sets
+        self._remove_preview_layers(stem)
+        added = []
+        for spec in layers:
+            kind = str(spec.get("kind", "labels"))
+            name = str(spec.get("name", _PREVIEW_SUFFIX))
+            axes = list(spec.get("axes") or [])
+            shape = spec.get("shape")
+            if not shape or not axes:
+                raise ValueError("preview layer needs 'shape' and 'axes'")
+            block = block_transfer.decode_block(spec["block"])
+            data = block_transfer.place_block_lazy(block, shape, axes, region or {})
+            layer_name = f"({stem}) {name}"
 
-        self._invalidate_colcol_cache(value_name)
-        for other in _LABEL_SUFFIXES["labels"]:
-            _remove_layer(self._viewer, f"({stem}) {other}")
-        layer = napari_utils.add_labels(
-            self._viewer, data, name=layer_name,
-            scale=self._im_scale, units=self._im_units, opacity=0.7,
-            # cache off for the same reason as a live store preview: consecutive previews of the same
-            # region produce same-shaped dask arrays, and a served-from-cache plane would show the
-            # PREVIOUS parameters' mask — the one thing this feature exists to avoid.
-            cache=False,
-            axes=list(label_axes), image_axes=self._display_axes(),
-            image_shape=self._display_shape(),
-        )
+            if kind == "labels":
+                self._invalidate_colcol_cache(value_name)
+                for other in _LABEL_SUFFIXES["labels"]:
+                    _remove_layer(self._viewer, f"({stem}) {other}")
+                layer = napari_utils.add_labels(
+                    self._viewer, data, name=layer_name,
+                    scale=self._im_scale, units=self._im_units, opacity=0.7,
+                    # cache off for the same reason as a live store preview: consecutive previews of the
+                    # same region produce same-shaped dask arrays, and a served-from-cache plane would
+                    # show the PREVIOUS parameters' result — the one thing this feature exists to avoid.
+                    cache=False,
+                    axes=axes, image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
+                )
+            elif kind == "image":
+                layer = napari_utils.add_image(
+                    self._viewer, data, name=layer_name,
+                    scale=self._im_scale, units=self._im_units,
+                    axes=axes, image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
+                    cache=False,
+                )
+            else:
+                raise ValueError(f"unknown preview layer kind {kind!r}")
+
+            self._preview_layers.add(layer_name)
+            added.append(layer)
+            print(f"[preview] added {layer_name} ({kind}): block={tuple(block.shape)} "
+                  f"extent={tuple(int(x) for x in shape)} region={region}", flush=True)
+
         # only now that a preview is actually on screen does a view change mean anything
         if api_url:
             self._attach_view_listener(api_url)
-        print(f"[preview] added {layer_name}: block={tuple(block.shape)} "
-              f"extent={tuple(int(s) for s in label_shape)} region={region}", flush=True)
-        return layer
+        return added
+
+    def _remove_preview_layers(self, stem: str):
+        """Remove every layer a previous preview added for this value_name.
+
+        Tracked by name rather than rediscovered by suffix, because an image preview's name comes from
+        the CHANNEL it corrects — there is no fixed suffix to scan for, and guessing one would either
+        miss layers (leaving a stale parameter set on screen) or delete a user's own.
+        """
+        for name in sorted(getattr(self, "_preview_layers", set())):
+            _remove_layer(self._viewer, name)
+        self._preview_layers = set()
+        # the labels slot is also removable by its fixed name, for a preview added before a restart
+        _remove_layer(self._viewer, f"({stem}) {_PREVIEW_SUFFIX}")
 
     def show_branch_labels(self, value_name: str = "default",
                            label_files: list = None, show_labels: bool = True,

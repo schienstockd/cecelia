@@ -83,26 +83,15 @@ const label = computed(() => {
         <i v-if="preview.notice.warn" class="pi" :class="SEVERITY.warn.icon" />
         {{ preview.notice.short }}
       </span>
-      <!-- the 2D fallback is a real warning, so it goes through the severity model: shape-distinct
-           icon + text, never colour alone (lib/severity.ts, WCAG 1.4.1) -->
-      <span v-if="preview.summary.warn" class="preview-warn cc-fs-2xs"
-        v-tooltip.left="preview.summary.warnDetail">
+      <!-- Every "the run will not look exactly like this" caveat: 2D fallback / no signal, base model
+           only, run-would-tile, composite steps not previewed. Collected in the store (`warnings`) —
+           they are the same kind of statement and rendered identically, so one loop rather than a span
+           each. All go through the severity model: shape-distinct icon + text, never colour alone
+           (lib/severity.ts, WCAG 1.4.1). -->
+      <span v-for="w in preview.warnings" :key="w.short" class="preview-warn cc-fs-2xs"
+        v-tooltip.left="w.detail">
         <i class="pi" :class="SEVERITY.warn.icon" />
-        {{ preview.summary.warn }}
-      </span>
-      <!-- a two-model run previews only its base type, so the mask on screen is not what the run
-           produces — shown whenever the params declare a nucleus model, result or not -->
-      <span v-if="preview.baseOnly.short" class="preview-warn cc-fs-2xs"
-        v-tooltip.left="preview.baseOnly.detail">
-        <i class="pi" :class="SEVERITY.warn.icon" />
-        {{ preview.baseOnly.short }}
-      </span>
-      <!-- a run would split this region at a tile seam and re-stitch across it; the preview segments
-           the region whole, so counts near the seam differ -->
-      <span v-if="preview.tiled.short" class="preview-warn cc-fs-2xs"
-        v-tooltip.left="preview.tiled.detail">
-        <i class="pi" :class="SEVERITY.warn.icon" />
-        {{ preview.tiled.short }}
+        {{ w.short }}
       </span>
     </div>
   </div>
