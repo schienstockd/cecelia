@@ -36,6 +36,19 @@ natively, which is *why* it stays — what keeps Python in the loop is the clust
 the file format. Full breakdown in
 [`docs/prompts/python-audit-report.md`](docs/prompts/python-audit-report.md).
 
+**Julia is fast — so why did the server take a minute to answer its first request?**
+It wasn't running anything; it was *compiling*. Two separate slowdowns turned out to be the same
+bug wearing different clothes: **one oversized unit that Julia has to compile in full before any of
+it runs.** The test suite was a single 8,000-line `@testset`, so the whole thing was compiled before
+the first assertion (~90 s of a 200 s run). The HTTP router was a single 156-branch `if/elseif`,
+which forces the compiler to infer *every* handler even though one route runs (42 s of a 53 s boot).
+Both fixes are the same move — stop putting everything in one unit: the suite body moved behind an
+`include`, and the router became a lookup table, so only the handler you actually hit gets compiled.
+Test suite 214 s → 78 s, server start 57 s → 11 s, CI 17.6 min → ~5.5 min. The lesson that keeps
+paying: measure where the time goes before optimising. Splitting the router into smaller *functions*
+changed nothing — it was still one compilation request — and an earlier plan to restructure the whole
+API layer was abandoned once the profiler showed it would have bought seconds.
+
 **Why keep all analysis out of the frontend?**
 So the core package can run and be tested from the Julia REPL with no interface attached. The same
 task code runs identically whether it's called from a test, the REPL, or the GUI. The API is a thin
