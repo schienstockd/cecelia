@@ -3,6 +3,7 @@ import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination,
+  warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
   type PreviewContext, type PreviewStatus,
 } from './taskPreview'
 
@@ -415,5 +416,53 @@ describe('previewSummary', () => {
     expect(d).not.toMatch(/may vary/i)
     expect(FALLBACK_2D_WARN.short.split(' ').length).toBeLessThanOrEqual(4)   // short really is short
     expect(d.split(' ').length).toBeLessThanOrEqual(20)                       // one line, not an essay
+  })
+})
+
+// ── waiting out a cold worker ──────────────────────────────────────────────────────────────────────
+//
+// THE BUG: a request made while the worker was still importing got `202 {starting: true}`, and the store
+// set `starting` and returned. Nothing re-requested, and the worker cannot call back — so the UI sat on
+// "Starting…" until the user happened to change a parameter again. Reported as "the preview sometimes
+// just doesn't finish", triggered by toggling the thunderbolt or editing a param during the ~18 s warm.
+describe('warmPollAction', () => {
+  const on = { enabled: true, pinned: false }
+  const warm = (o: Partial<PreviewStatus> = {}): PreviewStatus =>
+    ({ alive: true, starting: false, imageUid: 'i', zarrPath: 'z', taskDir: 't', ...o })
+
+  it('re-requests once the worker is alive and no longer starting', () => {
+    expect(warmPollAction(warm(), 5_000, on)).toBe('request')
+  })
+
+  it('keeps waiting while the worker is still starting', () => {
+    expect(warmPollAction(warm({ starting: true }), 5_000, on)).toBe('wait')
+    expect(warmPollAction(warm({ alive: false }), 5_000, on)).toBe('wait')
+    expect(warmPollAction(null, 5_000, on)).toBe('wait')       // status fetch failed; try again
+  })
+
+  it('gives up at the deadline rather than spinning forever', () => {
+    // the whole point: an unresolved spinner is indistinguishable from a hang, which IS the bug
+    expect(warmPollAction(warm({ alive: false }), WORKER_WARM_TIMEOUT_MS, on)).toBe('abandon')
+    expect(warmPollAction(warm({ starting: true }), WORKER_WARM_TIMEOUT_MS + 1, on)).toBe('abandon')
+  })
+
+  it('a ready worker beats the deadline — do not abandon a result we could still use', () => {
+    expect(warmPollAction(warm(), WORKER_WARM_TIMEOUT_MS * 10, on)).toBe('request')
+  })
+
+  it('stops silently when the user turns the preview off or pins it', () => {
+    // their action, not a failure: surfacing it as an error would be the wrong kind of loud
+    expect(warmPollAction(warm({ starting: true }), 1_000, { enabled: false, pinned: false }))
+      .toBe('stop')
+    expect(warmPollAction(warm({ starting: true }), 1_000, { enabled: true, pinned: true }))
+      .toBe('stop')
+    // ...and that takes precedence over the deadline, so a late abandon cannot raise an error either
+    expect(warmPollAction(warm({ alive: false }), WORKER_WARM_TIMEOUT_MS * 2,
+                          { enabled: false, pinned: false })).toBe('stop')
+  })
+
+  it('the poll interval is well under the timeout, or the wait would never retry', () => {
+    expect(WORKER_WARM_POLL_MS).toBeGreaterThan(0)
+    expect(WORKER_WARM_POLL_MS).toBeLessThan(WORKER_WARM_TIMEOUT_MS / 10)
   })
 })
