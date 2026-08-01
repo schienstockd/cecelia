@@ -197,340 +197,197 @@ end)
 
 # ── HTTP router ───────────────────────────────────────────────────────────────
 
+# Routing is a LOOKUP TABLE, not an if/elseif chain. It used to be one — 156 branches — and that
+# cost 42s of a 53s server boot, on every restart (measured with --trace-compile-timing; it showed
+# up as ONE method, the handle_stream closure that inlines the chain). Compiling the chain forces
+# the compiler to infer EVERY handler call even though exactly one runs. With a table only the
+# invoked handler compiles: boot 54s -> 11s, compile 50s -> 6s.
+#
+# Splitting the chain into per-method functions does NOT fix it — measured, no change — because it
+# is still one compilation request over the same call tree. The win comes from never putting all
+# the handler calls in one inferable unit. (Same shape as the 8k-line @testset that cost ~90s of a
+# 200s test run: one oversized unit dominating compilation.)
+#
+# Add a route by adding a table entry. Do NOT merge these back into a chain — the
+# "HTTP router — the full route table still dispatches" testset pins every path.
 function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     target = String(req.target)
     path   = split(HTTP.URI(target).path, '?')[1]
     method = req.method
 
-    # ── GET ─────────────────────────────────────────────────────────────────────
-    if method == "GET"
-        status, body = if path == "/api/health"
-            200, JSON3.write((; ok=true, version="CeceliaAPI"))
-        elseif path == "/api/diagnostics"
-            api_diagnostics(req)
-        elseif path == "/api/app/worktrees"
-            api_app_worktrees(req)
-        elseif path == "/api/diagnostics/packages"
-            api_packages(req)
-        elseif path == "/api/version"
-            api_version(req)
-        elseif path == "/api/update/check"
-            api_update_check(req)
-        elseif path == "/api/setup/defaults"
-            api_setup_defaults(req)
-        elseif path == "/api/setup/validate"
-            api_setup_validate(req)
-        elseif path == "/api/projects"
-            api_projects_list(req)
-        elseif path == "/api/projects/bundles"
-            api_projects_bundles(req)
-        elseif path == "/api/projects/bundle-info"
-            api_projects_bundle_info(req)
-        elseif path == "/api/fs/list"
-            api_fs_list(req)
-        elseif path == "/api/images"
-            api_images_list(req)
-        elseif path == "/api/images/meta"
-            api_images_meta(req)
-        elseif path == "/api/images/tasklog"
-            api_images_tasklog(req)
-        elseif path == "/api/tasks/history"
-            api_tasks_history(req)
-        elseif path == "/api/tasks/recent"
-            api_tasks_recent(req)
-        elseif path == "/api/qc/cohort"
-            api_qc_cohort(req)
-        elseif path == "/api/qc/cohort/runs"
-            api_qc_cohort_runs(req)
-        elseif path == "/api/analysis/lineage"
-            api_analysis_lineage(req)
-        elseif path == "/api/analysis/populations"
-            api_analysis_populations(req)
-        elseif path == "/api/analysis/measures"
-            api_analysis_measures(req)
-        elseif path == "/api/analysis/behaviour"
-            api_analysis_behaviour(req)
-        elseif path == "/api/analysis/clusters"
-            api_analysis_clusters(req)
-        elseif path == "/api/analysis/spatial"
-            api_analysis_spatial(req)
-        elseif path == "/api/analysis/chains"
-            api_analysis_chains(req)
-        elseif path == "/api/repl/api"
-            api_repl_api(req)
-        elseif path == "/api/observer/briefing"
-            api_observer_briefing(req)
-        elseif path == "/api/lablog"
-            api_lablog_read(req)
-        elseif path == "/api/tasks/definitions"
-            api_task_definitions(req)
-        elseif path == "/api/maintenance/patches"
-            api_maintenance_patches(req)
-        elseif path == "/api/tasks/custom-modules"
-            api_custom_modules_status(req)
-        elseif path == "/api/tasks/funparams"
-            api_task_fun_params(req)
-        elseif path == "/api/pools"
-            api_pools_list(req)
-        elseif path == "/api/tasks"
-            api_tasks_list(req)
-        elseif path == "/api/chains"
-            api_chains_list(req)
-        elseif path == "/api/chains/get"
-            api_chains_get(req)
-        elseif path == "/api/chains/runs"
-            api_chains_runs(req)
-        elseif path == "/api/chains/run"
-            api_chains_run(req)
-        elseif path == "/api/logs/recent"
-            api_logs_recent()
-        elseif path == "/api/observer/status"
-            api_observer_status(req)
-        elseif path == "/api/napari/status"
-            api_napari_status(req)
-        elseif path == "/api/napari/gpu"
-            api_napari_gpu_get(req)
-        elseif path == "/api/preview/status"
-            api_preview_status(req)
-        elseif path == "/api/notebooks"
-            api_notebooks_list(req)
-        elseif path == "/api/notebooks/content"
-            api_notebooks_content(req)
-        elseif path == "/api/notebooks/status"
-            api_notebooks_status(req)
-        elseif path == "/api/notebooks/snapshots"
-            api_notebooks_snapshots(req)
-        elseif path == "/api/gating/channels"
-            api_gating_channels(req)
-        elseif path == "/api/gating/popmap"
-            api_gating_popmap(req)
-        elseif path == "/api/gating/stats"
-            api_gating_stats(req)
-        elseif path == "/api/gating/membership"
-            api_gating_membership(req)
-        elseif path == "/api/gating/plotmeta"
-            api_gating_plotmeta(req)
-        elseif path == "/api/gating/plotdata"
-            api_gating_plotdata(req)
-        elseif path == "/api/gating/density"
-            api_gating_density(req)
-        elseif path == "/api/images/geometry"
-            api_image_geometry(req)
-        elseif path == "/api/crop/info"
-            api_crop_info(req)
-        elseif path == "/api/crop/frame"
-            api_crop_frame(req)
-        elseif path == "/api/plots/umap"
-            api_plots_umap(req)
-        elseif path == "/api/plots/definitions"
-            api_plot_definitions(req)
-        elseif path == "/api/plots/populations"
-            api_plot_populations(req)
-        elseif path == "/api/plots/attrs"
-            api_plot_attrs(req)
-        elseif path == "/api/tracking/motion-dims"
-            api_motion_dims(req)
-        elseif path == "/api/storage/summary"
-            api_storage_summary(req)
-        elseif path == "/api/movies"
-            api_movies_list(req)
-        else
-            404, JSON3.write((; error="Not found: $path"))
-        end
-        return status, body
-    end
+    table = method == "GET"  ? _GET_ROUTES :
+            method == "POST" ? _POST_ROUTES : nothing
+    table === nothing && return 405, JSON3.write((; error="Method not allowed: $method"))
 
-    # ── POST ────────────────────────────────────────────────────────────────────
-    if method == "POST"
-        return if path == "/api/projects/list"
-            api_projects_list(req)
-        elseif path == "/api/pools/set"
-            api_pool_set(body_bytes)
-        elseif path == "/api/tasks/custom-modules/reload"
-            api_custom_modules_reload(body_bytes)
-        elseif path == "/api/projects/create"
-            api_projects_create(body_bytes)
-        elseif path == "/api/projects/load"
-            api_projects_load(body_bytes)
-        elseif path == "/api/projects/boards"
-            api_projects_boards(body_bytes)
-        elseif path == "/api/projects/animations"
-            api_projects_animations(body_bytes)
-        elseif path == "/api/projects/canvases"
-            api_projects_canvases(body_bytes)
-        elseif path == "/api/board-assets/save"
-            api_board_asset_save(body_bytes)
-        elseif path == "/api/board-assets/delete"
-            api_board_asset_delete(body_bytes)
-        elseif path == "/api/board-assets/copy"
-            api_board_asset_copy(body_bytes)
-        elseif path == "/api/projects/rename"
-            api_projects_rename(body_bytes)
-        elseif path == "/api/projects/delete"
-            api_projects_delete(body_bytes)
-        elseif path == "/api/sets/create"
-            api_sets_create(body_bytes)
-        elseif path == "/api/sets/delete"
-            api_sets_delete(body_bytes)
-        elseif path == "/api/images/register"
-            api_images_register(body_bytes)
-        elseif path == "/api/import/scan-legacy"
-            api_import_scan_legacy(body_bytes)
-        elseif path == "/api/import/register-legacy"
-            api_import_register_legacy(body_bytes)
-        elseif path == "/api/images/delete"
-            api_images_delete(body_bytes)
-        elseif path == "/api/images/move"
-            api_images_move(body_bytes)
-        elseif path == "/api/images/attr/create"
-            api_images_attr_create(body_bytes)
-        elseif path == "/api/images/attr/delete"
-            api_images_attr_delete(body_bytes)
-        elseif path == "/api/images/attr/set"
-            api_images_attr_set(body_bytes)
-        elseif path == "/api/images/channelnames"
-            api_images_channelnames(body_bytes)
-        elseif path == "/api/images/meta/set"
-            api_images_meta_set(body_bytes)
-        elseif path == "/api/images/inclusion/set"
-            api_images_inclusion_set(body_bytes)
-        elseif path == "/api/qc/cohort/check"
-            api_qc_cohort_check(body_bytes)
-        elseif path == "/api/lablog/append"
-            api_lablog_append(body_bytes)
-        elseif path == "/api/lablog/capture"
-            api_lablog_capture(body_bytes)
-        elseif path == "/api/observer/feedback"
-            api_observer_feedback(body_bytes)
-        elseif path == "/api/observer/clear"
-            api_observer_clear(body_bytes)
-        elseif path == "/api/observer/register"
-            api_observer_register(body_bytes)
-        elseif path == "/api/lablog/dismiss"
-            api_lablog_dismiss(body_bytes)
-        elseif path == "/api/images/meta/resync"
-            api_images_meta_resync(body_bytes)
-        elseif path == "/api/images/labels/delete"
-            api_images_delete_labels(body_bytes)
-        elseif path == "/api/chains/save"
-            api_chains_save(body_bytes)
-        elseif path == "/api/chains/delete"
-            api_chains_delete(body_bytes)
-        elseif path == "/api/notebooks/launch"
-            api_notebooks_launch(body_bytes)
-        elseif path == "/api/notebooks/write"
-            api_notebooks_write(body_bytes)
-        elseif path == "/api/notebooks/create"
-            api_notebooks_create(body_bytes)
-        elseif path == "/api/notebooks/describe"
-            api_notebooks_describe(body_bytes)
-        elseif path == "/api/notebooks/delete"
-            api_notebooks_delete(body_bytes)
-        elseif path == "/api/notebooks/duplicate"
-            api_notebooks_duplicate(body_bytes)
-        elseif path == "/api/notebooks/revise"
-            api_notebooks_revise(body_bytes)
-        elseif path == "/api/notebooks/snapshot"
-            api_notebooks_snapshot(body_bytes)
-        elseif path == "/api/notebooks/restore"
-            api_notebooks_restore(body_bytes)
-        elseif path == "/api/notebooks/prune"
-            api_notebooks_prune(body_bytes)
-        elseif path == "/api/notebooks/shutdown"
-            api_notebooks_shutdown(body_bytes)
-        elseif path == "/api/notebooks/restart"
-            api_notebooks_restart(body_bytes)
-        elseif path == "/api/notebooks/build-sysimage"
-            api_notebooks_build_sysimage(body_bytes)
-        elseif path == "/api/setup/init"
-            api_setup_init(body_bytes)
-        elseif path == "/api/app/shutdown"
-            api_app_shutdown(body_bytes)
-        elseif path == "/api/app/restart"
-            api_app_restart(body_bytes)
-        elseif path == "/api/app/switch-worktree"
-            api_app_switch_worktree(body_bytes)
-        elseif path == "/api/napari/open"
-            api_napari_open(body_bytes)
-        elseif path == "/api/napari/close"
-            api_napari_close(body_bytes)
-        elseif path == "/api/napari/screenshot"
-            api_napari_screenshot(body_bytes)
-        elseif path == "/api/napari/apply-view-state"
-            api_napari_apply_view_state(body_bytes)
-        elseif path == "/api/napari/view-state"
-            api_napari_view_state(body_bytes)
-        elseif path == "/api/napari/overlay-legend"
-            api_napari_overlay_legend(body_bytes)
-        elseif path == "/api/napari/record-timelapse"
-            api_napari_record_timelapse(body_bytes)
-        elseif path == "/api/napari/record-animation"
-            api_napari_record_animation(body_bytes)
-        elseif path == "/api/napari/apply-movie-config"
-            api_napari_apply_movie_config(body_bytes)
-        elseif path == "/api/napari/restart"
-            api_napari_restart(body_bytes)
-        elseif path == "/api/napari/gpu"
-            api_napari_gpu_set(body_bytes)
-        elseif path == "/api/napari/configure-autosave"
-            api_napari_configure_autosave(body_bytes)
-        elseif path == "/api/napari/show-labels"
-            api_napari_show_labels(body_bytes)
-        elseif path == "/api/napari/refresh-labels"
-            api_napari_refresh_labels(body_bytes)
-        elseif path == "/api/napari/show-populations"
-            api_napari_show_populations(body_bytes)
-        elseif path == "/api/napari/show-tracks"
-            api_napari_show_tracks(body_bytes)
-        elseif path == "/api/napari/colour-labels"
-            api_napari_colour_labels(body_bytes)
-        elseif path == "/api/napari/colour-branch-labels"
-            api_napari_colour_branch_labels(body_bytes)
-        elseif path == "/api/napari/start-selection"
-            api_napari_start_selection(body_bytes)
-        elseif path == "/api/napari/selection-scope"
-            api_napari_selection_scope(body_bytes)
-        elseif path == "/api/napari/stop-selection"
-            api_napari_stop_selection(body_bytes)
-        elseif path == "/api/napari/event"
-            api_napari_event(body_bytes)
-        elseif path == "/api/preview/start"
-            api_preview_start(body_bytes)
-        elseif path == "/api/preview/stop"
-            api_preview_stop(body_bytes)
-        elseif path == "/api/preview/run"
-            api_preview_run(body_bytes)
-        elseif path == "/api/gating/pop/add"
-            api_gating_pop_add(body_bytes)
-        elseif path == "/api/gating/pop/set-gate"
-            api_gating_pop_set_gate(body_bytes)
-        elseif path == "/api/gating/pop/delete"
-            api_gating_pop_delete(body_bytes)
-        elseif path == "/api/gating/pop/update"
-            api_gating_pop_update(body_bytes)
-        elseif path == "/api/gating/pop/rename"
-            api_gating_pop_rename(body_bytes)
-        elseif path == "/api/gating/copy"
-            api_gating_copy(body_bytes)
-        elseif path == "/api/images/value-name-check"
-            api_images_value_name_check(body_bytes)
-        elseif path == "/api/plot_data"
-            api_plot_data(body_bytes)
-        elseif path == "/api/repl"
-            api_repl(body_bytes)
-        elseif path == "/api/repl/config"
-            api_repl_config(body_bytes)
-        elseif path == "/api/update/apply"
-            api_update_apply(body_bytes)
-        elseif path == "/api/storage/reclaim"
-            api_storage_reclaim(body_bytes)
-        else
-            404, JSON3.write((; error="Not found: $path"))
-        end
-    end
-
-    405, JSON3.write((; error="Method not allowed: $method"))
+    handler = get(table, path, nothing)   # SubString hashes as its String — no copy per request
+    handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
+    handler(req, body_bytes)
 end
+
+# ── GET ─────────────────────────────────────────────────────────────────────
+const _GET_ROUTES = Dict{String, Function}(
+    "/api/health" => (req, body_bytes) -> (200, JSON3.write((; ok=true, version="CeceliaAPI"))),
+    "/api/diagnostics" => (req, body_bytes) -> (api_diagnostics(req)),
+    "/api/app/worktrees" => (req, body_bytes) -> (api_app_worktrees(req)),
+    "/api/diagnostics/packages" => (req, body_bytes) -> (api_packages(req)),
+    "/api/version" => (req, body_bytes) -> (api_version(req)),
+    "/api/update/check" => (req, body_bytes) -> (api_update_check(req)),
+    "/api/setup/defaults" => (req, body_bytes) -> (api_setup_defaults(req)),
+    "/api/setup/validate" => (req, body_bytes) -> (api_setup_validate(req)),
+    "/api/projects" => (req, body_bytes) -> (api_projects_list(req)),
+    "/api/projects/bundles" => (req, body_bytes) -> (api_projects_bundles(req)),
+    "/api/projects/bundle-info" => (req, body_bytes) -> (api_projects_bundle_info(req)),
+    "/api/fs/list" => (req, body_bytes) -> (api_fs_list(req)),
+    "/api/images" => (req, body_bytes) -> (api_images_list(req)),
+    "/api/images/meta" => (req, body_bytes) -> (api_images_meta(req)),
+    "/api/images/tasklog" => (req, body_bytes) -> (api_images_tasklog(req)),
+    "/api/tasks/history" => (req, body_bytes) -> (api_tasks_history(req)),
+    "/api/tasks/recent" => (req, body_bytes) -> (api_tasks_recent(req)),
+    "/api/qc/cohort" => (req, body_bytes) -> (api_qc_cohort(req)),
+    "/api/qc/cohort/runs" => (req, body_bytes) -> (api_qc_cohort_runs(req)),
+    "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
+    "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
+    "/api/analysis/measures" => (req, body_bytes) -> (api_analysis_measures(req)),
+    "/api/analysis/behaviour" => (req, body_bytes) -> (api_analysis_behaviour(req)),
+    "/api/analysis/clusters" => (req, body_bytes) -> (api_analysis_clusters(req)),
+    "/api/analysis/spatial" => (req, body_bytes) -> (api_analysis_spatial(req)),
+    "/api/analysis/chains" => (req, body_bytes) -> (api_analysis_chains(req)),
+    "/api/repl/api" => (req, body_bytes) -> (api_repl_api(req)),
+    "/api/observer/briefing" => (req, body_bytes) -> (api_observer_briefing(req)),
+    "/api/lablog" => (req, body_bytes) -> (api_lablog_read(req)),
+    "/api/tasks/definitions" => (req, body_bytes) -> (api_task_definitions(req)),
+    "/api/maintenance/patches" => (req, body_bytes) -> (api_maintenance_patches(req)),
+    "/api/tasks/custom-modules" => (req, body_bytes) -> (api_custom_modules_status(req)),
+    "/api/tasks/funparams" => (req, body_bytes) -> (api_task_fun_params(req)),
+    "/api/pools" => (req, body_bytes) -> (api_pools_list(req)),
+    "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
+    "/api/chains" => (req, body_bytes) -> (api_chains_list(req)),
+    "/api/chains/get" => (req, body_bytes) -> (api_chains_get(req)),
+    "/api/chains/runs" => (req, body_bytes) -> (api_chains_runs(req)),
+    "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
+    "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent()),
+    "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
+    "/api/napari/status" => (req, body_bytes) -> (api_napari_status(req)),
+    "/api/napari/gpu" => (req, body_bytes) -> (api_napari_gpu_get(req)),
+    "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
+    "/api/notebooks" => (req, body_bytes) -> (api_notebooks_list(req)),
+    "/api/notebooks/content" => (req, body_bytes) -> (api_notebooks_content(req)),
+    "/api/notebooks/status" => (req, body_bytes) -> (api_notebooks_status(req)),
+    "/api/notebooks/snapshots" => (req, body_bytes) -> (api_notebooks_snapshots(req)),
+    "/api/gating/channels" => (req, body_bytes) -> (api_gating_channels(req)),
+    "/api/gating/popmap" => (req, body_bytes) -> (api_gating_popmap(req)),
+    "/api/gating/stats" => (req, body_bytes) -> (api_gating_stats(req)),
+    "/api/gating/membership" => (req, body_bytes) -> (api_gating_membership(req)),
+    "/api/gating/plotmeta" => (req, body_bytes) -> (api_gating_plotmeta(req)),
+    "/api/gating/plotdata" => (req, body_bytes) -> (api_gating_plotdata(req)),
+    "/api/gating/density" => (req, body_bytes) -> (api_gating_density(req)),
+    "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
+    "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
+    "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
+    "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
+    "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
+    "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
+    "/api/plots/attrs" => (req, body_bytes) -> (api_plot_attrs(req)),
+    "/api/tracking/motion-dims" => (req, body_bytes) -> (api_motion_dims(req)),
+    "/api/storage/summary" => (req, body_bytes) -> (api_storage_summary(req)),
+    "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
+)
+
+# ── POST ─────────────────────────────────────────────────────────────────────
+const _POST_ROUTES = Dict{String, Function}(
+    "/api/projects/list" => (req, body_bytes) -> (api_projects_list(req)),
+    "/api/pools/set" => (req, body_bytes) -> (api_pool_set(body_bytes)),
+    "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
+    "/api/projects/create" => (req, body_bytes) -> (api_projects_create(body_bytes)),
+    "/api/projects/load" => (req, body_bytes) -> (api_projects_load(body_bytes)),
+    "/api/projects/boards" => (req, body_bytes) -> (api_projects_boards(body_bytes)),
+    "/api/projects/animations" => (req, body_bytes) -> (api_projects_animations(body_bytes)),
+    "/api/projects/canvases" => (req, body_bytes) -> (api_projects_canvases(body_bytes)),
+    "/api/board-assets/save" => (req, body_bytes) -> (api_board_asset_save(body_bytes)),
+    "/api/board-assets/delete" => (req, body_bytes) -> (api_board_asset_delete(body_bytes)),
+    "/api/board-assets/copy" => (req, body_bytes) -> (api_board_asset_copy(body_bytes)),
+    "/api/projects/rename" => (req, body_bytes) -> (api_projects_rename(body_bytes)),
+    "/api/projects/delete" => (req, body_bytes) -> (api_projects_delete(body_bytes)),
+    "/api/sets/create" => (req, body_bytes) -> (api_sets_create(body_bytes)),
+    "/api/sets/delete" => (req, body_bytes) -> (api_sets_delete(body_bytes)),
+    "/api/images/register" => (req, body_bytes) -> (api_images_register(body_bytes)),
+    "/api/import/scan-legacy" => (req, body_bytes) -> (api_import_scan_legacy(body_bytes)),
+    "/api/import/register-legacy" => (req, body_bytes) -> (api_import_register_legacy(body_bytes)),
+    "/api/images/delete" => (req, body_bytes) -> (api_images_delete(body_bytes)),
+    "/api/images/move" => (req, body_bytes) -> (api_images_move(body_bytes)),
+    "/api/images/attr/create" => (req, body_bytes) -> (api_images_attr_create(body_bytes)),
+    "/api/images/attr/delete" => (req, body_bytes) -> (api_images_attr_delete(body_bytes)),
+    "/api/images/attr/set" => (req, body_bytes) -> (api_images_attr_set(body_bytes)),
+    "/api/images/channelnames" => (req, body_bytes) -> (api_images_channelnames(body_bytes)),
+    "/api/images/meta/set" => (req, body_bytes) -> (api_images_meta_set(body_bytes)),
+    "/api/images/inclusion/set" => (req, body_bytes) -> (api_images_inclusion_set(body_bytes)),
+    "/api/qc/cohort/check" => (req, body_bytes) -> (api_qc_cohort_check(body_bytes)),
+    "/api/lablog/append" => (req, body_bytes) -> (api_lablog_append(body_bytes)),
+    "/api/lablog/capture" => (req, body_bytes) -> (api_lablog_capture(body_bytes)),
+    "/api/observer/feedback" => (req, body_bytes) -> (api_observer_feedback(body_bytes)),
+    "/api/observer/clear" => (req, body_bytes) -> (api_observer_clear(body_bytes)),
+    "/api/observer/register" => (req, body_bytes) -> (api_observer_register(body_bytes)),
+    "/api/lablog/dismiss" => (req, body_bytes) -> (api_lablog_dismiss(body_bytes)),
+    "/api/images/meta/resync" => (req, body_bytes) -> (api_images_meta_resync(body_bytes)),
+    "/api/images/labels/delete" => (req, body_bytes) -> (api_images_delete_labels(body_bytes)),
+    "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
+    "/api/chains/delete" => (req, body_bytes) -> (api_chains_delete(body_bytes)),
+    "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
+    "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
+    "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),
+    "/api/notebooks/describe" => (req, body_bytes) -> (api_notebooks_describe(body_bytes)),
+    "/api/notebooks/delete" => (req, body_bytes) -> (api_notebooks_delete(body_bytes)),
+    "/api/notebooks/duplicate" => (req, body_bytes) -> (api_notebooks_duplicate(body_bytes)),
+    "/api/notebooks/revise" => (req, body_bytes) -> (api_notebooks_revise(body_bytes)),
+    "/api/notebooks/snapshot" => (req, body_bytes) -> (api_notebooks_snapshot(body_bytes)),
+    "/api/notebooks/restore" => (req, body_bytes) -> (api_notebooks_restore(body_bytes)),
+    "/api/notebooks/prune" => (req, body_bytes) -> (api_notebooks_prune(body_bytes)),
+    "/api/notebooks/shutdown" => (req, body_bytes) -> (api_notebooks_shutdown(body_bytes)),
+    "/api/notebooks/restart" => (req, body_bytes) -> (api_notebooks_restart(body_bytes)),
+    "/api/notebooks/build-sysimage" => (req, body_bytes) -> (api_notebooks_build_sysimage(body_bytes)),
+    "/api/setup/init" => (req, body_bytes) -> (api_setup_init(body_bytes)),
+    "/api/app/shutdown" => (req, body_bytes) -> (api_app_shutdown(body_bytes)),
+    "/api/app/restart" => (req, body_bytes) -> (api_app_restart(body_bytes)),
+    "/api/app/switch-worktree" => (req, body_bytes) -> (api_app_switch_worktree(body_bytes)),
+    "/api/napari/open" => (req, body_bytes) -> (api_napari_open(body_bytes)),
+    "/api/napari/close" => (req, body_bytes) -> (api_napari_close(body_bytes)),
+    "/api/napari/screenshot" => (req, body_bytes) -> (api_napari_screenshot(body_bytes)),
+    "/api/napari/apply-view-state" => (req, body_bytes) -> (api_napari_apply_view_state(body_bytes)),
+    "/api/napari/view-state" => (req, body_bytes) -> (api_napari_view_state(body_bytes)),
+    "/api/napari/overlay-legend" => (req, body_bytes) -> (api_napari_overlay_legend(body_bytes)),
+    "/api/napari/record-timelapse" => (req, body_bytes) -> (api_napari_record_timelapse(body_bytes)),
+    "/api/napari/record-animation" => (req, body_bytes) -> (api_napari_record_animation(body_bytes)),
+    "/api/napari/apply-movie-config" => (req, body_bytes) -> (api_napari_apply_movie_config(body_bytes)),
+    "/api/napari/restart" => (req, body_bytes) -> (api_napari_restart(body_bytes)),
+    "/api/napari/gpu" => (req, body_bytes) -> (api_napari_gpu_set(body_bytes)),
+    "/api/napari/configure-autosave" => (req, body_bytes) -> (api_napari_configure_autosave(body_bytes)),
+    "/api/napari/show-labels" => (req, body_bytes) -> (api_napari_show_labels(body_bytes)),
+    "/api/napari/refresh-labels" => (req, body_bytes) -> (api_napari_refresh_labels(body_bytes)),
+    "/api/napari/show-populations" => (req, body_bytes) -> (api_napari_show_populations(body_bytes)),
+    "/api/napari/show-tracks" => (req, body_bytes) -> (api_napari_show_tracks(body_bytes)),
+    "/api/napari/colour-labels" => (req, body_bytes) -> (api_napari_colour_labels(body_bytes)),
+    "/api/napari/colour-branch-labels" => (req, body_bytes) -> (api_napari_colour_branch_labels(body_bytes)),
+    "/api/napari/start-selection" => (req, body_bytes) -> (api_napari_start_selection(body_bytes)),
+    "/api/napari/selection-scope" => (req, body_bytes) -> (api_napari_selection_scope(body_bytes)),
+    "/api/napari/stop-selection" => (req, body_bytes) -> (api_napari_stop_selection(body_bytes)),
+    "/api/napari/event" => (req, body_bytes) -> (api_napari_event(body_bytes)),
+    "/api/preview/start" => (req, body_bytes) -> (api_preview_start(body_bytes)),
+    "/api/preview/stop" => (req, body_bytes) -> (api_preview_stop(body_bytes)),
+    "/api/preview/run" => (req, body_bytes) -> (api_preview_run(body_bytes)),
+    "/api/gating/pop/add" => (req, body_bytes) -> (api_gating_pop_add(body_bytes)),
+    "/api/gating/pop/set-gate" => (req, body_bytes) -> (api_gating_pop_set_gate(body_bytes)),
+    "/api/gating/pop/delete" => (req, body_bytes) -> (api_gating_pop_delete(body_bytes)),
+    "/api/gating/pop/update" => (req, body_bytes) -> (api_gating_pop_update(body_bytes)),
+    "/api/gating/pop/rename" => (req, body_bytes) -> (api_gating_pop_rename(body_bytes)),
+    "/api/gating/copy" => (req, body_bytes) -> (api_gating_copy(body_bytes)),
+    "/api/images/value-name-check" => (req, body_bytes) -> (api_images_value_name_check(body_bytes)),
+    "/api/plot_data" => (req, body_bytes) -> (api_plot_data(body_bytes)),
+    "/api/repl" => (req, body_bytes) -> (api_repl(body_bytes)),
+    "/api/repl/config" => (req, body_bytes) -> (api_repl_config(body_bytes)),
+    "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
+    "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
+)
+
 
 # ── WebSocket handler ─────────────────────────────────────────────────────────
 

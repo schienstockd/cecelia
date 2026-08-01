@@ -33,9 +33,19 @@ Settings → Debug console UI shows a note to this effect.
 
 ## Conventions
 
-- **Routing**: a flat dispatch in `server.jl` `handle_http(req, body_bytes)` — GET reads
+- **Routing**: two lookup tables in `server.jl` — `_GET_ROUTES` / `_POST_ROUTES`, both
+  `Dict{String, Function}` of `path => (req, body_bytes) -> handler(...)`. `handle_http` picks the
+  table by method, looks the path up and calls it (miss → `404`, unknown method → `405`). GET reads
   `HTTP.queryparams`, POST parses `JSON3.read(String(body_bytes))`. Each handler returns
-  `(status::Int, body)`.
+  `(status::Int, body)`. **Add a route by adding a table entry** — one line, same as before.
+  > **Do NOT turn these back into an `if/elseif` chain.** They used to be one, and it cost **42 s of
+  > a 53 s server boot**, on every restart. Compiling a 156-branch chain forces the compiler to infer
+  > *every* handler call though exactly one runs, and it lands in a single method (the
+  > `handle_stream` closure that inlines it). With a table only the invoked handler compiles: boot
+  > 54 s → 11 s, compile 50 s → 6 s. Splitting the chain into per-method functions does **not** help
+  > — measured, no change — because it is still one compilation request. A table is also faster per
+  > request (a hash lookup, not up to 156 string comparisons). Pinned by the *"HTTP router — the full
+  > route table still dispatches"* testset in `api/test/runtests.jl`.
 - **Response body**: a `String` (→ `Content-Type: application/json`) or an
   `AbstractVector{UInt8}` (→ `application/octet-stream`). The handler in `handle_stream`
   picks the content type from the body type — so a route serves binary just by returning
