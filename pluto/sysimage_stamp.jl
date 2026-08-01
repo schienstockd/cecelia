@@ -23,9 +23,12 @@
 # NB this is about the image being frozen, NOT about Revise: nothing in the notebook path loads
 # Revise at all (it lives in the global default env and only api/dev.jl uses it, for the API server).
 #
-# The API server mirrors the julia+manifest classification in api/src/notebooks_api.jl
-# (_classify_sysimage) — kept trivially in sync; if you change THOSE fields, change both. It ignores
-# unknown fields, so adding `variant` here does not affect it.
+# THIS FILE IS THE SINGLE IMPLEMENTATION. api/src/notebooks_api.jl used to carry a parallel copy of
+# all of it — its own path/fingerprint helpers plus its own JSON-parsing stamp readers — with a
+# comment admitting they were "kept trivially in sync". They were not one edit away from diverging;
+# they were one *forgotten* edit away. The API server now `include`s this file and calls these
+# functions, which is why they stay dependency-free (no JSON3): an env that cannot take a dependency
+# must still be able to load it by path.
 
 _sysimage_file(dir)  = joinpath(dir, "deps.so")
 _sysimage_stamp(dir) = joinpath(dir, "deps.so.stamp")
@@ -41,30 +44,41 @@ function write_sysimage_stamp(dir, variant::AbstractString = "deps")
     end
 end
 
-# Which recipe built the on-disk image: "deps", "full", or "unknown" (no stamp, unreadable, or a
-# stamp written before `variant` existed). "unknown" is NOT an error — it must not affect freshness,
-# only what we report — so an image from an older build keeps working and is simply described
-# honestly rather than mislabelled "deps".
-function sysimage_variant(dir)::String
-    isfile(_sysimage_stamp(dir)) || return "unknown"
-    try
-        s = read(_sysimage_stamp(dir), String)
-        occursin("\"variant\":\"full\"", s) ? "full" :
-        occursin("\"variant\":\"deps\"", s) ? "deps" : "unknown"
-    catch
-        "unknown"
-    end
+# ── Pure predicates over the stamp CONTENTS ──────────────────────────────────
+# THE single implementation, shared by both callers: the Pluto launcher (which has a directory) and
+# the API server (which has already read the bytes). Deliberately string-matching rather than JSON
+# parsing, so this file stays dependency-free and any env can `include` it by path — which is what
+# lets the API server use it instead of keeping a second copy.
+
+"""Does the stamp match this Julia + Manifest? `nothing` (no stamp) is never a match."""
+function stamp_matches(stamp::Union{String,Nothing}, julia::AbstractString, manifest::AbstractString)::Bool
+    stamp === nothing && return false
+    occursin("\"julia\":\"$(julia)\"", stamp) && occursin("\"manifest\":\"$(manifest)\"", stamp)
 end
+
+"""
+Which recipe built the image: "deps", "full", or "unknown" (no stamp, unreadable, or written before
+`variant` existed). "unknown" is NOT an error — it must not affect freshness, only what we report —
+so an older image keeps working and is described honestly rather than mislabelled "deps".
+"""
+function stamp_variant(stamp::Union{String,Nothing})::String
+    stamp === nothing && return "unknown"
+    occursin("\"variant\":\"full\"", stamp) ? "full" :
+    occursin("\"variant\":\"deps\"", stamp) ? "deps" : "unknown"
+end
+
+# ── Thin IO wrappers over the predicates above ───────────────────────────────
+
+"""Stamp contents for `dir`, or `nothing` if absent/unreadable."""
+function read_sysimage_stamp(dir)::Union{String,Nothing}
+    isfile(_sysimage_stamp(dir)) || return nothing
+    try read(_sysimage_stamp(dir), String) catch; nothing end
+end
+
+sysimage_variant(dir)::String = stamp_variant(read_sysimage_stamp(dir))
 
 # Fresh = the image exists AND its stamp matches this Julia + the current Manifest. A missing stamp
 # (e.g. an image from before stamping existed) counts as NOT fresh, so it gets rebuilt once and stamped.
-function sysimage_fresh(dir)::Bool
-    (isfile(_sysimage_file(dir)) && isfile(_sysimage_stamp(dir))) || return false
-    try
-        s = read(_sysimage_stamp(dir), String)
-        occursin("\"julia\":\"$(VERSION)\"", s) &&
-            occursin("\"manifest\":\"$(_manifest_fingerprint(dir))\"", s)
-    catch
-        false
-    end
-end
+sysimage_fresh(dir)::Bool =
+    isfile(_sysimage_file(dir)) &&
+    stamp_matches(read_sysimage_stamp(dir), string(VERSION), _manifest_fingerprint(dir))

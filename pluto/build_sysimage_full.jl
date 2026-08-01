@@ -14,8 +14,8 @@ include(joinpath(@__DIR__, "sysimage_stamp.jl"))
 
 create_sysimage(
     ["CairoMakie", "AlgebraOfGraphics", "DataFrames", "HDF5", "HTTP", "CSV", "Cecelia", "CeceliaNb"];
-    sysimage_path = joinpath(@__DIR__, "deps.so"),
+    sysimage_path = _sysimage_file(@__DIR__),
     precompile_execution_file = joinpath(@__DIR__, "precompile_workload_full.jl"),
 )
 write_sysimage_stamp(@__DIR__, "full")   # "full" so launch.jl can say Cecelia is baked in (frozen)
-@info "full sysimage built" path = joinpath(@__DIR__, "deps.so")
+@info "full sysimage built" path = _sysimage_file(@__DIR__)
