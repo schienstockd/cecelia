@@ -47,6 +47,37 @@ def _server_ready(timeout: float = 180.0) -> bool:
     return False
 
 
+def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
+    """Ask the server to stop ITS OWN children, then exit. True if it did.
+
+    `proc.terminate()` kills the Julia server and nothing else. The server is the parent of three
+    resident processes — the napari bridge (:7655), the task-preview worker (:7656) and the Pluto
+    notebooks server (:7660) — and they are grandchildren in their own process groups, so they survive
+    it. That left them running with no backend able to reach them: the preview worker in particular
+    holds a warm cellpose model's VRAM, and an orphan is then silently ADOPTED by the next launch, which
+    is how a worker running stale code outlived several restarts.
+
+    `POST /api/app/shutdown` already stops all three and then exits, and it is the path the in-app Quit
+    button uses — so this REUSES it rather than adding a third copy of platform-specific port-killing
+    (Julia has one in `_kill_listeners_on_port`, the dev supervisor another in `api/dev.jl::_free_port`).
+    Failure just falls through to terminate/kill, which is where this always ended up.
+    """
+    try:
+        req = urllib.request.Request(
+            f"{URL}/api/app/shutdown", data=b"{}",
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status != 200:
+                return False
+    except Exception:
+        return False          # hung, already gone, or too early to have a server — not worth reporting
+    try:
+        proc.wait(timeout=timeout)
+        return True
+    except subprocess.TimeoutExpired:
+        return False          # it accepted the request but did not exit; caller escalates
+
+
 def _apply_pending_update() -> None:
     """Apply an update staged by a previous run (the `.pending-update` marker + `.update-staging/
     payload`), before the server starts — when nothing is using the files. Best-effort: logs and
@@ -120,7 +151,10 @@ def main() -> int:
         except KeyboardInterrupt:
             return 0
         finally:
-            if proc.poll() is None:
+            # Ctrl-C, a crash, or the window being closed all land here. Ask the server to take its
+            # children down with it first (see `_stop_gracefully`); terminate/kill only if that fails,
+            # which is what this did unconditionally before — and which orphaned all three.
+            if proc.poll() is None and not _stop_gracefully(proc):
                 proc.terminate()
                 try:
                     proc.wait(timeout=10)
