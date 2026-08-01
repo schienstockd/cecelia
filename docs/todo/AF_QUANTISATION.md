@@ -64,6 +64,22 @@ This does not touch the speckle. It was a separate defect the investigation surf
    corrected signal — unlike the old Gaussian, which blurred the output. Note it would barely help here:
    with the denominator at background 98.6% of the time there is almost nothing to smooth.
 
+4. **A set-wide ceiling waits on a mechanism that does not exist yet.** AF's derived ceiling has a
+   real comparability problem — measured **1.71x** across the nine `kSUFux` movies (one experiment, one
+   channel pair, identical settings), and the existing AF QC is provably blind to it, which is why
+   `ceiling` is banked as a cohort metric. The fix is not a typed absolute window: `channel_ranges`'
+   `fixed=(lo, hi)` is in raw intensity units a user can reason about, whereas AF's ceiling is a
+   dimensionless ratio (~15–21 here) — the gain knob that was deliberately removed. The right shape is
+   "derive it from the set's reference image and apply it set-wide".
+
+   **But #443 landed only the NOMINATION** (`reference_image_uid` / `set_reference_image!`); no consumer
+   reads it yet. The derive-and-apply half is **in flight as #445** (`feat/import-reference-window`),
+   for the 8-bit import — its designed first consumer. Building a second copy for AF while that is open
+   is precisely the divergent re-implementation the set field exists to prevent, so AF waits for #445 to
+   land and then follows its shape (a `reference_window`-style helper the task calls, not its own path) — and on (1) and (2)
+   above, because on 8-bit input with the reference inactive 98.6% of the time, a shared ceiling would
+   make images consistently coarse rather than comparably precise.
+
 ## Why this is not just a TODO item
 
 It looks like one bug and is three separate things — an output-mapping defect (fixed), an input-precision
