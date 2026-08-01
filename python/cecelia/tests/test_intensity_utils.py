@@ -129,6 +129,80 @@ class TestIntensityUtils(unittest.TestCase):
         self.assertGreater(s['clipHighFrac'], 0.0)
         self.assertEqual(s['trueMax'], 50)
 
+    @staticmethod
+    def _tail(ceiling, clip_at=None, n=4096):
+        """A realistic fluorescence histogram: a background peak and a DECAYING tail. With
+        `clip_at`, everything above it is accumulated into that bin — what a saturating detector
+        does. Crude two-spike fixtures cannot tell the two cases apart, which is the whole point."""
+        h = np.zeros(n, dtype=np.int64)
+        h[100] = 5_000_000
+        vals = np.arange(101, ceiling + 1)
+        counts = (200_000 * np.exp(-(vals - 101) / 250.0)).astype(np.int64)
+        h[101:ceiling + 1] = counts
+        if clip_at is not None:
+            spill = int(h[clip_at + 1:].sum())
+            h[clip_at + 1:] = 0
+            h[clip_at] += spill
+        return h
+
+    def test_is_saturated_distinguishes_clipping_from_a_decaying_tail(self):
+        """A tail decays, so its top bin is the sparsest. Clipping inverts that — everything the
+        detector could not represent piles into the top bin."""
+        self.assertFalse(iu.is_saturated(self._tail(2000)))                  # natural end
+        self.assertTrue(iu.is_saturated(self._tail(4000, clip_at=1200)))     # pile-up
+        self.assertFalse(iu.is_saturated(np.zeros(4096, dtype=np.int64)))
+        hot = self._tail(2000); hot[4095] = 1                                # lone hot pixel
+        self.assertFalse(iu.is_saturated(hot))
+
+    def test_reference_window_ignores_a_saturated_channel(self):
+        """Measured on a real movie: one channel saturated at the 12-bit ceiling. Letting it choose
+        the window put every other image's cells at 68/255 instead of 170 — a 2.5x contrast loss
+        across the whole set, to protect pixels the detector had already destroyed."""
+        good = self._tail(1600)                            # decays to a natural end
+        sat  = self._tail(4095, clip_at=1200)              # everything above 1200 piles into it
+        self.assertTrue(iu.is_saturated(sat))
+        _, hi = iu.reference_window([good, sat], leeway=1.5)
+        self.assertAlmostEqual(hi, 1600 * 1.5)             # the unsaturated channel set it
+
+    def test_reference_window_falls_back_when_every_channel_is_saturated(self):
+        """Nothing better to go on — a window is still better than none."""
+        sat = self._tail(4095, clip_at=1200)
+        _, hi = iu.reference_window([sat, sat], leeway=1.0)
+        self.assertEqual(hi, 1200.0)                       # the clip point, not nothing at all
+
+    def test_reference_window_is_shared_across_channels_and_floored_at_zero(self):
+        """Derived from a reference image, applied to its whole set. Shared across channels because
+        the ratio between them is the thing that has to survive; floored at 0 because the camera
+        offset is real baseline and clipping into it biases every background estimate."""
+        bright = np.zeros(4096, dtype=np.int64); bright[100] = 10_000; bright[800] = 5_000
+        dim    = np.zeros(4096, dtype=np.int64); dim[100]    = 10_000; dim[300] = 5_000
+        lo, hi = iu.reference_window([dim, bright], leeway=1.5)
+        self.assertEqual(lo, 0.0)                       # floor is 0, not the image minimum
+        self.assertAlmostEqual(hi, 800 * 1.5)           # the BRIGHTEST channel sets it, plus leeway
+
+    def test_reference_window_ignores_a_hot_pixel(self):
+        """The failure this replaces: one voxel at the 12-bit ceiling deciding the whole set's
+        window. A leeway multiplier on a hot pixel would be worse than no leeway at all."""
+        h = np.zeros(4096, dtype=np.int64); h[100] = 10_000; h[600] = 5_000; h[4095] = 1
+        lo, hi = iu.reference_window([h], leeway=1.5)
+        self.assertAlmostEqual(hi, 600 * 1.5)
+        self.assertLess(hi, 4095)
+
+    def test_reference_window_none_when_there_is_no_signal(self):
+        """A caller must be able to fall back rather than write a degenerate [0, 0] window."""
+        self.assertIsNone(iu.reference_window([np.zeros(4096, dtype=np.int64)]))
+
+    def test_leeway_trades_contrast_for_headroom(self):
+        """Leeway is not free and the test says so: more headroom means the reference's own signal
+        lands lower. It buys not clipping a brighter image in the same set."""
+        h = np.zeros(4096, dtype=np.int64); h[100] = 10_000; h[600] = 5_000
+        _, tight = iu.reference_window([h], leeway=1.0)
+        _, loose = iu.reference_window([h], leeway=2.0)
+        self.assertEqual(tight, 600.0)
+        self.assertEqual(loose, 1200.0)
+        # the reference's own peak lands at half the 8-bit value under 2x leeway
+        self.assertAlmostEqual(600 / tight * 255, 2 * (600 / loose * 255))
+
     def test_rescale_golden(self):
         hists = iu.channel_histograms(self.arr, self.caxis)
         ranges = [iu.range_from_hist(h, 0.0, 100.0) for h in hists]

@@ -240,6 +240,84 @@ def channel_ranges(hists, lo_pct=0.0, hi_pct=100.0, fixed=None):
     return [range_from_hist(h, lo_pct, hi_pct) for h in hists]
 
 
+#: Headroom above the reference's own ceiling. Measured, not chosen: across nine real movies the
+#: non-saturated ceilings spanned 609-1498 (2.46x), so a MEDIAN nomination needs 1.64x to cover the
+#: brightest. 1.7 covers that; 1.5 does not, and 1.2 is far short. It only decides how often a set
+#: needs a second pass — after one import every image has recorded its own ceiling, so the exact
+#: window is known and the guess stops mattering. See the importImages.omezarr QC.
+REFERENCE_WINDOW_LEEWAY = 1.7
+
+
+def is_saturated(hist, min_count=None):
+    """Whether a channel CLIPPED AT ACQUISITION — its brightest occupied bin is shared by enough
+    voxels to be real signal rather than a hot pixel.
+
+    Structural, so it needs no knowledge of the detector's bit depth. A fluorescence tail DECAYS —
+    each brighter bin holds fewer voxels than the one below it — so the top occupied bin is the
+    sparsest. Clipping inverts that: every value the detector could not represent is accumulated into
+    the top bin, which then holds MORE voxels than its neighbour. That pile-up is the signature.
+
+    Both conditions are required. The count floor alone would flag any channel whose brightest bin
+    happens to be well populated; the pile-up alone would flag a two-voxel spike as saturation.
+
+    It matters because a saturated channel's real ceiling is unknowable — the detector already threw
+    it away — so it must not be allowed to set a rescale window. Measured on a real movie: one
+    channel saturated at the 12-bit ceiling, and letting it choose the window would have put every
+    other image's cells at 68/255 instead of 170 — a 2.5x contrast loss across the whole set, to
+    protect pixels that no longer carry information.
+    """
+    h = np.asarray(hist)
+    nz = np.nonzero(h)[0]
+    if nz.size < 2:
+        return False
+    if min_count is None:
+        min_count = max(int(ROBUST_MAX_MIN_FLOOR), int(int(h.sum()) * float(ROBUST_MAX_MIN_FRAC)))
+    top = int(nz[-1])
+    if int(h[top]) < int(min_count):
+        return False
+    # compare against the run of occupied bins just below, not a single neighbour, so one ragged bin
+    # in a sparse tail doesn't read as a pile-up
+    below = h[nz[max(0, nz.size - 11):nz.size - 1]]
+    return bool(int(h[top]) > float(np.median(below)))
+
+
+def reference_window(hists, leeway=REFERENCE_WINDOW_LEEWAY):
+    """One ``(0.0, ceiling)`` window derived from a REFERENCE image's histograms, to be applied to
+    every image in its set. ``None`` when no channel has any signal.
+
+    The ceiling is the largest outlier-rejected max across the channels, times ``leeway``. Three
+    choices, each of which is the point:
+
+    - **Shared across channels**, so the ratio between two channels survives the conversion. A
+      per-channel window rescales each by a different gain, which is what makes confetti identity —
+      "which channel is this cell brightest in" — unrecoverable afterwards.
+    - **Floor at 0, not at the image minimum.** The camera offset (~90 of 4095 on this data) is real
+      signal-free baseline; clipping into it truncates the noise distribution and biases every
+      background estimate downstream. Keeping it costs ~2% of the range and keeps the mapping linear.
+    - **Leeway above the reference's own maximum**, because the reference is representative, not
+      maximal — other images in the set will be brighter. Measured across nine movies, the derived
+      per-image ceilings spanned 1.65x on the one channel that could be measured cleanly. Headroom
+      turns that into unused range instead of clipped cells. It is not free: the reference's own
+      cells land at 1/leeway of where they otherwise would, so this trades contrast against not
+      destroying the brightest cells in the set's brightest movie.
+
+    Leeway cannot rescue a badly-chosen reference, only a slightly-dim one — so the consuming task is
+    expected to report what each image actually clipped (`clip_stats`), making a wrong nomination
+    visible rather than silent.
+    """
+    # Channels saturated at acquisition are EXCLUDED: their ceiling is unknowable, so including one
+    # pins the window to the detector maximum and crushes every other image (see is_saturated). Their
+    # top pixels then clip in 8-bit too — but they were already clipped in 12-bit, so nothing that
+    # still carried information is lost. If EVERY channel is saturated there is nothing better to go
+    # on, so fall back to using them rather than returning no window at all.
+    usable = [h for h in hists if not is_saturated(h)] or list(hists)
+    ceilings = [robust_hist_max(h) for h in usable]
+    top = max(ceilings) if ceilings else 0
+    if top <= 0:
+        return None
+    return (0.0, float(top) * float(leeway))
+
+
 def clip_stats(hist, vmin, vmax):
     """
     QC stats for a channel's rescale, from its histogram + chosen window. Pure/JSON-friendly.

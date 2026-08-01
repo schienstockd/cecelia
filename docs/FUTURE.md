@@ -235,6 +235,36 @@ and a real parent/child hierarchy for the auto-created branch-type pops.
 
 **Reference:** `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` → *Known limitation*; `docs/POPULATION.md`.
 
+## Two-phase import: derive the 8-bit window from a whole set, not one reference
+
+**What.** Convert every image in a set to its 16-bit transient, pool the histograms, derive one
+intensity window, then rescale all of them and delete the transients. Exact, single-pass, and it
+deletes the leeway guess entirely.
+
+**Why deferred.** The shipped design derives the window from one user-nominated *reference* image
+(`CciaSet.meta["referenceImage"]`) times a leeway multiplier. That is a guess — measured across nine
+real movies, the non-saturated ceilings spanned **609-1498 (2.46x)**, so a single nomination often
+will not cover its set, and the default (1.7) only decides how often a second pass is needed. Two
+phases would need none.
+
+It is deferred rather than rejected, on two counts that both turned out weaker than they first
+looked: peak disk (~24 GB of transients for nine images, against ~98 GB free — affordable) and
+"import is image-scoped" (set-scoped tasks already exist). The real reason is that **nothing has
+measured whether the window matters to the analysis it feeds**. The reference mechanism was built
+to fix a real defect (per-channel windows differing 3.5x within an image, 3x across images); going
+further is optimising a number whose downstream impact is unknown.
+
+**Revisit when.** Segmentation or confetti-identity results turn out to be sensitive to the 8-bit
+window — or when a set routinely needs the second import pass, which the
+`importImages.omezarr` QC now reports (`windowNeeded` per image; the set's true requirement is the
+max across it). If neither happens, the reference + QC loop is enough.
+
+**Also worth knowing:** 4 of those 9 movies had a channel **saturated at acquisition**. No window,
+derived however cleverly, recovers those — so there is a ceiling on what this whole line of work can
+buy.
+
+**Reference:** `intensity_utils.reference_window` / `is_saturated`, `qc.jl::rescale_metrics`.
+
 ---
 
 ## Adding entries

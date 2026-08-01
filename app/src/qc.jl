@@ -83,6 +83,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "rescale.channel_clipped" => (
         short = "Channel {channel} clips bright signal",
         long  = "Raise the 8-bit high percentile (or 100 = true max) and re-import."),
+    "rescale.channel_saturated" => (
+        short = "Channel {channel} is saturated",
+        long  = "It clipped at the detector, before import — no 8-bit window can recover it. Lower the gain or exposure when acquiring."),
     "rescale.hot_pixel" => (
         short = "Channel {channel} may have a hot pixel",
         long  = "The max is far above the 99.9th percentile, squashing the signal — lower the 8-bit high percentile (e.g. 99.9) and re-import."),
@@ -370,9 +373,17 @@ function rescale_qc_findings(meta::AbstractDict)
         clip_high = _cal_num(get(ch, "clipHighFrac", nothing))
         true_max  = _cal_num(get(ch, "trueMax", nothing))
         p999      = _cal_num(get(ch, "p999", nothing))
+        saturated = get(ch, "saturated", false) === true
         if span !== nothing && span <= 0
             push!(fs, qc_finding("warn", "rescale.channel_flat"; channel = i,
                 detail = Dict{String,Any}("channel" => i)))
+        elseif saturated
+            # Ordered before the clip check on purpose: a channel that clipped at ACQUISITION will
+            # also clip in the rescale, and telling the user to widen the window is bad advice —
+            # the information is already gone. Measured: 4 of 9 real movies hit this.
+            push!(fs, qc_finding("warn", "rescale.channel_saturated"; channel = i,
+                detail = Dict{String,Any}("channel" => i,
+                                          "robustMax" => _cal_num(get(ch, "robustMax", nothing)))))
         elseif clip_high !== nothing && clip_high > _RESCALE_CLIP_WARN
             push!(fs, qc_finding("warn", "rescale.channel_clipped"; channel = i,
                 detail = Dict{String,Any}("channel" => i,
@@ -417,7 +428,7 @@ function rescale_metrics(meta::AbstractDict)
     r isa AbstractDict || return nothing
     channels = get(Dict{String,Any}(String(k) => v for (k, v) in r), "channels", nothing)
     channels isa AbstractVector || return nothing
-    n_clipped = 0; n_flat = 0
+    n_clipped = 0; n_flat = 0; n_saturated = 0; needed = 0.0
     for ch0 in channels
         ch0 isa AbstractDict || continue
         ch = Dict{String,Any}(String(k) => v for (k, v) in ch0)
@@ -425,8 +436,20 @@ function rescale_metrics(meta::AbstractDict)
         clip_high = _cal_num(get(ch, "clipHighFrac", nothing))
         (span !== nothing && span <= 0) && (n_flat += 1)
         (clip_high !== nothing && clip_high > _RESCALE_CLIP_WARN) && (n_clipped += 1)
+        if get(ch, "saturated", false) === true
+            n_saturated += 1
+        else
+            # `windowNeeded` — the ceiling this image would have asked for, EXCLUDING channels that
+            # saturated at acquisition (their ceiling is unknowable, and letting one set the window
+            # pins it to the detector maximum and crushes the whole set). Banked per image so the
+            # window a SET needs is max(windowNeeded) across it — the exact number that replaces the
+            # leeway guess after one import. Measured across nine movies: 609-1498, a 2.46x spread.
+            rm = _cal_num(get(ch, "robustMax", nothing))
+            rm !== nothing && (needed = max(needed, rm))
+        end
     end
-    Dict{String,Any}("nChannelsClipped" => n_clipped, "nChannelsFlat" => n_flat)
+    Dict{String,Any}("nChannelsClipped" => n_clipped, "nChannelsFlat" => n_flat,
+                     "nChannelsSaturated" => n_saturated, "windowNeeded" => needed)
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale

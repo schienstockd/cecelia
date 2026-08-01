@@ -667,6 +667,29 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── The set's derived intensity window ────────────────────────────────────────────────────────────
+# Cached on the set by the importer once the REFERENCE image has been converted, so every later
+# image lands in the same space — including one imported long afterwards, when re-deriving is not
+# possible because the 16-bit transient is long gone.
+@testset "set intensity window" begin
+    proj = create_project!(name = "win-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "set")
+    img  = add_image!(s; name = "a")
+
+    @test !haskey(s.meta, Cecelia.SET_INTENSITY_WINDOW_KEY)      # absent until a reference converts
+
+    s.meta[Cecelia.SET_INTENSITY_WINDOW_KEY] = Dict{String,Any}(
+        "min" => 0.0, "max" => 1500.0, "fromImage" => img.uid, "leeway" => 1.5)
+    save!(s)
+
+    rs = load_project(proj.uid)._sets[1]
+    w  = rs.meta[Cecelia.SET_INTENSITY_WINDOW_KEY]
+    @test w["max"] == 1500.0
+    @test w["fromImage"] == img.uid                              # provenance: WHICH image set it
+    @test w["leeway"] == 1.5                                     # ...and with how much headroom
+    rm(proj.root; recursive=true)
+end
+
 @testset "move_image! (manifest-only, no data moved)" begin
     proj = create_project!(name="move-test-$(rand(1000:9999))")
     a = add_set!(proj; name="set-A")
@@ -7113,6 +7136,25 @@ end
         rtmeta = Dict{String,Any}(String(k) => v for (k, v) in rt)
         @test length(Cecelia.rescale_qc_findings(rtmeta)) == 3
         @test Cecelia.rescale_metrics(rtmeta)["nChannelsFlat"] == 1
+
+        # ── Saturated at ACQUISITION ────────────────────────────────────────────────────────────
+        # 4 of 9 real movies hit this. It must not be reported as a rescale problem: telling the
+        # user to widen the window is bad advice when the detector already threw the values away.
+        satmeta = Dict{String,Any}("rescale8bit" => Dict{String,Any}("channels" => [
+            merge(mk_ch(0; clipHigh = 0.05), Dict{String,Any}("saturated" => true,
+                                                              "robustMax" => 4095)),
+            merge(mk_ch(1; clipHigh = 0.05), Dict{String,Any}("saturated" => false,
+                                                              "robustMax" => 900)),
+        ]))
+        sfs = Dict(f["detail"]["channel"] => f["code"] for f in Cecelia.rescale_qc_findings(satmeta))
+        @test sfs[0] == "rescale.channel_saturated"     # NOT channel_clipped, though it also clips
+        @test sfs[1] == "rescale.channel_clipped"
+
+        sm = Cecelia.rescale_metrics(satmeta)
+        @test sm["nChannelsSaturated"] == 1
+        # windowNeeded EXCLUDES the saturated channel — letting a 4095 ceiling through would pin the
+        # whole set's window to the detector maximum and crush every other image.
+        @test sm["windowNeeded"] == 900
     end
 
     @testset "count metrics" begin

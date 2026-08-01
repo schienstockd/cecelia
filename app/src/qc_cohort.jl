@@ -66,7 +66,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # file or acquisition misconfig); nChannelsClipped/Flat only for convertTo8bit imports (an image
     # that rescaled worse than its peers). Banked by qc.jl import_metrics + rescale_metrics. See
     # docs/todo/IMPORT_RESCALE_PLAN.md.
-    "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat"],
+    # `windowNeeded` is the cohort-interesting one: the 8-bit ceiling each image asked for. The set's
+    # true requirement is the MAX across it, so an image far above the others is the one the shared
+    # window fails to cover — and the outlier flag says so without anyone re-reading pixels.
+    "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat",
+                                         "nChannelsSaturated", "windowNeeded"],
     # AF correction: both are cohort-comparable BECAUSE the output ceiling is derived per image rather
     # than dialled in — so an image whose corrected channel clipped far more, or used far less of the
     # output range, than its peers had its background/ceiling derived differently, which is a staining
