@@ -1735,11 +1735,15 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             )
 
         elif t == "show_task_preview":
+            # `layers`, not the old `mask`/`label_shape`/`label_axes` triple: a reply carries a LIST of
+            # layers, each with its own kind (see `show_task_preview`). This line was missed when the
+            # method was rewritten, and because it is the ONLY caller in production, every preview died
+            # here with a TypeError before rendering anything — reported as a bare "Preview failed".
+            # The tests called the method directly and so never crossed this boundary; one now goes
+            # through `_dispatch` for exactly that reason.
             state.show_task_preview(
                 value_name=cmd.get("value_name", "default"),
-                mask=cmd.get("mask"),
-                label_shape=cmd.get("label_shape"),
-                label_axes=cmd.get("label_axes"),
+                layers=cmd.get("layers"),
                 region=cmd.get("region"),
                 show=bool(cmd.get("show", True)),
                 api_url=cmd.get("api_url"),

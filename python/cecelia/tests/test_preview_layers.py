@@ -19,6 +19,7 @@ suite — run with `pixi run test-py`.
 """
 import importlib.util as iu
 import os
+import re
 import sys
 import unittest
 
@@ -140,6 +141,38 @@ class PreviewLayersTest(unittest.TestCase):
         bad.pop('shape')
         with self.assertRaises(ValueError):
             self._show([bad])
+
+    def test_the_command_dispatcher_speaks_the_same_protocol(self):
+        """Go through `execute_command`, not the method — the boundary a real preview crosses.
+
+        THE BUG THIS EXISTS FOR: the dispatcher kept forwarding the pre-layers protocol
+        (`mask=`/`label_shape=`/`label_axes=`) long after the method took `layers=`, so every preview
+        died with `unexpected keyword argument 'mask'` and surfaced as a bare "Preview failed". Every
+        other case in this file calls `show_task_preview` directly and so proved nothing about the path
+        production actually uses — the method and its only caller can disagree, and did.
+        """
+        cmd = {'type': 'show_task_preview', 'value_name': 'default', 'region': REGION,
+               'layers': [self._layer('image', 'CH1 AF', 'uint16', 900)], 'show': True}
+        self.nb.execute_command(self.st, cmd)
+        self.assertIn('(default) CH1 AF', self.names())
+
+        # ...and the hide direction, which is the same command with no layers
+        self.nb.execute_command(self.st, {'type': 'show_task_preview',
+                                          'value_name': 'default', 'show': False})
+        self.assertEqual(self.names(), ['CH1', 'CH2'])
+
+    def test_the_dispatcher_forwards_no_stale_keyword(self):
+        """The signatures must agree by construction, not by someone remembering to update both."""
+        import inspect
+        accepted = set(inspect.signature(self.nb.NapariState.show_task_preview).parameters)
+        src = inspect.getsource(self.nb.execute_command)
+        block = src[src.index('elif t == "show_task_preview"'):]
+        block = block[:block.index('elif t ==', 10)]
+        passed = set(re.findall(r'(\w+)=cmd\.get', block))
+        self.assertTrue(passed, 'found no forwarded kwargs — did the dispatch shape change?')
+        self.assertEqual(passed - accepted, set(),
+                         f'dispatcher forwards kwargs show_task_preview does not accept: '
+                         f'{sorted(passed - accepted)}')
 
 
 if __name__ == '__main__':
