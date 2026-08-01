@@ -405,8 +405,9 @@ def _preview_af(ctx):
         block = np.reshape(corrected, block_shape)
         label = names[ch] if ch < len(names) else f'ch{ch}'
         layers.append(_layer('image', f'{label} AF', block, axes, full_shape))
-        stats_out[str(ch)] = {'background': stats.val1, 'afBackground': stats.val2,
-                              'ceiling': stats.c_max}
+        # same helper the run's QC reports through, so the readout and the banked metric cannot
+        # disagree about a name or a value
+        stats_out[str(ch)] = correction_utils.af_derived_values(stats)
 
     if not layers:
         raise ValueError('no combination names a division channel')

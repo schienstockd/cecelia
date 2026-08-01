@@ -464,6 +464,20 @@ def _stream_division_channel(data, out, dim_utils, channel_idx, out_ch, correcti
     return af_output_stats(H_out, stats)
 
 
+def af_derived_values(stats):
+    """The three values AF derives instead of asking for, as a plain JSON-friendly dict.
+
+    One helper because two callers report them and they must not drift: the run banks them in QC
+    (`af_output_stats`) and the preview shows them as its readout. They were briefly written out by
+    hand in both places, which is how the two would have started disagreeing about a key name.
+    """
+    return {
+        'ceiling': float(stats.c_max),
+        'background': float(stats.val1),
+        'afBackground': float(stats.val2),
+    }
+
+
 def af_output_stats(hist, stats):
     """Did the derived ceiling land well? The numbers a user (or QC) acts on.
 
@@ -472,6 +486,17 @@ def af_output_stats(hist, stats):
     * ``levelsUsed`` / ``levelsAvailable`` — how much of the output range the data occupies. Low means
       the ceiling is too high and quantisation is being thrown away: under the percentile window this
       replaced, 99% of a real image landed in ~13 of 255 levels.
+
+    Also reports the derived values THEMSELVES — ``ceiling``, ``background``, ``afBackground`` — which
+    the two fractions above provably cannot stand in for. The corrected output is
+    ``ratio / ceiling * rescale``, so two images whose ratios differ by a constant factor derive
+    proportionally different ceilings and produce **byte-identical** output: measured, a 1.86x ceiling
+    difference moved ``clippedFrac`` and ``levelsUsedFrac`` by 0.000. That is the exact case where
+    intensities stop being comparable between images, so it has to be banked as its own number.
+    Nothing here can judge it — one image's ceiling is neither right nor wrong on its own; it is only
+    meaningful against its cohort, which is why it is a cohort metric and not a warning
+    (`af_qc_findings` in af_correct.jl). On the nine kSUFux movies — one experiment, one channel pair,
+    identical settings — the derived ceiling spanned 1.71x (14.06 to 24.09).
 
     Reported by the run (QC) and by the preview (readout), from one helper so the two agree.
     """
@@ -485,6 +510,7 @@ def af_output_stats(hist, stats):
         'levelsAvailable': hi + 1,
         'trueMax': int(s.get('trueMax', 0)),
         'p999': int(s.get('p999', 0)),
+        **af_derived_values(stats),
     }
 
 

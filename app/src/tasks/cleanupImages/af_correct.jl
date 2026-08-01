@@ -88,11 +88,23 @@ Two ways it can be wrong, in opposite directions:
   `levelsUsed / levelsAvailable`. Measured under the percentile window this replaced: 99% of a real
   image landed in ~13 of 255 levels, which nothing ever flagged.
 
+There is a **third** way, and it is not a finding here on purpose: the ceiling can land fine for this
+image and still differ from every other image in the set, which puts them on different intensity
+scales. Nothing per-image can see that — a ceiling is neither right nor wrong on its own — and the two
+fractions above are provably blind to it (a 1.86x ceiling difference moved both by 0.000; the corrected
+output is literally identical). So `ceiling` is returned as a plain **cohort metric** and the
+outlier detector in `qc_cohort.jl` is what flags the odd image out. Measured on the nine kSUFux movies
+— one experiment, one channel pair, identical settings — the derived ceiling spanned **1.71x**.
+
 Advisory only, per `docs/MODULES.md` — never an `error`, never a gate.
 """
 function af_qc_findings(per_channel::AbstractDict)
     findings = Vector{Dict{String,Any}}()
     worst_clipped, worst_levels = 0.0, 1.0
+    # The corrected channels' ceilings, for the cohort comparison. Max rather than mean: with one
+    # corrected channel (the common case) they are the same number, and with several the largest is
+    # the one that decides how much range the others give up.
+    ceiling = 0.0
     for (ch, s) in sort(collect(per_channel); by = first)
         clipped = Float64(get(s, "clippedFrac", 0.0))
         used    = Float64(get(s, "levelsUsed", 0))
@@ -100,6 +112,7 @@ function af_qc_findings(per_channel::AbstractDict)
         frac    = used / avail
         worst_clipped = max(worst_clipped, clipped)
         worst_levels  = min(worst_levels, frac)
+        ceiling       = max(ceiling, Float64(get(s, "ceiling", 0.0)))
 
         if clipped > 0.01
             push!(findings, Dict{String,Any}(
@@ -116,7 +129,7 @@ function af_qc_findings(per_channel::AbstractDict)
                             "channel is quantised coarsely."))
         end
     end
-    findings, (; clipped = worst_clipped, levels = worst_levels)
+    findings, (; clipped = worst_clipped, levels = worst_levels, ceiling = ceiling)
 end
 
 function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
@@ -184,9 +197,13 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
             write_qc(img, "cleanupImages.afCorrect", out_value_name, findings;
                      metrics = Dict{String,Any}("clippedFrac" => worst.clipped,
                                                 "levelsUsedFrac" => worst.levels,
+                                                # cohort-only: meaningless alone, an outlier against
+                                                # its set means this image is on a different scale
+                                                "ceiling" => worst.ceiling,
                                                 "byChannel" => per_ch))
             on_log("[QC] clipped $(round(worst.clipped * 100; digits = 2))% of voxels; " *
-                   "$(round(worst.levels * 100; digits = 1))% of the output range used.")
+                   "$(round(worst.levels * 100; digits = 1))% of the output range used; " *
+                   "ceiling $(round(worst.ceiling; digits = 2)).")
         catch e
             on_log("[QC] could not compute AF QC: $e")
         end
