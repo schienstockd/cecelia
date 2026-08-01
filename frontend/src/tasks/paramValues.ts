@@ -107,6 +107,11 @@ export function isKnownValueNameField(field: string | undefined): boolean {
  * For image versions, the ACTIVE version — it is what the viewer shows and what a run with no explicit
  * choice would read, so anything else silently previews/segments a version the user isn't looking at.
  * For other fields (label sets, spatial graphs) there is no "active", so the first option.
+ *
+ * **This is the R version's behaviour** (Dominik, 2026-08-01): input fields there always selected the
+ * active filepath. Worth recording, because the four tasks that had drifted off it (afCorrect,
+ * driftCorrect, cropImage, copyImage — see above) looked like they might have been a deliberate choice
+ * to start from the raw import. They were not; they were a dead string comparison.
  */
 export function preferredValueName(
   available: string[], field: string | undefined, activeValueName?: string | null,
