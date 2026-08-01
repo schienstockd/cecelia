@@ -92,6 +92,28 @@ def range_from_hist(hist, lo_pct=0.0, hi_pct=100.0):
     return float(vmin), float(vmax)
 
 
+def channel_ranges(hists, lo_pct=0.0, hi_pct=100.0, fixed=None):
+    """One ``(vmin, vmax)`` window per channel — the single place that decides how the 8-bit
+    rescale window is chosen.
+
+    ``fixed=(lo, hi)`` uses that SAME window for every channel and, being absolute, for every image.
+    Otherwise each channel gets its own percentile window (``range_from_hist``).
+
+    A per-channel percentile window is the right default for viewing — it gives each channel the
+    full 8-bit range. It is the wrong one whenever intensities have to be compared *between*
+    channels or *between* images, because it applies a different gain to each. Confetti is exactly
+    that case: identity is the ratio across channels, and pooling movies needs one intensity space.
+    Measured on the nine `kSUFux` movies, the per-channel percentile window left the same channel
+    with a 3x different gain across images, and 3.5x between channels within one image, while
+    pinning the top of the window to a saturated 12-bit pixel so the real signal used only ~15% of
+    the range.
+    """
+    if fixed is not None:
+        lo, hi = float(fixed[0]), float(fixed[1])
+        return [(lo, hi)] * len(hists)
+    return [range_from_hist(h, lo_pct, hi_pct) for h in hists]
+
+
 def clip_stats(hist, vmin, vmax):
     """
     QC stats for a channel's rescale, from its histogram + chosen window. Pure/JSON-friendly.

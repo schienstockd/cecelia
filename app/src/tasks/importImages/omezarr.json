@@ -57,6 +57,26 @@
           "tip": "Top of the 8-bit intensity window (100 = true maximum)"
         },
         {
+          "key": "rescaleFixedMin",
+          "label": "8-bit fixed window min",
+          "type": "float",
+          "min": 0,
+          "max": 65535,
+          "default": 0,
+          "step": 1,
+          "tip": "Bottom of a fixed raw-value window shared by every channel and image"
+        },
+        {
+          "key": "rescaleFixedMax",
+          "label": "8-bit fixed window max",
+          "type": "float",
+          "min": 0,
+          "max": 65535,
+          "default": 0,
+          "step": 1,
+          "tip": "Top of the fixed window; 0 = off, use the percentiles instead"
+        },
+        {
           "key": "chunkSizeX",
           "label": "Chunk size X",
           "type": "int",

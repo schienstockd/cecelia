@@ -41,6 +41,32 @@ class TestIntensityUtils(unittest.TestCase):
         _, vmax = iu.range_from_hist(hists[0], 0.0, 50.0)
         self.assertEqual(vmax, 20.0)
 
+    def test_channel_ranges_percentile_matches_the_per_channel_default(self):
+        hists = iu.channel_histograms(self.arr, self.caxis)
+        self.assertEqual(iu.channel_ranges(hists, 0.0, 100.0),
+                         [iu.range_from_hist(h, 0.0, 100.0) for h in hists])
+
+    def test_channel_ranges_fixed_is_the_same_window_for_every_channel(self):
+        """The point of the fixed window: two channels with very different content still get the
+        SAME map, so their values stay comparable. The percentile default does the opposite — here
+        it gives ch0 a span of 50 and ch1 a span of 0, i.e. a ~infinitely different gain."""
+        hists = iu.channel_histograms(self.arr, self.caxis)
+        self.assertEqual(iu.channel_ranges(hists, fixed=(20, 120)), [(20.0, 120.0), (20.0, 120.0)])
+
+        out = iu.rescale_stack_to_uint8(self.arr, self.caxis, iu.channel_ranges(hists, fixed=(0, 100)))
+        # one shared map [0,100] -> [0,255]: ch1's flat 100 now reads 255, not 0, and ch0's 50
+        # reads half of it — the ratio between the channels survives.
+        np.testing.assert_array_equal(out[1], np.full((2, 3), 255, np.uint8))
+        self.assertEqual(int(out[0][1, 2]), 127)
+
+    def test_fixed_window_clip_stats_still_report_what_was_clipped(self):
+        """A fixed window can clip, unlike the true-min/max default — so the QC numbers are the
+        thing that tells you whether it was set sensibly. They must stay meaningful."""
+        hists = iu.channel_histograms(self.arr, self.caxis)
+        s = iu.clip_stats(hists[0], 0.0, 25.0)        # ch0 spans 0..50, so half the values clip
+        self.assertGreater(s['clipHighFrac'], 0.0)
+        self.assertEqual(s['trueMax'], 50)
+
     def test_rescale_golden(self):
         hists = iu.channel_histograms(self.arr, self.caxis)
         ranges = [iu.range_from_hist(h, 0.0, 100.0) for h in hists]
