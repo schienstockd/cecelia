@@ -1623,6 +1623,74 @@ end
     @test isempty(Cecelia._branching_qc_findings(5))
 end
 
+@testset "AF correction QC — the exemption that got retired" begin
+    # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase:
+    # over-subtraction HAS an objective signal (the clipped fraction) but nothing reported it. Now
+    # that the output ceiling is derived rather than typed in, that signal is what says whether the
+    # derivation landed — so the exemption is gone and this is its replacement.
+    ok = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.0001, "levelsUsed" => 200, "levelsAvailable" => 256))
+    @test isempty(Cecelia.af_qc_findings(ok)[1])
+
+    # Two ways it goes wrong, in OPPOSITE directions — a single-sided check would miss half of them.
+    clipped = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.05, "levelsUsed" => 200, "levelsAvailable" => 256))
+    f, w = Cecelia.af_qc_findings(clipped)
+    @test length(f) == 1 && f[1]["code"] == "af-clipped" && f[1]["level"] == "warn"
+    @test w.clipped == 0.05
+
+    # ceiling too HIGH: the data crams into a few levels. Measured on real data under the percentile
+    # window this replaced — 99% of an image in ~13 of 255 levels, which nothing ever flagged.
+    low = Dict{String,Any}("2" => Dict{String,Any}(
+        "clippedFrac" => 0.0, "levelsUsed" => 13, "levelsAvailable" => 256))
+    f2, w2 = Cecelia.af_qc_findings(low)
+    @test length(f2) == 1 && f2[1]["code"] == "af-low-range"
+    @test occursin("13 of 256", f2[1]["detail"])
+    @test w2.levels < 0.06
+
+    # advisory only, per docs/MODULES.md — never an error, never a gate
+    for d in (clipped, low)
+        @test all(x -> x["level"] == "warn", Cecelia.af_qc_findings(d)[1])
+    end
+
+    # worst-case rollup across channels, since QC banks one number per image
+    both = merge(clipped, low)
+    _, w3 = Cecelia.af_qc_findings(both)
+    @test w3.clipped == 0.05          # worst = most clipped
+    @test w3.levels < 0.06            # worst = least range used
+
+    # Cohort-comparable BECAUSE the ceiling is derived per image: an image that clipped far more than
+    # its peers is a staining/acquisition outlier. Not checkable while the window was hand-tuned.
+    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["clippedFrac", "levelsUsedFrac"]
+    # ...and the keys must be the ones _run_task actually banks, or the cohort route reads nothing
+    @test Set(COHORT_METRICS["cleanupImages.afCorrect"]) ⊆ Set(["clippedFrac", "levelsUsedFrac"])
+end
+
+@testset "AF params are just channels" begin
+    # The spec grew into a bag of ~20 numbers while fitting individual datasets and was never
+    # revisited. A combination is now the two things it is actually about; everything else is derived
+    # (`af_division_stats`) or was a filter that belongs to a filtering task.
+    spec = Cecelia._task_spec(Cecelia.AfCorrect())
+    keys_top = [string(get(p, "key", "")) for p in get(spec, "params", [])]
+    @test keys_top == ["valueName", "afCombinations", "backgroundMethod"]
+
+    combo = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "afCombinations")
+    @test [string(get(p, "key", "")) for p in get(combo, "params", [])] ==
+          ["quotientChannel", "divisionChannels"]
+
+    # the deleted ones, named so a future session doesn't reintroduce them one at a time
+    gone = ["correctionMin", "correctionMax", "correctionGain", "channelPercentile",
+            "correctionPercentile", "correctionMode", "summaryMode", "summaryPercentile",
+            "generateInverse", "medianFilter", "topHatRadius", "rollingBallRadius",
+            "rollingBallPadding", "denoiseFun", "waveletMethod", "waveletMode", "tvWeight",
+            "applyGaussian", "applyGaussianToOthers"]
+    flat = Set{String}(keys_top)
+    union!(flat, Set(string(get(p, "key", "")) for p in get(combo, "params", [])))
+    for k in gone
+        @test !(k in flat)
+    end
+end
+
 # Cohort QC must aggregate the per-image anisotropy readout — it is Figure 4 panel D's x-axis
 # (SPATIAL_ANISOTROPY_PLAN Decision 6), so dropping it from COHORT_METRICS silently removes
 # the plot's data source.
