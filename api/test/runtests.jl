@@ -569,6 +569,11 @@ end
                 @test st == 409
                 d = JSON3.read(body)
                 @test d.code == "version-mismatch" && d.wantedValueName == "corrected"
+                # The frontend renders `code` as the short amber label and this message as the
+                # tooltip detail, so the message must carry the SPECIFICS — both names — rather than
+                # restate the problem. See `previewNotice`/`ERROR_SHORT` in utils/taskPreview.ts.
+                @test occursin("corrected", d.error) && occursin("orig.ome.zarr", d.error)
+                @test d.openZarr == "orig.ome.zarr"
 
                 # an unknown valueName is a 404, not a preview of the active version
                 st, _ = _post(api_preview_run, Dict(

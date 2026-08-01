@@ -40,6 +40,17 @@ been sent. The listener is attached only while a `({vn}) Preview` layer exists �
 `show_task_preview`, detached when it is removed **and** by `open_image` (whose `layers.clear()` removes
 the layer while the listener, being bound to dims/camera, would otherwise survive it).
 
+**It is also deduped against the region it last reported, and that is what stops it being a feedback
+loop.** The four events are *proxies* for the only thing a preview cares about — which box of pixels
+it would run on — and they fire for things that don't move it (a canvas refresh, a window resize, the
+bridge's own labels-layer swap). Each spurious post becomes a real cellpose run whose layer swap can
+fire them again: live this presented as a preview permanently stuck on "Previewing…" with the mask
+flickering. So `_post_view_changed` computes `preview_region()` and returns without posting when it is
+unchanged, which makes the loop impossible rather than unlikely. The region is recorded as posted only
+*after* a successful POST, so a transient failure doesn't dedupe away its own retry. Pinned by
+`python/cecelia/tests/test_view_change_dedup.py` (which drives the method against a stub `self` — no
+napari needed).
+
 ### Discrete-GPU rendering (hybrid graphics)
 
 On a Linux machine with hybrid graphics (NVIDIA "on-demand" / PRIME, or AMD/Intel), apps render on

@@ -126,6 +126,27 @@ preview with a user-facing message (a missing custom checkpoint).
 """
 preview_params(::CciaTask, params::AbstractDict, ::CciaImage)::AbstractDict = params
 
+"""
+    preview_params_for_run(task, params, img) -> Dict{String,Any}
+
+Params prepared **exactly as a real run would prepare them**: `section` sub-params lifted to the top
+level (`_flatten_sections`, what `run_task` does), then the task's own translation (`preview_params`).
+The single entry point for the preview path — call this, never `preview_params` directly.
+
+The two steps exist for the same underlying reason and each has already been a live bug. A `section` is
+a UI grouping, so the frontend sends its sub-params NESTED; every `_run_task` reads them flat. Skipping
+the lift does not fail loudly — Python's `params.get(k, default)` finds nothing and silently uses its
+own default. `blockSize` (inside the `imageTiling` include) fell back to 512 on an image under 1000 px
+wide, so the preview reported a tile seam on a run configured for 4096 that would never tile; the same
+silence applies to `normaliseToWhole`, `overlap` and every other section param, which is the part that
+would have gone on being wrong quietly. Flattening is idempotent, so this is safe on already-flat params.
+"""
+function preview_params_for_run(task::CciaTask, params::AbstractDict,
+                                img::CciaImage)::AbstractDict
+    flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    preview_params(task, flat, img)
+end
+
 
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a

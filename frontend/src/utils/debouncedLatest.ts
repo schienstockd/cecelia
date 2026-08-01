@@ -43,6 +43,15 @@ export interface DebouncedLatest<A> {
   flush(): void
   /** Drop the pending request and mark any in-flight run superseded (its `isCurrent()` goes false). */
   cancel(): void
+  /**
+   * Drop the queued request but let an in-flight run finish AND apply its result.
+   *
+   * The difference from `cancel()` is who is right about what the user is looking at. `cancel()` is
+   * for "that result is no longer wanted" (the toggle went off, the image changed) — it supersedes the
+   * run so a late result can't land. This is for "stop after this one": the in-flight run is the
+   * freshest there will be, so discarding its result would leave the caller reporting an older one.
+   */
+  dropPending(): void
   state(): RunState
 }
 
@@ -114,6 +123,11 @@ export function debouncedLatest<A>(
       clearTimer()
       pending = null
       token++                      // any in-flight run is now superseded
+      if (!running) setState('idle')
+    },
+    dropPending() {
+      clearTimer()
+      pending = null               // note: `token` untouched — the in-flight run stays current
       if (!running) setState('idle')
     },
     state: () => state,

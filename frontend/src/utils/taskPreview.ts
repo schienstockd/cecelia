@@ -89,6 +89,59 @@ export function blockerMessage(b: PreviewBlocker | null): string {
 }
 
 /**
+ * Short labels for the backend's refusal codes (`/api/preview/run`). The BACKEND owns the
+ * explanation — it knows which version is open and which the task reads — so its message becomes the
+ * detail, and this table only supplies the 2–3 word problem label. Keyed on `code`, never on the
+ * message text.
+ */
+const ERROR_SHORT: Record<string, string> = {
+  'version-mismatch':       'Wrong version open',
+  'image-mismatch':         'Wrong image open',
+  'no-image-open':          'No image open',
+  'no-region':              'No region to preview',
+  'params-not-previewable': 'Params not usable',
+  'timeout':                'Preview timed out',
+}
+
+/**
+ * What the control says about why there is no fresh preview — and at what volume.
+ *
+ * Volume is the point. A refusal that means *the preview is not showing what you think it is* has to
+ * be loud: a version mismatch reads as a working preview of the wrong pixels, and as muted 2xs text
+ * under the button nobody sees it. So it goes through the severity model (amber + triangle) like the
+ * 2D / base-only / tiling warnings do. What stays quiet is setup the user can see for themselves —
+ * no image open, no model chosen: those are visible in the viewer and the form, and an amber triangle
+ * for each would just teach the user to ignore amber triangles.
+ */
+export interface PreviewNotice {
+  /** the problem, ≤4 words; '' = say nothing */
+  short: string
+  /** the action / the specifics — tooltip only, may be a sentence */
+  detail: string
+  /** render amber + icon rather than muted text */
+  warn: boolean
+}
+
+export function previewNotice(
+  blocker: PreviewBlocker | null,
+  error: { message?: string; code?: string } | null,
+): PreviewNotice {
+  if (error?.message) {
+    return {
+      short: ERROR_SHORT[error.code ?? ''] ?? 'Preview failed',
+      detail: error.message,
+      warn: true,
+    }
+  }
+  // The frontend catches this one before spending a request; same class as the backend's
+  // version-mismatch, so the same volume.
+  if (blocker === 'image-mismatch') {
+    return { short: 'Wrong image open', detail: blockerMessage(blocker), warn: true }
+  }
+  return { short: blockerMessage(blocker), detail: '', warn: false }
+}
+
+/**
  * The 2D-fallback warning. A preview always runs on ONE z-plane, so in 3D display mode it previews the
  * current plane rather than refusing — and must say so.
  *

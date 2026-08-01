@@ -100,10 +100,20 @@ const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.s
 // Two live conditions on top of the declared capability: exactly one image selected, because the preview
 // shows ONE region of ONE image; and the params must currently carry a base model, because that is the
 // only thing the worker can run and sending it nothing would be an error rather than a preview.
+// The preview gets what `run()` sends: FLATTENED. A `section` is a UI grouping, so `paramValues` keeps
+// its sub-params nested, and everything downstream reads them flat — the run flattens on the way out
+// (`run()` below) and the preview did not. Nothing errors; the value is just absent, so each reader
+// quietly uses its own default. It made the preview claim "Run would tile this" on a run configured
+// for 4096 px (`blockSize` fell back to 512) and made the base-model warning always show its milder
+// wording (`removeUnmatched` read as undefined). A computed, so the identity is stable until the
+// params actually change — the preview re-runs on any change to this, debounced.
+const previewParams = computed<Record<string, unknown> | null>(() =>
+  taskDef.value ? flattenParams(taskDef.value, paramValues.value) as Record<string, unknown> : null)
+
 const canPreview = computed(() =>
   (taskDef.value?.previewable ?? false) &&
   drivingImageUid.value !== '' &&
-  hasPreviewableModel(paramValues.value as Record<string, unknown>))
+  hasPreviewableModel(previewParams.value))
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
@@ -376,7 +386,7 @@ const { width: sidebarWidth, onResizeStart } =
           :image-uid="drivingImageUid"
           :value-name="String(paramValues.valueName ?? 'default')"
           :fun-name="taskDef?.fun_name ?? ''"
-          :params="paramValues as Record<string, unknown>"
+          :params="previewParams"
           :previewable="canPreview"
         />
       </div>

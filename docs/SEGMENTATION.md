@@ -382,13 +382,21 @@ the image by shape alone with no `translate`. An earlier design wrote a never-pr
 it needed its own staging lifecycle and left debris the sweep's active-window heuristic then refused to
 collect. A preview is a picture, not data.
 
-**The params are prepared by the TASK, not by the worker.** A task's `_run_task` translates params
-before dispatch — cellpose resolves channel NAMES to 0-based indices and a custom model name to a
-checkpoint path. The preview sends the frontend's params, so it goes through the same translation via the
-`preview_params` hook (cellpose's overload and its own `_run_task` both call
-`cellpose_models_for_python`). Sharing `predict_slice` does NOT make the params shared — skipping this
-produced `ValueError: invalid literal for int() with base 10: 'CH3'`, and a custom checkpoint would have
-failed one step later.
+**The params are prepared exactly as a RUN prepares them — `preview_params_for_run` is the one entry
+point.** Two steps, and each has been a live bug:
+
+1. **`section` sub-params are lifted flat** (`_flatten_sections`, what `run_task` does). A section is a
+   UI grouping, so the form holds its params nested and every `_run_task` reads them flat.
+2. **Then the task translates its own params** (`preview_params`) — cellpose resolves channel NAMES to
+   0-based indices and a custom model name to a checkpoint path.
+
+Sharing `predict_slice` does NOT make the params shared. Skipping (2) produced `ValueError: invalid
+literal for int() with base 10: 'CH3'`. Skipping (1) produced nothing at all, which is worse: Python's
+`params.get(k, default)` filled every gap silently, so `blockSize` fell back to 512 and the preview
+reported a tile seam on a run configured for 4096, while `normaliseToWhole=false` was ignored and the
+preview normalised differently from the run. **Design against the silent default** — one entry point,
+not a fix per param. The frontend flattens too (`TaskRunner.previewParams`), because its own warnings
+read the same params; the backend still flattens because the chain path persists them nested.
 
 **Opt-in per task**, the `live_outputs` shape: `task_previewable(::CciaTask) = false` is the base, a task
 overloads it beside its struct, and there is a `CompositeTask` overload because the module page runs
@@ -419,6 +427,20 @@ overloads it beside its struct, and there is a `CompositeTask` overload because 
 The region and the pixels come from the same store by construction, because a drift-corrected store is
 padded larger than its source and pairing one's region with the other's pixels would silently preview
 the wrong area.
+
+A **mismatch refusal is amber, not muted text**: `version-mismatch` and `image-mismatch` are the two
+states that look exactly like a working preview of the wrong pixels, so they go through the severity
+model (`frontend/src/utils/taskPreview.ts` → `previewNotice`) alongside the four warnings above. The
+backend owns the explanation — it knows which version is open and which the task reads, so its message
+is the tooltip detail and the frontend supplies only the short label, keyed on `code`. What stays quiet
+is setup the user can already see: no image open, no model chosen. Amber for those too would just teach
+people to ignore amber.
+
+**Two things the preview must never do: keep previewing forever, and look busy forever.** The re-preview
+trigger is deduped at its source (`docs/NAPARI.md` → `viewChanged`), the pin drops the queue the moment
+it is set (`dropPending`, not `cancel` — the run in flight is the freshest and its mask is the one on
+screen), and `/api/preview/run` is deadlined at `PREVIEW_RUN_TIMEOUT_MS` so a wedged worker or viewer
+surfaces as *"Preview timed out"* instead of a permanent "Previewing…".
 
 ---
 

@@ -464,6 +464,13 @@ class NapariState:
     # drag — the frontend's debounce would collapse them into one preview, but only after the flood had
     # already been sent. The frontend window is the one tuned for GPU cost; this one just stops the
     # firehose.
+    #
+    # And the coalesced post is DEDUPED against the region it last reported, which is what keeps this
+    # from being a feedback loop: the events we listen to are proxies (camera zoom/centre, slider,
+    # ndisplay) for the only thing that matters — which pixels a preview would run on. Anything that
+    # fires one of them without moving that box (a canvas refresh, a window resize, our own layer
+    # swap) would otherwise trigger a preview, whose layer swap can fire them again, forever. Posting
+    # only on a real region change makes a self-sustaining loop impossible rather than unlikely.
     _VIEW_EVENT_COALESCE_S = 0.15
 
     def _attach_view_listener(self, api_url: str):
@@ -473,6 +480,8 @@ class NapariState:
         self._view_listener_url = api_url
         self._view_timer = None
         self._view_lock = threading.Lock()
+        # the region we last reported; None = nothing reported yet, so the first change always posts
+        self._last_posted_region = None
 
         def on_view_change(_event=None):
             with self._view_lock:
@@ -506,10 +515,20 @@ class NapariState:
         self._on_view_change = None
         self._view_timer = None
         self._view_listener_url = None
+        self._last_posted_region = None
 
     def _post_view_changed(self):
         url = getattr(self, "_view_listener_url", None)
         if not url:
+            return
+        # Did the previewable region actually move? An event that leaves it identical would produce a
+        # byte-identical preview, so reporting it is pure cost — and the loop fuel described above.
+        # Quiet, because this runs per coalesced event; the region is printed when one is really used.
+        try:
+            region = self.preview_region(verbose=False)
+        except Exception:
+            return                              # nothing previewable (no image layer) → nothing to say
+        if region == getattr(self, "_last_posted_region", None):
             return
         body = json.dumps({"type": "viewChanged"}).encode()
         try:
@@ -519,6 +538,9 @@ class NapariState:
             urllib.request.urlopen(req, timeout=10).read()
         except Exception as e:
             print(f"[preview] view-changed POST failed: {e}", flush=True)
+            return          # NOT recorded as posted: the frontend never heard, so let the next
+                            # event for this same region try again rather than dedupe the retry away
+        self._last_posted_region = region
 
     def show_task_preview(self, value_name: str = "default", mask: dict = None,
                           label_shape: list = None, label_axes: list = None,
@@ -716,7 +738,7 @@ class NapariState:
 
     # ── Populations (linked brushing with the flow plots) ─────────────────────
 
-    def preview_region(self):
+    def preview_region(self, verbose: bool = True):
         """What the viewer is currently looking at, as the task-preview region contract.
 
         Returns `{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int, "t": int, "ndisplay": int}` in
@@ -739,6 +761,9 @@ class NapariState:
         * corner_pixels is at `data_level`, not level 0 → multiply by that level's downsample factor.
         * corner_pixels bounds are INCLUSIVE; the region contract is half-open → +1 before scaling,
           or the preview quietly loses its last row and column.
+
+        `verbose=False` for the view-change dedup, which calls this per coalesced camera event and
+        would otherwise flood the log with regions nothing previewed.
         """
         layer = next((l for l in self._viewer.layers if isinstance(l, napari.layers.Image)), None)
         if layer is None:
@@ -753,7 +778,8 @@ class NapariState:
             layer.corner_pixels, factors, axes,
             ndisplay=self._viewer.dims.ndisplay,
             current_step=self._viewer.dims.current_step)
-        print(f"[preview_region] level={getattr(layer, 'data_level', 0)} {out}", flush=True)
+        if verbose:
+            print(f"[preview_region] level={getattr(layer, 'data_level', 0)} {out}", flush=True)
         return out
 
     def _display_axes(self):

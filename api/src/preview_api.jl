@@ -153,7 +153,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 409, JSON3.write((; error = "No image open in the viewer. Open the image to preview it.",
                                    code = "no-image-open"))
     open_image.imageUid == image_uid ||
-        return 409, JSON3.write((; error = "The viewer has a different image open. Open this image to preview it.",
+        return 409, JSON3.write((; error = "Open this image in the viewer to preview it.",
                                    code = "image-mismatch", openImageUid = open_image.imageUid))
     (isnothing(open_image.zarrPath) || isnothing(open_image.taskDir)) &&
         return 409, JSON3.write((; error = "The viewer has no image version resolved yet.",
@@ -170,9 +170,12 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 404, JSON3.write((; error = "No filepath registered (valueName=$in_value_name). Run a conversion task first."))
     wanted = joinpath(proj_dir, "0", image_uid, string(filename))
     _same_store(wanted, open_image.zarrPath) ||
+        # The message is the frontend's TOOLTIP DETAIL — the short amber label comes from `code`
+        # (frontend `ERROR_SHORT`), so this carries the two concrete names instead of restating the
+        # problem. See docs/UI.md → warning copy: short = problem, detail = the action + the numbers.
         return 409, JSON3.write((;
-            error = "The viewer is showing a different image version than this task reads. " *
-                    "Open '$in_value_name' to preview it.",
+            error = "The viewer is showing '$(basename(String(open_image.zarrPath)))'; this task " *
+                    "reads '$in_value_name'. Open that version to preview it.",
             code = "version-mismatch",
             wantedValueName = in_value_name,
             openZarr = basename(String(open_image.zarrPath))))
@@ -191,10 +194,11 @@ function api_preview_run(body_bytes::Vector{UInt8})
         return 409, JSON3.write((; error = sprint(showerror, e), code = "no-region"))
     end
 
-    # Params as the TASK's Python side needs them — cellpose resolves channel names to indices and a
-    # custom model to its checkpoint path. Skipping this sent "CH3" where an int was expected. The
-    # translation dispatches on the task, so it cannot be guessed at here; a missing custom checkpoint
-    # raises with a message worth showing.
+    # Params as a real RUN would prepare them: section sub-params lifted to the top level, then the
+    # task's own translation. Both dispatch on the task, so neither can be guessed at here — see
+    # `preview_params_for_run`, which documents the two live bugs that come from skipping either half
+    # (`"CH3"` where an int was expected; a nested `blockSize` silently defaulting to 512). A missing
+    # custom checkpoint raises with a message worth showing.
     task = try
         Cecelia._task_from_fun_name(String(get(data, "funName", "")))
     catch
@@ -207,7 +211,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
             return 500, JSON3.write((; error = "could not load image metadata: " * sprint(showerror, e)))
         end
         params = try
-            preview_params(task, params, img_for_params)
+            preview_params_for_run(task, params, img_for_params)
         catch e
             return 400, JSON3.write((;
                 error = e isa ErrorException ? e.msg : sprint(showerror, e),

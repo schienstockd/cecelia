@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  previewBlocker, hasPreviewableModel, blockerMessage, previewSummary, FALLBACK_2D_WARN,
-  baseOnlyWarning, tilingWarning,
+  previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
+  FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning,
   type PreviewContext, type PreviewStatus,
 } from './taskPreview'
 
@@ -95,6 +95,88 @@ describe('blockerMessage', () => {
     expect(blockerMessage('no-context')).toBe('')
     expect(blockerMessage('no-params')).toBe('')
     expect(blockerMessage(null)).toBe('')
+  })
+})
+
+// The readers below take FLAT params, and TaskRunner is what guarantees that (`previewParams` →
+// `flattenParams`). These pin why: fed the nested shape the form holds, they don't error — they read
+// undefined and fall back, which is how a preview quietly disagreed with the run it was previewing.
+describe('the params these readers get must be flat', () => {
+  const NESTED = {
+    models: { m1: { matchAs: 'base' }, m2: { matchAs: 'nuc' } },
+    labelModifications: { removeUnmatched: true },     // section-nested, as the form holds it
+  }
+  const FLAT = { models: NESTED.models, removeUnmatched: true }
+
+  it('reads the stronger base-model warning only from the flat shape', () => {
+    // removeUnmatched changes the ADVICE: the run deletes base labels with no nucleus, so it finds
+    // FEWER cells than the preview shows. Nested, that fact is silently lost.
+    expect(baseOnlyWarning(FLAT).detail).toContain('fewer')
+    expect(baseOnlyWarning(NESTED).detail).not.toContain('fewer')
+  })
+
+  it('still detects a previewable model either way, because models is not section-nested', () => {
+    expect(hasPreviewableModel(NESTED)).toBe(true)
+    expect(hasPreviewableModel(FLAT)).toBe(true)
+  })
+})
+
+describe('previewNotice', () => {
+  // The reason this exists: as muted 2xs text under the button, "the viewer is showing a different
+  // version than this task reads" is invisible — and it is the one refusal that looks like a working
+  // preview of the wrong pixels.
+  it('makes a version mismatch amber, with the backend message as the detail', () => {
+    const n = previewNotice(null, {
+      message: "The viewer is showing 'ccidCorrected.ome.zarr'; this task reads 'default'. " +
+               'Open that version to preview it.',
+      code: 'version-mismatch',
+    })
+    expect(n.warn).toBe(true)
+    expect(n.short).toBe('Wrong version open')
+    expect(n.detail).toContain('default')
+    expect(n.detail).toContain('ccidCorrected.ome.zarr')
+  })
+
+  it('warns on an image mismatch the frontend caught itself, before any request', () => {
+    const n = previewNotice('image-mismatch', null)
+    expect(n.warn).toBe(true)
+    expect(n.short).toBe('Wrong image open')
+    expect(n.detail).toBe('Open this image to preview it')   // short = problem, detail = the action
+  })
+
+  it('stays quiet for setup the user can see in the viewer and the form', () => {
+    for (const b of ['no-image-open', 'no-models'] as const) {
+      const n = previewNotice(b, null)
+      expect(n.warn).toBe(false)
+      expect(n.short).toBe(blockerMessage(b))
+      expect(n.detail).toBe('')
+    }
+    expect(previewNotice('off', null)).toEqual({ short: '', detail: '', warn: false })
+    expect(previewNotice('pinned', null)).toEqual({ short: '', detail: '', warn: false })
+  })
+
+  it('still warns for a failure it has no label for, rather than falling silent', () => {
+    const n = previewNotice(null, { message: 'worker died' })
+    expect(n.warn).toBe(true)
+    expect(n.short).toBe('Preview failed')
+    expect(n.detail).toBe('worker died')
+  })
+
+  // The label is the thing the user reads at a glance; the detail is free to be a sentence.
+  it('keeps every short label to a glance', () => {
+    for (const code of ['version-mismatch', 'image-mismatch', 'no-image-open', 'no-region',
+                        'params-not-previewable', 'unknown-code']) {
+      const n = previewNotice(null, { message: 'x', code })
+      expect(n.short.split(' ').length).toBeLessThanOrEqual(4)
+      expect(n.short).not.toMatch(/\.$/)
+    }
+  })
+
+  // An error outranks a blocker: the request was made and refused, which is more specific than
+  // whatever the local blocker computation would say about the same moment.
+  it('prefers the backend reason over a local blocker', () => {
+    const n = previewNotice('image-mismatch', { message: 'no region on screen', code: 'no-region' })
+    expect(n.short).toBe('No region to preview')
   })
 })
 

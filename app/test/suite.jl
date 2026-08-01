@@ -8069,6 +8069,48 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
 
             # a task with no overload passes params through untouched
             @test Cecelia.preview_params(Cecelia.MeasureLabels(), params, img) === params
+
+            # ── the SECOND half of "the way the RUN does it": section params must be lifted flat.
+            # Reported live: "Run would tile this comes up all the time. i've set the tiling to
+            # 4096 px. the image is not even 1000px." `blockSize` lives in the `imageTiling`
+            # section, so the frontend sends it NESTED; `run_task` flattens, the preview did not,
+            # and `SegmentationUtils` silently fell back to its own 512 default. Nothing errors —
+            # which is why this needs a test rather than a fix.
+            cellpose = Cecelia.CellposeSegment()
+            nested = Dict{String,Any}(
+                "models" => params["models"],
+                "imageTiling" => Dict{String,Any}("blockSize" => 4096, "overlap" => 128))
+            flat = Cecelia.preview_params_for_run(cellpose, nested, img)
+            @test flat["blockSize"] == 4096            # NOT SegmentationUtils' 512 default
+            @test flat["overlap"] == 128
+            @test !haskey(flat, "imageTiling")         # lifted, not duplicated
+            @test flat["models"]["0"]["cellChannels"] == [2]   # ...and still translated
+
+            # idempotent, so an already-flat bag (REPL, chain, a re-translated dict) is safe
+            @test Cecelia.preview_params_for_run(cellpose, flat, img)["blockSize"] == 4096
+
+            # an explicit top-level value wins over a section entry of the same name — the preview
+            # must not resurrect a stale nested copy
+            both = Dict{String,Any}("models" => params["models"], "blockSize" => 1024,
+                                    "imageTiling" => Dict{String,Any}("blockSize" => 4096))
+            @test Cecelia.preview_params_for_run(cellpose, both, img)["blockSize"] == 1024
+
+            # the composite goes through the same entry point, since that is what the page runs
+            @test Cecelia.preview_params_for_run(composite, nested, img)["blockSize"] == 4096
+
+            # ...and through the shape the API actually receives: a JSON body. Nested objects come
+            # back as JSON3 values with SYMBOL keys, which is the standing trap (CLAUDE.md — a
+            # `isa Dict` guard is false for `JSON3.Object`). If the lift missed those, this would be
+            # the one path that regressed while every hand-built Dict above kept passing.
+            body = """{"models":{"0":{"model":"cyto3","matchAs":"base",
+                       "cellChannels":["CH3"],"nucChannels":[]}},
+                       "imageTiling":{"blockSize":4096,"overlap":128}}"""
+            from_json = JSON3.read(body, Dict{String,Any})
+            j = Cecelia.preview_params_for_run(cellpose, from_json, img)
+            @test j["blockSize"] == 4096
+            @test j["overlap"] == 128
+            @test !haskey(j, "imageTiling")
+            @test j["models"]["0"]["cellChannels"] == [2]
         end
     end
 

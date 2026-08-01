@@ -289,6 +289,27 @@ because side notes in a conversation do not survive it:
 | Nothing exposes which image the viewer has open, so out-of-band callers guess (I guessed wrong three times) | the API status route |
 | The worker is a fourth resident process with no pixi task, service-panel entry, or `stop` wiring | operational surface |
 
+## Observations from live testing (2026-08-01) — the second pass
+
+| Observation | Where it went |
+|---|---|
+| The version-mismatch refusal was muted 2xs text under the button — "such a tiny message for something that is actually important" | amber via the severity model (`previewNotice`); `code` → short label, backend message → tooltip detail |
+| The readout stayed on "Previewing…" indefinitely while the mask kept updating | the `viewChanged` post is now deduped on the **region**, so an event that doesn't move the previewable box can't start a run whose layer swap starts another |
+| The pin read as a dead button | it dropped no queued work; now `dropPending()` on the way in — and `cancel()` would have been wrong, it would discard the in-flight result whose mask ends up on screen |
+| A request that never settles wedges the scheduler with no way out | `/api/preview/run` is deadlined (`PREVIEW_RUN_TIMEOUT_MS`), surfacing as *"Preview timed out"* |
+| A failed preview left the previous cell count on screen beside the error | `onError` clears the result — "12 cells" next to "Wrong version open" claims twelve cells in *this* version |
+| **Adding/removing a labels layer emits none of** `dims.current_step`, `camera.zoom`, `camera.center`, `dims.ndisplay` | measured on a headless `ViewerModel`, so the loop was *not* self-inflicted through those four; the dedup is the guard that doesn't depend on knowing which emitter fired |
+| A guarded optional import silently skipped 8 tests because the class had been renamed | the guard now tolerates only `ImportError`; a suite that skips itself pins nothing |
+| *"Run would tile this comes up all the time… i've set the tiling to 4096 px. the image is not even 1000px"* | **section params were never flattened for the preview.** `blockSize` lives in the `imageTiling` include, so the form holds it nested; `SegmentationUtils` fell back to its own 512 and any region straddling x/y=512 showed a seam |
+| The same nesting hit three readers, none of which errored | `preview_params_for_run` (backend, also covers the chain path) + `previewParams` in TaskRunner (frontend). `normaliseToWhole` diverged the *compute* when set to false; `removeUnmatched` made the base-model warning always show its milder wording |
+| It kept previewing without the thunderbolt being pressed | `enabled`/`pinned` are session-only now — carve-out documented in docs/MODULES.md so it isn't "fixed" back |
+
+**A silent default is the failure mode to design against here.** Every bug in the two live passes was
+the same shape: the preview sent params in a *slightly* different form than the run, and Python's
+`params.get(k, default)` filled the gap without complaint. `"CH3"` was the lucky one — it raised. The
+nested `blockSize` did not, and would have gone on being wrong indefinitely. Hence one entry point
+(`preview_params_for_run`) rather than a fix per param.
+
 ## Verified facts worth not re-deriving (2026-07-31)
 
 Measured, not assumed. Each of these cost a real experiment:

@@ -74,7 +74,15 @@ const label = computed(() => {
 
     <div v-if="preview.enabled" class="tp-status">
       <span v-if="label" class="cc-readout cc-fs-2xs">{{ label }}</span>
-      <span v-if="preview.hint" class="cc-muted cc-fs-2xs">{{ preview.hint }}</span>
+      <!-- why there is no fresh preview. A mismatch between what the viewer shows and what the task
+           reads is amber, not muted: it looks exactly like a working preview of the wrong pixels, so
+           it has to be as loud as the other warnings. `utils/taskPreview.previewNotice` decides. -->
+      <span v-if="preview.notice.short"
+        :class="preview.notice.warn ? 'preview-warn cc-fs-2xs' : 'cc-muted cc-fs-2xs'"
+        v-tooltip.left="preview.notice.detail || undefined">
+        <i v-if="preview.notice.warn" class="pi" :class="SEVERITY.warn.icon" />
+        {{ preview.notice.short }}
+      </span>
       <!-- the 2D fallback is a real warning, so it goes through the severity model: shape-distinct
            icon + text, never colour alone (lib/severity.ts, WCAG 1.4.1) -->
       <span v-if="preview.summary.warn" class="preview-warn cc-fs-2xs"

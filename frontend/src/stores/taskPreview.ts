@@ -16,22 +16,33 @@
 
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { previewApi } from '../utils/serviceApi'
+import { previewApi, type SvcError } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import {
-  previewBlocker, blockerMessage, previewSummary, baseOnlyWarning, tilingWarning,
+  previewBlocker, previewNotice, previewSummary, baseOnlyWarning, tilingWarning,
   PREVIEW_DEBOUNCE_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker,
 } from '../utils/taskPreview'
 import { useWsStore } from './ws'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
-  // Persisted: both are user-settable options, so they must survive a remount (docs/MODULES.md —
-  // "persist every user-settable option"; a bare ref() loses them the moment you navigate away).
-  const enabled = ref(localStorage.getItem('cc.taskPreviewEnabled') === 'true')   // default off
-  const pinned  = ref(localStorage.getItem('cc.taskPreviewPinned') === 'true')    // default off
-  watch(enabled, v => localStorage.setItem('cc.taskPreviewEnabled', String(v)))
-  watch(pinned,  v => localStorage.setItem('cc.taskPreviewPinned',  String(v)))
+  // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
+  // (docs/MODULES.md). That rule is about VIEW options: restoring a chart type costs nothing, so
+  // losing it is pure annoyance. Restoring this one spawns a 17.7 s Python process, loads a cellpose
+  // model into GPU memory and starts inference the moment the user scrolls — a side effect, not a
+  // restored preference. Persisted, it meant every session after the first ran previews without
+  // anyone asking for one.
+  //
+  // The store outlives route changes (Pinia is created once per app load), so navigating away from the
+  // task page and back does NOT lose the toggle — only a reload/restart does, which is exactly the
+  // boundary where resuming GPU work unasked would be wrong. A worker left running from a previous
+  // session is adopted rather than relaunched, and Settings → Task preview can stop it.
+  //
+  // `pinned` additionally MUST NOT persist: a pin holds one result, and the result does not survive a
+  // reload. Persisted, `enabled` + `pinned` restored together left the toggle looking on while
+  // `previewBlocker` returned 'pinned' — an on-looking preview that could never run.
+  const enabled = ref(false)
+  const pinned  = ref(false)
 
   const runState = ref<RunState>('idle')
   const status   = ref<PreviewStatus | null>(null)
@@ -41,12 +52,24 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const signal   = ref<{ hasSignal?: boolean; noSignalWhy?: string } | null>(null)
   const tiling   = ref<{ runSeams?: Record<string, number>; blockSize?: number } | null>(null)
   const error    = ref('')
+  /** the backend's machine-readable refusal reason — what the notice's severity/label switch on */
+  const errorCode = ref('')
   /** true between toggle-on and the worker answering — its imports take ~18 s, so this is visible */
   const starting = ref(false)
 
+  /** Forget the last result. Called whenever it stops describing what is on screen. */
+  function clearResult() {
+    counts.value = null
+    fallback2d.value = false
+    signal.value = null
+    tiling.value = null
+  }
+
   const blocker = computed<PreviewBlocker | null>(
     () => previewBlocker(context.value, status.value, { enabled: enabled.value, pinned: pinned.value }))
-  const hint    = computed(() => error.value || blockerMessage(blocker.value))
+  /** the one line under the button: what is wrong, and whether it is amber */
+  const notice  = computed(() => previewNotice(
+    blocker.value, error.value ? { message: error.value, code: errorCode.value } : null))
   const summary = computed(() => previewSummary(counts.value, fallback2d.value, signal.value ?? undefined))
   /** a two-model run previews only its base type — say so rather than let it look complete */
   const baseOnly = computed(() => baseOnlyWarning(context.value?.params ?? null))
@@ -81,12 +104,31 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     signal.value = { hasSignal: res?.hasSignal, noSignalWhy: res?.noSignalWhy }
     tiling.value = { runSeams: res?.runSeams, blockSize: res?.blockSize }
     error.value = ''
+    errorCode.value = ''
   }, {
     wait: PREVIEW_DEBOUNCE_MS,
     onState: s => { runState.value = s },
-    // a failed preview must be visible, not a console-only unhandled rejection
-    onError: e => { error.value = e instanceof Error ? e.message : String(e) },
+    // A failed preview must be visible, not a console-only unhandled rejection — and the previous
+    // result must go with it. "12 cells" beside "Wrong version open" reads as twelve cells in THIS
+    // version; the count no longer describes anything we accepted.
+    onError: e => {
+      error.value = e instanceof Error ? e.message : String(e)
+      errorCode.value = (e as SvcError)?.code ?? ''
+      starting.value = false
+      clearResult()
+    },
   })
+
+  // Pinning has to take effect NOW, not after the queue drains. `previewBlocker` stops new requests,
+  // but a request queued a moment before the click would still run — so the readout stayed
+  // "Previewing…" and the pin read as a dead button. `dropPending` (not `cancel`) because the run in
+  // flight is the freshest there will be and its mask is the one that ends up on screen: superseding
+  // it would leave the readout describing an older result.
+  // Unpinning must refresh, not wait for the next move. The view has probably moved while pinned (the
+  // bridge kept reporting; `request` kept declining), and the bridge dedups against the region it last
+  // reported — so there may be no further event to ride, and the user would sit looking at a mask for
+  // a region they left. "Follow the view again" has to include catching up to it.
+  watch(pinned, v => (v ? scheduler.dropPending() : request()))
 
   /** Ask for a preview unless something says not to. Safe to call on every keystroke. */
   function request() {
@@ -104,6 +146,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     enabled.value = true
     pinned.value = false
     error.value = ''
+    errorCode.value = ''
     starting.value = true
     try {
       // warm first: pays the worker's imports (and, on the first run, the normalisation statistic) at
@@ -119,11 +162,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   async function stop() {
     enabled.value = false
     scheduler.cancel()               // drop pending + supersede in flight, so no late mask lands
-    counts.value = null
-    fallback2d.value = false
-    signal.value = null
-    tiling.value = null
+    clearResult()
     error.value = ''
+    errorCode.value = ''
     starting.value = false
     try {
       // removes the layer AND stops the worker — the only thing that releases the model's VRAM
@@ -147,16 +188,14 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // worse than reporting nothing. The worker stays warm on purpose (that is what it is for); a new
     // preview is requested below if the params still apply to what is now open.
     scheduler.cancel()
-    counts.value = null
-    fallback2d.value = false
-    signal.value = null
-    tiling.value = null
+    clearResult()
     void refreshStatus().then(request)
   })
 
   return {
-    enabled, pinned, runState, status, context, counts, fallback2d, signal, tiling, error, starting,
-    blocker, hint, summary, busy, baseOnly, tiled,
+    enabled, pinned, runState, status, context, counts, fallback2d, signal, tiling,
+    error, errorCode, starting,
+    blocker, notice, summary, busy, baseOnly, tiled,
     setContext, request, start, stop, toggle, refreshStatus,
     /** show the current result now, skipping the debounce (the manual "preview now" action) */
     flush: () => scheduler.flush(),

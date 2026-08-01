@@ -102,6 +102,32 @@ describe('debouncedLatest', () => {
     expect(s.state()).toBe('idle')
   })
 
+  // "Stop after this one" — what pinning the preview means. The distinction from cancel() is which
+  // result the caller ends up reporting.
+  it('dropPending() lets the in-flight run finish AND apply', async () => {
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100 })
+    s.schedule(1)
+    await vi.advanceTimersByTimeAsync(100)
+    s.schedule(2)                                  // queued behind the run
+    s.dropPending()
+    await r.finish()
+    expect(r.ran).toEqual([1])                     // 2 never ran
+    expect(r.applied).toEqual([1])                 // ...and 1 still counted, unlike under cancel()
+    expect(s.state()).toBe('idle')
+  })
+
+  it('dropPending() settles to idle immediately when nothing is in flight', async () => {
+    const r = recorder()
+    const s = debouncedLatest(r.work, { wait: 100 })
+    s.schedule(1)
+    expect(s.state()).toBe('pending')
+    s.dropPending()
+    expect(s.state()).toBe('idle')                 // the button that did this must look like it worked
+    await vi.advanceTimersByTimeAsync(500)
+    expect(r.ran).toEqual([])
+  })
+
   it('flush() runs the pending request without waiting', async () => {
     const r = recorder()
     const s = debouncedLatest(r.work, { wait: 10_000 })
