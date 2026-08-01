@@ -45,6 +45,10 @@ export interface CciaImage {
 export interface CciaSet {
   uid: string
   name: string
+  /** uid of the image the user nominated as representative of this set, or null. A property of the
+   *  SET, not of any task — the 8-bit import derives its shared intensity window from it, and other
+   *  "process this set the way this image says" consumers read the same field. See model/set.jl. */
+  referenceImage: string | null
   images: CciaImage[]
 }
 
@@ -136,7 +140,7 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function addSetFromApi(uid: string, name: string): CciaSet {
-    const s: CciaSet = { uid, name, images: [] }
+    const s: CciaSet = { uid, name, referenceImage: null, images: [] }
     sets.value.push(s)
     activeSetUid.value = s.uid
     return s
@@ -178,7 +182,7 @@ export const useProjectStore = defineStore('project', () => {
   // Unlike addSetFromApi, does NOT switch the active set — a move shouldn't yank the user away.
   function ensureSet(uid: string, name: string): CciaSet {
     let s = sets.value.find(x => x.uid === uid)
-    if (!s) { s = { uid, name, images: [] }; sets.value.push(s) }
+    if (!s) { s = { uid, name, referenceImage: null, images: [] }; sets.value.push(s) }
     return s
   }
 
@@ -252,6 +256,13 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   // Reflect an include/exclude (+ note) change immediately, no reload. Only the provided keys change.
+  /** Reflect a reference-image change locally (the POST is the caller's). One per set, so
+   *  nominating a new image implicitly clears the old star. */
+  function setReferenceImage(setUid: string, imageUid: string | null) {
+    const set = sets.value.find(s => s.uid === setUid)
+    if (set) set.referenceImage = imageUid
+  }
+
   function setInclusion(imageUid: string, patch: { included?: boolean; note?: string }) {
     for (const set of sets.value) {
       const img = set.images.find(i => i.uid === imageUid)
@@ -295,5 +306,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, setReferenceImage, removeLabelSet }
 })

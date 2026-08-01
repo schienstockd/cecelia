@@ -2383,7 +2383,7 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/delete", "/api/setup/init",
+        "/api/sets/delete", "/api/sets/reference", "/api/setup/init",
         "/api/storage/reclaim", "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
@@ -2427,7 +2427,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 65 && length(POST_ROUTES) == 91
+    @test length(GET_ROUTES) == 65 && length(POST_ROUTES) == 92
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

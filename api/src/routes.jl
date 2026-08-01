@@ -884,6 +884,30 @@ function api_sets_create(body_bytes::Vector{UInt8})
     200, JSON3.write((; uid=s.uid, name))
 end
 
+# Nominate (or clear) the set's reference image — the one the user judges representative. Consumers
+# derive their own numbers from it; see model/set.jl. `imageUid` empty/absent clears.
+function api_sets_reference_set(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    set_uid     = String(get(body, :setUid, ""))
+    image_uid   = String(get(body, :imageUid, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
+
+    proj = load_project(project_uid)
+    idx  = findfirst(x -> x.uid == set_uid, proj._sets)
+    isnothing(idx) && return 404, JSON3.write((; error="Set not found: $set_uid"))
+    s = proj._sets[idx]
+    try
+        set_reference_image!(s, isempty(image_uid) ? nothing : image_uid)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, setUid=set_uid, referenceImage=reference_image_uid(s)))
+end
+
 function api_sets_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
@@ -1911,4 +1935,8 @@ function _image_payload(img::CciaImage)
     )
 end
 
-_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name, images=[_image_payload(i) for i in s._images])
+# `referenceImage` — the set's nominated representative (model/set.jl). Sent with the set rather
+# than the image so the table can render exactly one star without scanning every image, and so an
+# unset reference is a plain `nothing` instead of nine images each claiming not to be it.
+_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name, referenceImage=reference_image_uid(s),
+                              images=[_image_payload(i) for i in s._images])
