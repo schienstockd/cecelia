@@ -581,6 +581,12 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     convert_8bit = Bool(get(params, "convertTo8bit", false))
     low_pct      = Float64(get(params, "rescaleLowPercentile", 0.0))
     high_pct     = Float64(get(params, "rescaleHighPercentile", 100.0))
+    # An absolute window in RAW units, shared by every channel and every image. When set it
+    # overrides the percentiles — the only way to get one intensity space across a set, which
+    # anything comparing channels or pooling movies needs. See intensity_utils.channel_ranges.
+    fixed_min    = Float64(get(params, "rescaleFixedMin", 0.0))
+    fixed_max    = Float64(get(params, "rescaleFixedMax", 0.0))
+    fixed_window = fixed_max > fixed_min
 
     # When converting, bioformats2raw writes a single-level transient (the pyramid is rebuilt on the
     # 8-bit output); otherwise it writes the final pyramid directly.
@@ -622,7 +628,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Output:  $zarr_out")
     on_log("[INFO] Pyramid: $pyramid_scale levels")
     stage_local  && on_log("[INFO] Staged source locally (network-source speedup).")
-    convert_8bit && on_log("[INFO] Convert to 8-bit: window low=$(low_pct)% high=$(high_pct)%")
+    convert_8bit && on_log(fixed_window ?
+        "[INFO] Convert to 8-bit: FIXED window [$(fixed_min), $(fixed_max)] (shared by all channels)" :
+        "[INFO] Convert to 8-bit: window low=$(low_pct)% high=$(high_pct)%")
 
     out_pipe = Pipe()
     proc = run(pipeline(`$bf2raw --resolutions $bf2raw_res $eff_src $bf2raw_out`;
@@ -674,6 +682,8 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                nscales        = pyramid_scale,
                lowPercentile  = low_pct,
                highPercentile = high_pct,
+               fixedMin       = fixed_min,
+               fixedMax       = fixed_max,
                resultPath     = result_file),
             run_dir; on_log = on_log, on_progress = on_progress, on_process = on_process)
         # drop the 16-bit scratch regardless of outcome — it's transient (never keep it locally)
@@ -688,8 +698,11 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                 res   = JSON3.read(read(result_file, String))
                 chans = get(res, :channels, nothing)
                 if !isnothing(chans)
+                    # Record which window was actually applied, so the mapping stays invertible
+                    # (v/255*(vmax-vmin)+vmin) whichever mode produced it.
                     zarr_meta["rescale8bit"] = Dict{String,Any}(
                         "low" => low_pct, "high" => high_pct,
+                        "fixed" => fixed_window,
                         "channels" => [Dict{String,Any}(String(k) => v for (k, v) in ch) for ch in chans],
                     )
                     on_log("[INFO] 8-bit rescale complete ($(length(chans)) channel(s)).")
