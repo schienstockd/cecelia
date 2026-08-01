@@ -32,7 +32,7 @@ launch_browser = get(ENV, "CECELIA_PLUTO_BROWSER", "true") == "true"
 # workers reject it. So we use it only when its stamp matches (sysimage_stamp.jl); otherwise fall back
 # to a plain session (slow first plot) and let the app rebuild it. Never hand workers a stale image.
 include(joinpath(@__DIR__, "sysimage_stamp.jl"))
-sysimg = joinpath(@__DIR__, "deps.so")
+sysimg = _sysimage_file(@__DIR__)
 compiler = if sysimage_fresh(@__DIR__)
     # Say WHICH image, not just that there is one. Both recipes write this same path, and a `full`
     # image has Cecelia baked in at BUILD time — so app/src edits never reach notebook workers, not

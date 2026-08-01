@@ -124,39 +124,25 @@ end
 # The freshly-built image is picked up by launch.jl on the NEXT server launch — we don't restart a
 # running server out from under an open session. Mirrors the server lifecycle above (one tracked proc,
 # atexit cleanup). See docs/NOTEBOOKS.md and TODO #00070.
-_sysimage_path()  = joinpath(_pluto_root(), "deps.so")
-_sysimage_stamp() = _sysimage_path() * ".stamp"
-# Fingerprint of the resolved pluto deps — mirrors pluto/sysimage_stamp.jl (`hash(Manifest.toml)`), so
-# a package update that re-resolves the Manifest invalidates the stamp.
-_manifest_hash() = (m = joinpath(_pluto_root(), "Manifest.toml"); isfile(m) ? string(hash(read(m, String))) : "")
+# The stamp format has ONE implementation — pluto/sysimage_stamp.jl — and this file uses it rather
+# than keeping a parallel copy (paths, Manifest fingerprint and both stamp readers used to be
+# duplicated here, "kept trivially in sync" by hand). It is deliberately dependency-free so it can be
+# included by path from an env that does not depend on the pluto project.
+let helper = joinpath(_pluto_root(), "sysimage_stamp.jl")
+    # Loaded at server START, so a missing file takes the whole API down, not just notebooks. Say why.
+    isfile(helper) || error("pluto/sysimage_stamp.jl not found at $helper — the notebook sysimage " *
+                            "stamp helpers live there and the API server needs them at load. " *
+                            "A partial checkout/install?")
+    include(helper)
+end
+
+# Zero-arg conveniences: this server always means THE pluto env, so bind the dir once.
+_sysimage_path()  = _sysimage_file(_pluto_root())
+_sysimage_stamp() = _sysimage_stamp(_pluto_root())
+_manifest_hash()  = _manifest_fingerprint(_pluto_root())
 
 const _nb_build_proc  = Ref{Union{Base.Process,Nothing}}(nothing)
 const _nb_build_error = Ref{Union{String,Nothing}}(nothing)
-
-# Does the on-disk stamp match this Julia + the current Manifest? (Same two fields the build writes.)
-function _stamp_matches(stamp::Union{String,Nothing}, julia::AbstractString, manifest::AbstractString)::Bool
-    stamp === nothing && return false
-    try
-        d = JSON3.read(stamp)
-        String(get(d, :julia, "")) == julia && String(get(d, :manifest, "")) == manifest
-    catch
-        false
-    end
-end
-
-# Which recipe built the on-disk image: "deps", "full", or "unknown" (no stamp, unreadable, or a
-# stamp written before the field existed). Reads one more field out of the JSON `_stamp_matches`
-# already parses. Mirrors `sysimage_variant` in pluto/sysimage_stamp.jl — the same hand-sync noted
-# above; folding the two together is tracked separately.
-function _stamp_variant(stamp::Union{String,Nothing})::String
-    stamp === nothing && return "unknown"
-    try
-        v = String(get(JSON3.read(stamp), :variant, ""))
-        v in ("deps", "full") ? v : "unknown"
-    catch
-        "unknown"
-    end
-end
 
 # Pure classifier (testable, no IO): given whether deps.so exists, its stamp contents (or nothing),
 # whether a build is running, whether the last build errored, and the current Julia + Manifest hash →
@@ -165,7 +151,7 @@ end
 function _classify_sysimage(exists::Bool, stamp::Union{String,Nothing}, building::Bool, errored::Bool,
                             julia::AbstractString, manifest::AbstractString)::String
     if exists
-        _stamp_matches(stamp, julia, manifest) && return "ready"
+        stamp_matches(stamp, julia, manifest) && return "ready"
         return building ? "building" : "stale"
     end
     building && return "building"
@@ -197,7 +183,7 @@ function _ensure_sysimage_build!()::String
         # pre-variant stamp → deps, which is the safe default and what a first run has always built.
         pluto_root   = _pluto_root()
         onstamp      = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
-        script_name  = _stamp_variant(onstamp) == "full" ? "build_sysimage_full.jl" : "build_sysimage.jl"
+        script_name  = stamp_variant(onstamp) == "full" ? "build_sysimage_full.jl" : "build_sysimage.jl"
         build_script = joinpath(pluto_root, script_name)
         isfile(build_script) || error("pluto/$script_name not found at $build_script")
         _pluto_env_ready() || error("The notebook environment is not set up. $_SETUP_HINT")

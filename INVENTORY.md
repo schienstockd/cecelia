@@ -105,7 +105,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **gating_api.jl**: population manager + gating engine routes; **owns the shared helpers** (`_gating_image`/`_resolve_vn`/`_gerr`/`_live_map`) reused by tracking/plotting/napari (include-order coupled — `gating_api.jl` first).
 - **plotting_api.jl**: summary-canvas routes (thin wrappers over `plot_summary_data`).
 - **tracking_api.jl**: `/api/tracking/motion-dims` preflight.
-- **notebooks_api.jl**: Pluto engine lifecycle (:7660) + registry/snapshot CRUD + sysimage build.
+- **notebooks_api.jl**: Pluto engine lifecycle (:7660) + registry/snapshot CRUD + sysimage build. **The sysimage stamp — freshness AND which recipe built the image — has ONE implementation: `pluto/sysimage_stamp.jl`**, which this file `include`s by path (it is deliberately dependency-free so an env that can't depend on the pluto project can still load it). Don't re-derive `deps.so`/`.stamp` paths, the Manifest fingerprint, or the stamp readers here or anywhere else — that copy existed, was "kept in sync" by hand, and drifted the moment a field was added.
 - **app_api.jl**: `_stop_children_for_exit`, `/api/app/shutdown|restart`, dev worktree-switch.
 - **storage_api.jl**: `/api/storage/summary` (walked disk/reclaimable scan) + `/api/storage/reclaim` — thin adapters over `storage.jl`.
 - **repl_api.jl / update_api.jl / setup_api.jl**: diagnostics + gated REPL; self-update; first-launch wizard.

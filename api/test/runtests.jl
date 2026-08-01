@@ -483,7 +483,7 @@ end
     # this Julia + Manifest (no build running in tests).
     onstamp = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
     @test (_sysimage_status() == "ready") ==
-          (isfile(_sysimage_path()) && _stamp_matches(onstamp, string(VERSION), _manifest_hash()))
+          (isfile(_sysimage_path()) && stamp_matches(onstamp, string(VERSION), _manifest_hash()))
 end
 
 @testset "API: image geometry (axis mapping + version resolution)" begin
@@ -2089,7 +2089,9 @@ end
     # Revise can hot-reload it while -full bakes Cecelia in. Without a variant they are identical on
     # disk, so a -full build on a dev machine silently froze Cecelia in notebook workers while
     # launch.jl still logged "deps sysimage". These are the pure halves of that fix.
-    include(joinpath(@__DIR__, "..", "..", "pluto", "sysimage_stamp.jl"))
+    # No include needed: notebooks_api.jl (loaded via server.jl above) now includes the shared
+    # pluto/sysimage_stamp.jl itself, so these functions are already in scope. That IS the fix —
+    # if this testset ever needs its own include again, the duplication has come back.
 
     d = mktempdir()
     write(joinpath(d, "Manifest.toml"), "dummy")
@@ -2116,26 +2118,66 @@ end
     @test sysimage_variant(d) == "unknown"
     @test !sysimage_fresh(d)
 
-    # The stamp is read by TWO hand-synced implementations (pluto/sysimage_stamp.jl writes it,
-    # api/src/notebooks_api.jl's _stamp_matches reads it). A field added on one side must not break
-    # the other — that divergence is the standing risk this file's classifier tests sit next to.
+    # Writer and readers are now ONE implementation (pluto/sysimage_stamp.jl, included by the API
+    # server rather than copied). These pin the round trip end to end: what the builder writes is
+    # what the classifier and the rebuild path read back.
     full = "{\"julia\":\"1.11\",\"manifest\":\"abc\",\"variant\":\"full\"}"
     @test _classify_sysimage(true, full, false, false, "1.11", "abc") == "ready"
     @test _classify_sysimage(true, full, false, false, "1.10", "abc") == "stale"
 
     # The API reads the variant to rebuild LIKE FOR LIKE. Getting "unknown" wrong in the unreadable /
     # pre-variant / absent cases is what would silently downgrade a release's full image to deps.
-    @test _stamp_variant(full) == "full"
-    @test _stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\",\"variant\":\"deps\"}") == "deps"
-    @test _stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\"}") == "unknown"   # pre-variant stamp
-    @test _stamp_variant("{\"variant\":\"bogus\"}") == "unknown"                     # unrecognised
-    @test _stamp_variant("not json at all")         == "unknown"
-    @test _stamp_variant(nothing)                   == "unknown"                     # absent → first run
+    @test stamp_variant(full) == "full"
+    @test stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\",\"variant\":\"deps\"}") == "deps"
+    @test stamp_variant("{\"julia\":\"1.11\",\"manifest\":\"abc\"}") == "unknown"   # pre-variant stamp
+    @test stamp_variant("{\"variant\":\"bogus\"}") == "unknown"                     # unrecognised
+    @test stamp_variant("not json at all")         == "unknown"
+    @test stamp_variant(nothing)                   == "unknown"                     # absent → first run
 
-    # …and the two readers must agree on the same bytes, since they are hand-synced across envs.
+    # Round trip through the real writer: what a build stamps is what the readers report.
     for v in ("deps", "full")
-        d2 = mktempdir(); write(joinpath(d2, "Manifest.toml"), "x"); touch(joinpath(d2, "deps.so"))
+        d2 = mktempdir(); write(joinpath(d2, "Manifest.toml"), "x"); touch(_sysimage_file(d2))
         write_sysimage_stamp(d2, v)
-        @test _stamp_variant(read(joinpath(d2, "deps.so.stamp"), String)) == sysimage_variant(d2) == v
+        @test stamp_variant(read_sysimage_stamp(d2)) == sysimage_variant(d2) == v
     end
+end
+
+@testset "the sysimage stamp format has exactly one implementation" begin
+    # REPLACES a "both readers agree" assertion that went vacuous the moment they became the same
+    # function. The live risk is no longer drift between two copies — it is someone re-deriving the
+    # format a third time, which is exactly how the copy this consolidation deleted came to exist
+    # (with a comment noting the two were "kept trivially in sync"). So detect that instead.
+    canonical = normpath(joinpath(@__DIR__, "..", "..", "pluto", "sysimage_stamp.jl"))
+    @test isfile(canonical)
+
+    roots = [normpath(joinpath(@__DIR__, "..", "src")),
+             normpath(joinpath(@__DIR__, "..", "..", "app", "src")),
+             normpath(joinpath(@__DIR__, "..", "..", "pluto"))]
+
+    # Knowledge belonging to the canonical file alone: the artefact filenames, the stamp's JSON field
+    # spellings, and the Manifest fingerprint. Anything else deriving these is a second source of
+    # truth, whether or not it happens to agree today.
+    banned = [("image/stamp filename", r"\"deps\.so"),
+              ("stamp field literal",  r"\\\"(julia|manifest|variant)\\\""),
+              ("manifest fingerprint", r"hash\(read\(.*Manifest\.toml")]
+
+    offenders, scanned = String[], 0
+    for root in roots, (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        normpath(path) == canonical && continue
+        scanned += 1
+        for (i, line) in enumerate(eachline(path))
+            startswith(strip(line), "#") && continue        # prose may name them freely
+            for (what, re) in banned
+                occursin(re, line) && push!(offenders, "$(basename(path))#$i — $what: $(strip(line))")
+            end
+        end
+    end
+
+    @test isempty(offenders)
+    isempty(offenders) || @info "sysimage stamp format re-derived outside pluto/sysimage_stamp.jl — use its helpers (_sysimage_file / _sysimage_stamp / _manifest_fingerprint / stamp_matches / stamp_variant)" offenders
+
+    # Anti-vacuity: a walk over nothing reports a clean bill of health, so pin that we really looked.
+    @test scanned > 100
 end
