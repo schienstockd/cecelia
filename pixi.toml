@@ -19,6 +19,28 @@ license = "GPL-3.0-or-later"
 channels = ["conda-forge"]
 platforms = ["linux-64", "win-64", "osx-arm64"]
 
+# Pin `import cecelia` to THIS checkout's python/, for every `pixi run` in this project.
+#
+# `cecelia` is installed as an editable path dep (see [pypi-dependencies]), which setuptools implements
+# as a meta-path finder holding ONE ABSOLUTE PATH. The pixi/uv cache keys that build on the RELATIVE
+# `./python`, so the entry collides across git worktrees and the first checkout to build it wins: a
+# worktree's own env can resolve `cecelia` into a DIFFERENT worktree, and nothing errors. Half the app
+# then runs this checkout's files (everything launched by path — the napari bridge, the preview worker,
+# task runners) while importing another's library, until one side gains a helper the other lacks:
+#
+#   AttributeError: module 'cecelia.utils.correction_utils' has no attribute 'af_derived_values'
+#
+# PYTHONPATH is searched BEFORE the editable finder, so this makes the collision harmless rather than
+# something each worktree has to be repaired out of. $PIXI_PROJECT_ROOT expands per project, so every
+# worktree points at itself. Verified: re-breaking the finder no longer changes what imports.
+#
+# The launchers set it explicitly too (`run_py`, `preview.jl`, `napari.jl`) — that covers processes
+# spawned by the Julia server, which do not go through `pixi run`. This covers the other direction:
+# `pixi run test-py`, `pixi run python`, a REPL. Belt and braces, deliberately.
+# Full write-up: docs/DEV.md → *A worktree's Python env can point at ANOTHER checkout*.
+[activation.env]
+PYTHONPATH = "$PIXI_PROJECT_ROOT/python"
+
 [dependencies]
 python = "3.12.*"
 openjdk = ">=17"

@@ -609,6 +609,12 @@ class NapariState:
                     image_shape=self._display_shape(),
                     cache=False,
                 )
+                # Render the corrected channel in its ORIGINAL's colour. Comparing the two is the
+                # judgement being made, and napari's default grey makes a magenta channel's correction
+                # look like a different measurement rather than the same one. Contrast limits are
+                # deliberately NOT copied — the corrected values live on a different scale (a ratio
+                # rescaled to the dtype), so the original's window would usually show black.
+                self._mirror_source_colormap(layer, spec.get("source"))
             else:
                 raise ValueError(f"unknown preview layer kind {kind!r}")
 
@@ -621,6 +627,24 @@ class NapariState:
         if api_url:
             self._attach_view_listener(api_url)
         return added
+
+    def _mirror_source_colormap(self, layer, source: str = None):
+        """Give a derived layer the colormap of the layer it came from.
+
+        Best-effort on purpose. The source channel may not be a layer at all — a preview can name a
+        channel the user has closed, and an older worker (protocol < 3) sends no `source` — and in
+        every one of those cases the right answer is napari's default, not a failed preview. So this
+        never raises: the preview is the point, the colour is a courtesy.
+        """
+        if not source:
+            return
+        src = next((l for l in self._viewer.layers if l.name == source), None)
+        if src is None:
+            return
+        try:
+            layer.colormap = src.colormap
+        except Exception as e:                       # a Labels source, an exotic colormap — not fatal
+            print(f"[preview] could not mirror colormap from {source!r}: {e}", flush=True)
 
     def _remove_preview_layers(self, stem: str):
         """Remove every layer a previous preview added for this value_name.
@@ -1735,11 +1759,15 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             )
 
         elif t == "show_task_preview":
+            # `layers`, not the old `mask`/`label_shape`/`label_axes` triple: a reply carries a LIST of
+            # layers, each with its own kind (see `show_task_preview`). This line was missed when the
+            # method was rewritten, and because it is the ONLY caller in production, every preview died
+            # here with a TypeError before rendering anything — reported as a bare "Preview failed".
+            # The tests called the method directly and so never crossed this boundary; one now goes
+            # through `_dispatch` for exactly that reason.
             state.show_task_preview(
                 value_name=cmd.get("value_name", "default"),
-                mask=cmd.get("mask"),
-                label_shape=cmd.get("label_shape"),
-                label_axes=cmd.get("label_axes"),
+                layers=cmd.get("layers"),
                 region=cmd.get("region"),
                 show=bool(cmd.get("show", True)),
                 api_url=cmd.get("api_url"),

@@ -12,7 +12,7 @@
       "label": "Source image",
       "type": "valueNameSelection",
       "default": "default",
-      "field": "imFilepath",
+      "field": "filepaths",
       "tip": "Which image version to crop"
     },
     { "key": "x0", "label": "X min", "type": "int", "min": 0, "default": 0, "required": true, "tip": "Crop X start (px)" },

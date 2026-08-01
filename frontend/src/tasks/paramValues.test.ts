@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildParamValues, flattenParams, missingParamKeys } from './paramValues'
+import {
+  buildParamValues, flattenParams, missingParamKeys,
+  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS,
+} from './paramValues'
 import type { TaskDef, ParamValues } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -121,5 +124,51 @@ describe('sections', () => {
   it('still honours a legacy NESTED saved record', () => {
     const payload = flattenParams(SECT, buildParamValues(SECT, { grp: { inner: 0.7 } }))
     expect(payload.inner).toBe(0.7)
+  })
+})
+
+// ── valueNameSelection: which name gets preselected ────────────────────────────────────────────────
+//
+// The regression: the widget preselected the image's ACTIVE version only when `field` was absent or the
+// literal `'filepath'`. Nothing declared `'filepath'` — afCorrect/driftCorrect/cropImage/copyImage all
+// declared the R version's `imFilepath` — so those four fell through to "first option" and pointed the
+// form at a version the viewer wasn't showing, while cellpose (field absent) pointed at the right one.
+describe('preferredValueName', () => {
+  const available = ['default', 'driftCorrected', 'afCorrected']
+
+  it('prefers the ACTIVE version for image-version fields', () => {
+    expect(preferredValueName(available, 'filepaths', 'driftCorrected')).toBe('driftCorrected')
+  })
+
+  it('treats an ABSENT field as image versions — what most task JSON relies on', () => {
+    expect(preferredValueName(available, undefined, 'driftCorrected')).toBe('driftCorrected')
+  })
+
+  it('takes the first option for fields with no notion of "active"', () => {
+    expect(preferredValueName(['A', 'B'], 'labels', 'driftCorrected')).toBe('A')
+    expect(preferredValueName(['g1', 'g2'], 'spatialGraphs', 'driftCorrected')).toBe('g1')
+  })
+
+  it('falls back to the first option when the active version is not on offer', () => {
+    // e.g. the active version is a label set this param cannot show
+    expect(preferredValueName(available, 'filepaths', 'somethingElse')).toBe('default')
+    expect(preferredValueName(available, 'filepaths', null)).toBe('default')
+  })
+
+  it('survives an empty option list rather than returning undefined', () => {
+    expect(preferredValueName([], 'filepaths', null)).toBe('default')
+  })
+
+  it('rejects the R-era and ccid spellings, so neither can degrade silently again', () => {
+    expect(isKnownValueNameField('imFilepath')).toBe(false)   // R version
+    expect(isKnownValueNameField('filepath')).toBe(false)     // ccid.json, singular
+    expect(isKnownValueNameField('filepaths')).toBe(true)
+    expect(isKnownValueNameField(undefined)).toBe(true)       // absent = image versions
+    for (const f of VALUE_NAME_FIELDS) expect(isKnownValueNameField(f)).toBe(true)
+  })
+
+  it('an unknown field must NOT quietly behave like image versions', () => {
+    // the exact shape of the bug: `imFilepath` took the "first option" branch instead of the active one
+    expect(preferredValueName(available, 'imFilepath', 'driftCorrected')).toBe('default')
   })
 })

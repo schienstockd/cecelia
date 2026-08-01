@@ -63,7 +63,10 @@ AF_PREVIEW_STRIDE = (2, 4)
 #: Reply-shape + backend-set version. The backend refuses to adopt a worker that doesn't match and
 #: relaunches instead — see `_ensure_preview!`. 1: single `mask` field, cellpose only.
 #: 2: `layers` list with per-layer kind, cellpose + AF correction.
-PROTOCOL = 2
+#: 3: layers carry `source`, the viewer layer they derive from, so the bridge can mirror its colormap.
+#:    Bumped even though the bridge falls back gracefully: an adopted protocol-2 worker would omit it
+#:    and quietly render every corrected channel grey, which reads as "the fix didn't work".
+PROTOCOL = 3
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
@@ -314,10 +317,20 @@ class PreviewContext:
             return []
 
 
-def _layer(kind, name, block, axes, full_shape):
-    """One layer for the viewer to build. `kind` decides Labels vs Image on the receiving end."""
-    return {'kind': kind, 'name': name, 'block': encode_block(block),
-            'shape': [int(x) for x in full_shape], 'axes': list(axes)}
+def _layer(kind, name, block, axes, full_shape, source=None):
+    """One layer for the viewer to build. `kind` decides Labels vs Image on the receiving end.
+
+    `source` names the viewer layer this one is DERIVED from — the channel being corrected. The bridge
+    mirrors that layer's colormap so the corrected channel renders in the same colour as its original,
+    which is the whole point of putting them side by side: a grey copy of a magenta channel is hard to
+    compare against, and the comparison IS the judgement. Sent explicitly rather than parsed back out
+    of `name` ("CH1 AF" → "CH1"), because a channel name containing the suffix would break that guess.
+    """
+    out = {'kind': kind, 'name': name, 'block': encode_block(block),
+           'shape': [int(x) for x in full_shape], 'axes': list(axes)}
+    if source:
+        out['source'] = str(source)
+    return out
 
 
 def _preview_cellpose(ctx):
@@ -404,9 +417,10 @@ def _preview_af(ctx):
         # `region` without knowing how the crop was flattened — same contract as the labels path
         block = np.reshape(corrected, block_shape)
         label = names[ch] if ch < len(names) else f'ch{ch}'
-        layers.append(_layer('image', f'{label} AF', block, axes, full_shape))
-        stats_out[str(ch)] = {'background': stats.val1, 'afBackground': stats.val2,
-                              'ceiling': stats.c_max}
+        layers.append(_layer('image', f'{label} AF', block, axes, full_shape, source=label))
+        # same helper the run's QC reports through, so the readout and the banked metric cannot
+        # disagree about a name or a value
+        stats_out[str(ch)] = correction_utils.af_derived_values(stats)
 
     if not layers:
         raise ValueError('no combination names a division channel')
