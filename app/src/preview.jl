@@ -17,10 +17,16 @@
 
 const PREVIEW_PORT   = 7656
 
-# Reply-shape + backend-set version the backend expects, mirroring `preview_worker.PROTOCOL`. A running
-# worker is ADOPTED rather than relaunched on a backend restart — deliberate, since a warm worker
-# surviving a Revise restart is most of its value — but that means stale worker code otherwise outlives
-# every restart. It presented as a bare "Preview failed": a worker predating the AF backend ignored
+# Reply-shape + backend-set version the backend expects, mirroring `preview_worker.PROTOCOL`. A worker
+# already listening on the port is ADOPTED rather than relaunched, which saves its 17.7 s of imports —
+# but that means stale worker code can outlive a backend it was not started by.
+#
+# Adoption is now the CRASH path, not the normal one: an explicit Quit or Restart stops the worker with
+# the other resident children (`_stop_children_for_exit`). What still leaves one running is the backend
+# going away without that route — Ctrl-C on `pixi run dev`, or a kill — which in dev is common enough
+# that adoption stays worth having.
+#
+# Stale code presented as a bare "Preview failed": a worker predating the AF backend ignored
 # `funName`, fell through to the segmentation path and raised "no models in preview params", with
 # nothing anywhere reporting that the process was old. Bump BOTH sides together whenever the reply shape
 # or the set of previewable tasks changes.
@@ -59,7 +65,14 @@ imports torch and cellpose before it can serve anything (~18 s measured), which 
 amortised — a short timeout would just make the first toggle look broken.
 """
 function launch!(w::PreviewWorker)::PreviewWorker
-    w.proc = run(`$(python_bin_path()) $PREVIEW_WORKER`, wait=false)
+    # PYTHONPATH pins `import cecelia.*` to THIS checkout's `python/`, exactly as `run_py` does for
+    # task runners. Without it the worker runs this worktree's `preview_worker.py` while importing
+    # whatever `cecelia` pip has installed — in dev an editable install pointing at the MAIN checkout.
+    # The two then silently disagree: a helper added here raised `module 'cecelia.utils.correction_utils'
+    # has no attribute ...` in a worker that was, by its own path, running the new code. Harmless in the
+    # main checkout, where both resolve to the same directory, which is why it hid until a worktree.
+    w.proc = run(addenv(`$(python_bin_path()) $PREVIEW_WORKER`, "PYTHONPATH" => _python_dir()),
+                 wait=false)
     deadline = time() + 90
     while time() < deadline
         try

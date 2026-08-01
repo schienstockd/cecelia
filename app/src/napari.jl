@@ -54,7 +54,12 @@ _nvidia_present()::Bool = Sys.which("nvidia-smi") !== nothing || isdir("/proc/dr
 # from launch! so the env selection is unit-testable without spawning a process. DRI_PRIME is always
 # safe; the NVIDIA offload vars are added only when an NVIDIA GPU is present (see _NVIDIA_GPU_ENV).
 function _bridge_cmd(discrete_gpu::Bool)::Base.AbstractCmd
-    cmd = `$(python_bin_path()) $NAPARI_BRIDGE`
+    # PYTHONPATH pins `import cecelia.*` to THIS checkout's `python/`, as `run_py` does for task runners
+    # and `preview.jl` for the worker. The bridge imports the shared readers (`zarr_utils`,
+    # `napari_utils`), so without it a worktree runs its own `napari_bridge.py` against the MAIN
+    # checkout's installed `cecelia` — the two drift apart with no error until one calls something the
+    # other lacks. Same directory in the main checkout, so this changes nothing there.
+    cmd = addenv(`$(python_bin_path()) $NAPARI_BRIDGE`, "PYTHONPATH" => _python_dir())
     (discrete_gpu && Sys.islinux()) || return cmd
     env = collect(_MESA_GPU_ENV)
     _nvidia_present() && append!(env, collect(_NVIDIA_GPU_ENV))

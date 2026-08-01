@@ -24,6 +24,28 @@ _with_preview(f) = lock(f, _preview_lock)
 _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
 
 """
+    _stop_preview_worker!()
+
+Stop the worker and forget it. Shared by the user's toggle-off (`api_preview_stop`) and app
+shutdown/restart (`_stop_children_for_exit`), because "stop the worker" must mean the same thing
+however it is reached — the toggle used to be the only path, which is how shutdown came to leave the
+worker running on :7656 while napari and Pluto were both stopped.
+
+Best-effort by design: a worker we merely ADOPTED, or one that outlived a crash, has no process handle
+to close, so callers follow this with a port-level kill.
+"""
+function _stop_preview_worker!()
+    lock(_preview_lock) do
+        w = _preview_ref[]
+        w === nothing || try; close!(w); catch e
+            @warn "Could not stop preview worker" exception = e
+        end
+        _preview_ref[]      = nothing
+        _preview_starting[] = false
+    end
+end
+
+"""
 `(reachable, protocol)` for a worker — protocol 1 when it answers but names none, which is what every
 worker built before the handshake existed does.
 """
@@ -135,14 +157,7 @@ function api_preview_stop(body_bytes::Vector{UInt8})
             @warn "Could not remove preview layer" exception = e
         end
     end
-    lock(_preview_lock) do
-        w = _preview_ref[]
-        w === nothing || try; close!(w); catch e
-            @warn "Could not stop preview worker" exception = e
-        end
-        _preview_ref[]      = nothing
-        _preview_starting[] = false
-    end
+    _stop_preview_worker!()
     200, JSON3.write((; alive = false, stopped = true))
 end
 

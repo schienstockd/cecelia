@@ -5,6 +5,16 @@
 # Stop the child processes THIS server owns, best-effort, before the process exits. napari has no
 # atexit hook (unlike the notebook server), so it must be closed explicitly here or the bridge is
 # orphaned on :7655. Called by the global shutdown (and, later, restart).
+#
+# EVERY resident child this server can launch belongs here — the list is the contract, and it is
+# checked by a test (`api/test/runtests.jl`) rather than by whoever adds the next one. The preview
+# worker was missed when it was added and outlived Quit on :7656, holding the VRAM of a warm cellpose
+# model that nothing could then reach; the whole reason this function exists is that zombie children
+# were a recurring problem.
+#
+# Killing the preview worker here does NOT cost the warm-worker optimisation it was built for. A Revise
+# reload never reaches this function (the process does not exit), which is the case adoption exists to
+# serve; only an explicit Quit or Restart does, and after either the process handle is gone anyway.
 function _stop_children_for_exit()
     try
         v = _viewer()
@@ -17,11 +27,17 @@ function _stop_children_for_exit()
     catch e
         @warn "Shutdown: stopping notebooks failed" exception = e
     end
-    # belt-and-suspenders: also free the child ports by force, covering a bridge we only ADOPTED or
+    try
+        _stop_preview_worker!()             # the resident preview worker (no-op when never launched)
+    catch e
+        @warn "Shutdown: stopping the preview worker failed" exception = e
+    end
+    # belt-and-suspenders: also free the child ports by force, covering a child we only ADOPTED or
     # that outlived a crash (no process handle to close!) — so shutdown/restart never leaves a zombie
-    # on :7655 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed the port.
-    try; Cecelia._kill_listeners_on_port(Cecelia.NAPARI_PORT); catch; end
-    try; Cecelia._kill_listeners_on_port(NOTEBOOKS_PORT);      catch; end
+    # on :7655 / :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
+    try; Cecelia._kill_listeners_on_port(Cecelia.NAPARI_PORT);  catch; end
+    try; Cecelia._kill_listeners_on_port(Cecelia.PREVIEW_PORT); catch; end
+    try; Cecelia._kill_listeners_on_port(NOTEBOOKS_PORT);       catch; end
 end
 
 # POST /api/app/shutdown  → { ok, message }   — the global "Quit everything".

@@ -16,6 +16,17 @@ const RESTART_EXIT_CODE = 42
 const FRONTEND_PORT = 5173
 const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom port, this is the backstop
 
+# The backend's OWN children — napari, the preview worker, Pluto. Killing the backend does not take them
+# with it (they are grandchildren, in their own process groups), and only the in-app Quit/Restart runs
+# `_stop_children_for_exit`. So a Ctrl-C used to leave all three listening: the preview worker held a warm
+# cellpose model's VRAM with no backend able to reach it, and zombie napari bridges are the reason this
+# start/stop machinery exists at all.
+#
+# Duplicated as literals because dev.jl is a standalone supervisor with no Cecelia loaded (same reason
+# `_free_port` is inlined below). `api/test/runtests.jl` asserts these agree with the package constants,
+# so the copies cannot drift apart silently.
+const CHILD_PORTS = (7655, 7656, 7660)   # napari, preview worker, notebooks
+
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
 # with the restart sentinel; we relaunch the backend FROM THAT DIR (and the frontend from the sibling
 # `frontend/`) so both load the other worktree's code. The path is fixed in THIS (the launching)
@@ -151,6 +162,12 @@ function supervise()
         try; backend[] === nothing || kill(backend[]); catch; end
         _free_port(BACKEND_PORT)
         _stop_frontend(vite)
+        # …and the backend's own children, which it only stops itself on an in-app Quit/Restart. On a
+        # Ctrl-C or a crash nothing else will, so this is the one place that catches them. Ordered after
+        # the backend is dead, so a supervisor still running cannot relaunch one mid-teardown.
+        for p in CHILD_PORTS
+            _free_port(p)
+        end
     end
 end
 
