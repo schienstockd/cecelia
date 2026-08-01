@@ -653,6 +653,43 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Reference image: a SET-level nomination, deliberately not a task param ────────────────────────
+# The user picks the image they judge representative; a consumer (first: the 8-bit import) derives
+# its numbers from it. The load-bearing property is that "no usable reference" is ONE answer — a
+# consumer must not have to re-check set membership after a delete or a move.
+@testset "reference image" begin
+    proj = create_project!(name = "ref-$(rand(1000:9999))")
+    s    = add_set!(proj; name = "set")
+    img1 = add_image!(s; name = "a")
+    img2 = add_image!(s; name = "b")
+
+    @test isnothing(reference_image_uid(s))                     # unset is the normal state
+
+    set_reference_image!(s, img1.uid)
+    @test reference_image_uid(s) == img1.uid
+    reloaded = load_project(proj.uid)
+    rs = reloaded._sets[1]
+    @test reference_image_uid(rs) == img1.uid                   # persisted through meta
+
+    set_reference_image!(s, img2.uid)                           # one per set — re-nominating moves it
+    @test reference_image_uid(s) == img2.uid
+
+    set_reference_image!(s, nothing)                            # and can be cleared
+    @test isnothing(reference_image_uid(s))
+    @test !haskey(s.meta, Cecelia.REFERENCE_IMAGE_KEY)          # cleared, not left as an empty string
+
+    # A reference pointing outside the set is a bug, not a state to persist.
+    @test_throws ErrorException set_reference_image!(s, "not-in-set")
+
+    # ...and one that LEAVES the set reads as unset rather than as a dangling uid, so every consumer
+    # gets the same answer without re-checking membership itself.
+    set_reference_image!(s, img1.uid)
+    delete_image!(s, img1.uid)
+    @test isnothing(reference_image_uid(s))
+
+    rm(proj.root; recursive=true)
+end
+
 @testset "move_image! (manifest-only, no data moved)" begin
     proj = create_project!(name="move-test-$(rand(1000:9999))")
     a = add_set!(proj; name="set-A")

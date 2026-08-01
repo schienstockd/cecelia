@@ -2334,3 +2334,154 @@ end
     # Anti-vacuity: a walk over nothing reports a clean bill of health, so pin that we really looked.
     @test scanned > 100
 end
+
+# ── HTTP router: the full route table dispatches ─────────────────────────────────
+# SAFETY NET for turning the router from a 156-branch if/elseif chain into lookup tables. That chain
+# was ONE method costing 42s of a 53s server boot (--trace-compile-timing); a table compiles only the
+# handler you actually hit. Nothing tested ROUTING before this — the suite calls handlers directly —
+# so the refactor could have dropped a route into a 404 that only shows up in the browser.
+#
+#  * DISPATCH — every (method, path) must reach a handler. `handle_http` is a plain function, so no
+#    socket is needed. A router miss is 404 with body "Not found: <path>"; a handler's own 404 says
+#    something else, so the two are distinguishable. Reaching a handler and throwing still counts —
+#    the point is that routing happened.
+#  * INVENTORY — the `/api/...` literals in server.jl must equal this table exactly, so adding or
+#    removing a route without updating it fails here rather than in production.
+@testset "HTTP router — the full route table still dispatches" begin
+    GET_ROUTES = [
+        "/api/analysis/behaviour", "/api/analysis/chains",
+        "/api/analysis/clusters", "/api/analysis/lineage",
+        "/api/analysis/measures", "/api/analysis/populations",
+        "/api/analysis/spatial", "/api/app/worktrees",
+        "/api/chains", "/api/chains/get",
+        "/api/chains/run", "/api/chains/runs",
+        "/api/crop/frame", "/api/crop/info",
+        "/api/diagnostics", "/api/diagnostics/packages",
+        "/api/fs/list", "/api/gating/channels",
+        "/api/gating/density", "/api/gating/membership",
+        "/api/gating/plotdata", "/api/gating/plotmeta",
+        "/api/gating/popmap", "/api/gating/stats",
+        "/api/health", "/api/images",
+        "/api/images/geometry", "/api/images/meta",
+        "/api/images/tasklog", "/api/lablog",
+        "/api/logs/recent", "/api/maintenance/patches",
+        "/api/movies", "/api/napari/gpu",
+        "/api/napari/status", "/api/notebooks",
+        "/api/notebooks/content", "/api/notebooks/snapshots",
+        "/api/notebooks/status", "/api/observer/briefing",
+        "/api/observer/status", "/api/plots/attrs",
+        "/api/plots/definitions", "/api/plots/populations",
+        "/api/plots/umap", "/api/pools",
+        "/api/preview/status", "/api/projects",
+        "/api/projects/bundle-info", "/api/projects/bundles",
+        "/api/qc/cohort", "/api/qc/cohort/runs",
+        "/api/repl/api", "/api/setup/defaults",
+        "/api/setup/validate", "/api/storage/summary",
+        "/api/tasks", "/api/tasks/custom-modules",
+        "/api/tasks/definitions", "/api/tasks/funparams",
+        "/api/tasks/history", "/api/tasks/recent",
+        "/api/tracking/motion-dims", "/api/update/check",
+        "/api/version",
+    ]
+    POST_ROUTES = [
+        "/api/app/restart", "/api/app/shutdown",
+        "/api/app/switch-worktree", "/api/board-assets/copy",
+        "/api/board-assets/delete", "/api/board-assets/save",
+        "/api/chains/delete", "/api/chains/save",
+        "/api/gating/copy", "/api/gating/pop/add",
+        "/api/gating/pop/delete", "/api/gating/pop/rename",
+        "/api/gating/pop/set-gate", "/api/gating/pop/update",
+        "/api/images/attr/create", "/api/images/attr/delete",
+        "/api/images/attr/set", "/api/images/channelnames",
+        "/api/images/delete", "/api/images/inclusion/set",
+        "/api/images/labels/delete", "/api/images/meta/resync",
+        "/api/images/meta/set", "/api/images/move",
+        "/api/images/register", "/api/images/value-name-check",
+        "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/lablog/append", "/api/lablog/capture",
+        "/api/lablog/dismiss", "/api/napari/apply-movie-config",
+        "/api/napari/apply-view-state", "/api/napari/close",
+        "/api/napari/colour-branch-labels", "/api/napari/colour-labels",
+        "/api/napari/configure-autosave", "/api/napari/event",
+        "/api/napari/gpu", "/api/napari/open",
+        "/api/napari/overlay-legend", "/api/napari/record-animation",
+        "/api/napari/record-timelapse", "/api/napari/refresh-labels",
+        "/api/napari/restart", "/api/napari/screenshot",
+        "/api/napari/selection-scope", "/api/napari/show-labels",
+        "/api/napari/show-populations", "/api/napari/show-tracks",
+        "/api/napari/start-selection", "/api/napari/stop-selection",
+        "/api/napari/view-state", "/api/notebooks/build-sysimage",
+        "/api/notebooks/create", "/api/notebooks/delete",
+        "/api/notebooks/describe", "/api/notebooks/duplicate",
+        "/api/notebooks/launch", "/api/notebooks/prune",
+        "/api/notebooks/restart", "/api/notebooks/restore",
+        "/api/notebooks/revise", "/api/notebooks/shutdown",
+        "/api/notebooks/snapshot", "/api/notebooks/write",
+        "/api/observer/clear", "/api/observer/feedback",
+        "/api/observer/register", "/api/plot_data",
+        "/api/pools/set", "/api/preview/run",
+        "/api/preview/start", "/api/preview/stop",
+        "/api/projects/animations", "/api/projects/boards",
+        "/api/projects/canvases", "/api/projects/create",
+        "/api/projects/delete", "/api/projects/list",
+        "/api/projects/load", "/api/projects/rename",
+        "/api/qc/cohort/check", "/api/repl",
+        "/api/repl/config", "/api/sets/create",
+        "/api/sets/delete", "/api/sets/reference", "/api/setup/init",
+        "/api/storage/reclaim", "/api/tasks/custom-modules/reload",
+        "/api/update/apply",
+    ]
+    UNSAFE = [
+        "/api/app/restart", "/api/app/shutdown",
+        "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/napari/apply-movie-config", "/api/napari/apply-view-state",
+        "/api/napari/restart", "/api/napari/stop-selection",
+        "/api/notebooks/build-sysimage", "/api/notebooks/launch",
+        "/api/notebooks/restart", "/api/notebooks/shutdown",
+        "/api/preview/run", "/api/preview/start",
+        "/api/preview/stop", "/api/storage/reclaim",
+        "/api/update/apply",
+    ]
+    # counts pinned below: 65 GET, 91 POST, 17 not live-called
+
+    # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
+    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file"]
+
+    # Would genuinely restart/shut down/spawn a worker if called with an empty body. Their PRESENCE is
+    # still pinned by the inventory half; only the live call is skipped.
+    unsafe = Set(UNSAFE)
+
+    function dispatched(method, path)
+        try
+            st, body = handle_http(HTTP.Request(method, path), UInt8[])
+            !(st == 404 && occursin("Not found: $path", String(body)))
+        catch
+            true    # reached a handler and it threw — routing still happened
+        end
+    end
+
+    missed, checked = String[], 0
+    for (m, routes) in (("GET", GET_ROUTES), ("POST", POST_ROUTES)), p in routes
+        p in unsafe && continue
+        checked += 1
+        dispatched(m, p) || push!(missed, "$m $p")
+    end
+    @test isempty(missed)
+    isempty(missed) || @info "routes that no longer dispatch" missed
+
+    # Anti-vacuity: a loop over nothing passes trivially.
+    @test checked >= 130
+    @test length(GET_ROUTES) == 65 && length(POST_ROUTES) == 92
+
+    # A path nobody registered must still 404, else "dispatched" means nothing.
+    @test !dispatched("GET",  "/api/definitely-not-a-route")
+    @test !dispatched("POST", "/api/definitely-not-a-route")
+    # …and an unrouted METHOD falls through to 405, so method association is real.
+    @test first(handle_http(HTTP.Request("DELETE", "/api/health"), UInt8[])) == 405
+
+    # INVENTORY — every /api literal in server.jl is accounted for, and vice versa. Structure-agnostic
+    # on purpose: it keeps working whatever shape the router takes next.
+    src = read(joinpath(@__DIR__, "..", "src", "server.jl"), String)
+    literals = Set(strip(m.match, '"') for m in eachmatch(r"\"/api/[^\"]+\"", src))
+    @test literals == Set(vcat(GET_ROUTES, POST_ROUTES, STREAM_ROUTES))
+end
