@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
+  paramsBlocker, hasAfCombination,
   type PreviewContext, type PreviewStatus,
 } from './taskPreview'
 
@@ -118,6 +119,64 @@ describe('the params these readers get must be flat', () => {
   it('still detects a previewable model either way, because models is not section-nested', () => {
     expect(hasPreviewableModel(NESTED)).toBe(true)
     expect(hasPreviewableModel(FLAT)).toBe(true)
+  })
+})
+
+describe('paramsBlocker', () => {
+  // THE reported bug: the AF and AF+drift tasks showed no preview button at all. The readiness check
+  // was `hasPreviewableModel` — a cellpose question ("is there a base model?") asked of every task —
+  // so AF, which has `afCombinations` and no models, was reported not-runnable despite the backend
+  // declaring it previewable. Silently: no button, no message.
+  it('accepts an AF task with a division channel', () => {
+    expect(paramsBlocker({ afCombinations: { '2': { divisionChannels: [3] } } })).toBeNull()
+  })
+
+  it('names what an AF task is missing rather than hiding', () => {
+    expect(paramsBlocker({ afCombinations: {} })).toBe('no-af-channels')
+    expect(paramsBlocker({ afCombinations: { '2': { divisionChannels: [] } } })).toBe('no-af-channels')
+    expect(paramsBlocker({ afCombinations: { '2': {} } })).toBe('no-af-channels')
+    expect(blockerMessage('no-af-channels')).toBe('Add a division channel to preview')
+  })
+
+  it('still asks the cellpose question of a cellpose task', () => {
+    expect(paramsBlocker({ models: { a: { matchAs: 'base' } } })).toBeNull()
+    expect(paramsBlocker({ models: {} })).toBe('no-models')
+    expect(paramsBlocker({ models: { a: { matchAs: 'nuc' } } })).toBe('no-models')
+  })
+
+  it('is PERMISSIVE for a shape it does not recognise', () => {
+    // whether a task can be previewed is the backend's statement; if the params are wrong the worker
+    // refuses with a readable message. Hiding a control because the frontend doesn't know the shape is
+    // the worse failure, because it is silent — which is exactly what happened to AF.
+    expect(paramsBlocker({ someFutureBag: { x: 1 } })).toBeNull()
+    expect(paramsBlocker({})).toBeNull()
+  })
+
+  it('reports no-params for absent params', () => {
+    expect(paramsBlocker(null)).toBe('no-params')
+  })
+
+  it('flows through previewBlocker for both task shapes', () => {
+    const afCtx = ctx({ funName: 'cleanupImages.afCorrect',
+                        params: { afCombinations: { '2': { divisionChannels: [3] } } } })
+    expect(previewBlocker(afCtx, status(), on)).toBeNull()
+    const emptyAf = ctx({ funName: 'cleanupImages.afCorrect', params: { afCombinations: {} } })
+    expect(previewBlocker(emptyAf, status(), on)).toBe('no-af-channels')
+  })
+})
+
+describe('hasAfCombination', () => {
+  it('needs at least one combination naming a reference channel', () => {
+    expect(hasAfCombination({ afCombinations: { '2': { divisionChannels: [3] } } })).toBe(true)
+    expect(hasAfCombination({ afCombinations: { '1': { divisionChannels: [] },
+                                               '2': { divisionChannels: [0, 3] } } })).toBe(true)
+    expect(hasAfCombination({ afCombinations: {} })).toBe(false)
+    expect(hasAfCombination(null)).toBe(false)
+  })
+
+  it('survives a malformed value instead of throwing', () => {
+    expect(hasAfCombination({ afCombinations: 'nope' as unknown })).toBe(false)
+    expect(hasAfCombination({ afCombinations: { '2': { divisionChannels: 'x' as unknown } } })).toBe(false)
   })
 })
 

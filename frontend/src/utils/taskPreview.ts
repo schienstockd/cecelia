@@ -30,7 +30,8 @@ export type PreviewBlocker =
   | 'pinned'            // user pinned the current result; stop chasing the view
   | 'no-context'        // no project/image selected on the page yet
   | 'no-params'         // task params not resolved yet
-  | 'no-models'         // params carry no model to run
+  | 'no-models'         // a segmentation with no model to run
+  | 'no-af-channels'    // an AF correction with no channel combination to run
   | 'image-mismatch'    // the viewer has a different image open
   | 'no-image-open'     // nothing open in the viewer
 
@@ -52,10 +53,43 @@ export function previewBlocker(
   if (opts.pinned) return 'pinned'
   if (!ctx || !ctx.projectUid || !ctx.imageUid) return 'no-context'
   if (!ctx.params) return 'no-params'
-  if (!hasPreviewableModel(ctx.params)) return 'no-models'
+  const params = paramsBlocker(ctx.params)
+  if (params) return params
   if (!status || !status.imageUid) return 'no-image-open'
   if (status.imageUid !== ctx.imageUid) return 'image-mismatch'
   return null
+}
+
+/**
+ * Do these params carry something to preview yet? `null` when they do.
+ *
+ * **Permissive by default, and that matters.** This used to be `hasPreviewableModel` alone, which asks
+ * a cellpose question — "is there a `models` bag with a base model?" — of every task. AF correction has
+ * `afCombinations` and no models, so it was reported not-runnable and its button never appeared, even
+ * though the backend declared it previewable. An unrecognised param shape therefore returns `null`:
+ * whether a task can be previewed at all is the backend's statement (`task_previewable`), and if the
+ * params are wrong for it the worker refuses with a message worth reading. Hiding a control because the
+ * frontend doesn't recognise a shape is the worse failure — it is silent.
+ */
+export function paramsBlocker(params: Record<string, unknown> | null): PreviewBlocker | null {
+  if (!params) return 'no-params'
+  if ('models' in params) return hasPreviewableModel(params) ? null : 'no-models'
+  if ('afCombinations' in params) return hasAfCombination(params) ? null : 'no-af-channels'
+  return null
+}
+
+/**
+ * True when at least one AF combination names a division channel — the AF analogue of
+ * `hasPreviewableModel`. A combination with no reference channel is not a correction (the worker
+ * raises), and an empty bag is the state the form starts in.
+ */
+export function hasAfCombination(params: Record<string, unknown> | null): boolean {
+  const combos = (params as { afCombinations?: unknown } | null)?.afCombinations
+  if (!combos || typeof combos !== 'object') return false
+  return Object.values(combos as Record<string, unknown>).some(c => {
+    const div = (c as { divisionChannels?: unknown } | null)?.divisionChannels
+    return Array.isArray(div) && div.length > 0
+  })
 }
 
 /**
@@ -82,6 +116,7 @@ export function blockerMessage(b: PreviewBlocker | null): string {
     case 'no-image-open':   return 'Open the image to preview it'
     case 'image-mismatch':  return 'Open this image to preview it'
     case 'no-models':       return 'Add a model to preview'
+    case 'no-af-channels':  return 'Add a division channel to preview'
     // 'off' / 'pinned' / 'no-context' / 'no-params' are states the user chose or can see; a message
     // for those is noise (docs/UI.md — keep UI copy short, say nothing rather than narrate)
     default:                return ''

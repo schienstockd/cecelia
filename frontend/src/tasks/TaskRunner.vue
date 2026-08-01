@@ -19,7 +19,6 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
-import { hasPreviewableModel } from '../utils/taskPreview'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -92,14 +91,6 @@ const paramValues = ref<ParamValues>({})
 // last-used default rather than any single image's record.
 const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
 
-// Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
-// stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
-// line beside its struct — no list here to go stale. Composites resolve through their own overload, so
-// `segment.cellposeMeasure` (what this page actually runs) reports true.
-//
-// Two live conditions on top of the declared capability: exactly one image selected, because the preview
-// shows ONE region of ONE image; and the params must currently carry a base model, because that is the
-// only thing the worker can run and sending it nothing would be an error rather than a preview.
 // The preview gets what `run()` sends: FLATTENED. A `section` is a UI grouping, so `paramValues` keeps
 // its sub-params nested, and everything downstream reads them flat — the run flattens on the way out
 // (`run()` below) and the preview did not. Nothing errors; the value is just absent, so each reader
@@ -110,10 +101,19 @@ const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.s
 const previewParams = computed<Record<string, unknown> | null>(() =>
   taskDef.value ? flattenParams(taskDef.value, paramValues.value) as Record<string, unknown> : null)
 
+// Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
+// stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
+// line beside its struct — no list here to go stale. Composites resolve through their own overload, so
+// `segment.cellposeMeasure` and `cleanupImages.afDriftCorrect` both report true.
+//
+// One live condition on top of that: exactly one image selected, because the preview shows ONE region
+// of ONE image. Deliberately NOT "are the params ready" — that check used to be here as
+// `hasPreviewableModel`, which asks a cellpose question ("is there a base model?") of every task, so AF
+// correction (no `models`, it has `afCombinations`) never showed a button at all despite the backend
+// declaring it previewable. Readiness is now a blocker with a MESSAGE (`paramsBlocker`): a control that
+// explains why it cannot run beats one that silently isn't there.
 const canPreview = computed(() =>
-  (taskDef.value?.previewable ?? false) &&
-  drivingImageUid.value !== '' &&
-  hasPreviewableModel(previewParams.value))
+  (taskDef.value?.previewable ?? false) && drivingImageUid.value !== '')
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
