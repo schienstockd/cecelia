@@ -43,10 +43,53 @@ Previewability is a property of a task's *compute*, not of a category:
 
 1. **The real compute, on a bounded region.** No approximation — the point is to judge the params you are
    about to run, so an approximation would answer a different question.
-2. **The region is the current napari view in XY, the whole z-stack in Z, the current timepoint in T**
-   (Dominik, 2026-07-31). Viewing one plane of a stack still previews the stack: cellpose 3D needs the
-   volume, and a single-plane preview of a 3D run would show something the run won't reproduce.
-3. **Output is an unpromoted staging store at FULL image shape**, filled only in the previewed region.
+2. **The region is the current napari view in XY, ONE z-plane, the current timepoint** (Dominik,
+   2026-07-31, revised the same day once the numbers came in). The first version of this decision previewed
+   the whole z-stack, on the grounds that a single-plane preview shows something the run won't reproduce.
+   That is true, and it costs ~90 s (Decision 8) with no trick available to reduce it — so **3D previews are
+   dropped**: they are not previews.
+
+   **If the viewer is in 3D display mode (`dims.ndisplay == 3`), the preview silently falls back to the
+   current z-plane and says so** — it does not refuse, and it does not quietly pretend to be a 3D result.
+
+   What the fallback actually costs, stated precisely because "approximate" is useless to a user: the real
+   run is `do_3D=False` + `stitch_threshold`, i.e. **2D per plane, then stitched across z**
+   (`cellpose_utils.py:121-134`). A one-plane preview runs the identical per-plane inference, so
+   **diameter, boundaries and splitting are faithful**; what is missing is stitching, so **object counts and
+   z-extents will differ from the run**. The warning should say that, not "results may vary".
+3. **The preview never touches disk. The worker returns the mask block; the viewer wraps it in a lazy
+   full-shape array** (Dominik, 2026-07-31: *"for preview specifically I would expect this to be removed
+   after preview finishes"*).
+
+   This reverses the store-based version below, and it reverses it back to something like the plan's
+   FIRST draft — with the piece that was missing then. The original objection to "no store" was that a
+   task cannot hand napari an array. True, but the worker is not on the task rail, and the amount of data
+   is one plane. The objection that killed the crop-shaped-array idea was that it needs a `translate` to
+   line up with the image. Also avoidable:
+
+       arr = da.zeros(full_label_shape, dtype=uint32, chunks=…)   # lazy, virtual
+       arr[t:t+1, z:z+1] = mask_block                             # only the previewed plane
+
+   Measured 2026-07-31: **6.9 MB peak RAM** to build that graph for a `(201, 20, 544, 548)` uint32 array
+   — nominally **4.8 GB**. Full shape, so it aligns with the image with no translate; lazy, so the zeros
+   cost nothing; and **nothing exists on disk to clean up**.
+
+   **Built 2026-07-31.** The codec is `cecelia.utils.block_transfer` (`encode_block`/`decode_block`/
+   `place_block_lazy`) — ONE implementation shared by both Python ends, because a hand-rolled encode on
+   the worker and decode in the bridge is the drift this repo keeps paying for. Julia is a pure
+   pass-through (`preview_show_command`): it moves the opaque payload from worker to viewer and never
+   decodes it. The viewer end is `napari_bridge.show_task_preview`, holding the `Preview` slot in the
+   `labels` layer family so it and `({vn}) Labels`/`Labels (live)` evict each other rather than stack.
+
+   What this deletes: `staged_store(scratch=True)`, the whole question of who owns a preview's store, and
+   the lifecycle task that came with it. The store-based version accumulated one `*.partial` directory per
+   previewed image, invisible to `ccid.json`, forever — and worse, `store_sweep`'s 5-minute
+   active-window heuristic *refuses* to remove a store that was just previewed, so the Settings patch
+   could not clean it either. The sweep is a fine general broom once people know it is there; it is the
+   wrong answer for something that should never have been left behind.
+
+   (Superseded, kept because the reasoning is instructive:) *Output is an unpromoted staging store at FULL
+   image shape*, filled only in the previewed region.
    - Full shape means the layer aligns with the image for free; a crop-shaped layer renders at the origin
      and needs a translate.
    - The cost is negligible because zarr only materialises written chunks — measured 2026-07-31: a
@@ -87,9 +130,66 @@ Previewability is a property of a task's *compute*, not of a category:
    (segmentation, AF) and three once coastal denoise lands — so this decision depends on the widened scope.
    Precedent exists (`mcp/`, a non-viewer resident Python service), as do the
    lifecycle primitives (`_kill_listeners_on_port`, `jobs.jl:70`, how `stop-napari` works).
-8. **The worker holds warm models**, keyed by what identifies them (model type + device). Model
-   construction, not inference, is expected to dominate per-preview latency — that is the whole reason the
-   worker is resident rather than a subprocess per preview.
+8. **The worker is resident to amortise IMPORTS, not model loading** (measured 2026-07-31, RTX 2000 Ada
+   Laptop 8 GB, `cyto2`). An earlier draft of this decision said model construction would dominate. It
+   doesn't — it is essentially free:
+
+   | Fixed cost, per process | |
+   |---|---|
+   | `import cecelia.utils` | **11.7 s** |
+   | `import cellpose` (pulls torch) | 5.7 s |
+   | `CellposeModel(cyto2)` construction | **0.2 s** |
+   | total | **17.7 s** |
+
+   17.7 s per invocation is fatal for an interactive loop, so the worker stays resident — but it pays that
+   once at toggle-on, and holding *models* warm is a minor extra (`CellposeUtils._model_cache` already does
+   it within a process).
+
+   **Inference cost is proportional to CELLS, not pixels** — which kills the obvious optimisations. At a
+   fixed diameter it looks like ~2 µs/voxel (512² plane 0.47 s, 1024² plane 2.2 s, 20×512² 9.7 s,
+   40×1024² 89 s), but that is a coincidence of holding the diameter constant:
+
+   | Region | Voxels | Time | µs/voxel |
+   |---|---|---|---|
+   | level 0: 40 × 1024², diam 17 px | 41.9 M | 90.1 s | 2.15 |
+   | level 1: 40 × 512², diam 8.5 px | 10.5 M | 37.7 s | 3.60 |
+   | level 2: 40 × 256², diam 4.25 px | 2.6 M | **35.9 s** | 13.69 |
+
+   **16× fewer voxels buys only 2.5× less time.** Cellpose rescales internally to a canonical ~30 px
+   diameter, so a scaled-down diameter makes it *upscale*: at level 2, diam 4.25 → a 7× upscale, and a 256²
+   tile becomes ~1800² internally. Downsampling and diameter-scaling cancel. So:
+
+   - **Previewing at napari's displayed pyramid level is NOT a shortcut** (an earlier draft claimed cost
+     would "track the screen, not the image" — measured false).
+   - **`batch_size` is not a shortcut either**: 88.4 s at the default 8, and slightly *worse* at 16/32/64.
+   - **Z-depth is the whole problem.** 40 planes = 40× the cells, and nothing changes that arithmetic.
+
+   What is left is the only thing that was ever going to work — **do less, and show it sooner**:
+
+   | | |
+   |---|---|
+   | 1 plane at level 0 | **2.36 s** |
+   | 1 plane at level 1 | **0.95 s** |
+
+   So the preview segments **the plane you are looking at**, and nothing else (Decision 2).
+
+   **Measured end-to-end on real data** (`EaMaVq`, 201 × 20 × 544 × 548 driftCorrected, cyto2, 10 µm,
+   stitch 0.2, T-cell channel — the configuration `SEG_QUALITY_PLAN.md` benchmarked):
+
+   | | |
+   |---|---|
+   | first preview on an image | **27.5 s** — of which 24 s is `_compute_norm_params` |
+   | second preview, diameter 10 → 12 | **0.30 s** |
+
+   The tuning loop is therefore **sub-second**, and the one-off cost is the whole-image normalisation
+   statistic. That is cached per (image, channels, `normalise` percentile) — none of which are what you
+   tune — so it is paid once per image and never again while you sweep diameter/thresholds/filters.
+
+   Two things worth knowing about that 24 s: it is **specific to single-level stores**.
+   `_compute_norm_params` reads the statistic off the smallest pyramid level when there is one, but a
+   drift/AF-corrected store has only level 0, so it streams all 1.2 B voxels — and corrected stores are
+   the normal segmentation input. And it cannot be cheapened by subsampling without changing the
+   statistic, which would make the preview disagree with the run (Decision 5). See *Open questions*.
 9. **One adder for preview layers, both kinds.** Labels previews can reuse `_show_label_stores`; **image**
    previews (AF now, denoise later) have no equivalent and must not grow into a second near-copy. `docs/NAPARI.md`
    records that the label adder had already drifted into two copies before it was consolidated — don't
@@ -154,12 +254,90 @@ denoising *inside* AF correction, not the cellpose denoise task.)
   WS server and no firewall consideration, and `jobs.jl` already tracks process handles. Leaning port for
   consistency — but the subprocess is genuinely simpler, and this is worth deciding once, deliberately,
   since three modalities will depend on it.
-- **Model load latency** — measure it. It decides whether the worker holds several models at once
+- **Is a 25 s first preview acceptable?** It is one-off per image (then 0.3 s/iteration), and it buys
+  exactly matching the run's normalisation. Options if not: warm it at toggle-on so the wait is
+  attributable rather than surprising; or offer `normaliseToWhole=false` for previewing, which is faster
+  but then the preview is NOT what the run produces — the thing Decision 5 exists to prevent.
+- **An empty region reads as "0 cells", which is misleading.** Drift correction pads the canvas (and the
+  padding moves per timepoint — at t=0 on `EaMaVq`, z 0–6 is dead space), so a preview aimed there
+  segments an all-zero tile and honestly reports nothing found. Distinguish "no signal in this region"
+  from "no cells found": the tile's own max is enough to tell them apart, and the wrong one sends someone
+  hunting for a parameter problem that isn't there.
+- **Model load latency** — measured, not a factor (0.2 s). It decides whether the worker holds several models at once
   (segmentation + denoise, if someone toggles between them) or one at a time.
 - **Does `predict_slice` work on an arbitrary crop** outside the tiling/stitching loop that normally calls
   it?
 - **One preview layer that replaces itself, or one per attempt?** Comparing attempt A with B is the actual
   job, which argues for keeping the previous one — but then eviction and naming need thought.
+
+## Observations from live testing (2026-07-31) — all tracked, none of them dropped
+
+Testing against Dominik's running viewer produced findings that unit tests could not have, listed here
+because side notes in a conversation do not survive it:
+
+| Observation | Where it went |
+|---|---|
+| The current plane came from `corner_pixels`, which napari pins at `[0, 0]` for a non-displayed dim — every preview segmented padding | **fixed** (`cefb254`), regression test uses the live numbers |
+| The test "confirming" that used a fresh layer, so it compared 0 to 0 and could not fail | test now says so; the lesson is a saved memory, not a repo item |
+| A one-shot preview is invisible the moment you move z — reads as broken | must re-run on view change, debounced, with a visible state |
+| An empty region and bad params both report "0 cells" | distinguish them from the tile's own max |
+| A preview's scratch store accumulated with nothing owning it | **removed the store entirely** (Decision 3) |
+| `store_sweep` matches NAMES, so it only sees writers that opted into `staged_store` — import writes straight to the final name and slips through | its own item: detect incompleteness structurally (unregistered store, or declared-but-absent pyramid levels), not by name |
+| The Settings cleanup needs to announce itself, not be knowledge | report leftover bytes in the existing storage box |
+| 8 of 21 planes on a drift-corrected image are empty and every task processes them | `docs/TODO.md` **#00090** — pipeline-wide, not preview-specific |
+| The preview only handles the `base` model type, so a nuc+cyto run is not what the run produces | stated limitation, to fix or surface |
+| Nothing exposes which image the viewer has open, so out-of-band callers guess (I guessed wrong three times) | the API status route |
+| The worker is a fourth resident process with no pixi task, service-panel entry, or `stop` wiring | operational surface |
+
+## Observations from live testing (2026-08-01) — the second pass
+
+| Observation | Where it went |
+|---|---|
+| The version-mismatch refusal was muted 2xs text under the button — "such a tiny message for something that is actually important" | amber via the severity model (`previewNotice`); `code` → short label, backend message → tooltip detail |
+| The readout stayed on "Previewing…" indefinitely while the mask kept updating | the `viewChanged` post is now deduped on the **region**, so an event that doesn't move the previewable box can't start a run whose layer swap starts another |
+| The pin read as a dead button | it dropped no queued work; now `dropPending()` on the way in — and `cancel()` would have been wrong, it would discard the in-flight result whose mask ends up on screen |
+| A request that never settles wedges the scheduler with no way out | `/api/preview/run` is deadlined (`PREVIEW_RUN_TIMEOUT_MS`), surfacing as *"Preview timed out"* |
+| A failed preview left the previous cell count on screen beside the error | `onError` clears the result — "12 cells" next to "Wrong version open" claims twelve cells in *this* version |
+| **Adding/removing a labels layer emits none of** `dims.current_step`, `camera.zoom`, `camera.center`, `dims.ndisplay` | measured on a headless `ViewerModel`, so the loop was *not* self-inflicted through those four; the dedup is the guard that doesn't depend on knowing which emitter fired |
+| A guarded optional import silently skipped 8 tests because the class had been renamed | the guard now tolerates only `ImportError`; a suite that skips itself pins nothing |
+| *"Run would tile this comes up all the time… i've set the tiling to 4096 px. the image is not even 1000px"* | **section params were never flattened for the preview.** `blockSize` lives in the `imageTiling` include, so the form holds it nested; `SegmentationUtils` fell back to its own 512 and any region straddling x/y=512 showed a seam |
+| The same nesting hit three readers, none of which errored | `preview_params_for_run` (backend, also covers the chain path) + `previewParams` in TaskRunner (frontend). `normaliseToWhole` diverged the *compute* when set to false; `removeUnmatched` made the base-model warning always show its milder wording |
+| It kept previewing without the thunderbolt being pressed | `enabled`/`pinned` are session-only now — carve-out documented in docs/MODULES.md so it isn't "fixed" back |
+
+| The preview showed raw cellpose output — `_post_process` is only called from the run's frame loop, so `minCellSize`/`labelExpansion`/`labelErosion` changed nothing you could see | `post_process` (now public, two callers) applied to the previewed plane, **crop-aware** via `real_border`: clearing only at genuine image edges, clipped labels exempt from the size filter |
+| The cheap version of that (2 lines, no edge awareness) was costed and rejected | it would make `clearTouchingBorder` delete most cells when zoomed in and need a permanent "Edge cells may drop" warning to excuse it. ~45 extra lines to delete the caveat instead of surfacing it |
+
+**A silent default is the failure mode to design against here.** Every bug in the two live passes was
+the same shape: the preview sent params in a *slightly* different form than the run, and Python's
+`params.get(k, default)` filled the gap without complaint. `"CH3"` was the lucky one — it raised. The
+nested `blockSize` did not, and would have gone on being wrong indefinitely. Hence one entry point
+(`preview_params_for_run`) rather than a fix per param.
+
+## Verified facts worth not re-deriving (2026-07-31)
+
+Measured, not assumed. Each of these cost a real experiment:
+
+| Fact | Number / result |
+|---|---|
+| Fixed cost of a process that can segment | **17.7 s** (11.7 imports `cecelia.utils` + 5.7 `cellpose` + 0.2 model) |
+| Whole-image normalisation statistic, single-level 201×20×544×548 | **27.6 s** exact; **3.3 s** at a 20-frame budget |
+| Mask counts, exact vs strided statistic | **identical** at 50/20/10/5/2 frames (window moves ~3% at 20, ~35% at 2) |
+| Inference, warm | 0.35 s per 1024² plane; **~2 µs per canonical voxel** |
+| Cost scales with CELLS, not pixels | 16× fewer voxels (level 2 + scaled diameter) buys only **2.5×** — cellpose rescales to a canonical ~30 px diameter |
+| `batch_size` | no help: 88.4 s at 8, slightly **worse** at 16/32/64 |
+| Full z-stack preview, 40×1024² | **89 s** — why 3D previews are dropped |
+| Lazy full-shape dask array, one plane assigned | **6.9 MB** peak RAM for a nominally **4.8 GB** array |
+| Sparse zarr store, full shape | 908 B empty, 5 KB after one 512×512 region |
+| End-to-end in the live viewer | first preview ~10 s, then **0.14–0.38 s** per parameter change |
+| bioformats2raw with a `.ome.zarr.partial` output | **works** — exit 0, valid store; only our own `open_as_zarr` breaks on it |
+| Label-plane transfer, 590² uint32 / 676 cells (1.39 MB) | zlib-1 → **66 KB in 2.8 ms**; zlib-6 → 29 KB in 7.9 ms |
+| Realistic dense 2048² mask, 41 616 cells | **1.29 MB** on the wire — over the `websockets` 1 MiB default, hence the explicit `max_size` |
+| Full-extent lazy array: zeros+setitem vs `da.pad` | **8.4k tasks vs 93k** for `(201,21,544,548)` — and pad won't let us pick the chunking |
+| A 1.29 MB reply through `send` (HTTP.jl WS) → re-serialised → decoded in Python | **1.3 s**, 41 616 labels intact |
+
+**T and Z must be chunked to 1** in that lazy array (`block_transfer._PLANE_AXES`). A chunk is dask's
+atomic unit, so a chunk spanning T/Z would materialise the whole 4.8 GB volume to draw one plane — the
+lazy array's cheapness is a property of the chunking, not of `da.full`.
 
 ## Related
 

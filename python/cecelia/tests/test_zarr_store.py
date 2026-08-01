@@ -10,6 +10,7 @@ like) source and asserts an exact round-trip; the buggy pattern fails it (corrup
 
 Part of the Python (analysis-env) test suite — run with `pixi run test-py`.
 """
+import inspect
 import os
 import sys
 import shutil
@@ -509,6 +510,17 @@ class StagedStoreTest(unittest.TestCase):
     def test_promote_without_a_staging_store_raises(self):
         with self.assertRaises(FileNotFoundError):
             zu.promote_store(self.final + zu.STAGING_SUFFIX, self.final)
+
+    def test_every_staged_store_promotes(self):
+        """`staged_store` had a `scratch=True` mode that never promoted, for the task preview's
+        throwaway store. The preview now returns its mask block instead of writing anything, so the
+        mode is gone — and staging must not grow a second meaning again: everything staged here is on
+        its way to becoming real data."""
+        self.assertNotIn('scratch', inspect.signature(zu.staged_store).parameters)
+        with zu.staged_store(self.final) as staging:
+            _write_store(staging, 3)
+        self.assertTrue(os.path.isdir(self.final))
+        self.assertFalse(os.path.exists(staging))
 
 
 if __name__ == "__main__":

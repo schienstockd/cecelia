@@ -21,6 +21,7 @@ import ome_types
 
 import cecelia.utils.zarr_utils as zu
 import cecelia.utils.correction_utils as cu
+import cecelia.utils.intensity_utils as intensity_utils
 from cecelia.utils.dim_utils import DimUtils
 
 
@@ -85,93 +86,287 @@ class DriftStreamingEquivalenceTest(unittest.TestCase):
 
 
 class AfStreamingEquivalenceTest(unittest.TestCase):
-    def _run(self, du, af_combinations):
+    """Streamed (on-disk `out=`) AF output must equal the in-RAM reference byte for byte.
+
+    The four tests that used to live here exercised parameters that no longer exist — an inverse
+    channel, a rolling ball, a top hat, two denoisers, a gaussian — and one pinned the output sum
+    against a golden captured from the pre-streaming implementation. They were **deleted rather than
+    repaired**: a channel combination is now just channels, everything else is derived
+    (`af_division_stats`), and the golden described a method that was deliberately replaced. Pinning
+    the old numbers would have pinned the behaviour we set out to remove.
+
+    What survives is the property that still means something: streaming to disk must not change the
+    result. The method itself is pinned by `AfPreviewSeamTest` (the run and the preview agree) and by
+    `AfDerivedValuesTest` (the derivations are what they claim).
+    """
+
+    def _run(self, du, af_combinations, background_method='triangle'):
         rng = np.random.default_rng(1)
         base = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        # feed a dask array like production (as_dask=True): each channel slice computes to a fresh
-        # numpy array, so in-place denoise/rolling-ball/top-hat never aliases the input. Use an
-        # independent copy per call so the two runs can't influence each other.
-        def _src():
-            return da.from_array(base.copy(), chunks=base.shape)
 
-        class _Log:  # af_correct_image only calls logfile_utils.log
+        class _Log:
             def log(self, *_a, **_k):
                 pass
 
-        # AF now streams per frame in both cases; this pins that the on-disk (zarr) write matches the
-        # in-memory (numpy out=None) compute exactly.
         legacy = np.asarray(cu.af_correct_image(
-            _src(), af_combinations, dim_utils=du, logfile_utils=_Log(),
-            apply_gaussian=True, apply_gaussian_to_others=True, out=None))
+            base.copy(), af_combinations, dim_utils=du, logfile_utils=_Log(),
+            background_method=background_method, out=None))
 
         d = tempfile.mkdtemp()
         try:
-            out_shape = cu.af_correction_output_shape(base, du, af_combinations)
+            out_shape = cu.af_correction_output_shape(base, du)
             self.assertEqual(tuple(out_shape), tuple(legacy.shape))
             path = os.path.join(d, "af.ome.zarr")
             _, level0, _ = zu.open_multiscales_for_writing(
                 path, out_shape, base.dtype, du, nscales=1)   # writer forces native byte order
             cu.af_correct_image(
-                _src(), af_combinations, dim_utils=du, logfile_utils=_Log(),
-                apply_gaussian=True, apply_gaussian_to_others=True, out=level0)
+                base.copy(), af_combinations, dim_utils=du, logfile_utils=_Log(),
+                background_method=background_method, out=level0)
             streamed = zarr.open_group(path, mode="r")["0"][:]
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
         self.assertTrue(np.array_equal(legacy, streamed),
                         "streamed AF output differs from the in-RAM reference")
+        return legacy
 
-    def test_divide_plus_inverse_and_passthrough(self):
-        # ch0: AF-divide by ch1 with an inverse appended; ch1: gaussian-to-others (default)
+    def test_divide_and_passthrough(self):
+        # ch0 corrected against ch1; ch1 covered by no combination, so carried through UNCHANGED
         du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
-        combos = {"0": {"divisionChannels": [1], "correctionMode": "divide",
-                        "generateInverse": True, "channelPercentile": 80,
-                        "correctionPercentile": 40}}
-        self._run(du, combos)
+        out = self._run(du, {"0": {"divisionChannels": [1]}})
+        rng = np.random.default_rng(1)
+        base = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        c = du.dim_idx('C')
+        sl = tuple(slice(1, 2) if i == c else slice(None) for i in range(base.ndim))
+        self.assertTrue(np.array_equal(out[sl], base[sl]),
+                        "an uncorrected channel must be carried through untouched")
 
-    def test_matches_prerework_golden_within_tolerance(self):
-        # The per-frame rework computes its global-per-channel percentiles from streamed histograms
-        # instead of exact np.percentile, so the output differs from the pre-rework whole-channel
-        # path by the histogram bin resolution. Pin that it stays within ~2% of the golden captured
-        # from that implementation — guards the AF method against a real drift/regression.
-        du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=17, size_x=13)
-        base = np.random.default_rng(7).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        combos = {"0": {"divisionChannels": [1], "correctionMode": "divide", "generateInverse": True,
-                        "channelPercentile": 80, "correctionPercentile": 40,
-                        "correctionMin": 1, "correctionMax": 99}}
+    def test_output_has_the_same_channels_as_the_input(self):
+        # `generateInverse` used to widen the channel axis; nothing does now
+        du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
+        base = np.zeros(tuple(du.im_dim), dtype=np.uint16)
+        self.assertEqual(cu.af_correction_output_shape(base, du), tuple(base.shape))
+
+    def test_every_background_method_runs(self):
+        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
+        for m in intensity_utils.BACKGROUND_METHODS:
+            self._run(du, {"0": {"divisionChannels": [1]}}, background_method=m)
+
+    def test_an_unknown_background_method_is_refused(self):
+        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
+        with self.assertRaises(ValueError):
+            self._run(du, {"0": {"divisionChannels": [1]}}, background_method='nope')
+
+
+class SourceHandleAgnosticTest(unittest.TestCase):
+    """The streaming correction utils must not care whether they are handed a zarr or a dask array.
+
+    The four streaming runners (af / drift / cellpose_correct / measure_labels) used to open their
+    input with `as_dask=True` and then read every frame through `fortify(arr[slice])` anyway, so the
+    dask handle only added graph overhead. They now pass `as_dask=False`. Measured on a real store
+    (zolIMa/ldYr8J): `af_correct_image` **278.7 s → 30.1 s** (9.3×, because AF re-reads each slab
+    across three passes) and a per-timepoint `copy_stream` 4.07 s → 1.62 s (2.5×).
+
+    The runners have no tests of their own, so the guard lives here: identical bytes from either
+    handle. If that ever stops holding, the flip is not safe.
+    """
+
+    def _sources(self, arr):
+        """The same data as a zarr array and as a dask array — both independent copies, so an
+        in-place op in one path cannot influence the other."""
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        z = zarr.create_array(store=os.path.join(d, 'src.zarr'), shape=arr.shape,
+                              dtype=arr.dtype, chunks=arr.shape)
+        z[:] = arr
+        return z, da.from_array(arr.copy(), chunks=arr.shape)
+
+    def test_af_correct_image_is_identical_from_either_handle(self):
+        du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
+        rng = np.random.default_rng(3)
+        arr = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        combos = {"0": {"divisionChannels": [1]}}
 
         class _Log:
-            def log(self, *_a, **_k):
-                pass
+            def log(self, *_a, **_k): pass
 
-        res = np.asarray(cu.af_correct_image(
-            da.from_array(base, chunks=base.shape), combos, dim_utils=du, logfile_utils=_Log(),
-            apply_gaussian=True, apply_gaussian_to_others=True, out=None))
-        GOLDEN_SUM = 3245484   # pre-rework whole-channel af_correct_image, same synthetic input
-        self.assertLess(abs(int(res.sum()) - GOLDEN_SUM) / GOLDEN_SUM, 0.02,
-                        f"AF output drifted from the golden method (sum={int(res.sum())})")
+        z, dk = self._sources(arr)
+        out = [np.asarray(cu.af_correct_image(src, combos, dim_utils=du, logfile_utils=_Log(),
+                                              out=None))
+               for src in (z, dk)]
+        self.assertTrue(np.array_equal(*out), 'AF output depends on the source handle type')
 
-    def test_divide_with_rolling_ball_and_top_hat(self):
-        # exercises the per-frame rolling-ball / top-hat primitives (streaming == in-memory)
-        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=20, size_x=16)
-        combos = {"0": {"divisionChannels": [1], "correctionMode": "divide",
-                        "channelPercentile": 80, "correctionPercentile": 40,
-                        "rollingBallRadius": 2, "rollingBallPadding": 2, "topHatRadius": 2}}
-        self._run(du, combos)
+    def test_drift_correct_im_is_identical_from_either_handle(self):
+        du = _dim_utils(size_t=4, size_z=1, size_c=2, size_y=21, size_x=17)
+        rng = np.random.default_rng(4)
+        arr = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        z, dk = self._sources(arr)
+        # shifts are themselves read through the array, so derive them per handle too
+        out = [cu.drift_correct_im(src, du, 0,
+                                   shifts=cu.drift_correction_shifts(src, 0, du), out=None)
+               for src in (z, dk)]
+        self.assertTrue(np.array_equal(np.asarray(out[0]), np.asarray(out[1])),
+                        'drift output depends on the source handle type')
 
-    def test_denoise_only_channel_tv(self):
-        # 'tv' denoiser. Streaming vs in-RAM must match regardless of denoiser.
-        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
-        combos = {"0": {"divisionChannels": [], "denoiseFun": "tv", "tvWeight": 0.1}}
-        self._run(du, combos)
+    def test_copy_stream_is_identical_from_either_handle(self):
+        du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
+        rng = np.random.default_rng(5)
+        arr = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        z, dk = self._sources(arr)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        res = []
+        for i, src in enumerate((z, dk)):
+            dest = zarr.create_array(store=os.path.join(d, f'out{i}.zarr'), shape=arr.shape,
+                                     dtype=arr.dtype, chunks=zu.plane_chunks(arr.shape, du))
+            zu.copy_stream(dest, src, du)
+            res.append(dest[:])
+        self.assertTrue(np.array_equal(*res), 'copy_stream depends on the source handle type')
+        self.assertTrue(np.array_equal(res[0], arr))       # and it is a faithful copy
 
-    def test_denoise_only_channel_wavelet(self):
-        # 'wavelet' denoiser needs PyWavelets (pixi dep). Guards both the streaming/in-RAM
-        # equivalence AND that the wavelet path is importable (was an undeclared-dep crash).
-        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
-        combos = {"0": {"divisionChannels": [], "denoiseFun": "wavelet",
-                        "waveletMethod": "BayesShrink", "waveletMode": "soft"}}
-        self._run(du, combos)
+
+class AfPreviewSeamTest(unittest.TestCase):
+    """`af_division_stats` + `af_correct_frame` composed must BE the run.
+
+    The task preview corrects only the region on screen, which is possible because the global values
+    (both background levels and the output ceiling) are separable from the per-voxel work. That split
+    is the whole feature, and it is only worth anything if the two halves recombine into exactly what a
+    run produces — otherwise the preview shows a result the run won't reproduce, which is the one thing
+    it exists to avoid.
+    """
+
+    SHAPE = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)
+
+    def _data(self, du, seed=11):
+        return np.random.default_rng(seed).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+
+    def test_the_preview_sequence_reproduces_the_run(self):
+        du = _dim_utils(**self.SHAPE)
+        data = self._data(du)
+        c_axis, t_axis = du.dim_idx('C'), du.dim_idx('T')
+        for method in intensity_utils.BACKGROUND_METHODS:
+            run_out = np.zeros(data.shape, data.dtype)
+            cu._stream_division_channel(data, run_out, du, channel_idx=1, out_ch=1,
+                                        correction_channel_idx=[3], background_method=method)
+
+            # ── what the preview does: stats once, then the per-voxel part per region ──
+            stats = cu.af_division_stats(data, du, 1, [3], background_method=method)
+            for t in range(du.dim_val('T')):
+                corrected = cu.af_correct_frame(
+                    cu._af_slab(data, du, 1, t),
+                    cu._af_correction_slab(data, du, [3], t, 'maximum', 75),
+                    stats, data.dtype)
+                sl = [slice(None)] * data.ndim
+                sl[t_axis] = slice(t, t + 1)
+                sl[c_axis] = slice(1, 2)
+                self.assertTrue(np.array_equal(run_out[tuple(sl)], corrected),
+                                f'preview differs from the run: method={method} t={t}')
+
+    def test_a_region_is_corrected_exactly_as_its_slice_of_the_whole_frame(self):
+        """THE property the preview rests on: correcting a crop == cropping the correction.
+
+        True only because every global value is passed in rather than derived from what is visible.
+        Deriving them from the crop is the mistake this test exists to catch.
+        """
+        du = _dim_utils(**self.SHAPE)
+        data = self._data(du, seed=12)
+        stats = cu.af_division_stats(data, du, 1, [3])
+        y, x = du.dim_idx('Y'), du.dim_idx('X')
+        full = cu.af_correct_frame(cu._af_slab(data, du, 1, 0),
+                                   cu._af_correction_slab(data, du, [3], 0, 'maximum', 75),
+                                   stats, data.dtype)
+        box = [slice(None)] * data.ndim
+        box[y] = slice(8, 20)
+        box[x] = slice(5, 25)
+        crop = cu.af_correct_frame(cu._af_slab(data, du, 1, 0)[tuple(box)],
+                                   cu._af_correction_slab(data, du, [3], 0, 'maximum', 75)[tuple(box)],
+                                   stats, data.dtype)
+        self.assertTrue(np.array_equal(full[tuple(box)], crop),
+                        'a previewed region must equal that region of the full correction')
+
+    def test_reusing_stats_is_what_makes_them_reusable(self):
+        # the preview caches stats across parameter changes; passing them in must be equivalent to
+        # letting the writer compute its own
+        du = _dim_utils(**self.SHAPE)
+        data = self._data(du, seed=13)
+        a = np.zeros(data.shape, data.dtype)
+        b = np.zeros(data.shape, data.dtype)
+        cu._stream_division_channel(data, a, du, channel_idx=1, out_ch=1, correction_channel_idx=[3])
+        stats = cu.af_division_stats(data, du, 1, [3])
+        cu._stream_division_channel(data, b, du, channel_idx=1, out_ch=1, correction_channel_idx=[3],
+                                    stats=stats)
+        self.assertTrue(np.array_equal(a, b))
+
+
+class AfDerivedValuesTest(unittest.TestCase):
+    """The three values that used to be dialled in are now derived — pin what they are.
+
+    Replaces `channelPercentile`, `correctionPercentile`, `correctionMin` and `correctionMax`.
+    """
+
+    SHAPE = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)
+
+    def test_none_means_no_background_subtraction(self):
+        du = _dim_utils(**self.SHAPE)
+        data = np.random.default_rng(1).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        s = cu.af_division_stats(data, du, 1, [3], background_method='none')
+        self.assertEqual(s.val1, 0.0)
+        self.assertEqual(s.val2, 0.0)
+
+    def test_the_ceiling_never_collapses_into_the_background(self):
+        # the trap on `robust_hist_max`: the background bin dominates, so an over-large count would
+        # return a ceiling inside it and make the rescale degenerate
+        du = _dim_utils(**self.SHAPE)
+        data = np.zeros(tuple(du.im_dim), dtype=np.uint16)   # every voxel identical
+        s = cu.af_division_stats(data, du, 1, [3], ceiling_min_count=10 ** 9)
+        self.assertGreater(s.c_max, 0.0)
+        self.assertGreaterEqual(s.c_max, s.nbins * cu.AF_CEILING_FLOOR_FRAC)
+
+    def test_a_lone_hot_voxel_does_not_set_the_ceiling(self):
+        """The measured failure: on a real 181-frame movie the top six occupied ratio bins held ONE
+        voxel each, so one voxel in 5.88 billion set the output scale."""
+        du = _dim_utils(**self.SHAPE)
+        data = np.zeros(tuple(du.im_dim), dtype=np.uint16)
+        c = du.dim_idx('C')
+        # a broad dim signal in the target channel, no AF anywhere -> ratio ~= signal
+        sl = [slice(None)] * data.ndim
+        sl[c] = slice(1, 2)
+        data[tuple(sl)] = 40
+        clean = cu.af_division_stats(data, du, 1, [3], background_method='none',
+                                     ceiling_min_count=100)
+        # now plant ONE hot voxel, orders of magnitude brighter
+        hot = [0] * data.ndim
+        hot[c] = 1
+        data[tuple(hot)] = 65535
+        with_hot = cu.af_division_stats(data, du, 1, [3], background_method='none',
+                                        ceiling_min_count=100)
+        self.assertEqual(clean.c_max, with_hot.c_max,
+                         'one hot voxel moved the derived ceiling')
+        # ...whereas the true max would have been dragged all the way up
+        self.assertGreater(cu.af_division_stats(data, du, 1, [3], background_method='none',
+                                                ceiling_min_count=1).c_max,
+                           with_hot.c_max)
+
+    def test_a_spatial_stride_gives_the_same_ceiling(self):
+        # what makes the cheap pass honest: measured identical under z::2 / xy::4 / both on real data
+        du = _dim_utils(**self.SHAPE)
+        data = np.random.default_rng(2).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        full = cu.af_division_stats(data, du, 1, [3])
+        strided = cu.af_division_stats(data, du, 1, [3], spatial_stride=(1, 2))
+        self.assertAlmostEqual(full.c_max, strided.c_max, delta=full.nbins * 0.1)
+
+    def test_output_stats_report_both_failure_directions(self):
+        du = _dim_utils(**self.SHAPE)
+        data = np.random.default_rng(3).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        stats = cu.af_division_stats(data, du, 1, [3])
+        out = np.zeros(data.shape, data.dtype)
+        s = cu._stream_division_channel(data, out, du, channel_idx=1, out_ch=1,
+                                        correction_channel_idx=[3], stats=stats)
+        for k in ('clippedFrac', 'levelsUsed', 'levelsAvailable', 'trueMax', 'p999'):
+            self.assertIn(k, s)
+        self.assertGreaterEqual(s['clippedFrac'], 0.0)
+        self.assertLessEqual(s['levelsUsed'], s['levelsAvailable'])
+
 
 
 class PyramidRefactorTest(unittest.TestCase):

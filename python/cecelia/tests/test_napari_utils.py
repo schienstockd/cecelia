@@ -480,3 +480,88 @@ class TestAxisAlignedClipPlanes(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PreviewRegionFromCornersTest(unittest.TestCase):
+    """`preview_region_from_corners` — a viewer's visible box → the preview region, in level-0 pixels.
+
+    Both conversions it performs are invisible in the output if wrong: a missed level scaling
+    previews the image's top-left corner instead of what you are looking at, and a missed
+    inclusive→half-open conversion silently drops the last row and column. Hence real numbers here.
+    """
+
+    AXES = ['t', 'z', 'y', 'x']
+
+    def test_level_0_passes_through_with_half_open_bounds(self):
+        # inclusive [100, 611] at factor 1 → half-open [100, 612]
+        r = napari_utils.preview_region_from_corners(
+            [[3, 8, 100, 200], [3, 8, 611, 711]], [1, 1, 1, 1], self.AXES,
+            current_step=[3, 8, 0, 0])
+        self.assertEqual(r['xy'], {'Y': [100, 612], 'X': [200, 712]})
+        self.assertEqual((r['t'], r['z'], r['ndisplay']), (3, 8, 2))
+
+    def test_coarser_level_is_scaled_up_to_level_0(self):
+        # viewer showing level 2 (4x): visible 0..255 at that level IS 0..1024 at level 0
+        r = napari_utils.preview_region_from_corners(
+            [[0, 5, 0, 0], [0, 5, 255, 255]], [1, 1, 4, 4], self.AXES,
+            current_step=[0, 5, 0, 0])
+        self.assertEqual(r['xy'], {'Y': [0, 1024], 'X': [0, 1024]})
+        self.assertEqual(r['z'], 5, 'a non-spatial axis must not be scaled by an XY factor')
+
+    def test_plane_comes_from_the_SLIDER_not_the_corners(self):
+        """REGRESSION. napari leaves corner_pixels at [0, 0] for a dimension it is not displaying, so
+        reading z/t off the corners previews index 0 — which on a drift-corrected stack is padding, and
+        looked exactly like a broken segmentation on a live viewer sitting at t=44, z=9."""
+        r = napari_utils.preview_region_from_corners(
+            [[0, 0, 0, 0], [0, 0, 589, 590]], [1, 1, 1, 1], self.AXES,
+            current_step=[44, 9, 275, 263])
+        self.assertEqual((r['t'], r['z']), (44, 9), 'z/t must track the slider')
+        self.assertEqual(r['xy'], {'Y': [0, 590], 'X': [0, 591]}, 'XY still comes from the corners')
+
+    def test_step_shorter_than_axes_raises_rather_than_misaligning(self):
+        with self.assertRaises(ValueError):
+            napari_utils.preview_region_from_corners(
+                [[0, 0, 0, 0], [0, 0, 9, 9]], [1, 1, 1, 1], self.AXES, current_step=[9, 9])
+
+    def test_2d_image_has_no_z_or_t(self):
+        r = napari_utils.preview_region_from_corners([[0, 0], [99, 99]], [1, 1], ['y', 'x'],
+                                                     current_step=[0, 0])
+        self.assertEqual(r['xy'], {'Y': [0, 100], 'X': [0, 100]})
+        self.assertIsNone(r['z'])
+        self.assertIsNone(r['t'])
+
+    def test_negative_corners_are_clamped(self):
+        # a zoomed-out viewer can report a box starting outside the image
+        r = napari_utils.preview_region_from_corners([[0, -3, -5], [0, 99, 99]], [1, 1, 1],
+                                                     ['z', 'y', 'x'], current_step=[0, 0, 0])
+        self.assertEqual(r['xy']['Y'][0], 0)
+        self.assertEqual(r['xy']['X'][0], 0)
+
+    def test_ndisplay_is_carried_through(self):
+        r = napari_utils.preview_region_from_corners(
+            [[0, 0, 0, 0], [0, 0, 9, 9]], [1, 1, 1, 1], self.AXES, ndisplay=3,
+            current_step=[0, 0, 0, 0])
+        self.assertEqual(r['ndisplay'], 3)
+
+    def test_mismatched_axes_raise_rather_than_guess(self):
+        with self.assertRaises(ValueError):
+            napari_utils.preview_region_from_corners([[0, 0], [9, 9]], [1, 1], self.AXES)
+        with self.assertRaises(ValueError):
+            napari_utils.preview_region_from_corners([0, 0, 9, 9], [1, 1, 1, 1], self.AXES)
+
+    def test_matches_a_real_napari_multiscale_layer(self):
+        # NOTE: this asserts only that napari exposes these attributes together. It deliberately does
+        # NOT check z/t — a freshly built layer sits at step 0, so corner_pixels and the slider agree
+        # by coincidence, which is exactly how the corner-derived-plane bug survived review.
+        from napari.layers import Image
+        pyr = [np.zeros((40, 1024, 1024), np.uint16), np.zeros((40, 512, 512), np.uint16),
+               np.zeros((40, 256, 256), np.uint16)]
+        layer = Image(pyr, multiscale=True)
+        factors = np.asarray(layer.downsample_factors)[layer.data_level]
+        r = napari_utils.preview_region_from_corners(
+            layer.corner_pixels, factors, ['z', 'y', 'x'], ndisplay=2)
+        self.assertIn('Y', r['xy'])
+        self.assertIn('X', r['xy'])
+        # whatever level napari picked, the region is expressed in level-0 pixels
+        self.assertLessEqual(r['xy']['Y'][1], 1024)
+        self.assertLessEqual(r['xy']['X'][1], 1024)

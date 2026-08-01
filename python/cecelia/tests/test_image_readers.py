@@ -6,7 +6,8 @@ they were consolidated here so images are opened and their geometry read ONE way
 the analysis pipeline and coastal. This is their first unit coverage — it pins:
   - series_base: structural bioformats2raw-series-wrapper detection (nested `0/` vs flat root),
   - read_axes / read_scale: NGFF axes + coordinateTransformations, with the OME-XML scale fallback,
-  - open_as_zarr: a read-only multiscale open on both layouts,
+  - open_as_zarr: a read-only multiscale open on both layouts, incl. a staged store, and a loud
+    refusal of anything that isn't a store,
   - ox.load_ome_xml + read_pixel_unit / read_scale_from_ome_xml / read_time_increment.
 
 Part of the Python (analysis-env) suite — run with `pixi run test-py`.
@@ -123,6 +124,46 @@ class NgffGeometryTest(unittest.TestCase):
             data, _ = zu.open_as_zarr(p, as_dask=True)
             self.assertEqual(len(data), 1)
             self.assertEqual(tuple(data[0].shape), SHAPE)
+
+    def test_open_as_zarr_opens_a_staged_store(self):
+        """A store is still a store while it is staged.
+
+        `staged_store` writes to `<store>.ome.zarr.partial`, so extension dispatch saw `.partial`,
+        fell through to `tifffile.imread` and raised IsADirectoryError. The preview worker and the
+        store sweep both read stores that have not been promoted yet.
+        """
+        for maker, name in ((_make_flat_store, "flat"), (_make_nested_store, "nested")):
+            p = maker(os.path.join(self.d, f"{name}.ome.zarr" + zu.STAGING_SUFFIX))
+            data, _ = zu.open_as_zarr(p, as_dask=True)
+            self.assertEqual(tuple(data[0].shape), SHAPE)
+
+    def test_open_as_zarr_refuses_a_non_store_loudly(self):
+        """Stores only, and it says so.
+
+        `open_as_zarr` used to fall through to `tifffile.imread(..., aszarr=True)` for a non-store.
+        That branch is gone: every pixel read in the app happens after bioformats2raw has converted
+        the source, so nothing fed it a TIFF — and it had in fact been raising for every input
+        (tifffile refuses to build its zarr bridge against the pinned zarr 3.x), which is the evidence
+        that it had no callers. A clear error beats a reader that looks supported and isn't.
+        """
+        p = os.path.join(self.d, "plain.tiff")
+        tifffile.imwrite(p, np.zeros((8, 8), dtype=np.uint16))
+        for path in (p, os.path.join(self.d, "does-not-exist.ome.zarr")):
+            with self.assertRaises(ValueError) as cm:
+                zu.open_as_zarr(path)
+            self.assertIn("not a zarr store", str(cm.exception))
+        self.assertFalse(hasattr(zu, "open_image_as_zarr"))
+
+    def test_tiff_metadata_reading_is_unaffected(self):
+        """Only PIXEL reading was dropped. Import still reads calibration off the source TIFF
+        (`read_imagej_physical_size_run.py` → `read_imagej_metadata`)."""
+        p = os.path.join(self.d, "ij.tiff")
+        tifffile.imwrite(p, np.zeros((2, 8, 8), dtype=np.uint16),
+                         imagej=True, resolution=(2.0, 2.0),
+                         metadata={"spacing": 3.0, "unit": "um"})
+        meta = ox.read_imagej_metadata(p)          # raw ImageJ tags; the runner derives the Z spacing
+        self.assertAlmostEqual(float(meta["spacing"]), 3.0)
+        self.assertEqual(meta["unit"], "um")
 
 
 class OmeXmlReaderTest(unittest.TestCase):

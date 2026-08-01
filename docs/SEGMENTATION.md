@@ -102,8 +102,28 @@ data.
 
 Cancellation is a SIGKILL, so nothing cleans up: the `.partial` directory survives. That is the
 intended trade (the alternative is deleting the user's data to tidy up) and it is invisible — nothing
-in `ccid.json` names it. Settings → Data patches → **Remove leftover staging stores** is the broom
-(`cecelia.utils.store_sweep`).
+in `ccid.json` names it. Settings → Data patches → **Remove leftover stores** is the broom
+(`cecelia.utils.store_sweep`), and Settings → Storage reports the bytes on Scan so it announces itself
+rather than waiting to be found.
+
+**The sweep detects structurally, not by name**, because a name list only ever covers the writers
+someone remembered. `*.partial`/`*.superseded` catches everything that opted into `staged_store` — AF,
+drift, cellpose-correct, crop, rescale. **Import does not opt in**: on the 16-bit path
+`bf2raw_out == zarr_out`, so bioformats2raw writes straight to the FINAL name and a cancel leaves a
+half-written store called `ccidImage.ome.zarr` — which a name-based sweep actively *skipped* as a real
+store — plus `ccidImage.16bit.tmp.ome.zarr` and `_stage_src` (a full local copy of the source, often
+the biggest of the three). So on top of the name fast path:
+
+| `why` | Test |
+|---|---|
+| `unregistered` | a store in a store location no `ccid.json` entry names (a cancelled import is unregistered *by construction* — registration is the last thing a successful run does) |
+| `incomplete` | `.zattrs` declares levels 0..N, fewer exist on disk — catches a truncated store even at a registered path (the `KeyError: '1'` case) |
+| `scratch` | import scratch (`_stage_src`) — neither a store nor suffixed |
+
+Two guard rails, because a sweep that deletes the wrong directory is worse than the disk it reclaims:
+the orphan check is scoped to **store locations only** (`0/`, `labels/`, `branchLabels/` — `data/`,
+`qc/`, `gating/` and `labelProps/` are legitimately unregistered and deleting them would take the
+user's analysis), and an unreadable `ccid.json` reports **nothing** rather than everything.
 
 ---
 
@@ -333,6 +353,110 @@ at a time: adding the finished set evicts its own preview, and vice versa (`_LAB
 `layer.data` from a fresh view in place — throttled to one read per 2 s, since cellpose emits a tick per
 XY tile. The toggle is deliberately **not** persisted: it describes a store that exists only while one
 task runs, so restoring it later would produce a dead toggle for a layer the bridge can only skip.
+
+### Previewing params BEFORE a run (the task preview)
+
+A different thing from the section above, and the two are easy to confuse. *That* preview watches a run
+that is already going. **This one runs no task at all**: it executes the segmentation's own compute over
+the one region napari is showing, so params can be judged in under a second instead of by waiting out a
+full run and looking at the result. Full design + every measured number:
+[`docs/todo/TASK_PREVIEW_PLAN.md`](todo/TASK_PREVIEW_PLAN.md).
+
+| | Live preview (above) | Task preview (here) |
+|---|---|---|
+| What it shows | a run in progress | what a run *would* produce |
+| Runs when | a task is running | on demand, no task submitted |
+| Layer | `({vn}) Labels (live)` | `({vn}) Preview` |
+| Backed by | the run's staging store | nothing — an in-memory block |
+| Scope | whole image, as it fills | ONE z-plane of the visible region |
+
+**Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
+napari bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
+segmentation would not be a preview). Resident because a process that can segment costs **17.7 s** of
+imports before it can answer: fatal per preview, irrelevant once. It calls `CellposeUtils.predict_slice`
+— the same method the full run uses — so a preview cannot drift from the thing it previews.
+
+**Nothing is written to disk.** The worker returns the mask block (`cecelia.utils.block_transfer`) and
+the bridge builds a full-label-extent lazy array with that block placed in it, so the layer aligns with
+the image by shape alone with no `translate`. An earlier design wrote a never-promoted scratch store;
+it needed its own staging lifecycle and left debris the sweep's active-window heuristic then refused to
+collect. A preview is a picture, not data.
+
+**The params are prepared exactly as a RUN prepares them — `preview_params_for_run` is the one entry
+point.** Two steps, and each has been a live bug:
+
+1. **`section` sub-params are lifted flat** (`_flatten_sections`, what `run_task` does). A section is a
+   UI grouping, so the form holds its params nested and every `_run_task` reads them flat.
+2. **Then the task translates its own params** (`preview_params`) — cellpose resolves channel NAMES to
+   0-based indices and a custom model name to a checkpoint path.
+
+Sharing `predict_slice` does NOT make the params shared. Skipping (2) produced `ValueError: invalid
+literal for int() with base 10: 'CH3'`. Skipping (1) produced nothing at all, which is worse: Python's
+`params.get(k, default)` filled every gap silently, so `blockSize` fell back to 512 and the preview
+reported a tile seam on a run configured for 4096, while `normaliseToWhole=false` was ignored and the
+preview normalised differently from the run. **Design against the silent default** — one entry point,
+not a fix per param. The frontend flattens too (`TaskRunner.previewParams`), because its own warnings
+read the same params; the backend still flattens because the chain path persists them nested.
+
+**Opt-in per task**, the `live_outputs` shape: `task_previewable(::CciaTask) = false` is the base, a task
+overloads it beside its struct, and there is a `CompositeTask` overload because the module page runs
+`segment.cellposeMeasure`. `GET /api/tasks/definitions` stamps it onto each spec as `previewable`.
+
+**What it does NOT tell you** — all three surfaced in the UI rather than left to be discovered:
+- **One z-plane.** A visible z-stack costs ~89 s with no shortcut (cellpose rescales to a canonical
+  diameter, so cost tracks CELLS, not pixels — a coarser pyramid level buys only 2.5× for 16× fewer
+  voxels). In 3D display mode it previews the current plane and says so: *"2D preview only — diameter,
+  boundaries and splitting match the run; counts and z-extents will not (no z-stitching)"*.
+- **Base model only.** The nucleus pass and `_match_nuc_cyto` don't run. With `removeUnmatched` the
+  matching *deletes* base labels that found no nucleus, so the run finds **fewer** cells than the
+  preview shows — the warning says which case you're in. Not run because `_compute_iou_matrix` is
+  quadratic: 1.8 s at 100×100 labels, **26.9 s at 400×400**, against a 0.14–0.38 s preview (see
+  `docs/TODO.md` #00093 — the real pipeline pays this per timepoint too).
+- **Not tiled like the run.** `SegmentationUtils` tiles at `blockSize` and re-stitches labels split
+  across each seam; the preview segments the visible region as ONE tile. Where a seam would cross the
+  region the run's mask is two inferences plus an IoU re-join and the preview's is one, so counts and
+  boundaries near it differ — flagged as *"Run would tile this"*. The test is positional
+  (`_run_tile_seams`): the grid is anchored at the image origin, so a 600 px region inside one 1024 px
+  tile has no seam while a 300 px one straddling y=512 does.
+- **"0 cells" is qualified.** A drift-padded plane returns 0 and otherwise looks exactly like too large
+  a diameter, so the worker checks `zarr_utils.read_valid_box` and reports `hasSignal`/`noSignalWhy` →
+  *"No image data here"* (padding) or *"Region is blank"*.
+
+**The label modifications DO run** — `post_process` (erosion, expansion, the size filter, border
+clearing) is applied to the previewed plane, so tuning `minCellSize` or `labelExpansion` changes what
+you see. It is the run's own method, called with `la_t=None, T=1` (the whole-array branch the run uses
+per frame), and the count is taken *after* it so the readout matches the mask.
+
+It is **crop-aware**, which is the part that needed designing rather than plumbing. Two steps read the
+array edge as the image edge, and on a visible region it usually isn't — both errors showing fewer
+cells than the run produces: `clearTouchingBorder` would clear every cell at the crop edge (worse the
+more you zoom in), and the size filter would judge a cell on its *clipped* pixel count. The worker
+passes `real_border` (derived from the region bounds vs the axis lengths), so clearing happens only at
+genuine image edges and clipped labels are exempt from the size filter. `real_border=None` — what the
+run passes — is exactly the old behaviour, pinned by tests on both sides. Residuals: `labelExpansion`
+stays approximate at a crop edge (fixing it needs a halo, which would change what the preview reads for
+an edge-only cosmetic difference), and `clearDepth` needs a stack so a one-plane preview can never
+apply it — covered by the 2D warning.
+
+**It never guesses which image it is looking at.** `GET /api/preview/status` exposes the open image, and
+`/api/preview/run` *checks* the caller's `imageUid` rather than using it to select — mismatches are 409s.
+The region and the pixels come from the same store by construction, because a drift-corrected store is
+padded larger than its source and pairing one's region with the other's pixels would silently preview
+the wrong area.
+
+A **mismatch refusal is amber, not muted text**: `version-mismatch` and `image-mismatch` are the two
+states that look exactly like a working preview of the wrong pixels, so they go through the severity
+model (`frontend/src/utils/taskPreview.ts` → `previewNotice`) alongside the four warnings above. The
+backend owns the explanation — it knows which version is open and which the task reads, so its message
+is the tooltip detail and the frontend supplies only the short label, keyed on `code`. What stays quiet
+is setup the user can already see: no image open, no model chosen. Amber for those too would just teach
+people to ignore amber.
+
+**Two things the preview must never do: keep previewing forever, and look busy forever.** The re-preview
+trigger is deduped at its source (`docs/NAPARI.md` → `viewChanged`), the pin drops the queue the moment
+it is set (`dropPending`, not `cancel` — the run in flight is the freshest and its mask is the one on
+screen), and `/api/preview/run` is deadlined at `PREVIEW_RUN_TIMEOUT_MS` so a wedged worker or viewer
+surfaces as *"Preview timed out"* instead of a permanent "Previewing…".
 
 ---
 

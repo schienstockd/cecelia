@@ -347,6 +347,8 @@ cecelia-feijoa/
                 analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
                 to app/. This is what an external consumer (coastal) `pip install`s.
   napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
+  preview/      Task-preview worker (preview_worker.py, :7656) — resident process that runs a task's
+                real compute over the visible region. Runtime process, like napari/ and mcp/.
   mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
   pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
   docs/         Extended architecture and design reference
@@ -362,6 +364,7 @@ each task's co-located Python runner; `python/` is the **installable IO library*
 | `frontend/` | Vue/TS | The browser UI. |
 | `python/` | Python | The installable **`cecelia`** IO library — **no task runners**: `python/cecelia/utils/*` (zarr/OME/dim/label-props/tracking/… helpers) + `python/cecelia/writers/*` (h5ad write-side). `python/pyproject.toml` ships only `cecelia` + `cecelia.utils`. This is what coastal `pip install`s. |
 | `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
+| `preview/` | Python | The task-preview worker (`:7656`): runs a task's own compute over one visible region so params can be judged before a full run. Resident (17.7 s of imports), un-pooled, returns the mask block rather than writing a store. Imports `cecelia`; not part of it. |
 | `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
 
 > **⚠️ Structural shifts.** (2026-07) The Python helpers moved `app/py/` → top-level `python/cecelia/`
@@ -404,6 +407,8 @@ Miss one and it precompiles fine everywhere else but dies in that one env — wh
 - `8080` — Julia WS/HTTP server
 - `5173` — Vite dev (proxies `/ws` → `8080`)
 - `7655` — Napari bridge WS
+- `7656` — Task-preview worker WS (`preview/preview_worker.py`)
+- `7660` — Pluto notebooks server
 
 ### Module pattern
 Every task = **co-located files, same base name**:

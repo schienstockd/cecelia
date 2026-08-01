@@ -29,6 +29,18 @@ const _current_task_dir  = Ref{Union{String,Nothing}}(nothing)
 # which image uid is currently shown — stamped into screenshot provenance (zoom-to-source)
 const _current_image_uid = Ref{Union{String,Nothing}}(nothing)
 
+"""
+    current_napari_image() -> (; imageUid, zarrPath, taskDir)
+
+What the viewer has open, for out-of-band callers (the task preview). These refs were tracked but
+never exposed, so anything acting on "the image on screen" had to be TOLD which one that was — and a
+caller that guesses wrong acts on an image the user isn't looking at. Read-only; `nothing` in each
+field until an image is opened.
+"""
+current_napari_image() = (; imageUid = _current_image_uid[],
+                            zarrPath = _current_zarr_path[],
+                            taskDir  = _current_task_dir[])
+
 # Serialise all interaction with the single bridge process. Under `-t auto` two concurrent napari
 # requests would otherwise interleave command sequences on the one bridge (e.g. a screenshot mid-open,
 # or two opens racing the `_current_*` refs → a stale auto-save target). Hold this around each
@@ -1410,6 +1422,15 @@ end
 function api_napari_event(body_bytes::Vector{UInt8})
     data        = JSON3.read(String(body_bytes))
     evt         = String(get(data, :type, "cellSelection"))
+
+    # The viewer moved (pan/zoom/slider/2D-3D). Relayed to the frontend, which re-previews the region
+    # now on screen. Handled BEFORE the image resolution below because it carries no image — the
+    # viewer is reporting about itself, and requiring a projectUid it doesn't have would 404 it.
+    if evt == "viewChanged"
+        broadcast_ws(Dict{String,Any}("type" => "napari:view-changed"))
+        return 200, JSON3.write((; ok = true))
+    end
+
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     pop_type    = String(get(data, :popType, "flow"))

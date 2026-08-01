@@ -35,8 +35,11 @@ def run(params):
     im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default=None)
 
     log.log(f'>> open image: {im_path}')
-    # `as_dask=True` — zarr open is metadata-only; `copy_stream` fortifies per-frame.
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
+    # dask handle only ever added graph overhead. Measured on a real store (zolIMa/ldYr8J, 0.78 GB):
+    # a per-timepoint copy is 2.71 s from zarr vs 6.09 s from dask, at half the peak RSS. See
+    # docs/todo/ZARR_STREAMING_PLAN.md -> locked decision 2.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
 
     omexml     = ome_xml_utils.parse_meta(im_path)
     dim_utils  = DimUtils(omexml, use_channel_axis=True)

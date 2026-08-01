@@ -10,6 +10,68 @@ import numpy as np
 import cecelia.utils.intensity_utils as iu
 
 
+class RobustMaxWindowTest(unittest.TestCase):
+    """One hot pixel must not set the 8-bit window.
+
+    This is the live default path: `rescaleFixedMax` is 0 (off) unless someone sets it, so every
+    16→8-bit import lands on `range_from_hist(h, 0, 100)`. With the literal true max, a single
+    saturated voxel pins the top of the window and the real signal collapses into a fraction of the
+    output range — permanently, since the conversion is one-way. Measured independently twice: #440
+    ("the real signal used only ~15% of the range") and the AF work (top six ratio bins held one voxel
+    each, in 5.88 G voxels).
+
+    Only production call site: `channel_ranges` → `rescale_to_8bit_run.py`.
+    """
+
+    @staticmethod
+    def _hist(nbins=65536):
+        """A realistic dim channel: a broad low peak, plus ONE saturated voxel."""
+        h = np.zeros(nbins, np.int64)
+        h[0:200] = 5000          # background
+        h[200:900] = 400         # signal, up to raw 900
+        h[65535] = 1             # a single hot pixel
+        return h
+
+    def test_a_lone_hot_pixel_does_not_set_the_window(self):
+        h = self._hist()
+        _, vmax = iu.range_from_hist(h, 0.0, 100.0)
+        self.assertLess(vmax, 1000.0, 'the window was pinned by the hot pixel')
+        self.assertGreaterEqual(vmax, 800.0, 'real signal must not be clipped away')
+
+    def test_the_literal_true_max_is_still_available(self):
+        h = self._hist()
+        _, vmax = iu.range_from_hist(h, 0.0, 100.0, robust=False)
+        self.assertEqual(vmax, 65535.0)
+
+    def test_a_small_histogram_falls_back_to_the_true_max(self):
+        # the floor: too few voxels for a tail to mean anything, so behave exactly as before. This is
+        # what keeps the golden values below valid rather than needing a re-bless.
+        h = np.zeros(256, np.int64)
+        h[5] = 1
+        h[200] = 1
+        self.assertEqual(iu.range_from_hist(h, 0.0, 100.0), (5.0, 200.0))
+
+    def test_an_explicit_percentile_is_untouched(self):
+        h = self._hist()
+        self.assertEqual(iu.range_from_hist(h, 0.0, 50.0)[1], iu.hist_percentile(h, 50))
+
+    def test_min_count_can_be_given_directly(self):
+        h = np.zeros(1024, np.int64)
+        h[10] = 1_000
+        h[500] = 50
+        h[900] = 5
+        self.assertEqual(iu.robust_hist_max(h, min_count=1), 900)
+        self.assertEqual(iu.robust_hist_max(h, min_count=10), 500)
+        self.assertEqual(iu.robust_hist_max(h, min_count=100), 10)
+
+    def test_the_fixed_window_still_bypasses_all_of_this(self):
+        # #440's option is untouched: it buys comparability between channels and images, which no
+        # per-image estimate can give. The robust max fixes the DEFAULT, not the fixed path.
+        h = self._hist()
+        self.assertEqual(iu.channel_ranges([h, h], fixed=(20, 60000)),
+                         [(20.0, 60000.0), (20.0, 60000.0)])
+
+
 class TestIntensityUtils(unittest.TestCase):
     def setUp(self):
         # C=2, Y=2, X=3 — channel axis 0

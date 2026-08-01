@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { napariState, notebooksState, stateInfo, formatUptime } from './serviceStatus'
+import { napariState, notebooksState, previewState, stateInfo, formatUptime } from './serviceStatus'
 
 describe('napariState', () => {
   it('maps the /api/napari/status payload', () => {
@@ -46,5 +46,17 @@ describe('stateInfo', () => {
     expect(stateInfo('running')).toEqual({ label: 'Running', tone: 'ok' })
     expect(stateInfo('starting')).toEqual({ label: 'Starting…', tone: 'warn' })
     expect(stateInfo('stopped')).toEqual({ label: 'Stopped', tone: 'idle' })
+  })
+})
+
+describe('previewState', () => {
+  it('reduces the preview worker the same way as napari — same payload shape', () => {
+    // Deliberately an alias, not a copy: /api/preview/status returns {alive,starting} like napari's.
+    // Asserted so a future divergence in either payload is caught here rather than showing a wrong pill.
+    expect(previewState({ alive: true, starting: false })).toBe('running')
+    expect(previewState({ alive: false, starting: true })).toBe('starting')
+    expect(previewState({ alive: false, starting: false })).toBe('stopped')
+    expect(previewState(null)).toBe('stopped')      // backend unreachable → stopped, never "running"
+    expect(previewState(undefined)).toBe('stopped')
   })
 })

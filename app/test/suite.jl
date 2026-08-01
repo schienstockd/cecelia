@@ -7,6 +7,7 @@
 # compilation, for ~11s of actual test work. Behind an include it is ~194 small statements instead.
 # Keep it that way: do not re-wrap this file in a `begin` block or a single outer @testset.
 
+
 # ── Config ────────────────────────────────────────────────────────────────
 @testset "Config" begin
     @test !isempty(projects_dir())
@@ -1620,6 +1621,74 @@ end
     @test haskey(Cecelia.QC_TEXT, "branching.uncalibrated")
     @test Cecelia._branching_qc_findings(0)[1]["short"] == "No branches found"
     @test isempty(Cecelia._branching_qc_findings(5))
+end
+
+@testset "AF correction QC — the exemption that got retired" begin
+    # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase:
+    # over-subtraction HAS an objective signal (the clipped fraction) but nothing reported it. Now
+    # that the output ceiling is derived rather than typed in, that signal is what says whether the
+    # derivation landed — so the exemption is gone and this is its replacement.
+    ok = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.0001, "levelsUsed" => 200, "levelsAvailable" => 256))
+    @test isempty(Cecelia.af_qc_findings(ok)[1])
+
+    # Two ways it goes wrong, in OPPOSITE directions — a single-sided check would miss half of them.
+    clipped = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.05, "levelsUsed" => 200, "levelsAvailable" => 256))
+    f, w = Cecelia.af_qc_findings(clipped)
+    @test length(f) == 1 && f[1]["code"] == "af-clipped" && f[1]["level"] == "warn"
+    @test w.clipped == 0.05
+
+    # ceiling too HIGH: the data crams into a few levels. Measured on real data under the percentile
+    # window this replaced — 99% of an image in ~13 of 255 levels, which nothing ever flagged.
+    low = Dict{String,Any}("2" => Dict{String,Any}(
+        "clippedFrac" => 0.0, "levelsUsed" => 13, "levelsAvailable" => 256))
+    f2, w2 = Cecelia.af_qc_findings(low)
+    @test length(f2) == 1 && f2[1]["code"] == "af-low-range"
+    @test occursin("13 of 256", f2[1]["detail"])
+    @test w2.levels < 0.06
+
+    # advisory only, per docs/MODULES.md — never an error, never a gate
+    for d in (clipped, low)
+        @test all(x -> x["level"] == "warn", Cecelia.af_qc_findings(d)[1])
+    end
+
+    # worst-case rollup across channels, since QC banks one number per image
+    both = merge(clipped, low)
+    _, w3 = Cecelia.af_qc_findings(both)
+    @test w3.clipped == 0.05          # worst = most clipped
+    @test w3.levels < 0.06            # worst = least range used
+
+    # Cohort-comparable BECAUSE the ceiling is derived per image: an image that clipped far more than
+    # its peers is a staining/acquisition outlier. Not checkable while the window was hand-tuned.
+    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["clippedFrac", "levelsUsedFrac"]
+    # ...and the keys must be the ones _run_task actually banks, or the cohort route reads nothing
+    @test Set(COHORT_METRICS["cleanupImages.afCorrect"]) ⊆ Set(["clippedFrac", "levelsUsedFrac"])
+end
+
+@testset "AF params are just channels" begin
+    # The spec grew into a bag of ~20 numbers while fitting individual datasets and was never
+    # revisited. A combination is now the two things it is actually about; everything else is derived
+    # (`af_division_stats`) or was a filter that belongs to a filtering task.
+    spec = Cecelia._task_spec(Cecelia.AfCorrect())
+    keys_top = [string(get(p, "key", "")) for p in get(spec, "params", [])]
+    @test keys_top == ["valueName", "afCombinations", "backgroundMethod"]
+
+    combo = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "afCombinations")
+    @test [string(get(p, "key", "")) for p in get(combo, "params", [])] ==
+          ["quotientChannel", "divisionChannels"]
+
+    # the deleted ones, named so a future session doesn't reintroduce them one at a time
+    gone = ["correctionMin", "correctionMax", "correctionGain", "channelPercentile",
+            "correctionPercentile", "correctionMode", "summaryMode", "summaryPercentile",
+            "generateInverse", "medianFilter", "topHatRadius", "rollingBallRadius",
+            "rollingBallPadding", "denoiseFun", "waveletMethod", "waveletMode", "tvWeight",
+            "applyGaussian", "applyGaussianToOthers"]
+    flat = Set{String}(keys_top)
+    union!(flat, Set(string(get(p, "key", "")) for p in get(combo, "params", [])))
+    for k in gone
+        @test !(k in flat)
+    end
 end
 
 # Cohort QC must aggregate the per-image anisotropy readout — it is Figure 4 panel D's x-axis
@@ -7524,6 +7593,14 @@ end
             lp = joinpath(proj.root, "1", "img1", "labelProps"); mkpath(lp)
             write(joinpath(lp, "base.h5ad"), "hdf-bytes")
             write(joinpath(proj.root, ".cecelia.lock"), "")
+            # staging debris from a cancelled run. Matches neither `_is_store_dir` (no `.zarr`
+            # suffix) nor the skip list, so the mirror walker used to RECURSE and copy every
+            # chunk in as a loose file — gigabytes of unusable bytes in the bundle.
+            deb = joinpath(proj.root, "0", "img1", "data.ome.zarr" * Cecelia.STORE_STAGING_SUFFIX, "0")
+            mkpath(deb); write(joinpath(deb, "0.0"), "half-written")
+            sup = joinpath(proj.root, "1", "img1", "labels",
+                           "labels.zarr" * Cecelia.STORE_SUPERSEDED_SUFFIX)
+            mkpath(sup); write(joinpath(sup, ".zgroup"), "{}")
             # a notebook with the uid hardcoded — the one place copy/reidentify must rewrite
             mkpath(joinpath(proj.root, "notebooks"))
             write(joinpath(proj.root, "notebooks", "nb.jl"), "proj = load_project(\"$uid\")\n")
@@ -7536,6 +7613,12 @@ end
             @test isfile(joinpath(bundle, "1", "img1", "labels", "labels.zarr.tar"))
             @test !any(endswith(n, ".zarr") for (_, ds, _) in walkdir(bundle) for n in ds)  # packed, not unpacked
             @test !ispath(joinpath(bundle, ".cecelia.lock"))                                # lock skipped
+            # staging debris excluded entirely — neither packed nor mirrored as loose chunks
+            @test !any(any(s -> endswith(n, s), Cecelia.STORE_TMP_SUFFIXES)
+                       for (_, ds, _) in walkdir(bundle) for n in ds)
+            @test !occursin("half-written",
+                            join((read(joinpath(r, f), String) for (r, _, fs) in walkdir(bundle)
+                                  for f in fs if filesize(joinpath(r, f)) < 4096), "\n"))
             @test isempty(export_project(uid; out_dir = out))                               # refuses existing bundle
 
             rm(proj.root; recursive = true)                                                 # drop, then restore from bundle
@@ -8002,6 +8085,129 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
     end
 
+    @testset "preview params are translated the way the RUN translates them" begin
+        # THE reported bug: `preview worker: ValueError: invalid literal for int() with base 10: 'CH3'`.
+        # The frontend sends channel NAMES and a bare model name; Python wants 0-based indices and a
+        # checkpoint PATH. `_run_task` translated them inline, so the preview — which sends the
+        # frontend's params straight to the worker — sent names. Sharing `predict_slice` does not make
+        # the params shared; preparing them is the task's job, hence `preview_params`.
+        mktempdir() do dir
+            img = CciaImage(; uid = "uid1", name = "n", dir = joinpath(dir, "1", "uid1"))
+            mkpath(img._dir)
+            img.filepath["default"] = "ccidImage.ome.zarr"
+            img.im_channel_names["default"] = ["CH1", "CH2", "CH3", "CH4"]
+            save!(img)
+            raw = Cecelia.read_ccid_raw(Cecelia.state_file(img))
+
+            params = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "model" => "cyto3", "matchAs" => "base",
+                "cellChannels" => ["CH3"], "nucChannels" => String[])))
+
+            m = Cecelia.cellpose_models_for_python(params, raw)["0"]
+            @test m["cellChannels"] == [2]           # 0-based: CH3 is the third channel
+            @test m["nucChannels"] == Int[]
+            @test m["model"] == "cyto3"              # a built-in name passes through untouched
+
+            # the hook the preview calls produces the same thing, and leaves other params alone
+            got = Cecelia.preview_params(Cecelia.CellposeSegment(), params, img)
+            @test got["models"]["0"]["cellChannels"] == [2]
+            @test !haskey(params["models"]["0"], "cellChannels") ||
+                  params["models"]["0"]["cellChannels"] == ["CH3"]   # input not mutated
+
+            # idempotent: already-translated indices survive a second pass (a REPL/chain caller)
+            @test Cecelia.cellpose_models_for_python(got, raw)["0"]["cellChannels"] == [2]
+
+            # a channel the image does not have is dropped, not turned into a bogus index
+            bad = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "cellChannels" => ["CH9"], "nucChannels" => [])))
+            @test Cecelia.cellpose_models_for_python(bad, raw)["0"]["cellChannels"] == Int[]
+
+            # a missing CUSTOM checkpoint raises with a message worth showing, rather than failing
+            # deep inside cellpose — the second translation the preview used to skip
+            custom = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+                "model" => "no-such-model.pth", "cellChannels" => ["CH1"], "nucChannels" => [])))
+            err = try; Cecelia.cellpose_models_for_python(custom, raw); nothing
+                  catch e; e end
+            @test err isa ErrorException
+            @test occursin("no-such-model.pth", err.msg)
+
+            # and the composite delegates to its previewable step, since that is what the page runs
+            composite = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+            @test Cecelia.preview_params(composite, params, img)["models"]["0"]["cellChannels"] == [2]
+
+            # a task with no overload passes params through untouched
+            @test Cecelia.preview_params(Cecelia.MeasureLabels(), params, img) === params
+
+            # ── the SECOND half of "the way the RUN does it": section params must be lifted flat.
+            # Reported live: "Run would tile this comes up all the time. i've set the tiling to
+            # 4096 px. the image is not even 1000px." `blockSize` lives in the `imageTiling`
+            # section, so the frontend sends it NESTED; `run_task` flattens, the preview did not,
+            # and `SegmentationUtils` silently fell back to its own 512 default. Nothing errors —
+            # which is why this needs a test rather than a fix.
+            cellpose = Cecelia.CellposeSegment()
+            nested = Dict{String,Any}(
+                "models" => params["models"],
+                "imageTiling" => Dict{String,Any}("blockSize" => 4096, "overlap" => 128))
+            flat = Cecelia.preview_params_for_run(cellpose, nested, img)
+            @test flat["blockSize"] == 4096            # NOT SegmentationUtils' 512 default
+            @test flat["overlap"] == 128
+            @test !haskey(flat, "imageTiling")         # lifted, not duplicated
+            @test flat["models"]["0"]["cellChannels"] == [2]   # ...and still translated
+
+            # idempotent, so an already-flat bag (REPL, chain, a re-translated dict) is safe
+            @test Cecelia.preview_params_for_run(cellpose, flat, img)["blockSize"] == 4096
+
+            # an explicit top-level value wins over a section entry of the same name — the preview
+            # must not resurrect a stale nested copy
+            both = Dict{String,Any}("models" => params["models"], "blockSize" => 1024,
+                                    "imageTiling" => Dict{String,Any}("blockSize" => 4096))
+            @test Cecelia.preview_params_for_run(cellpose, both, img)["blockSize"] == 1024
+
+            # the composite goes through the same entry point, since that is what the page runs
+            @test Cecelia.preview_params_for_run(composite, nested, img)["blockSize"] == 4096
+
+            # ...and through the shape the API actually receives: a JSON body. Nested objects come
+            # back as JSON3 values with SYMBOL keys, which is the standing trap (CLAUDE.md — a
+            # `isa Dict` guard is false for `JSON3.Object`). If the lift missed those, this would be
+            # the one path that regressed while every hand-built Dict above kept passing.
+            body = """{"models":{"0":{"model":"cyto3","matchAs":"base",
+                       "cellChannels":["CH3"],"nucChannels":[]}},
+                       "imageTiling":{"blockSize":4096,"overlap":128}}"""
+            from_json = JSON3.read(body, Dict{String,Any})
+            j = Cecelia.preview_params_for_run(cellpose, from_json, img)
+            @test j["blockSize"] == 4096
+            @test j["overlap"] == 128
+            @test !haskey(j, "imageTiling")
+            @test j["models"]["0"]["cellChannels"] == [2]
+        end
+    end
+
+    @testset "task_previewable is declared, and composites inherit it" begin
+        # The trait replaced the frontend inferring previewability from a cellpose-shaped `models`
+        # bag — right about cellpose, silently wrong about every other backend.
+        @test Cecelia.task_previewable(Cecelia.CellposeSegment())
+
+        # Default is FALSE: a task says nothing unless the worker can actually run it.
+        for t in (Cecelia.MeasureLabels(), Cecelia.DriftCorrect(), Cecelia.ImportOmezarr())
+            @test !Cecelia.task_previewable(t)
+        end
+
+        # THE overload that matters: the segmentation module page runs the composite, not
+        # segment.cellpose. This is how the live preview shipped broken in #421.
+        composite = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+        @test composite isa Cecelia.CompositeTask
+        @test Cecelia.task_previewable(composite)
+        # `any`, not `all` — measureLabels has nothing to preview but must not veto the segmentation
+        @test any(Cecelia.task_previewable, Cecelia._composite_steps(composite))
+        @test !all(Cecelia.task_previewable, Cecelia._composite_steps(composite))
+
+        # every registered task answers without throwing — the definitions route stamps this onto
+        # every spec, so one bad overload would otherwise break the whole task picker
+        for (fun, task) in Cecelia._fun_name_map()
+            @test Cecelia.task_previewable(task) isa Bool
+        end
+    end
+
     # The staging mechanism itself lives in `zarr_utils.staged_store` (Python, where the writers
     # are). Julia mirrors the two suffixes to name the in-progress store a preview watches and to
     # sweep debris a killed run leaves. Nothing connects the two at runtime, so pin them together
@@ -8066,6 +8272,158 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("cleanupImages.afDriftCorrect"), params))
         # unknown composite / no spec → empty, never a throw
         @test isempty(Cecelia.live_outputs(Cecelia.CompositeTask("not.a.composite"), params))
+    end
+
+    # The preview worker's request shape. The worker owns the region DECISION (one z-plane,
+    # clamping, the 2D fallback — tested in python/cecelia/tests/test_preview_region.py); Julia
+    # only resolves which image version to read and where the scratch store goes. Both halves are
+    # pinned so they can't drift into disagreeing about the contract.
+    @testset "preview_request resolves the same image version a run would" begin
+        mktempdir() do dir
+            img = CciaImage(; uid = "uid1", name = "n", dir = joinpath(dir, "1", "uid1"))
+            img.filepath["default"]   = "ccidImage.ome.zarr"
+            img.filepath["corrected"] = "ccidDriftCorrected.ome.zarr"
+
+            region = Dict("xy" => Dict("X" => [0, 512], "Y" => [0, 512]),
+                          "z" => 8, "t" => 0, "ndisplay" => 2)
+
+            # reads the version named by the task's OWN valueName — a preview of a corrected
+            # image must not silently segment the original
+            req = Cecelia.preview_request(
+                img, Dict("valueName" => "corrected", "models" => Dict()), region)
+            @test req["type"] == "preview"
+            @test endswith(req["imPath"], joinpath("0", "uid1", "ccidDriftCorrected.ome.zarr"))
+            @test req["taskDir"] == img._dir
+            @test req["region"]["z"] == 8
+
+            # default falls back to the primary version, like the task does
+            req_default = Cecelia.preview_request(img, Dict("models" => Dict()), region)
+            @test endswith(req_default["imPath"], "ccidImage.ome.zarr")
+
+            # an unknown valueName is an error, not a silent segmentation of the wrong image
+            @test_throws ErrorException Cecelia.preview_request(
+                img, Dict("valueName" => "nope", "models" => Dict()), region)
+
+            # the explicit-paths form: what the API uses, with the store the VIEWER has open, so
+            # the pixels and the region can't come from differently-shaped versions
+            direct = Cecelia.preview_request(
+                "/somewhere/open.ome.zarr", "/somewhere/meta",
+                Dict("valueName" => "corrected", "models" => Dict()), region;
+                value_name = "B")
+            @test direct["imPath"] == "/somewhere/open.ome.zarr"   # NOT re-resolved from ccid
+            @test direct["taskDir"] == "/somewhere/meta"
+            @test direct["outputValueName"] == "B"
+            @test direct["region"]["z"] == 8
+        end
+    end
+
+    @testset "a preview reply becomes a viewer command without Julia decoding it" begin
+        # Julia is a pass-through: the blocks move worker → viewer untouched (the codec lives in
+        # cecelia.utils.block_transfer, used by both Python ends).
+        #
+        # A reply carries a LIST of layers, each with its own `kind`, because one task can preview
+        # several things: AF correction returns one image layer per corrected channel so they sit
+        # beside the originals to be flipped against. A single mask field plus a type flag — which is
+        # what this was — could not express that.
+        mask = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u4", "data" => "eJxjYGBgAAAABAAB")
+        img  = Dict("shape" => [1, 1, 4, 4], "dtype" => "<u2", "data" => "eJxjYGBgAAAABAAC")
+        layers = [
+            Dict("kind" => "labels", "name" => "Preview", "block" => mask,
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+            Dict("kind" => "image", "name" => "nuc-GFP AF", "block" => img,
+                 "shape" => [10, 5, 64, 64], "axes" => ["T", "Z", "Y", "X"]),
+        ]
+        reply = Dict("layers" => layers,
+                     "region" => Dict("T" => [3, 4], "Z" => [1, 2],
+                                      "Y" => [0, 4], "X" => [0, 4]),
+                     "valueName" => "A", "counts" => Dict("base" => 7))
+        cmd = Cecelia.preview_show_command(reply)
+        @test cmd["type"] == "show_task_preview"
+        @test cmd["layers"] === layers                      # not re-encoded, not copied
+        @test cmd["layers"][1]["block"] === mask
+        @test cmd["show"] == true
+        # the value_name is the REAL one — an unsuffixed stem is what lets `({vn}) Preview` and
+        # `({vn}) Labels` evict each other in the viewer instead of stacking
+        @test cmd["value_name"] == "A"
+        @test !occursin("__preview", cmd["value_name"])
+
+        # no layers at all is a fault, not a viewer showing nothing
+        @test_throws ErrorException Cecelia.preview_show_command(
+            filter(p -> first(p) != "layers", reply))
+        @test_throws ErrorException Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[])))
+
+        # a layer missing any of its geometry is a fault too — caught HERE rather than as a Python
+        # traceback in the viewer, which is the point of validating in the pass-through
+        for missing_key in ("kind", "name", "block", "shape", "axes")
+            broken_layer = filter(p -> first(p) != missing_key, layers[1])
+            @test_throws ErrorException Cecelia.preview_show_command(
+                merge(reply, Dict("layers" => Any[broken_layer])))
+        end
+
+        # an unknown kind is refused rather than passed on for the viewer to guess at
+        @test_throws ErrorException Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
+    end
+
+    @testset "a composite says which steps it does not preview" begin
+        # `preview_params` delegates to the FIRST previewable step, so a composite previews one step
+        # and the others silently do not happen. Correct — the alternative is previewing nothing — but
+        # it has to be said, because a skipped step can change what the previewed one means:
+        # afDriftCorrect previews AF and skips drift correction, which expands the canvas and shifts
+        # every frame, so the geometry on screen is not the geometry the run produces.
+        af_drift = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
+        skipped = Cecelia.preview_steps_not_previewed(af_drift)
+        @test length(skipped) == 1
+        @test skipped[1]["fun"] == "cleanupImages.driftCorrect"
+        @test skipped[1]["label"] == "Drift correction"      # the spec's own label, not a fun_name
+
+        # the segmentation composite likewise: measurement is not previewed
+        seg = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+        @test [x["fun"] for x in Cecelia.preview_steps_not_previewed(seg)] == ["segment.measureLabels"]
+
+        # a plain task skips nothing, and neither does a non-composite previewable one
+        for fn in ("segment.cellpose", "cleanupImages.afCorrect", "cleanupImages.driftCorrect")
+            @test isempty(Cecelia.preview_steps_not_previewed(Cecelia._task_from_fun_name(fn)))
+        end
+    end
+
+    @testset "AF correction is previewable, with its own param translation" begin
+        @test Cecelia.task_previewable(Cecelia.AfCorrect())
+        mktempdir() do dir
+            img = CciaImage(; uid = "af1", name = "n", dir = joinpath(dir, "1", "af1"))
+            mkpath(img._dir)
+            img.filepath["default"] = "ccidImage.ome.zarr"
+            img.im_channel_names["default"] = ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
+            save!(img)
+
+            # the real saved shape from a live project: channel NAMES, including one ("CH4") that is
+            # not in this image's channel list at all — it resolves to nothing, exactly as the run does
+            params = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+                "divisionChannels" => ["CH4", "CD169-Kat"],
+                "quotientChannel"  => ["mem-TOM"])))
+            out = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), params, img)
+            # quotientChannel re-keys the combination to the channel being corrected (mem-TOM → 2)
+            @test collect(keys(out["afCombinations"])) == ["2"]
+            @test out["afCombinations"]["2"]["divisionChannels"] == [3]
+            @test !haskey(out["afCombinations"]["2"], "quotientChannel")
+
+            # idempotent: already-translated indices survive a second pass (a chain or REPL caller)
+            again = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), out, img)
+            @test again["afCombinations"]["2"]["divisionChannels"] == [3]
+
+            # and the composite delegates to AF, since that is the step it can preview
+            comp = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
+            @test Cecelia.preview_params_for_run(comp, params, img)["afCombinations"]["2"]["divisionChannels"] == [3]
+        end
+    end
+
+    @testset "the preview worker gets its own port" begin
+        # a second resident process must not collide with the napari bridge (7655) or Pluto (7660)
+        @test Cecelia.PREVIEW_PORT != Cecelia.NAPARI_PORT
+        @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
+        # not alive until launched — `preview_alive` must never report true for a null process
+        @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
     end
 
     @testset "img_labels_path resolves registered and in-progress stores" begin

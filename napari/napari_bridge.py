@@ -27,10 +27,17 @@ from qtpy.QtCore import QTimer
 #                  read_axes, read_scale); light deps, so top-level.
 # ome_xml_utils (read_pixel_unit / read_time_increment) is imported LAZILY where used, so ome-types'
 # pydantic build cost is paid on first image open rather than at bridge startup.
-from cecelia.utils import napari_utils, zarr_utils
+from cecelia.utils import block_transfer, napari_utils, zarr_utils
 
 HOST = "localhost"
 PORT = 7655
+
+# Incoming-message cap. `websockets` defaults to 1 MiB, which the task preview crosses: it ships a
+# whole label block as one JSON message, and a full-frame uint32 mask of a large image compresses to
+# roughly 840 KB → ~1.1 MB once base64'd (measured ratios in `cecelia.utils.block_transfer`). Hitting
+# the default is not a graceful degradation — the server rejects the frame and closes the connection,
+# so the preview would fail on big images only. Set explicitly rather than left implicit.
+WS_MAX_SIZE = 64 * 1024 * 1024
 
 # bridge process start time — reported in the ping reply so the backend/Settings panel can show the
 # bridge's uptime and spot a STALE bridge (it survives a backend restart; see docs/NAPARI.md restart rules)
@@ -69,6 +76,7 @@ class NapariState:
         # set when open_image is called
         self._im_data = None          # list[dask array], one per multiscale level
         self._im_scale = None         # scale without channel axis, e.g. [z, y, x] µm
+        self._preview_layers = set()   # layer names the task preview added (see _remove_preview_layers)
         self._im_units = None         # unit tuple matching _im_scale axes, e.g. ('µm','µm','µm')
         self._axes = None             # ['t','c','z','y','x']
         self._channel_axis = None     # int index into im_data shape
@@ -114,6 +122,10 @@ class NapariState:
         self._labels_orig_cmap = {}
         self._colcol_cache = {}
         self._sel_ctx = None
+        # `layers.clear()` just removed the preview layer, but the view listener is attached to
+        # dims/camera and would survive it — left on, it keeps posting "the view moved" for a preview
+        # that no longer exists, and the frontend would re-request against the newly opened image.
+        self._detach_view_listener()
 
         # open the store + read its geometry through the shared cecelia readers (the same code the
         # analysis pipeline uses) — one implementation of "open an OME-ZARR, read its axes/scale".
@@ -442,6 +454,187 @@ class NapariState:
             self._viewer.layers[layer_name].data = arrays[0]
             print(f"[refresh_labels] {layer_name}", flush=True)
 
+    # ── View-change notification, for re-previewing what the user is now looking at ────────────
+    #
+    # A preview of one region goes stale the moment the view moves, and a stale mask reads as broken.
+    # The viewer is the only thing that knows the view changed, so it says so: the same POST-back
+    # channel the cell selection uses (`/api/napari/event`), which the backend relays over WS.
+    #
+    # Coalesced HERE as well as in the frontend, and both are load-bearing: a single pan emits camera
+    # events continuously, so without a bridge-side timer this would post hundreds of HTTP requests per
+    # drag — the frontend's debounce would collapse them into one preview, but only after the flood had
+    # already been sent. The frontend window is the one tuned for GPU cost; this one just stops the
+    # firehose.
+    #
+    # And the coalesced post is DEDUPED against the region it last reported, which is what keeps this
+    # from being a feedback loop: the events we listen to are proxies (camera zoom/centre, slider,
+    # ndisplay) for the only thing that matters — which pixels a preview would run on. Anything that
+    # fires one of them without moving that box (a canvas refresh, a window resize, our own layer
+    # swap) would otherwise trigger a preview, whose layer swap can fire them again, forever. Posting
+    # only on a real region change makes a self-sustaining loop impossible rather than unlikely.
+    _VIEW_EVENT_COALESCE_S = 0.15
+
+    def _attach_view_listener(self, api_url: str):
+        if getattr(self, "_view_listener_url", None) == api_url:
+            return                                  # already listening for this endpoint
+        self._detach_view_listener()
+        self._view_listener_url = api_url
+        self._view_timer = None
+        self._view_lock = threading.Lock()
+        # the region we last reported; None = nothing reported yet, so the first change always posts
+        self._last_posted_region = None
+
+        def on_view_change(_event=None):
+            with self._view_lock:
+                if self._view_timer is not None:
+                    self._view_timer.cancel()
+                self._view_timer = threading.Timer(
+                    self._VIEW_EVENT_COALESCE_S, self._post_view_changed)
+                self._view_timer.daemon = True
+                self._view_timer.start()
+
+        self._on_view_change = on_view_change
+        self._viewer.dims.events.current_step.connect(on_view_change)
+        self._viewer.camera.events.zoom.connect(on_view_change)
+        self._viewer.camera.events.center.connect(on_view_change)
+        self._viewer.dims.events.ndisplay.connect(on_view_change)
+
+    def _detach_view_listener(self):
+        cb = getattr(self, "_on_view_change", None)
+        if cb is not None:
+            for emitter in (self._viewer.dims.events.current_step,
+                            self._viewer.camera.events.zoom,
+                            self._viewer.camera.events.center,
+                            self._viewer.dims.events.ndisplay):
+                try:
+                    emitter.disconnect(cb)
+                except Exception:
+                    pass                            # already gone; detaching must never raise
+        timer = getattr(self, "_view_timer", None)
+        if timer is not None:
+            timer.cancel()
+        self._on_view_change = None
+        self._view_timer = None
+        self._view_listener_url = None
+        self._last_posted_region = None
+
+    def _post_view_changed(self):
+        url = getattr(self, "_view_listener_url", None)
+        if not url:
+            return
+        # Did the previewable region actually move? An event that leaves it identical would produce a
+        # byte-identical preview, so reporting it is pure cost — and the loop fuel described above.
+        # Quiet, because this runs per coalesced event; the region is printed when one is really used.
+        try:
+            region = self.preview_region(verbose=False)
+        except Exception:
+            return                              # nothing previewable (no image layer) → nothing to say
+        if region == getattr(self, "_last_posted_region", None):
+            return
+        body = json.dumps({"type": "viewChanged"}).encode()
+        try:
+            req = urllib.request.Request(
+                url.rstrip("/") + "/api/napari/event", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=10).read()
+        except Exception as e:
+            print(f"[preview] view-changed POST failed: {e}", flush=True)
+            return          # NOT recorded as posted: the frontend never heard, so let the next
+                            # event for this same region try again rather than dedupe the retry away
+        self._last_posted_region = region
+
+    def show_task_preview(self, value_name: str = "default", layers: list = None,
+                          region: dict = None, show: bool = True, api_url: str = None):
+        """Show one region's task preview as IN-MEMORY layers.
+
+        The counterpart to `_show_label_stores`, and deliberately not routed through it: there is no
+        store. The worker computes one plane and returns the blocks themselves
+        (`cecelia.utils.block_transfer`), which land here as full-extent lazy arrays with that one block
+        filled in — so each layer aligns with the image by shape alone, no `translate`, and nothing is
+        written to the user's project.
+
+        A reply carries a LIST, because one task can preview several things:
+
+        * ``kind="labels"`` — a segmentation mask. Takes the `Preview` slot in the `labels` family, so
+          it evicts (and is evicted by) `({vn}) Labels` and `({vn}) Labels (live)`: all three are the
+          same value_name's segmentation, and stacking them would show one mask over another.
+        * ``kind="image"`` — a corrected channel, e.g. from AF correction. Added as an Image layer named
+          after the channel it corrects (`(default) nuc-GFP AF`) so it sits beside the original and can
+          be toggled against it — comparing corrected to raw IS the judgement being made, so they have
+          to coexist rather than evict each other.
+
+        `show=False` (or a preview that produced nothing) removes every layer this has added.
+        """
+        stem = value_name
+        if not show or not layers:
+            self._remove_preview_layers(stem)
+            # stop reporting view changes: nothing is chasing the view any more
+            self._detach_view_listener()
+            return
+
+        # replace the previous preview wholesale: a parameter change can alter which channels a task
+        # even outputs, so leaving stale layers behind would show a mix of two parameter sets
+        self._remove_preview_layers(stem)
+        added = []
+        for spec in layers:
+            kind = str(spec.get("kind", "labels"))
+            name = str(spec.get("name", _PREVIEW_SUFFIX))
+            axes = list(spec.get("axes") or [])
+            shape = spec.get("shape")
+            if not shape or not axes:
+                raise ValueError("preview layer needs 'shape' and 'axes'")
+            block = block_transfer.decode_block(spec["block"])
+            data = block_transfer.place_block_lazy(block, shape, axes, region or {})
+            layer_name = f"({stem}) {name}"
+
+            if kind == "labels":
+                self._invalidate_colcol_cache(value_name)
+                for other in _LABEL_SUFFIXES["labels"]:
+                    _remove_layer(self._viewer, f"({stem}) {other}")
+                layer = napari_utils.add_labels(
+                    self._viewer, data, name=layer_name,
+                    scale=self._im_scale, units=self._im_units, opacity=0.7,
+                    # cache off for the same reason as a live store preview: consecutive previews of the
+                    # same region produce same-shaped dask arrays, and a served-from-cache plane would
+                    # show the PREVIOUS parameters' result — the one thing this feature exists to avoid.
+                    cache=False,
+                    axes=axes, image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
+                )
+            elif kind == "image":
+                layer = napari_utils.add_image(
+                    self._viewer, data, name=layer_name,
+                    scale=self._im_scale, units=self._im_units,
+                    axes=axes, image_axes=self._display_axes(),
+                    image_shape=self._display_shape(),
+                    cache=False,
+                )
+            else:
+                raise ValueError(f"unknown preview layer kind {kind!r}")
+
+            self._preview_layers.add(layer_name)
+            added.append(layer)
+            print(f"[preview] added {layer_name} ({kind}): block={tuple(block.shape)} "
+                  f"extent={tuple(int(x) for x in shape)} region={region}", flush=True)
+
+        # only now that a preview is actually on screen does a view change mean anything
+        if api_url:
+            self._attach_view_listener(api_url)
+        return added
+
+    def _remove_preview_layers(self, stem: str):
+        """Remove every layer a previous preview added for this value_name.
+
+        Tracked by name rather than rediscovered by suffix, because an image preview's name comes from
+        the CHANNEL it corrects — there is no fixed suffix to scan for, and guessing one would either
+        miss layers (leaving a stale parameter set on screen) or delete a user's own.
+        """
+        for name in sorted(getattr(self, "_preview_layers", set())):
+            _remove_layer(self._viewer, name)
+        self._preview_layers = set()
+        # the labels slot is also removable by its fixed name, for a preview added before a restart
+        _remove_layer(self._viewer, f"({stem}) {_PREVIEW_SUFFIX}")
+
     def show_branch_labels(self, value_name: str = "default",
                            label_files: list = None, show_labels: bool = True,
                            cache: bool = False):
@@ -587,6 +780,50 @@ class NapariState:
         return legend
 
     # ── Populations (linked brushing with the flow plots) ─────────────────────
+
+    def preview_region(self, verbose: bool = True):
+        """What the viewer is currently looking at, as the task-preview region contract.
+
+        Returns `{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int, "t": int, "ndisplay": int}` in
+        **level-0 pixels**. The worker turns that into the region it computes
+        (`slice_utils.preview_region_bounds`) — this only reports, it doesn't decide.
+
+        TWO sources, and the split is load-bearing:
+        * **X/Y from `layer.corner_pixels`** — the visible box, in the layer's own DATA coordinates, so
+          there is no world/scale conversion to get wrong.
+        * **z/t from `viewer.dims.current_step`** — the slider position.
+
+        It is tempting to take all four from `corner_pixels` (one source, no second coordinate system)
+        and this code did. It is **wrong**: napari leaves `corner_pixels` at `[0, 0]` for a dimension it
+        is not displaying, so z and t both read as 0 no matter where the sliders are. Live, at
+        `current_step = [44, 9, 275, 263]`, every preview segmented `t=0, z=0` — drift padding, all
+        channels black, "0 cells" on every parameter. The unit test that "confirmed" the collapse
+        assumption built a fresh layer, whose step is also 0, so it compared 0 to 0 and could not fail.
+
+        Two conversions that are easy to get silently wrong, so they are explicit here:
+        * corner_pixels is at `data_level`, not level 0 → multiply by that level's downsample factor.
+        * corner_pixels bounds are INCLUSIVE; the region contract is half-open → +1 before scaling,
+          or the preview quietly loses its last row and column.
+
+        `verbose=False` for the view-change dedup, which calls this per coalesced camera event and
+        would otherwise flood the log with regions nothing previewed.
+        """
+        layer = next((l for l in self._viewer.layers if isinstance(l, napari.layers.Image)), None)
+        if layer is None:
+            raise RuntimeError("no image layer open — nothing to preview")
+
+        axes = self._display_axes()                     # e.g. ['t','z','y','x'], channel dropped
+        factors = (np.asarray(layer.downsample_factors)[layer.data_level]
+                   if getattr(layer, "multiscale", False) else np.ones(len(axes)))
+        # the level scaling + inclusive→half-open conversion live in napari_utils, where they are
+        # unit-tested without needing a viewer (see the docstring on why z/t come from the slider)
+        out = napari_utils.preview_region_from_corners(
+            layer.corner_pixels, factors, axes,
+            ndisplay=self._viewer.dims.ndisplay,
+            current_step=self._viewer.dims.current_step)
+        if verbose:
+            print(f"[preview_region] level={getattr(layer, 'data_level', 0)} {out}", flush=True)
+        return out
 
     def _display_axes(self):
         """Non-channel image axes, in display order (e.g. ['t','z','y','x'])."""
@@ -1426,8 +1663,13 @@ class NapariState:
 # given store gets AT MOST ONE of these at a time, so `_show_label_stores` evicts all of a family's
 # suffixes before adding one — that's what makes a finished segmentation replace its own live preview
 # (and a preview of a re-run replace the finished layer, whose store the re-run has just deleted).
+_PREVIEW_SUFFIX = "Preview"
+
 _LABEL_SUFFIXES = {
-    "labels":       ("Labels", "Labels (live)"),
+    # `Preview` has no store behind it (`show_task_preview` builds it in memory) but shares the family
+    # so the three mutually evict: a finished run's labels replace a preview of the same value_name,
+    # and a new preview replaces them.
+    "labels":       ("Labels", "Labels (live)", _PREVIEW_SUFFIX),
     "branchLabels": ("Branches",),
 }
 
@@ -1490,6 +1732,17 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             state.refresh_labels(
                 value_name=cmd.get("value_name", "default"),
                 label_files=cmd.get("label_files", None),
+            )
+
+        elif t == "show_task_preview":
+            state.show_task_preview(
+                value_name=cmd.get("value_name", "default"),
+                mask=cmd.get("mask"),
+                label_shape=cmd.get("label_shape"),
+                label_axes=cmd.get("label_axes"),
+                region=cmd.get("region"),
+                show=bool(cmd.get("show", True)),
+                api_url=cmd.get("api_url"),
             )
 
         elif t == "colour_labels":
@@ -1607,6 +1860,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
         elif t == "capture_view_state":
             return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}
 
+        elif t == "preview_region":
+            return {"type": "ok", "cmd": t, "region": state.preview_region()}
+
         elif t == "apply_view_state":
             return {"type": "ok", "cmd": t,
                     "applied": state.apply_view_state(cmd.get("view_state") or {})}
@@ -1650,7 +1906,7 @@ async def handle(websocket):
 
 async def ws_server():
     import websockets
-    async with websockets.serve(handle, HOST, PORT):
+    async with websockets.serve(handle, HOST, PORT, max_size=WS_MAX_SIZE):
         print(f"napari bridge ready on ws://{HOST}:{PORT}", flush=True)
         await asyncio.Future()
 

@@ -259,6 +259,13 @@ capture_view_state(v::NapariViewer)::Dict{String,Any} =
 apply_view_state!(v::NapariViewer, snapshot) =
     (send(v, Dict("type"=>"apply_view_state", "view_state"=>snapshot)); v)
 
+# What the viewer is currently looking at, in LEVEL-0 pixels, as the task-preview region contract:
+# `{"xy" => {"X" => [lo, hi], "Y" => …}, "z", "t", "ndisplay"}`. Feeds straight into
+# `preview_request` (preview.jl) — the viewer reports, the worker decides what that region becomes.
+# Raises if no image is open, which is the honest answer to "preview what?".
+preview_region(v::NapariViewer)::Dict{String,Any} =
+    get(send(v, Dict("type"=>"preview_region")), "region", Dict{String,Any}())
+
 # ── Movie recording (napari-animation) ──────────────────────────────────────────
 
 # Record the open image's timelapse (T-sweep) to `path` (mp4); returns the bridge reply (frame count +

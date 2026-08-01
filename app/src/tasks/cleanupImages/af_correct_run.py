@@ -6,28 +6,18 @@ reference channels), and writes the result as a new OME-ZARR multiscale store.
 Called by the Julia AfCorrect task handler.
 
 Parameter contract (JSON written by Julia):
-  imPath              - absolute path to input .ome.zarr
-  imCorrectionPath    - absolute path to write corrected .ome.zarr
-  afCombinations      - dict keyed by string channel index ("0", "1", …):
-      divisionChannels  - list of 0-based integer channel indices (AF reference)
-      correctionMode    - "divide" | "none"
-      channelPercentile - float, background percentile to subtract from channel
-      correctionPercentile - float, background percentile for AF reference
-      summaryMode       - "maximum" | "percentile"
-      summaryPercentile - float, used when summaryMode == "percentile"
-      correctionMin     - float, lower rescale percentile
-      correctionMax     - float, upper rescale percentile
-      generateInverse   - bool
-      medianFilter      - int, median kernel half-width (0 = off)
-      topHatRadius      - int, top-hat radius (0 = off)
-      rollingBallRadius - int, rolling ball radius (0 = off)
-      rollingBallPadding - int
-      denoiseFun        - "NONE" | "wavelet" | "tv"
-      waveletMethod     - "BayesShrink" | "VisuShrink"
-      waveletMode       - "soft" | "hard"
-      tvWeight          - int, TV weight (used as-is)
-  applyGaussian         - bool, apply Gaussian to corrected channels
-  applyGaussianToOthers - bool, apply Gaussian to uncorrected channels
+  imPath           - absolute path to input .ome.zarr
+  imCorrectionPath - absolute path to write corrected .ome.zarr
+  afCombinations   - dict keyed by string channel index ("0", "1", …):
+      divisionChannels - list of 0-based integer channel indices (the AF reference)
+  backgroundMethod - "triangle" | "otsu" | "none", global to every combination
+  qcOutPath        - where to write per-channel output stats for QC
+
+A combination is **just channels**. Everything that used to be a number here — two background
+percentiles, a rescale window, a median filter, a gaussian, a rolling ball, a top hat, a denoiser, an
+inverse channel — is either derived from the data (`correction_utils.af_division_stats`) or gone. Those
+parameters accreted while fitting individual datasets and were never revisited; a correction task
+should correct, not carry a filter toolbox.
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -36,6 +26,7 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.correction_utils as correction_utils
+from cecelia.utils.atomic_io import write_json_atomic
 
 
 def run(params):
@@ -44,12 +35,16 @@ def run(params):
     im_path            = params['imPath']
     im_correction_path = params['imCorrectionPath']
     af_combinations    = params['afCombinations']
-    apply_gaussian     = bool(params.get('applyGaussian', True))
-    apply_gaussian_to_others = bool(params.get('applyGaussianToOthers', True))
+    background_method  = str(params.get('backgroundMethod', 'triangle'))
+    qc_out_path        = params.get('qcOutPath')
 
     log.progress(0, 3)
     log.log(f'>> open image: {im_path}')
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
+    # dask handle only ever added graph overhead. Measured on a real store (zolIMa/ldYr8J, 0.78 GB):
+    # a per-timepoint copy is 2.71 s from zarr vs 6.09 s from dask, at half the peak RSS. See
+    # docs/todo/ZARR_STREAMING_PLAN.md -> locked decision 2.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
@@ -60,11 +55,12 @@ def run(params):
 
     log.progress(1, 3)
     log.log('>> correct image (streaming to disk)')
-    # Stream channel-by-channel into the on-disk output store — the whole corrected image (all
-    # channels + inverses) never lives in RAM (was the OOM on large time-lapses). Size level 0 up
-    # front (channel count = C + one per inverse), fill per-channel, then build the pyramid.
-    out_shape = correction_utils.af_correction_output_shape(im_dat[0], dim_utils, af_combinations)
+    # Stream channel-by-channel into the on-disk output store — the whole corrected image never lives
+    # in RAM (was the OOM on large time-lapses). Size level 0 up front, fill per-channel, then build
+    # the pyramid. The output has the same channels as the input now that inverse channels are gone.
+    out_shape = correction_utils.af_correction_output_shape(im_dat[0], dim_utils)
     out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
+    output_stats = {}
     # Staged: the store lands on its final path only once it is complete, metadata included, so
     # cancelling this task can't leave a registered image version truncated.
     # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
@@ -75,10 +71,9 @@ def run(params):
             im_dat[0], af_combinations,
             dim_utils=dim_utils,
             logfile_utils=log,
-            apply_gaussian=apply_gaussian,
-            apply_gaussian_to_others=apply_gaussian_to_others,
-            use_dask=False,
+            background_method=background_method,
             out=level0,
+            output_stats=output_stats,
         )
 
         log.progress(2, 3)
@@ -96,6 +91,15 @@ def run(params):
         # verbatim, so without this the two are written from different sources and can
         # disagree. See zarr_utils.write_calibration.
         zarr_utils.write_calibration(staging, dim_utils)
+
+    # Per-channel output stats for QC. The ceiling is derived now, so whether it landed well is the
+    # one thing that can go wrong invisibly — and it has an objective signal in both directions
+    # (clipped away at the top, or crammed into too few levels). See `af_qc_findings` in af_correct.jl.
+    if qc_out_path:
+        write_json_atomic(qc_out_path, output_stats)
+        for ch, s in sorted(output_stats.items()):
+            log.log(f">> ch{ch}: clipped {s['clippedFrac'] * 100:.2f}%, "
+                    f"{s['levelsUsed']}/{s['levelsAvailable']} levels used")
 
     log.progress(3, 3)
     log.log('>> done')

@@ -279,6 +279,49 @@ def create_slices_multiscales(im_dim, dim_utils = None,
   return [tuple(x) for x in slices]
 
 
+def preview_region_bounds(xy_bounds, z_index, t_index, axis_len, ndisplay=2):
+    """Decide the region a task preview computes: the visible XY box, ONE z-plane, one timepoint.
+
+    Returns ``(bounds, fallback_2d)`` where `bounds` is the axis→(lo, hi) mapping
+    ``crop_slice_tuple`` consumes, so this only makes the DECISION and the existing helper builds the
+    slices. Pure — the napari coupling (reading `corner_pixels` at `data_level` and scaling it to
+    level 0 by `downsample_factors`) stays in the bridge, which is the only place a viewer exists.
+
+    ``xy_bounds``: {'X': (lo, hi), 'Y': (lo, hi)} in LEVEL-0 pixels, as the viewer reports them.
+    ``axis_len``: axis letter → that axis's length, used to clamp (a zoomed-out view reports corners
+    beyond the image edge, and a slice past the end would silently return fewer pixels than asked).
+    ``ndisplay``: napari's display mode. **3 means the viewer is in 3D and we preview one plane
+    anyway**, returning ``fallback_2d=True`` so the caller can say so — a whole z-stack costs ~90 s
+    with no available shortcut (see docs/todo/TASK_PREVIEW_PLAN.md, Decisions 2 and 8), which is not a
+    preview. Per-plane inference is identical to the real run; what a single plane cannot show is
+    z-stitching, so counts and z-extents differ.
+    """
+    bounds = {}
+    for ax in ('X', 'Y'):
+        lohi = (xy_bounds or {}).get(ax)
+        if lohi is None:
+            continue
+        lo, hi = int(lohi[0]), int(lohi[1])
+        limit = axis_len.get(ax)
+        lo = max(0, lo)
+        if limit is not None:
+            hi = min(int(limit), hi)
+        if hi > lo:
+            bounds[ax] = (lo, hi)
+
+    # exactly one plane / one timepoint — never a range, whatever the viewer is displaying
+    for ax, idx in (('Z', z_index), ('T', t_index)):
+        if idx is None:
+            continue
+        limit = axis_len.get(ax)
+        if limit is None:
+            continue
+        i = min(max(0, int(idx)), int(limit) - 1)
+        bounds[ax] = (i, i + 1)
+
+    return bounds, bool(ndisplay == 3 and axis_len.get('Z', 1) > 1)
+
+
 def crop_slice_tuple(ndim, axis_idx, bounds):
     """Build a slice tuple of length ``ndim`` cropping the given axes to half-open pixel bounds.
 

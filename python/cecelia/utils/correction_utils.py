@@ -7,6 +7,7 @@ All channel-level operations materialise to numpy internally; output is
 returned as a dask array so create_multiscales can use it directly.
 """
 
+import collections
 from copy import copy
 import numpy as np
 import shutil
@@ -257,50 +258,8 @@ def non_zero_edges(im):
     return {'tl': true_points.min(axis=0), 'br': true_points.max(axis=0)}
 
 
-def _af_denoise_frame(slab, dtype, denoise_fun, denoise_params):
-    """Denoise one frame (tv / wavelet), rescaled to the dtype's max. Returns slab-shaped float."""
-    chunk = np.squeeze(slab)
-    if denoise_fun == 'tv':
-        r = skimage.restoration.denoise_tv_chambolle(
-            chunk, weight=denoise_params.get('weight', 0.1), channel_axis=None) * np.iinfo(dtype).max
-    elif denoise_fun == 'wavelet':
-        r = skimage.restoration.denoise_wavelet(
-            chunk, channel_axis=None, convert2ycbcr=False,
-            method=denoise_params.get('method', 'BayesShrink'),
-            mode=denoise_params.get('mode', 'soft'), rescale_sigma=True) * np.iinfo(dtype).max
-    else:
-        return slab
-    return r.reshape(slab.shape)
 
 
-def _af_rolling_ball_frame(slab, is_3d, radius, padding):
-    """Rolling-ball background subtraction on one frame (2D disk / 3D ellipsoid), cropped to the
-    non-zero interior with `padding` (zeros outside). Returns slab-shaped."""
-    im = np.squeeze(slab)
-    edges = non_zero_edges(im)
-    out = np.zeros_like(im)
-    if is_3d:
-        crop = (slice(None),
-                slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1),
-                slice(edges['tl'][2] + padding, edges['br'][2] - padding, 1))
-        out[crop] = im[crop] - skimage.restoration.rolling_ball(
-            im[crop], kernel=skimage.restoration.ellipsoid_kernel((1, radius, radius), 0.1))
-    else:
-        crop = (slice(edges['tl'][0] + padding, edges['br'][0] - padding, 1),
-                slice(edges['tl'][1] + padding, edges['br'][1] - padding, 1))
-        out[crop] = im[crop] - skimage.restoration.rolling_ball(im[crop], radius=radius)
-    return out.reshape(slab.shape)
-
-
-def _af_top_hat_frame(slab, radius):
-    """White top-hat (background suppression) on one frame. Returns slab-shaped."""
-    im = np.squeeze(slab)
-    footprint = (np.ones((3, 2 * radius + 1, 2 * radius + 1)) if im.ndim >= 3
-                 else skimage.morphology.disk(radius))
-    return skimage.morphology.white_tophat(im, footprint=footprint).reshape(slab.shape)
-
-
-# ── Per-timepoint slab helpers (bounded AF — a whole channel-timecourse in float64 is what OOM'd) ──
 
 def _af_slab(data, dim_utils, channel_idx, t):
     """One channel + one timepoint as numpy, full axis layout (T=1, C=1, spatial). The unit of AF
@@ -338,202 +297,259 @@ def _af_subtract(slab, subtract_val):
     return f
 
 
-def _stream_division_channel(
-        data, out, dim_utils, channel_idx, out_ch, inv_ch, correction_channel_idx,
-        channel_percentile, correction_percentile, correction_mode, summary_mode, summary_percentile,
-        correction_range, median_filter, generate_inverse, gaussian_sigma, apply_gaussian,
-        rolling_ball_radius, rolling_ball_padding, top_hat_radius, logfile_utils):
-    """Divide-mode AF for one channel, streamed one timepoint at a time into ``out`` (peak memory =
-    one frame, not the whole channel). The three global-per-channel percentiles — channel background,
-    correction background, and the final rescale window — are gathered from streamed histograms; every
-    other op (subtract / divide / rescale / inverse / median / gaussian / rolling-ball / top-hat) is
-    frame-local. Result matches the old whole-channel path to within the histogram bin resolution.
-    See docs/todo/ZARR_STREAMING_PLAN.md (AF rework)."""
+#: The GLOBAL scalars divide-mode AF needs before it can correct a single pixel. Whole-image by
+#: definition, which is why they are a separate, cacheable step — see `af_division_stats`.
+AfDivisionStats = collections.namedtuple('AfDivisionStats', 'val1 val2 c_max nbins rescale')
+
+#: How many voxels a value must reach before the ceiling will sit at it. Measured on a real 181-frame
+#: movie: the top six occupied ratio bins held ONE voxel each, and this threshold gave an identical
+#: ceiling under every spatial stride tried (z::2, xy::4, both), where the true max did not. Lower
+#: values track the data more closely but sample worse — 100 drifted ~10% under striding, 1 000 by 2%,
+#: 10 000 not at all. See docs/todo/TASK_PREVIEW_PLAN.md.
+AF_CEILING_MIN_COUNT = 10_000
+
+#: Fraction of the ratio's own range the derived ceiling may never fall below. Guards the trap in
+#: `robust_hist_max`: the background bin dominates the histogram, so a min-count larger than the
+#: signal population would return a ceiling inside the background and collapse the rescale.
+AF_CEILING_FLOOR_FRAC = 0.02
+
+
+def af_division_stats(
+        data, dim_utils, channel_idx, correction_channel_idx,
+        background_method='triangle', summary_mode='maximum', summary_percentile=75,
+        timepoints=None, spatial_stride=(1, 1), ceiling_min_count=None):
+    """Everything divide-mode AF needs that a single region cannot supply: the two background levels
+    and the output ceiling. All three **derived**, none dialled in.
+
+    * ``val1`` — background of the target channel
+    * ``val2`` — the level above which the AF reference counts as autofluorescence
+    * ``c_max`` — the ratio that maps to full scale, as an outlier-rejected maximum
+
+    These replace `channelPercentile`, `correctionPercentile`, `correctionMin` and `correctionMax`,
+    four numbers with no defensible value that were fitted per dataset and never revisited. The
+    background pair now comes from `intensity_utils.background_threshold` (Zack's triangle by default)
+    and the ceiling from `intensity_utils.robust_hist_max`.
+
+    Split out from the streaming writer so the **task preview** can pay for them once and cache them,
+    then correct just the region on screen with `af_correct_frame` (the analogue of cellpose's
+    `norm_params` → `predict_slice`). They are global by definition: computing them from a crop would
+    subtract a different background in the previewed region than in the run, i.e. lie about the one
+    thing being tuned.
+
+    Two passes, because the ratio cannot be formed until the backgrounds are known. Both are
+    subsamplable and the defaults are measured, not guessed:
+
+    * ``timepoints`` — which frames to gather from. ``None`` = all.
+    * ``spatial_stride`` — ``(z, xy)`` stride WITHIN each frame. Prefer this over dropping frames: it
+      keeps every timepoint represented, and the count-thresholded ceiling is invariant to it
+      (identical answer at ``(2, 4)``, which cost 24 s against 148 s for the full read).
+
+    A note on why the ceiling is derived here and not handed in: it is a property of the corrected
+    ratio, so it cannot be known before the backgrounds are, and it must be identical for the run and
+    the preview or the preview's brightness is a lie.
+    """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
+    ts = range(T) if timepoints is None else list(timepoints)
+    zst, xyst = (int(spatial_stride[0]), int(spatial_stride[1]))
+    strided = zst > 1 or xyst > 1
+
     dt = data.dtype
     integer = np.issubdtype(dt, np.integer)
     rescale = float(np.iinfo(dt).max) if integer else 255.0
     nbins = (int(np.iinfo(dt).max) + 1) if integer else 256
-    hi = float(nbins)                     # corrected ratio is bounded by (0, maxval+1] = (0, nbins]
+    hi = float(nbins)                     # the ratio's ceiling: (maxval+1)/1
 
-    sigma = [0] * len(data.shape)
-    for d in dim_utils.spatial_axis():
-        sigma[dim_utils.dim_idx(d)] = gaussian_sigma
-    fp = None
-    if median_filter > 0:
-        fp = (skimage.morphology.ball(median_filter) if dim_utils.is_3D()
-              else skimage.morphology.disk(median_filter)).astype(bool)
+    def _stride(a):
+        return a[..., ::zst, ::xyst, ::xyst] if (strided and a.ndim >= 3) else a
 
-    do_ch_sub, do_corr_sub = channel_percentile > 0, correction_percentile > 0
-
-    # Pass 1 — global background percentiles (integer histograms; exact bins for integer data)
+    # ── pass 1: the two background levels ───────────────────────────────────
     H_ch, H_corr = np.zeros(nbins, np.int64), np.zeros(nbins, np.int64)
-    for t in range(T):
-        if do_ch_sub:
-            ch = _af_slab(data, dim_utils, channel_idx, t)
-            H_ch += np.bincount(np.clip(ch, 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
-        if do_corr_sub:
-            ci = _af_correction_slab(data, dim_utils, correction_channel_idx, t, summary_mode, summary_percentile)
-            H_corr += np.bincount(np.clip(np.rint(ci), 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
-    val1 = float(intensity_utils.hist_percentile(H_ch, channel_percentile)) if do_ch_sub else None
-    val2 = float(intensity_utils.hist_percentile(H_corr, correction_percentile)) if do_corr_sub else None
+    for t in ts:
+        ch = _stride(_af_slab(data, dim_utils, channel_idx, t))
+        H_ch += np.bincount(np.clip(ch, 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
+        ci = _stride(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
+                                         summary_mode, summary_percentile))
+        H_corr += np.bincount(np.clip(np.rint(ci), 0, nbins - 1).astype(np.int64).ravel(),
+                              minlength=nbins)[:nbins]
+    val1 = float(intensity_utils.background_threshold(H_ch, background_method))
+    val2 = float(intensity_utils.background_threshold(H_corr, background_method))
 
-    def _raw(t):
-        img = _af_subtract(_af_slab(data, dim_utils, channel_idx, t), val1)
-        corr = _af_subtract(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
-                                                summary_mode, summary_percentile), val2)
-        return img, (img + 1.0) / (corr + 1.0)
+    # ── pass 2: the ceiling, from the corrected-ratio distribution ──────────
+    H_ratio = np.zeros(nbins, np.int64)
+    for t in ts:
+        img = _af_subtract(_stride(_af_slab(data, dim_utils, channel_idx, t)), val1)
+        corr = _af_subtract(_stride(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
+                                                       summary_mode, summary_percentile)), val2)
+        ratio = (img + 1.0) / (corr + 1.0)
+        H_ratio += np.bincount(np.clip(ratio / hi * (nbins - 1), 0, nbins - 1).astype(np.int64).ravel(),
+                               minlength=nbins)[:nbins]
 
-    # Pass 2 — rescale window from the corrected-ratio distribution (divide mode only)
-    c_min, c_max = 0.0, 1.0
-    if correction_mode == 'divide':
-        Hc = np.zeros(nbins, np.int64)
-        for t in range(T):
-            _, corrected = _raw(t)
-            idx = np.clip(corrected / hi * (nbins - 1), 0, nbins - 1).astype(np.int64)
-            Hc += np.bincount(idx.ravel(), minlength=nbins)[:nbins]
-        c_min = intensity_utils.hist_percentile(Hc, correction_range[0]) / (nbins - 1) * hi
-        c_max = intensity_utils.hist_percentile(Hc, correction_range[1]) / (nbins - 1) * hi
+    # Scale the count threshold by the sampling fraction, so a strided pass asks for proportionally
+    # fewer voxels and lands on the same ceiling as a full one.
+    if ceiling_min_count is None:
+        frac = 1.0 / (zst * xyst * xyst) * (len(ts) / max(1, T))
+        ceiling_min_count = max(1, int(round(AF_CEILING_MIN_COUNT * frac)))
+    c_max = intensity_utils.robust_hist_max(H_ratio, ceiling_min_count) / (nbins - 1) * hi
+    # the trap documented on `robust_hist_max`: the background bin dominates, so an over-large count
+    # can return a ceiling inside it. Never let the window collapse.
+    c_max = max(float(c_max), hi * AF_CEILING_FLOOR_FRAC)
 
-    # Pass 3 — apply + write per timepoint
-    for t in range(T):
-        img, corrected = _raw(t)
-        if correction_mode == 'divide':
-            denom = (c_max - c_min) if c_max > c_min else 1.0
-            corrected = np.clip((corrected - c_min) / denom * rescale, 0, rescale)
-        else:
-            corrected = img
-        inverse = (img + 1.0) / (corrected + 1.0) if (generate_inverse and inv_ch is not None) else None
-
-        if fp is not None:
-            f = fp
-            for _ in range(corrected.ndim - f.ndim):
-                f = np.expand_dims(f, axis=0)
-            corrected = scipy.ndimage.median_filter(corrected, footprint=f)
-            if inverse is not None:
-                inverse = scipy.ndimage.median_filter(inverse, footprint=f)
-        if apply_gaussian:
-            corrected = scipy.ndimage.gaussian_filter(corrected, sigma=sigma)
-            if inverse is not None:
-                inverse = scipy.ndimage.gaussian_filter(inverse, sigma=sigma)
-
-        # cast to the stored dtype BEFORE rolling ball / top hat (matches the old per-channel order,
-        # which cast the corrected channel to int before those spatial ops)
-        corrected = corrected.astype(out.dtype)
-        if inverse is not None:
-            inverse = inverse.astype(out.dtype)
-        is_3d = dim_utils.is_3D()
-        if rolling_ball_radius > 0:           # corrected only, per the old order
-            corrected = _af_rolling_ball_frame(corrected, is_3d, rolling_ball_radius, rolling_ball_padding)
-        if top_hat_radius > 0:                # both corrected and inverse
-            corrected = _af_top_hat_frame(corrected, top_hat_radius)
-            if inverse is not None:
-                inverse = _af_top_hat_frame(inverse, top_hat_radius)
-
-        _af_write_slab(out, dim_utils, out_ch, t, corrected)
-        if inverse is not None:
-            _af_write_slab(out, dim_utils, inv_ch, t, inverse)
+    return AfDivisionStats(val1=val1, val2=val2, c_max=c_max, nbins=nbins, rescale=rescale)
 
 
-def _af_inverse_channels(af_combinations, dim_utils):
-    """Channel indices (ascending) that produce an appended inverse channel — a combination with
-    both ``generateInverse`` and at least one division channel. Shared by the output-shape helper
-    and the streaming writer so both agree on the appended-channel layout."""
-    combos = {int(i): x for i, x in af_combinations.items()}
-    return sorted(i for i, x in combos.items()
-                  if x.get('generateInverse', False) and len(x.get('divisionChannels', [])) > 0)
+def af_correct_frame(img_slab, corr_slab, stats, out_dtype):
+    """Divide-mode AF for ONE frame: subtract both backgrounds, divide, map to the stored dtype.
+
+    Takes the two raw slabs already read — the target channel and the summarised AF reference — so it
+    is pure compute with no data access. That is what lets the preview hand it a CROP while the run
+    hands it a whole frame, and it is why the preview cannot drift from the run.
+
+    Four lines of arithmetic, and deliberately nothing else. It used to carry a median filter, a
+    gaussian, a rolling-ball and a top-hat, none of which are autofluorescence correction — they were
+    a small image-processing toolbox that accreted in this task while fitting individual datasets.
+
+    The gaussian is the one worth explaining, because it was not cosmetic: dividing by a small noisy
+    denominator amplifies noise, and the blur hid that. **Noise suppression is the denoise step's job**
+    (pre-cellpose, now in coastal), so keeping a second, weaker version of it here meant every
+    corrected channel was silently blurred whether or not it was going to be denoised anyway. It also
+    matters less than it did: the derived AF background sits higher than the hand-tuned percentile it
+    replaced, so more of the reference channel is zeroed, the denominator is 1 more often, and there is
+    simply less division to amplify anything.
+
+    ``stats.c_max`` is the ratio that maps to full scale, derived in `af_division_stats` as an
+    outlier-rejected maximum. Every value in this function comes from the data.
+    """
+    img = _af_subtract(img_slab, stats.val1)
+    corr = _af_subtract(corr_slab, stats.val2)
+    ratio = (img + 1.0) / (corr + 1.0)
+    denom = stats.c_max if stats.c_max > 0 else 1.0
+    return np.clip(ratio / denom * stats.rescale, 0, stats.rescale).astype(out_dtype)
 
 
-def af_correction_output_shape(input_array, dim_utils, af_combinations):
-    """Shape of the AF-corrected output: same as input but with the channel axis widened by one
-    channel per combination that requests an inverse (inverses are appended after the C corrected
-    channels). Lets a caller size the on-disk output store before ``af_correct_image`` fills it."""
-    n_inverse = len(_af_inverse_channels(af_combinations, dim_utils))
-    shape = list(input_array.shape)
-    shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + n_inverse
-    return tuple(shape)
 
 
-def _stream_simple_channel(input_image, out, i, dim_utils, recipe, sigma,
-                           apply_gaussian_to_others, logfile_utils):
-    """Non-division output channel, streamed one timepoint at a time: optional denoise (per frame),
-    optional gaussian-to-others, then rolling ball / top hat — all frame-local. ``recipe`` is the
-    channel's af_combination entry, or None for a channel not covered by any combination."""
+def _stream_division_channel(data, out, dim_utils, channel_idx, out_ch, correction_channel_idx,
+                             background_method='triangle', summary_mode='maximum',
+                             summary_percentile=75, stats=None, logfile_utils=None):
+    """Divide-mode AF for one channel, streamed one timepoint at a time into ``out`` (peak memory =
+    one frame, not the whole channel).
+
+    Everything global comes from `af_division_stats`, everything per-voxel from `af_correct_frame`.
+    Pass ``stats`` to reuse an already-computed set — that is how the preview and the run stay
+    identical. Returns `af_output_stats` for the corrected channel so the caller can bank QC.
+    """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
-    dt = input_image.dtype
-    x = recipe or {}
-    denoise_fun = x.get('denoiseFun', 'NONE') if recipe is not None else 'NONE'
-    r = x.get('rollingBallRadius', 0) if recipe is not None else 0
-    th = x.get('topHatRadius', 0) if recipe is not None else 0
-    if denoise_fun == 'wavelet':
-        dp = {'method': x.get('waveletMethod', 'BayesShrink'), 'mode': x.get('waveletMode', 'soft')}
-    elif denoise_fun == 'tv':
-        dp = {'weight': x.get('tvWeight', 0.1)}
-    else:
-        dp = {}
+    if stats is None:
+        stats = af_division_stats(data, dim_utils, channel_idx, correction_channel_idx,
+                                  background_method=background_method, summary_mode=summary_mode,
+                                  summary_percentile=summary_percentile)
+    if logfile_utils is not None:
+        logfile_utils.log(f'>> ch{channel_idx}: background {stats.val1:.0f} / AF {stats.val2:.0f}, '
+                          f'ceiling {stats.c_max:.1f} ({background_method})')
 
-    is_3d = dim_utils.is_3D()
+    # Output histogram, accumulated as we go — the objective signal the QC exemption in af_correct.jl
+    # said was missing. Free: one bincount per frame we already hold.
+    H_out = np.zeros(stats.nbins, np.int64)
+
     for t in range(T):
-        base = _af_slab(input_image, dim_utils, i, t)
-        if denoise_fun != 'NONE':
-            base = _af_denoise_frame(base, dt, denoise_fun, dp).astype(dt)
-        if apply_gaussian_to_others:
-            base = scipy.ndimage.gaussian_filter(base.astype(np.float64), sigma=sigma).astype(dt)
-        if r > 0:
-            base = _af_rolling_ball_frame(base, is_3d, r, x.get('rollingBallPadding', 4))
-        if th > 0:
-            base = _af_top_hat_frame(base, th)
-        _af_write_slab(out, dim_utils, i, t, base.astype(out.dtype))
+        corrected = af_correct_frame(
+            _af_slab(data, dim_utils, channel_idx, t),
+            _af_correction_slab(data, dim_utils, correction_channel_idx, t,
+                                summary_mode, summary_percentile),
+            stats, out.dtype)
+        H_out += np.bincount(np.clip(corrected, 0, stats.nbins - 1).astype(np.int64).ravel(),
+                             minlength=stats.nbins)[:stats.nbins]
+        _af_write_slab(out, dim_utils, out_ch, t, corrected)
+
+    return af_output_stats(H_out, stats)
+
+
+def af_output_stats(hist, stats):
+    """Did the derived ceiling land well? The numbers a user (or QC) acts on.
+
+    * ``clippedFrac`` — fraction pushed to the dtype ceiling. Should be near zero; if it isn't, the
+      ceiling was derived too low and real signal is being flattened.
+    * ``levelsUsed`` / ``levelsAvailable`` — how much of the output range the data occupies. Low means
+      the ceiling is too high and quantisation is being thrown away: under the percentile window this
+      replaced, 99% of a real image landed in ~13 of 255 levels.
+
+    Reported by the run (QC) and by the preview (readout), from one helper so the two agree.
+    """
+    rescale = stats.rescale
+    hi = int(rescale)
+    s = intensity_utils.clip_stats(hist, 0, hi)
+    nz = np.nonzero(hist)[0]
+    return {
+        'clippedFrac': float(s.get('clipHighFrac', 0.0)),
+        'levelsUsed': int(nz.size),
+        'levelsAvailable': hi + 1,
+        'trueMax': int(s.get('trueMax', 0)),
+        'p999': int(s.get('p999', 0)),
+    }
+
+
+def af_correction_output_shape(input_array, dim_utils, af_combinations=None):
+    """Shape of the AF-corrected output — now identical to the input.
+
+    It used to widen the channel axis by one per combination requesting `generateInverse`. That option
+    is gone with the rest of the per-combination bag, so the output has the same channels as the input:
+    corrected where a combination covers them, carried through unchanged where it doesn't. Kept as a
+    function (rather than inlining `input_array.shape`) because every writer sizes its store through it
+    and a future channel-adding option would land here.
+    """
+    return tuple(input_array.shape)
+
+
+def _copy_channel(input_image, out, i, dim_utils):
+    """Carry a channel no combination covers through unchanged, one timepoint at a time.
+
+    It used to denoise, gaussian-blur, rolling-ball and top-hat these channels — by DEFAULT, since
+    `applyGaussianToOthers` was true, so the AF task silently filtered channels it wasn't correcting.
+    A correction task has no business modifying a channel nobody asked it to touch.
+    """
+    T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
+    for t in range(T):
+        _af_write_slab(out, dim_utils, i, t,
+                       _af_slab(input_image, dim_utils, i, t).astype(out.dtype))
 
 
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
-                     gaussian_sigma=1, use_dask=False,
-                     apply_gaussian=True, apply_gaussian_to_others=True, out=None):
+                     background_method='triangle', out=None, output_stats=None):
     """Correct autofluorescence for all channels, streamed ONE TIMEPOINT AT A TIME per channel.
 
+    A **channel combination is now just channels**: which channel to correct, and which to correct it
+    against. Everything that was a number in the UI — two background percentiles, a rescale window, a
+    median filter, a gaussian, a rolling ball, a top hat, a denoiser, an inverse channel — is either
+    derived (`af_division_stats`) or gone. Those parameters accreted while fitting individual datasets
+    and were a bag nobody revisited; a correction task should correct, not carry a filter toolbox.
+
+    ``background_method`` is the one remaining choice, global to every combination — how the two
+    background levels are derived (`intensity_utils.BACKGROUND_METHODS`).
+
     Peak memory is a single channel-frame — casting a whole channel-timecourse to float64 (~47 GB on
-    a large movie) was the OOM. Division channels gather their three global-per-channel percentiles
-    (channel bg, correction bg, rescale window) from streamed histograms; every other op is
-    frame-local. When ``out`` is None a numpy array of the output shape is allocated and returned
-    (legacy / small-image path); production passes the on-disk zarr from
-    ``open_multiscales_for_writing`` (sized by ``af_correction_output_shape``). Output matches the
-    old whole-channel path to within the histogram bin resolution."""
+    a large movie) was the OOM. When ``out`` is None a numpy array is allocated and returned (legacy /
+    small-image path); production passes the on-disk zarr from ``open_multiscales_for_writing``.
+    Pass a dict as ``output_stats`` to receive per-corrected-channel `af_output_stats`, keyed by
+    channel index as a string — an out-parameter rather than a second return value so callers that use
+    the returned array keep working.
+    """
     n_channels = dim_utils.dim_val('C')
     af_combinations = {int(i): x for i, x in af_combinations.items()}
-
-    sigma = [0] * len(input_image.shape)
-    for d in dim_utils.spatial_axis():
-        sigma[dim_utils.dim_idx(d)] = gaussian_sigma
-
-    # inverse channels are appended after the C corrected channels, in ascending channel order
-    inverse_channels = _af_inverse_channels(af_combinations, dim_utils)
-    inv_slot = {ch: n_channels + k for k, ch in enumerate(inverse_channels)}
 
     if out is None:   # legacy/small: allocate the full output (compute still streams per frame)
         out = np.zeros(af_correction_output_shape(input_image, dim_utils, af_combinations),
                        dtype=zarr_utils.native_dtype(input_image.dtype))
 
+    output_stats = {} if output_stats is None else output_stats
     for i in range(n_channels):
         x = af_combinations.get(i)
         div_channels = x.get('divisionChannels', []) if x is not None else []
-        if x is not None and len(div_channels) > 0:
-            _stream_division_channel(
-                input_image, out, dim_utils, channel_idx=i, out_ch=i, inv_ch=inv_slot.get(i),
-                correction_channel_idx = div_channels,
-                channel_percentile     = x.get('channelPercentile',    80),
-                correction_percentile  = x.get('correctionPercentile', 40),
-                correction_mode        = x.get('correctionMode',       'divide'),
-                summary_mode           = x.get('summaryMode',          'maximum'),
-                summary_percentile     = x.get('summaryPercentile',    75),
-                correction_range       = (x.get('correctionMin', 1), x.get('correctionMax', 99)),
-                median_filter          = x.get('medianFilter', 0),
-                generate_inverse       = x.get('generateInverse', False),
-                gaussian_sigma         = gaussian_sigma, apply_gaussian = apply_gaussian,
-                rolling_ball_radius    = x.get('rollingBallRadius', 0),
-                rolling_ball_padding   = x.get('rollingBallPadding', 4),
-                top_hat_radius         = x.get('topHatRadius', 0),
-                logfile_utils          = logfile_utils)
+        if div_channels:
+            output_stats[str(i)] = _stream_division_channel(
+                input_image, out, dim_utils, channel_idx=i, out_ch=i,
+                correction_channel_idx=div_channels,
+                background_method=background_method,
+                logfile_utils=logfile_utils)
         else:
-            _stream_simple_channel(input_image, out, i, dim_utils, x, sigma,
-                                   apply_gaussian_to_others, logfile_utils)
+            _copy_channel(input_image, out, i, dim_utils)
     return out

@@ -55,8 +55,11 @@ def run(params: dict):
     out_vn     = params.get('outputValueName', 'default')
 
     log.log(f'>> open image: {im_path}')
-    # `as_dask=True` — metadata-only; MeasureUtils iterates per-frame.
-    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+    # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
+    # dask handle only ever added graph overhead. Measured on a real store (zolIMa/ldYr8J, 0.78 GB):
+    # a per-timepoint copy is 2.71 s from zarr vs 6.09 s from dask, at half the peak RSS. See
+    # docs/todo/ZARR_STREAMING_PLAN.md -> locked decision 2.
+    im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
@@ -75,7 +78,7 @@ def run(params: dict):
         try:
             # open labels through the shared reader (same as the image above) — a list of
             # multiscale levels; measure_from_zarr takes level 0 (full-res). NOT hand-rolled zarr.
-            label_zarrs[ltype], _ = zarr_utils.open_as_zarr(fpath, as_dask=True)
+            label_zarrs[ltype], _ = zarr_utils.open_as_zarr(fpath, as_dask=False)
             log.log(f'>> opened label "{ltype}": {fpath}')
         except Exception as e:
             log.log(f'[WARN] Could not open {fpath}: {e}')

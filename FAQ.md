@@ -61,6 +61,42 @@ one less setting a user can get wrong.
 Version 4 removed the denoising models, which Cecelia's pipeline relies on. Until that changes, v3
 is a hard pin rather than an oversight.
 
+## Image processing
+
+**Everyone says "use Dask" for out-of-memory images. Why doesn't Cecelia?**
+Because the OOM problem and the *access pattern* problem have different answers, and Dask solves the
+first by making the second worse. Dask's default chunking packs the whole timecourse into one ~128 MB
+block, so reading a single 512×512 tile over-fetches the entire block — and Cecelia's hot paths are
+all tiled or per-plane (segmentation tiles, napari slicing one z per frame). The original code worked
+around that by loading whole images into RAM, which is what actually caused the OOM: one channel's
+timecourse as float64 is ~47 GB on a large movie.
+
+The fix wasn't laziness, it was **granularity**. Every image task now holds exactly one frame at a
+time and writes it straight into the output store. Bounded memory *and* fast in-RAM tiling. Measured
+on a real 0.78 GB store, copying per-timepoint from plain zarr takes 2.71 s at 1.2 GB peak RSS;
+the same copy from a Dask array takes 6.09 s, and `da.store` with the required rechunk takes 8.31 s
+at 3.6 GB. Dask lost 3× on speed and 3× on memory in its own best case.
+
+There's a correctness edge too. `da.store(lock=False)` silently corrupts output when the source
+blocks straddle the destination's chunk grid — two tasks read-modify-write the same chunk file. We
+reproduced that 10 times out of 10. It's fixable by rechunking first, and the one place Cecelia still
+uses `da.store` does exactly that, but it's a footgun a sequential per-frame write doesn't have.
+
+Dask hasn't been thrown out — it's still the lazy container that napari renders from. It's just not
+the compute engine. Full rationale and the numbers:
+[`docs/todo/ZARR_STREAMING_PLAN.md`](docs/todo/ZARR_STREAMING_PLAN.md).
+
+**Then how do the live task previews work, if not by re-evaluating a lazy graph?**
+By splitting each task into the part that needs the whole image and the part that doesn't. The
+expensive global statistic — a normalisation window, a background percentile — is computed once and
+cached; the per-pixel work is then applied to just the region you're looking at. That's why changing
+Cellpose's diameter re-previews in 0.14 s while changing its input channel costs a fresh statistic.
+
+A lazy graph over the visible region would be simpler *and wrong*: it would recompute those
+statistics from the crop, so the preview would be normalised differently from the run it is
+supposed to be previewing. Being fast is not the hard part — agreeing with the real run is.
+See [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Previewing params BEFORE a run*.
+
 ## How it was built
 
 **Was this really written by an AI?**

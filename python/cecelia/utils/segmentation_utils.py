@@ -178,7 +178,8 @@ class SegmentationUtils:
                         frame[ma] = self._stitch_tile_seams(frame[ma], H, W, None, fa_y, fa_x, 1)
 
                 for ma in frame:
-                    frame[ma] = self._post_process(frame[ma], frame_axes, None, 1, is_3d)
+                    # no `real_border`: a run processes whole frames, so its array edge IS the image edge
+                    frame[ma] = self.post_process(frame[ma], frame_axes, None, 1, is_3d)
 
                 if 'base' in frame and 'nuc' in frame:
                     frame['base'], frame['nuc'] = self._match_nuc_cyto(
@@ -268,8 +269,38 @@ class SegmentationUtils:
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 
-    def _compute_norm_params(self, im_dat, model_params):
+    def _subsample_time(self, darr, max_frames):
+        """Evenly stride the time axis down to at most `max_frames` frames; identity when that isn't
+        needed or possible. A no-op for a single-timepoint image (a large tiled mosaic), which is why
+        subsampling can't hurt the case that most depends on a global window."""
+        if not max_frames or max_frames < 1:
+            return darr
+        t_idx = self.dim_utils.dim_idx('T')
+        if t_idx is None or darr.shape[t_idx] <= max_frames:
+            return darr
+        stride = -(-darr.shape[t_idx] // max_frames)      # ceil → at most max_frames frames
+        sl = [slice(None)] * darr.ndim
+        sl[t_idx] = slice(0, None, stride)
+        return darr[tuple(sl)]
+
+    def _compute_norm_params(self, im_dat, model_params, max_frames=None):
         """Per-channel percentile clipping range for scale-to-whole normalisation.
+
+        Why scale-to-whole exists at all: on a large TILED image, per-tile normalisation gives each
+        tile its own window and the segmentation comes out **patchy** — visibly inconsistent from tile
+        to tile. A global window is the fix. (It sometimes also helps intravital, and sometimes not —
+        which is why `normaliseToWhole` is a user option, `segmentationOptions/normaliseToWhole`.)
+
+        ``max_frames`` — read at most this many TIMEPOINTS (evenly strided) instead of all of them.
+        Opt-in, default None = exact, because this function also serves real runs and silently
+        changing their statistic would change existing results. The **preview** passes it: the exact
+        statistic costs ~28 s on a single-level timelapse (measured, `EaMaVq` 201 × 20 × 544 × 548,
+        ~2.4 GB read), which is the entire latency of a preview whose inference is 0.35 s.
+
+        Subsampling trades only TEMPORAL coverage — every frame it reads is read in full, so spatial
+        coverage is untouched. That is what makes it safe for the case that most needs a global window:
+        a large tiled mosaic is typically a single timepoint, so the stride is 1 and the result is
+        exact. It degrades only on timelapses, where consecutive frames are highly redundant.
 
         Scale-to-whole is required — a per-tile/per-frame window would swing with local brightness
         and give inconsistent masks — so the percentile is GLOBAL. Two ways to get it without a
@@ -291,6 +322,7 @@ class SegmentationUtils:
             # bounded streaming histogram over the (single, full-res) level
             level = im_dat[0]
             darr = level if isinstance(level, da.Array) else da.from_array(level)
+            darr = self._subsample_time(darr, max_frames)
             hists = intensity_utils.channel_histograms(darr, c_idx, channels=channels)
             for ch, hist in zip(channels, hists):
                 hist = hist.copy()
@@ -313,8 +345,29 @@ class SegmentationUtils:
 
     # ── Post-processing ───────────────────────────────────────────────────────
 
-    def _post_process(self, arr, label_axes, la_t, T, is_3d):
-        """Apply erosion, expansion, min-size filter, and border clearing."""
+    def post_process(self, arr, label_axes, la_t, T, is_3d, real_border=None):
+        """Apply erosion, expansion, min-size filter, and border clearing.
+
+        ``real_border`` says which of the array's Y/X faces are the **image** edge, as
+        ``{'Y': (lo_is_image_edge, hi_is_image_edge), 'X': (…)}``. ``None`` (the default, and what the
+        full run passes) means all of them are — the run processes whole frames, so its array edge IS
+        the image edge.
+
+        It exists for the task preview, which runs this on a CROP of one plane. There, most edges are
+        just where the user stopped looking, and two steps would otherwise be silently wrong about
+        them — both in the direction of showing fewer cells than the run produces:
+
+        * ``clear_touching_border`` would clear every cell at the crop edge. The more you zoom in, the
+          more it deletes, so a parameter the run applies at the image border only would look
+          catastrophic. Passed as ``mask`` to ``clear_border``, where ``False`` marks the bands that
+          are genuinely image edge.
+        * the size filter would judge a cell on its **clipped** pixel count, dropping cells that are
+          only small because the crop cut them. Labels touching a non-image edge are exempted.
+
+        ``label_expansion`` stays approximate on a crop — an edge cell cannot grow into pixels outside
+        it. That needs a halo around the region to fix, which would change what the preview reads;
+        it is an edge-only cosmetic difference, so it is left alone deliberately.
+        """
         for t in range(T):
             if la_t is not None:
                 idx = tuple(t if i == la_t else slice(None) for i in range(arr.ndim))
@@ -328,9 +381,15 @@ class SegmentationUtils:
             if self.label_expansion > 0:
                 vol = segmentation.expand_labels(vol, self.label_expansion)
 
+            # Labels the crop cut through, and the mask marking which bands to actually clear. Built
+            # once per volume because both steps below need it (see the docstring).
+            border_mask, clipped = self._crop_edges(vol, real_border)
+
             if self.min_cell_size > 0 or self.cell_size_max > 0:
                 labels, counts = np.unique(vol[vol > 0], return_counts=True)
                 for lb, cnt in zip(labels, counts):
+                    if int(lb) in clipped:
+                        continue        # measured short by the crop — not a size the run would see
                     if (self.min_cell_size > 0 and cnt < self.min_cell_size) or \
                        (self.cell_size_max > 0 and cnt > self.cell_size_max):
                         vol[vol == lb] = 0
@@ -348,9 +407,9 @@ class SegmentationUtils:
                 if is_3d:
                     # Clear Y/X borders per Z slice; don't clear Z borders
                     for z in range(vol.shape[0]):
-                        vol[z] = segmentation.clear_border(vol[z])
+                        vol[z] = segmentation.clear_border(vol[z], mask=border_mask)
                 else:
-                    vol = segmentation.clear_border(vol)
+                    vol = segmentation.clear_border(vol, mask=border_mask)
 
             if la_t is not None:
                 arr[idx] = vol
@@ -358,6 +417,34 @@ class SegmentationUtils:
                 arr[:] = vol
 
         return arr
+
+    # The two Y/X faces of each axis, as an index into the LAST two axes of `vol` — so one table
+    # serves a 2D [Y,X] mask and a 3D [Z,Y,X] volume (`Ellipsis` absorbs the leading axes).
+    _YX_FACES = {'Y': ((0, slice(None)), (-1, slice(None))),
+                 'X': ((slice(None), 0), (slice(None), -1))}
+
+    def _crop_edges(self, vol, real_border):
+        """`(border_mask, clipped_labels)` for `post_process` — see its docstring.
+
+        `border_mask` is what `clear_border` takes as `mask`: **False marks a band to clear**, i.e. a
+        real image edge. `clipped_labels` are the ids touching a non-image edge, whose pixel count the
+        crop cut short. `real_border=None` → `(None, set())`, which is `clear_border`'s own default
+        (every edge cleared) and no exemptions: exactly the behaviour before this argument existed.
+        """
+        if real_border is None:
+            return None, set()
+
+        border_mask = np.ones(vol.shape[-2:], dtype=bool)
+        clipped = set()
+        for ax_name, (lo_idx, hi_idx) in self._YX_FACES.items():
+            lo_real, hi_real = real_border.get(ax_name, (True, True))
+            for is_image_edge, idx in ((lo_real, lo_idx), (hi_real, hi_idx)):
+                if is_image_edge:
+                    border_mask[idx] = False       # the run would clear here too
+                else:
+                    face = vol[(Ellipsis,) + idx]
+                    clipped.update(int(lb) for lb in np.unique(face) if lb > 0)
+        return border_mask, clipped
 
     def _stitch_tile_seams(self, arr, H, W, la_t, la_y, la_x, T):
         """Merge label IDs split at tile boundaries using IoU matching.

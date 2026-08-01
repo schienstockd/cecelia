@@ -97,23 +97,99 @@ def set_contrast_from_sample(layer, low_pct=1.0, high_pct=99.9, min_valid=100):
 
 
 def add_image(viewer, data, *, scale, units=None, channel_axis=None, channel_names=None,
-              colormaps=None, contrast=True, blending='additive', visible=True):
+              colormaps=None, contrast=True, blending='additive', visible=True,
+              name=None, axes=None, image_axes=None, image_shape=None, cache=None):
   """Add a (possibly multi-channel) image — one layer per channel via ``channel_axis``, per-channel
   ``colormaps``, additive ``blending``, and (optionally) contrast from a middle sample. Returns the
-  added layer, or the list of per-channel layers when ``channel_axis`` is set."""
+  added layer, or the list of per-channel layers when ``channel_axis`` is set.
+
+  ``axes``/``image_axes``/``image_shape`` align a layer whose axes are a SUBSET of the viewer's, exactly
+  as ``add_labels`` does and for the same reason — napari reinterprets a short layer's axes as the
+  viewer's trailing ones, which silently renders time as Z. The task preview needs this: its block is
+  channel-less ``[T, Z, Y, X]`` while the image layers it sits beside include C. See ``expand_to_axes``.
+
+  ``name`` overrides the derived layer name, for a layer that is not simply "the image" — a corrected
+  channel from an AF preview, say, which has to be distinguishable from the raw channel beside it.
+  ``cache=False`` forces every slice to re-read, which matters when consecutive layers of the same
+  shape hold DIFFERENT data (see the note on ``add_labels``).
+  """
   require_napari()
-  kw = dict(channel_axis=channel_axis, name=image_layer_name(channel_names, channel_axis),
+  if axes is not None or image_axes is not None:
+    data, aligned = expand_to_axes(data, axes, image_axes, viewer_shape=image_shape)
+    if not aligned:
+      nd = layer_ndim(data)
+      scale = align_axis_vector(scale, nd)
+      if units is not None:
+        units = align_axis_vector(units, nd)
+  kw = dict(channel_axis=channel_axis,
+            name=name if name is not None else image_layer_name(channel_names, channel_axis),
             colormap=colormaps, scale=scale, visible=visible)
   if units is not None:
     kw['units'] = units
   if blending is not None:
     kw['blending'] = blending
+  if cache is not None:
+    kw['cache'] = bool(cache)
   result = viewer.add_image(data, **kw)
   if contrast:
     for layer in (result if isinstance(result, list) else [result]):
       if getattr(layer, 'visible', True):
         set_contrast_from_sample(layer)
   return result
+
+
+def preview_region_from_corners(corners, factors, axes, ndisplay=2, current_step=None):
+    """A viewer's visible extent → the task-preview region contract, in **level-0 pixels**.
+
+    ``corners``: napari's ``layer.corner_pixels``, shape (2, ndim) — ``[min, max]`` in the layer's own
+    DATA coordinates at its current ``data_level``. ``factors``: that level's row of
+    ``layer.downsample_factors``. ``axes``: the layer's axis letters in order (channel already
+    dropped), e.g. ``['t','z','y','x']``. ``current_step``: ``viewer.dims.current_step``, aligned with
+    ``axes`` — the DATA index per dimension.
+
+    Returns ``{"xy": {"X": [lo, hi], "Y": [lo, hi]}, "z": int|None, "t": int|None, "ndisplay": int}``.
+
+    **Two different sources, deliberately, and this is the part that bit us:**
+
+    * The visible XY box comes from ``corner_pixels``.
+    * The current plane/timepoint comes from ``current_step``. It CANNOT come from corner_pixels: for a
+      dimension that isn't being displayed, napari leaves corner_pixels at ``[0, 0]`` rather than the
+      slider position. An earlier version of this function read z/t off corner_pixels on the assumption
+      that min == max == the current index; on a live viewer sitting at t=44, z=9 it returned t=0, z=0
+      and previewed drift-correction padding. (The unit test that "confirmed" the assumption built a
+      fresh layer, whose step is 0 anyway — 0 == 0 proved nothing. Hence the live-viewer test below.)
+
+    Two conversions on the XY box are also silently wrong if fumbled, and invisible in the result:
+
+    * corner_pixels is at ``data_level``, **not level 0** — a zoomed-out viewer reports small numbers
+      that must be scaled up, or the preview segments the top-left corner of the image.
+    * corner_pixels bounds are **inclusive**; the contract is half-open — so +1 before scaling, or the
+      preview quietly drops its last row and column.
+    """
+    corners = np.asarray(corners)
+    factors = np.asarray(factors, dtype=float)
+    if corners.ndim != 2 or corners.shape[0] != 2:
+        raise ValueError(f"corner_pixels must be (2, ndim), got {corners.shape}")
+    if corners.shape[1] != len(axes) or len(factors) != len(axes):
+        raise ValueError(
+            f"axes {list(axes)} do not match corners {corners.shape} / factors {len(factors)}")
+    step = list(current_step) if current_step is not None else None
+    if step is not None and len(step) != len(axes):
+        raise ValueError(f"current_step {step} does not match axes {list(axes)}")
+
+    out = {"xy": {}, "z": None, "t": None, "ndisplay": int(ndisplay)}
+    for i, ax in enumerate(axes):
+        ax = str(ax).upper()
+        if ax in ("Y", "X"):
+            lo = int(np.floor(corners[0][i] * factors[i]))
+            hi = int(np.ceil((corners[1][i] + 1) * factors[i]))   # inclusive → half-open
+            out["xy"][ax] = [max(0, lo), hi]
+        elif ax in ("Z", "T"):
+            # the slider, NOT corner_pixels (see above). No step given → fall back to the corner, which
+            # is right only for a viewer that has never been moved.
+            idx = step[i] if step is not None else corners[0][i]
+            out[ax.lower()] = max(0, int(idx))
+    return out
 
 
 def layer_ndim(data):

@@ -67,6 +67,12 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # that rescaled worse than its peers). Banked by qc.jl import_metrics + rescale_metrics. See
     # docs/todo/IMPORT_RESCALE_PLAN.md.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat"],
+    # AF correction: both are cohort-comparable BECAUSE the output ceiling is derived per image rather
+    # than dialled in — so an image whose corrected channel clipped far more, or used far less of the
+    # output range, than its peers had its background/ceiling derived differently, which is a staining
+    # or acquisition outlier rather than a parameter someone typed. That was not checkable while the
+    # window came from hand-tuned percentiles: every image got its own, so there was nothing to compare.
+    "cleanupImages.afCorrect"        => ["clippedFrac", "levelsUsedFrac"],
 )
 
 """

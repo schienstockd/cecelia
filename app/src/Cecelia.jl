@@ -130,7 +130,14 @@ export launch!, close!, restart!, send
 export open_image!, show_labels!, show_branch_labels!, refresh_labels!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!
-export capture_view_state, apply_view_state!
+export capture_view_state, apply_view_state!, preview_region
+
+# ── Task preview (resident worker) ────────────────────────────────────────────
+# `launch!`/`close!`/`send` above are shared generics — the preview worker adds methods, not names.
+export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
+export preview_show_command, show_task_preview!, hide_task_preview!
+export task_previewable, preview_params, preview_params_for_run,
+       preview_steps_not_previewed
 
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")
@@ -199,6 +206,9 @@ include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
 include("napari.jl")
+# Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
+# `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).
+include("preview.jl")
 # Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)
 # + py_runner.jl (run_py/task_run_dir).
 include("maintenance.jl")

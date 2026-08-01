@@ -37,7 +37,7 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test !isempty(String(d.julia))
     @test haskey(d, :replAvailable) && haskey(d, :loopback) && haskey(d, :replEnabled)
     # service ports surfaced for the System panel
-    @test d.port > 0 && d.napariPort == 7655 && d.notebooksPort == 7660
+    @test d.port > 0 && d.napariPort == 7655 && d.previewPort == 7656 && d.notebooksPort == 7660
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
@@ -484,6 +484,115 @@ end
     onstamp = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
     @test (_sysimage_status() == "ready") ==
           (isfile(_sysimage_path()) && stamp_matches(onstamp, string(VERSION), _manifest_hash()))
+end
+
+@testset "API: task definitions carry the previewable trait" begin
+    # The trait is declared in Julia beside the task and STAMPED onto the spec here, rather than written
+    # into the JSON (which is the param spec — a capability of the compute doesn't belong in it, and two
+    # copies could disagree). The frontend reads this instead of sniffing the params for a
+    # cellpose-shaped `models` bag.
+    st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=segment"))
+    @test st == 200
+    specs = JSON3.read(body).segment
+    by_fun = Dict(String(s.fun_name) => s for s in specs if haskey(s, :fun_name))
+
+    # every spec gets the key, so the frontend never has to treat "absent" as a third state
+    for s in specs
+        haskey(s, :fun_name) && @test haskey(s, :previewable)
+    end
+    @test by_fun["segment.cellpose"].previewable == true
+    # the composite the module page actually runs — the #421 trap
+    @test by_fun["segment.cellposeMeasure"].previewable == true
+    # and a task the worker can't run says so
+    @test by_fun["segment.measureLabels"].previewable == false
+end
+
+@testset "API: task preview never guesses which image is open" begin
+    # The property this whole route exists for. `napari_api` tracked the open image but exposed
+    # nothing, so callers had to be told which image to act on — and guessing wrong wrote scratch
+    # stores into images the user wasn't looking at. Every branch below is a REFUSAL, because the
+    # alternative to refusing is acting on the wrong image.
+    saved = (_current_image_uid[], _current_zarr_path[], _current_task_dir[])
+    try
+        # ── nothing open → the status route says so in every field, so a client can't read a
+        #    plausible-looking default out of it
+        _current_image_uid[] = nothing; _current_zarr_path[] = nothing; _current_task_dir[] = nothing
+        st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.imageUid === nothing && d.zarrPath === nothing && d.taskDir === nothing
+        @test d.port == 7656 && d.port != 7655        # its own port, not the bridge's
+        @test d.alive == false
+
+        # ...and a run refuses rather than picking something
+        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i",
+                                               "params" => Dict("models" => Dict())))
+        @test st == 409
+        @test JSON3.read(body).code == "no-image-open"
+
+        # ── a DIFFERENT image open → refuse, and name what is actually open
+        _current_image_uid[] = "openImg"; _current_zarr_path[] = "/x/openImg.ome.zarr"
+        _current_task_dir[]  = "/x/meta"
+        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "otherImg",
+                                               "params" => Dict("models" => Dict())))
+        @test st == 409
+        d = JSON3.read(body)
+        @test d.code == "image-mismatch" && d.openImageUid == "openImg"
+
+        # ── missing required fields are 400s, not silent defaults
+        @test _post(api_preview_run, Dict("imageUid" => "i", "params" => Dict()))[1] == 400
+        @test _post(api_preview_run, Dict("projectUid" => "p", "params" => Dict()))[1] == 400
+        @test _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i"))[1] == 400
+
+        # ── the open image, but the task reads a DIFFERENT VERSION of it → refuse and say which to
+        #    open. Previewing anyway would either segment pixels the user can't see or pair the
+        #    region with a differently-shaped store.
+        mktempdir() do proj_root
+            conf  = cecelia_conf()
+            pdirs = get!(conf, "dirs", Dict{String,Any}())
+            had   = haskey(pdirs, "projects"); prev = get(pdirs, "projects", nothing)
+            pdirs["projects"] = proj_root
+            try
+                uid = "img9"
+                meta = joinpath(proj_root, "p", "1", uid); mkpath(meta)
+                write(joinpath(meta, "ccid.json"), JSON3.write(Dict(
+                    "uid" => uid,
+                    "filepath" => Dict("default" => "orig.ome.zarr",
+                                       "corrected" => "drift.ome.zarr", "_active" => "default"))))
+                _current_image_uid[] = uid
+                _current_zarr_path[] = joinpath(proj_root, "p", "0", uid, "orig.ome.zarr")
+                _current_task_dir[]  = meta
+
+                st, body = _post(api_preview_run, Dict(
+                    "projectUid" => "p", "imageUid" => uid,
+                    "params" => Dict("valueName" => "corrected", "models" => Dict())))
+                @test st == 409
+                d = JSON3.read(body)
+                @test d.code == "version-mismatch" && d.wantedValueName == "corrected"
+                # The frontend renders `code` as the short amber label and this message as the
+                # tooltip detail, so the message must carry the SPECIFICS — both names — rather than
+                # restate the problem. See `previewNotice`/`ERROR_SHORT` in utils/taskPreview.ts.
+                @test occursin("corrected", d.error) && occursin("orig.ome.zarr", d.error)
+                @test d.openZarr == "orig.ome.zarr"
+
+                # an unknown valueName is a 404, not a preview of the active version
+                st, _ = _post(api_preview_run, Dict(
+                    "projectUid" => "p", "imageUid" => uid,
+                    "params" => Dict("valueName" => "nope", "models" => Dict())))
+                @test st == 404
+            finally
+                had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
+            end
+        end
+
+        # ── a RUNNING segmentation puts the viewer on the staging store while ccid.json still
+        #    resolves the final path. Same store mid-write, so this must NOT be a mismatch.
+        @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr" * Cecelia.STORE_STAGING_SUFFIX)
+        @test _same_store("/a/b/X.ome.zarr", "/a/b/X.ome.zarr")
+        @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
+    finally
+        _current_image_uid[], _current_zarr_path[], _current_task_dir[] = saved
+    end
 end
 
 @testset "API: image geometry (axis mapping + version resolution)" begin

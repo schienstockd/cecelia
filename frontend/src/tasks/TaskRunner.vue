@@ -18,6 +18,7 @@ import { taskGatingReason } from '../utils/taskGating'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -89,6 +90,30 @@ const paramValues = ref<ParamValues>({})
 // single config applied to ALL selected images, so with several selected we show the set-level
 // last-used default rather than any single image's record.
 const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
+
+// The preview gets what `run()` sends: FLATTENED. A `section` is a UI grouping, so `paramValues` keeps
+// its sub-params nested, and everything downstream reads them flat — the run flattens on the way out
+// (`run()` below) and the preview did not. Nothing errors; the value is just absent, so each reader
+// quietly uses its own default. It made the preview claim "Run would tile this" on a run configured
+// for 4096 px (`blockSize` fell back to 512) and made the base-model warning always show its milder
+// wording (`removeUnmatched` read as undefined). A computed, so the identity is stable until the
+// params actually change — the preview re-runs on any change to this, debounced.
+const previewParams = computed<Record<string, unknown> | null>(() =>
+  taskDef.value ? flattenParams(taskDef.value, paramValues.value) as Record<string, unknown> : null)
+
+// Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
+// stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
+// line beside its struct — no list here to go stale. Composites resolve through their own overload, so
+// `segment.cellposeMeasure` and `cleanupImages.afDriftCorrect` both report true.
+//
+// One live condition on top of that: exactly one image selected, because the preview shows ONE region
+// of ONE image. Deliberately NOT "are the params ready" — that check used to be here as
+// `hasPreviewableModel`, which asks a cellpose question ("is there a base model?") of every task, so AF
+// correction (no `models`, it has `afCombinations`) never showed a button at all despite the backend
+// declaring it previewable. Readiness is now a blocker with a MESSAGE (`paramsBlocker`): a control that
+// explains why it cannot run beats one that silently isn't there.
+const canPreview = computed(() =>
+  (taskDef.value?.previewable ?? false) && drivingImageUid.value !== '')
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
@@ -340,17 +365,31 @@ const { width: sidebarWidth, onResizeStart } =
 
     <!-- ── Run + Concurrency ── -->
     <section class="runner-section run-section">
-      <button
-        class="run-btn"
-        :disabled="!canRun"
-        @click="run"
-        v-tooltip.left="canRun
-          ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s)`
-          : (activeTaskGatingReason || 'Select at least one image from the list to enable run')"
-      >
-        <i class="pi pi-play" />
-        {{ runLabel }}
-      </button>
+      <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
+           BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
+      <div class="run-row">
+        <button
+          class="run-btn"
+          :disabled="!canRun"
+          @click="run"
+          v-tooltip.left="canRun
+            ? `Run '${taskDef?.label}' on ${selectedUids.length} selected image(s)`
+            : (activeTaskGatingReason || 'Select at least one image from the list to enable run')"
+        >
+          <i class="pi pi-play" />
+          {{ runLabel }}
+        </button>
+
+        <!-- Preview: run these params on the region napari is showing, before committing to a full run -->
+        <TaskPreviewControls
+          :project-uid="projectMeta.current?.uid ?? ''"
+          :image-uid="drivingImageUid"
+          :value-name="String(paramValues.valueName ?? 'default')"
+          :fun-name="taskDef?.fun_name ?? ''"
+          :params="previewParams"
+          :previewable="canPreview"
+        />
+      </div>
 
       <div class="pool-row" v-if="pools.length > 0">
         <span class="pool-label cc-muted cc-fs-xs"
@@ -516,8 +555,12 @@ const { width: sidebarWidth, onResizeStart } =
 
 /* run */
 .run-section { flex-shrink: 0; }
+/* Run + Preview on one line. `stretch` is what makes the preview buttons match Run's height without
+   either side hardcoding a number — so a change to Run's padding can't silently desync them. */
+.run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
 .run-btn {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;

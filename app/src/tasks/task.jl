@@ -93,6 +93,99 @@ _inject_dynamic_options!(spec::Dict{String,Any}, ::CciaTask) = spec
 const LiveOutput = @NamedTuple{kind::String, value_name::String, files::Vector{String}}
 live_outputs(::CciaTask, ::AbstractDict)::Vector{LiveOutput} = LiveOutput[]
 
+# ── Previewable (run this task's real compute over one visible region, on demand) ──────────────
+# Whether the task preview can run this task: the resident worker (`preview/preview_worker.py`) executes
+# the task's OWN compute over the region napari is showing, so params can be judged before committing to
+# a full run. See docs/todo/TASK_PREVIEW_PLAN.md.
+#
+# A DECLARED trait rather than something inferred, for the same reason as `live_outputs`: the property
+# belongs to the task's compute, not to tasks in general. The frontend previously sniffed the params for
+# a cellpose-shaped `models` bag, which is honest about cellpose and silently wrong about everything
+# else — a denoise or AF-correction preview (the point of generalising this) could never light up.
+#
+# `false` is the correct answer for most tasks and the base method says so. A task overloads this only
+# when the worker actually knows how to run it — today that is the cellpose family, because
+# `CellposeUtils.predict_slice` is a real seam the worker calls rather than a reimplementation.
+#
+# NEEDS A CompositeTask OVERLOAD, below. This is exactly how the live preview shipped broken in #421:
+# the segmentation module page runs `segment.cellposeMeasure`, not `segment.cellpose`.
+task_previewable(::CciaTask)::Bool = false
+
+"""
+    preview_params(task, params, img) -> Dict
+
+The task's params as its OWN Python side needs them, for a preview. The base method passes them through.
+
+Why this exists: a task's `_run_task` typically *translates* params before dispatch — cellpose resolves
+channel NAMES to 0-based indices and a custom model name to a checkpoint path. The preview sends the
+frontend's params straight to the worker, so without this hook it sends names where Python expects
+indices (`ValueError: invalid literal for int() with base 10: 'CH3'`). The compute being shared
+(`predict_slice`) does not make the params shared; preparing them is the task's job, so it dispatches on
+the task rather than being guessed at by the worker or the API. Raise from an overload to refuse a
+preview with a user-facing message (a missing custom checkpoint).
+"""
+preview_params(::CciaTask, params::AbstractDict, ::CciaImage)::AbstractDict = params
+
+"""
+    preview_steps_not_previewed(task) -> Vector{Dict{String,Any}}
+
+For a COMPOSITE, the steps a preview does not run — `[{fun, label}, …]`, empty for a plain task.
+
+`preview_params` delegates to the FIRST previewable step, so a composite previews one step and the
+others silently do not happen. That is correct (the alternative is previewing nothing) but it must be
+SAID, because a skipped step can change what the previewed one even means: `afDriftCorrect` previews AF
+and skips drift correction, which expands the canvas and shifts every frame — so the geometry on screen
+is not the geometry the run produces. Labels come from each step's own spec so the message names them
+the way the UI does, rather than showing a `fun_name`.
+"""
+function preview_steps_not_previewed(task::CciaTask)::Vector{Dict{String,Any}}
+    spec = _task_spec(task)
+    isnothing(spec) && return Dict{String,Any}[]
+    steps = get(spec, "composite", nothing)
+    steps isa AbstractVector || return Dict{String,Any}[]
+    names = String[String(s) for s in steps]
+    length(names) <= 1 && return Dict{String,Any}[]
+
+    _task_of(n) = try _task_from_fun_name(n) catch; nothing end
+    previewed = findfirst(n -> begin
+        t = _task_of(n)
+        t !== nothing && task_previewable(t)
+    end, names)
+    isnothing(previewed) && return Dict{String,Any}[]
+
+    out = Dict{String,Any}[]
+    for (i, n) in enumerate(names)
+        i == previewed && continue
+        t = _task_of(n)
+        s = t === nothing ? nothing : _task_spec(t)
+        label = (s !== nothing && haskey(s, "label")) ? String(s["label"]) : n
+        push!(out, Dict{String,Any}("fun" => n, "label" => label))
+    end
+    out
+end
+
+"""
+    preview_params_for_run(task, params, img) -> Dict{String,Any}
+
+Params prepared **exactly as a real run would prepare them**: `section` sub-params lifted to the top
+level (`_flatten_sections`, what `run_task` does), then the task's own translation (`preview_params`).
+The single entry point for the preview path — call this, never `preview_params` directly.
+
+The two steps exist for the same underlying reason and each has already been a live bug. A `section` is
+a UI grouping, so the frontend sends its sub-params NESTED; every `_run_task` reads them flat. Skipping
+the lift does not fail loudly — Python's `params.get(k, default)` finds nothing and silently uses its
+own default. `blockSize` (inside the `imageTiling` include) fell back to 512 on an image under 1000 px
+wide, so the preview reported a tile seam on a run configured for 4096 that would never tile; the same
+silence applies to `normaliseToWhole`, `overlap` and every other section param, which is the part that
+would have gone on being wrong quietly. Flattening is idempotent, so this is safe on already-flat params.
+"""
+function preview_params_for_run(task::CciaTask, params::AbstractDict,
+                                img::CciaImage)::AbstractDict
+    flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    preview_params(task, flat, img)
+end
+
+
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a
 # constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream
@@ -428,6 +521,25 @@ function live_outputs(task::CompositeTask, params::AbstractDict)::Vector{LiveOut
     end
     unique(out)
 end
+
+# Composite: previewable if ANY step is. Same reasoning as `live_outputs` above, and the same trap —
+# `segment.cellposeMeasure` is what the segmentation page actually runs, so without this the most common
+# way to start a segmentation would report itself unpreviewable. `any`, not `all`: the preview shows one
+# step's output (the segmentation), and the measurement step that follows has nothing to preview but must
+# not veto it.
+task_previewable(task::CompositeTask)::Bool =
+    any(task_previewable, _composite_steps(task))
+
+# Composite: the previewable step owns the translation. Params are shared across a composite's steps
+# (they sit flat in one dict — see `live_outputs(::CompositeTask, …)`), so the first step that can be
+# previewed is the one whose Python will consume them.
+function preview_params(task::CompositeTask, params::AbstractDict, img::CciaImage)::AbstractDict
+    for sub in _composite_steps(task)
+        task_previewable(sub) && return preview_params(sub, params, img)
+    end
+    params
+end
+
 
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.

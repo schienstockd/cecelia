@@ -860,6 +860,14 @@ This is a hard convention: when adding a new page or option, the persistence is 
 The bug class it prevents (plots reverting, selections vanishing on navigation) is easy to ship and
 tedious to catch by clicking through — so put the option in the `defaults` bag from the start.
 
+**The one carve-out: an option whose restored value has a SIDE EFFECT, rather than just describing a
+view.** Restoring a chart type costs nothing, so losing it is pure annoyance and the rule applies.
+Restoring a switch that spawns a process, occupies a GPU or starts a job is *doing the thing* — not
+remembering a preference — and the user never asked for it in this session. Those stay session-only
+(the Pinia store already outlives route changes, so navigating away and back does not lose them; only
+a reload does, which is the right boundary). Live example and reasoning:
+`stores/taskPreview.ts` → `enabled` / `pinned`. Don't "fix" one of these back to `localStorage`.
+
 ### Custom task:result handling
 
 If a task sends back a result that needs frontend side-effects beyond the default filepath update, add a handler in `frontend/src/stores/ws.ts` inside the `task:result` block:

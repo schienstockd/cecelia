@@ -122,6 +122,12 @@ build    = { cmd = "npm run build", cwd = "frontend" }  # static production buil
 # Napari bridge (port 7655) standalone — normally the backend launches it; run this to debug it alone.
 napari = { cmd = "python3 napari_bridge.py", cwd = "napari" }
 
+# Task-preview worker (port 7656) standalone — normally the backend launches it on the first preview;
+# run this to debug it alone. Resident because a process that can segment costs 17.7s of imports before
+# it can answer (measured), which is fatal per preview and irrelevant once. PYTHONPATH so it resolves
+# `import cecelia.*` the same way run_py sets it up for task runners.
+preview = { cmd = "python3 preview_worker.py", cwd = "preview", env = { PYTHONPATH = "python" } }
+
 # Headless task console — read-only live view of scheduler tasks over the server's WebSocket.
 # Reporting only (no run/cancel); safe alongside the GUI. `-- --stream` for append-only log output.
 console = { cmd = "julia --project task_console.jl", cwd = "api" }
@@ -179,16 +185,18 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.insta
 # These (lsof) tasks are the macOS default; Linux OVERRIDES them with `ss` below — lsof walks every
 # process's /proc/<pid>/fd table and hangs indefinitely on any process stuck in D (uninterruptible)
 # sleep (e.g. a filesystem-wide search wedged on a slow mount), which stalled `pixi run stop`.
-stop           = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:5173 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)'"
+stop           = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:5173 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7656 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/preview(7656)/notebooks(7660)'"
 stop-backend   = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)'"
 stop-napari    = "kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
+stop-preview   = "kill $(lsof -ti tcp:7656 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped preview worker(7656)'"
 stop-notebooks = "kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped notebooks(7660)'"
 
 # Windows: kill by listening port via PowerShell (lsof is unix-only). Untested on Windows hardware.
 [target.win-64.tasks]
-stop           = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655,7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop           = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655,7656,7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 stop-backend   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 stop-napari    = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-preview   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7656 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 stop-notebooks = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 
 # Linux: kill by listening port via `ss` (iproute2) instead of lsof. `ss` reads /proc/net/tcp*
@@ -197,9 +205,10 @@ stop-notebooks = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPo
 # lsof's -sTCP:LISTEN / the Windows -State Listen), so a browser client connected to :5173 is never
 # killed. Literal (single-quoted) TOML strings so the `\K` in the grep pattern isn't escape-mangled.
 [target.linux-64.tasks]
-stop           = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :5173" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)"'
+stop           = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :5173" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7656" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)/frontend(5173)/napari(7655)/preview(7656)/notebooks(7660)"'
 stop-backend   = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)"'
 stop-napari    = 'kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped napari bridge(7655)"'
+stop-preview   = 'kill $(ss -tlnpH "sport = :7656" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped preview worker(7656)"'
 stop-notebooks = 'kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped notebooks(7660)"'
 
 # --- GPU acceleration (PARKED) ----------------------------------------------------------------

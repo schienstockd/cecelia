@@ -4,16 +4,49 @@
 // (the same reason app quit goes through the appControl store). App-level lifecycle (quit / update /
 // dev restart) stays in appControl — this is only the per-service start/stop/restart controls.
 
-/** POST JSON to a service endpoint. Returns the parsed body; throws Error(server message | HTTP n)
- *  on a non-2xx response so callers can surface failures in their own UI state. */
-export async function svcPost(url: string, body?: object): Promise<any> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  })
+/**
+ * A failed service call. `code` is the backend's machine-readable reason (see docs/API.md); a caller
+ * that must react differently per reason — a different severity, a different label — switches on
+ * `code`, NEVER on the message text, which is prose and free to change.
+ */
+export interface SvcError extends Error {
+  status: number
+  code?: string
+}
+
+/** POST JSON to a service endpoint. Returns the parsed body; throws `SvcError` (server message |
+ *  HTTP n, plus `status`/`code`) on a non-2xx response so callers can surface failures in their
+ *  own UI state.
+ *
+ *  `timeoutMs` bounds the wait. Worth setting for anything whose UI shows a busy state: a request
+ *  that never settles leaves that state stuck with no way out, and "still working" is the one
+ *  failure mode a user cannot distinguish from a hang. Rejects with `code: 'timeout'`. */
+export async function svcPost(url: string, body?: object, timeoutMs?: number): Promise<any> {
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+    })
+  } catch (e) {
+    // an abort is our own deadline, and must not read like a network error
+    if (timeoutMs && e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      const t = new Error(`No answer within ${Math.round(timeoutMs / 1000)} s`) as SvcError
+      t.status = 0
+      t.code = 'timeout'
+      throw t
+    }
+    throw e
+  }
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  if (!res.ok) {
+    const err = new Error((data as any)?.error ?? `HTTP ${res.status}`) as SvcError
+    err.status = res.status
+    err.code = (data as any)?.code
+    throw err
+  }
   return data
 }
 
@@ -29,6 +62,35 @@ export const napariApi = {
   restart: () => svcPost('/api/napari/restart'),
   close: () => svcPost('/api/napari/close'),
 }
+
+/**
+ * Task-preview worker (port 7656) — the resident process that runs a task's real compute over the
+ * region the viewer is showing.
+ *
+ * `status` is the ONE way to learn which image the viewer has open: the backend tracks it, and a caller
+ * that guesses instead acts on an image the user is not looking at. `run` deliberately passes
+ * `imageUid` for the backend to CHECK, not to select — a mismatch is a 409, never a silent switch.
+ */
+export const previewApi = {
+  status: async (): Promise<any> => {
+    const res = await fetch('/api/preview/status')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+  start: () => svcPost('/api/preview/start'),
+  stop: (valueName?: string) => svcPost('/api/preview/stop', { valueName }),
+  /**
+   * One plane of the task's real compute. Deadlined because the control shows "Previewing…" for the
+   * whole round trip and the scheduler treats a run as in flight until it settles — so a request that
+   * never comes back wedges both, permanently, with the mask of some earlier run still on screen. The
+   * window is far above a real preview (warm 0.14–0.9 s, cold 2048² a few seconds; the worker's 17.7 s
+   * import shows up as an immediate `starting` reply, not a slow one), so hitting it means stuck.
+   */
+  run: (body: { projectUid: string; imageUid: string; valueName: string; funName: string; params: object }) =>
+    svcPost('/api/preview/run', body, PREVIEW_RUN_TIMEOUT_MS),
+}
+
+export const PREVIEW_RUN_TIMEOUT_MS = 90_000
 
 /** Per-project observer session: the assistant session id + cumulative token totals. */
 export interface ObserverPass {

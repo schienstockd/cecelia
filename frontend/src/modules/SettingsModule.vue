@@ -5,11 +5,11 @@ import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
-import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
-import { notebooksApi, napariApi } from '../utils/serviceApi'
+import { napariState, notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
+import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
-import { fetchStorageSummary, reclaimStorage, formatBytes, type StorageSummary } from '../utils/storage'
+import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, type StorageSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -107,7 +107,7 @@ interface Diag {
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean; dev: boolean
-  napariPort: number; notebooksPort: number
+  napariPort: number; previewPort: number; notebooksPort: number
 }
 const diag = ref<Diag | null>(null)
 const diagBusy = ref(false)
@@ -163,8 +163,13 @@ onMounted(loadDiag)
 // lives in utils/serviceStatus.ts (unit-tested); here we only poll, act, and pick which buttons show.
 const napariRaw = ref<{ alive?: boolean; starting?: boolean; bridgeUptimeSeconds?: number | null; bridgeStale?: boolean } | null>(null)
 const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
+// The task-preview worker. It gets a row because it holds a cellpose model in GPU memory, and the
+// toggle that starts it lives on the task page — reachable only while you are there with a previewable
+// task selected. Without this row, a preview left running has no off switch.
+const previewRaw = ref<{ alive?: boolean; starting?: boolean; imageUid?: string | null } | null>(null)
 const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
+const previewSt = computed<ServiceState>(() => previewState(previewRaw.value))
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 
 // ── Data patches (project-scoped maintenance scripts) ──────────────────────────
@@ -250,6 +255,7 @@ onMounted(loadGpu)
 async function pollServices() {
   try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
   try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
+  try { previewRaw.value = await previewApi.status() } catch { previewRaw.value = null }
 }
 let svcTimer: number | undefined
 onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
@@ -261,6 +267,17 @@ async function napariAction(kind: 'restart' | 'stop') {
     await (kind === 'restart' ? napariApi.restart() : napariApi.close())
     svcMsg.value = kind === 'restart' ? 'Napari restarting — reopen the image to reload its layers.' : 'Napari stopped.'
   } catch { svcMsg.value = 'Napari action failed.' }
+  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
+}
+// Stop only. Starting a preview means previewing SOMETHING — it needs a task's params and an open
+// image, which this panel has neither of; a Start button here would either do nothing visible or need
+// to invent params. The task page owns starting; this owns the off switch.
+async function previewStop() {
+  svcBusy.value = 'preview'; svcMsg.value = ''
+  try {
+    await previewApi.stop()
+    svcMsg.value = 'Preview stopped — GPU memory released.'
+  } catch { svcMsg.value = 'Could not stop the preview worker.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }
 async function notebooksAction(kind: 'start' | 'stop' | 'restart') {
@@ -445,6 +462,17 @@ async function switchWt(path: string) {
           <span v-tooltip.top="'Total size of the image OME-ZARRs in this project (not labels or other analysis data)'">Images in project</span>
           <strong>{{ formatBytes(storage.imageBytes) }}</strong>
           <span>Disk free</span><strong>{{ formatBytes(storage.diskAvailable) }} / {{ formatBytes(storage.diskTotal) }}</strong>
+        </div>
+
+        <!-- Leftovers a cancelled/crashed run abandoned — bytes nothing in the UI can reach. Shown
+             here so the cleanup announces itself instead of waiting to be found in Data patches. Not
+             actionable from this box on purpose: the patch shows the list before deleting anything. -->
+        <div v-if="debrisLine(storage.debris)" class="stor-line">
+          <span v-tooltip.top="'Free these in Data patches → Remove leftover stores'">Leftover from cancelled runs</span>
+          <strong>{{ debrisLine(storage.debris) }}</strong>
+          <span v-if="storage.debris?.activeSkipped" class="field-hint cc-muted cc-fs-xs">
+            +{{ storage.debris.activeSkipped }} in use, not counted
+          </span>
         </div>
 
         <div v-if="storage.reclaimable.length" class="stor-reclaim">
@@ -641,6 +669,23 @@ async function switchWt(path: string) {
               <i class="pi pi-stop" /> Stop
             </button>
           </template>
+        </span>
+      </div>
+
+      <!-- Task preview worker. Stop only — starting means previewing something, which needs a task's
+           params and an open image (the task page owns that). This is the off switch, and it exists
+           because a warm cellpose model holds GPU memory. -->
+      <div class="svc-row">
+        <span class="svc-name">Task preview</span>
+        <span class="svc-pill" :class="stateInfo(previewSt).tone"><span class="dot" /> {{ stateInfo(previewSt).label }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
+        <span class="svc-actions">
+          <button v-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
+                  @click="previewStop()"
+                  v-tooltip.top="'Stop the preview worker and free its GPU memory'">
+            <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-cog' : 'pi-stop']" /> Stop
+          </button>
+          <span v-else class="cc-muted cc-fs-xs">Starts from a task's preview toggle</span>
         </span>
       </div>
 
