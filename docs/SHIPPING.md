@@ -66,8 +66,20 @@ User clicks the desktop icon
   → app.py polls http://localhost:8080/api/health until {ok:true}
   → app.py opens the default browser at http://localhost:8080
   → Cecelia is running
-  → User closes the launcher window → app.py SIGTERMs the Julia server → clean shutdown
+  → User closes the launcher window → app.py asks the server to shut down (POST /api/app/shutdown),
+    which stops its own children first; SIGTERM only if that fails → clean shutdown
 ```
+
+**Why the launcher asks rather than just SIGTERMs.** The server is the parent of three resident
+processes — the napari bridge (:7655), the task-preview worker (:7656), the Pluto notebooks server
+(:7660) — and they are grandchildren in their own process groups, so killing the server leaves them
+running. That is not merely untidy: the preview worker holds a warm cellpose model's VRAM with nothing
+able to reach it, and an orphan gets silently **adopted** by the next launch, which is how a worker
+running stale code can outlive several restarts. `POST /api/app/shutdown` already stops all three (it is
+the in-app Quit path), so the launcher reuses it instead of carrying a third copy of platform-specific
+port-killing — the other two live in Julia's `_kill_listeners_on_port` and `api/dev.jl::_free_port`.
+Asserted by *"shutdown stops EVERY resident child"* in `api/test/runtests.jl`, which covers all three
+supervisors and checks the ORDER (a graceful attempt after the terminate would be pointless).
 
 The same-origin design (server serves the frontend) is what removes all the friction: the frontend
 calls `/api/...` and `ws://<host>/ws` relatively, so it works identically whether served by Vite in

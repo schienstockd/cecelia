@@ -250,6 +250,25 @@ end
     dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
     @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, NOTEBOOKS_PORT])
     @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
+
+    # PROD's supervisor (`app.py`) had the same hole: `proc.terminate()` kills the Julia server and
+    # leaves its three grandchildren running. It closes it by REUSING the route above rather than
+    # carrying a third copy of platform port-killing — so assert the reuse and, crucially, the ORDER:
+    # attempting a graceful stop AFTER terminate would be pointless, and the diff that introduces that
+    # mistake looks almost identical to the correct one.
+    app = read(joinpath(@__DIR__, "..", "..", "app.py"), String)
+    @test occursin("/api/app/shutdown", app)
+    @test occursin("_stop_gracefully(proc)", app)
+    # Assert the order inside the teardown block itself: the graceful attempt must come before the
+    # terminate it is meant to avoid. Comparing positions in the whole file would pass even if the two
+    # were in unrelated places, which is exactly the bug being guarded against.
+    let tail = app[findlast("finally", app)[1]:end]
+        i_graceful = findfirst("_stop_gracefully(proc)", tail)
+        i_term     = findfirst("proc.terminate()", tail)
+        @test i_graceful !== nothing
+        @test i_term !== nothing
+        @test i_graceful[1] < i_term[1]
+    end
 end
 
 @testset "API: packages" begin
