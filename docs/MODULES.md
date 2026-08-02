@@ -203,6 +203,15 @@ only where one code carries two wordings — see the note on the catalog. The fo
   thresholds live in one testable place, the task just calls it and writes.
 - **If the metric is comparable across a set's images, add it to `COHORT_METRICS`** (`app/src/qc_cohort.jl`,
   `"mycat.myTask" => ["nCells", …]`) so cohort-outlier detection and the observer pick it up for free.
+- **A metric may be cohort-only — banked with NO finding attached — and that is not an oversight.**
+  Some numbers cannot be judged from one image but are decisive against a set. AF correction's derived
+  `ceiling` is the example: one image's ceiling is neither right nor wrong, but two images with
+  different ceilings are on different intensity scales, and since the corrected channel is what gets
+  measured and pooled, that silently invalidates the comparison. There is no threshold to warn on, so
+  it rides through as a metric and `qc_cohort.jl`'s outlier detector does the judging. Note the trap it
+  closes: the task's *other* two metrics are provably blind to it — a 1.86x ceiling difference moved
+  both by 0.000 — so "we already have QC here" was not the same as "this is covered". When a metric has
+  no sensible per-image threshold, bank it and say why, rather than inventing one.
 - **Set-scope / Python tasks:** compute per-image stats in Python and hand them back via a `qcOutPath`
   JSON the Julia handler reads (the `segment.cellpose` / clustering pattern — `qcOutPath` param →
   `write_qc` per image), so counting stays where the data is.

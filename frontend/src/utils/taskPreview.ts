@@ -304,3 +304,44 @@ export function previewSummary(
 
 /** Debounce window, ms. A pan emits events continuously and each run is real cellpose on the GPU. */
 export const PREVIEW_DEBOUNCE_MS = 400
+
+// ── waiting out a cold worker ──────────────────────────────────────────────────────────────────────
+//
+// A preview requested while the worker is still importing gets `202 {starting: true}` rather than a
+// result. That used to be a DEAD END: the store set `starting` and returned, so the UI sat on
+// "Starting…" until the user happened to change a parameter again — which is why toggling the preview
+// on, or editing a param during the ~18 s warm-up, looked like a preview that never finished.
+//
+// The worker cannot call back, so the client has to wait it out. This is the decision inside that wait,
+// kept pure so the give-up path is actually tested rather than assumed.
+
+/** How often to re-ask while the worker warms. */
+export const WORKER_WARM_POLL_MS = 1000
+/**
+ * How long to keep waiting. Generously above the measured cold start (17.7 s of imports, plus a
+ * whole-image statistic on the first request) — but bounded, because "Starting…" forever is the bug
+ * being fixed, and a spinner that never resolves is indistinguishable from a hang.
+ */
+export const WORKER_WARM_TIMEOUT_MS = 180_000
+
+export type WarmAction = 'request' | 'wait' | 'abandon' | 'stop'
+
+/**
+ * What to do next while waiting for the worker.
+ *
+ * - `stop` — the user turned the preview off or pinned it; stop polling and say nothing. Their action
+ *   is not an error, so it must not surface as one.
+ * - `request` — the worker answers and is not starting: re-issue the request that got the 202.
+ * - `abandon` — past the deadline. Report it; do not keep a spinner alive on hope.
+ * - `wait` — poll again.
+ */
+export function warmPollAction(
+  status: PreviewStatus | null,
+  elapsedMs: number,
+  opts: { enabled: boolean; pinned: boolean },
+): WarmAction {
+  if (!opts.enabled || opts.pinned) return 'stop'
+  if (status?.alive && !status.starting) return 'request'
+  if (elapsedMs >= WORKER_WARM_TIMEOUT_MS) return 'abandon'
+  return 'wait'
+}

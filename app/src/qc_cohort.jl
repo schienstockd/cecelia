@@ -71,12 +71,21 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # window fails to cover — and the outlier flag says so without anyone re-reading pixels.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat",
                                          "nChannelsSaturated", "windowNeeded"],
-    # AF correction: both are cohort-comparable BECAUSE the output ceiling is derived per image rather
-    # than dialled in — so an image whose corrected channel clipped far more, or used far less of the
+    # AF correction: cohort-comparable BECAUSE the output ceiling is derived per image rather than
+    # dialled in — so an image whose corrected channel clipped far more, or used far less of the
     # output range, than its peers had its background/ceiling derived differently, which is a staining
     # or acquisition outlier rather than a parameter someone typed. That was not checkable while the
     # window came from hand-tuned percentiles: every image got its own, so there was nothing to compare.
-    "cleanupImages.afCorrect"        => ["clippedFrac", "levelsUsedFrac"],
+    #
+    # `ceiling` is here for a different and stronger reason: it is the ONLY one of the three that can
+    # see two images drifting onto different intensity scales. The corrected output is
+    # `ratio / ceiling * rescale`, so if two images' ratios differ by a constant factor their ceilings
+    # differ by that factor and their outputs come out identical — a 1.86x ceiling difference moved
+    # clippedFrac and levelsUsedFrac by 0.000 (measured). Since the corrected channel is what gets
+    # segmented, measured and then POOLED across a set, that is the failure that quietly invalidates a
+    # comparison. It is cohort-only by nature: a single image's ceiling is neither right nor wrong.
+    # Measured on the nine kSUFux movies (one experiment, one channel pair, identical settings): 1.71x.
+    "cleanupImages.afCorrect"        => ["clippedFrac", "levelsUsedFrac", "ceiling"],
 )
 
 """

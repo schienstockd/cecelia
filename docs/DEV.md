@@ -223,6 +223,44 @@ port). A plain Restart bounces only the backend (the frontend keeps its HMR stat
 relaunches Vite. Prod (`app.py`) is backend-only and doesn't offer the switch (control hidden when not
 dev/supervised).
 
+### A worktree's Python env can point at ANOTHER checkout
+
+`pixi.toml` installs the helper package as an editable path dep (`cecelia = { path = "python" }`), which
+setuptools implements as a **meta-path finder holding one absolute path**. The uv cache key derives from
+the relative `./python`, so across worktrees the entry collides and **the first checkout to build it
+wins** — a fresh `pixi install` in a new worktree can hand you an env whose `import cecelia` resolves
+into a *different* worktree. Nothing errors.
+
+That splits the app in half. Anything launched **by path** (napari bridge, preview worker, `run_py` task
+runners) runs *this* checkout's files; anything imported **by name** comes from the other one. They agree
+until one side gains a helper the other lacks, and then the error names the symptom, not the cause:
+`AttributeError: module 'cecelia.utils.correction_utils' has no attribute 'af_derived_values'` — raised
+by a worker whose own file had the caller.
+
+**This is prevented structurally, not by remembering it.** `PYTHONPATH` is searched *before* the editable
+finder, so pinning it makes the collision harmless. Three layers, covering the two ways Python gets
+started here:
+
+| Layer | Covers | Where |
+|---|---|---|
+| `[activation.env] PYTHONPATH = "$PIXI_PROJECT_ROOT/python"` | every `pixi run` — `test-py`, `python`, `dev`, a REPL | `pixi.toml` |
+| launchers set it explicitly | processes the Julia server spawns, which never go through `pixi run` | `run_py`, `preview.jl`, `napari.jl` |
+| a test that fails naming both paths | the tripwire, if both of the above are ever bypassed | `python/cecelia/tests/test_env_wiring.py` |
+
+`$PIXI_PROJECT_ROOT` expands per project, so each worktree points at itself with nothing to configure.
+Verified by deliberately repointing a worktree's finder at another checkout: the bare interpreter then
+imported the wrong one, and `pixi run` still imported the right one.
+
+Repairing an env is therefore optional now (only a bare interpreter outside `pixi run` is affected):
+
+```bash
+pixi run python -m pip install -e python --no-deps --no-build-isolation
+```
+
+Note that `rm -rf .pixi && pixi install` alone does **not** fix a mis-wired env — the collision is in
+the shared uv cache, not in the env — which is exactly why this needed a structural answer rather than a
+documented ritual.
+
 ## Diagnostics & debug console
 
 **Settings → Diagnostics** (always on) shows server threads, Julia version, memory, the bound

@@ -1,8 +1,15 @@
 # Task preview — one mechanism for judging long-running tasks before you commit
 
-**Status:** planning. Started 2026-07-30 as a segmentation-only plan (`SEG_PREVIEW_PLAN.md`); widened
-2026-07-31 to a shared component after Dominik pointed out that denoise and autofluorescence correction
-have the same problem and no preview at all. Covers `docs/TODO.md` #00089.
+**Status: BUILT** — shipped in #437 (2026-08-01) with two consumers, `segment.cellpose` and
+`cleanupImages.afCorrect`. Denoise is deliberately not a consumer; see *Denoise waits for coastal*.
+`docs/TODO.md` #00089 is retired accordingly, and the durable half is promoted into
+`docs/SEGMENTATION.md` → *Previewing params BEFORE a run (the task preview)*.
+
+**This file is kept for the measurements, not the plan.** Everything below that reads as a decision was
+one, and the numbers behind it (cellpose cost scaling, the AF stats cost, the striding-stability sweep,
+the dask comparison) are expensive to re-derive and are cited from code comments. Started 2026-07-30 as
+a segmentation-only plan (`SEG_PREVIEW_PLAN.md`); widened 2026-07-31 to a shared component after
+Dominik pointed out that denoise and autofluorescence correction have the same problem.
 
 ## Goal
 
@@ -23,7 +30,7 @@ Previewability is a property of a task's *compute*, not of a category:
 | Task | Preview output | Crop-safe? |
 |---|---|---|
 | `segment.cellpose` | labels | Yes — modulo tile seams and whole-image normalisation |
-| `cleanupImages.afCorrect` | image | Yes — per-pixel channel unmixing. **Widens the channel axis** (`af_correction_output_shape`: C + one per requested inverse), so an AF preview has more channels than the source |
+| `cleanupImages.afCorrect` | image | Yes — per-pixel channel unmixing. Preserves the input shape, but needs **whole-image globals** (`af_division_stats`: two background levels + a ceiling), so the preview derives them once over the whole image and caches them, exactly as cellpose caches `norm_params` |
 | `cleanupImages.cellposeCorrect` (denoise) | image | Yes in principle, but **not a build target** — see *Denoise waits for coastal* |
 | `cleanupImages.driftCorrect` | — | **No.** `drift_correction_shifts` derives shifts from the whole timecourse; a crop cannot produce the real shifts, and the shifts are the thing you would want to judge. Declares nothing. |
 
@@ -214,15 +221,18 @@ same shape, and a denoise preview then costs one trait declaration. Recorded in 
 pin, where someone bumping cellpose will actually read it.
 
 So denoise is not a build target here, and **AF is the image-kind consumer instead** — it is also the harder
-test, because it widens the channel axis rather than preserving the input shape.
+test, because its correction depends on statistics no crop can see (`correction_utils.af_division_stats`).
 
-(Unrelated, despite the name: `_af_denoise_frame` at `correction_utils.py:207` is skimage tv/wavelet
-denoising *inside* AF correction, not the cellpose denoise task.)
+(Both drafted while AF still had a filter toolbox. `_af_denoise_frame` — skimage tv/wavelet denoising
+*inside* AF correction, unrelated to the cellpose denoise task despite the name — was deleted with the
+rest of it.)
 
 ## Phases
 
+**P1, P2 and P3 all shipped in #437. P2.5 (denoise) is the only one left, and is gated on coastal.**
+
 - **P1 — the mechanism + segmentation.** The previewable trait (+ composite overload), the region contract,
-  the worker and its lifecycle, `staged_store(promote=False)`, the labels preview path (mostly existing),
+  the worker and its lifecycle, ~~`staged_store(promote=False)`~~ (dropped — see the table), the labels preview path (mostly existing),
   whole-image stats passed in. Ends with: toggle on, look at a region, see labels.
 - **P2 — the image kind: AF correction.** The image-layer adder (Decision 9) plus AF's trait. This is what
   proves the component is general rather than segmentation-shaped, and AF stresses it properly by changing
@@ -239,36 +249,38 @@ denoising *inside* AF correction, not the cellpose denoise task.)
 |---|---|
 | `app/src/tasks/task.jl` | the previewable trait + its `CompositeTask` overload (reuse `_composite_steps`) |
 | `app/src/preview.jl` (new) | region resolution + worker request/lifecycle, algorithm-agnostic — the Julia half, mirroring how `segmentation.jl` holds the algorithm-agnostic segmentation half |
-| `python/cecelia/utils/zarr_utils.py` | `staged_store(promote=False)` |
-| `python/.../preview_worker.py` (new) | resident worker: warm models, one request → one region → write into the unpromoted store |
+| `python/cecelia/utils/zarr_utils.py` | ~~`staged_store(promote=False)`~~ — **not built, deliberately.** The preview returns pixels over the wire instead of writing a scratch store, so there is no never-promoted mode to add; `zarr_utils.py` now says so in place, to stop it being re-proposed |
+| `preview/preview_worker.py` (new) | resident worker: warm models, one request → one region → the block back over WS. **Landed in `preview/`, not the `python/` package** — it's a runtime process like `napari/` and `mcp/`, not part of the installable IO library. And it returns the block rather than writing a store at all, so `staged_store(promote=False)` was never needed |
 | `napari/napari_bridge.py` | one adder for preview layers of both kinds; a distinct suffix so a tuning preview isn't confused with a running run's `Labels (live)` |
-| `api/src/napari_api.jl`, `api/src/server.jl` | preview toggle + status routes |
+| `api/src/preview_api.jl` (new), `api/src/server.jl` | preview toggle + status routes. Its own file rather than inside `napari_api.jl`, which the plan assumed |
 | `app/src/maintenance.jl` | nothing — the `store-debris` sweep already covers preview debris |
 | Settings service panel | a fourth component entry (`SERVICE_PANEL_PLAN.md`) |
 
-## Open questions
+## Open questions — all resolved by the build
 
-- **Worker transport: port + WS, or a long-lived stdin/stdout subprocess?** (Decide once — every consumer
-  depends on it.) A port follows the existing
-  precedent (bridge :7655, Pluto :7660, mcp) and is inspectable; a kept-alive subprocess needs no port, no
-  WS server and no firewall consideration, and `jobs.jl` already tracks process handles. Leaning port for
-  consistency — but the subprocess is genuinely simpler, and this is worth deciding once, deliberately,
-  since three modalities will depend on it.
-- **Is a 25 s first preview acceptable?** It is one-off per image (then 0.3 s/iteration), and it buys
-  exactly matching the run's normalisation. Options if not: warm it at toggle-on so the wait is
-  attributable rather than surprising; or offer `normaliseToWhole=false` for previewing, which is faster
-  but then the preview is NOT what the run produces — the thing Decision 5 exists to prevent.
-- **An empty region reads as "0 cells", which is misleading.** Drift correction pads the canvas (and the
-  padding moves per timepoint — at t=0 on `EaMaVq`, z 0–6 is dead space), so a preview aimed there
-  segments an all-zero tile and honestly reports nothing found. Distinguish "no signal in this region"
-  from "no cells found": the tile's own max is enough to tell them apart, and the wrong one sends someone
-  hunting for a parameter problem that isn't there.
-- **Model load latency** — measured, not a factor (0.2 s). It decides whether the worker holds several models at once
-  (segmentation + denoise, if someone toggles between them) or one at a time.
-- **Does `predict_slice` work on an arbitrary crop** outside the tiling/stitching loop that normally calls
-  it?
-- **One preview layer that replaces itself, or one per attempt?** Comparing attempt A with B is the actual
-  job, which argues for keeping the previous one — but then eviction and naming need thought.
+Kept with their answers rather than deleted: each was a real fork, and the answer is the thing worth
+knowing.
+
+- **Worker transport: port + WS, or a long-lived stdin/stdout subprocess?** → **Port + WS (:7656).** Went
+  with the existing precedent (bridge :7655, Pluto :7660, mcp) and it paid off in a way the simpler
+  subprocess would not have: the worker is independently pingable, which is how a *stale* worker became
+  detectable at all (`PREVIEW_PROTOCOL`, `_preview_ping`). It also survives a Revise restart, so the warm
+  process outlives backend reloads — most of its value.
+- **Is a 25 s first preview acceptable?** → **Yes, warmed at toggle-on** so the wait is attributable.
+  `normaliseToWhole=false` was rejected: a faster preview that disagrees with the run is what Decision 5
+  exists to prevent. AF pays a comparable cold cost for its own globals (~11 s measured).
+- **An empty region reads as "0 cells", which is misleading.** → **Split out as `docs/TODO.md` #00090**,
+  which is the wider bug (every task processes the padding, ~38% of GPU time on one image). `#435` landed
+  `zarr_utils.read_valid_box` as the mechanism.
+- **Model load latency** → **not a factor (0.2 s).** The worker holds one model at a time.
+- **Does `predict_slice` work on an arbitrary crop** outside the tiling/stitching loop? → **Yes**, and it
+  is how the preview runs. Post-segmentation processing needed crop-awareness added separately
+  (`SegmentationUtils.post_process(real_border=…)`), so that edge-touching labels are only cleared at
+  *real* image edges, not at the crop's own.
+- **One preview layer that replaces itself, or one per attempt?** → **Replaces itself, by name.** A
+  parameter change can alter which channels a task even outputs, so the adder tracks the exact names it
+  added and removes those (`_preview_layers`). Comparing A against B is served by the corrected
+  channel sitting *beside* its original instead, which is the comparison that actually matters.
 
 ## Observations from live testing (2026-07-31) — all tracked, none of them dropped
 

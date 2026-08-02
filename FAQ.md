@@ -101,7 +101,7 @@ the compute engine. Full rationale and the numbers:
 
 **Then how do the live task previews work, if not by re-evaluating a lazy graph?**
 By splitting each task into the part that needs the whole image and the part that doesn't. The
-expensive global statistic — a normalisation window, a background percentile — is computed once and
+expensive global statistic — a normalisation window, a background level — is computed once and
 cached; the per-pixel work is then applied to just the region you're looking at. That's why changing
 Cellpose's diameter re-previews in 0.14 s while changing its input channel costs a fresh statistic.
 
@@ -109,6 +109,22 @@ A lazy graph over the visible region would be simpler *and wrong*: it would reco
 statistics from the crop, so the preview would be normalised differently from the run it is
 supposed to be previewing. Being fast is not the hard part — agreeing with the real run is.
 See [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Previewing params BEFORE a run*.
+
+**Why does autofluorescence correction have almost no settings?**
+Because it used to have a dozen, and that was the bug. Two background percentiles, a rescale ceiling, a
+median filter, a Gaussian, a rolling ball, a wavelet denoiser — each one added while fitting somebody's
+particular dataset, none of them revisited afterwards. A parameter that exists because one image once
+needed it is not a setting, it's a fossil.
+
+They're gone. You pick which channel to correct and which to correct it against; the background levels
+and the rescale ceiling are derived from the image's own histogram (triangle thresholding, Zack et al.
+1977). The one surviving knob chooses *how* they're derived, not what they are.
+
+The reason to prefer derivation over a knob here is that nobody can set these by eye. A rescale ceiling
+is "the brightest real voxel", and on one test image a **single** voxel out of 5.88 billion was setting
+it — a value you cannot see, cannot guess, and would get wrong on the next image in the set. Whether it
+landed well *is* checkable after the fact, so that became QC (`clippedFrac`, `levelsUsedFrac`) instead
+of a parameter.
 
 ## How it was built
 

@@ -9,6 +9,7 @@ import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
+import { preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
@@ -46,6 +47,9 @@ const val = computed({
 // Which field is used depends on param.field:
 //   'labels'   → img.labels keys  (segmentation label sets)
 //   'filepath' or absent → img.filepaths keys  (image versions)
+// `field` names a CciaImage field (stores/project.ts): 'filepaths' (image versions, the default),
+// 'labels' (segmentation label sets), 'spatialGraphs'. See `VALUE_NAME_FIELDS` in paramValues.ts —
+// an unrecognised name used to degrade silently, and the suite now rejects one.
 function imageFieldKeys(img: CciaImage, field: string | undefined): string[] {
   if (field === 'labels') return Object.keys(img.labels ?? {})
   // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
@@ -78,13 +82,8 @@ watch(() => props.context?.images, (images) => {
   // Keep an already-valid selection — notably an edge-propagated chain value like
   // "cpCorrected" — rather than resetting it to the active/first name on every image change.
   if (props.modelValue && availableValueNames.value.includes(props.modelValue as string)) return
-  const field = props.param.field
-  const first = availableValueNames.value[0] ?? 'default'
-  const preferred = (field === undefined || field === 'filepath')
-    ? (images[0].activeValueName ?? first)
-    : first
-  const target = availableValueNames.value.includes(preferred) ? preferred : first
-  emit('update:modelValue', target)
+  emit('update:modelValue', preferredValueName(
+    availableValueNames.value, props.param.field, images[0].activeValueName))
 }, { immediate: true })
 
 // channelSelection: intersection of channel names across selected images

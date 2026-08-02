@@ -107,7 +107,11 @@ the observer redesign lands. Each slice: pure helper unit-tested + wiring + doc 
 - Auto-calling Claude on "multiple warnings" (escalation ladder) — Dom chose on-demand-only; revisit
   only if on-demand proves insufficient.
 - `qc_flag_fired` / `:flagged` node state + hold (needs QC_PLAN.md advisory-vs-blocking ratification).
-- afCorrect / cellposeCorrect QC (no agreed objective metric — see the QC-coverage notes).
+- ~~afCorrect~~ / cellposeCorrect QC (no agreed objective metric — see the QC-coverage notes).
+  **afCorrect shipped in #437** and is no longer parked: once the rescale ceiling became derived rather
+  than a knob, "did it land well" got an objective signal in both directions — `clippedFrac` (burnt off
+  the top) and `levelsUsedFrac` (crammed into too few levels). Both are cohort metrics
+  (`af_qc_findings`). Denoise stays parked; perceptual quality still has no metric.
 - A separate Claude-vs-Cecelia badge *icon* — v1 uses one badge coloured by worst unseen level; a
   distinct author icon is a nice-to-have.
 

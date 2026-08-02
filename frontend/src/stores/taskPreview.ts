@@ -20,8 +20,8 @@ import { previewApi, type SvcError } from '../utils/serviceApi'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import {
   previewBlocker, previewNotice, previewSummary, baseOnlyWarning, tilingWarning,
-  compositeWarning,
-  PREVIEW_DEBOUNCE_MS,
+  compositeWarning, warmPollAction,
+  PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker,
 } from '../utils/taskPreview'
 import { useWsStore } from './ws'
@@ -116,7 +116,8 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // for a region that is no longer on screen. The layer the backend just set is replaced by the next
     // run; only the READOUT would lie, so only the readout is guarded.
     if (!isCurrent()) return
-    if (res?.starting) { starting.value = true; return }
+    // 202: the worker is warming. Wait it out and re-request — nothing else will.
+    if (res?.starting) { starting.value = true; pollUntilWarm(); return }
     starting.value = false
     counts.value = res?.counts ?? null
     fallback2d.value = Boolean(res?.fallback2d)
@@ -156,6 +157,47 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     scheduler.schedule(context.value)
   }
 
+  // ── waiting out a cold worker ───────────────────────────────────────────────
+  // A request that arrives while the worker is still importing gets `202 {starting}` instead of a
+  // result, and the worker cannot call back when it is ready. That made the 202 a DEAD END: the UI sat
+  // on "Starting…" until the user happened to change a parameter again, so toggling the preview on — or
+  // editing a param during the ~18 s warm-up — looked like a preview that never finished. So poll, and
+  // re-issue the request that got the 202. Decision logic is `warmPollAction` (pure, tested).
+  let warmTimer: ReturnType<typeof setTimeout> | null = null
+  let warmStartedAt = 0
+
+  function cancelWarmPoll() {
+    if (warmTimer !== null) { clearTimeout(warmTimer); warmTimer = null }
+  }
+
+  function pollUntilWarm() {
+    if (warmTimer !== null) return          // one loop at a time, however many 202s arrive
+    warmStartedAt = Date.now()
+    const tick = async () => {
+      warmTimer = null
+      await refreshStatus()
+      // refreshStatus sets `starting` from the backend; it is authoritative from here on
+      switch (warmPollAction(status.value, Date.now() - warmStartedAt,
+                             { enabled: enabled.value, pinned: pinned.value })) {
+        case 'stop':                        // user turned it off or pinned — their choice, not an error
+          starting.value = false
+          return
+        case 'request':
+          starting.value = false
+          request()
+          return
+        case 'abandon':
+          starting.value = false
+          error.value = 'The preview worker did not start.'
+          errorCode.value = 'timeout'
+          return
+        default:
+          warmTimer = setTimeout(tick, WORKER_WARM_POLL_MS)
+      }
+    }
+    warmTimer = setTimeout(tick, WORKER_WARM_POLL_MS)
+  }
+
   /** The module page keeps this current; a change re-previews (debounced). */
   function setContext(ctx: PreviewContext | null) {
     context.value = ctx
@@ -182,6 +224,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   async function stop() {
     enabled.value = false
     scheduler.cancel()               // drop pending + supersede in flight, so no late mask lands
+    cancelWarmPoll()                 // …and stop waiting on a worker we are about to shut down
     clearResult()
     error.value = ''
     errorCode.value = ''

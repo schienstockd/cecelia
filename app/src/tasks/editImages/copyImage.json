@@ -12,7 +12,7 @@
       "label": "Source version",
       "type": "valueNameSelection",
       "default": "default",
-      "field": "imFilepath",
+      "field": "filepaths",
       "required": true,
       "tip": "Which image version to copy (becomes the copy's default; all derived data is dropped)"
     },

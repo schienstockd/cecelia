@@ -13,7 +13,7 @@
       "label": "Image to correct",
       "type": "valueNameSelection",
       "default": "default",
-      "field": "imFilepath",
+      "field": "filepaths",
       "tip": "Select which image version to apply drift correction to"
     },
     {

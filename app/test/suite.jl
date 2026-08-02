@@ -335,17 +335,40 @@ end
 # always applied (safe on single-GPU); the NVIDIA GLX vendor var only when NVIDIA is present.
 @testset "Napari discrete-GPU command" begin
     plain = Cecelia._bridge_cmd(false)
-    @test plain.env === nothing                          # no env override → inherits parent
-    gpu = Cecelia._bridge_cmd(true)
+    gpu   = Cecelia._bridge_cmd(true)
+    for cmd in (plain, gpu)
+        @test cmd.env !== nothing
+        @test any(==("PYTHONPATH=$(Cecelia._python_dir())"), cmd.env)
+    end
     if Sys.islinux()
-        @test gpu.env !== nothing
         @test any(==("DRI_PRIME=1"), gpu.env)             # always safe → always applied
         # nvidia GLX vendor var is gated on detection (forcing it without NVIDIA breaks GL)
         has_nvidia = any(startswith("__GLX_VENDOR_LIBRARY_NAME=nvidia"), gpu.env)
         @test has_nvidia == Cecelia._nvidia_present()
     else
-        @test gpu.env === nothing                         # no-op off Linux
+        @test !any(==("DRI_PRIME=1"), gpu.env)            # no GPU offload off Linux
     end
+end
+
+# ── Resident Python processes resolve `cecelia` from THIS checkout ──────────
+# The bridge and the preview worker are launched by PATH but import `cecelia` by NAME, so without an
+# explicit PYTHONPATH they use whatever pip has installed — in dev an editable install pointing at the
+# MAIN checkout. A worktree then runs its own `napari_bridge.py`/`preview_worker.py` against another
+# checkout's library, and the halves drift with no error until one calls something the other lacks
+# (observed: `module 'cecelia.utils.correction_utils' has no attribute 'af_derived_values'`, raised by a
+# worker whose own file did have the caller). `run_py` always set PYTHONPATH; these two did not.
+@testset "resident python processes pin PYTHONPATH" begin
+    pyroot = Cecelia._python_dir()
+    @test isdir(joinpath(pyroot, "cecelia"))              # the dir we are pinning really is the package
+
+    for cmd in (Cecelia._bridge_cmd(false), Cecelia._bridge_cmd(true))
+        @test any(==("PYTHONPATH=$pyroot"), cmd.env)
+    end
+
+    # the worker's launch is inside `launch!` (which spawns), so assert on the source rather than run it
+    src = read(joinpath(dirname(pathof(Cecelia)), "preview.jl"), String)
+    body = src[findfirst("function launch!(", src)[1]:end]
+    @test occursin("PYTHONPATH", body[1:findfirst("\nend", body)[1]])
 end
 
 # ── AI observer (in-app assistant) — pure command/result pieces ─────────────
@@ -1400,6 +1423,11 @@ end
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
+    # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
+    # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image
+    # versions. NOT the ccid.json spelling (`filepath`, singular) nor the R version's (`imFilepath`).
+    known_value_name_fields = Set(["filepaths", "labels", "spatialGraphs"])
+
     # A value the spec itself calls valid: the declared default, else something in range/options.
     function valid_value(p)
         t = string(get(p, "type", ""))
@@ -1492,6 +1520,17 @@ end
                 isempty(key) && continue
                 t in ("section", "group") && continue   # containers hold no value of their own
                 @test t ∈ known_types
+
+                # A `valueNameSelection`'s `field` names a CciaImage field the FRONTEND reads
+                # (`VALUE_NAME_FIELDS` in frontend/src/tasks/paramValues.ts). Same failure mode as an
+                # unknown `type`: nothing errors, the widget just quietly degrades. Four tasks carried
+                # the R version's `imFilepath`, which matched no branch, so they stopped preselecting
+                # the image's ACTIVE version — and the form pointed at a version the viewer wasn't
+                # showing while cellpose (field absent) pointed at the right one.
+                if t == "valueNameSelection"
+                    fld = spec_get(p, "field", nothing)
+                    fld === nothing || @test String(fld) ∈ known_value_name_fields
+                end
 
                 # perturb exactly one value, in place, inside its group entry if nested
                 function with(bad)
@@ -1721,9 +1760,38 @@ end
 
     # Cohort-comparable BECAUSE the ceiling is derived per image: an image that clipped far more than
     # its peers is a staining/acquisition outlier. Not checkable while the window was hand-tuned.
-    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["clippedFrac", "levelsUsedFrac"]
+    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["clippedFrac", "levelsUsedFrac", "ceiling"]
     # ...and the keys must be the ones _run_task actually banks, or the cohort route reads nothing
-    @test Set(COHORT_METRICS["cleanupImages.afCorrect"]) ⊆ Set(["clippedFrac", "levelsUsedFrac"])
+    @test Set(COHORT_METRICS["cleanupImages.afCorrect"]) ⊆
+          Set(["clippedFrac", "levelsUsedFrac", "ceiling"])
+
+    # THE CEILING IS BANKED BUT NEVER WARNED ON — and that split is the point, not an oversight.
+    # A ceiling cannot be judged from one image; it is only wrong relative to a cohort. So it must
+    # ride through as a metric with no finding attached, and the outlier detector does the judging.
+    ceil_ok = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 24.09))
+    f4, w4 = Cecelia.af_qc_findings(ceil_ok)
+    @test isempty(f4)                 # a wildly different ceiling is NOT a per-image finding
+    @test w4.ceiling ≈ 24.09
+
+    # An absurd ceiling is still not a finding — same reason. This is what stops someone "fixing" it
+    # by adding a threshold that cannot exist.
+    f5, w5 = Cecelia.af_qc_findings(Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 999.0)))
+    @test isempty(f5)
+    @test w5.ceiling ≈ 999.0
+
+    # Rolled up as the MAX across corrected channels: with one channel they agree, with several the
+    # largest is the one that decides how much range the others give up.
+    _, w6 = Cecelia.af_qc_findings(Dict{String,Any}(
+        "1" => Dict{String,Any}("clippedFrac" => 0.0, "levelsUsed" => 200,
+                                "levelsAvailable" => 256, "ceiling" => 14.06),
+        "2" => Dict{String,Any}("clippedFrac" => 0.0, "levelsUsed" => 200,
+                                "levelsAvailable" => 256, "ceiling" => 24.09)))
+    @test w6.ceiling ≈ 24.09
+
+    # Older stats files predate the key; absence must read as 0.0, not throw.
+    @test Cecelia.af_qc_findings(ok)[2].ceiling == 0.0
 end
 
 @testset "AF params are just channels" begin
@@ -8443,6 +8511,15 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # an unknown kind is refused rather than passed on for the viewer to guess at
         @test_throws ErrorException Cecelia.preview_show_command(
             merge(reply, Dict("layers" => Any[merge(layers[1], Dict("kind" => "heatmap"))])))
+
+        # `source` (the viewer layer a corrected channel derives from, so the bridge can mirror its
+        # colormap) rides through untouched and is OPTIONAL — Julia neither requires it nor interprets
+        # it. Required here would break the one thing the pass-through exists to allow: the two Python
+        # ends evolving the payload without this file learning every field.
+        sourced = merge(reply, Dict("layers" => Any[merge(layers[2], Dict("source" => "nuc-GFP"))]))
+        @test Cecelia.preview_show_command(sourced)["layers"][1]["source"] == "nuc-GFP"
+        @test Cecelia.preview_show_command(
+            merge(reply, Dict("layers" => Any[layers[2]])))["layers"][1] === layers[2]
     end
 
     @testset "a composite says which steps it does not preview" begin

@@ -208,6 +208,69 @@ end
     @test haskey(JSON3.read(body2), :logs)
 end
 
+@testset "API: shutdown stops EVERY resident child" begin
+    # The preview worker was added and this function was not updated, so Quit left it alive on :7656
+    # holding a warm cellpose model's VRAM that nothing could reach. Zombie children are the reason
+    # the start/stop logic exists at all, so the coverage is asserted rather than remembered.
+    #
+    # Source-level on purpose: actually exercising it would kill the developer's own running napari
+    # and preview worker, since the ports are fixed and these tests share the machine.
+    src  = read(joinpath(@__DIR__, "..", "src", "app_api.jl"), String)
+    body = src[findfirst("function _stop_children_for_exit()", src)[1]:end]
+    body = body[1:findfirst("\nend", body)[1]]
+
+    # `api_diagnostics` is the de-facto registry of resident children — it reports one `*Port` per
+    # child for the System panel. Anything it lists must be freed on exit, so ADDING a child to
+    # diagnostics without adding it here fails this test rather than shipping another zombie.
+    diag  = JSON3.read(api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))[2])
+    child = [k for k in keys(diag) if endswith(String(k), "Port") && String(k) != "port"]
+    @test length(child) == 3            # napari, preview, notebooks — update deliberately, not silently
+    @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child)
+
+    for c in ("NAPARI_PORT", "PREVIEW_PORT", "NOTEBOOKS_PORT")
+        @test occursin(c, body)
+    end
+    # and the graceful stop, not only the port-level kill, for each child that has a handle
+    @test occursin("close!(v)", body)
+    @test occursin("_shutdown_notebook_server!()", body)
+    @test occursin("_stop_preview_worker!()", body)
+
+    # the shared stop must be reachable from the toggle-off route too — one meaning of "stop the
+    # worker", however it is reached
+    @test occursin("_stop_preview_worker!()",
+                   read(joinpath(@__DIR__, "..", "src", "preview_api.jl"), String))
+    @test isdefined(Main, :_stop_preview_worker!)
+
+    # The dev supervisor frees the same children on Ctrl-C / crash, where nothing runs the route above.
+    # It cannot load Cecelia (standalone script), so it repeats the port numbers as literals — assert the
+    # copies agree, because a renumbered port that only ONE of them knows about is a silent zombie.
+    dev = read(joinpath(@__DIR__, "..", "dev.jl"), String)
+    m   = match(r"const CHILD_PORTS = \(([^)]*)\)", dev)
+    @test m !== nothing
+    dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
+    @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, NOTEBOOKS_PORT])
+    @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
+
+    # PROD's supervisor (`app.py`) had the same hole: `proc.terminate()` kills the Julia server and
+    # leaves its three grandchildren running. It closes it by REUSING the route above rather than
+    # carrying a third copy of platform port-killing — so assert the reuse and, crucially, the ORDER:
+    # attempting a graceful stop AFTER terminate would be pointless, and the diff that introduces that
+    # mistake looks almost identical to the correct one.
+    app = read(joinpath(@__DIR__, "..", "..", "app.py"), String)
+    @test occursin("/api/app/shutdown", app)
+    @test occursin("_stop_gracefully(proc)", app)
+    # Assert the order inside the teardown block itself: the graceful attempt must come before the
+    # terminate it is meant to avoid. Comparing positions in the whole file would pass even if the two
+    # were in unrelated places, which is exactly the bug being guarded against.
+    let tail = app[findlast("finally", app)[1]:end]
+        i_graceful = findfirst("_stop_gracefully(proc)", tail)
+        i_term     = findfirst("proc.terminate()", tail)
+        @test i_graceful !== nothing
+        @test i_term !== nothing
+        @test i_graceful[1] < i_term[1]
+    end
+end
+
 @testset "API: packages" begin
     st, body = api_packages(HTTP.Request("GET", "/api/diagnostics/packages"))
     @test st == 200

@@ -21,6 +21,7 @@ import ome_types
 
 import cecelia.utils.zarr_utils as zu
 import cecelia.utils.correction_utils as cu
+import cecelia.utils.intensity_utils as iu
 import cecelia.utils.intensity_utils as intensity_utils
 from cecelia.utils.dim_utils import DimUtils
 
@@ -366,6 +367,45 @@ class AfDerivedValuesTest(unittest.TestCase):
             self.assertIn(k, s)
         self.assertGreaterEqual(s['clippedFrac'], 0.0)
         self.assertLessEqual(s['levelsUsed'], s['levelsAvailable'])
+
+    def test_output_stats_carry_the_derived_values_themselves(self):
+        """The fractions cannot stand in for the ceiling, so the ceiling has to be reported too."""
+        du = _dim_utils(**self.SHAPE)
+        data = np.random.default_rng(3).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        stats = cu.af_division_stats(data, du, 1, [3])
+        out = np.zeros(data.shape, data.dtype)
+        s = cu._stream_division_channel(data, out, du, channel_idx=1, out_ch=1,
+                                        correction_channel_idx=[3], stats=stats)
+        self.assertAlmostEqual(s['ceiling'], stats.c_max)
+        self.assertAlmostEqual(s['background'], stats.val1)
+        self.assertAlmostEqual(s['afBackground'], stats.val2)
+
+    def test_a_proportional_gain_difference_is_invisible_to_both_fractions(self):
+        """Why the ceiling is banked at all — and the reason it is a COHORT metric, not a warning.
+
+        Two images whose ratios differ by a constant factor derive proportionally different ceilings
+        and produce identical corrected output, so `clippedFrac` and `levelsUsedFrac` cannot tell them
+        apart while their intensity scales differ by that factor. Measured across the nine kSUFux
+        movies (one experiment, one channel pair, identical settings): a 1.71x spread in the ceiling.
+        """
+        rng = np.random.default_rng(7)
+        ratios = rng.gamma(shape=2.0, scale=3.0, size=200_000)
+        rescale = 255.0
+
+        def stats_for(scale):
+            c_max = float(iu.robust_hist_max(np.bincount((ratios * scale).astype(int))))
+            corrected = np.clip(ratios * scale / c_max * rescale, 0, rescale).astype(np.uint8)
+            hist = np.bincount(corrected, minlength=256)[:256]
+            return c_max, cu.af_output_stats(
+                hist, cu.AfDivisionStats(val1=0, val2=0, c_max=c_max, nbins=256, rescale=rescale))
+
+        c1, s1 = stats_for(1.0)
+        c2, s2 = stats_for(2.0)
+
+        self.assertGreater(c2 / c1, 1.5)                       # the scales really do differ...
+        self.assertEqual(s1['clippedFrac'], s2['clippedFrac'])  # ...and neither fraction moves at all
+        self.assertEqual(s1['levelsUsed'], s2['levelsUsed'])
+        self.assertNotAlmostEqual(s1['ceiling'], s2['ceiling'])  # only the banked ceiling shows it
 
 
 
