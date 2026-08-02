@@ -40,6 +40,9 @@ def run(params):
     fixed_min   = float(params.get('fixedMin', 0.0))
     fixed_max   = float(params.get('fixedMax', 0.0))
     fixed       = (fixed_min, fixed_max) if fixed_max > fixed_min else None
+    # This image is its set's REFERENCE: derive the window from its own histograms instead of being
+    # handed one, and report it back so the set can apply it to every other image. > 0 turns it on.
+    derive      = float(params.get('deriveLeeway', 0.0))
     result_path = params['resultPath']
 
     log.progress(0, 4)
@@ -56,19 +59,31 @@ def run(params):
     log.progress(1, 4)
     log.log('>> compute intensity window over the stack ' + (
         f'(FIXED [{fixed_min:.0f}, {fixed_max:.0f}], shared by all channels)' if fixed
+        else f'(DERIVED from this reference image, leeway {derive}x)' if derive > 0
         else f'(per channel, low={low_pct}%, high={high_pct}%)'))
     # Histograms are computed either way — with a fixed window they no longer choose it, but
     # clip_stats still reports how much of each channel it actually clips, which is the number
     # that tells you whether the window was set sensibly.
-    hists  = intensity_utils.channel_histograms(level0, c_idx)
+    hists = intensity_utils.channel_histograms(level0, c_idx)
+    if fixed is None and derive > 0:
+        fixed = intensity_utils.reference_window(hists, leeway=derive)
+        if fixed is None:
+            log.log('   [WARN] no signal in any channel — falling back to the percentile window')
     ranges = intensity_utils.channel_ranges(hists, low_pct, high_pct, fixed=fixed)
 
     channels = []
     for i, (h, (vmin, vmax)) in enumerate(zip(hists, ranges)):
         stats = intensity_utils.clip_stats(h, vmin, vmax)
+        # robustMax: the ceiling THIS image would have asked for. Recorded per channel so the set can
+        # be compared afterwards — the image with the largest one is, by construction, the reference
+        # that would clip the others least. The QC uses it to name a better nomination.
+        stats['robustMax'] = intensity_utils.robust_hist_max(h)
+        # Saturated at acquisition: the ceiling is unknowable and no window can recover it. Recorded
+        # so the QC reports it as its own problem instead of blaming the rescale.
+        stats['saturated'] = bool(intensity_utils.is_saturated(h))
         channels.append({'index': i, 'vmin': vmin, 'vmax': vmax, **stats})
         log.log(f'   ch{i}: window [{vmin:.0f}, {vmax:.0f}] '
-                f'(trueMax={stats["trueMax"]}, p99.9={stats["p999"]}, '
+                f'(robustMax={stats["robustMax"]}, trueMax={stats["trueMax"]}, '
                 f'clipHigh={stats["clipHighFrac"]*100:.3f}%)')
 
     log.progress(2, 4)
@@ -101,7 +116,12 @@ def run(params):
         # disagree. See zarr_utils.write_calibration.
         zarr_utils.write_calibration(staging, dim_utils)
 
-    write_json_atomic(result_path, {'channels': channels})
+    # `window` is what was APPLIED, whatever chose it — so the caller stores one thing on the set and
+    # every later image is handed the same numbers rather than re-deriving them per image.
+    write_json_atomic(result_path, {
+        'channels': channels,
+        'window': None if fixed is None else {'min': float(fixed[0]), 'max': float(fixed[1])},
+    })
 
     log.progress(4, 4)
     log.log('>> done')

@@ -588,6 +588,47 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     fixed_max    = Float64(get(params, "rescaleFixedMax", 0.0))
     fixed_window = fixed_max > fixed_min
 
+    # Reference-derived window: the user nominates one image as representative (model/set.jl) and the
+    # rest of the set is converted into ITS intensity space, so channels and images stay comparable
+    # without anyone typing a raw intensity. Three cases, decided here so the runner only ever sees
+    # numbers:
+    #   this image IS the reference -> derive from its own histograms (deriveLeeway) and store the
+    #                                  result on the set
+    #   the set already has a window -> use it verbatim
+    #   neither                      -> per-image, and say so; the reference has not been imported
+    #                                   yet, which is a sequencing mistake worth surfacing rather
+    #                                   than silently converting into a space nothing else shares
+    derive_leeway = Float64(get(params, "rescaleReferenceLeeway", 0.0))
+    ref_set       = nothing
+    derive_here   = 0.0
+    if convert_8bit && !fixed_window && derive_leeway > 0
+        proj_obj = load_project(basename(dirname(dirname(img._dir))))   # img._dir = {proj}/1/{uid}
+        si = findfirst(x -> img.uid in x.image_uids, proj_obj._sets)
+        if isnothing(si)
+            on_log("[WARN] 8-bit: image is in no set — falling back to a per-image window")
+        else
+            ref_set = proj_obj._sets[si]
+            ref_uid = reference_image_uid(ref_set)
+            stored  = get(ref_set.meta, SET_INTENSITY_WINDOW_KEY, nothing)
+            if ref_uid == img.uid
+                derive_here = derive_leeway
+                on_log("[INFO] 8-bit: this is the set's reference image — deriving the window " *
+                       "(leeway $(derive_leeway)x) for the whole set")
+            elseif stored isa AbstractDict && haskey(stored, "max")
+                fixed_min, fixed_max = Float64(stored["min"]), Float64(stored["max"])
+                fixed_window = fixed_max > fixed_min
+                on_log("[INFO] 8-bit: using the set window [$(fixed_min), $(fixed_max)] " *
+                       "derived from reference $(get(stored, "fromImage", "?"))")
+            elseif isnothing(ref_uid)
+                on_log("[WARN] 8-bit: the set has no reference image — falling back to a per-image " *
+                       "window. Star one in the image table and import it first.")
+            else
+                on_log("[WARN] 8-bit: reference $(ref_uid) has not been imported yet — falling " *
+                       "back to a per-image window. Import the reference first.")
+            end
+        end
+    end
+
     # When converting, bioformats2raw writes a single-level transient (the pyramid is rebuilt on the
     # 8-bit output); otherwise it writes the final pyramid directly.
     bf2raw_out = convert_8bit ? joinpath(img_zero_dir(img), "ccidImage.16bit.tmp.ome.zarr") : zarr_out
@@ -684,6 +725,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                highPercentile = high_pct,
                fixedMin       = fixed_min,
                fixedMax       = fixed_max,
+               deriveLeeway   = derive_here,
                resultPath     = result_file),
             run_dir; on_log = on_log, on_progress = on_progress, on_process = on_process)
         # drop the 16-bit scratch regardless of outcome — it's transient (never keep it locally)
@@ -706,6 +748,18 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                         "channels" => [Dict{String,Any}(String(k) => v for (k, v) in ch) for ch in chans],
                     )
                     on_log("[INFO] 8-bit rescale complete ($(length(chans)) channel(s)).")
+                    # This image WAS the reference: cache the window it produced on the set, so
+                    # every other image — including one imported months from now — is converted
+                    # into the same space rather than deriving its own.
+                    win = get(res, :window, nothing)
+                    if derive_here > 0 && !isnothing(ref_set) && win isa JSON3.Object
+                        ref_set.meta[SET_INTENSITY_WINDOW_KEY] = Dict{String,Any}(
+                            "min" => Float64(win["min"]), "max" => Float64(win["max"]),
+                            "fromImage" => img.uid, "leeway" => derive_here)
+                        save!(ref_set)
+                        on_log("[INFO] set window [$(win["min"]), $(win["max"])] stored — " *
+                               "the rest of the set will be converted into it")
+                    end
                 end
             catch e
                 @warn "Could not read 8-bit rescale result" exception = e

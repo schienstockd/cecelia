@@ -111,6 +111,12 @@ end
 
 const REFERENCE_IMAGE_KEY = "referenceImage"
 
+# The intensity window a consumer DERIVED from the reference, cached on the set so every later image
+# is converted into the same space without re-deriving it — and so an image imported months later
+# still lands there. Written by the importer; read by anything that needs to know what space the
+# set's 8-bit data lives in. `{min, max, fromImage, leeway}`.
+const SET_INTENSITY_WINDOW_KEY = "intensityWindow"
+
 """
     reference_image_uid(s::CciaSet) -> Union{String,Nothing}
 
