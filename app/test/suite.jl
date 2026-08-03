@@ -1723,88 +1723,84 @@ end
 end
 
 @testset "AF correction QC — the exemption that got retired" begin
-    # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase:
-    # over-subtraction HAS an objective signal (the clipped fraction) but nothing reported it. Now
-    # that the output ceiling is derived rather than typed in, that signal is what says whether the
-    # derivation landed — so the exemption is gone and this is its replacement.
+    # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase.
+    # The correction has no free parameter left to land badly, so the two objective signals are about
+    # the INPUT (was it clipped at the sensor?) and the output's quantisation.
     ok = Dict{String,Any}("1" => Dict{String,Any}(
-        "clippedFrac" => 0.0001, "levelsUsed" => 200, "levelsAvailable" => 256))
+        "saturatedFrac" => 0.0001, "levelsUsed" => 200, "levelsAvailable" => 256))
     @test isempty(Cecelia.af_qc_findings(ok)[1])
 
-    # Two ways it goes wrong, in OPPOSITE directions — a single-sided check would miss half of them.
-    clipped = Dict{String,Any}("1" => Dict{String,Any}(
-        "clippedFrac" => 0.05, "levelsUsed" => 200, "levelsAvailable" => 256))
-    f, w = Cecelia.af_qc_findings(clipped)
-    @test length(f) == 1 && f[1]["code"] == "af-clipped" && f[1]["level"] == "warn"
-    @test w.clipped == 0.05
+    # Two independent ways it goes wrong — a single-sided check would miss half of them.
+    saturated = Dict{String,Any}("1" => Dict{String,Any}(
+        "saturatedFrac" => 0.05, "levelsUsed" => 200, "levelsAvailable" => 256))
+    f, w = Cecelia.af_qc_findings(saturated)
+    @test length(f) == 1 && f[1]["code"] == "af-saturated-input" && f[1]["level"] == "warn"
+    @test w.saturated == 0.05
+    # the action belongs at the microscope: a clipped voxel's value is gone before this task runs
+    @test occursin("gain", f[1]["detail"])
 
-    # ceiling too HIGH: the data crams into a few levels. Measured on real data under the percentile
+    # coarse output: the data crams into a few levels. Measured on real data under the percentile
     # window this replaced — 99% of an image in ~13 of 255 levels, which nothing ever flagged.
     low = Dict{String,Any}("2" => Dict{String,Any}(
-        "clippedFrac" => 0.0, "levelsUsed" => 13, "levelsAvailable" => 256))
+        "saturatedFrac" => 0.0, "levelsUsed" => 13, "levelsAvailable" => 256))
     f2, w2 = Cecelia.af_qc_findings(low)
     @test length(f2) == 1 && f2[1]["code"] == "af-low-range"
     @test occursin("13 of 256", f2[1]["detail"])
     @test w2.levels < 0.06
 
     # advisory only, per docs/MODULES.md — never an error, never a gate
-    for d in (clipped, low)
+    for d in (saturated, low)
         @test all(x -> x["level"] == "warn", Cecelia.af_qc_findings(d)[1])
     end
 
     # worst-case rollup across channels, since QC banks one number per image
-    both = merge(clipped, low)
+    both = merge(saturated, low)
     _, w3 = Cecelia.af_qc_findings(both)
-    @test w3.clipped == 0.05          # worst = most clipped
-    @test w3.levels < 0.06            # worst = least range used
+    @test w3.saturated == 0.05         # worst = most saturated
+    @test w3.levels < 0.06             # worst = least range used
 
-    # Cohort-comparable BECAUSE the ceiling is derived per image: an image that clipped far more than
-    # its peers is a staining/acquisition outlier. Not checkable while the window was hand-tuned.
-    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["clippedFrac", "levelsUsedFrac", "ceiling"]
-    # ...and the keys must be the ones _run_task actually banks, or the cohort route reads nothing
-    @test Set(COHORT_METRICS["cleanupImages.afCorrect"]) ⊆
-          Set(["clippedFrac", "levelsUsedFrac", "ceiling"])
+    # Both metrics describe the ACQUISITION, which is what makes them comparable across a set shot in
+    # one session. Measured across the nine kSUFux movies, CH3 saturation spanned 0.001%-0.018% — a 13x
+    # spread at identical settings, so an outlier is a real difference rather than a typed parameter.
+    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["saturatedFrac", "levelsUsedFrac"]
 
-    # THE CEILING IS BANKED BUT NEVER WARNED ON — and that split is the point, not an oversight.
-    # A ceiling cannot be judged from one image; it is only wrong relative to a cohort. So it must
-    # ride through as a metric with no finding attached, and the outlier detector does the judging.
-    ceil_ok = Dict{String,Any}("1" => Dict{String,Any}(
-        "clippedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 24.09))
-    f4, w4 = Cecelia.af_qc_findings(ceil_ok)
-    @test isempty(f4)                 # a wildly different ceiling is NOT a per-image finding
-    @test w4.ceiling ≈ 24.09
+    # `ceiling` is GONE, and deliberately: it was banked to catch two images drifting onto different
+    # intensity scales, on the reasoning that the output was `ratio / ceiling * rescale`. The output is
+    # in input counts now — there is no ceiling, so there is nothing derived per image to drift.
+    @test !("ceiling" in COHORT_METRICS["cleanupImages.afCorrect"])
+    @test !("clippedFrac" in COHORT_METRICS["cleanupImages.afCorrect"])
+    ceiling_era = Dict{String,Any}("1" => Dict{String,Any}(
+        "clippedFrac" => 0.9, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 999.0))
+    @test isempty(Cecelia.af_qc_findings(ceiling_era)[1])   # old keys are ignored, not warned on
 
-    # An absurd ceiling is still not a finding — same reason. This is what stops someone "fixing" it
-    # by adding a threshold that cannot exist.
-    f5, w5 = Cecelia.af_qc_findings(Dict{String,Any}("1" => Dict{String,Any}(
-        "clippedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 999.0)))
-    @test isempty(f5)
-    @test w5.ceiling ≈ 999.0
-
-    # Rolled up as the MAX across corrected channels: with one channel they agree, with several the
-    # largest is the one that decides how much range the others give up.
-    _, w6 = Cecelia.af_qc_findings(Dict{String,Any}(
-        "1" => Dict{String,Any}("clippedFrac" => 0.0, "levelsUsed" => 200,
-                                "levelsAvailable" => 256, "ceiling" => 14.06),
-        "2" => Dict{String,Any}("clippedFrac" => 0.0, "levelsUsed" => 200,
-                                "levelsAvailable" => 256, "ceiling" => 24.09)))
-    @test w6.ceiling ≈ 24.09
-
-    # Older stats files predate the key; absence must read as 0.0, not throw.
-    @test Cecelia.af_qc_findings(ok)[2].ceiling == 0.0
+    # A stats file missing the key must read as 0.0, not throw.
+    @test Cecelia.af_qc_findings(Dict{String,Any}("1" => Dict{String,Any}(
+        "levelsUsed" => 200, "levelsAvailable" => 256)))[2].saturated == 0.0
 end
 
 @testset "AF params are just channels" begin
     # The spec grew into a bag of ~20 numbers while fitting individual datasets and was never
     # revisited. A combination is now the two things it is actually about; everything else is derived
-    # (`af_division_stats`) or was a filter that belongs to a filtering task.
+    # (`af_weight_stats`) or was a filter that belongs to a filtering task.
     spec = Cecelia._task_spec(Cecelia.AfCorrect())
     keys_top = [string(get(p, "key", "")) for p in get(spec, "params", [])]
     @test keys_top == ["valueName", "afCombinations", "backgroundMethod"]
 
     combo = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "afCombinations")
     @test [string(get(p, "key", "")) for p in get(combo, "params", [])] ==
-          ["quotientChannel", "divisionChannels"]
+          ["targetChannel", "competingChannels"]
+
+    # `none` is NOT offered: the weight is a ratio of intensities, so an unsubtracted pedestal makes
+    # background voxels split evenly and survive. Measured on kSUFux/Or1L8a: 92.1% of background voxels
+    # come out non-zero and cell-to-background contrast collapses to 6.8x.
+    bg = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "backgroundMethod")
+    @test [string(get(o, "value", "")) for o in get(bg, "options", [])] == ["triangle", "otsu"]
+
+    # No exponent param. This task deleted four numbers with no defensible value (channelPercentile,
+    # correctionPercentile, correctionMin, correctionMax) and a user-facing sharpness dial is that same
+    # thing returning — see `AF_WEIGHT_EXPONENT`.
+    @test !("exponent" in keys_top)
+    @test !("weightExponent" in keys_top)
 
     # the deleted ones, named so a future session doesn't reintroduce them one at a time
     gone = ["correctionMin", "correctionMax", "correctionGain", "channelPercentile",
@@ -8556,21 +8552,37 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # the real saved shape from a live project: channel NAMES, including one ("CH4") that is
             # not in this image's channel list at all — it resolves to nothing, exactly as the run does
             params = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
-                "divisionChannels" => ["CH4", "CD169-Kat"],
-                "quotientChannel"  => ["mem-TOM"])))
+                "competingChannels" => ["CH4", "CD169-Kat"],
+                "targetChannel"     => ["mem-TOM"])))
             out = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), params, img)
-            # quotientChannel re-keys the combination to the channel being corrected (mem-TOM → 2)
+            # targetChannel re-keys the combination to the channel being corrected (mem-TOM → 2)
             @test collect(keys(out["afCombinations"])) == ["2"]
-            @test out["afCombinations"]["2"]["divisionChannels"] == [3]
-            @test !haskey(out["afCombinations"]["2"], "quotientChannel")
+            @test out["afCombinations"]["2"]["competingChannels"] == [3]
+            @test !haskey(out["afCombinations"]["2"], "targetChannel")
 
             # idempotent: already-translated indices survive a second pass (a chain or REPL caller)
             again = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), out, img)
-            @test again["afCombinations"]["2"]["divisionChannels"] == [3]
+            @test again["afCombinations"]["2"]["competingChannels"] == [3]
 
             # and the composite delegates to AF, since that is the step it can preview
             comp = Cecelia._task_from_fun_name("cleanupImages.afDriftCorrect")
-            @test Cecelia.preview_params_for_run(comp, params, img)["afCombinations"]["2"]["divisionChannels"] == [3]
+            @test Cecelia.preview_params_for_run(comp, params, img)["afCombinations"]["2"]["competingChannels"] == [3]
+
+            # A target named inside its OWN competitor list is dropped, not squared into the denominator
+            # a second time — that would quietly halve the channel's own output. Two separate widgets,
+            # so picking the same channel in both is an easy slip with one obvious intent.
+            self_ref = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+                "competingChannels" => ["mem-TOM", "CD169-Kat"],
+                "targetChannel"     => ["mem-TOM"])))
+            selfed = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), self_ref, img)
+            @test selfed["afCombinations"]["2"]["competingChannels"] == [3]
+
+            # ...and duplicates collapse, so a name listed twice cannot double its weight either
+            dupes = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+                "competingChannels" => ["CD169-Kat", "CD169-Kat"],
+                "targetChannel"     => ["mem-TOM"])))
+            @test Cecelia.preview_params_for_run(Cecelia.AfCorrect(), dupes,
+                                                 img)["afCombinations"]["2"]["competingChannels"] == [3]
         end
     end
 
@@ -8580,6 +8592,21 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
         # not alive until launched — `preview_alive` must never report true for a null process
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
+    end
+
+    @testset "the preview protocol matches on both sides" begin
+        # A running worker is ADOPTED, not relaunched, so the two constants are the only thing stopping
+        # stale worker code from serving a backend it was not started by. They live in different
+        # languages and were bumped by hand three times with nothing checking they agreed.
+        #
+        # Protocol 4 is why this test exists: a stale protocol-3 worker carries the old ratio
+        # `af_correct_frame`, so it returns well-formed previews of the WRONG method rather than
+        # failing. Forgetting one side would be invisible.
+        worker = joinpath(dirname(dirname(pathof(Cecelia))), "..", "preview", "preview_worker.py")
+        @test isfile(worker)
+        m = match(r"^PROTOCOL\s*=\s*(\d+)"m, read(worker, String))
+        @test m !== nothing
+        @test parse(Int, m.captures[1]) == Cecelia.PREVIEW_PROTOCOL
     end
 
     @testset "img_labels_path resolves registered and in-progress stores" begin

@@ -79,16 +79,16 @@ export function paramsBlocker(params: Record<string, unknown> | null): PreviewBl
 }
 
 /**
- * True when at least one AF combination names a division channel — the AF analogue of
- * `hasPreviewableModel`. A combination with no reference channel is not a correction (the worker
+ * True when at least one AF combination names a competing channel — the AF analogue of
+ * `hasPreviewableModel`. A combination with nothing to compete against is not a correction (the worker
  * raises), and an empty bag is the state the form starts in.
  */
 export function hasAfCombination(params: Record<string, unknown> | null): boolean {
   const combos = (params as { afCombinations?: unknown } | null)?.afCombinations
   if (!combos || typeof combos !== 'object') return false
   return Object.values(combos as Record<string, unknown>).some(c => {
-    const div = (c as { divisionChannels?: unknown } | null)?.divisionChannels
-    return Array.isArray(div) && div.length > 0
+    const competing = (c as { competingChannels?: unknown } | null)?.competingChannels
+    return Array.isArray(competing) && competing.length > 0
   })
 }
 

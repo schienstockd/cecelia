@@ -21,7 +21,6 @@ import ome_types
 
 import cecelia.utils.zarr_utils as zu
 import cecelia.utils.correction_utils as cu
-import cecelia.utils.intensity_utils as iu
 import cecelia.utils.intensity_utils as intensity_utils
 from cecelia.utils.dim_utils import DimUtils
 
@@ -93,7 +92,7 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
     channel, a rolling ball, a top hat, two denoisers, a gaussian — and one pinned the output sum
     against a golden captured from the pre-streaming implementation. They were **deleted rather than
     repaired**: a channel combination is now just channels, everything else is derived
-    (`af_division_stats`), and the golden described a method that was deliberately replaced. Pinning
+    (`af_weight_stats`), and the golden described a method that was deliberately replaced. Pinning
     the old numbers would have pinned the behaviour we set out to remove.
 
     What survives is the property that still means something: streaming to disk must not change the
@@ -134,7 +133,7 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
     def test_divide_and_passthrough(self):
         # ch0 corrected against ch1; ch1 covered by no combination, so carried through UNCHANGED
         du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
-        out = self._run(du, {"0": {"divisionChannels": [1]}})
+        out = self._run(du, {"0": {"competingChannels": [1]}})
         rng = np.random.default_rng(1)
         base = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
         c = du.dim_idx('C')
@@ -151,12 +150,12 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
     def test_every_background_method_runs(self):
         du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
         for m in intensity_utils.BACKGROUND_METHODS:
-            self._run(du, {"0": {"divisionChannels": [1]}}, background_method=m)
+            self._run(du, {"0": {"competingChannels": [1]}}, background_method=m)
 
     def test_an_unknown_background_method_is_refused(self):
         du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=16, size_x=12)
         with self.assertRaises(ValueError):
-            self._run(du, {"0": {"divisionChannels": [1]}}, background_method='nope')
+            self._run(du, {"0": {"competingChannels": [1]}}, background_method='nope')
 
 
 class SourceHandleAgnosticTest(unittest.TestCase):
@@ -186,7 +185,7 @@ class SourceHandleAgnosticTest(unittest.TestCase):
         du = _dim_utils(size_t=3, size_z=1, size_c=2, size_y=19, size_x=14)
         rng = np.random.default_rng(3)
         arr = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        combos = {"0": {"divisionChannels": [1]}}
+        combos = {"0": {"competingChannels": [1]}}
 
         class _Log:
             def log(self, *_a, **_k): pass
@@ -227,10 +226,10 @@ class SourceHandleAgnosticTest(unittest.TestCase):
 
 
 class AfPreviewSeamTest(unittest.TestCase):
-    """`af_division_stats` + `af_correct_frame` composed must BE the run.
+    """`af_weight_stats` + `af_correct_frame` composed must BE the run.
 
     The task preview corrects only the region on screen, which is possible because the global values
-    (both background levels and the output ceiling) are separable from the per-voxel work. That split
+    (one background level per participating channel) are separable from the per-voxel work. That split
     is the whole feature, and it is only worth anything if the two halves recombine into exactly what a
     run produces — otherwise the preview shows a result the run won't reproduce, which is the one thing
     it exists to avoid.
@@ -247,16 +246,14 @@ class AfPreviewSeamTest(unittest.TestCase):
         c_axis, t_axis = du.dim_idx('C'), du.dim_idx('T')
         for method in intensity_utils.BACKGROUND_METHODS:
             run_out = np.zeros(data.shape, data.dtype)
-            cu._stream_division_channel(data, run_out, du, channel_idx=1, out_ch=1,
-                                        correction_channel_idx=[3], background_method=method)
+            cu._stream_corrected_channel(data, run_out, du, channel_idx=1, out_ch=1,
+                                         competing_channel_idx=[3], background_method=method)
 
             # ── what the preview does: stats once, then the per-voxel part per region ──
-            stats = cu.af_division_stats(data, du, 1, [3], background_method=method)
+            stats = cu.af_weight_stats(data, du, [1, 3], background_method=method)
             for t in range(du.dim_val('T')):
                 corrected = cu.af_correct_frame(
-                    cu._af_slab(data, du, 1, t),
-                    cu._af_correction_slab(data, du, [3], t, 'maximum', 75),
-                    stats, data.dtype)
+                    cu._af_slabs(data, du, [1, 3], t), 1, stats, data.dtype)
                 sl = [slice(None)] * data.ndim
                 sl[t_axis] = slice(t, t + 1)
                 sl[c_axis] = slice(1, 2)
@@ -271,17 +268,15 @@ class AfPreviewSeamTest(unittest.TestCase):
         """
         du = _dim_utils(**self.SHAPE)
         data = self._data(du, seed=12)
-        stats = cu.af_division_stats(data, du, 1, [3])
+        stats = cu.af_weight_stats(data, du, [1, 3])
         y, x = du.dim_idx('Y'), du.dim_idx('X')
-        full = cu.af_correct_frame(cu._af_slab(data, du, 1, 0),
-                                   cu._af_correction_slab(data, du, [3], 0, 'maximum', 75),
-                                   stats, data.dtype)
+        slabs = cu._af_slabs(data, du, [1, 3], 0)
+        full = cu.af_correct_frame(slabs, 1, stats, data.dtype)
         box = [slice(None)] * data.ndim
         box[y] = slice(8, 20)
         box[x] = slice(5, 25)
-        crop = cu.af_correct_frame(cu._af_slab(data, du, 1, 0)[tuple(box)],
-                                   cu._af_correction_slab(data, du, [3], 0, 'maximum', 75)[tuple(box)],
-                                   stats, data.dtype)
+        crop = cu.af_correct_frame({ch: s[tuple(box)] for ch, s in slabs.items()},
+                                   1, stats, data.dtype)
         self.assertTrue(np.array_equal(full[tuple(box)], crop),
                         'a previewed region must equal that region of the full correction')
 
@@ -292,154 +287,291 @@ class AfPreviewSeamTest(unittest.TestCase):
         data = self._data(du, seed=13)
         a = np.zeros(data.shape, data.dtype)
         b = np.zeros(data.shape, data.dtype)
-        cu._stream_division_channel(data, a, du, channel_idx=1, out_ch=1, correction_channel_idx=[3])
-        stats = cu.af_division_stats(data, du, 1, [3])
-        cu._stream_division_channel(data, b, du, channel_idx=1, out_ch=1, correction_channel_idx=[3],
-                                    stats=stats)
+        cu._stream_corrected_channel(data, a, du, channel_idx=1, out_ch=1,
+                                     competing_channel_idx=[3])
+        stats = cu.af_weight_stats(data, du, [1, 3])
+        cu._stream_corrected_channel(data, b, du, channel_idx=1, out_ch=1,
+                                     competing_channel_idx=[3], stats=stats)
         self.assertTrue(np.array_equal(a, b))
 
 
-class AfDerivedValuesTest(unittest.TestCase):
-    """The three values that used to be dialled in are now derived — pin what they are.
+class AfWeightMechanismTest(unittest.TestCase):
+    """What the power weight actually does, pinned as arithmetic rather than as a golden image.
 
-    Replaces `channelPercentile`, `correctionPercentile`, `correctionMin` and `correctionMax`.
+    Replaces a class that pinned the derived ceiling — `AF_CEILING_MIN_COUNT`, the floor fraction, the
+    lone-hot-voxel guard, the proportional-gain blindness. All of it described a rescale that no longer
+    exists: the output is in input counts now, so there is no ceiling to derive, subsample, defend
+    against a hot voxel, or compare across a set.
     """
 
     SHAPE = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)
 
-    def test_none_means_no_background_subtraction(self):
+    def _stats(self, backgrounds, exponent=cu.AF_WEIGHT_EXPONENT, nbins=256):
+        """A hand-built stats object, so the per-voxel arithmetic can be checked without an image."""
+        return cu.AfWeightStats(backgrounds=dict(backgrounds),
+                                saturated={ch: 0.0 for ch in backgrounds},
+                                exponent=exponent, nbins=nbins)
+
+    # ── the per-voxel form ────────────────────────────────────────────────────
+
+    def test_a_channel_with_no_competition_passes_through_untouched(self):
+        """The property that makes the output "input counts": alone, the weight is exactly 1.
+
+        Under the ratio this same voxel came out rescaled by `rescale / ceiling` — one input count became
+        ~17 output counts on a real 8-bit image, so the corrected channel's brightness depended on a
+        derived number rather than on the data.
+        """
+        stats = self._stats({0: 10.0, 1: 10.0})
+        target = np.array([[10, 30, 60, 255]], dtype=np.uint8)
+        other = np.full_like(target, 10)                      # competitor at its own background
+        out = cu.af_correct_frame({0: target, 1: other}, 0, stats, np.uint8)
+        np.testing.assert_array_equal(out, np.array([[0, 20, 50, 245]], dtype=np.uint8))
+
+    def test_two_equally_bright_channels_split_the_voxel_evenly(self):
+        """No channel wins territory for being brighter overall — the symmetry the mutual ratio lacked.
+
+        This is also the case the ratio destroyed: equal channels put the ratio at 1, which mapped to
+        zero, so a cell carrying both reporters was hollowed out from the centre.
+        """
+        stats = self._stats({0: 0.0, 1: 0.0})
+        a = np.array([[40, 100]], dtype=np.uint8)
+        out0 = cu.af_correct_frame({0: a, 1: a.copy()}, 0, stats, np.uint8)
+        out1 = cu.af_correct_frame({0: a, 1: a.copy()}, 1, stats, np.uint8)
+        np.testing.assert_array_equal(out0, np.array([[20, 50]], dtype=np.uint8))   # b/2, not 0
+        np.testing.assert_array_equal(out0, out1)
+
+    def test_n_equally_bright_channels_each_keep_one_nth(self):
+        # generalises the pair case, and pins that competitors are NOT collapsed into one reference
+        stats = self._stats({0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0})
+        a = np.array([[120]], dtype=np.uint8)
+        for n in (2, 3, 4):
+            slabs = {ch: a.copy() for ch in range(n)}
+            out = cu.af_correct_frame(slabs, 0, stats, np.uint8)
+            self.assertEqual(int(out[0, 0]), 120 // n, f'{n} equal channels must split {n} ways')
+
+    def test_the_brighter_channel_keeps_more_by_a_fixed_power(self):
+        """`out_a / out_b == (b_a / b_b) ** (p + 1)` — the whole behaviour in one identity."""
+        p = 3
+        stats = self._stats({0: 0.0, 1: 0.0}, exponent=p, nbins=65536)
+        a = np.array([[2000]], dtype=np.uint16)
+        b = np.array([[1000]], dtype=np.uint16)
+        out_a = cu.af_correct_frame({0: a, 1: b}, 0, stats, np.uint16)
+        out_b = cu.af_correct_frame({0: a, 1: b}, 1, stats, np.uint16)
+        self.assertAlmostEqual(float(out_a[0, 0]) / float(out_b[0, 0]), 2.0 ** (p + 1), delta=0.05)
+
+    def test_the_output_never_exceeds_the_input(self):
+        """Why there is no `clippedFrac` any more: `weight <= 1`, so clipping is structurally impossible.
+
+        Under the ratio this was a real failure mode — a ceiling derived too low flattened bright
+        structure against the top of the range, which is exactly what that metric watched for.
+        """
+        rng = np.random.default_rng(21)
+        stats = self._stats({0: 5.0, 1: 5.0, 2: 5.0})
+        slabs = {ch: rng.integers(0, 256, size=(40, 40)).astype(np.uint8) for ch in range(3)}
+        out = cu.af_correct_frame(slabs, 0, stats, np.uint8)
+        self.assertTrue(np.all(out.astype(int) <= np.clip(slabs[0].astype(int) - 5, 0, None)),
+                        'the correction must never brighten a voxel')
+
+    def test_background_voxels_come_out_zero_without_dividing_by_zero(self):
+        # den == 0 everywhere nothing is above background: the `where=` branch, not a division by zero
+        stats = self._stats({0: 20.0, 1: 20.0})
+        slabs = {0: np.full((8, 8), 15, np.uint8), 1: np.full((8, 8), 20, np.uint8)}
+        with np.errstate(divide='raise', invalid='raise'):
+            out = cu.af_correct_frame(slabs, 0, stats, np.uint8)
+        self.assertEqual(int(out.max()), 0)
+
+    def test_a_voxel_dimmer_than_a_competitor_is_SUPPRESSED_not_zeroed(self):
+        """The deliberate behaviour change, kept as a test so it cannot be reverted by accident.
+
+        The ratio had `test_a_voxel_dimmer_than_its_reference_is_also_zero` (#448) asserting the exact
+        opposite, and that assertion WAS correct for the ratio: everything with `ratio <= 1` mapped to 0.
+        That is the hollowing — a co-positive cell's centre is precisely where the target is not the
+        brighter channel. Here the loser keeps a share, small but non-zero, so the cell stays solid.
+        """
+        stats = self._stats({0: 0.0, 1: 0.0})
+        img = np.full((1, 2, 2), 20, dtype=np.uint8)
+        rival = np.full((1, 2, 2), 60, dtype=np.uint8)     # competitor 3x brighter
+        out = cu.af_correct_frame({0: img, 1: rival}, 0, stats, np.uint8)
+        # weight = 400 / (400 + 3600) = 0.1 -> 20 * 0.1 = 2
+        self.assertTrue(np.all(out == 2), f'expected a suppressed 2, got {np.unique(out)}')
+        self.assertGreater(int(out.max()), 0, 'the losing channel must not be zeroed outright')
+
+    def test_the_integer_output_is_rounded_not_truncated(self):
+        """The output is in input counts, so values are often single digits and truncation biases every
+        one of them down by ~half a count. Measured on one plane of kSUFux/Or1L8a: truncating shifts the
+        mean by -0.072 counts and forces 4.9% of real output to zero, against +0.002 and 4.0% rounding.
+        """
+        stats = self._stats({0: 0.0, 1: 0.0})
+        # b0=3, b1=2 -> weight 9/13, out = 3 * 9/13 = 2.077 -> 2 either way
+        # b0=5, b1=3 -> weight 25/34, out = 5 * 25/34 = 3.676 -> 4 rounded, 3 truncated
+        a = np.array([[3, 5]], dtype=np.uint8)
+        c = np.array([[2, 3]], dtype=np.uint8)
+        out = cu.af_correct_frame({0: a, 1: c}, 0, stats, np.uint8)
+        np.testing.assert_array_equal(out, np.array([[2, 4]], dtype=np.uint8))
+
+    def test_a_float_output_is_left_unrounded(self):
+        stats = self._stats({0: 0.0, 1: 0.0})
+        a = np.array([[5]], dtype=np.uint8)
+        c = np.array([[3]], dtype=np.uint8)
+        out = cu.af_correct_frame({0: a, 1: c}, 0, stats, np.float32)
+        self.assertAlmostEqual(float(out[0, 0]), 5.0 * 25.0 / 34.0, places=5)
+
+    def test_a_target_absent_from_the_slabs_is_refused(self):
+        stats = self._stats({0: 0.0, 1: 0.0})
+        with self.assertRaises(ValueError):
+            cu.af_correct_frame({1: np.zeros((4, 4), np.uint8)}, 0, stats, np.uint8)
+
+    def test_a_channel_with_no_derived_background_is_refused(self):
+        """Refused rather than defaulted. A missing background would silently skip subtraction, so that
+        channel's pedestal would enter the denominator and over-suppress the target — a wrong answer
+        that looks like a working one. It means the stats were derived for a different channel set."""
+        stats = self._stats({0: 5.0})                      # nothing for channel 1
+        slabs = {0: np.full((4, 4), 40, np.uint8), 1: np.full((4, 4), 40, np.uint8)}
+        with self.assertRaises(ValueError) as ctx:
+            cu.af_correct_frame(slabs, 0, stats, np.uint8)
+        self.assertIn('1', str(ctx.exception))
+
+    def test_naming_the_target_among_its_own_competitors_changes_nothing(self):
+        """A slip the Julia side filters out (`af_combinations_for_python`); nothing downstream may
+        depend on that filtering having happened. Squaring the target's own term into the denominator a
+        second time would quietly halve its output.
+
+        Two layers stop it: `af_weight_stats` dedupes the channel list, and `af_correct_frame` takes the
+        slabs as a **dict keyed by channel**, so a channel physically cannot appear twice.
+        """
+        du = _dim_utils(**self.SHAPE)
+        data = np.random.default_rng(5).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        plain = cu.af_weight_stats(data, du, [1, 3])
+        dupes = cu.af_weight_stats(data, du, [1, 3, 1, 3])
+        self.assertEqual(plain.backgrounds, dupes.backgrounds)
+        self.assertEqual(plain.saturated, dupes.saturated)
+        slabs = cu._af_slabs(data, du, [1, 3, 1], 0)
+        self.assertEqual(sorted(slabs), [1, 3])
+        np.testing.assert_array_equal(cu.af_correct_frame(slabs, 1, plain, data.dtype),
+                                      cu.af_correct_frame(slabs, 1, dupes, data.dtype))
+
+    # ── the derived globals ───────────────────────────────────────────────────
+
+    def test_a_background_is_derived_per_channel(self):
         du = _dim_utils(**self.SHAPE)
         data = np.random.default_rng(1).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        s = cu.af_division_stats(data, du, 1, [3], background_method='none')
-        self.assertEqual(s.val1, 0.0)
-        self.assertEqual(s.val2, 0.0)
+        s = cu.af_weight_stats(data, du, [1, 3])
+        self.assertEqual(sorted(s.backgrounds), [1, 3])
+        self.assertEqual(s.exponent, cu.AF_WEIGHT_EXPONENT)
 
-    def test_the_ceiling_never_collapses_into_the_background(self):
-        # the trap on `robust_hist_max`: the background bin dominates, so an over-large count would
-        # return a ceiling inside it and make the rescale degenerate
-        du = _dim_utils(**self.SHAPE)
-        data = np.zeros(tuple(du.im_dim), dtype=np.uint16)   # every voxel identical
-        s = cu.af_division_stats(data, du, 1, [3], ceiling_min_count=10 ** 9)
-        self.assertGreater(s.c_max, 0.0)
-        self.assertGreaterEqual(s.c_max, s.nbins * cu.AF_CEILING_FLOOR_FRAC)
-
-    def test_a_lone_hot_voxel_does_not_set_the_ceiling(self):
-        """The measured failure: on a real 181-frame movie the top six occupied ratio bins held ONE
-        voxel each, so one voxel in 5.88 billion set the output scale."""
-        du = _dim_utils(**self.SHAPE)
-        data = np.zeros(tuple(du.im_dim), dtype=np.uint16)
-        c = du.dim_idx('C')
-        # a broad dim signal in the target channel, no AF anywhere -> ratio ~= signal
+    def _pedestal_image(self, du, pedestal=30, blob=900):
+        """A flat background with one bright blob in each channel — enough of a histogram for a
+        threshold to be derived from, unlike a single spike."""
+        data = np.full(tuple(du.im_dim), pedestal, dtype=np.uint16)
+        y, x = du.dim_idx('Y'), du.dim_idx('X')
         sl = [slice(None)] * data.ndim
-        sl[c] = slice(1, 2)
-        data[tuple(sl)] = 40
-        clean = cu.af_division_stats(data, du, 1, [3], background_method='none',
-                                     ceiling_min_count=100)
-        # now plant ONE hot voxel, orders of magnitude brighter
-        hot = [0] * data.ndim
-        hot[c] = 1
-        data[tuple(hot)] = 65535
-        with_hot = cu.af_division_stats(data, du, 1, [3], background_method='none',
-                                        ceiling_min_count=100)
-        self.assertEqual(clean.c_max, with_hot.c_max,
-                         'one hot voxel moved the derived ceiling')
-        # ...whereas the true max would have been dragged all the way up
-        self.assertGreater(cu.af_division_stats(data, du, 1, [3], background_method='none',
-                                                ceiling_min_count=1).c_max,
-                           with_hot.c_max)
+        sl[y] = slice(2, 8)
+        sl[x] = slice(2, 8)
+        data[tuple(sl)] = blob
+        return data, tuple(sl)
 
-    def test_a_spatial_stride_gives_the_same_ceiling(self):
-        # what makes the cheap pass honest: measured identical under z::2 / xy::4 / both on real data
+    def test_without_background_subtraction_the_background_survives(self):
+        """Why the task JSON does not offer `'none'`, as a test rather than as a comment.
+
+        The weight is a ratio of intensities, so an unsubtracted pedestal makes background voxels split
+        evenly between the channels and come out non-zero. Measured on kSUFux/Or1L8a: 92.1% of
+        background voxels survive and cell-to-background contrast collapses to 6.8x.
+        """
+        du = _dim_utils(size_t=1, size_z=1, size_c=2, size_y=24, size_x=24)
+        data, blob = self._pedestal_image(du)
+        slabs = cu._af_slabs(data, du, [0, 1], 0)
+
+        none_stats = cu.af_weight_stats(data, du, [0, 1], background_method='none')
+        self.assertEqual(none_stats.backgrounds, {0: 0.0, 1: 0.0})
+        survived = cu.af_correct_frame(slabs, 0, none_stats, data.dtype)
+
+        derived = cu.af_weight_stats(data, du, [0, 1], background_method='triangle')
+        self.assertGreater(derived.backgrounds[0], 0.0)
+        cleaned = cu.af_correct_frame(slabs, 0, derived, data.dtype)
+
+        # outside the blob is background in both channels; it must not survive a derived background
+        bg = np.ones(survived.shape, bool)
+        bg[blob] = False
+        self.assertGreater(int(survived[bg].max()), 0, 'background survives without subtraction')
+        self.assertEqual(int(cleaned[bg].max()), 0, 'a derived background must remove the pedestal')
+
+    def test_saturated_reports_the_input_clipped_at_the_sensor(self):
+        """The QC signal that replaced `clippedFrac`. A clipped voxel's true value is gone before this
+        task sees it — measured across the nine kSUFux movies, CH3 saturation spanned 0.001% to 0.018%
+        at identical acquisition settings."""
+        du = _dim_utils(size_t=1, size_z=1, size_c=2, size_y=10, size_x=10)
+        data = np.zeros(tuple(du.im_dim), dtype=np.uint8)
+        c, y = du.dim_idx('C'), du.dim_idx('Y')
+        sl = [slice(None)] * data.ndim
+        sl[c] = slice(0, 1)
+        sl[y] = slice(0, 1)            # one row of 10 in a 10x10 channel
+        data[tuple(sl)] = 255
+        s = cu.af_weight_stats(data, du, [0, 1])
+        self.assertAlmostEqual(s.saturated[0], 0.10, places=6)
+        self.assertAlmostEqual(s.saturated[1], 0.0, places=6)
+
+    def test_a_spatial_stride_gives_the_same_backgrounds(self):
+        """What makes the preview's cheap pass honest, and it is EXACT — not merely close.
+
+        The preview derives its globals from a strided read (`AF_PREVIEW_STRIDE`) while the run reads
+        every voxel. If those disagree the preview subtracts a different background than the run, which
+        is the one thing the feature exists to rule out. Measured here at `(1,1)`, `(1,2)` and `(2,4)`:
+        the same background to the count.
+
+        **It holds because the image HAS a background population**, which is what a threshold needs to
+        find. On structureless uniform noise there is none, and the triangle threshold then swings
+        wildly under subsampling (measured on `rng.integers(0, 4000)`: 3178 → 544 → 196). That is a
+        degenerate input rather than a realistic one — a fluorescence channel is mostly background — but
+        it is the assumption the strided pass rests on, so it is written down here and on
+        `af_weight_stats` rather than left implicit. The previous implementation had the same exposure
+        and no test covered it.
+        """
         du = _dim_utils(**self.SHAPE)
-        data = np.random.default_rng(2).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        full = cu.af_division_stats(data, du, 1, [3])
-        strided = cu.af_division_stats(data, du, 1, [3], spatial_stride=(1, 2))
-        self.assertAlmostEqual(full.c_max, strided.c_max, delta=full.nbins * 0.1)
+        rng = np.random.default_rng(2)
+        # a real channel: a background pedestal with sensor noise, plus signal over part of the frame
+        data = np.full(tuple(du.im_dim), 30, dtype=np.uint16)
+        data += rng.integers(0, 8, size=data.shape, dtype=np.uint16)
+        y, x = du.dim_idx('Y'), du.dim_idx('X')
+        sl = [slice(None)] * data.ndim
+        sl[y] = slice(4, 20)
+        sl[x] = slice(4, 20)
+        data[tuple(sl)] += 900
 
-    def test_output_stats_report_both_failure_directions(self):
+        full = cu.af_weight_stats(data, du, [1, 3])
+        for stride in ((1, 2), (2, 4)):
+            strided = cu.af_weight_stats(data, du, [1, 3], spatial_stride=stride)
+            self.assertEqual(full.backgrounds, strided.backgrounds,
+                             f'stride {stride} moved a derived background')
+
+    # ── what the run banks and the preview reads out ──────────────────────────
+
+    def test_output_stats_carry_what_qc_acts_on(self):
         du = _dim_utils(**self.SHAPE)
         data = np.random.default_rng(3).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        stats = cu.af_division_stats(data, du, 1, [3])
+        stats = cu.af_weight_stats(data, du, [1, 3])
         out = np.zeros(data.shape, data.dtype)
-        s = cu._stream_division_channel(data, out, du, channel_idx=1, out_ch=1,
-                                        correction_channel_idx=[3], stats=stats)
-        for k in ('clippedFrac', 'levelsUsed', 'levelsAvailable', 'trueMax', 'p999'):
+        s = cu._stream_corrected_channel(data, out, du, channel_idx=1, out_ch=1,
+                                         competing_channel_idx=[3], stats=stats)
+        for k in ('levelsUsed', 'levelsAvailable', 'trueMax', 'p999',
+                  'saturatedFrac', 'background', 'competingBackgrounds', 'exponent'):
             self.assertIn(k, s)
-        self.assertGreaterEqual(s['clippedFrac'], 0.0)
+        self.assertNotIn('clippedFrac', s)     # structurally ~0 now — see af_output_stats
+        self.assertNotIn('ceiling', s)         # there is no rescale to have a ceiling for
         self.assertLessEqual(s['levelsUsed'], s['levelsAvailable'])
 
-    def test_no_signal_and_no_autofluorescence_comes_out_as_ZERO(self):
-        """The neutral ratio (1.0) is what AF correction removes, so it must map to 0, not a pedestal.
-
-        Measured before this was anchored: on a real 8-bit image with a derived ceiling of 15.06, every
-        background voxel came out at 17 of 255 — 6.6% of the range spent on nothing, and a background
-        region's mean intensity reading 17 instead of 0 for everything downstream.
-        """
-        stats = cu.AfDivisionStats(val1=10, val2=10, c_max=15.06, nbins=256, rescale=255.0)
-        # both at background -> img 0, corr 0 -> ratio 1.0 -> neutral
-        flat = np.full((2, 4, 4), 10, dtype=np.uint8)
-        out = cu.af_correct_frame(flat, flat, stats, np.uint8)
-        self.assertTrue(np.all(out == 0), f'background did not come out as 0: {np.unique(out)}')
-
-    def test_a_voxel_dimmer_than_its_reference_is_also_zero(self):
-        stats = cu.AfDivisionStats(val1=0, val2=0, c_max=10.0, nbins=256, rescale=255.0)
-        img = np.full((1, 2, 2), 1, dtype=np.uint8)
-        corr = np.full((1, 2, 2), 50, dtype=np.uint8)     # reference far brighter -> ratio < 1
-        self.assertTrue(np.all(cu.af_correct_frame(img, corr, stats, np.uint8) == 0))
-
-    def test_the_ceiling_still_maps_to_full_scale(self):
-        """Anchoring the bottom must not move the top — the ceiling is what `af_division_stats` derived."""
-        stats = cu.AfDivisionStats(val1=0, val2=0, c_max=11.0, nbins=256, rescale=255.0)
-        img = np.full((1, 2, 2), 10, dtype=np.uint8)      # corr 0 -> ratio (10+1)/1 == c_max
-        out = cu.af_correct_frame(img, np.zeros((1, 2, 2), np.uint8), stats, np.uint8)
-        self.assertTrue(np.all(out == 255), f'ceiling did not reach full scale: {np.unique(out)}')
-
-    def test_a_degenerate_ceiling_does_not_divide_by_zero(self):
-        for c in (1.0, 0.5, 0.0):
-            stats = cu.AfDivisionStats(val1=0, val2=0, c_max=c, nbins=256, rescale=255.0)
-            out = cu.af_correct_frame(np.ones((1, 2, 2), np.uint8),
-                                      np.zeros((1, 2, 2), np.uint8), stats, np.uint8)
-            self.assertTrue(np.all(np.isfinite(out.astype(float))), f'c_max={c} produced non-finite')
-
-    def test_output_stats_carry_the_derived_values_themselves(self):
-        """The fractions cannot stand in for the ceiling, so the ceiling has to be reported too."""
+    def test_the_readout_and_the_banked_metric_come_from_one_helper(self):
+        """`af_derived_values` is shared by the run's QC and the preview's readout precisely so the two
+        cannot drift on a key name or a value."""
         du = _dim_utils(**self.SHAPE)
         data = np.random.default_rng(3).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
-        stats = cu.af_division_stats(data, du, 1, [3])
+        stats = cu.af_weight_stats(data, du, [1, 3])
         out = np.zeros(data.shape, data.dtype)
-        s = cu._stream_division_channel(data, out, du, channel_idx=1, out_ch=1,
-                                        correction_channel_idx=[3], stats=stats)
-        self.assertAlmostEqual(s['ceiling'], stats.c_max)
-        self.assertAlmostEqual(s['background'], stats.val1)
-        self.assertAlmostEqual(s['afBackground'], stats.val2)
-
-    def test_a_proportional_gain_difference_is_invisible_to_both_fractions(self):
-        """Why the ceiling is banked at all — and the reason it is a COHORT metric, not a warning.
-
-        Two images whose ratios differ by a constant factor derive proportionally different ceilings
-        and produce identical corrected output, so `clippedFrac` and `levelsUsedFrac` cannot tell them
-        apart while their intensity scales differ by that factor. Measured across the nine kSUFux
-        movies (one experiment, one channel pair, identical settings): a 1.71x spread in the ceiling.
-        """
-        rng = np.random.default_rng(7)
-        ratios = rng.gamma(shape=2.0, scale=3.0, size=200_000)
-        rescale = 255.0
-
-        def stats_for(scale):
-            c_max = float(iu.robust_hist_max(np.bincount((ratios * scale).astype(int))))
-            corrected = np.clip(ratios * scale / c_max * rescale, 0, rescale).astype(np.uint8)
-            hist = np.bincount(corrected, minlength=256)[:256]
-            return c_max, cu.af_output_stats(
-                hist, cu.AfDivisionStats(val1=0, val2=0, c_max=c_max, nbins=256, rescale=rescale))
-
-        c1, s1 = stats_for(1.0)
-        c2, s2 = stats_for(2.0)
-
-        self.assertGreater(c2 / c1, 1.5)                       # the scales really do differ...
-        self.assertEqual(s1['clippedFrac'], s2['clippedFrac'])  # ...and neither fraction moves at all
-        self.assertEqual(s1['levelsUsed'], s2['levelsUsed'])
-        self.assertNotAlmostEqual(s1['ceiling'], s2['ceiling'])  # only the banked ceiling shows it
-
+        s = cu._stream_corrected_channel(data, out, du, channel_idx=1, out_ch=1,
+                                         competing_channel_idx=[3], stats=stats)
+        self.assertAlmostEqual(s['background'], stats.backgrounds[1])
+        self.assertEqual(s['competingBackgrounds'], {'3': stats.backgrounds[3]})
+        for k, v in cu.af_derived_values(stats, 1).items():
+            self.assertEqual(s[k], v, f'{k} differs between the readout and the banked metric')
 
 
 class PyramidRefactorTest(unittest.TestCase):
