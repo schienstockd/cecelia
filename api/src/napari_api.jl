@@ -125,14 +125,30 @@ function _ensure_viewer!()::Bool
         # sending commands to one window while the user looks at the other.
         if _viewer_ref[] === nothing
             probe = NapariViewer()
-            try
-                send(probe, Dict("type" => "ping"))
-                _viewer_ref[] = probe
-                @info "Adopted existing Napari bridge on port $(probe.port)"
-                return true
+            adopted = try
+                reply = send(probe, Dict("type" => "ping"))
+                # Adopt only a bridge whose command surface MATCHES. One running older code answers a
+                # ping perfectly and then misreads a command — which is how a stale bridge has twice
+                # surfaced as something else entirely (`unexpected keyword argument 'mask'`, a bare
+                # "Preview failed"). Treating a mismatch as not-adoptable is the same rule the preview
+                # worker follows; see NAPARI_PROTOCOL.
+                protocol = get(reply, "protocol", nothing)
+                if protocol == NAPARI_PROTOCOL
+                    _viewer_ref[] = probe
+                    @info "Adopted existing Napari bridge on port $(probe.port)"
+                    true
+                else
+                    @warn "Napari bridge on port $(probe.port) speaks protocol " *
+                          "$(isnothing(protocol) ? "<pre-protocol>" : protocol), not $NAPARI_PROTOCOL " *
+                          "— its code predates a change to the command surface. Replacing it; the " *
+                          "viewer reopens where you left it (layer props are autosaved)."
+                    Cecelia._kill_listeners_on_port(NAPARI_PORT)
+                    false
+                end
             catch
-                # none running — fall through to launch a fresh one
+                false   # none running — fall through to launch a fresh one
             end
+            adopted && return true
         end
         @info "Launching Napari bridge..."
         v = NapariViewer()

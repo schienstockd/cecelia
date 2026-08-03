@@ -13,6 +13,19 @@ import argparse
 import json
 import os
 
+#: Version of the JULIA<->PYTHON PARAMS CONTRACT, mirroring `PY_CONTRACT_VERSION` in
+#: app/src/py_runner.jl. Checked in `script_params`, so every runner is covered without doing anything.
+#:
+#: The asymmetry this exists for: a runner is spawned FRESH from disk every run, while the Julia process
+#: that builds its params can be stale — `app/src` is Revise-tracked and a branch switch or a merge under
+#: a live server does not always reload it. So Python can be a version ahead of the Julia calling it,
+#: with nothing to say so. Observed once as `invalid literal for int() with base 10: 'CH3'` after a param
+#: rename landed on disk while the running backend kept the previous translator.
+#:
+#: Bump BOTH sides together for a renamed/removed key, a changed type or unit, or a new REQUIRED key —
+#: not for an additive optional one. A test asserts the two constants agree.
+CONTRACT_VERSION = 1
+
 
 class StdoutLogger:
     """Minimal logger that writes to stdout so Julia can stream every line."""
@@ -101,13 +114,47 @@ def get_ccia_params(params):
     return list()
 
 
+def check_contract_version(env=None):
+    """Refuse a params file written by a backend running older code than this runner.
+
+    `run_py` passes `CECELIA_PY_CONTRACT`; an ABSENT variable means "not launched by run_py" — a
+    developer replaying a saved params file by hand, or an external caller — and is deliberately allowed
+    through rather than treated as a failure. Only a PRESENT-and-different value is fatal, because that
+    can only mean the two halves disagree about the params' shape.
+
+    Raises `SystemExit` rather than `ValueError`: this is a launch precondition, not a data problem, and
+    a runner has no way to recover from it. The message names the fix, because the fix is not obvious
+    from anything the params contain.
+    """
+    want = (env if env is not None else os.environ).get('CECELIA_PY_CONTRACT')
+    if want in (None, ''):
+        return None
+    try:
+        want_i = int(want)
+    except (TypeError, ValueError):
+        return None                     # unparseable → treat as absent, never fail a run over the guard
+    if want_i != CONTRACT_VERSION:
+        raise SystemExit(
+            f'[ERROR] Params contract mismatch: the backend sent version {want_i}, this runner speaks '
+            f'{CONTRACT_VERSION}. The Julia and Python halves are running different code — almost '
+            f'always a backend that was already running when the branch changed, because app/src is '
+            f'Revise-tracked and does not always reload. Restart the backend.')
+    return want_i
+
+
 def script_params():
     """
     Read and return the JSON params file passed via --params.
 
     The file is deleted after reading so temp files don't accumulate.
     Returns None if --params is not provided or the file does not exist.
+
+    Also verifies the params CONTRACT version (`check_contract_version`) — here rather than in each
+    runner, because this is the one function every runner already calls, so the guard cannot be
+    forgotten by a new one.
     """
+    check_contract_version()
+
     cli = argparse.ArgumentParser()
     cli.add_argument('--params', type=str, default=None)
     args = cli.parse_args()

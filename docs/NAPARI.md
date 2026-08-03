@@ -121,6 +121,23 @@ The bridge's `execute_command` dispatches on `cmd["type"]`. Adding a new command
 
 Errors are returned as `{"type": "error", "msg": "..."}` — `send()` raises on these so Julia's try/catch blocks catch them.
 
+### The surface is VERSIONED — bump both sides
+
+`ping` reports `protocol`, and `_ensure_viewer!` **only adopts a bridge whose value matches**
+`NAPARI_PROTOCOL` (`app/src/napari.jl`); a mismatch kills the port listener and relaunches. Bump both
+whenever the surface changes shape — a new or renamed command, a changed argument, a changed reply.
+
+This exists because adoption is deliberate: the bridge outlives a backend crash or Ctrl-C so the user
+keeps their viewer window, which also means it can be running code from before a branch switch. That is
+not a graceful degradation — a stale bridge answers `ping` perfectly and then misreads the command,
+which has surfaced as `unexpected keyword argument 'mask'` and as a bare "Preview failed". Losing the
+window on a mismatch is cheap: layer props and the T/Z position are autosaved, so the relaunch reopens
+where the user was.
+
+The same rule covers the preview worker and the `run_py` params contract — one table in
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md) → *Every language boundary carries a version*, asserted by the
+`language boundaries agree on their protocol` testset.
+
 ---
 
 ## Movie recording (`record_timelapse`)

@@ -247,6 +247,20 @@ The params file lands in `task_run_dir(<obj>._dir)` (the run's task dir — `<_d
 a temp dir; consistent across every task) and the Python script deletes it after reading. Pass the
 exact params your runner expects as the second arg (a `NamedTuple` or `Dict`).
 
+> **If you change the params CONTRACT, bump `PY_CONTRACT_VERSION`** (`app/src/py_runner.jl`) *and*
+> `CONTRACT_VERSION` (`cecelia.utils.script_utils`). A key renamed or removed, a changed type or unit, a
+> new REQUIRED key — not an additive optional one. `run_py` ships the version as
+> `CECELIA_PY_CONTRACT` and `script_params` refuses a mismatch, because your runner is spawned fresh
+> from disk while the backend calling it may be running older code (`app/src` is Revise-tracked and does
+> not always reload). Without it a rename surfaces inside the runner as something like
+> `invalid literal for int() with base 10: 'CH3'`. The two constants are asserted equal by the
+> `language boundaries agree on their protocol` testset — see
+> [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) → *Every language boundary carries a version*.
+>
+> **Channel params are indices, never names.** Resolve them Julia-side (the `*_for_python` translators)
+> and read them with `script_utils.channel_indices` / `channel_index`, which name the translator and the
+> fix when a name slips through. Enforced by `NoBareChannelCoercionTest`.
+
 > **Migration note:** several existing tasks (cleanup/segment/tracking) still inline the spawn loop
 > and bootstrap `sys.path` in their runner — that older pattern works but is being migrated to
 > `run_py`. **New tasks must use `run_py`.** `clustPops.cluster` is the reference example.

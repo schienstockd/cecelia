@@ -154,3 +154,49 @@ class NoBareChannelCoercionTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ContractVersionTest(unittest.TestCase):
+    """The params-contract guard: a runner must refuse a params file from an older backend.
+
+    A runner is spawned FRESH from disk every run while the Julia process building its params can be
+    stale (`app/src` is Revise-tracked and does not always reload after a branch switch or a merge under
+    a live server). That asymmetry is invisible without a handshake — it surfaced once as
+    `invalid literal for int() with base 10: 'CH3'`, which named neither the cause nor the fix.
+    """
+
+    def test_a_matching_version_passes(self):
+        v = script_utils.CONTRACT_VERSION
+        self.assertEqual(script_utils.check_contract_version({'CECELIA_PY_CONTRACT': str(v)}), v)
+
+    def test_an_absent_variable_is_allowed_through(self):
+        # not launched by run_py: a developer replaying a saved params file by hand, or an external
+        # caller. Deliberately NOT a failure — the guard must not make manual replay impossible.
+        self.assertIsNone(script_utils.check_contract_version({}))
+        self.assertIsNone(script_utils.check_contract_version({'CECELIA_PY_CONTRACT': ''}))
+
+    def test_an_unparseable_value_never_fails_a_run(self):
+        # the guard is a safety net, not a gate: it must not become the thing that breaks a working run
+        self.assertIsNone(script_utils.check_contract_version({'CECELIA_PY_CONTRACT': 'v2'}))
+
+    def test_a_mismatch_exits_and_names_the_fix(self):
+        older = str(script_utils.CONTRACT_VERSION - 1)
+        with self.assertRaises(SystemExit) as ctx:
+            script_utils.check_contract_version({'CECELIA_PY_CONTRACT': older})
+        msg = str(ctx.exception)
+        self.assertIn(older, msg)                                # what the backend sent
+        self.assertIn(str(script_utils.CONTRACT_VERSION), msg)   # what this runner speaks
+        self.assertIn('Revise', msg)                             # why the two disagree
+        self.assertIn('Restart the backend', msg)                # what to do
+
+    def test_a_newer_backend_is_also_refused(self):
+        # symmetric: Python behind Julia is just as broken as Julia behind Python
+        with self.assertRaises(SystemExit):
+            script_utils.check_contract_version(
+                {'CECELIA_PY_CONTRACT': str(script_utils.CONTRACT_VERSION + 1)})
+
+    def test_script_params_runs_the_check(self):
+        # the guard sits at the one function every runner already calls, so a NEW runner is covered by
+        # writing nothing at all — that is the whole point of putting it here
+        import inspect
+        self.assertIn('check_contract_version', inspect.getsource(script_utils.script_params))

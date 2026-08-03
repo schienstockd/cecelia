@@ -2,6 +2,18 @@ using HTTP, JSON3
 
 const NAPARI_PORT   = 7655
 const NAPARI_BRIDGE = joinpath(@__DIR__, "..", "..", "napari", "napari_bridge.py")
+
+# Command-surface version the backend expects, mirroring `napari_bridge.PROTOCOL`. A bridge already
+# listening on the port is ADOPTED rather than relaunched — deliberately, because it holds the user's
+# open viewer window — but that means bridge code can outlive the backend that started it (a crash, a
+# Ctrl-C, a branch switch). A mismatched bridge is not a graceful degradation: it has surfaced as
+# `unexpected keyword argument 'mask'` and as a bare "Preview failed", neither naming the cause.
+#
+# Bump BOTH sides together whenever the command surface changes: a new/renamed command, a changed
+# argument, or a changed reply. Asserted equal by the "language boundaries agree on their protocol"
+# testset. Losing the window on a mismatch is recoverable — layer props and the T/Z position are
+# autosaved (`save_layer_props`), so a relaunch reopens where the user was.
+const NAPARI_PROTOCOL = 1
 # Python interpreter comes from `python_bin_path()` (config default "python3"), resolved within
 # the activated Pixi env — i.e. launch via `pixi run`. No hardcoded venv path; see docs/SHIPPING.md.
 

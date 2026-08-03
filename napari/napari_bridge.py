@@ -43,6 +43,19 @@ WS_MAX_SIZE = 64 * 1024 * 1024
 # bridge's uptime and spot a STALE bridge (it survives a backend restart; see docs/NAPARI.md restart rules)
 _STARTED_AT = time.time()
 
+#: Command-surface version, reported by `ping` and checked before the backend ADOPTS this process.
+#: Mirrored by `NAPARI_PROTOCOL` in app/src/napari.jl; a test asserts the two agree.
+#:
+#: Uptime was already reported here "to spot a stale bridge", but that left the judgement to a human
+#: reading a number. A bridge outlives the backend by design (adopted after a crash or a Ctrl-C), so it
+#: can be running code from before a branch switch while the backend sends it commands from after —
+#: which is not a graceful degradation: it surfaced once as `unexpected keyword argument 'mask'` and
+#: once as a bare "Preview failed", neither naming the real cause.
+#:
+#: Bump whenever the command surface changes shape: a new/renamed command, a changed argument, or a
+#: changed reply. 1: the surface as of the protocol's introduction.
+PROTOCOL = 1
+
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
 
@@ -1727,7 +1740,7 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
     t = cmd.get("type")
     try:
         if t == "ping":
-            return {"type": "pong", "started_at": _STARTED_AT}
+            return {"type": "pong", "started_at": _STARTED_AT, "protocol": PROTOCOL}
 
         elif t == "gl_info":
             return {"type": "gl_info", **_gl_info()}
