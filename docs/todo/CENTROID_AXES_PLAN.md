@@ -1,6 +1,9 @@
 # Centroid axes: explicit `centroid_x/_y/_z/_t` everywhere (rename + read + gate)
 
-**Status:** planned, not started. Branch `feat/centroid-axes`.
+**Status:** partly shipped — the header used to say "planned, not started", which was already wrong
+(Phases 0 and 4 are marked DONE below and the writer emits the explicit names). Phase 2's one-off
+converter has since been **retired** (see that phase). Anything still outstanding is Phase 3 / Phase 5;
+the durable convention itself now lives in `docs/DATAMODEL.md`.
 
 ## Problem
 
@@ -122,11 +125,15 @@ every read (accessors + `as_df`); the skimage→axis namer lives writer-side onl
 **Phase 1 — writer + legacy migrate.** `measure_utils._to_anndata` and `legacy_migrate` emit
 `centroid_x/_y/_z` + `centroid_t`. Python unit tests: 2D and 3D produce the right `uns` names.
 
-**Phase 2 — generic converter + fixtures.** A dry-runnable, idempotent converter over
-`projects_dir()/**/labelProps/*.h5ad` (excl. `*__tracks.h5ad`) handling both prior formats (decision
-6), via anndata (sanctioned structural edit, like `legacy_migrate`). Convert the committed test fixture
-and update the Julia/Python assertions (`runtests.jl:2422-2456`, `:2565-2569`). Dominik runs it on his
-data.
+**Phase 2 — generic converter + fixtures. DONE, then RETIRED.** The converter shipped as the
+`centroid-axes` data patch (`convert_centroid_names.py` + its `_run.py`) and was run on the real data;
+both files and the patch entry have now been **removed** — the projects that needed it are migrated, so
+it was a permanent entry in Settings that could only ever be a no-op. It is in git history if a
+pre-migration project ever turns up.
+
+The conversion LOGIC survives, because a second consumer needs it: `centroid_migrate.normalise_centroids`
+is still called by `legacy_migrate` (the R→Feijoa import) and is still covered by
+`test_centroid_migrate.py`. Do not delete that with the converter.
 
 **Phase 3 — explicit-axis readers (all spatial + tracking modules).** Rewrite every Section-B/C
 consumer to select by axis via the Phase-0 accessor and map resolution by axis name. Covers
