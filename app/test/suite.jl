@@ -2716,6 +2716,101 @@ end
     empty!(Cecelia._OUTCOMES)
 end
 
+# ── The scheduler stamps a task's own timing ───────────────────────────────
+# `list_tasks()` is what a client polls to answer "how long has this been going?". Without these
+# fields it can only be answered from when the client first SAW the row, so a console or a browser
+# tab that attached mid-run could report a lower bound and nothing better (the task console printed
+# `≥0s` for a task that had been running for 20 minutes).
+@testset "Scheduler records queued/started timestamps" begin
+    proj = create_project!(name="tasktime-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    _HOLD_TASK_GO[] = Channel{Nothing}(1)
+    tid  = "hold$(rand(1000:9999))"
+    seen = TaskRecord[]
+    th = Threads.@spawn run_task(_HoldTask(), img, Dict{String,Any}();
+                                 task_id = tid, on_status_change = rec -> push!(seen, rec))
+    try
+        @test timedwait(() -> any(r -> r.id == tid && r.status == "running", list_tasks()), 30.0) === :ok
+        row = only(filter(r -> r.id == tid, list_tasks()))
+        # both are ISO-8601 UTC to the millisecond — one wire format for the whole rail
+        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.queued_at)
+        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.started_at)
+        @test row.started_at >= row.queued_at            # a slot is acquired after submission
+        # …and the SAME start is on the rail, so it still answers once this record is gone
+        @test iso_utc(task_started_at(tid)) == row.started_at
+        # the status frames the API sends carry it too (that's what `on_status_change` feeds)
+        running = last(filter(r -> r.status === :running, seen))
+        @test !isnothing(running.started_at) && iso_utc(running.started_at) == row.started_at
+    finally
+        put!(_HOLD_TASK_GO[], nothing)                    # let the task finish even if a @test failed
+        timedwait(() -> istaskdone(th), 30.0)
+    end
+    @test istaskdone(th) && fetch(th) === true
+    @test !any(r -> r.id == tid, list_tasks())            # record gone…
+    @test !isnothing(task_started_at(tid))                # …but the start outlived it
+    forget_task_start!(tid)
+
+    # a task still QUEUED has a queue time and NO start — so a client shows a wait, not a run of 0s
+    rec = Cecelia._register_task!("q$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
+    @test isnothing(rec.started_at)
+    @test only(filter(r -> r.id == rec.id, list_tasks())).started_at == ""
+    Cecelia._deregister_task!(rec.id)
+    rm(proj.root; recursive=true)
+end
+
+# ── When a unit of work started ────────────────────────────────────────────
+# The other half of the same problem as the outcome log: the scheduler's record is deregistered the
+# instant a task finishes, and the consumers that want a DURATION mostly ask afterwards (the chain
+# bridge fires node:done once run_task has returned; a dropped terminal frame is recovered minutes
+# later). So the start is noted on the rail, and the banked outcome row carries it from then on —
+# without which every client has to time tasks off when it first happened to see them.
+@testset "Task start timing" begin
+    empty!(Cecelia._OUTCOMES); empty!(Cecelia._STARTED)
+
+    # first note wins, so a repeated `running` announcement does not restart the clock
+    began = Dates.now(UTC) - Dates.Minute(5)
+    @test note_task_started!("t1", began) == began
+    @test note_task_started!("t1", Dates.now(UTC)) == began       # ← would have reset the elapsed
+    @test task_started_at("t1") == began
+
+    # not started / not noted is `nothing`, never a zero date — a client must be able to tell
+    @test isnothing(task_started_at("never-seen"))
+    @test isnothing(task_started_at(""))
+    @test iso_utc(nothing) == ""                                   # …and it serialises as "", not epoch 0
+
+    # the banked outcome carries the start, and the in-flight note is then dropped: one home for the
+    # fact at a time, so nothing can report two different starts for the same task.
+    row = record_task_outcome!("t1", "done"; image_uid="img1")
+    @test row.started_at == iso_utc(began)
+    @test isnothing(task_started_at("t1"))
+    @test only(filter(r -> r.id == "t1", recent_tasks())).started_at == iso_utc(began)
+    @test row.finished_at >= row.started_at
+
+    # a task that never ran banks an empty start rather than a made-up one
+    @test record_task_outcome!("t2", "cancelled").started_at == ""
+
+    # a non-terminal status still returns nothing — the caller uses that to tell live from finished
+    @test isnothing(record_task_outcome!("t3", "running"))
+
+    # a reused id (task:restart) is timed from its own beginning, not the previous run's
+    note_task_started!("t4", began)
+    forget_task_start!("t4")
+    @test isnothing(task_started_at("t4"))
+
+    # bounded, like the outcome log: a producer that never announces an outcome must not accumulate
+    # forever. The OLDEST starts are evicted — a long-running task is the one whose elapsed matters.
+    empty!(Cecelia._STARTED)
+    base = Dates.now(UTC) - Dates.Hour(1)
+    for i in 1:(Cecelia._STARTED_CAP + 10)
+        note_task_started!("s$i", base + Dates.Millisecond(i))
+    end
+    @test length(Cecelia._STARTED) <= Cecelia._STARTED_CAP
+    @test !isnothing(task_started_at("s$(Cecelia._STARTED_CAP + 10)"))   # newest kept
+    @test isnothing(task_started_at("s1"))                              # oldest evicted
+    empty!(Cecelia._STARTED); empty!(Cecelia._OUTCOMES)
+end
+
 @testset "Run log records status (done + failed)" begin
     proj = create_project!(name="rl-status-$(rand(1000:9999))")
     img  = add_image!(add_set!(proj; name="s"); name="img")

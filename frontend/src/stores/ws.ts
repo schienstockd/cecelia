@@ -7,6 +7,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
+import { parseRailTime } from '../utils/taskElapsed'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -163,7 +164,11 @@ export const useWsStore = defineStore('ws', () => {
         || useTaskStore().tasks.find(t => t.id === taskId)?.imageUid
         || ''
       if (taskId && status) {
-        useTaskStore().setStatus(taskId, status as any)
+        // the backend's own timestamps — see utils/taskElapsed.ts for why they beat stamping locally
+        useTaskStore().setStatus(taskId, status as any, {
+          startedAt:  parseRailTime(data.startedAt),
+          finishedAt: parseRailTime(data.finishedAt),
+        })
         if (imageUid) {
           if (status === 'running') {
             useProjectStore().updateImageStatus(imageUid, 'converting')
@@ -258,6 +263,10 @@ export const useWsStore = defineStore('ws', () => {
         // the scheduler task this node ran as — "" / absent for a node with no task id yet (skipped
         // before submission, set-scope). Recorded so a dropped terminal frame can be recovered.
         taskId:     String(data.taskId ?? ''),
+        // the scheduler's own timing. A chain run emits no `task:status`, so these frames are the only
+        // live carrier of it — without them a node's elapsed is timed from frame arrival.
+        startedAt:  parseRailTime(data.startedAt),
+        finishedAt: parseRailTime(data.finishedAt),
       })
     }
 

@@ -9,6 +9,12 @@
 # REPORTING ONLY — it never sends task:run / task:cancel /
 # chain:* control messages, so it is safe to run alongside the GUI.
 #
+# Elapsed time comes from the SERVER — `started_at`/`queued_at` on the snapshot, `startedAt`/`finishedAt`
+# on the frames — so a task that was already running when this console connected still shows its true
+# elapsed. The console's own clock is only the fallback for a server too old to send them (or a producer
+# whose start nobody noted), and a locally-clocked run whose start we didn't witness renders `≥`: a
+# floor, not a reading.
+#
 #   pixi run console                 # live dashboard (default; needs a TTY)
 #   pixi run console -- --stream     # append-only event log (pipe/tee friendly)
 #
@@ -55,6 +61,18 @@ mutable struct TaskView
     progress::Float64      # -1 = unknown / not reported yet
     last_log::String
     updated::DateTime
+    # ── Elapsed clock (see `_set_phase!`) ─────────────────────────────────────────
+    # `since` is when the row entered its CURRENT status (UTC, like the rail), so the clock reads as queue
+    # wait while queued and as run time while running. Normally the SERVER's own timestamp — the scheduler
+    # stamps `queued_at`/`started_at` on the record and publishes them on the snapshot and the status
+    # frames — in which case `exact` is true. `exact` false means the console had to time the row itself
+    # (an older server, or a producer whose start nobody noted) *and* did not witness the transition, so
+    # the elapsed is a floor and renders `≥` rather than posing as a measurement — the same rule as
+    # counting "ended" instead of guessing done/failed. `phase_set` distinguishes "status asserted" from
+    # the default `"queued"` a fresh row carries before any frame has said anything about it.
+    since::DateTime
+    exact::Bool
+    phase_set::Bool
     # Reconciliation state (see refresh_snapshot!). `in_snapshot` marks a task the /api/tasks
     # snapshot has listed at least once — i.e. a real SCHEDULER task, so its absence from a later
     # snapshot is meaningful. WS-only producers (jobs, batch movies) never appear in the snapshot
@@ -101,11 +119,65 @@ now_hms() = Dates.format(Dates.now(), "HH:MM:SS")
 short(id::AbstractString, n::Int=6) = length(id) <= n ? String(id) : String(last(id, n))
 trunc_s(s::AbstractString, n::Int) = length(s) <= n ? String(s) : String(first(s, max(0, n - 1))) * "…"
 
+# Elapsed as a compact string: 42s · 4m 12s · 1h 30m. Same spelling as the GUI's
+# `formatTaskDuration` (`frontend/src/utils/taskElapsed.ts`) so one duration doesn't read two ways
+# depending on where you look at it — never wider than 8 chars including the marker.
+# `exact=false` prefixes `≥`: the console had to time this itself and only started watching part-way in,
+# so the number is a floor, not a reading.
+function dur_str(ms::Real; exact::Bool = true)
+    s = max(0, round(Int, ms / 1000))
+    body = s < 60   ? string(s, "s") :
+           s < 3600 ? string(s ÷ 60, "m ", lpad(s % 60, 2, '0'), "s") :
+                      string(s ÷ 3600, "h ", lpad((s % 3600) ÷ 60, 2, '0'), "m")
+    (exact ? "" : "≥") * body
+end
+# Everything is compared in UTC, because the rail's timestamps are UTC.
+dur_since(t::TaskView) = dur_str(Dates.value(Dates.now(UTC) - t.since); exact = t.exact)
+
+# The rail's timestamp format. A copy of `TASK_TS_FORMAT` (`app/src/tasks/task_outcomes.jl`) — this
+# script deliberately depends on nothing but HTTP/JSON3/Dates, so it can't import the constant; that file
+# is where the format is decided.
+const TS_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"
+
+# Parse a timestamp off the wire. `""` means the server does not know (an older server, or a task that
+# never started) — answered as `nothing` so the caller falls back to the console's own clock. A malformed
+# value is treated the same way rather than taking the reader down over a field it can live without.
+function _ts(v)::Union{DateTime, Nothing}
+    s = v isa AbstractString ? String(v) : ""
+    isempty(s) && return nothing
+    try; DateTime(s, TS_FORMAT); catch; nothing; end
+end
+
 # Get-or-create a task view, so a WS event for a not-yet-snapshotted task still shows up.
 function _task!(id::AbstractString)
     get!(TASKS, String(id)) do
-        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now(), false, 0)
+        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now(),
+                 Dates.now(UTC), false, false, false, 0)
     end
+end
+
+# The ONE place a row's status changes — because the elapsed clock restarts with it.
+#
+# `at` is the server's own timestamp for this transition (`started_at`/`queued_at` on the snapshot,
+# `startedAt` on a live frame). When present it simply wins, changed status or not: it is the real
+# instant, so a row the console had been timing itself is UPGRADED to exact the first time the rail
+# supplies one. Only when there is none does the console clock the row, and then only on a real *change* —
+# the snapshot re-asserts the same status every 2s, and resetting per poll would peg every clock at "0s".
+# `witnessed` then says whether that local clock is a measurement (a live WS frame — the transition is
+# happening now) or a floor (the HTTP snapshot, which says a task IS running, not that it just started).
+function _set_phase!(t::TaskView, status::AbstractString; witnessed::Bool = false, at = nothing)
+    isempty(status) && return t
+    changed = !t.phase_set || status != t.status
+    if !isnothing(at)
+        t.since = at
+        t.exact = true
+    elseif changed
+        t.since = Dates.now(UTC)
+        t.exact = witnessed
+    end
+    t.phase_set = true
+    t.status    = status
+    t
 end
 
 function push_event!(kind::AbstractString, detail::AbstractString; colour=nothing)
@@ -133,6 +205,26 @@ end
 # keeping a number we know to be wrong, and it can't double-count: the id leaves ENDED_IDS as it's
 # corrected, and every other repeat sighting still returns early.
 const ENDED_IDS = Set{String}()   # ids currently counted as "ended" — correctable, unlike a real outcome
+
+# How long the task ran, for the line announcing its outcome — the only place a finished task's elapsed
+# can be reported, since it is collapsed to a count and its row is dropped.
+#
+# Two sources, server first: `started`/`finished` are the frame's (or outcome row's) own timestamps and
+# give the exact duration — including for a task this console never held a row for, which is the whole
+# point of the outcome poll. Without them it falls back to the row's own clock, which must therefore be
+# read BEFORE `_note_terminal!` drops the row. Empty when neither can answer, and when the task was never
+# running: a task cancelled from the queue never ran, and a queue wait is not a run time.
+function _ran_for(id::AbstractString; started = nothing, finished = nothing)
+    s     = _ts(started)
+    exact = true
+    if isnothing(s)
+        t = get(TASKS, String(id), nothing)
+        (t === nothing || t.status != "running") && return ""
+        s, exact = t.since, t.exact
+    end
+    f = something(_ts(finished), Dates.now(UTC))
+    string(" ", col(DIM, "in $(dur_str(Dates.value(f - s); exact = exact))"))
+end
 
 # Returns what it did, so a caller can report an outcome the live stream never delivered:
 #   :counted   — first terminal sighting, tallied
@@ -205,7 +297,12 @@ function _reconcile_snapshot!(rows)
             t.image_uid    = String(get(row, :image_uid, t.image_uid))
             t.pool_name    = String(get(row, :pool_name, t.pool_name))
             t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
-            isempty(status) || (t.status = status)
+            # The snapshot carries the scheduler's own timestamps, so elapsed is exact even for a task
+            # that was already running when this console connected — which is the case the console used
+            # to have to report as a floor. `queued_at` does the same for the queue wait. Falls back to
+            # "clock it locally" against a server too old to send them.
+            _set_phase!(t, status;
+                        at = _ts(get(row, status == "running" ? :started_at : :queued_at, "")))
             t.in_snapshot  = true
             t.misses       = 0
         end
@@ -216,8 +313,9 @@ function _reconcile_snapshot!(rows)
             t.misses += 1
             t.misses >= SNAPSHOT_MISSES_TO_RETIRE || continue
             if t.in_snapshot
+                ran = _ran_for(id)                 # before the row is dropped
                 _note_terminal!(id, "ended")
-                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"),
+                push_event!("status", string(col(BOLD, short(id)), " ", col(GREY, "ended"), ran,
                             col(DIM, " (outcome unseen — dropped frame)")); colour = GREY)
             else
                 delete!(TASKS, id)
@@ -266,11 +364,14 @@ function _apply_recent!(rows; prime::Bool = false)
             ts > RECENT_SINCE[] && (RECENT_SINCE[] = ts)
             prime && (_seen_only!(id); continue)
             status = String(get(row, :status, ""))
+            # The banked row carries both ends, so a recovered outcome reports the SAME duration the live
+            # frame would have — even for a task this console never had a row for.
+            ran = _ran_for(id; started = get(row, :started_at, ""), finished = ts)
             # Report only what the live stream never delivered — a frame that already arrived is
             # ignored here and was announced when it landed.
             if _note_terminal!(id, status) != :ignored
                 push_event!("status", string(col(BOLD, short(id)), " ",
-                            col(status_colour(status), status),
+                            col(status_colour(status), status), ran,
                             col(DIM, " (outcome poll)"));
                             colour = status_colour(status))
             end
@@ -337,15 +438,19 @@ function handle_ws(raw::AbstractString)
             ev_fun  = String(get(msg, :fun,  ""))
             ev_pool = String(get(msg, :pool, ""))
             fn = !isempty(ev_fun) ? ev_fun : (haskey(TASKS, id) ? TASKS[id].fun_name : "")
+            ev_started  = get(msg, :startedAt,  "")       # the rail's own timestamps (empty on an
+            ev_finished = get(msg, :finishedAt, "")       # older server → the local clock is used)
             push_event!("status", string(col(BOLD, short(id)), " ",
                         col(status_colour(status), status),
+                        # still the running row at this point, so the local fallback can read it
+                        status in TERMINAL ? _ran_for(id; started = ev_started, finished = ev_finished) : "",
                         isempty(fn) ? "" : col(DIM, " ($fn)"));
                         colour = status_colour(status))
             if status in TERMINAL
                 _note_terminal!(id, status)            # collapse to a count, drop the row
             else
                 t = _task!(id)
-                isempty(status)  || (t.status = status)
+                _set_phase!(t, status; witnessed = true, at = _ts(ev_started))
                 isempty(ev_fun)  || (t.fun_name = ev_fun)     # label WS-only ops (else blank FUNCTION)
                 isempty(ev_pool) || (t.pool_name = ev_pool)   # …and their POOL (viewer / job)
                 uid = String(get(msg, :imageUid, "")); isempty(uid) || (t.image_uid = uid)
@@ -383,17 +488,22 @@ function handle_ws(raw::AbstractString)
             fn     = String(get(msg, :fn, ""))
             run_id = String(get(msg, :runId, ""))
             img    = String(get(msg, :imageUid, ""))
-            push_event!("chain:$node",
-                        string(col(BOLD, fn), col(DIM, "  img=$(short(img)) run=$(short(run_id))"));
-                        colour = status_colour(node == "done" ? "done" :
-                                               node == "failed" ? "failed" :
-                                               node == "running" ? "running" : "queued"))
             # A chain run emits NO task:status frames (handle_chain_run passes no on_status_change), so
             # a chain node's row would otherwise only ever leave the table via the snapshot-retire path —
             # i.e. always "ended / outcome unseen", never done or failed. `taskId` on the chain event is
             # the correlation handle: attribute the node's real outcome to its task row here. Terminal
-            # events only; `:queued`/`:running` already come from the snapshot poll.
+            # events only; `:queued`/`:running` already come from the snapshot poll. Resolved BEFORE the
+            # line is pushed so the node's run time can go on it, while its row still exists.
             tid = let t = get(msg, :taskId, nothing); t isa AbstractString ? String(t) : "" end
+            push_event!("chain:$node",
+                        string(col(BOLD, fn),
+                               node in ("done", "failed") && !isempty(tid) ?
+                                   _ran_for(tid; started  = get(msg, :startedAt, ""),
+                                                 finished = get(msg, :finishedAt, "")) : "",
+                               col(DIM, "  img=$(short(img)) run=$(short(run_id))"));
+                        colour = status_colour(node == "done" ? "done" :
+                                               node == "failed" ? "failed" :
+                                               node == "running" ? "running" : "queued"))
             if !isempty(tid) && node in ("done", "failed")
                 # node:failed carries which of failed/skipped/cancelled it was
                 _note_terminal!(tid, node == "done" ? "done" : String(get(msg, :status, "failed")))
@@ -473,15 +583,19 @@ function render()
         print(io, col(DIM, "  no active tasks — waiting for work\n"))
     else
         print(io, col(DIM, string(rpad("TASK", 9), rpad("FUNCTION", 26), rpad("IMAGE", 10),
-                                   rpad("POOL", 10), rpad("STATUS", 11), "PROGRESS")), "\n")
+                                   rpad("POOL", 10), rpad("STATUS", 11), rpad("ELAPSED", 9),
+                                   "PROGRESS")), "\n")
         for t in tasks[1:nShown]
             chain = isempty(t.chain_run_id) ? "" : " ⛓"
+            # ELAPSED is run time on a running row and queue wait on a queued one — the clock restarts
+            # with the status (`_set_phase!`), so the column always reads "how long in this state".
             print(io,
                 rpad(short(t.id), 9),
                 rpad(trunc_s(isempty(t.fun_name) ? "…" : t.fun_name * chain, 25), 26),
                 rpad(short(t.image_uid), 10),
                 rpad(trunc_s(t.pool_name, 9), 10),
                 col(status_colour(t.status), rpad(t.status, 11)),
+                t.status == "running" ? rpad(dur_since(t), 9) : col(DIM, rpad(dur_since(t), 9)),
                 t.status == "running" ? progress_bar(t.progress) : col(DIM, "waiting"),
                 "\n")
         end

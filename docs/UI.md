@@ -1329,6 +1329,32 @@ through that same `dispatch`. The reconstruction lives in `utils/taskReconcile.t
   frame reaches you like any other. Do **not** add a second poller; `taskReconcile.ts` owns
   `/api/tasks/recent` and `utils/runningTasks.ts` owns `/api/tasks`.
 
+### Task elapsed time — the backend's timestamps, one formatter, one clock
+
+**A task's start and end come from the backend, not from when this tab received a frame.** `task:status`
+and `chain:node:*` carry `startedAt`/`finishedAt`, and the recovered frames carry the outcome row's
+(`docs/API.md` → *Elapsed time is served, not guessed*). `stores/ws.ts` parses them with `parseRailTime`
+and passes them to `tasks.setStatus(id, status, { startedAt, finishedAt })`, which **prefers them over
+stamping `new Date()`** — a recovered terminal frame arrives seconds or minutes late, so stamping arrival
+inflated every recovered task's duration by the poll delay. `new Date()` remains the fallback for a
+producer whose start the backend never noted.
+
+Two shared pieces, and a new elapsed counter must use both rather than hand-rolling a fourth copy (there
+were three, and they had already drifted in what they printed):
+
+| Need | Use |
+|---|---|
+| parse / format / compute an elapsed | `utils/taskElapsed.ts` — `parseRailTime`, `formatTaskDuration`, `taskElapsed(startedAt, finishedAt, now)` |
+| a reactive `now` that ticks | `composables/useNowTick()` — ONE shared 1s interval, reference-counted, released with the component scope |
+
+`useNowTick` exists because each counter owning a `setInterval` means N timers on N phases (two counters
+on screen disagreeing by up to a second) and N chances to leak one. The counting logic lives in
+`utils/nowTick.ts` so it is testable without mounting a component. Consumers today: `tasks/TaskList.vue`,
+`modules/TasksModule.vue`, `components/ChainLiveNode.vue`.
+
+Known gap: the `tasks` store is built from WS events only, so a tab opened mid-run has no row for work
+already in flight — nothing to time. Rebuilding rows from `GET /api/tasks` would be a separate change.
+
 ---
 
 ## Data freshness — task-refresh (no per-plot reload buttons)
