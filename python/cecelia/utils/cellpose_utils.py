@@ -10,6 +10,7 @@ from skimage import filters
 
 from cecelia.utils.segmentation_utils import SegmentationUtils
 from cecelia.utils.gpu_utils import torch_device
+import cecelia.utils.script_utils as script_utils
 
 
 class CellposeUtils(SegmentationUtils):
@@ -86,8 +87,11 @@ class CellposeUtils(SegmentationUtils):
         Returns: uint32 label array [Z, Y, X] or [Y, X]
         """
         model_type    = model_params.get('model', 'cyto3')
-        cell_channels = [int(c) for c in model_params.get('cellChannels', [])] or [0]
-        nuc_channels  = [int(c) for c in model_params.get('nucChannels',  [])]
+        # indices, not names — see script_utils.channel_indices for what a name here means
+        cell_channels = script_utils.channel_indices(
+            model_params.get('cellChannels'), 'cellChannels', 'cellpose_models_for_python (cellpose.jl)') or [0]
+        nuc_channels = script_utils.channel_indices(
+            model_params.get('nucChannels'), 'nucChannels', 'cellpose_models_for_python (cellpose.jl)')
         is_3d = (tile.ndim == 4)  # [C, Z, Y, X]
 
         # Merge cell channels via np.maximum

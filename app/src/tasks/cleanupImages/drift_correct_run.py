@@ -28,7 +28,8 @@ def run(params):
 
     im_path            = params['imPath']
     im_correction_path = params['imCorrectionPath']
-    drift_channel      = int(params['driftChannel'])
+    drift_channel      = script_utils.channel_index(
+        params.get('driftChannel'), 'driftChannel', 'drift_correct.jl')
     normalisation_raw  = params.get('driftNormalisation', 'none')
     normalisation      = normalisation_raw if normalisation_raw != 'none' else None
 

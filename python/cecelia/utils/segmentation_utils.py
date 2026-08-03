@@ -15,6 +15,7 @@ import dask.array as da
 import zarr
 
 import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.script_utils as script_utils
 import cecelia.utils.intensity_utils as intensity_utils
 
 from skimage import morphology, segmentation
@@ -314,8 +315,9 @@ class SegmentationUtils:
         Excludes background zeros in both paths (matches the historical `data[data > 0]`)."""
         c_idx = self.dim_utils.dim_idx('C')
         normalise_perc = float(model_params.get('normalise', 99.9))
-        channels = [int(c) for c in (list(model_params.get('cellChannels', [])) +
-                                     list(model_params.get('nucChannels', [])))]
+        channels = script_utils.channel_indices(
+            list(model_params.get('cellChannels', [])) + list(model_params.get('nucChannels', [])),
+            'cellChannels/nucChannels', 'cellpose_models_for_python (cellpose.jl)')
         result = {}
 
         if len(im_dat) == 1:
