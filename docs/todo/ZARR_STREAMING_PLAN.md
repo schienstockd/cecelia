@@ -75,9 +75,12 @@ fights the Phase-1 one-frame-in-RAM streaming. **Conclusion: no code change — 
   writer that creates a zarr array (`create_multiscales`, `write_multiscale_pyramid`,
   `open_multiscales_for_writing`, `create_zarr_from_ndarray`); tasks dropped their scattered
   `.newbyteorder('=')`. Also fixed latent big-endian output in `cellpose_correct` + `cropImage`.
-- **3.2 Two tilers → one — PARKED (won't do).** `slice_utils.create_slices` (dim-ordered slice
-  tuples) and segmentation's `_create_xy_tiles` (read/write/crop overlap triples) return genuinely
-  different shapes for different needs; merging would contort more than it saves. No real benefit.
+- **3.2 Two tilers → one — RESOLVED by deletion, not by merging.** The premise was wrong: this was
+  weighed as a trade-off between two live tilers, but `slice_utils.create_slices` had **no caller at
+  all** — segmentation's `_create_xy_tiles` had already superseded it. Removed, along with the five
+  helpers it was the only entry point to (`create_slices_3D/2D`, `create_slices_3D_time/2D_time`,
+  `combine_time_frame_slices`) and `convert_coords_to_slices`. `create_slices_multiscales` stays —
+  `zarr_utils` uses it for the pyramid. Nothing to merge.
 - **3.3 Retire `da.store(lock=False)`+rechunk — PARKED (won't do).** It works correctly today and is
   regression-tested (`test_zarr_store`); retiring it only pays off if it cleanly removes the branch,
   which needs crop/rescale migrated too for little gain. Not worth the churn.

@@ -113,40 +113,10 @@ def get_im_size_dict(omexml):
 """
 Set physical size with dict
 """
-def set_physical_size_with_dict(omexml, omedict):
-  # go through dimensions
-  for i, x in omedict.items():
-    if i == 'T':
-      omexml.images[0].pixels.physical_size_t = x
-    if i == 'Z':
-      omexml.images[0].pixels.physical_size_z = x
-    if i == 'C':
-      omexml.images[0].pixels.physical_size_c = x
-    if i == 'Y':
-      omexml.images[0].pixels.physical_size_y = x
-    if i == 'X':
-      omexml.images[0].pixels.physical_size_x = x
-      
-  return omexml
 
 """
 Set im size with dict
 """
-def set_im_size_with_dict(omexml, omedict):
-  # go through dimensions
-  for i, x in omedict.items():
-    if i == 'T':
-      omexml.images[0].pixels.size_t = x
-    if i == 'Z':
-      omexml.images[0].pixels.size_z = x
-    if i == 'C':
-      omexml.images[0].pixels.size_c = x
-    if i == 'Y':
-      omexml.images[0].pixels.size_y = x
-    if i == 'X':
-      omexml.images[0].pixels.size_x = x
-      
-  return omexml
 
 """
 Write OME-XML
@@ -196,48 +166,10 @@ Flip dimension order
 
 TODO this only works on OME-ZARR for now
 """
-def switch_dim_order(im_path, dim_order = 'XYZCT'):
-  # flip dimension order in pixels and adjust sizes
-  if is_zarr_store(im_path):
-    omexml = parse_meta(im_path)
-    
-    # get previous order
-    prev_dim_order = omexml.images[0].pixels.dimension_order
-    
-    # get dimension dict
-    dim_dict = get_im_size_dict(omexml)
-    
-    # get dimension mapping
-    dim_mapping = {dim_order[i]: x for i, x in enumerate(prev_dim_order)}
-    
-    # set new sizes
-    # go through dimension order  
-    for i, x in {dim_mapping[i]: x for i, x in dim_dict.items()}.items():
-      if i == 'T':
-        omexml.images[0].pixels.size_t = x
-      if i == 'Z':
-        omexml.images[0].pixels.size_z = x
-      if i == 'C':
-        omexml.images[0].pixels.size_c = x
-      if i == 'Y':
-        omexml.images[0].pixels.size_y = x
-      if i == 'X':
-        omexml.images[0].pixels.size_x = x
-        
-    # set new dimension order
-    omexml.images[0].pixels.dimension_order = dim_order
-    
-    # write back
-    write_ome_xml(im_path, omexml)
 
 """
 Parse raw ome XML from tiff
 """
-def parse_from_tiff(im_path):
-  # TODO is there a better way to do this .. ?
-  tif = tifffile.TiffFile(im_path)
-
-  return tif.ome_metadata
 
 """
 Parse metadata from tiff

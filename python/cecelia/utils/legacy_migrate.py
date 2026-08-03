@@ -302,27 +302,6 @@ def _store_ndim(zarr_path: str):
     return None
 
 
-def _upgrade_label_axes(path: Path, meta: dict, log) -> None:
-    """Upgrade a copied legacy label store: write NGFF `axes` + `datasets` (from the legacy `labels`
-    key) so napari's label loader finds `datasets` and places the mask (labels are TZYX — no channel)."""
-    try:
-        from cecelia.utils import zarr_utils
-        names = _AXES_BY_NDIM.get(_store_ndim(str(path)))
-        if not names or "c" in names:      # labels shouldn't carry a channel axis
-            log(f"! label {path.name}: unexpected ndim, skipped axis upgrade")
-            return
-        sp = meta.get("PhysicalSizeUnit")
-        ok = zarr_utils.set_ngff_axes(
-            str(path), names,
-            scale={"t": meta.get("TimeIncrement", 1.0), "z": meta.get("PhysicalSizeZ", 1.0),
-                   "y": meta.get("PhysicalSizeY", 1.0), "x": meta.get("PhysicalSizeX", 1.0)},
-            units={"z": sp, "y": sp, "x": sp, "t": meta.get("TimeIncrementUnit")})
-        log(f"upgraded NGFF axes ({''.join(names)}) on {path.name}"
-            if ok else f"! label {path.name}: axis upgrade skipped")
-    except Exception as e:
-        log(f"! label axis upgrade failed on {path.name}: {e}")
-
-
 def _versioned(values: dict, active, fallback=None) -> dict:
     out = dict(values)
     act = active if active in values else (fallback if fallback in values else next(iter(values), None))
