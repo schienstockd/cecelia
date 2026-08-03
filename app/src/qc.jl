@@ -119,6 +119,12 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Image has no pixel size",
         long  = "Set the pixel size, or read the µm scale settings as pixels — 1 µm/px was assumed."),
 
+    # AF correction (af_qc_findings). The only finding this task has: the correction itself has no free
+    # parameter left to land behaviourally wrong, so the one objective signal is about the INPUT.
+    "af.saturated_input" => (
+        short = "Channel {channel} saturated",
+        long  = "Input voxels are clipped at the top of the range, so their true value is already lost — lower the gain or laser power and reacquire."),
+
     # output geometry (qc_canvas_expansion)
     "output.canvas_expansion" => (
         short = "Output canvas grew +{pct}% in XY",

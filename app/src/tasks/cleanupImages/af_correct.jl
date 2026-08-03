@@ -86,20 +86,30 @@ end
 QC for AF correction, from the per-channel output stats the runner writes.
 
 This task used to be QC-exempt, with a comment calling itself the weakest exemption in the codebase.
-Two objective signals, and neither is about the correction's own arithmetic — the correction has no
-free parameter left to land badly:
+It now has exactly ONE finding, because the correction has no free parameter left to land badly and the
+only objective signal is about the INPUT:
 
 * **saturated input** → the channel was clipped at the sensor, before we saw it. `saturatedFrac`. No
   correction recovers a clipped voxel's true value, so this is a warning about the acquisition and the
   action is at the microscope. Measured across the nine kSUFux movies, CH3 saturation ranged from
   0.001% to 0.018% of voxels — a 13x spread within one experiment at identical settings.
-* **coarse output** → the corrected channel occupies few of the available levels.
-  `levelsUsed / levelsAvailable`. Under the hand-tuned percentile window that preceded all of this,
-  99% of a real image landed in ~13 of 255 levels and nothing ever flagged it.
 
-`clippedFrac` and `ceiling` are gone with the ratio. The output is `b * weight` with `weight <= 1`, so
-it can never reach the top of the range — the clipping metric was structurally ~0. And there is no
-derived ceiling to compare across a set, which is what the `ceiling` cohort metric existed to catch.
+**`af-low-range` is deleted, not re-tuned, and that is the interesting part.** It warned when the output
+used under 20% of the dtype's levels. That was a real signal under the RATIO, whose output was stretched
+to fill the range through a derived ceiling — using little of it meant the ceiling had been derived too
+high. The power weight outputs in INPUT COUNTS, so a 16-bit channel carrying signal in the low thousands
+legitimately occupies a sliver: measured on Dominik's own runs, 735-3576 of 65536 levels (1.1-5.5%) on
+every channel of every image. The threshold survived the mechanism change with its premise inverted, so
+it fired on everything and meant nothing. `levelsUsedFrac` is still banked and still a COHORT metric —
+an image far below its peers is informative even when the absolute number is not.
+
+Nothing replaced it. The tempting substitute was "warn when a target channel was almost entirely
+suppressed", but there is no observed instance of that, so the threshold would have been invented rather
+than derived — the trap `docs/MODULES.md` names ("do not invent a meaningless metric"). If such a case
+ever appears it supplies both the failure mode and the number.
+
+`clippedFrac` and `ceiling` went with the ratio too: the output is `b * weight` with `weight <= 1`, so it
+can never reach the top of the range, and there is no derived ceiling left to drift across a set.
 
 Advisory only, per `docs/MODULES.md` — never an `error`, never a gate.
 """
@@ -110,23 +120,18 @@ function af_qc_findings(per_channel::AbstractDict)
         saturated = Float64(get(s, "saturatedFrac", 0.0))
         used      = Float64(get(s, "levelsUsed", 0))
         avail     = max(1.0, Float64(get(s, "levelsAvailable", 1)))
-        frac      = used / avail
         worst_saturated = max(worst_saturated, saturated)
-        worst_levels    = min(worst_levels, frac)
+        worst_levels    = min(worst_levels, used / avail)
 
         if saturated > 0.001
-            push!(findings, Dict{String,Any}(
-                "level" => "warn", "code" => "af-saturated-input",
-                "short" => "Channel $ch saturated",
-                "detail" => "$(round(saturated * 100; digits = 2))% of input voxels are at the top " *
-                            "of the range. Lower the gain or laser power and reacquire."))
-        end
-        if frac < 0.2
-            push!(findings, Dict{String,Any}(
-                "level" => "warn", "code" => "af-low-range",
-                "short" => "Channel $ch uses little of the range",
-                "detail" => "$(Int(round(used))) of $(Int(round(avail))) levels — the corrected " *
-                            "channel is quantised coarsely."))
+            # short = problem; long = the action; FIGURES GO IN `detail`, as a Dict. This used to
+            # hand-roll the finding with a `detail` STRING and no `long` at all, which the QC panel
+            # rendered as "Channel N saturated → undefined" — visible in the GUI from the day AF QC
+            # shipped. `qc_finding` + QC_TEXT is the one way to build a finding.
+            push!(findings, qc_finding("warn", "af.saturated_input"; channel = ch,
+                detail = Dict{String,Any}(
+                    "saturatedFrac" => round(saturated; digits = 5),
+                    "saturatedPct"  => round(saturated * 100; digits = 3))))
         end
     end
     findings, (; saturated = worst_saturated, levels = worst_levels)

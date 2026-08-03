@@ -1692,58 +1692,100 @@ end
 
 @testset "AF correction QC — the exemption that got retired" begin
     # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase.
-    # The correction has no free parameter left to land badly, so the two objective signals are about
-    # the INPUT (was it clipped at the sensor?) and the output's quantisation.
+    # It now has exactly ONE finding: the correction has no free parameter left to land badly, so the
+    # only objective signal is about the INPUT.
     ok = Dict{String,Any}("1" => Dict{String,Any}(
         "saturatedFrac" => 0.0001, "levelsUsed" => 200, "levelsAvailable" => 256))
     @test isempty(Cecelia.af_qc_findings(ok)[1])
 
-    # Two independent ways it goes wrong — a single-sided check would miss half of them.
     saturated = Dict{String,Any}("1" => Dict{String,Any}(
         "saturatedFrac" => 0.05, "levelsUsed" => 200, "levelsAvailable" => 256))
     f, w = Cecelia.af_qc_findings(saturated)
-    @test length(f) == 1 && f[1]["code"] == "af-saturated-input" && f[1]["level"] == "warn"
+    @test length(f) == 1 && f[1]["code"] == "af.saturated_input" && f[1]["level"] == "warn"
     @test w.saturated == 0.05
-    # the action belongs at the microscope: a clipped voxel's value is gone before this task runs
-    @test occursin("gain", f[1]["detail"])
 
-    # coarse output: the data crams into a few levels. Measured on real data under the percentile
-    # window this replaced — 99% of an image in ~13 of 255 levels, which nothing ever flagged.
-    low = Dict{String,Any}("2" => Dict{String,Any}(
-        "saturatedFrac" => 0.0, "levelsUsed" => 13, "levelsAvailable" => 256))
-    f2, w2 = Cecelia.af_qc_findings(low)
-    @test length(f2) == 1 && f2[1]["code"] == "af-low-range"
-    @test occursin("13 of 256", f2[1]["detail"])
-    @test w2.levels < 0.06
+    # THE BUG THIS REPLACED: the finding was hand-rolled with a `detail` STRING and no `long` at all,
+    # so the QC panel rendered "Channel 1 saturated → undefined" — visible in the GUI from the day AF
+    # QC shipped, because `lib/qc.ts` reads `f.long`. House convention (see drift_correct.jl):
+    # short = problem, long = the action, FIGURES in `detail` as a Dict.
+    @test f[1]["short"] == "Channel 1 saturated"
+    @test !isempty(get(f[1], "long", ""))
+    @test occursin("gain", f[1]["long"])                    # the action, imperative
+    @test f[1]["detail"] isa AbstractDict                   # figures, NOT a string
+    @test f[1]["detail"]["saturatedPct"] == 5.0
+    # ...and it comes from the copy catalog, so it re-renders at read time like every other finding
+    @test haskey(Cecelia.QC_TEXT, "af.saturated_input")
+    @test f[1]["key"] == "af.saturated_input"
 
     # advisory only, per docs/MODULES.md — never an error, never a gate
-    for d in (saturated, low)
-        @test all(x -> x["level"] == "warn", Cecelia.af_qc_findings(d)[1])
-    end
+    @test all(x -> x["level"] == "warn", f)
+
+    # `af-low-range` IS GONE, and re-tuning it would be wrong. It warned when the output used <20% of
+    # the dtype's levels — a real signal under the RATIO, whose output was stretched to fill the range
+    # through a derived ceiling. The power weight outputs INPUT COUNTS, so a 16-bit channel with signal
+    # in the low thousands legitimately occupies a sliver: measured on real runs, 735-3576 of 65536
+    # levels (1.1-5.5%) on EVERY channel of EVERY image. The premise inverted with the mechanism.
+    coarse = Dict{String,Any}("2" => Dict{String,Any}(
+        "saturatedFrac" => 0.0, "levelsUsed" => 775, "levelsAvailable" => 65536))
+    f2, w2 = Cecelia.af_qc_findings(coarse)
+    @test isempty(f2)                              # 1.2% of the range is NORMAL now, not a warning
+    @test w2.levels < 0.02                         # ...but the metric is still banked
+    @test !any(x -> occursin("range", x["code"]), Cecelia.af_qc_findings(coarse)[1])
 
     # worst-case rollup across channels, since QC banks one number per image
-    both = merge(saturated, low)
+    both = merge(saturated, coarse)
     _, w3 = Cecelia.af_qc_findings(both)
     @test w3.saturated == 0.05         # worst = most saturated
-    @test w3.levels < 0.06             # worst = least range used
+    @test w3.levels < 0.02             # worst = least range used
 
-    # Both metrics describe the ACQUISITION, which is what makes them comparable across a set shot in
-    # one session. Measured across the nine kSUFux movies, CH3 saturation spanned 0.001%-0.018% — a 13x
-    # spread at identical settings, so an outlier is a real difference rather than a typed parameter.
+    # `levelsUsedFrac` stays a COHORT metric: an image far below its peers is informative even when the
+    # absolute number is not. `saturatedFrac` describes the acquisition — measured across the nine
+    # kSUFux movies it spanned 0.001%-0.018%, a 13x spread at identical settings.
     @test COHORT_METRICS["cleanupImages.afCorrect"] == ["saturatedFrac", "levelsUsedFrac"]
-
-    # `ceiling` is GONE, and deliberately: it was banked to catch two images drifting onto different
-    # intensity scales, on the reasoning that the output was `ratio / ceiling * rescale`. The output is
-    # in input counts now — there is no ceiling, so there is nothing derived per image to drift.
     @test !("ceiling" in COHORT_METRICS["cleanupImages.afCorrect"])
     @test !("clippedFrac" in COHORT_METRICS["cleanupImages.afCorrect"])
+
+    # ratio-era stats files are ignored, not warned on
     ceiling_era = Dict{String,Any}("1" => Dict{String,Any}(
         "clippedFrac" => 0.9, "levelsUsed" => 200, "levelsAvailable" => 256, "ceiling" => 999.0))
-    @test isempty(Cecelia.af_qc_findings(ceiling_era)[1])   # old keys are ignored, not warned on
+    @test isempty(Cecelia.af_qc_findings(ceiling_era)[1])
 
     # A stats file missing the key must read as 0.0, not throw.
     @test Cecelia.af_qc_findings(Dict{String,Any}("1" => Dict{String,Any}(
         "levelsUsed" => 200, "levelsAvailable" => 256)))[2].saturated == 0.0
+end
+
+@testset "every QC finding carries the fields the GUI reads" begin
+    # `lib/qc.ts` renders `${f.short}\n→ ${f.long}`, so a finding without `long` displays the literal
+    # string "undefined" to the user. AF shipped exactly that for months because it hand-rolled its
+    # finding dict instead of calling `qc_finding`. Nothing checked, so nothing caught it.
+    #
+    # Enforced structurally: no producer may build a finding dict by hand. `qc_finding` is the one
+    # constructor, and it cannot omit `long` or put a string in `detail`.
+    src = String[]
+    for (root, _, files) in walkdir(joinpath(dirname(dirname(pathof(Cecelia))), "src"))
+        for f in files
+            endswith(f, ".jl") || continue
+            push!(src, joinpath(root, f))
+        end
+    end
+    @test !isempty(src)
+    offenders = String[]
+    for path in src
+        endswith(path, "qc.jl") && continue          # the constructor itself
+        for (i, line) in enumerate(eachline(path))
+            occursin(r"\"level\"\s*=>\s*\"(warn|info)\"", line) &&
+                push!(offenders, "$(basename(path)):$i")
+        end
+    end
+    @test offenders == []
+
+    # and the constructor's own contract: `long` always present, `detail` only ever structured
+    f = Cecelia.qc_finding("warn", "af.saturated_input"; channel = 2,
+                           detail = Dict{String,Any}("saturatedPct" => 1.5))
+    @test haskey(f, "long") && !isempty(f["long"])
+    @test f["detail"] isa AbstractDict
+    @test !(Cecelia.qc_finding("warn", "x.y", "s", "l")["long"] |> isempty)
 end
 
 @testset "AF params are just channels" begin
