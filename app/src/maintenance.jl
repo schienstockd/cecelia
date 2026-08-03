@@ -16,23 +16,13 @@ end
 # The shipped patches. Add a new one-off data migration here as an entry.
 const MAINTENANCE_PATCHES = MaintenancePatch[
     MaintenancePatch(
-        "centroid-axes",
-        "Convert centroid axis names",
-        "Rewrite this project's label-props files to explicit centroid_x/_y/_z + centroid_t axis " *
-        "names (from the legacy positional centroid-N / t). Needed to open projects created before " *
-        "the centroid-axis change. Dry-run lists what would change; Apply writes.",
-        "tasks/importImages/convert_centroid_names_run.py",
-    ),
-    MaintenancePatch(
         "store-debris",
         "Remove leftover stores",
-        "Delete store directories left by cancelled or crashed runs: `*.partial`/`*.superseded` " *
-        "staging dirs, import scratch (`_stage_src`), stores no `ccid.json` entry names, and stores " *
-        "whose metadata declares more pyramid levels than exist on disk. Detection is structural, " *
-        "not by name — a cancelled import writes a half-finished store at the FINAL name, so a name " *
-        "list would miss it. Nothing in the UI can see any of it, so it just occupies disk. " *
-        "Run it with no tasks in flight — a store still being written is reported and skipped, but " *
-        "that check is time-based, not authoritative. Dry-run lists what it found; Apply deletes.",
+        # What it sweeps and WHY detection is structural rather than name-based belongs in the code
+        # that does it (`store_sweep.py` header, docs/SEGMENTATION.md), not in a Settings string the
+        # user reads every time. Dry-run/Apply is not restated: both are buttons, and the section
+        # already says "Dry-run first to see what would change".
+        "Delete store directories left by cancelled or crashed runs. Run with no tasks in flight.",
         "utils/store_sweep.py",
     ),
 ]

@@ -304,4 +304,4 @@ dir; `apply=false` is a dry run; emit `[PROGRESS] n/total` + log lines). The Set
 patches from `GET /api/maintenance/patches` and launches one via the `maintenance:run` WS message
 (cancel via `maintenance:cancel`). Registry + runner: `app/src/maintenance.jl`
 (`run_maintenance_patch`/`cancel_maintenance!`); WS handler: `api/src/sockets.jl`
-(`handle_maintenance_run`). Example patch: `centroid-axes` (the centroid-axis converter).
+(`handle_maintenance_run`). Example patch: `store-debris` (the leftover-store sweep).

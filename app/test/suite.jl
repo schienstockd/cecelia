@@ -8637,6 +8637,13 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
                    joinpath(repo, "python", "cecelia", p.script)
             @test isfile(path)
             @test !isnothing(Cecelia.maintenance_patch(p.id))
+            # Copy budget (docs/UI.md → UI copy). This description sits in Settings and is read every
+            # time, so it gets one line + the one caveat that matters — the store-debris entry had
+            # grown to 674 characters explaining its own detection strategy, which belongs in the
+            # runner. 160 leaves room for a caveat and none for an essay.
+            @test length(p.description) <= 160
+            @test !isempty(p.description)
+            @test !endswith(p.title, ".")            # a title is a fragment, not a sentence
         end
     end
 end

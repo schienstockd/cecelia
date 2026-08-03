@@ -60,9 +60,12 @@ end
     r = JSON3.read(body)
     @test length(r.patches) >= 1
     ids = [String(p.id) for p in r.patches]
-    @test "centroid-axes" in ids                       # the shipped centroid converter patch
-    cp = r.patches[findfirst(==("centroid-axes"), ids)]
+    @test "store-debris" in ids                        # the shipped leftover-store sweep
+    cp = r.patches[findfirst(==("store-debris"), ids)]
     @test !isempty(String(cp.title)) && !isempty(String(cp.description))
+    for p in r.patches
+        @test !isempty(String(p.id)) && !isempty(String(p.title))
+    end
 end
 
 @testset "API: update scope" begin

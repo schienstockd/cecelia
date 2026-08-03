@@ -17,7 +17,7 @@ Julia side (`ccid.json`) and stopped at the language boundary; the canonical Pyt
 **Temp names carry the extension suffix, never a real one** — `base.h5ad.tmp.a1b2c3d4`, not
 `base.tmp.h5ad`. Discovery in several places is a directory listing filtered by extension
 (`img_spatial_graph_suffixes` in `app/src/model/image.jl` does `endswith(f, ".h5ad")`;
-`convert_centroid_names.py` globs `labelProps/*.h5ad`; `/api/movies` lists `*.mp4`), so a leftover from
+`store_sweep.py` matches store suffixes; `/api/movies` lists `*.mp4`), so a leftover from
 a killed process must not match. Getting this backwards would register a half-written file as a real
 segmentation or movie.
 
