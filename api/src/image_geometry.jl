@@ -112,6 +112,95 @@ function image_geometry(zarr_path::AbstractString)
     (sizeX = dim("x"), sizeY = dim("y"), sizeZ = dim("z"), sizeT = dim("t"))
 end
 
+"""
+    store_compression(zarr_path) -> Union{NamedTuple,Nothing}
+
+How a version's pixels are ENCODED on disk, from its level-0 `.zarray`. `nothing` when the store or
+its `.zarray` is unreadable — a display-only answer must never throw at a caller listing versions.
+
+Returns `(label, codec, level, shuffle)`. `label` is the name Settings → Storage uses for that codec
+(`Cecelia.IMAGE_COMPRESSOR_CHOICES`) so the two surfaces agree; a store written before that choice
+existed carries a codec that is not in the table and gets a plain descriptive label instead
+(`"blosc/lz4-5"`), which is the honest answer — those stores predate the decision rather than
+disagreeing with it.
+
+Reads the JSON, deliberately: `open_level0` would instantiate a Zarr array to answer a question that
+is one small file read. Layout is detected STRUCTURALLY, not by suffix (CLAUDE.md → OME-ZARR
+dual-format): a flat store's level-0 array is `<store>/0`, a bioformats2raw series' is `<store>/0/0`,
+and both have a `0/` child so the path tells you nothing.
+"""
+function store_compression(zarr_path::AbstractString)
+    zarray = nothing
+    for candidate in (joinpath(zarr_path, "0", ".zarray"),        # flat: level 0 IS "0"
+                      joinpath(zarr_path, "0", "0", ".zarray"))   # series: "0" is the group wrapper
+        isfile(candidate) && (zarray = candidate; break)
+    end
+    isnothing(zarray) && return nothing
+    try
+        comp = get(JSON3.read(read(zarray, String)), :compressor, nothing)
+        return _describe_compressor(comp)
+    catch
+        return nothing
+    end
+end
+
+# numcodecs config → what to show. Two shapes reach here: blosc (`cname`/`clevel`/`shuffle`) and a
+# bare codec like zstd (`level`). `compressor: null` is a real, valid value — an uncompressed store.
+function _describe_compressor(comp)
+    isnothing(comp) && return (label = "none", codec = "none", level = 0, shuffle = false)
+    comp isa AbstractDict || return nothing
+    id      = string(get(comp, :id, "?"))
+    cname   = haskey(comp, :cname) ? string(comp[:cname]) : id
+    level   = Int(get(comp, :clevel, get(comp, :level, 0)))
+    shuffle = Int(get(comp, :shuffle, 0)) != 0
+    # zstd treats level 0 as "the library default", which is 3 — so a store written at 0 must not read
+    # as a different setting from one written at 3. Same normalisation the rechunk sweep uses.
+    (cname == "zstd" && level == 0) && (level = 3)
+    # Match the WRAPPER too, not just (cname, level, shuffle). `store_compressor` writes a bare
+    # numcodecs Zstd for the unshuffled-zstd choice and a Blosc for everything else, so a
+    # blosc-WRAPPED unshuffled zstd is a different encoding on disk from the `zstd` choice even though
+    # those three fields agree — labelling it as that choice would misreport what is in the file.
+    wrapper(c) = (!c.shuffle && c.cname == "zstd") ? "zstd" : "blosc"
+    known = findfirst(c -> c.cname == cname && c.clevel == level && c.shuffle == shuffle &&
+                           wrapper(c) == id,
+                      Cecelia.IMAGE_COMPRESSOR_CHOICES)
+    label = isnothing(known) ?
+        "$(id == "blosc" ? "blosc/" : "")$cname-$level$(shuffle ? " + shuffle" : "")" :
+        Cecelia.IMAGE_COMPRESSOR_CHOICES[known].label
+    (label = label, codec = cname, level = level, shuffle = shuffle)
+end
+
+# GET /api/images/compression?projectUid=&imageUid= → {versions: {valueName: {label,codec,…}}}
+#
+# EVERY version at once, because the only consumer (the image-metadata modal) lists them all — one
+# call rather than one per version. A version whose store is missing or unreadable is reported as
+# `null` rather than omitted, so the modal can say "—" against it instead of silently dropping a row.
+function api_image_compression(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", "")
+    image_uid   = get(q, "imageUid", "")
+    (isempty(project_uid) || isempty(image_uid)) &&
+        return 400, JSON3.write((; error = "projectUid + imageUid required"))
+    proj_dir = joinpath(projects_dir(), project_uid)
+    meta     = state_file(proj_dir, image_uid)
+    (isdir(proj_dir) && isfile(meta)) || return 404, JSON3.write((; error = "Image not found"))
+
+    raw = read_ccid_raw(meta)
+    fp  = get(raw, "filepath", nothing)
+    fp isa AbstractDict || return 200, JSON3.write((; versions = Dict{String,Any}()))
+    out = Dict{String,Any}()
+    for vn in versioned_keys(fp)
+        fn = versioned_get_field(raw, "filepath", vn)
+        isnothing(fn) && (out[vn] = nothing; continue)
+        zp = joinpath(proj_dir, "0", image_uid, string(fn))
+        c  = isdir(zp) ? store_compression(zp) : nothing
+        out[vn] = isnothing(c) ? nothing :
+                  Dict{String,Any}("label" => c.label, "codec" => c.codec,
+                                   "level" => c.level, "shuffle" => c.shuffle)
+    end
+    200, JSON3.write((; versions = out))
+end
+
 # GET /api/images/geometry?projectUid=&imageUid=&valueName= → {sizeX,sizeY,sizeZ,sizeT,valueName}
 #
 # The frame extent of ONE image version. `valueName` omitted ⇒ the ACTIVE version, which is what a

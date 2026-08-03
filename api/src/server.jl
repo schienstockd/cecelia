@@ -305,6 +305,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/plotdata" => (req, body_bytes) -> (api_gating_plotdata(req)),
     "/api/gating/density" => (req, body_bytes) -> (api_gating_density(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
+    "/api/images/compression" => (req, body_bytes) -> (api_image_compression(req)),
     "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
     "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
