@@ -43,6 +43,7 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.block_transfer import encode_block
+import cecelia.utils.script_utils as script_utils
 from cecelia.utils.cellpose_utils import CellposeUtils
 from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.segmentation_utils import count_labels
@@ -74,6 +75,11 @@ AF_PREVIEW_STRIDE = (2, 4)
 #:    all — against a backend that believes it is showing the new method. Silently, and the preview's
 #:    entire purpose is to agree with the run.
 PROTOCOL = 4
+
+#: Named in the error a channel NAME raises, so the message points at the Julia function that should
+#: have resolved it — see `script_utils.channel_indices`.
+_AF_TRANSLATOR = 'af_combinations_for_python (af_correct.jl)'
+_CELLPOSE_TRANSLATOR = 'cellpose_models_for_python (cellpose.jl)'
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
@@ -138,8 +144,10 @@ class PreviewState:
         if not seg.normalise_to_whole:
             return None
         key = (im_path,
-               tuple(sorted(int(c) for c in model_params.get("cellChannels", []))),
-               tuple(sorted(int(c) for c in model_params.get("nucChannels", []))),
+               tuple(sorted(script_utils.channel_indices(
+                   model_params.get("cellChannels"), "cellChannels", _CELLPOSE_TRANSLATOR))),
+               tuple(sorted(script_utils.channel_indices(
+                   model_params.get("nucChannels"), "nucChannels", _CELLPOSE_TRANSLATOR))),
                model_params.get("normalise"))
         if key not in self._norm:
             self._norm[key] = seg._compute_norm_params(
@@ -162,8 +170,11 @@ class PreviewState:
         safe before for a more delicate reason — the ceiling was a COUNT-thresholded max rather than a
         true max — and that reason is gone along with the ceiling.)
         """
-        channels = [int(channel_idx)] + [int(c) for c in competing_channels]
-        key = (im_path, int(channel_idx), tuple(sorted(int(c) for c in competing_channels)), method)
+        competing = script_utils.channel_indices(
+            competing_channels, f'competingChannels for channel {channel_idx}', _AF_TRANSLATOR)
+        channels = script_utils.channel_indices(
+            [channel_idx], 'the target channel', _AF_TRANSLATOR) + competing
+        key = (im_path, int(channel_idx), tuple(sorted(competing)), method)
         if key not in self._af:
             self._af[key] = correction_utils.af_weight_stats(
                 self.image_zarr(im_path)[0], dim_utils, channels,
@@ -412,7 +423,10 @@ def _preview_af(ctx):
     layers, stats_out = [], {}
 
     for ch in sorted(combos):
-        competing = [int(d) for d in (combos[ch].get('competingChannels') or [])]
+        # same coercion + diagnosis the run uses: a channel NAME here means the Julia translator did not
+        # run, which is a stale-backend symptom rather than a bad parameter
+        competing = correction_utils.af_channel_indices(
+            combos[ch].get('competingChannels'), 'competingChannels', for_channel=ch)
         if not competing:
             continue
         stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method)

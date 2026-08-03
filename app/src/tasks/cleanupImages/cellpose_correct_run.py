@@ -81,8 +81,10 @@ def run(params):
             if x['model'] == 'NONE':
                 continue
             slices = [
-                dim_utils.create_channel_slices(channel=int(ch))
-                for ch in x['modelChannels']
+                dim_utils.create_channel_slices(channel=ch)
+                # indices, not names — a name here means the Julia translator did not run
+                for ch in script_utils.channel_indices(
+                    x['modelChannels'], 'modelChannels', 'cellpose_correct.jl')
             ]
             if dim_utils.is_3D():
                 slices = dim_utils.expand_slices([list(s) for s in slices], dim='Z')

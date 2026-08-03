@@ -22,6 +22,7 @@ from skimage.registration import phase_cross_correlation
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.intensity_utils as intensity_utils
+import cecelia.utils.script_utils as script_utils
 
 
 # ── Drift correction ──────────────────────────────────────────────────────────
@@ -271,6 +272,11 @@ def _af_write_slab(out, dim_utils, channel_idx, t, slab):
     out[tuple(sl)] = slab
 
 
+#: The Julia function that turns this task's channel NAMES into indices. Named in the error a channel
+#: name raises, so the message points at the thing that should have run — see `script_utils.channel_indices`.
+_AF_TRANSLATOR = 'af_combinations_for_python (af_correct.jl)'
+
+
 def _af_slabs(data, dim_utils, channels, t):
     """One frame of EVERY channel taking part in a correction, keyed by channel index.
 
@@ -364,7 +370,8 @@ def af_weight_stats(
     # dict.fromkeys dedupes while keeping order: a channel named twice must not be counted twice, and
     # a target listed inside its own competitors would otherwise square that term into the denominator
     # a second time (the Julia side rejects that case outright — see `af_combinations_for_python`).
-    channels = [int(c) for c in dict.fromkeys(int(c) for c in channels)]
+    channels = list(dict.fromkeys(
+        script_utils.channel_indices(channels, 'channels', _AF_TRANSLATOR)))
 
     def _stride(a):
         return a[..., ::zst, ::xyst, ::xyst] if (strided and a.ndim >= 3) else a
@@ -481,7 +488,9 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
     separate.
     """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
-    channels = [int(channel_idx)] + [int(c) for c in competing_channel_idx]
+    channels = script_utils.channel_indices([channel_idx], 'the target channel', _AF_TRANSLATOR) + \
+        script_utils.channel_indices(
+            competing_channel_idx, f'competingChannels for channel {channel_idx}', _AF_TRANSLATOR)
     if stats is None:
         stats = af_weight_stats(data, dim_utils, channels, background_method=background_method)
     if logfile_utils is not None:

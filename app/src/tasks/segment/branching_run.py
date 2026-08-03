@@ -434,7 +434,9 @@ def run(params: dict):
     flatten_branching    = bool(script_utils.get_param(params, "flattenBranching", default=False))
     calc_anisotropy      = bool(script_utils.get_param(params, "calcAnisotropy", default=False))
     calc_flattened       = bool(script_utils.get_param(params, "calcFlattened", default=False))
-    fibre_channels       = script_utils.get_param(params, "fibreChannels", default=[]) or []
+    fibre_channels       = script_utils.channel_indices(
+        script_utils.get_param(params, "fibreChannels", default=[]), "fibreChannels",
+        "branching.jl")
     st_sigma             = float(script_utils.get_param(params, "structureTensorSigma", default=12.0))
     aniso_box_size       = int(script_utils.get_param(params, "anisotropyBoxSize", default=15))
     sigma_um             = script_utils.get_param(params, "structureTensorSigmaUm", default=None)
