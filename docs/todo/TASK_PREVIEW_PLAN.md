@@ -30,7 +30,7 @@ Previewability is a property of a task's *compute*, not of a category:
 | Task | Preview output | Crop-safe? |
 |---|---|---|
 | `segment.cellpose` | labels | Yes — modulo tile seams and whole-image normalisation |
-| `cleanupImages.afCorrect` | image | Yes — per-pixel channel unmixing. Preserves the input shape, but needs **whole-image globals** (`af_division_stats`: two background levels + a ceiling), so the preview derives them once over the whole image and caches them, exactly as cellpose caches `norm_params` |
+| `cleanupImages.afCorrect` | image | Yes — per-pixel channel competition. Preserves the input shape, but needs **whole-image globals** (`af_weight_stats`: one background level per participating channel), so the preview derives them once over the whole image and caches them, exactly as cellpose caches `norm_params` |
 | `cleanupImages.cellposeCorrect` (denoise) | image | Yes in principle, but **not a build target** — see *Denoise waits for coastal* |
 | `cleanupImages.driftCorrect` | — | **No.** `drift_correction_shifts` derives shifts from the whole timecourse; a crop cannot produce the real shifts, and the shifts are the thing you would want to judge. Declares nothing. |
 
@@ -221,7 +221,7 @@ same shape, and a denoise preview then costs one trait declaration. Recorded in 
 pin, where someone bumping cellpose will actually read it.
 
 So denoise is not a build target here, and **AF is the image-kind consumer instead** — it is also the harder
-test, because its correction depends on statistics no crop can see (`correction_utils.af_division_stats`).
+test, because its correction depends on statistics no crop can see (`correction_utils.af_weight_stats`).
 
 (Both drafted while AF still had a filter toolbox. `_af_denoise_frame` — skimage tv/wavelet denoising
 *inside* AF correction, unrelated to the cellpose denoise task despite the name — was deleted with the

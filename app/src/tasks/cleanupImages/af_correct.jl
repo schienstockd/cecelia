@@ -3,17 +3,22 @@ struct AfCorrect <: CciaTask end
 """
     af_combinations_for_python(params, raw) -> Dict
 
-The `afCombinations` bag as the PYTHON side needs it: `divisionChannels` resolved from channel NAMES
-to 0-based indices, and `quotientChannel` resolved to the combination's key (the channel being
+The `afCombinations` bag as the PYTHON side needs it: `competingChannels` resolved from channel NAMES
+to 0-based indices, and `targetChannel` resolved to the combination's key (the channel being
 corrected). Names come from the **default** version deliberately — a corrected variant inherits them
 by versioned fallback and may carry no list of its own.
 
 **Shared by the run and the task preview, and it has to be.** Exactly the shape of the cellpose bug
 (`cellpose_models_for_python`): the frontend sends names, Python wants indices, and the preview sends
 the frontend's params. Real saved params on a live project carry
-`divisionChannels = ["CH4", "CD169-Kat"]` where `"CH4"` is not in that image's `imChannelNames` at all
+`competingChannels = ["CH4", "CD169-Kat"]` where `"CH4"` is not in that image's `imChannelNames` at all
 — a stale name that silently resolves to nothing. Keeping one translator means the preview drops it
 exactly where the run does, rather than the two disagreeing about which channels were used.
+
+**The target is dropped from its own competitor list.** It is already the numerator's channel, so
+naming it again would square its term into the denominator twice and quietly halve the channel's own
+output. Silently dropped rather than rejected because the two lists are separate widgets and picking
+the same channel in both is an easy slip with one obvious intent.
 """
 function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Dict{String,Any}
     channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
@@ -27,10 +32,10 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
     for (k, v) in af_combos_raw
         entry = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
 
-        # divisionChannels: channel names → 0-based indices (an already-translated index passes
+        # competingChannels: channel names → 0-based indices (an already-translated index passes
         # through, so this is idempotent — a REPL or chain caller may hand back a converted dict)
         idx_channels = Int[]
-        for ch in get(entry, "divisionChannels", [])
+        for ch in get(entry, "competingChannels", [])
             if ch isa Integer
                 push!(idx_channels, Int(ch))
                 continue
@@ -38,14 +43,13 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
             idx = findfirst(==(String(ch)), ch_names)
             isnothing(idx) || push!(idx_channels, idx - 1)
         end
-        entry["divisionChannels"] = idx_channels
 
-        # quotientChannel: resolve name → 0-based index → use as the af_combos key
-        raw_quot = get(entry, "quotientChannel", [])
-        delete!(entry, "quotientChannel")
+        # targetChannel: resolve name → 0-based index → use as the af_combos key
+        raw_target = get(entry, "targetChannel", [])
+        delete!(entry, "targetChannel")
         combo_key = String(k)
-        if !isempty(raw_quot)
-            q = first(raw_quot)
+        if !isempty(raw_target)
+            q = first(raw_target)
             if q isa Integer
                 combo_key = string(Int(q))
             else
@@ -53,6 +57,11 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
                 isnothing(idx) || (combo_key = string(idx - 1))
             end
         end
+
+        # the target competes with the OTHERS, never with itself — see the docstring
+        target_idx = tryparse(Int, combo_key)
+        entry["competingChannels"] = isnothing(target_idx) ? unique(idx_channels) :
+                                     filter(!=(target_idx), unique(idx_channels))
         af_combos[combo_key] = entry
     end
     af_combos
@@ -63,7 +72,7 @@ end
 # (`PreviewState.af_stats`). See `task_previewable` in task.jl.
 task_previewable(::AfCorrect) = true
 
-# The preview sends the FRONTEND's params, so `divisionChannels` arrive as channel NAMES. Same hook and
+# The preview sends the FRONTEND's params, so `competingChannels` arrive as channel NAMES. Same hook and
 # same reason as cellpose's: sharing the compute does not make the params shared.
 function preview_params(::AfCorrect, params::AbstractDict, img::CciaImage)::Dict{String,Any}
     out = Dict{String,Any}(String(k) => v for (k, v) in params)
@@ -76,50 +85,41 @@ end
 
 QC for AF correction, from the per-channel output stats the runner writes.
 
-This task used to be QC-exempt, with a comment calling itself the weakest exemption in the codebase:
-over-subtraction *does* have an objective signal — the fraction of voxels clipped — but nothing
-reported it. Now that the output ceiling is derived rather than dialled in, that signal is exactly
-what says whether the derivation landed, so the exemption is gone.
+This task used to be QC-exempt, with a comment calling itself the weakest exemption in the codebase.
+Two objective signals, and neither is about the correction's own arithmetic — the correction has no
+free parameter left to land badly:
 
-Two ways it can be wrong, in opposite directions:
+* **saturated input** → the channel was clipped at the sensor, before we saw it. `saturatedFrac`. No
+  correction recovers a clipped voxel's true value, so this is a warning about the acquisition and the
+  action is at the microscope. Measured across the nine kSUFux movies, CH3 saturation ranged from
+  0.001% to 0.018% of voxels — a 13x spread within one experiment at identical settings.
+* **coarse output** → the corrected channel occupies few of the available levels.
+  `levelsUsed / levelsAvailable`. Under the hand-tuned percentile window that preceded all of this,
+  99% of a real image landed in ~13 of 255 levels and nothing ever flagged it.
 
-* **ceiling too low** → bright structure flattens against the top of the range. `clippedFrac`.
-* **ceiling too high** → the data crams into a handful of levels and quantisation is thrown away.
-  `levelsUsed / levelsAvailable`. Measured under the percentile window this replaced: 99% of a real
-  image landed in ~13 of 255 levels, which nothing ever flagged.
-
-There is a **third** way, and it is not a finding here on purpose: the ceiling can land fine for this
-image and still differ from every other image in the set, which puts them on different intensity
-scales. Nothing per-image can see that — a ceiling is neither right nor wrong on its own — and the two
-fractions above are provably blind to it (a 1.86x ceiling difference moved both by 0.000; the corrected
-output is literally identical). So `ceiling` is returned as a plain **cohort metric** and the
-outlier detector in `qc_cohort.jl` is what flags the odd image out. Measured on the nine kSUFux movies
-— one experiment, one channel pair, identical settings — the derived ceiling spanned **1.71x**.
+`clippedFrac` and `ceiling` are gone with the ratio. The output is `b * weight` with `weight <= 1`, so
+it can never reach the top of the range — the clipping metric was structurally ~0. And there is no
+derived ceiling to compare across a set, which is what the `ceiling` cohort metric existed to catch.
 
 Advisory only, per `docs/MODULES.md` — never an `error`, never a gate.
 """
 function af_qc_findings(per_channel::AbstractDict)
     findings = Vector{Dict{String,Any}}()
-    worst_clipped, worst_levels = 0.0, 1.0
-    # The corrected channels' ceilings, for the cohort comparison. Max rather than mean: with one
-    # corrected channel (the common case) they are the same number, and with several the largest is
-    # the one that decides how much range the others give up.
-    ceiling = 0.0
+    worst_saturated, worst_levels = 0.0, 1.0
     for (ch, s) in sort(collect(per_channel); by = first)
-        clipped = Float64(get(s, "clippedFrac", 0.0))
-        used    = Float64(get(s, "levelsUsed", 0))
-        avail   = max(1.0, Float64(get(s, "levelsAvailable", 1)))
-        frac    = used / avail
-        worst_clipped = max(worst_clipped, clipped)
-        worst_levels  = min(worst_levels, frac)
-        ceiling       = max(ceiling, Float64(get(s, "ceiling", 0.0)))
+        saturated = Float64(get(s, "saturatedFrac", 0.0))
+        used      = Float64(get(s, "levelsUsed", 0))
+        avail     = max(1.0, Float64(get(s, "levelsAvailable", 1)))
+        frac      = used / avail
+        worst_saturated = max(worst_saturated, saturated)
+        worst_levels    = min(worst_levels, frac)
 
-        if clipped > 0.01
+        if saturated > 0.001
             push!(findings, Dict{String,Any}(
-                "level" => "warn", "code" => "af-clipped",
-                "short" => "Channel $ch clipped",
-                "detail" => "$(round(clipped * 100; digits = 1))% of voxels hit the top of the " *
-                            "range — bright structure is flattened. Try a lower background method."))
+                "level" => "warn", "code" => "af-saturated-input",
+                "short" => "Channel $ch saturated",
+                "detail" => "$(round(saturated * 100; digits = 2))% of input voxels are at the top " *
+                            "of the range. Lower the gain or laser power and reacquire."))
         end
         if frac < 0.2
             push!(findings, Dict{String,Any}(
@@ -129,7 +129,7 @@ function af_qc_findings(per_channel::AbstractDict)
                             "channel is quantised coarsely."))
         end
     end
-    findings, (; clipped = worst_clipped, levels = worst_levels, ceiling = ceiling)
+    findings, (; saturated = worst_saturated, levels = worst_levels)
 end
 
 function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
@@ -161,7 +161,11 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Input:  $im_path")
     on_log("[INFO] Output: $im_correction_path")
-    on_log("[INFO] Combinations: $(length(af_combos))")
+    # log the RESOLVED sets, not just a count: names that match no channel are dropped here, and so is
+    # a target named inside its own competitor list — both silent otherwise
+    for k in sort(collect(keys(af_combos)))
+        on_log("[INFO] ch$k competes with $(get(af_combos[k], "competingChannels", Int[]))")
+    end
 
     qc_out_path = joinpath(task_run_dir(img._dir), "af_output_stats.json")
 
@@ -170,7 +174,7 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
            imCorrectionPath = im_correction_path,
            afCombinations   = af_combos,
            # the one remaining choice, global to every combination (was two percentiles per
-           # combination plus a rescale window, all now derived — see `af_division_stats`)
+           # combination plus a rescale window, all now derived — see `af_weight_stats`)
            backgroundMethod = string(get(params, "backgroundMethod", "triangle")),
            qcOutPath        = qc_out_path),
         task_run_dir(img._dir);
@@ -186,8 +190,8 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
         versioned_set_field!(raw, "filepath", out_filename, out_value_name)
     end
 
-    # QC: the derived ceiling is the one thing that can go wrong invisibly, and it has an objective
-    # signal — how much of the output range got used, and how much was clipped away.
+    # QC: the correction itself has no free parameter left to land badly, so the objective signals are
+    # the input's saturation and how coarsely the output ends up quantised — see `af_qc_findings`.
     if isfile(qc_out_path)
         try
             stats = JSON3.read(read(qc_out_path, String))
@@ -195,15 +199,11 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
                                       for (k, s) in stats)
             findings, worst = af_qc_findings(per_ch)
             write_qc(img, "cleanupImages.afCorrect", out_value_name, findings;
-                     metrics = Dict{String,Any}("clippedFrac" => worst.clipped,
+                     metrics = Dict{String,Any}("saturatedFrac" => worst.saturated,
                                                 "levelsUsedFrac" => worst.levels,
-                                                # cohort-only: meaningless alone, an outlier against
-                                                # its set means this image is on a different scale
-                                                "ceiling" => worst.ceiling,
                                                 "byChannel" => per_ch))
-            on_log("[QC] clipped $(round(worst.clipped * 100; digits = 2))% of voxels; " *
-                   "$(round(worst.levels * 100; digits = 1))% of the output range used; " *
-                   "ceiling $(round(worst.ceiling; digits = 2)).")
+            on_log("[QC] $(round(worst.saturated * 100; digits = 3))% of input voxels saturated; " *
+                   "$(round(worst.levels * 100; digits = 1))% of the output range used.")
         catch e
             on_log("[QC] could not compute AF QC: $e")
         end

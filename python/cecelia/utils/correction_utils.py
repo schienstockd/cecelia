@@ -278,12 +278,14 @@ def _af_write_slab(out, dim_utils, channel_idx, t, slab):
     out[tuple(sl)] = slab
 
 
-def _af_correction_slab(data, dim_utils, correction_channel_idx, t, summary_mode, summary_percentile):
-    """Summary correction image (max, or percentile, across the division channels) for one frame."""
-    stack = np.stack([_af_slab(data, dim_utils, x, t) for x in correction_channel_idx], axis=0)
-    if summary_mode == 'percentile':
-        return np.percentile(stack, summary_percentile, axis=0)
-    return np.max(stack, axis=0)
+def _af_slabs(data, dim_utils, channels, t):
+    """One frame of EVERY channel taking part in a correction, keyed by channel index.
+
+    Replaces a `max`-across-the-references summary. The competing channels have to stay separate: each
+    one contributes its own term to the weight's denominator, so collapsing them to a single reference
+    image (which is what divide-mode AF did) throws away exactly the information the weight needs.
+    """
+    return {int(ch): _af_slab(data, dim_utils, int(ch), t) for ch in channels}
 
 
 def _af_subtract(slab, subtract_val):
@@ -297,56 +299,65 @@ def _af_subtract(slab, subtract_val):
     return f
 
 
-#: The GLOBAL scalars divide-mode AF needs before it can correct a single pixel. Whole-image by
-#: definition, which is why they are a separate, cacheable step — see `af_division_stats`.
-AfDivisionStats = collections.namedtuple('AfDivisionStats', 'val1 val2 c_max nbins rescale')
+#: The GLOBAL values the power weight needs before it can correct a single voxel: one background level
+#: per participating channel. Whole-image by definition, which is why they are a separate, cacheable
+#: step — see `af_weight_stats`. ``saturated`` rides along because the same pass already has the
+#: histograms, and input saturation is the one thing about this correction worth warning about.
+AfWeightStats = collections.namedtuple('AfWeightStats', 'backgrounds saturated exponent nbins')
 
-#: How many voxels a value must reach before the ceiling will sit at it. Measured on a real 181-frame
-#: movie: the top six occupied ratio bins held ONE voxel each, and this threshold gave an identical
-#: ceiling under every spatial stride tried (z::2, xy::4, both), where the true max did not. Lower
-#: values track the data more closely but sample worse — 100 drifted ~10% under striding, 1 000 by 2%,
-#: 10 000 not at all. See docs/todo/TASK_PREVIEW_PLAN.md.
-AF_CEILING_MIN_COUNT = 10_000
+#: How sharply a channel must dominate a voxel to keep it: ``weight = b_t^p / Σ b_i^p``.
+#:
+#: **Deliberately not a user parameter.** This task previously carried `channelPercentile`,
+#: `correctionPercentile`, `correctionMin` and `correctionMax` — four numbers with no defensible value,
+#: fitted per dataset and never revisited — and deleting them was the point of the current design. A
+#: user-facing sharpness dial is that same thing coming back. p=2 was compared against p=1 and p=8 on
+#: real overlapping reporter cells (kSUFux/Or1L8a): p=1 leaves too much of the losing channel, p=8
+#: approaches a hard cut without gaining separation. If a dataset ever genuinely needs a different
+#: value, that measurement is the trigger to expose it — not a guess in advance.
+AF_WEIGHT_EXPONENT = 2
 
-#: Fraction of the ratio's own range the derived ceiling may never fall below. Guards the trap in
-#: `robust_hist_max`: the background bin dominates the histogram, so a min-count larger than the
-#: signal population would return a ceiling inside the background and collapse the rescale.
-AF_CEILING_FLOOR_FRAC = 0.02
 
+def af_weight_stats(
+        data, dim_utils, channels, background_method='triangle',
+        timepoints=None, spatial_stride=(1, 1), exponent=AF_WEIGHT_EXPONENT):
+    """The one thing the power weight needs that a single region cannot supply: a background level per
+    participating channel. Derived, not dialled in
+    (`intensity_utils.background_threshold`, Zack's triangle by default).
 
-def af_division_stats(
-        data, dim_utils, channel_idx, correction_channel_idx,
-        background_method='triangle', summary_mode='maximum', summary_percentile=75,
-        timepoints=None, spatial_stride=(1, 1), ceiling_min_count=None):
-    """Everything divide-mode AF needs that a single region cannot supply: the two background levels
-    and the output ceiling. All three **derived**, none dialled in.
+    Background subtraction is **not optional** here, and that is worth stating because
+    `BACKGROUND_METHODS` still offers `'none'` for other callers. The weight is a ratio of channel
+    intensities, so an unsubtracted pedestal makes background voxels split evenly between the channels
+    and survive. Measured on kSUFux/Or1L8a: **92.1%** of background voxels come out non-zero and
+    cell-to-background contrast collapses from effectively unbounded to **6.8x**. The task JSON
+    therefore does not offer `'none'`.
 
-    * ``val1`` — background of the target channel
-    * ``val2`` — the level above which the AF reference counts as autofluorescence
-    * ``c_max`` — the ratio that maps to full scale, as an outlier-rejected maximum
+    Split out from the streaming writer so the **task preview** can pay for it once and cache it, then
+    correct just the region on screen with `af_correct_frame` (the analogue of cellpose's
+    `norm_params` → `predict_slice`). Global by definition: derived from a crop it would subtract a
+    different background in the previewed region than in the run, i.e. lie about the thing being judged.
 
-    These replace `channelPercentile`, `correctionPercentile`, `correctionMin` and `correctionMax`,
-    four numbers with no defensible value that were fitted per dataset and never revisited. The
-    background pair now comes from `intensity_utils.background_threshold` (Zack's triangle by default)
-    and the ceiling from `intensity_utils.robust_hist_max`.
+    ONE pass, where divide-mode AF needed two — it had to build the ratio distribution to find an
+    output ceiling, and there is no ceiling any more (the output is in input counts). Measured on the
+    kSUFux movies that halves this step, ~39 s → ~20 s per channel pair.
 
-    Split out from the streaming writer so the **task preview** can pay for them once and cache them,
-    then correct just the region on screen with `af_correct_frame` (the analogue of cellpose's
-    `norm_params` → `predict_slice`). They are global by definition: computing them from a crop would
-    subtract a different background in the previewed region than in the run, i.e. lie about the one
-    thing being tuned.
-
-    Two passes, because the ratio cannot be formed until the backgrounds are known. Both are
-    subsamplable and the defaults are measured, not guessed:
+    Both subsampling knobs are kept for the preview's benefit:
 
     * ``timepoints`` — which frames to gather from. ``None`` = all.
-    * ``spatial_stride`` — ``(z, xy)`` stride WITHIN each frame. Prefer this over dropping frames: it
-      keeps every timepoint represented, and the count-thresholded ceiling is invariant to it
-      (identical answer at ``(2, 4)``, which cost 24 s against 148 s for the full read).
+    * ``spatial_stride`` — ``(z, xy)`` stride WITHIN each frame. Prefer it over dropping frames: it
+      keeps every timepoint represented.
 
-    A note on why the ceiling is derived here and not handed in: it is a property of the corrected
-    ratio, so it cannot be known before the backgrounds are, and it must be identical for the run and
-    the preview or the preview's brightness is a lie.
+    **Subsampling is exact only because the channel has a background population to find.** The preview
+    reads strided while the run reads every voxel, and they must agree to the count or the preview
+    subtracts a different background than the run. They do, on real data and on any image with a
+    background peak. On structureless noise there is no such population and the triangle threshold
+    swings under subsampling (measured on uniform `rng.integers(0, 4000)`: 3178 → 544 → 196 at strides
+    (1,1) → (1,2) → (2,4)). A fluorescence channel is mostly background so this is a degenerate rather
+    than a realistic input, but it is the assumption the cheap pass rests on. Pinned by
+    `test_a_spatial_stride_gives_the_same_backgrounds`.
+
+    ``saturated`` is the fraction of each channel's voxels sitting at the dtype maximum, i.e. clipped
+    on acquisition. It is free here (the histograms are already built) and it is the honest QC signal
+    for this task: a clipped voxel's true value is gone, and no correction recovers it.
     """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
     ts = range(T) if timepoints is None else list(timepoints)
@@ -355,162 +366,188 @@ def af_division_stats(
 
     dt = data.dtype
     integer = np.issubdtype(dt, np.integer)
-    rescale = float(np.iinfo(dt).max) if integer else 255.0
     nbins = (int(np.iinfo(dt).max) + 1) if integer else 256
-    hi = float(nbins)                     # the ratio's ceiling: (maxval+1)/1
+
+    # dict.fromkeys dedupes while keeping order: a channel named twice must not be counted twice, and
+    # a target listed inside its own competitors would otherwise square that term into the denominator
+    # a second time (the Julia side rejects that case outright — see `af_combinations_for_python`).
+    channels = [int(c) for c in dict.fromkeys(int(c) for c in channels)]
 
     def _stride(a):
         return a[..., ::zst, ::xyst, ::xyst] if (strided and a.ndim >= 3) else a
 
-    # ── pass 1: the two background levels ───────────────────────────────────
-    H_ch, H_corr = np.zeros(nbins, np.int64), np.zeros(nbins, np.int64)
+    hists = {ch: np.zeros(nbins, np.int64) for ch in channels}
     for t in ts:
-        ch = _stride(_af_slab(data, dim_utils, channel_idx, t))
-        H_ch += np.bincount(np.clip(ch, 0, nbins - 1).astype(np.int64).ravel(), minlength=nbins)[:nbins]
-        ci = _stride(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
-                                         summary_mode, summary_percentile))
-        H_corr += np.bincount(np.clip(np.rint(ci), 0, nbins - 1).astype(np.int64).ravel(),
-                              minlength=nbins)[:nbins]
-    val1 = float(intensity_utils.background_threshold(H_ch, background_method))
-    val2 = float(intensity_utils.background_threshold(H_corr, background_method))
+        for ch in channels:
+            a = _stride(_af_slab(data, dim_utils, ch, t))
+            hists[ch] += np.bincount(np.clip(a, 0, nbins - 1).astype(np.int64).ravel(),
+                                     minlength=nbins)[:nbins]
 
-    # ── pass 2: the ceiling, from the corrected-ratio distribution ──────────
-    H_ratio = np.zeros(nbins, np.int64)
-    for t in ts:
-        img = _af_subtract(_stride(_af_slab(data, dim_utils, channel_idx, t)), val1)
-        corr = _af_subtract(_stride(_af_correction_slab(data, dim_utils, correction_channel_idx, t,
-                                                       summary_mode, summary_percentile)), val2)
-        ratio = (img + 1.0) / (corr + 1.0)
-        H_ratio += np.bincount(np.clip(ratio / hi * (nbins - 1), 0, nbins - 1).astype(np.int64).ravel(),
-                               minlength=nbins)[:nbins]
-
-    # Scale the count threshold by the sampling fraction, so a strided pass asks for proportionally
-    # fewer voxels and lands on the same ceiling as a full one.
-    if ceiling_min_count is None:
-        frac = 1.0 / (zst * xyst * xyst) * (len(ts) / max(1, T))
-        ceiling_min_count = max(1, int(round(AF_CEILING_MIN_COUNT * frac)))
-    c_max = intensity_utils.robust_hist_max(H_ratio, ceiling_min_count) / (nbins - 1) * hi
-    # the trap documented on `robust_hist_max`: the background bin dominates, so an over-large count
-    # can return a ceiling inside it. Never let the window collapse.
-    c_max = max(float(c_max), hi * AF_CEILING_FLOOR_FRAC)
-
-    return AfDivisionStats(val1=val1, val2=val2, c_max=c_max, nbins=nbins, rescale=rescale)
+    backgrounds = {ch: float(intensity_utils.background_threshold(hists[ch], background_method))
+                   for ch in channels}
+    saturated = {ch: float(hists[ch][nbins - 1]) / max(1.0, float(hists[ch].sum()))
+                 for ch in channels}
+    return AfWeightStats(backgrounds=backgrounds, saturated=saturated,
+                         exponent=int(exponent), nbins=nbins)
 
 
-def af_correct_frame(img_slab, corr_slab, stats, out_dtype):
-    """Divide-mode AF for ONE frame: subtract both backgrounds, divide, map to the stored dtype.
+def af_correct_frame(slabs, target, stats, out_dtype):
+    """Correct ONE frame of ONE channel: keep the share of each voxel this channel dominates.
 
-    Takes the two raw slabs already read — the target channel and the summarised AF reference — so it
-    is pure compute with no data access. That is what lets the preview hand it a CROP while the run
-    hands it a whole frame, and it is why the preview cannot drift from the run.
+        b_i    = max(raw_i - background_i, 0)      for the target and every competing channel
+        out_t  = b_t * b_t^p / Σ_i b_i^p
 
-    Four lines of arithmetic, and deliberately nothing else. It used to carry a median filter, a
-    gaussian, a rolling-ball and a top-hat, none of which are autofluorescence correction — they were
-    a small image-processing toolbox that accreted in this task while fitting individual datasets.
+    Takes the raw slabs already read, keyed by channel index, so it is pure compute with no data
+    access. That is what lets the preview hand it a CROP while the run hands it a whole frame, and it
+    is why the preview cannot drift from the run.
 
-    The gaussian is the one worth explaining, because it was not cosmetic: dividing by a small noisy
-    denominator amplifies noise, and the blur hid that. **Noise suppression is the denoise step's job**
-    (pre-cellpose, now in coastal), so keeping a second, weaker version of it here meant every
-    corrected channel was silently blurred whether or not it was going to be denoised anyway. It also
-    matters less than it did: the derived AF background sits higher than the hand-tuned percentile it
-    replaced, so more of the reference channel is zeroed, the denominator is 1 more often, and there is
-    simply less division to amplify anything.
+    **The output is in input counts.** Where the target is the only channel present the weight is 1 and
+    the voxel passes through untouched; where a competitor is brighter it is suppressed towards zero.
+    Nothing is rescaled, so there is no ceiling to derive and no window to get wrong — and the output
+    can never exceed the input, so there is nothing to clip either.
 
-    ``stats.c_max`` is the ratio that maps to full scale, derived in `af_division_stats` as an
-    outlier-rejected maximum. Every value in this function comes from the data.
+    This replaces a mutual ratio, ``out = (b_t + 1)/(b_c + 1) / ceiling * rescale``, whose problem was
+    structural: it goes to zero wherever the target is not brighter than the reference, so a cell
+    carrying BOTH reporters was hollowed into a dim rim — the centre, where both channels are bright and
+    the ratio sits near 1, went to zero. Measured on real overlapping reporter cells with overall gain
+    cancelled (kSUFux/Or1L8a and bNnmQL, one plane each), the co-positive cell came out at **3-7%** of a
+    clean single-reporter cell's brightness under the ratio, against **149-358%** here. A hollow cell is
+    not a cosmetic problem: segmentation runs next, and a ring with a zero centre either fails to be
+    detected or splits.
+
+    Two properties the ratio did not have, both falling out of the form rather than added machinery: it
+    is symmetric (no channel wins territory for being brighter overall), and it takes any number of
+    competitors in one expression instead of chaining pairwise ratios.
+
+    Deliberately nothing else here. This function used to carry a median filter, a gaussian, a
+    rolling-ball and a top-hat, none of which are autofluorescence correction. The gaussian is the one
+    worth explaining, because it was not cosmetic: dividing by a small noisy denominator amplifies
+    noise, and the blur hid that. **Noise suppression is the denoise step's job** (pre-cellpose, now in
+    coastal), so keeping a second, weaker version here silently blurred every corrected channel.
+
+    ``p`` is `AF_WEIGHT_EXPONENT` — see that constant for why it is not a user parameter.
     """
-    img = _af_subtract(img_slab, stats.val1)
-    corr = _af_subtract(corr_slab, stats.val2)
-    ratio = (img + 1.0) / (corr + 1.0)
-    denom = stats.c_max if stats.c_max > 0 else 1.0
-    return np.clip(ratio / denom * stats.rescale, 0, stats.rescale).astype(out_dtype)
+    p = int(stats.exponent)
+    target = int(target)
+    channels = [int(ch) for ch in slabs]
+    if target not in channels:
+        raise ValueError(f'target channel {target} is not among the slabs given ({sorted(channels)})')
+    # A channel with no derived background would silently skip subtraction, so its pedestal would enter
+    # the denominator and over-suppress the target. Refuse instead: it means the stats were derived for a
+    # different channel set than the one being corrected, which no caller can want.
+    missing = [ch for ch in channels if ch not in stats.backgrounds]
+    if missing:
+        raise ValueError(f'no derived background for channel(s) {missing}; '
+                         f'stats cover {sorted(stats.backgrounds)}')
+
+    b = {int(ch): _af_subtract(slab, stats.backgrounds[int(ch)]) for ch, slab in slabs.items()}
+
+    num = b[target] ** p
+    den = num.copy()
+    for ch, v in b.items():
+        if ch != target:
+            den += v ** p
+    # den == 0 exactly where every channel sits at or below its own background — nothing to attribute.
+    # `where` leaves those voxels at the zeros `out=` already holds rather than dividing by zero.
+    weight = np.divide(num, den, out=np.zeros_like(num), where=den > 0)
+    out = b[target] * weight
+
+    # ROUND to the integer output, don't truncate. Output is in input counts now, so the values are
+    # often single digits and a bare `astype` biases every one of them down by ~half a count. Measured
+    # on one plane of kSUFux/Or1L8a (85,526 non-zero voxels): truncating shifts the mean by -0.072
+    # counts and forces 4.9% of real output to zero, against +0.002 and 4.0% when rounding. It mattered
+    # less under the ratio, whose output was multiplied up by `rescale / ceiling` first.
+    if np.issubdtype(np.dtype(out_dtype), np.integer):
+        out = np.rint(out)
+    return np.clip(out, 0, stats.nbins - 1).astype(out_dtype)
 
 
 
 
-def _stream_division_channel(data, out, dim_utils, channel_idx, out_ch, correction_channel_idx,
-                             background_method='triangle', summary_mode='maximum',
-                             summary_percentile=75, stats=None, logfile_utils=None):
-    """Divide-mode AF for one channel, streamed one timepoint at a time into ``out`` (peak memory =
-    one frame, not the whole channel).
+def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competing_channel_idx,
+                              background_method='triangle', stats=None, logfile_utils=None):
+    """Correct one channel, streamed one timepoint at a time into ``out`` (peak memory = one frame,
+    not the whole channel).
 
-    Everything global comes from `af_division_stats`, everything per-voxel from `af_correct_frame`.
+    Everything global comes from `af_weight_stats`, everything per-voxel from `af_correct_frame`.
     Pass ``stats`` to reuse an already-computed set — that is how the preview and the run stay
     identical. Returns `af_output_stats` for the corrected channel so the caller can bank QC.
+
+    Reads the target plus every competing channel per frame, which is the same number of slabs the
+    divide-mode path read to build its `max`-collapsed reference — so no extra IO, it just keeps them
+    separate.
     """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
+    channels = [int(channel_idx)] + [int(c) for c in competing_channel_idx]
     if stats is None:
-        stats = af_division_stats(data, dim_utils, channel_idx, correction_channel_idx,
-                                  background_method=background_method, summary_mode=summary_mode,
-                                  summary_percentile=summary_percentile)
+        stats = af_weight_stats(data, dim_utils, channels, background_method=background_method)
     if logfile_utils is not None:
-        logfile_utils.log(f'>> ch{channel_idx}: background {stats.val1:.0f} / AF {stats.val2:.0f}, '
-                          f'ceiling {stats.c_max:.1f} ({background_method})')
+        others = ', '.join(f'ch{c} {stats.backgrounds.get(int(c), 0.0):.0f}'
+                           for c in competing_channel_idx)
+        logfile_utils.log(
+            f'>> ch{channel_idx}: background {stats.backgrounds.get(int(channel_idx), 0.0):.0f} '
+            f'({background_method}), competing against {others}, p={stats.exponent}')
 
     # Output histogram, accumulated as we go — the objective signal the QC exemption in af_correct.jl
     # said was missing. Free: one bincount per frame we already hold.
     H_out = np.zeros(stats.nbins, np.int64)
 
     for t in range(T):
-        corrected = af_correct_frame(
-            _af_slab(data, dim_utils, channel_idx, t),
-            _af_correction_slab(data, dim_utils, correction_channel_idx, t,
-                                summary_mode, summary_percentile),
-            stats, out.dtype)
+        corrected = af_correct_frame(_af_slabs(data, dim_utils, channels, t),
+                                     channel_idx, stats, out.dtype)
         H_out += np.bincount(np.clip(corrected, 0, stats.nbins - 1).astype(np.int64).ravel(),
                              minlength=stats.nbins)[:stats.nbins]
         _af_write_slab(out, dim_utils, out_ch, t, corrected)
 
-    return af_output_stats(H_out, stats)
+    return af_output_stats(H_out, stats, channel_idx)
 
 
-def af_derived_values(stats):
-    """The three values AF derives instead of asking for, as a plain JSON-friendly dict.
+def af_derived_values(stats, target):
+    """The values this correction derives instead of asking for, as a plain JSON-friendly dict.
 
     One helper because two callers report them and they must not drift: the run banks them in QC
     (`af_output_stats`) and the preview shows them as its readout. They were briefly written out by
     hand in both places, which is how the two would have started disagreeing about a key name.
+
+    There is no ``ceiling`` any more — the output is in input counts, so nothing is rescaled and there
+    is no derived full-scale value to report or to compare across a set.
     """
+    target = int(target)
     return {
-        'ceiling': float(stats.c_max),
-        'background': float(stats.val1),
-        'afBackground': float(stats.val2),
+        'background': float(stats.backgrounds.get(target, 0.0)),
+        'competingBackgrounds': {str(ch): float(v) for ch, v in sorted(stats.backgrounds.items())
+                                 if ch != target},
+        'saturatedFrac': float(stats.saturated.get(target, 0.0)),
+        'exponent': int(stats.exponent),
     }
 
 
-def af_output_stats(hist, stats):
-    """Did the derived ceiling land well? The numbers a user (or QC) acts on.
+def af_output_stats(hist, stats, target):
+    """What the correction did to this channel — the numbers a user (or QC) acts on.
 
-    * ``clippedFrac`` — fraction pushed to the dtype ceiling. Should be near zero; if it isn't, the
-      ceiling was derived too low and real signal is being flattened.
+    * ``saturatedFrac`` — fraction of the channel's INPUT voxels sitting at the dtype maximum, i.e.
+      clipped on acquisition. This is the honest warning for this task: a clipped voxel's true value is
+      gone before we see it, so no correction recovers it and the right fix is at the microscope.
     * ``levelsUsed`` / ``levelsAvailable`` — how much of the output range the data occupies. Low means
-      the ceiling is too high and quantisation is being thrown away: under the percentile window this
-      replaced, 99% of a real image landed in ~13 of 255 levels.
+      the channel is quantised coarsely. Under the hand-tuned percentile window that preceded all of
+      this, 99% of a real image landed in ~13 of 255 levels and nothing flagged it.
 
-    Also reports the derived values THEMSELVES — ``ceiling``, ``background``, ``afBackground`` — which
-    the two fractions above provably cannot stand in for. The corrected output is
-    ``ratio / ceiling * rescale``, so two images whose ratios differ by a constant factor derive
-    proportionally different ceilings and produce **byte-identical** output: measured, a 1.86x ceiling
-    difference moved ``clippedFrac`` and ``levelsUsedFrac`` by 0.000. That is the exact case where
-    intensities stop being comparable between images, so it has to be banked as its own number.
-    Nothing here can judge it — one image's ceiling is neither right nor wrong on its own; it is only
-    meaningful against its cohort, which is why it is a cohort metric and not a warning
-    (`af_qc_findings` in af_correct.jl). On the nine kSUFux movies — one experiment, one channel pair,
-    identical settings — the derived ceiling spanned 1.71x (14.06 to 24.09).
+    There is deliberately no ``clippedFrac``. The output is ``b_t * weight`` with ``weight <= 1``, so it
+    can never exceed ``raw - background`` and therefore never reaches the dtype ceiling — the metric
+    would be structurally ~0 and say nothing. Under the ratio it was the signal that the derived
+    ceiling had landed too low; there is no ceiling now.
 
     Reported by the run (QC) and by the preview (readout), from one helper so the two agree.
     """
-    rescale = stats.rescale
-    hi = int(rescale)
+    hi = int(stats.nbins) - 1
     s = intensity_utils.clip_stats(hist, 0, hi)
     nz = np.nonzero(hist)[0]
     return {
-        'clippedFrac': float(s.get('clipHighFrac', 0.0)),
         'levelsUsed': int(nz.size),
         'levelsAvailable': hi + 1,
         'trueMax': int(s.get('trueMax', 0)),
         'p999': int(s.get('p999', 0)),
-        **af_derived_values(stats),
+        **af_derived_values(stats, target),
     }
 
 
@@ -543,14 +580,16 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                      background_method='triangle', out=None, output_stats=None):
     """Correct autofluorescence for all channels, streamed ONE TIMEPOINT AT A TIME per channel.
 
-    A **channel combination is now just channels**: which channel to correct, and which to correct it
-    against. Everything that was a number in the UI — two background percentiles, a rescale window, a
-    median filter, a gaussian, a rolling ball, a top hat, a denoiser, an inverse channel — is either
-    derived (`af_division_stats`) or gone. Those parameters accreted while fitting individual datasets
-    and were a bag nobody revisited; a correction task should correct, not carry a filter toolbox.
+    A **channel combination is now just channels**: which channel to correct, and which channels
+    compete with it. Everything that was a number in the UI — two background percentiles, a rescale
+    window, a median filter, a gaussian, a rolling ball, a top hat, a denoiser, an inverse channel — is
+    either derived (`af_weight_stats`) or gone. Those parameters accreted while fitting individual
+    datasets and were a bag nobody revisited; a correction task should correct, not carry a filter
+    toolbox.
 
-    ``background_method`` is the one remaining choice, global to every combination — how the two
-    background levels are derived (`intensity_utils.BACKGROUND_METHODS`).
+    ``background_method`` is the one remaining choice, global to every combination — how each channel's
+    background level is derived (`intensity_utils.BACKGROUND_METHODS`, minus ``'none'``: see
+    `af_weight_stats`).
 
     Peak memory is a single channel-frame — casting a whole channel-timecourse to float64 (~47 GB on
     a large movie) was the OOM. When ``out`` is None a numpy array is allocated and returned (legacy /
@@ -569,11 +608,11 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     output_stats = {} if output_stats is None else output_stats
     for i in range(n_channels):
         x = af_combinations.get(i)
-        div_channels = x.get('divisionChannels', []) if x is not None else []
-        if div_channels:
-            output_stats[str(i)] = _stream_division_channel(
+        competing = x.get('competingChannels', []) if x is not None else []
+        if competing:
+            output_stats[str(i)] = _stream_corrected_channel(
                 input_image, out, dim_utils, channel_idx=i, out_ch=i,
-                correction_channel_idx=div_channels,
+                competing_channel_idx=competing,
                 background_method=background_method,
                 logfile_utils=logfile_utils)
         else:

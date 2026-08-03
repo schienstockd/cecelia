@@ -116,15 +116,25 @@ median filter, a Gaussian, a rolling ball, a wavelet denoiser — each one added
 particular dataset, none of them revisited afterwards. A parameter that exists because one image once
 needed it is not a setting, it's a fossil.
 
-They're gone. You pick which channel to correct and which to correct it against; the background levels
-and the rescale ceiling are derived from the image's own histogram (triangle thresholding, Zack et al.
-1977). The one surviving knob chooses *how* they're derived, not what they are.
+They're gone. You pick which channel to correct and which channels compete with it; each channel's
+background level is derived from its own histogram (triangle thresholding, Zack et al. 1977). The one
+surviving knob chooses *how* that's derived, not what it is.
 
-The reason to prefer derivation over a knob here is that nobody can set these by eye. A rescale ceiling
-is "the brightest real voxel", and on one test image a **single** voxel out of 5.88 billion was setting
-it — a value you cannot see, cannot guess, and would get wrong on the next image in the set. Whether it
-landed well *is* checkable after the fact, so that became QC (`clippedFrac`, `levelsUsedFrac`) instead
-of a parameter.
+The reason to prefer derivation over a knob is that nobody can set these by eye. There used to be a
+rescale ceiling — "the brightest real voxel" — and on one test image a **single** voxel out of 5.88
+billion was setting it. A value you cannot see, cannot guess, and would get wrong on the next image in
+the set.
+
+That ceiling is now gone too, along with the division it scaled. Correction keeps the share of each
+voxel that a channel dominates — `out = b × b²/Σbᵢ²` over the competing channels — so the output stays
+in input counts and there is nothing left to normalise. Dividing had a structural flaw: it goes to zero
+wherever the target isn't brighter than the reference, so a cell carrying **two** reporters was hollowed
+into a dim rim, its centre — where both channels are bright and the ratio sits at 1 — pushed to zero. A
+hollow cell doesn't segment, and segmentation runs next.
+
+**Why isn't the exponent a setting?** Because that's how the dozen fossils got in. p=2 was compared
+against p=1 and p=8 on real overlapping cells; if a dataset ever genuinely needs a different value, that
+measurement is the trigger to expose it, not a guess in advance.
 
 ## How it was built
 

@@ -53,11 +53,12 @@ from cecelia.utils.segmentation_utils import count_labels
 # stable and the wait short. Runs stay EXACT — see `_compute_norm_params(max_frames=…)`.
 NORM_FRAMES = 20
 
-#: `(z, xy)` stride for AF's global values. Two full passes over a 181-frame movie cost 148 s; at
-#: (2, 4) the same derivation costs 24 s and gave an IDENTICAL ceiling plus identical background
-#: levels on real data. Safe only because the ceiling is a count-thresholded max — subsampling a true
-#: max is biased low by construction, which is exactly why the percentile window it replaced could not
-#: be made cheap. Runs stay exact: they pass no stride.
+#: `(z, xy)` stride for the correction's global values. A full pass over a 181-frame movie costs tens of
+#: seconds; at (2, 4) the same derivation gives byte-identical background levels on real data. Safe
+#: because every value is an interior histogram threshold and the channel has a background population to
+#: find it in — the one assumption, spelled out on `correction_utils.af_weight_stats`. Unlike the true
+#: max of the percentile window this all replaced, which is biased low by construction and so could
+#: never be made cheap. Runs stay exact: they pass no stride.
 AF_PREVIEW_STRIDE = (2, 4)
 
 #: Reply-shape + backend-set version. The backend refuses to adopt a worker that doesn't match and
@@ -66,7 +67,13 @@ AF_PREVIEW_STRIDE = (2, 4)
 #: 3: layers carry `source`, the viewer layer they derive from, so the bridge can mirror its colormap.
 #:    Bumped even though the bridge falls back gracefully: an adopted protocol-2 worker would omit it
 #:    and quietly render every corrected channel grey, which reads as "the fix didn't work".
-PROTOCOL = 3
+#: 4: AF correction is the power weight, not a ratio. `derived` carries `background` /
+#:    `competingBackgrounds` / `saturatedFrac` / `exponent` where it carried `ceiling` / `background` /
+#:    `afBackground`. This bump is the load-bearing kind: an adopted protocol-3 worker still has the old
+#:    `af_correct_frame`, so it would keep serving RATIO previews — hollowed-out overlapping cells and
+#:    all — against a backend that believes it is showing the new method. Silently, and the preview's
+#:    entire purpose is to agree with the run.
+PROTOCOL = 4
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
@@ -139,29 +146,27 @@ class PreviewState:
                 levels, model_params, max_frames=NORM_FRAMES)
         return self._norm[key]
 
-    def af_stats(self, im_path, levels, dim_utils, channel_idx, division_channels, method):
-        """AF's global values — both background levels and the output ceiling — cached.
+    def af_stats(self, im_path, levels, dim_utils, channel_idx, competing_channels, method):
+        """The correction's global values — one background level per participating channel — cached.
 
-        The AF analogue of `norm_params`, and the same bargain. Measured on `zolIMa/ldYr8J`
-        (181 × 4 × 31 × 1024²): deriving these costs **148 s** because it is two full passes over the
-        movie, against **5-7 ms** to correct one visible plane with them. So the first preview of an
-        image is slow and every one after it is instant.
+        The AF analogue of `norm_params`, and the same bargain: deriving these costs a full pass over
+        the movie (tens of seconds), against **5-7 ms** to correct one visible plane with them. So the
+        first preview of an image is slow and every one after it is instant.
 
-        The key is what the values actually depend on: the image, the channel pair, and the background
-        method. Nothing else — so switching the method correctly misses the cache, and moving the view
-        correctly hits it.
+        The key is what the values actually depend on: the image, the participating channels, and the
+        background method. Nothing else — so switching the method correctly misses the cache, and moving
+        the view correctly hits it.
 
-        `AF_PREVIEW_STRIDE` is the one concession to the cold start, and it is safe for a specific
-        reason: the ceiling is a COUNT-thresholded max, not a true max, so it survives subsampling
-        (measured identical at z::2 / xy::4 / both, at 24 s instead of 148 s), and the two background
-        levels are interior thresholds that never moved. A true max could not be subsampled at all —
-        that was the whole problem with the percentile window this replaced.
+        `AF_PREVIEW_STRIDE` is the one concession to the cold start, and it is safe because every value
+        here is now an interior threshold over a histogram, which subsampling does not move. (It was
+        safe before for a more delicate reason — the ceiling was a COUNT-thresholded max rather than a
+        true max — and that reason is gone along with the ceiling.)
         """
-        key = (im_path, int(channel_idx), tuple(sorted(int(d) for d in division_channels)), method)
+        channels = [int(channel_idx)] + [int(c) for c in competing_channels]
+        key = (im_path, int(channel_idx), tuple(sorted(int(c) for c in competing_channels)), method)
         if key not in self._af:
-            self._af[key] = correction_utils.af_division_stats(
-                self.image_zarr(im_path)[0], dim_utils,
-                int(channel_idx), [int(d) for d in division_channels],
+            self._af[key] = correction_utils.af_weight_stats(
+                self.image_zarr(im_path)[0], dim_utils, channels,
                 background_method=method, spatial_stride=AF_PREVIEW_STRIDE)
         return self._af[key]
 
@@ -385,11 +390,12 @@ def _preview_cellpose(ctx):
 def _preview_af(ctx):
     """AF-correct the visible region, one Image layer per corrected channel.
 
-    The whole reason this is possible in a fraction of a second: `af_division_stats` computes the two
-    background levels and the output ceiling over the WHOLE image — 148 s on a 181-frame movie — and
-    they are cached here, while `af_correct_frame` is pure per-voxel arithmetic on the crop. Those
-    globals are exactly what must NOT come from the visible region: derive them from a crop and the
-    preview is normalised differently from the run, which is the one thing it exists to rule out.
+    The whole reason this is possible in a fraction of a second: `af_weight_stats` derives one
+    background level per participating channel over the WHOLE image — tens of seconds on a 181-frame
+    movie — and they are cached here, while `af_correct_frame` is pure per-voxel arithmetic on the crop.
+    Those globals are exactly what must NOT come from the visible region: derive them from a crop and
+    the preview subtracts a different background than the run, which is the one thing it exists to
+    rule out.
 
     Outputs an IMAGE, not labels, so the reply carries `kind: 'image'` per layer and the receiver adds
     them beside the originals for A/B comparison.
@@ -406,13 +412,14 @@ def _preview_af(ctx):
     layers, stats_out = [], {}
 
     for ch in sorted(combos):
-        div = [int(d) for d in (combos[ch].get('divisionChannels') or [])]
-        if not div:
+        competing = [int(d) for d in (combos[ch].get('competingChannels') or [])]
+        if not competing:
             continue
-        stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, div, method)
-        # the same summary the run uses across several AF references (`_af_correction_slab`)
-        corr_slab = np.max(np.stack([tile[d] for d in div], axis=0), axis=0)
-        corrected = correction_utils.af_correct_frame(tile[ch], corr_slab, stats, out_dtype)
+        stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method)
+        # every participating channel stays separate — each contributes its own term to the weight's
+        # denominator, so there is nothing to collapse into a single reference image
+        slabs = {c: tile[c] for c in [ch] + competing}
+        corrected = correction_utils.af_correct_frame(slabs, ch, stats, out_dtype)
         # to the channel-less block shape (T/Z restored as length-1) so the receiver can place it at
         # `region` without knowing how the crop was flattened — same contract as the labels path
         block = np.reshape(corrected, block_shape)
@@ -420,10 +427,10 @@ def _preview_af(ctx):
         layers.append(_layer('image', f'{label} AF', block, axes, full_shape, source=label))
         # same helper the run's QC reports through, so the readout and the banked metric cannot
         # disagree about a name or a value
-        stats_out[str(ch)] = correction_utils.af_derived_values(stats)
+        stats_out[str(ch)] = correction_utils.af_derived_values(stats, ch)
 
     if not layers:
-        raise ValueError('no combination names a division channel')
+        raise ValueError('no combination names a competing channel')
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
     return {'hasSignal': has_signal, 'noSignalWhy': why,

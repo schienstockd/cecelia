@@ -71,21 +71,18 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # window fails to cover — and the outlier flag says so without anyone re-reading pixels.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat",
                                          "nChannelsSaturated", "windowNeeded"],
-    # AF correction: cohort-comparable BECAUSE the output ceiling is derived per image rather than
-    # dialled in — so an image whose corrected channel clipped far more, or used far less of the
-    # output range, than its peers had its background/ceiling derived differently, which is a staining
-    # or acquisition outlier rather than a parameter someone typed. That was not checkable while the
-    # window came from hand-tuned percentiles: every image got its own, so there was nothing to compare.
+    # AF correction: both metrics describe the ACQUISITION, which is what makes them comparable across a
+    # set shot in one session. `saturatedFrac` is the fraction of input voxels clipped at the sensor —
+    # measured across the nine kSUFux movies it spanned 0.001% to 0.018%, a 13x spread at identical
+    # settings, so the outlier is a real difference in gain or expression rather than a parameter
+    # someone typed. `levelsUsedFrac` says how coarsely the corrected channel ends up quantised.
     #
-    # `ceiling` is here for a different and stronger reason: it is the ONLY one of the three that can
-    # see two images drifting onto different intensity scales. The corrected output is
-    # `ratio / ceiling * rescale`, so if two images' ratios differ by a constant factor their ceilings
-    # differ by that factor and their outputs come out identical — a 1.86x ceiling difference moved
-    # clippedFrac and levelsUsedFrac by 0.000 (measured). Since the corrected channel is what gets
-    # segmented, measured and then POOLED across a set, that is the failure that quietly invalidates a
-    # comparison. It is cohort-only by nature: a single image's ceiling is neither right nor wrong.
-    # Measured on the nine kSUFux movies (one experiment, one channel pair, identical settings): 1.71x.
-    "cleanupImages.afCorrect"        => ["clippedFrac", "levelsUsedFrac", "ceiling"],
+    # There is deliberately no `ceiling` here. It was carried as a cohort metric to catch two images
+    # drifting onto different intensity scales, on the reasoning that the corrected output was
+    # `ratio / ceiling * rescale`. The output is now in input counts — no ceiling, nothing derived
+    # per image to drift. (And the premise was weak anyway: acquisition drift means intensities are not
+    # comparable between intravital movies regardless of what this task does.)
+    "cleanupImages.afCorrect"        => ["saturatedFrac", "levelsUsedFrac"],
 )
 
 """

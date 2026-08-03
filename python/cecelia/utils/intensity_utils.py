@@ -114,8 +114,14 @@ def robust_hist_max(hist, min_count=None, min_frac=ROBUST_MAX_MIN_FRAC,
     **Trap:** the background bin usually holds far more voxels than anything else, so a ``min_count``
     larger than the signal population returns the *background* level rather than nothing — a ceiling
     at or below the peak, which makes a rescale window degenerate. The caller owns that check, because
-    only it knows which bins are background: see `correction_utils.af_division_stats`, which floors the
-    ceiling above the derived background.
+    only it knows which bins are background — see `rescale_to_8bit_run.py`, the remaining caller that
+    needs an output window at all.
+
+    **Second trap, from the AF task that used to call this:** clipped input piles every saturated voxel
+    into one bin, so a count threshold can land on a *clipping artefact* rather than on signal. Measured
+    on the kSUFux movies, that bin held 55-90k voxels where its neighbours held ~1k, and the threshold
+    decided the ceiling in 4 of 9 images purely on whether the pile cleared it. Ask for a fraction of
+    the image rather than an absolute count if the image size is not fixed.
     """
     h = np.asarray(hist)
     if min_count is None:
