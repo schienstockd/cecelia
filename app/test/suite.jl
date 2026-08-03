@@ -8660,19 +8660,49 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
     end
 
-    @testset "the preview protocol matches on both sides" begin
-        # A running worker is ADOPTED, not relaunched, so the two constants are the only thing stopping
-        # stale worker code from serving a backend it was not started by. They live in different
-        # languages and were bumped by hand three times with nothing checking they agreed.
+    @testset "language boundaries agree on their protocol" begin
+        # THE PROBLEM THIS TABLE SOLVES. Julia and Python each hold their own copy of a version, and the
+        # only thing keeping them equal is that someone remembers to change both. Measured record before
+        # this test existed: the preview pair was bumped by hand three times and the fourth was nearly
+        # missed; the napari bridge and the params contract had no version at all.
         #
-        # Protocol 4 is why this test exists: a stale protocol-3 worker carries the old ratio
-        # `af_correct_frame`, so it returns well-formed previews of the WRONG method rather than
-        # failing. Forgetting one side would be invisible.
-        worker = joinpath(dirname(dirname(pathof(Cecelia))), "..", "preview", "preview_worker.py")
-        @test isfile(worker)
-        m = match(r"^PROTOCOL\s*=\s*(\d+)"m, read(worker, String))
-        @test m !== nothing
-        @test parse(Int, m.captures[1]) == Cecelia.PREVIEW_PROTOCOL
+        # A mismatch is never a clean failure. A stale peer answers the handshake perfectly and then
+        # misreads the actual work — it has surfaced as `unexpected keyword argument 'mask'`, as a bare
+        # "Preview failed", and as `invalid literal for int() with base 10: 'CH3'`, none of which name the
+        # cause. So every boundary gets a version, and every version gets asserted here.
+        #
+        # A fourth boundary = one more row.
+        repo = joinpath(dirname(dirname(pathof(Cecelia))), "..")
+        boundaries = [
+            # (what,            python file,                          python const,       julia value)
+            ("preview worker",  "preview/preview_worker.py",           "PROTOCOL",         Cecelia.PREVIEW_PROTOCOL),
+            ("napari bridge",   "napari/napari_bridge.py",             "PROTOCOL",         Cecelia.NAPARI_PROTOCOL),
+            ("params contract", "python/cecelia/utils/script_utils.py", "CONTRACT_VERSION", Cecelia.PY_CONTRACT_VERSION),
+        ]
+        for (what, rel, const_name, julia_value) in boundaries
+            path = joinpath(repo, rel)
+            @test isfile(path)
+            m = match(Regex("^" * const_name * raw"\s*=\s*(\d+)", "m"), read(path, String))
+            @test m !== nothing
+            m === nothing && continue
+            py = parse(Int, m.captures[1])
+            @test py == julia_value
+            py == julia_value ||
+                @warn "$what: Python says $py, Julia says $julia_value — bump BOTH sides" rel
+        end
+    end
+
+    @testset "the params contract is checked where every runner already goes" begin
+        # The guard lives in `script_params`, not in each runner, so a NEW runner is covered by writing
+        # nothing. Asserted on the source because the check runs in a subprocess we do not spawn here.
+        su = read(joinpath(dirname(dirname(pathof(Cecelia))), "..",
+                           "python", "cecelia", "utils", "script_utils.py"), String)
+        @test occursin("def check_contract_version", su)
+        @test occursin(r"def script_params\(\):(?s).{0,600}check_contract_version\(\)", su)
+        # ...and run_py is what supplies it, as an env var rather than a params field
+        pr = read(joinpath(dirname(dirname(pathof(Cecelia))), "src", "py_runner.jl"), String)
+        @test occursin("CECELIA_PY_CONTRACT", pr)
+        @test occursin("PY_CONTRACT_VERSION", pr)
     end
 
     @testset "img_labels_path resolves registered and in-progress stores" begin

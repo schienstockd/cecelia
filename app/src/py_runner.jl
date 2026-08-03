@@ -13,6 +13,23 @@ _app_dir() = dirname(@__DIR__)                       # app/src → app/
 # python/pyproject.toml + the pixi `cecelia` dep) is what makes `import cecelia.*` resolve inside them.
 _python_dir() = joinpath(dirname(_app_dir()), "python")   # app/ → repo-root/python/
 
+# Version of the JULIA↔PYTHON PARAMS CONTRACT, mirroring `script_utils.CONTRACT_VERSION`. Travels to
+# every runner as `CECELIA_PY_CONTRACT` (see `run_py`) and is checked in `script_params`, so the guard
+# costs nothing per task and cannot be forgotten by a new runner.
+#
+# What it protects: a runner is spawned FRESH from disk every run, while the Julia process that builds
+# its params can be stale (Revise does not always reload `app/src` after a branch switch or a merge
+# under a live server). So the two halves can disagree about the params' shape with nothing to say so.
+#
+# BUMP THIS whenever the contract changes in a way a stale caller would get wrong: a param key renamed
+# or removed, a value's type or units changed, a new REQUIRED key. Not for additive optional keys — an
+# older caller omitting one is handled by the runner's own default. Asserted equal to the Python side by
+# the "language boundaries agree on their protocol" testset.
+#
+# 1: the contract as of the guard's introduction — the state after `divisionChannels` →
+#    `competingChannels` and `quotientChannel` → `targetChannel` (the rename that motivated it).
+const PY_CONTRACT_VERSION = 1
+
 """
     task_run_dir(base_dir) -> String
 
@@ -83,9 +100,20 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     # runner's zarr write picks it up through `zarr_utils.store_compressor` without each task having
     # to declare and forward it. Read per call on the Python side, so flipping the Settings choice
     # applies to the next task with no restart.
+    # The params CONTRACT version, so a runner can refuse a params file written by a backend running
+    # older code than the Python it is calling. `app/src` is Revise-tracked and a branch switch or a
+    # merge under a live server does not always reload it, so the Julia half can be a version behind
+    # while every runner is loaded fresh from disk. That has bitten once already: a param rename landed
+    # on disk, the running backend kept the previous translator, and the runner died with
+    # `invalid literal for int() with base 10: 'CH3'` — naming neither the cause nor the fix.
+    #
+    # An ENV VAR rather than a params field, on purpose: the params payload stays exactly the shape each
+    # runner documents, and a developer replaying a saved params file by hand simply has no variable set,
+    # which `script_utils` treats as "skip the check" rather than as a failure.
     cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`,
                   "PYTHONPATH" => pythonpath,
-                  "CECELIA_IMAGE_COMPRESSOR" => image_compressor())
+                  "CECELIA_IMAGE_COMPRESSOR" => image_compressor(),
+                  "CECELIA_PY_CONTRACT" => string(PY_CONTRACT_VERSION))
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

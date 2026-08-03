@@ -27,6 +27,32 @@ scripts (e.g. `"writers/…"`) under `python/cecelia/`, and sets `PYTHONPATH=pyt
 can `import cecelia.*`. Dependency split: light IO deps in `python/pyproject.toml`; heavy/conda/
 per-platform deps in `pixi.toml`. See [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
+### Every language boundary carries a version
+
+Julia and Python meet at three places, and **each one can end up with the two halves running different
+code**. Two of them hold a long-lived Python process that is *adopted* rather than relaunched (it
+outlives a backend crash or Ctrl-C on purpose); the third spawns Python fresh every run, so it is the
+**Julia** half that goes stale — `app/src` is Revise-tracked and a branch switch or a merge under a
+live server does not always reload it.
+
+| Boundary | Julia | Python | Mismatch → |
+|---|---|---|---|
+| napari bridge (:7655) | `NAPARI_PROTOCOL` (`app/src/napari.jl`) | `PROTOCOL` (`napari/napari_bridge.py`) | refuse to adopt, kill the port, relaunch |
+| preview worker (:7656) | `PREVIEW_PROTOCOL` (`app/src/preview.jl`) | `PROTOCOL` (`preview/preview_worker.py`) | refuse to adopt, relaunch |
+| task params (`run_py`) | `PY_CONTRACT_VERSION` (`app/src/py_runner.jl`) | `CONTRACT_VERSION` (`cecelia.utils.script_utils`) | the runner exits, naming the restart |
+
+**Bump both sides together**, and add a row rather than a bespoke check. The pairs are asserted equal by
+the `language boundaries agree on their protocol` testset — before it existed the preview pair had been
+bumped by hand three times and the fourth was nearly missed.
+
+Why versions at all, rather than trusting the processes to match: a mismatch is **never a clean
+failure**. A stale peer answers the handshake perfectly and then misreads the actual work. The three
+real occurrences read as `unexpected keyword argument 'mask'`, a bare `Preview failed`, and
+`invalid literal for int() with base 10: 'CH3'` — none of which named the cause. The params guard lives
+in `script_params` (the one function every runner already calls) so a new runner is covered without
+doing anything, and an ABSENT `CECELIA_PY_CONTRACT` is allowed through so replaying a saved params file
+by hand still works.
+
 ### Layer ownership
 
 | Concern | Layer | Notes |
