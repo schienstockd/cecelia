@@ -87,12 +87,18 @@ That is worth being blunt about, because it rules out a whole family of tempting
    `saturatedFrac` reads **0.00000 for every channel of every movie** — including `PsD5Xc` ch2, which
    holds 105 voxels piled at 4095 against a median of 1 in the bins below it.
 
-   The metric is not wrong, its validity domain is narrower than it looks: it is correct only when the
-   data fills its dtype. Keeping images at their acquired bit depth (`docs/FUTURE.md`) makes
-   12-bit-in-16-bit the normal case, so it will now read 0 on most real input. `intensity_utils.is_saturated`
-   is the structural test (a pile-up in the brightest OCCUPIED bin, wherever that sits) and is already
-   used by the import QC — AF could bank its number from that instead. Not changed here because the AF
-   mechanism is recent and this is a decision about its QC, not a defect in the correction.
+   **This is an artifact of a 12-bit sensor in a 16-bit container, and the container declares it** —
+   these files carry `SignificantBits="12"` alongside `Type="uint16"` in their OME-XML. So the fix is
+   not a different detector: it is to take the ceiling from `SignificantBits` (`2^12-1`) rather than
+   from the dtype, which keeps `saturatedFrac` the one-liner it is and makes it correct.
+
+   Two caveats before relying on that. `SignificantBits` is only as good as what the writer declared:
+   `4kS67f` says `16` while its data never exceeds 7311, so a declared ceiling reads 0 there too (in
+   that image nothing IS clipped, so it is not a false negative — but the number is not evidence of
+   anything either). And a metric tied to any declared ceiling is silent when the declaration is
+   wrong, where `intensity_utils.is_saturated` — structural, a pile-up in the brightest OCCUPIED bin
+   wherever it sits — needs no metadata at all. That is why the import QC uses the structural test;
+   AF, which already has the histogram, can use whichever suits its own reporting.
 
 ## Why this is not just a TODO item
 

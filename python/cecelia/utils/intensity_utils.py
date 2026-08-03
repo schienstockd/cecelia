@@ -97,9 +97,13 @@ def is_saturated(hist, min_count=None):
     data fills its dtype. Measured on the nine `kSUFux` movies, which are 12-bit sensor data stored in
     16-bit words: every channel clips at **4095** while the dtype maximum is 65535, so the dtype-max
     fraction reports **0.00000 for every channel of every movie** — including one with 105 voxels piled
-    at 4095 against a median of 1 in the bins below it, which this test flags. Keeping images at their
-    acquired bit depth (see docs/FUTURE.md) makes 12-bit-in-16-bit the normal case, so a detector tied
-    to the dtype is the wrong one to rely on.
+    at 4095 against a median of 1 in the bins below it, which this test flags.
+
+    That is an artifact of a 12-bit sensor in a 16-bit container, and the container DECLARES it —
+    those files carry ``SignificantBits="12"`` next to ``Type="uint16"``. So a dtype-max test is not
+    unfixable, it just has to read the ceiling from `SignificantBits`. The reason this one is
+    structural anyway: it needs no metadata, so it still holds when the declaration is absent or
+    wrong (`4kS67f` declares 16 significant bits while its data never exceeds 7311).
 
     **Use a FULL histogram, not a strided one.** The threshold is a voxel count, so subsampling scales
     the pile-up down with it and a marginal channel changes verdict: `kSUFux/RbC99T` ch2 holds 60 at
