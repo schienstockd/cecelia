@@ -6,15 +6,17 @@
   (PhysicalSizeDialog, Metadata page) — this one only shows.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { useProjectMetaStore } from '../stores/projectMeta'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
 
 const img = computed(() => props.image)
+const projectMeta = useProjectMetaStore()
 
 // "12 × 512 × 512" style formatting is overkill here — we show each dimension as its own row so a
 // missing one reads as "—" rather than a silently-absent factor.
@@ -38,6 +40,21 @@ const timeStr = computed(() => {
 const channels = computed(() => img.value.channelNames?.filter(c => c && c.length) ?? [])
 // valueName → filename, active first. The active version is the zarr the app currently reads.
 const versions = computed(() => Object.entries(img.value.filepaths ?? {}))
+
+// How each version's pixels are ENCODED on disk. Fetched rather than stored: the codec is a property
+// of the store, and a store can be re-landed on a different one (rechunk_zarr.py) without anything in
+// ccid.json changing. Read from the level-0 `.zarray`, so it is one small file read per version.
+// Failure is silent — this dialog is read-only information and must still open if a store is missing.
+const compression = ref<Record<string, { label: string } | null>>({})
+onMounted(async () => {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  try {
+    const res = await fetch(`/api/images/compression?projectUid=${encodeURIComponent(projectUid)}`
+                            + `&imageUid=${encodeURIComponent(img.value.uid)}`)
+    if (res.ok) compression.value = (await res.json()).versions ?? {}
+  } catch { /* display-only */ }
+})
 const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
@@ -105,6 +122,7 @@ const copy = (key: string, value: string) => copyValue(value, key)
         <div v-for="[vn, fn] in versions" :key="'v-' + vn" class="md-file">
           <span class="md-file-vn cc-muted">{{ vn }}</span>
           <code class="md-code">{{ fn }}</code>
+          <span v-if="compression[vn]" class="md-codec cc-muted cc-fs-xs">{{ compression[vn]!.label }}</span>
         </div>
         <template v-if="labels.length">
           <div v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-file">
@@ -175,6 +193,7 @@ const copy = (key: string, value: string) => copyValue(value, key)
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
 .md-file { display: flex; align-items: baseline; gap: 0.5rem; }
+.md-codec { white-space: nowrap; }
 .md-file-vn { flex-shrink: 0; min-width: 6rem; }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }

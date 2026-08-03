@@ -701,6 +701,63 @@ end
     @test e2 == "Image not found"
 end
 
+@testset "API: store compression (what a version is encoded with)" begin
+    # The label a version shows in the metadata modal must be the SAME name Settings uses, or the two
+    # surfaces describe one codec two ways.
+    known = Dict(c.label => c for c in Cecelia.IMAGE_COMPRESSOR_CHOICES)
+
+    d = _describe_compressor(Dict(:id => "blosc", :cname => "zstd", :clevel => 3, :shuffle => 1))
+    @test haskey(known, d.label)                       # it resolved to a Settings choice, not a guess
+    @test d.codec == "zstd" && d.level == 3 && d.shuffle
+
+    # zstd level 0 IS the library default (3) — a store written at 0 must not read as a DIFFERENT
+    # setting from one written at 3, or every store predating the explicit choice looks non-canonical.
+    z0 = _describe_compressor(Dict(:id => "zstd", :level => 0))
+    z3 = _describe_compressor(Dict(:id => "zstd", :level => 3))
+    @test z0.level == 3 && z0.label == z3.label
+
+    # The three codecs actually on disk today all happen to BE selectable choices, so they resolve to
+    # Settings labels — verified against real stores (bioformats2raw/zarr-2 `lz4 + shuffle`, zarr-3
+    # `zstd`, and the canonical `zstd + shuffle`).
+    @test haskey(known, _describe_compressor(
+        Dict(:id => "blosc", :cname => "lz4", :clevel => 5, :shuffle => 1)).label)
+
+    # Something genuinely OUTSIDE the table must get an honest descriptive label rather than being
+    # silently mapped onto the nearest option — a wrong name here would misreport what is on disk.
+    for spec in (Dict(:id => "blosc", :cname => "lz4", :clevel => 9, :shuffle => 1),   # same codec, other level
+                 Dict(:id => "zlib", :level => 6),                                     # not offered at all
+                 Dict(:id => "blosc", :cname => "zstd", :clevel => 3, :shuffle => 0))  # blosc-wrapped, unshuffled
+        d2 = _describe_compressor(spec)
+        @test !haskey(known, d2.label)
+        @test occursin(string(d2.level), d2.label)      # the label carries the level it found
+    end
+
+    # `compressor: null` is a real value — an uncompressed store, not an error
+    @test _describe_compressor(nothing).label == "none"
+    @test _describe_compressor("garbage") === nothing
+
+    # store_compression: BOTH layouts, detected structurally (a flat store's level 0 is `0`, a
+    # bioformats2raw series' is `0/0`, and both have a `0/` child so the path says nothing)
+    mktempdir() do dir
+        flat = joinpath(dir, "flat.ome.zarr"); mkpath(joinpath(flat, "0"))
+        write(joinpath(flat, "0", ".zarray"),
+              """{"compressor":{"id":"blosc","cname":"zstd","clevel":3,"shuffle":1}}""")
+        @test store_compression(flat).codec == "zstd"
+
+        series = joinpath(dir, "series.ome.zarr"); mkpath(joinpath(series, "0", "0"))
+        write(joinpath(series, "0", "0", ".zarray"),
+              """{"compressor":{"id":"blosc","cname":"lz4","clevel":5,"shuffle":1}}""")
+        @test store_compression(series).codec == "lz4"
+
+        # unreadable / absent / malformed → nothing, never a throw: this is display-only and the
+        # caller is listing every version of an image
+        @test store_compression(joinpath(dir, "nope.ome.zarr")) === nothing
+        bad = joinpath(dir, "bad.ome.zarr"); mkpath(joinpath(bad, "0"))
+        write(joinpath(bad, "0", ".zarray"), "{not json")
+        @test store_compression(bad) === nothing
+    end
+end
+
 @testset "API: image render composite" begin
     # Pure colourise/blend for the server-side preview render (image_render.jl) — no zarr/IO. (C,H,W) float +
     # per-channel (lo,hi,cmap,visible) → H×W RGB, clip-to-contrast + additive blend.
@@ -2384,7 +2441,8 @@ end
         "/api/gating/plotdata", "/api/gating/plotmeta",
         "/api/gating/popmap", "/api/gating/stats",
         "/api/health", "/api/images",
-        "/api/images/geometry", "/api/images/meta",
+        "/api/images/compression", "/api/images/geometry",
+        "/api/images/meta",
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
         "/api/movies", "/api/napari/gpu",
@@ -2466,7 +2524,7 @@ end
         "/api/preview/stop", "/api/storage/reclaim",
         "/api/update/apply",
     ]
-    # counts pinned below: 66 GET, 92 POST, 17 not live-called
+    # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
     STREAM_ROUTES = ["/api/board-assets", "/api/movies/file"]
@@ -2495,7 +2553,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 66 && length(POST_ROUTES) == 92
+    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 92
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
