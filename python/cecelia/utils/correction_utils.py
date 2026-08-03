@@ -411,10 +411,22 @@ def af_correct_frame(img_slab, corr_slab, stats, out_dtype):
     The gaussian is the one worth explaining, because it was not cosmetic: dividing by a small noisy
     denominator amplifies noise, and the blur hid that. **Noise suppression is the denoise step's job**
     (pre-cellpose, now in coastal), so keeping a second, weaker version of it here meant every
-    corrected channel was silently blurred whether or not it was going to be denoised anyway. It also
-    matters less than it did: the derived AF background sits higher than the hand-tuned percentile it
-    replaced, so more of the reference channel is zeroed, the denominator is 1 more often, and there is
-    simply less division to amplify anything.
+    corrected channel was silently blurred whether or not it was going to be denoised anyway.
+
+    **`ratio == 1` is the neutral point, and it maps to 0.** Both terms carry `+1` so a zero denominator
+    is harmless, which means a voxel with no signal AND no autofluorescence lands on `ratio == 1` — "no
+    excess over the reference". That is what AF correction removes, so it must come out as zero.
+    Anchoring at `c_max` alone instead put it on a PEDESTAL of `rescale / c_max`: measured on a real
+    8-bit image (`kSUFux/Or1L8a`, CH1÷CH4, derived ceiling 15.06) every background voxel came out at
+    **17 of 255** rather than 0, which is 6.6% of the range spent on nothing, and made the mean intensity
+    of a background region 17 instead of 0 for everything downstream. Voxels dimmer than the reference
+    (`ratio < 1`) clip to 0, which is the same statement: no excess is no signal.
+
+    What this does NOT fix, because it cannot: on that image the reference channel is above its own
+    background for only **1.45%** of voxels, so for ~99% of them no division happens at all and the
+    result is `(img + 1)` scaled — one input count becomes ~17 output counts. The visible speckle is
+    8-bit QUANTISATION magnified, not noise amplified by a division, and no arithmetic here recovers
+    levels the 8-bit input never had. See docs/todo/AF_QUANTISATION.md.
 
     ``stats.c_max`` is the ratio that maps to full scale, derived in `af_division_stats` as an
     outlier-rejected maximum. Every value in this function comes from the data.
@@ -422,8 +434,12 @@ def af_correct_frame(img_slab, corr_slab, stats, out_dtype):
     img = _af_subtract(img_slab, stats.val1)
     corr = _af_subtract(corr_slab, stats.val2)
     ratio = (img + 1.0) / (corr + 1.0)
-    denom = stats.c_max if stats.c_max > 0 else 1.0
-    return np.clip(ratio / denom * stats.rescale, 0, stats.rescale).astype(out_dtype)
+    # span from the neutral ratio (1.0) to the ceiling, so "no excess" is 0 and the ceiling is full
+    # scale. Guarded because a degenerate ceiling <= 1 would otherwise divide by zero or invert.
+    span = stats.c_max - 1.0
+    if span <= 0:
+        span = stats.c_max if stats.c_max > 0 else 1.0
+    return np.clip((ratio - 1.0) / span * stats.rescale, 0, stats.rescale).astype(out_dtype)
 
 
 

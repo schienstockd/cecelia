@@ -368,6 +368,39 @@ class AfDerivedValuesTest(unittest.TestCase):
         self.assertGreaterEqual(s['clippedFrac'], 0.0)
         self.assertLessEqual(s['levelsUsed'], s['levelsAvailable'])
 
+    def test_no_signal_and_no_autofluorescence_comes_out_as_ZERO(self):
+        """The neutral ratio (1.0) is what AF correction removes, so it must map to 0, not a pedestal.
+
+        Measured before this was anchored: on a real 8-bit image with a derived ceiling of 15.06, every
+        background voxel came out at 17 of 255 — 6.6% of the range spent on nothing, and a background
+        region's mean intensity reading 17 instead of 0 for everything downstream.
+        """
+        stats = cu.AfDivisionStats(val1=10, val2=10, c_max=15.06, nbins=256, rescale=255.0)
+        # both at background -> img 0, corr 0 -> ratio 1.0 -> neutral
+        flat = np.full((2, 4, 4), 10, dtype=np.uint8)
+        out = cu.af_correct_frame(flat, flat, stats, np.uint8)
+        self.assertTrue(np.all(out == 0), f'background did not come out as 0: {np.unique(out)}')
+
+    def test_a_voxel_dimmer_than_its_reference_is_also_zero(self):
+        stats = cu.AfDivisionStats(val1=0, val2=0, c_max=10.0, nbins=256, rescale=255.0)
+        img = np.full((1, 2, 2), 1, dtype=np.uint8)
+        corr = np.full((1, 2, 2), 50, dtype=np.uint8)     # reference far brighter -> ratio < 1
+        self.assertTrue(np.all(cu.af_correct_frame(img, corr, stats, np.uint8) == 0))
+
+    def test_the_ceiling_still_maps_to_full_scale(self):
+        """Anchoring the bottom must not move the top — the ceiling is what `af_division_stats` derived."""
+        stats = cu.AfDivisionStats(val1=0, val2=0, c_max=11.0, nbins=256, rescale=255.0)
+        img = np.full((1, 2, 2), 10, dtype=np.uint8)      # corr 0 -> ratio (10+1)/1 == c_max
+        out = cu.af_correct_frame(img, np.zeros((1, 2, 2), np.uint8), stats, np.uint8)
+        self.assertTrue(np.all(out == 255), f'ceiling did not reach full scale: {np.unique(out)}')
+
+    def test_a_degenerate_ceiling_does_not_divide_by_zero(self):
+        for c in (1.0, 0.5, 0.0):
+            stats = cu.AfDivisionStats(val1=0, val2=0, c_max=c, nbins=256, rescale=255.0)
+            out = cu.af_correct_frame(np.ones((1, 2, 2), np.uint8),
+                                      np.zeros((1, 2, 2), np.uint8), stats, np.uint8)
+            self.assertTrue(np.all(np.isfinite(out.astype(float))), f'c_max={c} produced non-finite')
+
     def test_output_stats_carry_the_derived_values_themselves(self):
         """The fractions cannot stand in for the ceiling, so the ceiling has to be reported too."""
         du = _dim_utils(**self.SHAPE)
