@@ -286,6 +286,17 @@ const activeTasks = computed(() =>
     .filter(t => t.status === 'running' || t.status === 'queued')
 )
 
+// What the collapsed task list would have shown. Rendered in the toggle bar ONLY while that half is
+// hidden — with the list visible it would just restate it — so expanding the runner doesn't mean losing
+// track of whether anything is still going.
+const hiddenTaskNote = computed(() => {
+  if (pane.value !== 'top') return ''
+  const running = activeTasks.value.filter(t => t.status === 'running').length
+  const queued  = activeTasks.value.length - running
+  if (!activeTasks.value.length) return ''
+  return queued ? `${running} running · ${queued} queued` : `${running} running`
+})
+
 function cancelAll() {
   const cancelledChainRuns = new Set<string>()
   for (const t of activeTasks.value) {
@@ -328,7 +339,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       top-label="function runner" bottom-label="task list"
       top-icon="pi-cog" bottom-icon="pi-bars"
       @toggle="togglePane"
-    />
+    >
+      <span v-if="hiddenTaskNote" class="cc-readout"
+            v-tooltip.right="'Tasks still running in this module — expand the task list to see them'">
+        {{ hiddenTaskNote }}
+      </span>
+    </PaneExpandBar>
 
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
     <section v-if="!defs.length" class="runner-section defs-empty">

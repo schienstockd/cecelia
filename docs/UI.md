@@ -806,6 +806,10 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
   needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
 - Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s "napari is busy" banner
   is deliberately outside both, since it matters most while you are watching the task list.
+- **The bar's default slot is a readout for the hidden half.** Expanding a half means losing sight of the
+  other one, so put back the one thing you'd miss rather than nothing: `TaskRunner` shows
+  `3 running · 1 queued` there while the task list is collapsed (and nothing when it's visible, which
+  would just restate the list). One line, `.cc-readout`, no new row — the bar is already paid for.
 
 **Popovers — use `TeleportPopover`, don't hand-roll an absolute one.** Any ⚙/dropdown popover that
 lives inside a panel (canvas, table, plot) WILL be clipped by the panel's `overflow`/scroll/transform.
