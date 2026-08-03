@@ -788,8 +788,8 @@ panel expand one of them; each also un-expands its own half, so whichever one is
 brought back. A module page gets this for free — nothing to wire.
 
 It uses the shared two-half-panel primitive (`usePaneExpand` + `PaneExpandBar`), which the batch-movies
-panel uses too — **don't add a third variant of this toggle**. Full contract, both consumers, and the
-`v-show`-not-`v-if` rule: `docs/UI.md` → *Two-half side panels*.
+panel uses too — **don't add a third variant of this toggle**. Full contract, both consumers, and why the
+halves are hidden by a CSS rule rather than a per-element guard: `docs/UI.md` → *Two-half side panels*.
 
 > **Functions not showing on the module page?** `useTaskDefs` fetches on mount and auto-retries up to 5 times (2 s apart) if the server is still starting. If defs are still empty after that, `TaskRunner` shows a **Reload** button — click it to retry. The most common causes: (1) the Julia server isn't running yet; (2) a task JSON file has a syntax error (check the Julia console for `Skipping malformed task spec` warnings); (3) `api/src/routes.jl` was changed but the server wasn't restarted — those files are not Revise-tracked.
 

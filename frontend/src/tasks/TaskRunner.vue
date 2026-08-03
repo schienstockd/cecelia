@@ -10,8 +10,9 @@
   task list as the BOTTOM — with the shared `PaneExpandBar` giving either one the whole panel
   (`utils/paneExpand.ts`; the batch-movies panel uses the same primitive). Width is drag-resizable;
   height is not, because there are only three states worth having and a click reaches them faster than a
-  drag. Hidden with `v-show`, not `v-if`: unmounting the params would throw away what each ParamRenderer
-  has loaded (population lists, model lists) and refetch it on the way back.
+  drag. The halves are hidden by the `pane-<mode>` rules in this file's CSS, never `v-if`: unmounting the
+  params would throw away what each ParamRenderer has loaded (population lists, model lists) and refetch
+  it on the way back.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
@@ -307,8 +308,7 @@ const { width: sidebarWidth, onResizeStart } =
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Vertical space is the scarce one here: a long param list and a busy task list can't both fit on a
 // laptop screen. Top half = this runner, bottom half = the module's task list.
-const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
-  usePaneExpand('cc-taskrunner-pane')
+const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </script>
 
 <template>
@@ -331,7 +331,7 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
     />
 
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
-    <section v-if="!defs.length" v-show="showRunner" class="runner-section defs-empty">
+    <section v-if="!defs.length" class="runner-section defs-empty">
       <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
       <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="onReloadDefs">
         <i class="pi pi-refresh" /> Reload
@@ -339,7 +339,7 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
     </section>
 
     <!-- ── Function selector ── -->
-    <section v-if="defs.length" v-show="showRunner" class="runner-section">
+    <section v-if="defs.length" class="runner-section">
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
       <select
         class="fn-select"
@@ -373,7 +373,7 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
     </section>
 
     <!-- ── Parameters ── -->
-    <section class="runner-section params-section" v-if="taskDef" v-show="showRunner">
+    <section class="runner-section params-section" v-if="taskDef">
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
       <div class="params-list">
         <ParamRenderer
@@ -388,7 +388,7 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
     </section>
 
     <!-- ── Run + Concurrency ── -->
-    <section class="runner-section run-section" v-show="showRunner">
+    <section class="runner-section run-section">
       <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
            BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
       <div class="run-row">
@@ -435,7 +435,7 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
     </section>
 
     <!-- ── Task list ── -->
-    <section class="runner-section tasks-section" v-show="showTasks">
+    <section class="runner-section tasks-section">
       <div class="tasks-heading">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Tasks</h3>
         <div class="tasks-heading-actions">
@@ -477,6 +477,12 @@ const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
 
 /* the shared bar (PaneExpandBar) sits above the first section heading — only its inset is ours */
 .runner-pane-bar { padding: 0.2rem 0.5rem 0; }
+
+/* Which half is showing is one CSS concern, not a guard on every element: each half-member is a direct
+   `.runner-section` child of the panel, so two rules cover both halves — including a section added later,
+   which per-element guards would miss. Same mechanism as BatchMoviesPanel; `display:none` either way. */
+.task-runner.pane-bottom > .runner-section:not(.tasks-section) { display: none; }
+.task-runner.pane-top    > .tasks-section                      { display: none; }
 
 /* With the task list hidden, the params are what should grow — otherwise the runner keeps its 45vh cap
    and the reclaimed space just sits empty below it. */

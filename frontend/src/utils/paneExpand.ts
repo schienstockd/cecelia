@@ -13,6 +13,10 @@
 // It lives in localStorage under a per-panel key, alongside the panel widths, and is NOT scoped per
 // module or project: it's a preference about how a panel is arranged, not about what's in it.
 //
+// A consumer puts the mode on its root as `pane-<mode>` and hides each half with ONE CSS rule — see
+// `docs/UI.md` → *Two-half side panels*. Deliberately not a per-element boolean: a half is usually several
+// sibling elements, and guarding each one means a section added later is silently left visible.
+//
 // Pure logic here, so the toggle rule and the stored-value guard are testable without mounting a
 // component (docs/DEV.md → frontend test scope). `composables/usePaneExpand.ts` is the wrapper to use.
 
@@ -35,11 +39,6 @@ export function parsePane(raw: unknown): PaneExpand {
  */
 export function nextPane(current: PaneExpand, clicked: PaneHalf): PaneExpand {
   return current === clicked ? 'split' : clicked
-}
-
-/** Whether a half is currently rendered. Only the OTHER half being expanded hides it. */
-export function paneShows(pane: PaneExpand, half: PaneHalf): boolean {
-  return pane !== (half === 'top' ? 'bottom' : 'top')
 }
 
 export function loadPane(storageKey: string): PaneExpand {

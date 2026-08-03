@@ -777,26 +777,35 @@ screen, neither gets enough vertical room. Both panels that have this shape use 
 
 Three modes — `split` (default), `top`, `bottom` — persisted per panel. Each half's button also
 *un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
-can't click out of. The recipe:
+can't click out of. The recipe is the mode on the root plus one CSS rule per half:
 
 ```ts
-const { pane, toggle, showTop, showBottom } = usePaneExpand('cc-mypanel-pane')
+const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
 ```
 ```vue
-<PaneExpandBar :pane="pane" top-label="movie config" bottom-label="task list"
-               top-icon="pi-cog" bottom-icon="pi-bars" @toggle="toggle" />
+<div class="mypanel" :class="'pane-' + pane">
+  <PaneExpandBar :pane="pane" top-label="movie config" bottom-label="task list"
+                 top-icon="pi-cog" bottom-icon="pi-bars" @toggle="toggle" />
+  …
+```
+```css
+.mypanel.pane-bottom > .my-config { display: none; }   /* bottom expanded → hide the top half */
+.mypanel.pane-top    > .my-tasks  { display: none; }
 ```
 
+- **A rule per half, not a guard per element.** A half is usually several sibling elements, so
+  `v-show` on each means a section added later is silently left visible — the rule matches by class and
+  covers it. Give a single-component half a plain wrapper div (`BatchMoviesPanel`'s `.bm-tasks`) rather
+  than reaching into the child's root from scoped CSS.
+- **Never `v-if`.** Unmounting a config half discards whatever its children have fetched (population
+  lists, model lists) and refetches on the way back. `display: none` keeps them alive.
 - **The bar owns the tooltip wording**, so every panel phrases the action identically; the consumer only
   names its halves (lower-case, short — they go straight into "Expand the …").
-- **Hide with `v-show`, not `v-if`.** Unmounting a config half discards whatever its children have
-  fetched (population lists, model lists) and refetches on the way back. A root `pane-<mode>` class +
-  one CSS rule is the other sanctioned form — `BatchMoviesPanel` uses it because its config half is a
-  flat run of `.bm-sec` siblings, so one rule covers a section added later that a per-element `v-show`
-  would miss.
 - **Growth is the consumer's** — the primitive decides what's visible, not how the survivor uses the
   space. `TaskRunner` lifts its `params-section` `max-height` cap under `.pane-top`; `BatchMoviesPanel`
   needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
+- Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s "napari is busy" banner
+  is deliberately outside both, since it matters most while you are watching the task list.
 
 **Popovers — use `TeleportPopover`, don't hand-roll an absolute one.** Any ⚙/dropdown popover that
 lives inside a panel (canvas, table, plot) WILL be clipped by the panel's `overflow`/scroll/transform.

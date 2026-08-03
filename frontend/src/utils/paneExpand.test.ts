@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePane, nextPane, paneShows } from './paneExpand'
+import { parsePane, nextPane } from './paneExpand'
 
 describe('parsePane', () => {
   it('accepts the three modes', () => {
@@ -30,21 +30,5 @@ describe('nextPane', () => {
   it('switches straight from one half to the other', () => {
     expect(nextPane('top', 'bottom')).toBe('bottom')
     expect(nextPane('bottom', 'top')).toBe('top')
-  })
-})
-
-describe('paneShows', () => {
-  it('shows both halves when split', () => {
-    expect(paneShows('split', 'top')).toBe(true)
-    expect(paneShows('split', 'bottom')).toBe(true)
-  })
-
-  it('an expanded half hides only the other one', () => {
-    // the expanded half must never hide ITSELF — that state would render an empty panel whose only
-    // control is the bar, with nothing explaining where the content went
-    expect(paneShows('top', 'top')).toBe(true)
-    expect(paneShows('top', 'bottom')).toBe(false)
-    expect(paneShows('bottom', 'bottom')).toBe(true)
-    expect(paneShows('bottom', 'top')).toBe(false)
   })
 })

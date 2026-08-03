@@ -1,15 +1,14 @@
-import { ref, computed } from 'vue'
-import { loadPane, savePane, nextPane, paneShows, type PaneExpand, type PaneHalf } from '../utils/paneExpand'
+import { ref } from 'vue'
+import { loadPane, savePane, nextPane, type PaneExpand, type PaneHalf } from '../utils/paneExpand'
 
 /**
  * Which half of a two-half side panel is expanded, persisted per panel.
  *
- * Pair it with `components/PaneExpandBar.vue` (the control) and `v-show` on each half — see
- * `utils/paneExpand.ts` for the scenario and `docs/MODULES.md` → *Either half of the panel can take the
- * whole panel* for the consumer recipe.
+ * Pair it with `components/PaneExpandBar.vue` (the control) and a `pane-<mode>` class on the panel root,
+ * which one CSS rule per half hides against — see `docs/UI.md` → *Two-half side panels*.
  *
  * ```ts
- * const { pane, toggle, showTop, showBottom } = usePaneExpand('cc-taskrunner-pane')
+ * const { pane, toggle } = usePaneExpand('cc-taskrunner-pane')
  * ```
  *
  * `storageKey` is per panel, so the task runner and the batch-movies panel remember their own
@@ -23,10 +22,5 @@ export function usePaneExpand(storageKey: string) {
     savePane(storageKey, pane.value)
   }
 
-  return {
-    pane,
-    toggle,
-    showTop:    computed(() => paneShows(pane.value, 'top')),
-    showBottom: computed(() => paneShows(pane.value, 'bottom')),
-  }
+  return { pane, toggle }
 }

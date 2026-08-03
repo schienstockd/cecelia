@@ -226,8 +226,7 @@ async function previewOpen() {
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Same arrangement as the module pages' TaskRunner: config on top, task list below. Its own storage key,
 // so this panel remembers its arrangement separately from the runner's.
-const { pane, toggle: togglePane, showBottom: showTasks } =
-  usePaneExpand('cc-batchmovies-pane')
+const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 </script>
 
 <template>
@@ -249,7 +248,7 @@ const { pane, toggle: togglePane, showBottom: showTasks } =
       </div>
 
       <!-- ── The CONFIG half ── every `.bm-sec` below, plus the actions row: hidden as a group by the
-           `pane-bottom` rule in this file's CSS rather than a `v-show` on each one, so a section added
+           `pane-bottom` rule in this file's CSS rather than a guard on each one, so a section added
            later is covered without remembering to guard it. -->
 
       <!-- Channels -->
@@ -341,7 +340,11 @@ const { pane, toggle: togglePane, showBottom: showTasks } =
         </button>
       </div>
 
-      <TaskList v-show="showTasks" module="batchMovies" />
+      <!-- ── The TASKS half ── wrapped so the same `pane-<mode>` CSS hides it: TaskList's root belongs to
+           that component, and reaching into it from here would be a scoped-CSS trick waiting to break. -->
+      <div class="bm-tasks">
+        <TaskList module="batchMovies" />
+      </div>
     </template>
   </div>
 </template>
@@ -349,12 +352,14 @@ const { pane, toggle: togglePane, showBottom: showTasks } =
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
 .bm-hint { margin: 2px 0; }
-/* Expanding the task list hides the config half: every config section is a direct `.bm-sec` child plus
-   the actions row, so one rule covers the group — and covers a section added later, which a per-element
-   `v-show` would not. The busy banner deliberately stays: "napari is taken over" matters MOST while you
-   are watching the task list. Same mechanism as v-show (display:none), just declared once. */
+/* Which half is showing, declared once per half — the same mechanism TaskRunner uses. Every config
+   member is a direct `.bm-sec` child plus the actions row, so one rule covers the group AND a section
+   added later, which a per-element guard would miss. The busy banner is in neither half on purpose:
+   "napari is taken over" matters MOST while you are watching the task list. */
 .bm.pane-bottom > .bm-sec,
 .bm.pane-bottom > .bm-actions { display: none; }
+.bm.pane-top    > .bm-tasks   { display: none; }
+.bm-tasks { display: flex; min-width: 0; }
 /* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
    progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
    a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */
