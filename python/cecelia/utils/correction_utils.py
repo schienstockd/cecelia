@@ -406,14 +406,20 @@ def af_correct_frame(slabs, target, stats, out_dtype):
     Nothing is rescaled, so there is no ceiling to derive and no window to get wrong — and the output
     can never exceed the input, so there is nothing to clip either.
 
-    This replaces a mutual ratio, ``out = (b_t + 1)/(b_c + 1) / ceiling * rescale``, whose problem was
-    structural: it goes to zero wherever the target is not brighter than the reference, so a cell
-    carrying BOTH reporters was hollowed into a dim rim — the centre, where both channels are bright and
-    the ratio sits near 1, went to zero. Measured on real overlapping reporter cells with overall gain
-    cancelled (kSUFux/Or1L8a and bNnmQL, one plane each), the co-positive cell came out at **3-7%** of a
-    clean single-reporter cell's brightness under the ratio, against **149-358%** here. A hollow cell is
-    not a cosmetic problem: segmentation runs next, and a ring with a zero centre either fails to be
-    detected or splits.
+    This replaces a mutual ratio, whose problem was structural rather than a matter of tuning. Its final
+    form (#448) anchored the neutral ratio at zero::
+
+        ratio = (b_t + 1) / (b_c + 1)
+        out   = clip((ratio - 1) / (ceiling - 1), 0, 1) * rescale
+
+    which makes the flaw explicit: **every voxel with ``ratio <= 1`` maps to zero.** So a cell carrying
+    BOTH reporters was hollowed into a dim rim — its centre, where both channels are bright and the ratio
+    sits at 1, went to zero. Anchoring at the neutral point was a real fix for a different bug (a
+    ``rescale / c_max`` pedestal on every background voxel) and it did not touch this one; it could not.
+    Measured on real overlapping reporter cells with overall gain cancelled (kSUFux/Or1L8a and bNnmQL,
+    one plane each), the co-positive cell came out at **3-7%** of a clean single-reporter cell's
+    brightness under the ratio, against **149-358%** here. A hollow cell is not a cosmetic problem:
+    segmentation runs next, and a ring with a zero centre either fails to be detected or splits.
 
     Two properties the ratio did not have, both falling out of the form rather than added machinery: it
     is symmetric (no channel wins territory for being brighter overall), and it takes any number of
@@ -426,6 +432,12 @@ def af_correct_frame(slabs, target, stats, out_dtype):
     coastal), so keeping a second, weaker version here silently blurred every corrected channel.
 
     ``p`` is `AF_WEIGHT_EXPONENT` — see that constant for why it is not a user parameter.
+
+    What this still cannot fix is the INPUT's precision: on 8-bit data with ~30 usable counts above
+    background, no arithmetic here invents levels. It no longer magnifies that coarseness either (the
+    ratio stretched one input count into ~17 output counts), but the remaining questions — correcting the
+    16-bit source before the 8-bit import, and whether a reference that is above its own background for
+    1.45% of voxels can serve at all — are in docs/todo/AF_QUANTISATION.md.
     """
     p = int(stats.exponent)
     target = int(target)

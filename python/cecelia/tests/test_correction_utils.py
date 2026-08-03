@@ -380,6 +380,22 @@ class AfWeightMechanismTest(unittest.TestCase):
             out = cu.af_correct_frame(slabs, 0, stats, np.uint8)
         self.assertEqual(int(out.max()), 0)
 
+    def test_a_voxel_dimmer_than_a_competitor_is_SUPPRESSED_not_zeroed(self):
+        """The deliberate behaviour change, kept as a test so it cannot be reverted by accident.
+
+        The ratio had `test_a_voxel_dimmer_than_its_reference_is_also_zero` (#448) asserting the exact
+        opposite, and that assertion WAS correct for the ratio: everything with `ratio <= 1` mapped to 0.
+        That is the hollowing — a co-positive cell's centre is precisely where the target is not the
+        brighter channel. Here the loser keeps a share, small but non-zero, so the cell stays solid.
+        """
+        stats = self._stats({0: 0.0, 1: 0.0})
+        img = np.full((1, 2, 2), 20, dtype=np.uint8)
+        rival = np.full((1, 2, 2), 60, dtype=np.uint8)     # competitor 3x brighter
+        out = cu.af_correct_frame({0: img, 1: rival}, 0, stats, np.uint8)
+        # weight = 400 / (400 + 3600) = 0.1 -> 20 * 0.1 = 2
+        self.assertTrue(np.all(out == 2), f'expected a suppressed 2, got {np.unique(out)}')
+        self.assertGreater(int(out.max()), 0, 'the losing channel must not be zeroed outright')
+
     def test_the_integer_output_is_rounded_not_truncated(self):
         """The output is in input counts, so values are often single digits and truncation biases every
         one of them down by ~half a count. Measured on one plane of kSUFux/Or1L8a: truncating shifts the
