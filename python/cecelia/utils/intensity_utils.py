@@ -72,65 +72,6 @@ def hist_percentile(hist, pct):
     return int(np.searchsorted(cdf, target))
 
 
-#: Floor and fraction for `robust_hist_max`'s default count threshold. The floor is what keeps a small
-#: or synthetic histogram behaving exactly as a true max did — nothing reaches the threshold, so it
-#: falls back — while a real image (millions of voxels) rejects a one-voxel hot pixel.
-ROBUST_MAX_MIN_FRAC = 1e-6
-ROBUST_MAX_MIN_FLOOR = 64
-
-
-def robust_hist_max(hist, min_count=None, min_frac=ROBUST_MAX_MIN_FRAC,
-                    min_floor=ROBUST_MAX_MIN_FLOOR):
-    """Highest value that at least ``min_count`` voxels attain — an **outlier-rejected maximum**.
-
-    ``min_count=None`` derives it as ``max(min_floor, total * min_frac)``, which is what makes this a
-    drop-in replacement for a true max: a fraction of the total is scale-free across image sizes, and
-    the floor means a histogram too small to have a meaningful tail falls back to the true max rather
-    than to something arbitrary.
-
-    The true max (``nonzero(hist)[-1]``) is decided by a single voxel, which makes it useless as a
-    rescale ceiling: measured on a real 181-frame movie, the top six occupied bins held **exactly one
-    voxel each**, so one hot pixel in 5.88 billion set the output scale of the whole image. A
-    percentile is no better here, only differently wrong — the signal in a fluorescence ratio lives in
-    the extreme tail (p99.99 was 52 against a max of 256), so any percentile near 100 cuts into real
-    structure.
-
-    What actually separates a hot pixel from a bright cell is not its value but how many voxels share
-    it: one versus thousands. Hence a count threshold. It also **survives subsampling**, which a max
-    cannot — a structure of 1000 voxels still has ~60 after a 16× stride, so a strided pass gives the
-    same answer, while hunting a single voxel fails as soon as you skip it. Measured: identical
-    ceilings under z::2 / xy::4 / both at ``min_count`` 10 000.
-
-    Returns 0 for an empty histogram, and falls back to the true max if NO value reaches
-    ``min_count`` (a tiny or nearly-empty image — better a wide ceiling than a zero one).
-
-    **No caller today.** Two landed in the same window: the AF task replaced its division (so it no
-    longer derives a ceiling) and the 16→8-bit import was removed (so nothing needs an output window at
-    all). It is kept because the two traps below are measured and non-obvious, and the next thing that
-    needs an outlier-rejected maximum should start here rather than re-derive them. Retire it if that
-    never happens — it is one function and this docstring is the reason to keep it.
-
-    **Trap:** the background bin usually holds far more voxels than anything else, so a ``min_count``
-    larger than the signal population returns the *background* level rather than nothing — a ceiling
-    at or below the peak, which makes a rescale window degenerate. The caller owns that check, because
-    only it knows which bins are background.
-
-    **Second trap, from the AF task that used to call this:** clipped input piles every saturated voxel
-    into one bin, so a count threshold can land on a *clipping artefact* rather than on signal. Measured
-    on the kSUFux movies, that bin held 55-90k voxels where its neighbours held ~1k, and the threshold
-    decided the ceiling in 4 of 9 images purely on whether the pile cleared it. Ask for a fraction of
-    the image rather than an absolute count if the image size is not fixed.
-    """
-    h = np.asarray(hist)
-    if min_count is None:
-        min_count = max(int(min_floor), int(int(h.sum()) * float(min_frac)))
-    ok = np.nonzero(h >= int(min_count))[0]
-    if ok.size:
-        return int(ok[-1])
-    nz = np.nonzero(h)[0]
-    return int(nz[-1]) if nz.size else 0
-
-
 def triangle_threshold(hist):
     """Zack's triangle threshold on a histogram — the bin furthest from the line joining the
     histogram's peak to its last occupied bin.

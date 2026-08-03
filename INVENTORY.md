@@ -51,7 +51,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **tracking_utils**: `BayesianTrackingUtils.track_objects` (btrack) + `write_track_props` (new `{vn}__tracks.h5ad`).
 - **clustering_utils**: shared Leiden engine (`find_populations` + `split_back_and_write`); used by both cluster runners.
 - **correction_utils**: AF + drift correction (drift shifts, AF channel correct, denoise/rolling-ball/top-hat).
-- **intensity_utils**: whole-stack intensity statistics from streamed per-channel histograms — `channel_histograms`, `hist_percentile`, outlier-rejected max (`robust_hist_max`), derived background level (`background_threshold`/`triangle_threshold`), `clip_stats`. Used by AF correction and segmentation normalisation.
+- **intensity_utils**: whole-stack intensity statistics from streamed per-channel histograms — `channel_histograms`, `hist_percentile`, derived background level (`background_threshold`/`triangle_threshold`), `clip_stats`. Used by AF correction and segmentation normalisation.
 - **dim_utils**: `DimUtils` — dimension-order/index/physical-size/slice reasoning off an ome-types OME object. Core dependency of most tasks.
 - **slice_utils**: numpy slice-tuple generators for tiled 2D/3D(+time) processing + downsample strides.
 - **napari_utils**: project-agnostic napari layer builders (`add_image`/`add_labels`/`add_tracks`), hex↔rgba, clip planes, view snapshot, movie recording, colour-by helpers. Imported by the bridge (and coastal).

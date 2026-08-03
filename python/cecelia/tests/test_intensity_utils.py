@@ -1,62 +1,15 @@
 """Unit tests for cecelia.utils.intensity_utils (whole-stack intensity statistics).
 
-Golden values pin the streamed per-channel histogram, the outlier-rejected max, the derived
-background threshold and the clip stats — the primitives AF correction and segmentation
-normalisation are built on. Part of the Python (analysis-env) suite — run with `pixi run test-py`.
+Golden values pin the streamed per-channel histogram, the derived background threshold and the clip
+stats — the primitives AF correction and segmentation normalisation are built on. Part of the Python
+(analysis-env) suite — run with `pixi run test-py`.
 
-`robust_hist_max` currently has no production caller — the AF task replaced its division and the 8-bit
-import was removed, in the same window. It stays under test because it is kept deliberately for the two
-measured traps on its docstring; a kept function with no test is how those get quietly broken.
 """
 import unittest
 
 import numpy as np
 
 import cecelia.utils.intensity_utils as iu
-
-
-class RobustMaxTest(unittest.TestCase):
-    """One hot pixel must not set a derived ceiling.
-
-    Production call site: `correction_utils.af_division_stats`, which uses `robust_hist_max` for the
-    AF ratio ceiling. Measured independently twice: #440 ("the real signal used only ~15% of the
-    range" with a literal max) and the AF work (the top six ratio bins held ONE voxel each, out of
-    5.88 G voxels).
-    """
-
-    @staticmethod
-    def _hist(nbins=65536):
-        """A realistic dim channel: a broad low peak, plus ONE saturated voxel."""
-        h = np.zeros(nbins, np.int64)
-        h[0:200] = 5000          # background
-        h[200:900] = 400         # signal, up to raw 900
-        h[65535] = 1             # a single hot pixel
-        return h
-
-    def test_a_lone_hot_pixel_does_not_set_the_ceiling(self):
-        vmax = iu.robust_hist_max(self._hist())
-        self.assertLess(vmax, 1000, 'the ceiling was pinned by the hot pixel')
-        self.assertGreaterEqual(vmax, 800, 'real signal must not be rejected as an outlier')
-
-    def test_a_small_histogram_falls_back_to_the_true_max(self):
-        # the floor: too few voxels for a tail to mean anything, so don't reject anything as an
-        # outlier. Keeps synthetic and tiny cases predictable.
-        h = np.zeros(256, np.int64)
-        h[5] = 1
-        h[200] = 1
-        self.assertEqual(iu.robust_hist_max(h), 200)
-
-    def test_min_count_can_be_given_directly(self):
-        h = np.zeros(1024, np.int64)
-        h[10] = 1_000
-        h[500] = 50
-        h[900] = 5
-        self.assertEqual(iu.robust_hist_max(h, min_count=1), 900)
-        self.assertEqual(iu.robust_hist_max(h, min_count=10), 500)
-        self.assertEqual(iu.robust_hist_max(h, min_count=100), 10)
-
-    def test_an_empty_histogram_is_zero(self):
-        self.assertEqual(iu.robust_hist_max(np.zeros(4096, np.int64)), 0)
 
 
 class TestIntensityUtils(unittest.TestCase):
