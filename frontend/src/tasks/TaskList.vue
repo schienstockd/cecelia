@@ -9,6 +9,8 @@ import { TASK_STATUS } from '../lib/taskStatus'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useNowTick } from '../composables/useNowTick'
+import { taskElapsed } from '../utils/taskElapsed'
 
 const props       = defineProps<{ module: string }>()
 const tasks       = useTaskStore()
@@ -72,12 +74,9 @@ async function copyLog(t: TaskEntry) {
   await copy(t.log.join('\n'), t.id)     // keyed flash — one row at a time
 }
 
-function elapsed(t: TaskEntry) {
-  if (!t.startedAt) return null
-  const end = t.finishedAt ?? new Date()
-  const s = Math.round((end.getTime() - t.startedAt.getTime()) / 1000)
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
-}
+// shared formatter + shared 1s clock, so a running task's elapsed advances without a frame arriving
+const now = useNowTick()
+const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
 </script>
 
 <template>

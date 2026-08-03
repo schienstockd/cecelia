@@ -9,8 +9,31 @@ describe('recoveredTaskFrames', () => {
     const f = recoveredTaskFrames([{ id: 't1', imageUid: 'EaMaVq' }], [out('t1', 'done')])
     expect(f).toEqual([{
       type: 'task:status', taskId: 't1', status: 'done', imageUid: 'EaMaVq',
-      recovered: true, recoveredFrom: 't1',
+      recovered: true, recoveredFrom: 't1', finishedAt: '2026-07-31T04:50:00.000Z',
     }])
+  })
+
+  // The row's own timestamps ride along, because this frame is rebuilt seconds or minutes after the fact:
+  // stamping arrival time (what the store does without them) inflates every recovered task's duration by
+  // however long the poll took to notice.
+  describe('timing', () => {
+    it('carries the row\'s started_at / finished_at', () => {
+      const f = recoveredTaskFrames([{ id: 't1' }],
+                                    [out('t1', 'done', { started_at: '2026-07-31T04:45:48.000Z' })])
+      expect(f[0].startedAt).toBe('2026-07-31T04:45:48.000Z')
+      expect(f[0].finishedAt).toBe('2026-07-31T04:50:00.000Z')
+    })
+
+    it('omits what the server could not say, rather than sending an empty string', () => {
+      // '' is the backend's "never ran / nobody noted it"; passing it through would parse to undefined
+      // anyway, but omitting keeps the recovered frame shaped exactly like a real one.
+      const f = recoveredTaskFrames([{ id: 't1' }], [out('t1', 'done', { started_at: '' })])
+      expect('startedAt' in f[0]).toBe(false)
+      const g = recoveredTaskFrames([{ id: 't2' }],
+                                    [{ id: 't2', status: 'done' }])   // older backend: no timestamps
+      expect('startedAt' in g[0]).toBe(false)
+      expect('finishedAt' in g[0]).toBe(false)
+    })
   })
 
   // A chain run emits NO task:status at all, so a chain node's missing frame is a chain:node:* one —
@@ -27,7 +50,7 @@ describe('recoveredTaskFrames', () => {
       expect(f).toEqual([{
         type: 'chain:node:done', runId: 'run1', nodeId: 'n1', chainName: 'ch', projectUid: 'p1',
         imageUid: 'EaMaVq', fn: 'segment.branching', status: 'done', taskId: 'sched7',
-        recovered: true, recoveredFrom: 'sched7',
+        recovered: true, recoveredFrom: 'sched7', finishedAt: '2026-07-31T04:50:00.000Z',
       }])
     })
 

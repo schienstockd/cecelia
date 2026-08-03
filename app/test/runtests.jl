@@ -73,6 +73,15 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# A task that stays running until it's told to stop, so a test can inspect the LIVE registry — the
+# scheduler's timestamps and `list_tasks()` only exist while the task is in flight (the record is
+# deregistered the instant it finishes).
+const _HOLD_TASK_GO = Ref{Channel{Nothing}}(Channel{Nothing}(1))
+struct _HoldTask <: CciaTask end
+Cecelia._run_task(::_HoldTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) = (take!(_HOLD_TASK_GO[]); true)
+
 # ── Fault injection: make the scheduler's OWN error path throw ────────────────────
 # `_execute_job!` must post to `job.done` no matter what, because `run_task` is blocked in `take!` and
 # a throw escaping into the dispatcher's `Threads.@spawn` is silent — the cost is a submitter blocked

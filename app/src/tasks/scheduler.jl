@@ -26,12 +26,19 @@ came to report every finished task as "outcome unseen".
 `live_outputs` in task.jl). This snapshot is therefore also the answer to "what can I watch while it
 runs?", which is how the napari viewer offers a preview of a segmentation before `ccid.json` knows
 about its output.
+
+`queued_at`/`started_at` are ISO-8601 UTC (`TASK_TS_FORMAT`), `started_at` empty until a pool slot
+admits the task. They make the snapshot answer "how long has this been going?" — which a client
+otherwise has to guess from when it first saw the row, so a console or tab that attached mid-run could
+only ever report a lower bound.
 """
 function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
            image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
-           status=string(rec.status), live_outputs=rec.live_outputs) for rec in values(_TASKS)]
+           status=string(rec.status), queued_at=iso_utc(rec.queued_at),
+           started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs)
+         for rec in values(_TASKS)]
     end
 end
 
@@ -250,6 +257,12 @@ mutable struct TaskRecord
     image_uid::String
     chain_run_id::String                    # "" for standalone tasks; run.id for chain nodes
     status::Symbol                          # :queued | :running | :done | :failed | :cancelled
+    # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
+    # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
+    # start is also banked in `note_task_started!` because THIS record dies the moment the task finishes
+    # and the duration is wanted afterwards (`tasks/task_outcomes.jl`).
+    queued_at::DateTime
+    started_at::Union{DateTime, Nothing}
     # Written by a worker thread (on_process), read by cancel_task! on another — `@atomic` gives
     # guaranteed cross-thread visibility of the assignment (the cancel-before-set logical race is
     # already handled by the on_process race guard below).
@@ -266,7 +279,11 @@ const _TASKS_LOCK = ReentrantLock()
 
 function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
                          live_outputs::Vector{LiveOutput} = LiveOutput[])
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, :queued, nothing,
+    # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
+    # so any start still on record belongs to the previous run and must not be inherited.
+    forget_task_start!(id)
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, :queued,
+                     Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
     rec
@@ -292,6 +309,12 @@ function _set_status!(rec::TaskRecord, s::Symbol)
     # Terminal states are final — don't let :done overwrite a :cancelled
     # that arrived from cancel_task! while the task was still running.
     rec.status in (:done, :failed, :cancelled) && return
+    # The pool slot has just been acquired, so this is the real start of the work. Stamped BEFORE the
+    # status change is announced, so the `task:status` frame the handler sends already carries it — and
+    # banked on the rail (`note_task_started!`) because this record won't survive the task.
+    if s === :running && isnothing(rec.started_at)
+        rec.started_at = note_task_started!(rec.id)
+    end
     rec.status = s
     try; Base.invokelatest(rec.on_status_change, rec); catch; end
 end

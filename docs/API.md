@@ -94,7 +94,7 @@ Settings → Debug console UI shows a note to this effect.
 | GET | `/api/images/geometry?projectUid&imageUid&valueName?` | frame extent of ONE image **version** — `{sizeX,sizeY,sizeZ,sizeT,valueName}`, read off that version's zarr (metadata only, no pixels). Omit `valueName` for the **active** version, which is what a task runs against. **Ask this rather than storing a size on the image**: the extent is version-dependent — drift correction expands the canvas (`output.canvas_expansion`), a crop shrinks it — so EaMaVq is 512×512 as imported and 544×548 corrected. Implemented in `api/src/image_geometry.jl`, which also backs `/api/crop/*`. |
 | GET | `/api/images/tasklog?projectUid&imageUid&fun` | raw task log for one `fun` on one image — reads `{img._dir}/logs/{fun}.log` (written by the scheduler's `_wrap_log_with_file`). `{projectUid, imageUid, fun, exists, content[, bytes]}`; `exists:false`+`""` when never run. `fun` is filename-sanitised (rejects `/`,`\`,`..`). Read-only; backs the observer's `get_task_log`. |
 | GET | `/api/tasks/history?projectUid[&limit]` | recent task runs across **all** images, newest first: `{count, history:[{imageUid,imageName,status,runStatus,fun,valueName,at,params}]}` — aggregates each image's `runlog.json`. `status` = the image's current status; `runStatus` = that run's outcome (`"done"`/`"failed"` — failures are recorded too so repeated failures are visible; legacy entries → `"done"`). `params` = the params that run used (the tuning trail; `{}` on legacy entries) — lets the observer suggest a param adjustment on an outlier. `limit` default 100. Read-only; backs the observer's `get_task_history`. |
-| GET | `/api/tasks/recent[?since]` | the banked terminal frames of recently finished task-rail work, oldest → newest: `[{id,status,fun_name,pool_name,image_uid,image_uids,finished_at}]` (`recent_tasks()`, a bounded in-memory log — see `docs/SCHEDULER.md`). The companion to `/api/tasks`: that answers *what is in flight*, this *how the ones that left it ended*. Exists because the terminal `task:status` frame is dropped for a slow client by design, so a client needs a lossy-safe way to learn the outcome (see the WS section below). Written at the rail's two status *sinks* — `ws_status` and the `chain:node:done`/`failed` bridge — so it covers **every** producer: scheduler tasks, chain nodes, background jobs (`pool="job"`), batch movies (`pool="viewer"`). `image_uids` = every image the unit touched (a set-scope task's full member list, which exists only on that frame). `since` = a previous poll's newest `finished_at`, **inclusive** (two units finishing in the same millisecond must not fall through the gap — de-duplicate by `id`). Not run history: that is `/api/tasks/history`, on disk and permanent. Read-only. |
+| GET | `/api/tasks/recent[?since]` | the banked terminal frames of recently finished task-rail work, oldest → newest: `[{id,status,fun_name,pool_name,image_uid,image_uids,started_at,finished_at}]` (`recent_tasks()`, a bounded in-memory log — see `docs/SCHEDULER.md`). `started_at` (`""` when the unit never ran) is what lets a recovered frame report the task's real duration instead of the poll delay — see *Elapsed time is served, not guessed* below. The companion to `/api/tasks`: that answers *what is in flight*, this *how the ones that left it ended*. Exists because the terminal `task:status` frame is dropped for a slow client by design, so a client needs a lossy-safe way to learn the outcome (see the WS section below). Written at the rail's two status *sinks* — `ws_status` and the `chain:node:done`/`failed` bridge — so it covers **every** producer: scheduler tasks, chain nodes, background jobs (`pool="job"`), batch movies (`pool="viewer"`). `image_uids` = every image the unit touched (a set-scope task's full member list, which exists only on that frame). `since` = a previous poll's newest `finished_at`, **inclusive** (two units finishing in the same millisecond must not fall through the gap — de-duplicate by `id`). Not run history: that is `/api/tasks/history`, on disk and permanent. Read-only. |
 | GET | `/api/storage/summary?projectUid` | Settings **storage box** (`api/src/storage_api.jl`). Walks every image store (expensive — the frontend calls it on a "Scan" button, not on open) + `diskstat`: `{diskTotal, diskAvailable, imageBytes, reclaimableBytes, reclaimable:[{imageUid,name,setUid,bytes,activeVersion,versions:[{valueName,bytes}]}]}` (`imageBytes` = image OME-ZARR versions only, NOT labels/other task-dir data). `reclaimable` = one entry per image with freeable versions — every version EXCEPT the active one (`reclaimable_versions`), incl. the original `default`; biggest first. |
 | POST | `/api/storage/reclaim` | `{projectUid, imageUids:[…]}` → free every NON-active version of each image, keeping only the active one (shared `reclaim_inactive!` / `remove_image_version!`; the active version is never touched, so its channel names/dims survive). `{ok, freedBytes, reclaimed:[uid]}`; images with nothing to reclaim are skipped. `400` empty `imageUids`. |
 | GET | `/api/storage/compressor` | Image-store compression (Settings → Storage, advanced): `{current, default, choices:[{name,label,detail}]}`. The choice list + its measured trade-off text are SERVED, not duplicated in Vue — same rule as task param specs. Source: `app/src/config.jl` → `IMAGE_COMPRESSOR_CHOICES`. |
@@ -234,6 +234,39 @@ later dequeues and skips it; `done`/`failed` are held until the result is sent. 
 whole view on reconnect (a localhost drop = server restart), so stale tasks don't linger — and a failed
 20s keepalive now tears the socket down instead of being swallowed, so a half-open connection actually
 reaches that reconnect rather than leaving the reader blocked forever on a socket that never speaks again.
+
+**Elapsed time is served, not guessed.** Every carrier on the rail publishes the task's own timestamps,
+ISO-8601 UTC to the millisecond (`TASK_TS_FORMAT`, `app/src/tasks/task_outcomes.jl` — one format for the
+whole rail):
+
+| Carrier | Fields |
+|---|---|
+| `GET /api/tasks` | `queued_at`, `started_at` (`""` until a pool slot admits it) |
+| `GET /api/tasks/recent` | `started_at` (`""` if it never ran), `finished_at` |
+| `task:status` | `startedAt`, `finishedAt` (terminal only) |
+| `chain:node:running` / `:done` / `:failed` | `startedAt`, `finishedAt` |
+
+The scheduler stamps `queued_at` at registration and `started_at` when the pool slot is acquired
+(`_set_status!`), so `started_at − queued_at` *is* the queue wait — that's why a task blocked on a busy
+GPU reads as waiting rather than as a run of zero seconds. The start is **also** banked on the rail
+(`note_task_started!`) because the `TaskRecord` is deregistered the instant the task finishes and the
+duration is mostly wanted afterwards: the chain bridge fires `node:done` only once `run_task` has
+returned, and a dropped terminal frame is recovered from `recent_tasks` seconds or minutes later. Same
+sink rule as the outcomes — the scheduler stamps when it can, `ws_status` stamps on the first `running`
+frame otherwise, first write wins — so background jobs and batch movies (no record at all) are covered by
+the same mechanism. `record_task_outcome!` **returns the row it banked** and every caller publishes those
+values on the live frame, so the live and the replayed frame cannot disagree about when a task ran.
+
+Both clients consume it and keep their own clock only as a fallback: the console's `_set_phase!` adopts
+the server's instant whenever one is present (upgrading a row it had been timing itself), and only a
+locally-clocked phase whose start it did not witness renders `≥4m 12s` — a floor that says so, the same
+rule as tallying `ended` instead of guessing an outcome. The browser does the same in
+`utils/taskElapsed.ts`. Pinned by *API: status frames carry the task's timing*, *API: task console times
+each task*, and *Scheduler records queued/started timestamps* / *Task start timing* (package suite).
+
+One gap, deliberate: the browser's Task Manager is built from WS events only, so a tab opened mid-run has
+no row to time at all — it isn't that its elapsed is wrong, the task simply isn't listed. Rebuilding rows
+from `GET /api/tasks` is a separate change (`runningTasks.ts` only counts them today).
 
 ---
 

@@ -630,6 +630,36 @@ path (`api/task_console.jl`, `frontend/src/utils/taskReconcile.ts`).
 - **Not run history.** Fixed size, in memory, gone on restart. Durable per-image history is
   `append_run_log!` → `GET /api/tasks/history`.
 
+### …and so is the START (`note_task_started!`)
+
+The same problem from the other end: a client asking "how long has this been running?" had nothing to
+ask, so it timed the task from when it first happened to *see* it — the console printed `≥0s` for a task
+that had been running for twenty minutes, and the GUI's elapsed restarted from zero on a page reload.
+
+`TaskRecord` now carries `queued_at` (set at registration) and `started_at` (set in `_set_status!` the
+moment a pool slot is acquired), both UTC, both published by `list_tasks()` → `GET /api/tasks` as
+ISO-8601 strings. `started_at − queued_at` is therefore the real queue wait, which is what makes a task
+blocked on a busy GPU read as *waiting* rather than as a run of zero seconds.
+
+But the record dies with the task, and the duration is mostly wanted afterwards — the chain bridge fires
+`node:done` only once `run_task` has returned *and deregistered*, and a dropped terminal frame is
+recovered from `recent_tasks` minutes later. So the start is also banked on the rail, beside the outcomes
+and by the same rules:
+
+- **Same sink rule.** The scheduler stamps it when there is a record (exact, at the transition);
+  `ws_status` stamps it on the first `running` frame otherwise, which is what covers the producers with no
+  record at all — background jobs and batch movies. `note_task_started!` is **first-write-wins**, so the
+  two writers can never fight and a re-announced `running` doesn't restart the clock.
+- **One home at a time.** `record_task_outcome!` copies the start into the banked row (`started_at`) and
+  then forgets the in-flight note, so nothing can report two different starts for one task. The map is
+  bounded (`_STARTED_CAP`, oldest evicted) as a backstop for a producer that never announces an outcome.
+- **`record_task_outcome!` returns the row it banked**, and every sink publishes *those* values on the
+  live frame — so the live frame and the replayed one cannot disagree about when the task ran.
+- **`""` means unknown, never epoch zero** (`iso_utc(nothing)`). A task cancelled from the queue never
+  ran; a consumer must fall back to its own clock rather than render a duration of decades.
+
+Wire fields, consumers and the fallback rule: `docs/API.md` → *Elapsed time is served, not guessed*.
+
 ---
 
 ## REPL API

@@ -28,11 +28,21 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # browser left the task pinned at `running`. Banking HERE rather than in the scheduler is what makes that
 # true for every producer — background jobs and batch movies never enter the scheduler's registry at all.
 # Emit a terminal frame from anywhere and it is recoverable; don't add a second bank.
+# Every status frame carries the task's TIMES, so a client shows a real elapsed instead of counting from
+# when it happened to see the task. `running` also NOTES the start on the rail — that's what covers the
+# producers with no `TaskRecord` (background jobs, batch movies): their only announcement comes through
+# here, and `note_task_started!` is first-write-wins, so a scheduler task that already stamped it in
+# `_set_status!` reads back its own (earlier, exact) value rather than being overwritten by this one.
+# `finishedAt` comes from the banked outcome row so the live frame and the replayable row cannot disagree
+# about when the task ended.
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="")
-    record_task_outcome!(task_id, status;
-                         image_uid=uid, image_uids=image_uids, fun=fun, pool=pool)
+    string(status) == "running" && note_task_started!(task_id)
+    row = record_task_outcome!(task_id, status;
+                               image_uid=uid, image_uids=image_uids, fun=fun, pool=pool)
     _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid,
-                       imageUids=image_uids, fun=fun, pool=pool))
+                       imageUids=image_uids, fun=fun, pool=pool,
+                       startedAt  = isnothing(row) ? iso_utc(task_started_at(task_id)) : row.started_at,
+                       finishedAt = isnothing(row) ? "" : row.finished_at))
 end
 ws_result(_ws, task_id, uid, meta)     = _broadcast_task((; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 

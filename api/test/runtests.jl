@@ -1270,6 +1270,57 @@ end
     end
 end
 
+# ── Every status frame carries the task's timing ───────────────────────────────
+# `ws_status` is the rail's one status sink, so it is where a client learns WHEN a task ran. Without
+# this a client can only time a task from when its own socket happened to receive the frame — which
+# restarts at zero on a page reload and overstates by the poll delay on a recovered frame.
+#
+# It is also the sink that covers the producers with NO scheduler record — background jobs
+# (`pool="job"`) and batch movies (`pool="viewer"`) announce themselves only here — so `running`
+# notes the start on the rail rather than assuming somebody upstream did.
+@testset "API: status frames carry the task's timing" begin
+    cap = Channel{String}(64)
+    key = gensym("test-tasktime")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (fs = Any[]; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    isots   = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"
+    try
+        tid = "wsdur$(rand(1000:9999))"
+        forget_task_start!(tid)
+
+        # queued: nothing has started, so the frame says so with "" — never a placeholder date
+        drain()
+        ws_status(nothing, tid, "queued"; fun="project:export", pool="job")
+        let f = only(drain())
+            @test f.startedAt == "" && f.finishedAt == ""
+        end
+
+        # running: the sink itself notes the start (this producer has no TaskRecord) and publishes it
+        ws_status(nothing, tid, "running"; fun="project:export", pool="job")
+        started = only(drain()).startedAt
+        @test occursin(isots, started)
+        @test iso_utc(task_started_at(tid)) == started
+
+        # a re-announced running must not restart the clock — the same start comes back out
+        ws_status(nothing, tid, "running"; fun="project:export", pool="job")
+        @test only(drain()).startedAt == started
+
+        # terminal: both ends, and they are the SAME values banked for replay — a client that missed
+        # this frame and recovers it from /api/tasks/recent must not compute a different duration
+        ws_status(nothing, tid, "done"; fun="project:export", pool="job")
+        let f = only(drain())
+            @test f.startedAt == started
+            @test occursin(isots, f.finishedAt)
+            row = only(filter(r -> r.id == tid, recent_tasks()))
+            @test row.started_at == f.startedAt && row.finished_at == f.finishedAt
+        end
+        # …and the in-flight note is released once the row owns it
+        @test isnothing(task_started_at(tid))
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+    end
+end
+
 @testset "API: custom modules status/reload" begin
     # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
     st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
@@ -1886,6 +1937,140 @@ end
     @test C.TALLY["done"] == 1
     recon([row("c5")])
     @test !haskey(C.TASKS, "c5") && C.TALLY["done"] == 1
+end
+
+# ── Task console: the elapsed clock ───────────────────────────────────────────
+# Elapsed is measured client-side — nothing on the wire carries a start timestamp (the scheduler keeps
+# none, and a record is deregistered the instant it finishes). So the two things worth pinning are the
+# formatter and WHEN the clock restarts: only on a real status change, because the snapshot re-asserts
+# the same status every 2s and resetting per poll would peg every row at "0s". Plus the honesty marker:
+# a run whose start we didn't witness reads `≥` rather than passing a floor off as a measurement.
+@testset "API: task console times each task" begin
+    C = TaskConsoleUT
+    row(id; status="running") = (; id=id, status=status, fun_name="segment.cellpose",
+                                  pool_name="gpu", image_uid="EaMaVq", chain_run_id="")
+    feed(frame) = redirect_stdout(devnull) do; C.handle_ws(JSON3.write(frame)) end
+    recon(rows)  = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    # formatter: seconds → minutes → hours, zero-padded so the column doesn't jitter. Same spelling as
+    # the GUI's `formatTaskDuration` — a duration must not read two ways depending on where you look.
+    @test C.dur_str(0)          == "0s"
+    @test C.dur_str(42_400)     == "42s"
+    @test C.dur_str(59_400)     == "59s"          # rounds to the second, no early rollover
+    @test C.dur_str(60_000)     == "1m 00s"
+    @test C.dur_str(252_000)    == "4m 12s"
+    @test C.dur_str(3_600_000)  == "1h 00m"
+    @test C.dur_str(5_430_000)  == "1h 30m"
+    @test C.dur_str(-1)         == "0s"           # clock skew must not print a negative
+    # a start we didn't witness is a FLOOR, and says so
+    @test C.dur_str(252_000; exact = false) == "≥4m 12s"
+
+    # a witnessed queued → running transition is exact and restarts the clock
+    reset_console!()
+    recon([row("e1"; status="queued")])
+    waited = C.TASKS["e1"].since
+    @test !C.TASKS["e1"].exact                    # the snapshot found it already queued
+    recon([row("e1"; status="queued")])           # re-asserted, not changed…
+    @test C.TASKS["e1"].since == waited           # …so the queue-wait clock keeps running
+    feed((; type="task:status", taskId="e1", status="running", fun="segment.cellpose"))
+    @test C.TASKS["e1"].status == "running"
+    @test C.TASKS["e1"].exact                     # we saw it start
+    @test C.TASKS["e1"].since >= waited           # and the clock restarted on the run
+    since_run = C.TASKS["e1"].since
+    recon([row("e1")])                            # snapshot agrees it is running — no reset
+    @test C.TASKS["e1"].since == since_run && C.TASKS["e1"].exact
+
+    # a task ALREADY running when the console connects: clocked from now, marked as a floor
+    reset_console!()
+    recon([row("e2")])
+    @test C.TASKS["e2"].status == "running" && !C.TASKS["e2"].exact
+    @test startswith(C.dur_since(C.TASKS["e2"]), "≥")
+
+    # …and one whose first frame is the live `running` transition is exact even with no queued sighting
+    reset_console!()
+    feed((; type="task:status", taskId="e3", status="running", fun="segment.cellpose", pool="gpu"))
+    @test C.TASKS["e3"].exact && !startswith(C.dur_since(C.TASKS["e3"]), "≥")
+
+    # the outcome line reports the run time — the only place a finished task's elapsed can appear,
+    # since the row is collapsed to a count. Read before the row is dropped, so it must be non-empty.
+    reset_console!()
+    recon([row("e4")])
+    ran = C._ran_for("e4")
+    @test occursin("in ", ran)
+    feed((; type="task:status", taskId="e4", status="done", fun="segment.cellpose"))
+    @test !haskey(C.TASKS, "e4") && C.TALLY["done"] == 1
+    @test occursin("in ", last(C.EVENTS))         # …and it made it onto the announced line
+    @test C._ran_for("e4") == ""                  # gone with the row
+
+    # a task cancelled while still QUEUED never ran — no run time is claimed for it
+    reset_console!()
+    recon([row("e5"; status="queued")])
+    @test C._ran_for("e5") == ""
+
+    # ── the server's own timestamps, which is what makes it a measurement rather than an estimate ──
+    iso(dt) = Dates.format(dt, C.TS_FORMAT)
+    stamped(id; status="running", started="", queued="") =
+        (; id=id, status=status, fun_name="segment.cellpose", pool_name="gpu",
+           image_uid="EaMaVq", chain_run_id="", started_at=started, queued_at=queued)
+
+    # a task that has been running for 20 minutes, first seen NOW: the console used to be able to say
+    # only "≥0s" here — the whole point of `started_at` on the snapshot
+    reset_console!()
+    began = Dates.now(UTC) - Dates.Minute(20)
+    recon([stamped("s1"; started = iso(began))])
+    @test C.TASKS["s1"].exact
+    @test C.TASKS["s1"].since == began
+    @test C.dur_since(C.TASKS["s1"]) == "20m 00s"           # not "≥0s"
+
+    # …re-asserted every poll without drifting or resetting
+    recon([stamped("s1"; started = iso(began))])
+    @test C.TASKS["s1"].since == began && C.TASKS["s1"].exact
+
+    # a row the console had been timing ITSELF is upgraded the first time the rail supplies a real start
+    reset_console!()
+    recon([row("s2")])                                       # no timestamps (older server)
+    @test !C.TASKS["s2"].exact
+    recon([stamped("s2"; started = iso(began))])
+    @test C.TASKS["s2"].exact && C.TASKS["s2"].since == began
+
+    # queued rows are timed from `queued_at`, so the wait is real too
+    reset_console!()
+    enq = Dates.now(UTC) - Dates.Second(90)
+    recon([stamped("s3"; status="queued", queued = iso(enq))])
+    @test C.TASKS["s3"].exact && C.dur_since(C.TASKS["s3"]) == "1m 30s"
+
+    # a garbage or empty timestamp must not take the reader down — it just means "not known"
+    reset_console!()
+    recon([stamped("s4"; started = "not a date")])
+    @test haskey(C.TASKS, "s4") && !C.TASKS["s4"].exact      # fell back to the local clock
+
+    # a live terminal frame carries both ends → the announced duration is exact
+    reset_console!()
+    recon([stamped("s5"; started = iso(began))])
+    feed((; type="task:status", taskId="s5", status="done", fun="segment.cellpose",
+           startedAt=iso(began), finishedAt=iso(began + Dates.Minute(25))))
+    @test occursin("in 25m 00s", last(C.EVENTS))
+    @test C.TALLY["done"] == 1
+
+    # …and so is a RECOVERED one, for a task this console never even held a row for. Timing it locally
+    # would have measured the poll delay, not the task.
+    reset_console!()
+    redirect_stdout(devnull) do
+        C._apply_recent!([(; id="s6", status="done", image_uid="EaMaVq", image_uids=String[],
+                            started_at=iso(began), finished_at=iso(began + Dates.Minute(3)))])
+    end
+    @test !haskey(C.TASKS, "s6") && C.TALLY["done"] == 1
+    @test occursin("in 3m 00s", last(C.EVENTS))
+
+    # an outcome row with no start (older server / never ran) still counts, just without a duration
+    reset_console!()
+    redirect_stdout(devnull) do
+        C._apply_recent!([(; id="s7", status="failed", image_uid="", image_uids=String[],
+                            started_at="", finished_at=iso(Dates.now(UTC)))])
+    end
+    @test C.TALLY["failed"] == 1 && !occursin("in ", last(C.EVENTS))
 end
 
 # ── Task console: the done counter must not depend on the WS stream ───────────

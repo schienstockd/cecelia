@@ -100,7 +100,9 @@ install; a system-wide install is updated by re-running the installer as an admi
 
 Long jobs — segmentation, tracking, and whole **chain runs** — are handled by a background scheduler.
 Alongside the in-app view, you can watch them from a terminal with a live, **read-only** dashboard:
-which tasks are running, their progress, how many are queued, and how many have finished. It only
+which tasks are running, their progress, how long each has been going (the real elapsed, even for a task
+that was already running when you opened the console), how many are queued, and how many have finished.
+It only
 *reads* the running Cecelia (it never starts or cancels anything), so it's safe to leave open next to
 the app. It also shows a **pools** line — how many concurrent slots each resource pool (cpu/gpu/io/
 network) allows and how many are in use right now — so you can see what's saturated at a glance.

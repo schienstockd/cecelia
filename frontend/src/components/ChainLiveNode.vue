@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { TaskStatus } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
+import { useNowTick } from '../composables/useNowTick'
+import { taskElapsed } from '../utils/taskElapsed'
 
 const props = defineProps<{
   id: string
@@ -19,22 +21,15 @@ const props = defineProps<{
   }
 }>()
 
-const now = ref(Date.now())
-let timer: ReturnType<typeof setInterval> | null = null
+// shared 1s clock + shared formatter (utils/nowTick.ts, utils/taskElapsed.ts) — this component used to
+// own its own interval, which is how three copies of the same counter drifted apart
+const now = useNowTick()
 
-onMounted(() => {
-  timer = setInterval(() => {
-    if (props.data.status === 'running') now.value = Date.now()
-  }, 1000)
-})
-onUnmounted(() => { if (timer) clearInterval(timer) })
-
-const elapsed = computed(() => {
-  if (!props.data.startedAt) return undefined
-  const end = props.data.finishedAt ?? now.value
-  const s = Math.round((end - props.data.startedAt) / 1000)
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
-})
+const elapsed = computed(() => taskElapsed(
+  props.data.startedAt  === undefined ? undefined : new Date(props.data.startedAt),
+  props.data.finishedAt === undefined ? undefined : new Date(props.data.finishedAt),
+  now.value,
+))
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
   queued:    '#3f3f46',

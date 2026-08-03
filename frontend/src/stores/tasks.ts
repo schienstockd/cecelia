@@ -54,16 +54,26 @@ export const useTaskStore = defineStore('tasks', () => {
     if (t) t.log.push(line)
   }
 
-  function setStatus(id: string, status: TaskStatus) {
+  /**
+   * `at` carries the BACKEND's own timestamps for this transition (`startedAt`/`finishedAt` on the frame,
+   * parsed by the ws store). They take precedence over stamping `new Date()` here, because "when this tab
+   * received the frame" is not when the task ran: a terminal frame recovered by polling arrives seconds
+   * late, and a frame for a task that started before this tab connected has no local equivalent at all.
+   * Falling back to `new Date()` keeps a producer whose start the backend never noted working as before.
+   */
+  function setStatus(id: string, status: TaskStatus, at: { startedAt?: Date; finishedAt?: Date } = {}) {
     const t = tasks.value.find(t => t.id === id)
     if (!t) return
     // Terminal states set by the user (cancelled) are sticky — don't let a late
     // backend "done" or "running" overwrite a cancel the user explicitly requested.
     if (t.status === 'cancelled' && status !== 'cancelled') return
     t.status = status
-    if (status === 'running' && !t.startedAt) t.startedAt = new Date()
+    // A backend start is adopted even if we already stamped one locally — it's the real instant, and it
+    // only ever moves the number closer to the truth.
+    if (at.startedAt) t.startedAt = at.startedAt
+    else if (status === 'running' && !t.startedAt) t.startedAt = new Date()
     if (status === 'done' || status === 'failed' || status === 'cancelled')
-      t.finishedAt = new Date()
+      t.finishedAt = at.finishedAt ?? new Date()
   }
 
   function setProgress(id: string, progress: number) {
@@ -119,8 +129,9 @@ export const useTaskStore = defineStore('tasks', () => {
   const jumpToId = ref<string | null>(null)
 
   // Upsert a task entry from a chain WS event. Creates on first event (usually :queued),
-  // updates status thereafter. startedAt is only stamped on :running (real pool-slot start),
-  // so a node waiting for a GPU slot shows :queued with no elapsed time.
+  // updates status thereafter. startedAt is only set on :running (real pool-slot start), so a node
+  // waiting for a GPU slot shows :queued with no elapsed time — and it comes from the frame
+  // (`chain:node:*` carries the scheduler's own `startedAt`), falling back to now only if absent.
   function addFromChainEvent(opts: {
     runId: string
     nodeId: string
@@ -132,6 +143,8 @@ export const useTaskStore = defineStore('tasks', () => {
     status: TaskStatus
     projectUid: string
     taskId?: string
+    startedAt?: Date
+    finishedAt?: Date
   }) {
     const syntheticId = `${opts.runId}::${opts.nodeId}::${opts.imageUid}`
     const existing = tasks.value.find(t => t.id === syntheticId)
@@ -141,7 +154,7 @@ export const useTaskStore = defineStore('tasks', () => {
       if (opts.imageName && existing.imageName === opts.imageUid) existing.imageName = opts.imageName
       // …same for the scheduler task id: :queued may arrive before the node has one
       if (opts.taskId) existing.backendTaskId = opts.taskId
-      setStatus(syntheticId, opts.status)
+      setStatus(syntheticId, opts.status, { startedAt: opts.startedAt, finishedAt: opts.finishedAt })
       return existing
     }
     // Derive module from fn category: 'cleanupImages' → 'cleanup', 'importImages' → 'import'
@@ -155,7 +168,8 @@ export const useTaskStore = defineStore('tasks', () => {
       imageUid:    opts.imageUid,
       imageName:   opts.imageName ?? opts.imageUid,
       status:      opts.status,
-      startedAt:   opts.status === 'running' ? new Date() : undefined,
+      startedAt:   opts.startedAt ?? (opts.status === 'running' ? new Date() : undefined),
+      finishedAt:  opts.finishedAt,
       log:         [],
       taskName:    opts.fn,
       funName:     opts.fn,

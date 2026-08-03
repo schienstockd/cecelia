@@ -10,6 +10,8 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import { moduleColor } from '../utils/taskModule'
+import { useNowTick } from '../composables/useNowTick'
+import { taskElapsed } from '../utils/taskElapsed'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
@@ -91,12 +93,9 @@ async function copyLog() {
   await copy(selected.value.log.join('\n'))
 }
 
-function elapsed(t: TaskEntry) {
-  if (!t.startedAt) return null
-  const end = t.finishedAt ?? new Date()
-  const s   = Math.round((end.getTime() - t.startedAt.getTime()) / 1000)
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
-}
+// shared formatter + shared 1s clock, so a running task's elapsed advances without a frame arriving
+const now = useNowTick()
+const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
 
 // status icon/colour/label come from the ONE canonical map (lib/taskStatus.ts)
 

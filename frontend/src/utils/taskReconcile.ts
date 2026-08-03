@@ -29,6 +29,8 @@ export interface RecentTaskOutcome {
   image_uid?: string
   /** every image the task touched — a set-scope task's full member list, not just the representative */
   image_uids?: string[]
+  /** ISO-8601 UTC. Both may be absent against an older backend, or `started_at` `''` if it never ran. */
+  started_at?: string
   finished_at?: string
 }
 
@@ -81,7 +83,15 @@ export function recoveredTaskFrames(
     emitted.add(t.id)
     // the ring carries the scheduler's representative image; fall back to what we launched with
     const imageUid = o.image_uid || t.imageUid || ''
-    const common = { recovered: true, recoveredFrom: backendId }
+    // …and the times it ran, which is the whole reason the row is better than "now": this frame is
+    // reconstructed seconds or minutes after the fact, so stamping arrival would inflate every recovered
+    // task's duration by the poll delay. Absent/`''` (older backend, never started) simply omits them and
+    // the store falls back to its own clock, exactly as before.
+    const times = {
+      ...(o.started_at  ? { startedAt:  o.started_at  } : {}),
+      ...(o.finished_at ? { finishedAt: o.finished_at } : {}),
+    }
+    const common = { recovered: true, recoveredFrom: backendId, ...times }
 
     if (t.chainRunId && t.chainNodeId) {
       // a chain node's outcome travels as chain:node:done / chain:node:failed, carrying WHICH terminal
