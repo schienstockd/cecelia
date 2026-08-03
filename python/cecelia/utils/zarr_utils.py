@@ -150,12 +150,6 @@ def open_zarr(zarr_path, mode='r', multiscales=None, as_dask=False):
     return zarr_data, zarr_group_info
 
 
-def get_dask_copy(image_array):
-    if isinstance(image_array, zarr.Array):
-        image_array = da.from_zarr(image_array)
-    return copy(image_array)
-
-
 def fortify(im_array):
     if isinstance(im_array, zarr.Array):
         return im_array[:]
@@ -693,7 +687,6 @@ def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets',
     return [ms_entry]
 
 
-
 def calibration_for_axes(dim_utils, axes):
     """``(scale_for_axis, unit_for_axis)`` for a store's axes — the ONE derivation of "what physical
     calibration do these axes carry", shared by every NGFF writer (`create_multiscales`,
@@ -998,14 +991,3 @@ def copy_stream(dest, src, dim_utils=None):
         sl = tuple(sl)
         dest[sl] = fortify(src[sl])
 
-
-def apply_min(x, im_min):
-    x[x == 0] = im_min
-    return x
-
-
-def get_minmax_from_low_res(im_dat):
-    low_res = fortify(im_dat[len(im_dat) - 1])
-    im_min = low_res[low_res > 0].min()
-    im_max = low_res.max()
-    return im_min, im_max

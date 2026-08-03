@@ -253,13 +253,6 @@ def drift_correct_im(
 # (which broke on a single-frame slab). Each squeezes to the spatial frame, applies the op, and
 # reshapes back to the slab shape.
 
-def non_zero_edges(im):
-    true_points = np.argwhere(im)
-    return {'tl': true_points.min(axis=0), 'br': true_points.max(axis=0)}
-
-
-
-
 
 def _af_slab(data, dim_utils, channel_idx, t):
     """One channel + one timepoint as numpy, full axis layout (T=1, C=1, spatial). The unit of AF
@@ -472,8 +465,6 @@ def af_correct_frame(slabs, target, stats, out_dtype):
     if np.issubdtype(np.dtype(out_dtype), np.integer):
         out = np.rint(out)
     return np.clip(out, 0, stats.nbins - 1).astype(out_dtype)
-
-
 
 
 def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competing_channel_idx,

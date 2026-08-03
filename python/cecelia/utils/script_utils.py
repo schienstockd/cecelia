@@ -43,11 +43,6 @@ def get_param(params, key, default=None):
     return v
 
 
-def get_ccia_param(params, key, default=None):
-    """Retrieve a value from the nested 'ccia' sub-dict of params."""
-    return get_param(get_ccia_params(params), key, default=default)
-
-
 def get_ccia_params(params):
     """Return the 'ccia' sub-dict of params, or an empty list if absent."""
     if 'ccia' in params:
