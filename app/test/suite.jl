@@ -7289,6 +7289,77 @@ end
 
     end
 
+    @testset "clipping-at-acquisition findings" begin
+        mk(i, sat; top = 4095, frac = 0.0, n = 0) =
+            Dict{String,Any}("index" => i, "saturated" => sat, "topValue" => top,
+                             "topCount" => n, "topFrac" => frac)
+        meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, false; top = 1032, frac = 1.0e-6),
+            mk(1, true;  top = 4095, frac = 0.00018, n = 534),   # clipped at the 12-bit ceiling
+            mk(2, false; top = 2854, frac = 1.0e-6),
+        ]))
+
+        fs = Cecelia.saturation_qc_findings(meta)
+        @test length(fs) == 1                              # only the clipped channel
+        @test fs[1]["code"] == "import.channel_saturated"
+        @test fs[1]["level"] == "warn"                     # advisory, never a gate
+        @test fs[1]["detail"]["channel"] == 1
+        # the effective ceiling is reported because it is NOT the dtype maximum on 12-bit-in-16-bit
+        @test fs[1]["detail"]["topValue"] == 4095.0
+        # the COUNT is what a reader can judge; the fraction is ~1e-6 and rounds away
+        @test fs[1]["detail"]["clippedVoxels"] == 534.0
+
+        m = Cecelia.saturation_metrics(meta)
+        @test m["nChannelsSaturated"] == 1
+        @test m["maxClippedFrac"] == 0.00018
+
+        # the check didn't run (pre-existing image, or a non-integer store) → say nothing at all
+        @test isempty(Cecelia.saturation_qc_findings(Dict{String,Any}()))
+        @test Cecelia.saturation_metrics(Dict{String,Any}()) === nothing
+        @test isempty(Cecelia.saturation_qc_findings(
+            Dict{String,Any}("saturation" => Dict{String,Any}())))
+
+        # nothing clipped → no findings, but the metrics still bank (a measured zero is a result, and
+        # the cohort needs it to tell "clean" apart from "not checked")
+        clean = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [mk(0, false)]))
+        @test isempty(Cecelia.saturation_qc_findings(clean))
+        @test Cecelia.saturation_metrics(clean)["nChannelsSaturated"] == 0
+
+        # TRACE clipping: structurally detected, but far too small to act on. This is the real measured
+        # case — 4 of 36 channels across nine kSUFux movies sit at 1.1-1.4e-6, i.e. ~500 voxels of
+        # 377 M. No finding (telling someone to lower the gain over 500 voxels is not actionable), but
+        # the metric MUST still record it: the cohort comparison is relative, so it is what surfaces an
+        # image clipping far more than its session peers.
+        trace = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, true; top = 4095, frac = 1.4e-6, n = 534),
+        ]))
+        @test isempty(Cecelia.saturation_qc_findings(trace))
+        tm = Cecelia.saturation_metrics(trace)
+        @test tm["nChannelsSaturated"] == 1
+        @test tm["maxClippedFrac"] == 1.4e-6
+
+        # …and just above the floor it does warn
+        material = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000),
+        ]))
+        @test length(Cecelia.saturation_qc_findings(material)) == 1
+
+        # a channel with no recorded fraction is not guessed at
+        noneframe = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            Dict{String,Any}("index" => 0, "saturated" => true, "topValue" => 4095),
+        ]))
+        @test isempty(Cecelia.saturation_qc_findings(noneframe))
+
+        # JSON3 round-trip — the real path: persisted ccid meta comes back with Symbol keys
+        rt   = JSON3.read(JSON3.write(meta))
+        rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
+        @test length(Cecelia.saturation_qc_findings(rtm)) == 1
+        @test Cecelia.saturation_metrics(rtm)["nChannelsSaturated"] == 1
+
+        # the finding renders — a `{channel}` placeholder with no substitution throws (see qc_text)
+        @test occursin("1", fs[1]["short"])
+    end
+
     # Julia and Python each carry the compressor table — a bioformats2raw command line cannot read a
     # Python constant, and the API serves the list to Settings. Same arrangement as the calibration
     # writers (CLAUDE.md -> *Calibration - three copies, one stamp*): two copies, one contract test.

@@ -76,6 +76,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # clipping at acquisition (import.channel_saturated)
+    "import.channel_saturated" => (
+        short = "Channel {channel} clipped at the detector",
+        long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
+
 
     # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)
     "hmm.no_states_decoded" => (
@@ -280,6 +285,25 @@ end
 const _Z_RATIO_MIN = 0.02
 const _Z_RATIO_MAX = 50
 
+# Materiality floor for the clipping FINDING: the fraction of a channel's voxels sitting at the
+# detector ceiling above which it is worth interrupting someone.
+#
+# **This is a chosen number, not a fitted one, and it should be re-set by the first real case.**
+# `intensity_utils.is_saturated` decides whether a channel clipped AT ALL — structural, measured, and
+# it stays the gate on detection. But detection is not the same as materiality: measured over all 36
+# channels of the nine `kSUFux` movies (one session), the four it flags hold 415-534 voxels of ~377 M
+# at the ceiling — 1.1-1.4e-6. That is real clipping of trivial extent, and "lower the gain" is not
+# an actionable thing to tell someone about 500 voxels, on 4 of every 9 imports.
+#
+# 1e-4 is ~37 000 voxels on an image that size: unambiguously truncated structure rather than a few
+# hot cells, and ~70x above the worst trace case observed. Nothing in that session would warn. It is
+# set from what would damage a MEASUREMENT, because there is no material case in hand to fit to.
+#
+# The metric (`saturation_metrics`) is banked regardless of this floor: a trace-level count is still
+# worth having, because the cohort comparison is relative and will surface an image clipping far more
+# than its session peers without anyone choosing an absolute level.
+const _SATURATION_WARN_FRAC = 1e-4
+
 _cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
 _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
 _cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
@@ -354,6 +378,79 @@ function import_metrics(meta::AbstractDict)
     isempty(d) ? nothing : d
 end
 
+"""
+    saturation_qc_findings(meta) -> Vector
+
+One `warn` per channel that clipped at acquisition **materially** — detected by
+`intensity_utils.is_saturated` AND with at least `_SATURATION_WARN_FRAC` of its voxels at the ceiling.
+From the persisted `meta["saturation"]` (written by `ImportOmezarr`, which checks every import).
+PURE → unit-tested. Empty when the check didn't run (an image imported before it existed, or a
+non-integer store), and empty for trace-level clipping — which the METRICS still record.
+
+Advisory, like all QC — but this is the one import finding a user can only act on *before* the
+experiment: clipped values are gone, so no correction, threshold or rescale recovers them. Hence the
+imperative long text points at the acquisition, not at a parameter.
+
+Detection lives in `intensity_utils.is_saturated` and is structural (a pile-up in the brightest
+occupied bin), so it holds for a 12-bit sensor stored in 16-bit words — where the obvious
+"fraction at the dtype maximum" test reads 0 on visibly clipped data.
+"""
+function saturation_qc_findings(meta::AbstractDict)
+    fs = Dict{String,Any}[]
+    for ch in _saturation_channels(meta)
+        get(ch, "saturated", false) === true || continue
+        # detected AND material — see _SATURATION_WARN_FRAC. A trace pile-up is recorded in the
+        # metrics but does not raise a finding.
+        frac = _cal_num(get(ch, "topFrac", nothing))
+        (isnothing(frac) || frac < _SATURATION_WARN_FRAC) && continue
+        i = _cal_int(get(ch, "index", nothing), 0)
+        push!(fs, qc_finding("warn", "import.channel_saturated"; channel = i,
+            # the COUNT, not a percentage: measured on a real session the clipped fraction is ~1e-6,
+            # which rounds to "0.0001%" and tells the user nothing. "534 voxels at 4095" is judgeable.
+            detail = Dict{String,Any}("channel"        => i,
+                                      "topValue"       => _cal_num(get(ch, "topValue", nothing)),
+                                      "clippedVoxels"  => _cal_num(get(ch, "topCount", nothing)))))
+    end
+    fs
+end
+
+# `meta["saturation"]["channels"]`, normalised to String-keyed Dicts. JSON3 hands back Symbol keys
+# (CLAUDE.md → JSON3 gotcha), and this is read from the persisted ccid on every QC recompute.
+function _saturation_channels(meta::AbstractDict)::Vector{Dict{String,Any}}
+    s = get(meta, "saturation", nothing)
+    s isa AbstractDict || return Dict{String,Any}[]
+    chans = get(Dict{String,Any}(String(k) => v for (k, v) in s), "channels", nothing)
+    chans isa AbstractVector || return Dict{String,Any}[]
+    out = Dict{String,Any}[]
+    for ch in chans
+        ch isa AbstractDict && push!(out, Dict{String,Any}(String(k) => v for (k, v) in ch))
+    end
+    out
+end
+
+"""
+    saturation_metrics(meta) -> Union{Dict,Nothing}
+
+Cohort-comparable saturation counts: `nChannelsSaturated` and `maxClippedFrac` (the worst channel's
+clipped fraction). `nothing` when the check didn't run.
+
+Cohort-comparable because both describe the ACQUISITION, not a parameter anyone typed — so an image
+clipping far more than its session peers is a real gain/expression difference. Measured across nine
+movies from one session, 4 had a clipped channel and 5 did not, which is exactly the spread an
+outlier flag should surface.
+"""
+function saturation_metrics(meta::AbstractDict)
+    chans = _saturation_channels(meta)
+    isempty(chans) && return nothing
+    n = 0; worst = 0.0
+    for ch in chans
+        get(ch, "saturated", false) === true && (n += 1)
+        v = _cal_num(get(ch, "topFrac", nothing))
+        isnothing(v) || (worst = max(worst, v))
+    end
+    Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst)
+end
+
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale
 # in-memory `img.meta`) so it's correct from any call site — import, resync, metadata edit. Writes
 # even when clean (empty findings), so a fixed image overwrites its stale warning. Recomputed from
@@ -363,9 +460,11 @@ function write_metadata_qc!(img::CciaImage)
     isfile(ccid) || return
     raw      = read_ccid_raw(ccid)
     meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    findings = metadata_qc_findings(meta)
+    findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta))
 
     metrics = import_metrics(meta)
+    sm      = saturation_metrics(meta)
+    isnothing(sm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, sm))
 
     if isnothing(metrics)
         write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, findings)

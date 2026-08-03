@@ -64,7 +64,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],
     # import: nChannels/nZ/nT for every image — an odd channel count / dimensionality vs peers means
     # the wrong file was imported or the acquisition was misconfigured. Banked by qc.jl import_metrics.
-    "importImages.omezarr"           => ["nChannels", "nZ", "nT"],
+    # `nChannelsSaturated`/`maxClippedFrac` describe the ACQUISITION rather than a parameter, so they
+    # are comparable across a set shot in one session — an image clipping far more than its peers is a
+    # real gain/expression difference. See qc.jl saturation_metrics.
+    "importImages.omezarr"           => ["nChannels", "nZ", "nT",
+                                         "nChannelsSaturated", "maxClippedFrac"],
     # AF correction: both metrics describe the ACQUISITION, which is what makes them comparable across a
     # set shot in one session. `saturatedFrac` is the fraction of input voxels clipped at the sensor —
     # measured across the nine kSUFux movies it spanned 0.001% to 0.018%, a 13x spread at identical

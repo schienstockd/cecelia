@@ -272,8 +272,10 @@ dim-channel cost above is then unavoidable arithmetic).
 
 **Reference:** `zarr_utils.store_compressor` (the measured codec table that replaced it);
 `intensity_utils` retains the whole-stack histogram helpers the work produced, now used by AF
-correction and segmentation normalisation. The removed pieces — `image_window`, `is_saturated`
-(structural detection of clipping at acquisition), `rescale_stack_to_uint8` — are in git history.
+correction, segmentation normalisation and the import saturation check. `image_window` and
+`rescale_stack_to_uint8` are gone (git history). `is_saturated` was removed with the feature and then
+**brought back for its own sake**: clipping at acquisition is worth reporting whatever the bit depth,
+and it is now a standard QC pass on every import (`saturation_run.py`, `qc.jl::saturation_qc_findings`).
 
 ---
 
