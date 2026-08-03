@@ -16,12 +16,41 @@
 import type { TaskDef, ParamValues } from './types'
 
 /**
+ * One entry of a repeatable `group`, reconciled against the group's declared sub-params.
+ *
+ * Section children are stored FLAT in the entry (that is what `ParamRenderer.addGroupEntry` writes), so
+ * they are read flat here too.
+ */
+function buildGroupEntry(params: TaskDef['params'][number]['params'], saved: ParamValues): ParamValues {
+  const out: ParamValues = {}
+  for (const p of params ?? []) {
+    if (p.type === 'section') {
+      for (const sp of p.params ?? []) out[sp.key] = saved[sp.key] ?? sp.default ?? null
+    } else {
+      out[p.key] = saved[p.key] ?? p.default ?? null
+    }
+  }
+  return out
+}
+
+/**
  * Form values for every param the spec declares, preferring `saved` and falling back to the param's
  * default. Sections are containers: their children are read from the FLAT key (that is how they are
  * stored) with a legacy nested record honoured first.
  *
  * Use this for a server-saved record AND for a restored draft — anything that may predate the current
  * spec. `null` (not `undefined`) is the "no value" marker, because null survives JSON.
+ *
+ * **A `group`'s ENTRIES are reconciled too, not passed through.** This used to take the saved group
+ * verbatim, which meant the invariant above stopped at the top level: a group entry kept sub-keys the
+ * spec no longer declares and never gained the ones it does. Real cost, measured on live projects —
+ * `zolIMa` and `4kS67f` still stored AF combinations carrying `channelPercentile`, `correctionMax`,
+ * `medianFilter`, `denoiseFun` and a dozen more, deleted from the spec in #437 and re-persisted on every
+ * run since. And when `quotientChannel`/`divisionChannels` were renamed to
+ * `targetChannel`/`competingChannels`, the entries survived while their contents did not: the form
+ * showed the right NUMBER of combinations with every channel picker blank, which reads as "my params
+ * weren't remembered". Same reconciliation as the top level: known keys survive, new sub-params get
+ * their defaults, sub-params that no longer exist drop out.
  */
 export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues {
   const vals: ParamValues = {}
@@ -33,6 +62,13 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
         sectionVals[sp.key] = savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null
       }
       vals[p.key] = sectionVals
+    } else if (p.type === 'group') {
+      const savedGroup = ((saved[p.key] ?? p.default ?? {}) as Record<string, unknown>)
+      const groupVals: Record<string, ParamValues> = {}
+      for (const [entryKey, entry] of Object.entries(savedGroup)) {
+        groupVals[entryKey] = buildGroupEntry(p.params, (entry ?? {}) as ParamValues)
+      }
+      vals[p.key] = groupVals
     } else {
       vals[p.key] = saved[p.key] ?? p.default ?? null
     }
