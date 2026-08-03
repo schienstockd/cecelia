@@ -4,8 +4,9 @@ Golden values pin the streamed per-channel histogram, the outlier-rejected max, 
 background threshold and the clip stats — the primitives AF correction and segmentation
 normalisation are built on. Part of the Python (analysis-env) suite — run with `pixi run test-py`.
 
-`robust_hist_max` is under test because `correction_utils.af_division_stats` depends on its outlier
-rejection: a single hot pixel must not decide a derived ceiling.
+`robust_hist_max` currently has no production caller — the AF task replaced its division and the 8-bit
+import was removed, in the same window. It stays under test because it is kept deliberately for the two
+measured traps on its docstring; a kept function with no test is how those get quietly broken.
 """
 import unittest
 

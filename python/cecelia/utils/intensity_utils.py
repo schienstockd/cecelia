@@ -1,8 +1,9 @@
 """
 Whole-stack intensity statistics, computed from streamed per-channel histograms.
 
-Used by AF correction (`correction_utils.af_division_stats` — background level, ratio ceiling, clip
-stats) and by segmentation normalisation (`segmentation_utils` — percentile bounds per channel).
+Used by AF correction (`correction_utils.af_weight_stats` — the derived background level;
+`af_output_stats` — clip stats) and by segmentation normalisation (`segmentation_utils` — percentile
+bounds per channel).
 
 Why a histogram (not `np.percentile`): the input is 16-bit integer data that can be tens of GB, so we
 cannot materialise a channel to sort it. A single streamed `bincount` per channel (65 536 bins
@@ -103,11 +104,22 @@ def robust_hist_max(hist, min_count=None, min_frac=ROBUST_MAX_MIN_FRAC,
     Returns 0 for an empty histogram, and falls back to the true max if NO value reaches
     ``min_count`` (a tiny or nearly-empty image — better a wide ceiling than a zero one).
 
+    **No caller today.** Two landed in the same window: the AF task replaced its division (so it no
+    longer derives a ceiling) and the 16→8-bit import was removed (so nothing needs an output window at
+    all). It is kept because the two traps below are measured and non-obvious, and the next thing that
+    needs an outlier-rejected maximum should start here rather than re-derive them. Retire it if that
+    never happens — it is one function and this docstring is the reason to keep it.
+
     **Trap:** the background bin usually holds far more voxels than anything else, so a ``min_count``
     larger than the signal population returns the *background* level rather than nothing — a ceiling
     at or below the peak, which makes a rescale window degenerate. The caller owns that check, because
-    only it knows which bins are background: see `correction_utils.af_division_stats`, which floors the
-    ceiling above the derived background.
+    only it knows which bins are background.
+
+    **Second trap, from the AF task that used to call this:** clipped input piles every saturated voxel
+    into one bin, so a count threshold can land on a *clipping artefact* rather than on signal. Measured
+    on the kSUFux movies, that bin held 55-90k voxels where its neighbours held ~1k, and the threshold
+    decided the ceiling in 4 of 9 images purely on whether the pile cleared it. Ask for a fraction of
+    the image rather than an absolute count if the image size is not fixed.
     """
     h = np.asarray(hist)
     if min_count is None:
@@ -182,8 +194,8 @@ def clip_stats(hist, vmin, vmax):
     """
     How much of a channel falls outside an intensity window, from its histogram. Pure/JSON-friendly.
 
-    Sole caller today is `correction_utils.af_division_stats`, which reports what its derived AF
-    ratio ceiling clips.
+    Sole caller today is `correction_utils.af_output_stats`, which reports what the corrected
+    channel clips.
 
     - clipLowFrac / clipHighFrac: fraction of pixels strictly outside [vmin, vmax] — i.e. what the
       window would saturate at each end.

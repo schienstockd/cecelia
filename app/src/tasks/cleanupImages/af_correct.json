@@ -22,25 +22,25 @@
       "label": "Channel combinations",
       "type": "group",
       "repeatable": true,
-      "labelKey": "quotientChannel",
+      "labelKey": "targetChannel",
       "default": {},
-      "tip": "One entry per channel, with its AF reference channels",
+      "tip": "One entry per channel, with the channels it competes with",
       "params": [
         {
-          "key": "quotientChannel",
+          "key": "targetChannel",
           "label": "Channel to correct",
           "type": "channelSelection",
           "multiple": false,
           "default": [],
-          "tip": "The channel whose autofluorescence will be corrected"
+          "tip": "The channel to correct"
         },
         {
-          "key": "divisionChannels",
-          "label": "Division channels (AF reference)",
+          "key": "competingChannels",
+          "label": "Competing channels",
           "type": "channelSelection",
           "multiple": true,
           "default": [],
-          "tip": "Channels whose signal is used as the autofluorescence reference for correction"
+          "tip": "Channels that share signal with this one"
         }
       ]
     },
@@ -57,10 +57,6 @@
         {
           "label": "Otsu",
           "value": "otsu"
-        },
-        {
-          "label": "None",
-          "value": "none"
         }
       ],
       "tip": "How the background level of each channel is found"

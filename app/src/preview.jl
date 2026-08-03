@@ -30,7 +30,12 @@ const PREVIEW_PORT   = 7656
 # `funName`, fell through to the segmentation path and raised "no models in preview params", with
 # nothing anywhere reporting that the process was old. Bump BOTH sides together whenever the reply shape
 # or the set of previewable tasks changes.
-const PREVIEW_PROTOCOL = 3
+#
+# 4 is also the first bump where a stale worker would NOT fail loudly: it carries the old ratio
+# `af_correct_frame`, so it would keep returning well-formed ratio previews — hollowed-out overlapping
+# cells and all — while the backend believes the power weight is being shown. A preview that silently
+# disagrees with the run is the one outcome this feature must never produce.
+const PREVIEW_PROTOCOL = 4
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
