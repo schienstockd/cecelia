@@ -420,6 +420,33 @@ end
 
 # Set a pool's concurrency limit live (Settings sliders): resize now + persist to custom.toml.
 # Only already-configured pools are settable (no typo pools accumulating in custom.toml).
+# ── Image store compression ──────────────────────────────────────────────────
+# GET → { current, default, choices: [{name, label, detail}] }. The choice list is served, never
+# duplicated in Vue — same rule as task param specs (CLAUDE.md → the JSON spec is the single source).
+function api_compressor_get(_req)
+    choices = [(; name = c.name, label = c.label, size = c.size, ratio = c.ratio,
+                  write = c.write, read = c.read, url = c.url)
+               for c in Cecelia.IMAGE_COMPRESSOR_CHOICES]
+    200, JSON3.write((; current = Cecelia.image_compressor(),
+                        default = Cecelia.IMAGE_COMPRESSOR_DEFAULT,
+                        measuredOn = Cecelia.IMAGE_COMPRESSOR_MEASURED_ON,
+                        docsUrl = Cecelia.IMAGE_COMPRESSOR_DOCS_URL,
+                        choices = choices))
+end
+
+# Set it live: persists to custom.toml + hot-reloads, so the NEXT task writes with it. Existing
+# stores are untouched (a re-write is rechunk_zarr.py's job) — the UI says so.
+function api_compressor_set(body_bytes)
+    data = JSON3.read(body_bytes)
+    name = String(get(data, :name, ""))
+    isempty(name) && return 400, JSON3.write((; error = "name required"))
+    try
+        200, JSON3.write((; current = Cecelia.set_image_compressor!(name)))
+    catch e
+        e isa ArgumentError ? (400, JSON3.write((; error = e.msg))) : rethrow()
+    end
+end
+
 function api_pool_set(body_bytes)
     data  = JSON3.read(body_bytes)
     name  = String(get(data, :name, ""))
@@ -882,30 +909,6 @@ function api_sets_create(body_bytes::Vector{UInt8})
     s    = add_set!(proj; name=name)
     @info "Created set" name uid=s.uid project=project_uid
     200, JSON3.write((; uid=s.uid, name))
-end
-
-# Nominate (or clear) the set's reference image — the one the user judges representative. Consumers
-# derive their own numbers from it; see model/set.jl. `imageUid` empty/absent clears.
-function api_sets_reference_set(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
-    project_uid = String(get(body, :projectUid, ""))
-    set_uid     = String(get(body, :setUid, ""))
-    image_uid   = String(get(body, :imageUid, ""))
-    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
-    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
-
-    proj = load_project(project_uid)
-    idx  = findfirst(x -> x.uid == set_uid, proj._sets)
-    isnothing(idx) && return 404, JSON3.write((; error="Set not found: $set_uid"))
-    s = proj._sets[idx]
-    try
-        set_reference_image!(s, isempty(image_uid) ? nothing : image_uid)
-    catch e
-        return 400, JSON3.write((; error=sprint(showerror, e)))
-    end
-    200, JSON3.write((; ok=true, setUid=set_uid, referenceImage=reference_image_uid(s)))
 end
 
 function api_sets_delete(body_bytes::Vector{UInt8})
@@ -1640,10 +1643,12 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
-# Set include/exclude (+ optional note) for one or more images. `values` maps uid → a partial
-# dict {included?, note?}; only the keys present are changed (toggle inclusion without clobbering a
-# note, or edit a note without touching inclusion). First-class CciaImage fields, so this rounds
-# through the model (save! preserves every other field) rather than the meta bag.
+# Set the per-image user flags for one or more images. `values` maps uid → a partial dict
+# {included?, note?, starred?}; only the keys present are changed (toggle inclusion without
+# clobbering a note, star without touching inclusion). First-class CciaImage fields, so this rounds
+# through the model (save! preserves every other field) rather than the meta bag. One route for all
+# three because they are the same operation — flip a user-owned flag on an image — and a second
+# route would duplicate the load/mutate/save path.
 function api_images_inclusion_set(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
@@ -1656,6 +1661,7 @@ function api_images_inclusion_set(body_bytes::Vector{UInt8})
         _mutate_images!(project_uid, [String(image_uid)]) do img
             haskey(fields, "included") && (img.included = Bool(fields["included"]))
             haskey(fields, "note")     && (img.note     = string(fields["note"]))
+            haskey(fields, "starred")  && (img.starred  = Bool(fields["starred"]))
         end
         # Notify observers (mcp/) that a note was set — first-class user context (OBSERVER.md §4).
         if haskey(fields, "note")
@@ -1925,6 +1931,9 @@ function _image_payload(img::CciaImage)
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.
         included        = img.included,
         note            = img.note,
+        # A plain user bookmark, any number per set — drives the Starred row filter and nothing else
+        # (no effect on selection, runs, or processing). See model/image.jl.
+        starred         = img.starred,
         # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
         # flags the GUI renders as a badge + tooltip. Includes the live calibration fallback so
         # pre-migration images still surface metadata warnings (see _image_qc_payload).
@@ -1935,8 +1944,5 @@ function _image_payload(img::CciaImage)
     )
 end
 
-# `referenceImage` — the set's nominated representative (model/set.jl). Sent with the set rather
-# than the image so the table can render exactly one star without scanning every image, and so an
-# unset reference is a plain `nothing` instead of nine images each claiming not to be it.
-_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name, referenceImage=reference_image_uid(s),
+_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name,
                               images=[_image_payload(i) for i in s._images])

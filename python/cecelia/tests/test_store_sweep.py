@@ -150,10 +150,10 @@ def _multiscale_store(root, name, declared, present):
 class StructuralDetectionTest(unittest.TestCase):
     """The half that name-matching cannot do.
 
-    `*.partial` only catches writers that opted into `staged_store`. IMPORT does not: on the 16-bit path
-    bioformats2raw writes straight to the FINAL name, so a cancelled import leaves a half-written store
-    called `ccidImage.ome.zarr` — which the sweep actively SKIPPED as "a real store" — plus
-    `ccidImage.16bit.tmp.ome.zarr` and `_stage_src` (often the biggest of the three).
+    `*.partial` only catches writers that opted into `staged_store`. IMPORT does not: bioformats2raw
+    writes straight to the FINAL name, so a cancelled import leaves a half-written store called
+    `ccidImage.ome.zarr` — which the sweep actively SKIPPED as "a real store" — plus `_stage_src`
+    (often larger than the store itself).
     """
 
     def setUp(self):
@@ -185,8 +185,9 @@ class StructuralDetectionTest(unittest.TestCase):
         self.assertEqual(found[orphan]['why'], 'unregistered')
 
     def test_the_import_leftovers_name_matching_missed(self):
-        # the exact three a cancelled 16-bit import leaves
-        half = _store(self.zero, 'ccidImage.16bit.tmp.ome.zarr')
+        # what a cancelled import leaves: an unregistered store under a name no ccid entry claims,
+        # plus the local stage copy of the source
+        half = _store(self.zero, 'ccidImage.staged.ome.zarr')
         stage = os.path.join(self.zero, '_stage_src')
         os.makedirs(stage, exist_ok=True)
         with open(os.path.join(stage, 'src.tif'), 'wb') as f:

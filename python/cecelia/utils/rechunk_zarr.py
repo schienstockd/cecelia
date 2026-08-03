@@ -1,10 +1,18 @@
-"""Rechunk existing OME-ZARR corrections to per-plane chunks (one-off maintenance).
+"""Rechunk + recompress existing OME-ZARR corrections (one-off maintenance).
 
-Corrections written before the plane-chunk fix (``zarr_utils.plane_chunks``) can be chunked across the
-whole T/C axes (dask ``chunks='auto'`` → ~128 MB chunks). napari slices per (t,c,z), so a single plane
-access then costs a full-timecourse read — slow on first open, fast once OS-cached. This rewrites each
-multiscale level with per-plane chunks (1 along T/C/Z, ``xy_tile``-capped along Y/X). **Pixel data is
-unchanged** — only the on-disk chunk layout differs.
+Two on-disk properties, both fixed by the same rewrite and neither touching a pixel value:
+
+**Chunking.** Corrections written before the plane-chunk fix (``zarr_utils.plane_chunks``) can be
+chunked across the whole T/C axes (dask ``chunks='auto'`` → ~128 MB chunks). napari slices per
+(t,c,z), so a single plane access then costs a full-timecourse read — slow on first open, fast once
+OS-cached. Each multiscale level is rewritten with per-plane chunks (1 along T/C/Z, ``xy_tile``-capped
+along Y/X).
+
+**Compressor.** Stores written before `zarr_utils.store_compressor` existed carry whichever codec the
+library defaulted to at the time (`blosc/lz4-5` under zarr-python 2 and from bioformats2raw; plain
+`zstd` since the zarr 3 migration). This is the migration path onto the canonical one — measured 33%
+smaller than `blosc/lz4-5` on 16-bit acquisition data. **Pixel data is unchanged** either way; only
+the layout and the encoding differ.
 
 Usage (run in the analysis env, e.g. ``pixi run python``):
     python python/cecelia/utils/rechunk_zarr.py PATH [--replace] [--force] [--xy-tile 512]
@@ -12,10 +20,12 @@ Usage (run in the analysis env, e.g. ``pixi run python``):
     PATH       a single ``*.ome.zarr`` store, or a directory scanned recursively for corrected stores.
     --replace  swap the rechunked copy in place; the original is backed up to ``<name>.bak.ome.zarr``.
                Without it, a ``<name>.rechunked.ome.zarr`` is written and the original left untouched.
-    --force    rechunk even if the store already looks per-plane-chunked.
+    --force    rewrite even if the store already looks per-plane-chunked on the canonical codec.
 
 Only FLAT corrected stores (numeric level arrays at the group root, i.e. our correction output) are
 touched; bioformats2raw originals (a nested series group) are skipped — they're already pyramided.
+The sweep matches ``*.ome.zarr``, so LABEL stores (``labels/<name>.zarr``) are never picked up — hence
+the ``kind='image'`` default; pass ``kind='labels'`` to `rechunk_store` for one by hand.
 
 **Writes here do NOT use `zarr_utils.staged_store`, deliberately** — it is the canonical write-to-a-
 staging-path-then-rename helper every TASK writer uses (see docs/SEGMENTATION.md →
@@ -35,7 +45,7 @@ import dask.array as da
 import zarr
 
 # `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
-from cecelia.utils.zarr_utils import plane_chunks
+from cecelia.utils.zarr_utils import plane_chunks, store_compressor
 
 
 def _levels(group):
@@ -50,8 +60,37 @@ def needs_rechunk(arr, xy_tile=512):
     return any(c > 1 for i, c in enumerate(arr.chunks) if i < n - 2)
 
 
-def rechunk_store(path, xy_tile=512, replace=False, force=False):
-    """Rechunk one ``*.ome.zarr``. Returns (status, detail)."""
+def _codec_identity(cfg):
+    """The part of a numcodecs config that decides the bytes on disk, normalised for comparison.
+
+    ``zstd`` level 0 is the library's sentinel for its default level (3) — measured byte-identical
+    output — so a store written at level 0 must NOT read as needing a rewrite to level 3. Without
+    this, every store written since the zarr 3 migration would be swept for no gain."""
+    cid = cfg.get('id')
+    level = cfg.get('clevel', cfg.get('level', 0))
+    if cid == 'zstd' and level == 0:
+        level = 3
+    return (cid, cfg.get('cname'), int(level), int(cfg.get('shuffle', 0)))
+
+
+def needs_recompress(arr, kind='image'):
+    """True if the array's compressor isn't the canonical one for its kind.
+
+    Checked alongside `needs_rechunk` so an already-plane-chunked store still gets swept onto the
+    canonical codec — otherwise the rewrite this module performs would skip exactly the stores that
+    have the old compressor and correct chunking, which is most of them."""
+    want = _codec_identity(store_compressor(kind).get_config())
+    have = [_codec_identity(c.get_config()) for c in (arr.compressors or ())]
+    return want not in have
+
+
+def rechunk_store(path, xy_tile=512, replace=False, force=False, kind='image'):
+    """Rechunk one ``*.ome.zarr``. Returns (status, detail).
+
+    Also re-lands the store on the canonical compressor (`zarr_utils.store_compressor`), because it
+    is rewriting every chunk anyway — which makes this the migration path for stores written before
+    that choice existed (a `blosc/lz4-5` bioformats2raw original is ~33% larger than it needs to be).
+    ``kind='labels'`` for a label store; the default suits the flat correction stores this targets."""
     try:
         src = zarr.open_group(path, mode="r")
     except Exception as e:
@@ -59,8 +98,11 @@ def rechunk_store(path, xy_tile=512, replace=False, force=False):
     levels = _levels(src)
     if not levels:
         return ("skip", "no root-level arrays (bioformats2raw original or unknown layout)")
-    if not force and not needs_rechunk(src[levels[0]], xy_tile):
-        return ("ok", "already per-plane chunked")
+    rechunk    = needs_rechunk(src[levels[0]], xy_tile)
+    recompress = needs_recompress(src[levels[0]], kind)
+    if not force and not rechunk and not recompress:
+        return ("ok", "already per-plane chunked, canonical codec")
+    reasons = ", ".join(r for r, on in (("rechunk", rechunk), ("recompress", recompress)) if on) or "forced"
 
     tmp = path.rstrip("/") + ".rechunk_tmp"
     if os.path.exists(tmp):
@@ -70,7 +112,8 @@ def rechunk_store(path, xy_tile=512, replace=False, force=False):
     for k in levels:
         s = src[k]
         ch = plane_chunks(s.shape, xy_tile=xy_tile)
-        d = dst.create_array(k, shape=s.shape, chunks=ch, dtype=s.dtype)
+        d = dst.create_array(k, shape=s.shape, chunks=ch, dtype=s.dtype,
+                             compressor=store_compressor(kind))
         da.store(da.from_array(s, chunks=ch), d, lock=False)  # streams level→level, plane-chunked
     # copy any non-array members verbatim (e.g. an `OME/` metadata subgroup); levels + dotfiles handled
     for entry in os.listdir(path):
@@ -90,7 +133,7 @@ def rechunk_store(path, xy_tile=512, replace=False, force=False):
             shutil.rmtree(bak)
         os.rename(path, bak)          # keep the original as a backup
         os.rename(tmp, path)
-        return ("rechunked", f"replaced in place (backup: {os.path.basename(bak)})")
+        return ("rechunked", f"{reasons}; replaced in place (backup: {os.path.basename(bak)})")
     out = base + ".rechunked.ome.zarr"
     if os.path.exists(out):
         shutil.rmtree(out)

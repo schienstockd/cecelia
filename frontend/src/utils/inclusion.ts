@@ -5,6 +5,13 @@
 
 export interface Includable { uid: string; included?: boolean | null }
 
+/** Starred — a plain user bookmark ("I like this one"), any number per set. Drives the Starred row
+ *  filter and NOTHING else: it does not affect selection, runs, or processing. Absent/null = not
+ *  starred, so legacy images read false. */
+export function isStarred(img: { starred?: boolean | null }): boolean {
+  return img.starred === true
+}
+
 // THE canonical "is this image usable yet?" predicate — one source of truth for every gate that needs
 // real image data (open in napari, crop, segment, measure, run a chain, …). Use this instead of
 // hand-rolling checks. An image is IMPORTED once its converted OME-ZARR exists, i.e. it has a real

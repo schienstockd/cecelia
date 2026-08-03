@@ -202,6 +202,7 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 |---|---|
 | Open an OME-ZARR (image **or** labels) as a level list | `zarr_utils.open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
 | **Write** a store (image version, label set) | `with zarr_utils.staged_store(final_path) as staging:` — then `create_multiscales`/`open_multiscales_for_writing` on `staging`, never on `final_path` |
+| **Compression** for any array you create | `compressor=zarr_utils.store_compressor(kind)` — `kind='image'` or `'labels'`. NEVER omit it, never build a `Blosc`/`Zstd` yourself |
 | Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
 | NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
 | OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
@@ -216,6 +217,14 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 - **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
   producing task's job, via `zarr_utils.create_multiscales` (or the segmentation writer), not a
   hand-rolled `zarr.open(..., 'w')`.
+- **The compressor is a decision, not a default.** `create_array` without `compressor=` silently
+  takes whatever the zarr version defaults to, which is how three different codecs ended up on disk
+  with no intent behind any of them. `store_compressor` holds the one choice per store kind — and the
+  two kinds need *opposite* settings (byte shuffle wins on 16-bit intensity data, and loses on
+  >99%-zero label planes), so pass the right `kind` rather than assuming one is better. Selectable in
+  Settings → Storage (`[zarr].imageCompressor`), reaching Python via the `CECELIA_IMAGE_COMPRESSOR`
+  env var `run_py` sets. Enforced by `test_store_compressor_convention.py`. The measured numbers live
+  on the constants; why images are NOT reduced to 8-bit is a recorded non-goal in `docs/FUTURE.md`.
 - **Never write a store at its final path — stage it.** `staged_store` is the store-level twin of
   `write_atomic`: a writer that opens the final path destroys the previous store up front and then
   fills it over minutes, so a cancelled re-run leaves `ccid.json` pointing at a truncated store — and

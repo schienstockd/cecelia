@@ -609,6 +609,8 @@ def run(params: dict):
             # a legacy R store layout only; using it here writes a store no cecelia reader can open.
             ignore_channel=False,
             squeeze=False,
+            # branch-type LABELS, not intensity — picks the label compressor (see store_compressor)
+            kind='labels',
         )
 
     aniso_uns = None

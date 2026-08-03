@@ -603,7 +603,8 @@ class SegmentationUtils:
 
         chunks = self._label_chunks(tuple(label_shape), label_axes)
         level0 = g.create_array('0', shape=tuple(label_shape),
-                                chunks=chunks, dtype=self.LABEL_DTYPE)
+                                chunks=chunks, dtype=self.LABEL_DTYPE,
+                                compressor=zarr_utils.store_compressor('labels'))
         return g, level0, chunks
 
     def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):
@@ -615,7 +616,7 @@ class SegmentationUtils:
         la_t = label_axes.index('T') if 'T' in label_axes else None
         zarr_utils.write_multiscale_pyramid(
             g, level0, None, nscales, list(chunks),
-            x_idx=la_x, y_idx=la_y, t_idx=la_t)
+            x_idx=la_x, y_idx=la_y, t_idx=la_t, kind='labels')
 
     def _label_chunks(self, shape, label_axes):
         return tuple(

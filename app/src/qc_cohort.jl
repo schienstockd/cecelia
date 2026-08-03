@@ -62,15 +62,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # region clustering (set-scope, one run): per-image region distribution — an image collapsed to
     # one region / a very different dominant-region fraction is an outlier. See clustRegions/cluster.jl.
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],
-    # import: nChannels/nZ/nT for every image (an odd channel count / dimensionality vs peers = wrong
-    # file or acquisition misconfig); nChannelsClipped/Flat only for convertTo8bit imports (an image
-    # that rescaled worse than its peers). Banked by qc.jl import_metrics + rescale_metrics. See
-    # docs/todo/IMPORT_RESCALE_PLAN.md.
-    # `windowNeeded` is the cohort-interesting one: the 8-bit ceiling each image asked for. The set's
-    # true requirement is the MAX across it, so an image far above the others is the one the shared
-    # window fails to cover — and the outlier flag says so without anyone re-reading pixels.
-    "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat",
-                                         "nChannelsSaturated", "windowNeeded"],
+    # import: nChannels/nZ/nT for every image — an odd channel count / dimensionality vs peers means
+    # the wrong file was imported or the acquisition was misconfigured. Banked by qc.jl import_metrics.
+    "importImages.omezarr"           => ["nChannels", "nZ", "nT"],
     # AF correction: cohort-comparable BECAUSE the output ceiling is derived per image rather than
     # dialled in — so an image whose corrected channel clipped far more, or used far less of the
     # output range, than its peers had its background/ceiling derived differently, which is a staining

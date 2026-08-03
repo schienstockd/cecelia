@@ -8,7 +8,7 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
-import { isExcluded, isIncluded, includedUids, isImported } from '../utils/inclusion'
+import { isExcluded, isIncluded, includedUids, isImported, isStarred } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
@@ -175,32 +175,24 @@ async function saveNote(img: CciaImage, val: string) {
   }
 }
 
-// ── Reference image ───────────────────────────────────────────────────────────
-// One image per set, nominated by the user as representative. It is a SET property, not a task
-// param: the 8-bit import derives its shared intensity window from it, so every image in the set
-// lands in one intensity space. The user picks it because they are the one who knows which movie
-// looks like what they usually see — the alternative is asking for a raw intensity number, which
-// only someone eyeballing a histogram can answer.
-function isReference(img: CciaImage) {
-  return project.sets.find(s => s.uid === props.setUid)?.referenceImage === img.uid
-}
-
-async function toggleReference(img: CciaImage) {
+// ── Star ──────────────────────────────────────────────────────────────────────
+// A plain bookmark — "I like this one". Any number of images can be starred, and nothing downstream
+// reads it: it drives the Starred row filter (utils/rowFilters.ts) and nothing else. Same shape as
+// include/exclude below, so it rides the same per-image flags route.
+async function toggleStarred(img: CciaImage) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
-  const set = project.sets.find(s => s.uid === props.setUid)
-  const prev = set?.referenceImage ?? null
-  const next = prev === img.uid ? null : img.uid          // clicking the current star clears it
-  project.setReferenceImage(props.setUid, next)           // reflect immediately
+  const starred = !isStarred(img)
+  project.setInclusion(img.uid, { starred })                  // reflect immediately
   try {
-    const res = await fetch('/api/sets/reference', {
+    const res = await fetch('/api/images/inclusion/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, setUid: props.setUid, imageUid: next ?? '' }),
+      body: JSON.stringify({ projectUid, values: { [img.uid]: { starred } } }),
     })
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
   } catch (e) {
-    project.setReferenceImage(props.setUid, prev)         // revert on failure
-    log.error(`Failed to set reference image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    project.setInclusion(img.uid, { starred: !starred })      // revert on failure
+    log.error(`Failed to star image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
   }
 }
 
@@ -794,12 +786,10 @@ onUnmounted(stopResize)
               v-tooltip.right="qcFor(img)!.long">
               <i class="pi pi-flag" /> QC
             </span>
-            <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isReference(img) }"
-              @click.stop="toggleReference(img)"
-              v-tooltip.right="isReference(img)
-                ? 'Reference image for this set — click to clear'
-                : 'Set as the set\'s reference image (the representative one others are matched to)'">
-              <i :class="isReference(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
+            <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
+              @click.stop="toggleStarred(img)"
+              v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">
+              <i :class="isStarred(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
             </button>
             <span v-if="isExcluded(img)" class="excl-badge"
               v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
@@ -1119,8 +1109,8 @@ th:hover .resize-handle::after { opacity: 1; }
 .warn-icon-btn { color: var(--cc-sev-warn); }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .warn-icon-btn:hover { filter: brightness(1.2); }
 
-/* Reference-image star — a SET-level nomination, so exactly one row shows it filled. Dim until
-   hovered when unset, so eight unset stars don't compete with the QC and exclusion badges. */
+/* Star — a per-image bookmark, any number per set. Dim until hovered when unset, so a column of
+   unset stars doesn't compete with the QC and exclusion badges. */
 .ref-star { opacity: .25; }
 .ref-star:hover { opacity: .7; }
 .ref-star.on { opacity: 1; color: var(--cc-accent); }

@@ -2395,7 +2395,8 @@ end
         "/api/projects/bundle-info", "/api/projects/bundles",
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
-        "/api/setup/validate", "/api/storage/summary",
+        "/api/setup/validate", "/api/storage/compressor",
+        "/api/storage/summary",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
         "/api/tasks/history", "/api/tasks/recent",
@@ -2446,8 +2447,9 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/delete", "/api/sets/reference", "/api/setup/init",
-        "/api/storage/reclaim", "/api/tasks/custom-modules/reload",
+        "/api/sets/delete", "/api/setup/init",
+        "/api/storage/compressor/set", "/api/storage/reclaim",
+        "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
     UNSAFE = [
@@ -2461,7 +2463,7 @@ end
         "/api/preview/stop", "/api/storage/reclaim",
         "/api/update/apply",
     ]
-    # counts pinned below: 65 GET, 91 POST, 17 not live-called
+    # counts pinned below: 66 GET, 92 POST, 17 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
     STREAM_ROUTES = ["/api/board-assets", "/api/movies/file"]
@@ -2490,7 +2492,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 65 && length(POST_ROUTES) == 92
+    @test length(GET_ROUTES) == 66 && length(POST_ROUTES) == 92
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -67,18 +67,22 @@ This does not touch the speckle. It was a separate defect the investigation surf
 4. **A set-wide ceiling waits on a mechanism that does not exist yet.** AF's derived ceiling has a
    real comparability problem — measured **1.71x** across the nine `kSUFux` movies (one experiment, one
    channel pair, identical settings), and the existing AF QC is provably blind to it, which is why
-   `ceiling` is banked as a cohort metric. The fix is not a typed absolute window: `channel_ranges`'
-   `fixed=(lo, hi)` is in raw intensity units a user can reason about, whereas AF's ceiling is a
-   dimensionless ratio (~15–21 here) — the gain knob that was deliberately removed. The right shape is
-   "derive it from the set's reference image and apply it set-wide".
+   `ceiling` is banked as a cohort metric. The fix is not a typed absolute window in raw intensity
+   units: AF's ceiling is a dimensionless ratio (~15–21 here) — the gain knob that was deliberately
+   removed.
 
-   **But #443 landed only the NOMINATION** (`reference_image_uid` / `set_reference_image!`); no consumer
-   reads it yet. The derive-and-apply half is **in flight as #445** (`feat/import-reference-window`),
-   for the 8-bit import — its designed first consumer. Building a second copy for AF while that is open
-   is precisely the divergent re-implementation the set field exists to prevent, so AF waits for #445 to
-   land and then follows its shape (a `reference_window`-style helper the task calls, not its own path) — and on (1) and (2)
-   above, because on 8-bit input with the reference inactive 98.6% of the time, a shared ceiling would
-   make images consistently coarse rather than comparably precise.
+   **There is no set-wide intensity mechanism to reuse — every attempt at one was removed.** #443
+   landed a set-level `referenceImage` nomination and #445 made the 8-bit import derive a set-wide
+   window from it; both were removed, and then the whole 8-bit conversion was removed with them
+   (images are kept at their acquired bit depth — recorded as a non-goal in `docs/FUTURE.md`, with the
+   measurements and the five window designs that failed). The star survives as a plain multi-select
+   bookmark with no consumer.
+
+   So if AF needs a set-wide ceiling it has to derive one itself. Two things carry over from that
+   work, both hard-won: a per-CHANNEL gain skews the cross-channel ratio the analysis measures, and a
+   nominated reference is a guess that either clips the brighter images or wastes range on all of
+   them. Note also that (1) and (2) above are unchanged by the input now being 16-bit rather than
+   8-bit — that removes the input-precision limit, but not the output-mapping question.
 
 ## Why this is not just a TODO item
 

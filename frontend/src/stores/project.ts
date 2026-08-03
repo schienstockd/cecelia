@@ -38,6 +38,9 @@ export interface CciaImage {
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)
+  // A plain user bookmark, any number per set. Drives the Starred row filter and nothing else — no
+  // effect on selection, runs, or processing (utils/rowFilters.ts).
+  starred?: boolean
   qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
   runLog?: import('../utils/runLog').RunLogEntry[]  // automatic per-image run history (provenance)
 }
@@ -45,10 +48,6 @@ export interface CciaImage {
 export interface CciaSet {
   uid: string
   name: string
-  /** uid of the image the user nominated as representative of this set, or null. A property of the
-   *  SET, not of any task — the 8-bit import derives its shared intensity window from it, and other
-   *  "process this set the way this image says" consumers read the same field. See model/set.jl. */
-  referenceImage: string | null
   images: CciaImage[]
 }
 
@@ -140,7 +139,7 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function addSetFromApi(uid: string, name: string): CciaSet {
-    const s: CciaSet = { uid, name, referenceImage: null, images: [] }
+    const s: CciaSet = { uid, name, images: [] }
     sets.value.push(s)
     activeSetUid.value = s.uid
     return s
@@ -182,7 +181,7 @@ export const useProjectStore = defineStore('project', () => {
   // Unlike addSetFromApi, does NOT switch the active set — a move shouldn't yank the user away.
   function ensureSet(uid: string, name: string): CciaSet {
     let s = sets.value.find(x => x.uid === uid)
-    if (!s) { s = { uid, name, referenceImage: null, images: [] }; sets.value.push(s) }
+    if (!s) { s = { uid, name, images: [] }; sets.value.push(s) }
     return s
   }
 
@@ -255,20 +254,15 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  // Reflect an include/exclude (+ note) change immediately, no reload. Only the provided keys change.
-  /** Reflect a reference-image change locally (the POST is the caller's). One per set, so
-   *  nominating a new image implicitly clears the old star. */
-  function setReferenceImage(setUid: string, imageUid: string | null) {
-    const set = sets.value.find(s => s.uid === setUid)
-    if (set) set.referenceImage = imageUid
-  }
-
-  function setInclusion(imageUid: string, patch: { included?: boolean; note?: string }) {
+  // Reflect a per-image user-flag change immediately, no reload. Only the provided keys change.
+  // One setter for all three because they share a route (api_images_inclusion_set) and a shape.
+  function setInclusion(imageUid: string, patch: { included?: boolean; note?: string; starred?: boolean }) {
     for (const set of sets.value) {
       const img = set.images.find(i => i.uid === imageUid)
       if (img) {
         if (patch.included !== undefined) img.included = patch.included
         if (patch.note !== undefined) img.note = patch.note
+        if (patch.starred !== undefined) img.starred = patch.starred
         return
       }
     }
@@ -306,5 +300,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, setReferenceImage, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })

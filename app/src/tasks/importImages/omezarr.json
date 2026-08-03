@@ -17,13 +17,6 @@
       "tip": "Resolution levels in the image pyramid"
     },
     {
-      "key": "convertTo8bit",
-      "label": "Convert to 8-bit",
-      "type": "bool",
-      "default": false,
-      "tip": "Rescale 16-bit to 8-bit on import; the 16-bit is not kept"
-    },
-    {
       "key": "stageLocal",
       "label": "Copy to local scratch first",
       "type": "bool",
@@ -36,56 +29,6 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        {
-          "key": "rescaleLowPercentile",
-          "label": "8-bit low percentile",
-          "type": "float",
-          "min": 0,
-          "max": 50,
-          "default": 0,
-          "step": 0.1,
-          "tip": "Bottom of the 8-bit intensity window (0 = true minimum)"
-        },
-        {
-          "key": "rescaleHighPercentile",
-          "label": "8-bit high percentile",
-          "type": "float",
-          "min": 50,
-          "max": 100,
-          "default": 100,
-          "step": 0.1,
-          "tip": "Top of the 8-bit intensity window (100 = true maximum)"
-        },
-        {
-          "key": "rescaleFixedMin",
-          "label": "8-bit fixed window min",
-          "type": "float",
-          "min": 0,
-          "max": 65535,
-          "default": 0,
-          "step": 1,
-          "tip": "Bottom of a fixed raw-value window shared by every channel and image"
-        },
-        {
-          "key": "rescaleFixedMax",
-          "label": "8-bit fixed window max",
-          "type": "float",
-          "min": 0,
-          "max": 65535,
-          "default": 0,
-          "step": 1,
-          "tip": "Top of the fixed window; 0 = off, use the percentiles instead"
-        },
-        {
-          "key": "rescaleReferenceLeeway",
-          "label": "8-bit reference leeway",
-          "type": "float",
-          "min": 0,
-          "max": 5,
-          "default": 1.7,
-          "step": 0.1,
-          "tip": "Derive the set's window from its starred reference image; 0 = off"
-        },
         {
           "key": "chunkSizeX",
           "label": "Chunk size X",
