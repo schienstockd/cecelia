@@ -602,3 +602,49 @@ class PyramidRefactorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AfChannelIndicesTest(unittest.TestCase):
+    """Channel NAMES reaching Python must say WHY, not `invalid literal for int()`.
+
+    Observed live: a worktree whose files carried the `divisionChannels` → `competingChannels` rename
+    while its running backend still had the previous Julia translator compiled (`app/src` is
+    Revise-tracked and a merge under a live server does not always reload it). The params arrived with
+    names, and the failure surfaced as a bare ValueError from inside the streaming loop with nothing
+    pointing at the stale process.
+    """
+
+    def test_indices_pass_through(self):
+        self.assertEqual(cu.af_channel_indices([0, 2, 3]), [0, 2, 3])
+        self.assertEqual(cu.af_channel_indices([np.int64(1)]), [1])
+
+    def test_none_and_empty_are_empty(self):
+        self.assertEqual(cu.af_channel_indices(None), [])
+        self.assertEqual(cu.af_channel_indices([]), [])
+
+    def test_a_channel_name_names_itself_and_the_fix(self):
+        with self.assertRaises(ValueError) as ctx:
+            cu.af_channel_indices(['CH2', 'CH4'], 'competingChannels', for_channel=2)
+        msg = str(ctx.exception)
+        self.assertIn("'CH2'", msg)                        # the offending value
+        self.assertIn('channel 2', msg)                    # which combination
+        self.assertIn('af_combinations_for_python', msg)   # what should have run
+        self.assertIn('restart', msg)                      # what to do about it
+
+    def test_a_bool_is_refused_rather_than_indexing_channel_0(self):
+        # bool is an int subclass, so `int(True)` would silently mean channel 1
+        with self.assertRaises(ValueError):
+            cu.af_channel_indices([True])
+
+    def test_the_streaming_path_raises_the_diagnosis(self):
+        du = _dim_utils(size_t=2, size_z=1, size_c=2, size_y=12, size_x=10)
+        data = np.random.default_rng(9).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        out = np.zeros(data.shape, data.dtype)
+        with self.assertRaises(ValueError) as ctx:
+            cu._stream_corrected_channel(data, out, du, channel_idx=0, out_ch=0,
+                                         competing_channel_idx=['CH2'])
+        self.assertIn('af_combinations_for_python', str(ctx.exception))
+
+    def test_a_digit_string_still_converts(self):
+        # no stricter than the `int(c)` this replaced — a REPL/chain caller may hand back strings
+        self.assertEqual(cu.af_channel_indices(['0', '2']), [0, 2])

@@ -412,7 +412,10 @@ def _preview_af(ctx):
     layers, stats_out = [], {}
 
     for ch in sorted(combos):
-        competing = [int(d) for d in (combos[ch].get('competingChannels') or [])]
+        # same coercion + diagnosis the run uses: a channel NAME here means the Julia translator did not
+        # run, which is a stale-backend symptom rather than a bad parameter
+        competing = correction_utils.af_channel_indices(
+            combos[ch].get('competingChannels'), 'competingChannels', for_channel=ch)
         if not competing:
             continue
         stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method)

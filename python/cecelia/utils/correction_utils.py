@@ -271,6 +271,40 @@ def _af_write_slab(out, dim_utils, channel_idx, t, slab):
     out[tuple(sl)] = slab
 
 
+def af_channel_indices(channels, what='competingChannels', for_channel=None):
+    """0-based channel indices from a params value, or a ValueError that says what actually went wrong.
+
+    The Julia side resolves channel NAMES to indices before the params reach Python
+    (`af_combinations_for_python` in af_correct.jl); everything here indexes the channel axis with an
+    integer. When that translation has not happened the raw failure is
+    ``ValueError: invalid literal for int() with base 10: 'CH3'`` from somewhere deep in the streaming
+    loop, which says nothing about the cause — and the cause is nearly always a **backend running older
+    Julia than the Python it is calling**, because `app/src` is Revise-tracked and a branch switch or a
+    merge under a live server does not always reload it. Observed exactly that way on a worktree whose
+    files carried the rename while its running process still had the previous translator compiled.
+
+    So: name the offender and name the fix.
+
+    Deliberately no stricter than the `int(c)` it replaced — a digit string still converts, so a REPL or
+    chain caller passing ``["0", "1"]`` keeps working. Only a value `int()` cannot read is refused, plus
+    `bool`, which is an `int` subclass and would otherwise index channel 0/1 silently.
+    """
+    out = []
+    for c in (channels or []):
+        if isinstance(c, bool):
+            raise ValueError(f'{what} contains {c!r}; a bool would silently index channel {int(c)}')
+        try:
+            out.append(int(c))
+        except (TypeError, ValueError):
+            raise ValueError(
+                f'{what}{"" if for_channel is None else f" for channel {for_channel}"} contains '
+                f'{c!r}, which is a channel NAME, not a 0-based index. The Julia translator '
+                f'(af_combinations_for_python) resolves names before the params get here, so it did not '
+                f'run — if the backend was already running when this branch changed, restart it '
+                f'(Revise does not always reload app/src).') from None
+    return out
+
+
 def _af_slabs(data, dim_utils, channels, t):
     """One frame of EVERY channel taking part in a correction, keyed by channel index.
 
@@ -481,7 +515,8 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
     separate.
     """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
-    channels = [int(channel_idx)] + [int(c) for c in competing_channel_idx]
+    channels = af_channel_indices([channel_idx], 'the target channel') + \
+        af_channel_indices(competing_channel_idx, 'competingChannels', for_channel=channel_idx)
     if stats is None:
         stats = af_weight_stats(data, dim_utils, channels, background_method=background_method)
     if logfile_utils is not None:
