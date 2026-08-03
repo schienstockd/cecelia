@@ -172,3 +172,83 @@ describe('preferredValueName', () => {
     expect(preferredValueName(available, 'imFilepath', 'driftCorrected')).toBe('default')
   })
 })
+
+// ── repeatable groups ────────────────────────────────────────────────────────
+// The AF spec, whose combinations are a repeatable group. This shape had NO coverage, which is how a
+// group's entries went years without being reconciled against the spec.
+const AF_DEF = {
+  task: 'afCorrect', fun_name: 'cleanupImages.afCorrect', label: 'AF correction',
+  category: 'Cleanup',
+  params: [
+    { key: 'valueName', label: 'Image', type: 'valueNameSelection', default: 'default',
+      field: 'filepaths' },
+    { key: 'afCombinations', label: 'Channel combinations', type: 'group', repeatable: true,
+      labelKey: 'targetChannel', default: {},
+      params: [
+        { key: 'targetChannel', label: 'Channel to correct', type: 'channelSelection', default: [] },
+        { key: 'competingChannels', label: 'Competing channels', type: 'channelSelection',
+          default: [] },
+      ] },
+    { key: 'backgroundMethod', label: 'Background detection', type: 'select', default: 'triangle' },
+  ],
+} as unknown as TaskDef
+
+describe('buildParamValues — repeatable group entries', () => {
+  it('keeps entries whose sub-params the spec still declares', () => {
+    const saved: ParamValues = {
+      afCombinations: {
+        '0': { targetChannel: ['CH3'], competingChannels: ['CH2', 'CH4'] },
+        '1': { targetChannel: ['CH4'], competingChannels: ['CH2', 'CH3'] },
+      },
+    }
+    const v = buildParamValues(AF_DEF, saved)
+    expect(v.afCombinations).toEqual(saved.afCombinations)
+  })
+
+  it('reconciles a RENAMED sub-param instead of showing a blank entry', () => {
+    // the real symptom: quotientChannel/divisionChannels -> targetChannel/competingChannels. The entry
+    // count survived, every channel picker was blank, and it read as "my params weren't remembered".
+    const preRename: ParamValues = {
+      afCombinations: { '0': { quotientChannel: ['CH3'], divisionChannels: ['CH4'] } },
+    }
+    const v = buildParamValues(AF_DEF, preRename) as
+      { afCombinations: Record<string, ParamValues> }
+    // the dead sub-keys must not survive into the run payload or be re-persisted
+    expect(v.afCombinations['0']).not.toHaveProperty('quotientChannel')
+    expect(v.afCombinations['0']).not.toHaveProperty('divisionChannels')
+    // ...and the declared ones are present, at their defaults, so the form renders real controls
+    expect(v.afCombinations['0']).toEqual({ targetChannel: [], competingChannels: [] })
+  })
+
+  it('drops the pre-#437 fossil bag that live projects still store', () => {
+    // measured on zolIMa / 4kS67f: entries carrying a dozen params deleted from the spec in #437 and
+    // re-persisted on every run since, because the group was passed through verbatim
+    const fossils: ParamValues = {
+      afCombinations: {
+        '0': {
+          quotientChannel: ['CH1'], divisionChannels: ['CH4'],
+          channelPercentile: 0.98, correctionMin: 0, correctionMax: 255, correctionMode: 'divide',
+          medianFilter: 3, denoiseFun: 'wavelet', generateInverse: false, topHatRadius: 10,
+        },
+      },
+    }
+    const v = buildParamValues(AF_DEF, fossils) as
+      { afCombinations: Record<string, ParamValues> }
+    expect(Object.keys(v.afCombinations['0']).sort())
+      .toEqual(['competingChannels', 'targetChannel'])
+  })
+
+  it('an empty or absent group stays empty rather than becoming null', () => {
+    expect(buildParamValues(AF_DEF, {}).afCombinations).toEqual({})
+    expect(buildParamValues(AF_DEF, { afCombinations: {} }).afCombinations).toEqual({})
+  })
+
+  it('the group still round-trips through flattenParams', () => {
+    const saved: ParamValues = {
+      afCombinations: { '0': { targetChannel: ['CH3'], competingChannels: ['CH4'] } },
+    }
+    const flat = flattenParams(AF_DEF, buildParamValues(AF_DEF, saved))
+    expect(flat.afCombinations).toEqual(saved.afCombinations)
+    expect(missingParamKeys(AF_DEF, flat)).toEqual([])
+  })
+})
