@@ -81,6 +81,19 @@ That is worth being blunt about, because it rules out a whole family of tempting
    them. Note also that (1) and (2) above are unchanged by the input now being 16-bit rather than
    8-bit — that removes the input-precision limit, but not the output-mapping question.
 
+5. **`saturatedFrac` is blind to this data's detector — measured.** `af_weight_stats` computes it as
+   the fraction of voxels sitting at the **dtype** maximum. On the nine `kSUFux` movies the sensor is
+   12-bit stored in 16-bit words: every channel clips at **4095** while the dtype maximum is 65535, so
+   `saturatedFrac` reads **0.00000 for every channel of every movie** — including `PsD5Xc` ch2, which
+   holds 105 voxels piled at 4095 against a median of 1 in the bins below it.
+
+   The metric is not wrong, its validity domain is narrower than it looks: it is correct only when the
+   data fills its dtype. Keeping images at their acquired bit depth (`docs/FUTURE.md`) makes
+   12-bit-in-16-bit the normal case, so it will now read 0 on most real input. `intensity_utils.is_saturated`
+   is the structural test (a pile-up in the brightest OCCUPIED bin, wherever that sits) and is already
+   used by the import QC — AF could bank its number from that instead. Not changed here because the AF
+   mechanism is recent and this is a decision about its QC, not a defect in the correction.
+
 ## Why this is not just a TODO item
 
 It looked like one bug and was three separate things — an output-mapping defect, an input-precision

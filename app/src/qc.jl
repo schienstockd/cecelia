@@ -76,6 +76,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # clipping at acquisition (import.channel_saturated)
+    "import.channel_saturated" => (
+        short = "Channel {channel} clipped at the detector",
+        long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
+
 
     # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)
     "hmm.no_states_decoded" => (
@@ -348,6 +353,73 @@ function import_metrics(meta::AbstractDict)
     isempty(d) ? nothing : d
 end
 
+"""
+    saturation_qc_findings(meta) -> Vector
+
+One `warn` per channel that CLIPPED AT ACQUISITION, from the persisted `meta["saturation"]` (written
+by `ImportOmezarr`, which checks every import). PURE → unit-tested. Empty when the check didn't run
+(an image imported before it existed, or a non-integer store).
+
+Advisory, like all QC — but this is the one import finding a user can only act on *before* the
+experiment: clipped values are gone, so no correction, threshold or rescale recovers them. Hence the
+imperative long text points at the acquisition, not at a parameter.
+
+Detection lives in `intensity_utils.is_saturated` and is structural (a pile-up in the brightest
+occupied bin), so it holds for a 12-bit sensor stored in 16-bit words — where the obvious
+"fraction at the dtype maximum" test reads 0 on visibly clipped data.
+"""
+function saturation_qc_findings(meta::AbstractDict)
+    fs = Dict{String,Any}[]
+    for ch in _saturation_channels(meta)
+        get(ch, "saturated", false) === true || continue
+        i = _cal_int(get(ch, "index", nothing), 0)
+        push!(fs, qc_finding("warn", "import.channel_saturated"; channel = i,
+            # the COUNT, not a percentage: measured on a real session the clipped fraction is ~1e-6,
+            # which rounds to "0.0001%" and tells the user nothing. "534 voxels at 4095" is judgeable.
+            detail = Dict{String,Any}("channel"        => i,
+                                      "topValue"       => _cal_num(get(ch, "topValue", nothing)),
+                                      "clippedVoxels"  => _cal_num(get(ch, "topCount", nothing)))))
+    end
+    fs
+end
+
+# `meta["saturation"]["channels"]`, normalised to String-keyed Dicts. JSON3 hands back Symbol keys
+# (CLAUDE.md → JSON3 gotcha), and this is read from the persisted ccid on every QC recompute.
+function _saturation_channels(meta::AbstractDict)::Vector{Dict{String,Any}}
+    s = get(meta, "saturation", nothing)
+    s isa AbstractDict || return Dict{String,Any}[]
+    chans = get(Dict{String,Any}(String(k) => v for (k, v) in s), "channels", nothing)
+    chans isa AbstractVector || return Dict{String,Any}[]
+    out = Dict{String,Any}[]
+    for ch in chans
+        ch isa AbstractDict && push!(out, Dict{String,Any}(String(k) => v for (k, v) in ch))
+    end
+    out
+end
+
+"""
+    saturation_metrics(meta) -> Union{Dict,Nothing}
+
+Cohort-comparable saturation counts: `nChannelsSaturated` and `maxClippedFrac` (the worst channel's
+clipped fraction). `nothing` when the check didn't run.
+
+Cohort-comparable because both describe the ACQUISITION, not a parameter anyone typed — so an image
+clipping far more than its session peers is a real gain/expression difference. Measured across nine
+movies from one session, 4 had a clipped channel and 5 did not, which is exactly the spread an
+outlier flag should surface.
+"""
+function saturation_metrics(meta::AbstractDict)
+    chans = _saturation_channels(meta)
+    isempty(chans) && return nothing
+    n = 0; worst = 0.0
+    for ch in chans
+        get(ch, "saturated", false) === true && (n += 1)
+        v = _cal_num(get(ch, "topFrac", nothing))
+        isnothing(v) || (worst = max(worst, v))
+    end
+    Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst)
+end
+
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale
 # in-memory `img.meta`) so it's correct from any call site — import, resync, metadata edit. Writes
 # even when clean (empty findings), so a fixed image overwrites its stale warning. Recomputed from
@@ -357,9 +429,11 @@ function write_metadata_qc!(img::CciaImage)
     isfile(ccid) || return
     raw      = read_ccid_raw(ccid)
     meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    findings = metadata_qc_findings(meta)
+    findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta))
 
     metrics = import_metrics(meta)
+    sm      = saturation_metrics(meta)
+    isnothing(sm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, sm))
 
     if isnothing(metrics)
         write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, findings)

@@ -78,6 +78,17 @@ class TestIntensityUtils(unittest.TestCase):
         h[101:ceiling + 1] = (200_000 * np.exp(-(vals - 101) / 250.0)).astype(np.int64)
         return h
 
+    @classmethod
+    def _clipped(cls, ceiling, clip_at, n=4096):
+        """The same tail, but a detector that cannot represent anything above `clip_at` — so every
+        higher value is accumulated INTO that bin. Crude two-spike fixtures cannot tell the two
+        cases apart, which is the whole point of the test."""
+        h = cls._tail(ceiling, n)
+        spill = int(h[clip_at + 1:].sum())
+        h[clip_at + 1:] = 0
+        h[clip_at] += spill
+        return h
+
     def test_background_threshold_sits_between_the_peak_and_the_tail(self):
         """Triangle over a background peak with a long tail — the default, and what the AF correction
         derives its background pair from instead of two hand-tuned percentiles."""
@@ -102,6 +113,44 @@ class TestIntensityUtils(unittest.TestCase):
     def test_background_threshold_rejects_an_unknown_method(self):
         with self.assertRaises(ValueError):
             iu.background_threshold(self._tail(2000), method='mean')
+
+    def test_is_saturated_distinguishes_clipping_from_a_decaying_tail(self):
+        """A tail decays, so its top bin is the sparsest. Clipping inverts that — every value the
+        detector could not represent piles into the top bin."""
+        self.assertFalse(iu.is_saturated(self._tail(2000)))                   # natural end
+        self.assertTrue(iu.is_saturated(self._clipped(4000, clip_at=1200)))   # pile-up
+        self.assertFalse(iu.is_saturated(np.zeros(4096, dtype=np.int64)))     # empty
+        hot = self._tail(2000); hot[4095] = 1                                 # lone hot pixel
+        self.assertFalse(iu.is_saturated(hot))
+
+    def test_a_pile_up_below_the_count_floor_is_not_flagged(self):
+        """Both conditions are required: a two-voxel spike at the top is a hot pixel, not saturation."""
+        h = self._tail(2000)
+        h[2500] = 3                                   # above the tail, but nowhere near the floor
+        self.assertFalse(iu.is_saturated(h))
+
+    def test_is_saturated_does_not_depend_on_the_dtype_maximum(self):
+        """THE reason this test is structural rather than `fraction at the dtype max`.
+
+        Measured on the nine kSUFux movies: a 12-bit sensor stored in 16-bit words clips at 4095 while
+        the dtype maximum is 65535, so the dtype-max fraction reads 0.0 on visibly clipped data. One
+        movie held 105 voxels at 4095 against a median of 1 below it."""
+        h = np.zeros(65536, dtype=np.int64)           # 16-bit container...
+        h[100] = 5_000_000
+        vals = np.arange(101, 4096)
+        h[101:4096] = (200_000 * np.exp(-(vals - 101) / 250.0)).astype(np.int64)
+        spill = int(h[1200:].sum()); h[1200:] = 0; h[1200] = spill   # ...12-bit sensor clipping at 1200
+        self.assertTrue(iu.is_saturated(h))
+        self.assertEqual(float(h[65535]) / float(h.sum()), 0.0)      # the dtype-max test sees nothing
+
+    def test_saturation_stats_reports_the_numbers_behind_the_verdict(self):
+        s = iu.saturation_stats(self._clipped(4000, clip_at=1200))
+        self.assertTrue(s['saturated'])
+        self.assertEqual(s['topValue'], 1200)        # the detector's effective ceiling, not the dtype's
+        self.assertGreater(s['topCount'], 0)
+        self.assertGreater(s['topFrac'], 0.0)
+        clean = iu.saturation_stats(self._tail(2000))
+        self.assertFalse(clean['saturated'])
 
     def test_triangle_threshold_degenerate_histograms(self):
         self.assertEqual(iu.triangle_threshold(np.zeros(16, np.int64)), 0.0)

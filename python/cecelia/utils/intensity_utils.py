@@ -72,6 +72,80 @@ def hist_percentile(hist, pct):
     return int(np.searchsorted(cdf, target))
 
 
+#: Floor and fraction for the `is_saturated` count threshold: a bin must hold at least
+#: ``max(floor, total * frac)`` voxels to count as a population rather than a hot pixel. Scale-free (a
+#: fraction of the image) with a floor so a small or synthetic histogram still behaves sensibly.
+SATURATION_MIN_FRAC = 1e-6
+SATURATION_MIN_FLOOR = 64
+
+
+def is_saturated(hist, min_count=None):
+    """Whether a channel CLIPPED AT ACQUISITION — its brightest occupied bin is shared by enough
+    voxels to be real signal rather than a hot pixel.
+
+    **Structural, so it needs no knowledge of the detector's bit depth**, and that is the whole point.
+    A fluorescence tail DECAYS — each brighter bin holds fewer voxels than the one below — so the top
+    occupied bin is the sparsest. Clipping inverts that: every value the detector could not represent
+    is accumulated into the top bin, which then holds MORE voxels than its neighbours. That pile-up is
+    the signature, wherever the ceiling happens to sit.
+
+    Both conditions are required. The count floor alone would flag any channel whose brightest bin
+    happens to be well populated; the pile-up alone would flag a two-voxel spike as saturation.
+
+    **Why not "fraction of voxels at the dtype maximum"** — the obvious one-liner, and what
+    `correction_utils.af_weight_stats` computes for its own `saturatedFrac`: it only works when the
+    data fills its dtype. Measured on the nine `kSUFux` movies, which are 12-bit sensor data stored in
+    16-bit words: every channel clips at **4095** while the dtype maximum is 65535, so the dtype-max
+    fraction reports **0.00000 for every channel of every movie** — including one with 105 voxels piled
+    at 4095 against a median of 1 in the bins below it, which this test flags. Keeping images at their
+    acquired bit depth (see docs/FUTURE.md) makes 12-bit-in-16-bit the normal case, so a detector tied
+    to the dtype is the wrong one to rely on.
+
+    **Use a FULL histogram, not a strided one.** The threshold is a voxel count, so subsampling scales
+    the pile-up down with it and a marginal channel changes verdict: `kSUFux/RbC99T` ch2 holds 60 at
+    the top bin under a ``::6`` stride (below the floor of 64, so not flagged) and ~360 unstrided.
+
+    **The threshold, measured.** Over all 36 channels of the nine `kSUFux` movies (one session,
+    identical settings) it flags **4, in 4 different movies** — independently reproducing the count the
+    earlier rescale work arrived at. The separation is real but not wide: flagged channels hold
+    1.10-1.42e-6 of their voxels at the ceiling, while the highest unflagged one holds 5.7e-7. Note
+    the ABSOLUTE counts are small (415-534 voxels of ~377 M), so this reports a true clipping event of
+    modest extent rather than a ruined channel — which is why the QC finding carries the voxel count
+    and leaves the judgement to the reader.
+    """
+    h = np.asarray(hist)
+    nz = np.nonzero(h)[0]
+    if nz.size < 2:
+        return False
+    if min_count is None:
+        min_count = max(int(SATURATION_MIN_FLOOR), int(int(h.sum()) * float(SATURATION_MIN_FRAC)))
+    top = int(nz[-1])
+    if int(h[top]) < int(min_count):
+        return False
+    # compare against the run of occupied bins just below, not a single neighbour, so one ragged bin
+    # in a sparse tail doesn't read as a pile-up
+    below = h[nz[max(0, nz.size - 11):nz.size - 1]]
+    return bool(int(h[top]) > float(np.median(below)))
+
+
+def saturation_stats(hist):
+    """`is_saturated` plus the numbers behind the verdict, JSON-friendly for QC.
+
+    `topValue` is where the pile-up sits — the detector's effective ceiling, which is worth reporting
+    because it is NOT the dtype maximum on sub-16-bit sensor data.
+    """
+    h = np.asarray(hist)
+    total = int(h.sum())
+    nz = np.nonzero(h)[0]
+    top = int(nz[-1]) if nz.size else 0
+    return {
+        'saturated': bool(is_saturated(h)),
+        'topValue': top,
+        'topCount': int(h[top]) if nz.size else 0,
+        'topFrac': (int(h[top]) / total) if total else 0.0,
+    }
+
+
 def triangle_threshold(hist):
     """Zack's triangle threshold on a histogram — the bin furthest from the line joining the
     histogram's peak to its last occupied bin.
