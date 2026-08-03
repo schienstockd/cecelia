@@ -5,6 +5,10 @@
   mp4 per selected image. The batch drives the single shared napari viewer sequentially (see
   api/src/napari_api.jl → run_batch_movies): it TAKES OVER the viewer for a while, so we warn while it runs.
 
+  Two stacked halves like the module pages' TaskRunner — the movie CONFIG as the top half, the batch's
+  task list as the bottom — sharing the same `PaneExpandBar` primitive (`utils/paneExpand.ts`), so either
+  can take the whole panel instead of scrolling past the other.
+
   Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps/scale
   reuse the same per-set movie config as the ViewerPanel recorder. Progress/cancel ride the normal task
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
@@ -22,6 +26,8 @@ import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultC
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
+import PaneExpandBar from '../../components/PaneExpandBar.vue'
+import { usePaneExpand } from '../../composables/usePaneExpand'
 import TitleCardControls from '../../components/TitleCardControls.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
 
@@ -216,18 +222,35 @@ async function previewOpen() {
     if (!res.ok) log.warn(`Preview failed: ${(await res.json())?.error ?? res.status}`, { source: 'napari' })
   } catch (e) { log.warn(`Preview failed: ${e}`, { source: 'napari' }) }
 }
+
+// ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
+// Same arrangement as the module pages' TaskRunner: config on top, task list below. Its own storage key,
+// so this panel remembers its arrangement separately from the runner's.
+const { pane, toggle: togglePane, showBottom: showTasks } =
+  usePaneExpand('cc-batchmovies-pane')
 </script>
 
 <template>
-  <div class="bm">
+  <div class="bm" :class="'pane-' + pane">
     <p v-if="!selectedUids.length" class="bm-hint cc-muted">Select one or more images (left) to author a batch of movies.</p>
 
     <template v-else>
+      <PaneExpandBar
+        :pane="pane"
+        top-label="movie config" bottom-label="task list"
+        top-icon="pi-cog" bottom-icon="pi-bars"
+        @toggle="togglePane"
+      />
+
       <!-- BUSY banner: the batch takes over the single napari viewer -->
       <div v-if="running" class="bm-busy">
         <i class="pi pi-spin pi-spinner" />
         <span>Napari is busy generating movies…</span>
       </div>
+
+      <!-- ── The CONFIG half ── every `.bm-sec` below, plus the actions row: hidden as a group by the
+           `pane-bottom` rule in this file's CSS rather than a `v-show` on each one, so a section added
+           later is covered without remembering to guard it. -->
 
       <!-- Channels -->
       <section class="bm-sec">
@@ -318,7 +341,7 @@ async function previewOpen() {
         </button>
       </div>
 
-      <TaskList module="batchMovies" />
+      <TaskList v-show="showTasks" module="batchMovies" />
     </template>
   </div>
 </template>
@@ -326,6 +349,12 @@ async function previewOpen() {
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
 .bm-hint { margin: 2px 0; }
+/* Expanding the task list hides the config half: every config section is a direct `.bm-sec` child plus
+   the actions row, so one rule covers the group — and covers a section added later, which a per-element
+   `v-show` would not. The busy banner deliberately stays: "napari is taken over" matters MOST while you
+   are watching the task list. Same mechanism as v-show (display:none), just declared once. */
+.bm.pane-bottom > .bm-sec,
+.bm.pane-bottom > .bm-actions { display: none; }
 /* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
    progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
    a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */

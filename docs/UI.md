@@ -62,6 +62,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
 | Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
+| Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
@@ -763,6 +764,39 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 - `defaultOpen` — whether open on mount (default: `true`)
 - `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth). With `'none'` the body is `overflow-y: visible` (not a scroll container) so a `position: sticky` descendant sticks to the outer page scroll instead of a box that never scrolls.
 - `storageKey` — when set, the open/closed state persists in localStorage under this key (the `#plots` wrapper uses this so a collapsed canvas stays collapsed across navigation)
+
+### Two-half side panels — `usePaneExpand` + `PaneExpandBar`
+
+A recurring **scenario**, not a widget: a right-hand panel made of two stacked halves where, on a laptop
+screen, neither gets enough vertical room. Both panels that have this shape use the same primitive:
+
+| Panel | Top half | Bottom half | Storage key |
+|---|---|---|---|
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane` |
+| `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
+
+Three modes — `split` (default), `top`, `bottom` — persisted per panel. Each half's button also
+*un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
+can't click out of. The recipe:
+
+```ts
+const { pane, toggle, showTop, showBottom } = usePaneExpand('cc-mypanel-pane')
+```
+```vue
+<PaneExpandBar :pane="pane" top-label="movie config" bottom-label="task list"
+               top-icon="pi-cog" bottom-icon="pi-bars" @toggle="toggle" />
+```
+
+- **The bar owns the tooltip wording**, so every panel phrases the action identically; the consumer only
+  names its halves (lower-case, short — they go straight into "Expand the …").
+- **Hide with `v-show`, not `v-if`.** Unmounting a config half discards whatever its children have
+  fetched (population lists, model lists) and refetches on the way back. A root `pane-<mode>` class +
+  one CSS rule is the other sanctioned form — `BatchMoviesPanel` uses it because its config half is a
+  flat run of `.bm-sec` siblings, so one rule covers a section added later that a per-element `v-show`
+  would miss.
+- **Growth is the consumer's** — the primitive decides what's visible, not how the survivor uses the
+  space. `TaskRunner` lifts its `params-section` `max-height` cap under `.pane-top`; `BatchMoviesPanel`
+  needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
 
 **Popovers — use `TeleportPopover`, don't hand-roll an absolute one.** Any ⚙/dropdown popover that
 lives inside a panel (canvas, table, plot) WILL be clipped by the panel's `overflow`/scroll/transform.

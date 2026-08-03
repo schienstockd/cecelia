@@ -5,12 +5,21 @@
     - module: string        — module key ('import' | 'segment' | ...)
     - selectedUids: string[] — image UIDs to run on (from the module's image table)
     - selectedNames: string[] — matching display names (for task labels)
+
+  Two stacked halves — the function runner (function + params + run + pool) as the TOP half, the module's
+  task list as the BOTTOM — with the shared `PaneExpandBar` giving either one the whole panel
+  (`utils/paneExpand.ts`; the batch-movies panel uses the same primitive). Width is drag-resizable;
+  height is not, because there are only three states worth having and a click reaches them faster than a
+  drag. Hidden with `v-show`, not `v-if`: unmounting the params would throw away what each ParamRenderer
+  has loaded (population lists, model lists) and refetch it on the way back.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams } from './paramValues'
 import { usePanelResize } from '../composables/usePanelResize'
+import { usePaneExpand } from '../composables/usePaneExpand'
+import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
@@ -294,10 +303,16 @@ function cancelAll() {
 // ── Sidebar resize (shared composable; width persisted) ────────────────────────
 const { width: sidebarWidth, onResizeStart } =
   usePanelResize({ min: 200, max: 600, default: 280, storageKey: 'cc-taskrunner-width' })
+
+// ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
+// Vertical space is the scarce one here: a long param list and a busy task list can't both fit on a
+// laptop screen. Top half = this runner, bottom half = the module's task list.
+const { pane, toggle: togglePane, showTop: showRunner, showBottom: showTasks } =
+  usePaneExpand('cc-taskrunner-pane')
 </script>
 
 <template>
-  <aside class="task-runner" :style="{ width: sidebarWidth + 'px' }">
+  <aside class="task-runner" :class="'pane-' + pane" :style="{ width: sidebarWidth + 'px' }">
 
     <!-- drag handle on left edge -->
     <div
@@ -306,8 +321,17 @@ const { width: sidebarWidth, onResizeStart } =
       v-tooltip.left="'Drag to resize the task panel'"
     />
 
+    <!-- ── Expand one half ── always visible, so whichever half is hidden can be brought back -->
+    <PaneExpandBar
+      class="runner-pane-bar"
+      :pane="pane"
+      top-label="function runner" bottom-label="task list"
+      top-icon="pi-cog" bottom-icon="pi-bars"
+      @toggle="togglePane"
+    />
+
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
-    <section v-if="!defs.length" class="runner-section defs-empty">
+    <section v-if="!defs.length" v-show="showRunner" class="runner-section defs-empty">
       <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
       <button v-if="onReloadDefs" class="cc-btn cc-btn-secondary" @click="onReloadDefs">
         <i class="pi pi-refresh" /> Reload
@@ -315,7 +339,7 @@ const { width: sidebarWidth, onResizeStart } =
     </section>
 
     <!-- ── Function selector ── -->
-    <section v-if="defs.length" class="runner-section">
+    <section v-if="defs.length" v-show="showRunner" class="runner-section">
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
       <select
         class="fn-select"
@@ -349,7 +373,7 @@ const { width: sidebarWidth, onResizeStart } =
     </section>
 
     <!-- ── Parameters ── -->
-    <section class="runner-section params-section" v-if="taskDef">
+    <section class="runner-section params-section" v-if="taskDef" v-show="showRunner">
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
       <div class="params-list">
         <ParamRenderer
@@ -364,7 +388,7 @@ const { width: sidebarWidth, onResizeStart } =
     </section>
 
     <!-- ── Run + Concurrency ── -->
-    <section class="runner-section run-section">
+    <section class="runner-section run-section" v-show="showRunner">
       <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
            BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
       <div class="run-row">
@@ -411,7 +435,7 @@ const { width: sidebarWidth, onResizeStart } =
     </section>
 
     <!-- ── Task list ── -->
-    <section class="runner-section tasks-section">
+    <section class="runner-section tasks-section" v-show="showTasks">
       <div class="tasks-heading">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Tasks</h3>
         <div class="tasks-heading-actions">
@@ -449,6 +473,17 @@ const { width: sidebarWidth, onResizeStart } =
   flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+
+/* the shared bar (PaneExpandBar) sits above the first section heading — only its inset is ours */
+.runner-pane-bar { padding: 0.2rem 0.5rem 0; }
+
+/* With the task list hidden, the params are what should grow — otherwise the runner keeps its 45vh cap
+   and the reclaimed space just sits empty below it. */
+.task-runner.pane-top .params-section {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .resize-handle {
