@@ -279,6 +279,25 @@ end
 const _Z_RATIO_MIN = 0.02
 const _Z_RATIO_MAX = 50
 
+# Materiality floor for the clipping FINDING: the fraction of a channel's voxels sitting at the
+# detector ceiling above which it is worth interrupting someone.
+#
+# **This is a chosen number, not a fitted one, and it should be re-set by the first real case.**
+# `intensity_utils.is_saturated` decides whether a channel clipped AT ALL — structural, measured, and
+# it stays the gate on detection. But detection is not the same as materiality: measured over all 36
+# channels of the nine `kSUFux` movies (one session), the four it flags hold 415-534 voxels of ~377 M
+# at the ceiling — 1.1-1.4e-6. That is real clipping of trivial extent, and "lower the gain" is not
+# an actionable thing to tell someone about 500 voxels, on 4 of every 9 imports.
+#
+# 1e-4 is ~37 000 voxels on an image that size: unambiguously truncated structure rather than a few
+# hot cells, and ~70x above the worst trace case observed. Nothing in that session would warn. It is
+# set from what would damage a MEASUREMENT, because there is no material case in hand to fit to.
+#
+# The metric (`saturation_metrics`) is banked regardless of this floor: a trace-level count is still
+# worth having, because the cohort comparison is relative and will surface an image clipping far more
+# than its session peers without anyone choosing an absolute level.
+const _SATURATION_WARN_FRAC = 1e-4
+
 _cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
 _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
 _cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
@@ -356,9 +375,11 @@ end
 """
     saturation_qc_findings(meta) -> Vector
 
-One `warn` per channel that CLIPPED AT ACQUISITION, from the persisted `meta["saturation"]` (written
-by `ImportOmezarr`, which checks every import). PURE → unit-tested. Empty when the check didn't run
-(an image imported before it existed, or a non-integer store).
+One `warn` per channel that clipped at acquisition **materially** — detected by
+`intensity_utils.is_saturated` AND with at least `_SATURATION_WARN_FRAC` of its voxels at the ceiling.
+From the persisted `meta["saturation"]` (written by `ImportOmezarr`, which checks every import).
+PURE → unit-tested. Empty when the check didn't run (an image imported before it existed, or a
+non-integer store), and empty for trace-level clipping — which the METRICS still record.
 
 Advisory, like all QC — but this is the one import finding a user can only act on *before* the
 experiment: clipped values are gone, so no correction, threshold or rescale recovers them. Hence the
@@ -372,6 +393,10 @@ function saturation_qc_findings(meta::AbstractDict)
     fs = Dict{String,Any}[]
     for ch in _saturation_channels(meta)
         get(ch, "saturated", false) === true || continue
+        # detected AND material — see _SATURATION_WARN_FRAC. A trace pile-up is recorded in the
+        # metrics but does not raise a finding.
+        frac = _cal_num(get(ch, "topFrac", nothing))
+        (isnothing(frac) || frac < _SATURATION_WARN_FRAC) && continue
         i = _cal_int(get(ch, "index", nothing), 0)
         push!(fs, qc_finding("warn", "import.channel_saturated"; channel = i,
             # the COUNT, not a percentage: measured on a real session the clipped fraction is ~1e-6,

@@ -7188,6 +7188,31 @@ end
         @test isempty(Cecelia.saturation_qc_findings(clean))
         @test Cecelia.saturation_metrics(clean)["nChannelsSaturated"] == 0
 
+        # TRACE clipping: structurally detected, but far too small to act on. This is the real measured
+        # case — 4 of 36 channels across nine kSUFux movies sit at 1.1-1.4e-6, i.e. ~500 voxels of
+        # 377 M. No finding (telling someone to lower the gain over 500 voxels is not actionable), but
+        # the metric MUST still record it: the cohort comparison is relative, so it is what surfaces an
+        # image clipping far more than its session peers.
+        trace = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, true; top = 4095, frac = 1.4e-6, n = 534),
+        ]))
+        @test isempty(Cecelia.saturation_qc_findings(trace))
+        tm = Cecelia.saturation_metrics(trace)
+        @test tm["nChannelsSaturated"] == 1
+        @test tm["maxClippedFrac"] == 1.4e-6
+
+        # …and just above the floor it does warn
+        material = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000),
+        ]))
+        @test length(Cecelia.saturation_qc_findings(material)) == 1
+
+        # a channel with no recorded fraction is not guessed at
+        noneframe = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            Dict{String,Any}("index" => 0, "saturated" => true, "topValue" => 4095),
+        ]))
+        @test isempty(Cecelia.saturation_qc_findings(noneframe))
+
         # JSON3 round-trip — the real path: persisted ccid meta comes back with Symbol keys
         rt   = JSON3.read(JSON3.write(meta))
         rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
