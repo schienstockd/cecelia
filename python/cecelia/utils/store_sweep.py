@@ -33,11 +33,11 @@ _SUFFIXES = (STAGING_SUFFIX, SUPERSEDED_SUFFIX)
 # ── Why name-matching alone is not enough ─────────────────────────────────────
 #
 # `*.partial` / `*.superseded` only ever catches writers that opted into `staged_store`. AF, drift,
-# cellpose-correct, crop and rescale all do. **Import does not**: on the 16-bit path bioformats2raw
-# writes straight to the FINAL name (`bf2raw_out == zarr_out`), so a cancel leaves a half-written store
-# at `ccidImage.ome.zarr` — a name the sweep actively skipped as "a real store". It also leaves
-# `ccidImage.16bit.tmp.ome.zarr` and `_stage_src` (a full local copy of the source, often the largest
-# item of the three). None contain "partial".
+# cellpose-correct and crop all do. **Import does not**: bioformats2raw writes straight to the FINAL
+# name, so a cancel leaves a half-written store at `ccidImage.ome.zarr` — a name the sweep actively
+# skipped as "a real store". It also leaves
+# `_stage_src` behind too — a full local copy of the source, often larger than the store itself.
+# Neither contains "partial".
 #
 # So the detection is STRUCTURAL, because a name list only ever covers the writers someone remembered:
 #

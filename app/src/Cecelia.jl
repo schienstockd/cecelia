@@ -5,6 +5,8 @@ export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_p
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
+export image_compressor, set_image_compressor!, bf2raw_compression_flags, IMAGE_COMPRESSOR_CHOICES
+export IMAGE_COMPRESSOR_MEASURED_ON, IMAGE_COMPRESSOR_DOCS_URL
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
@@ -22,7 +24,6 @@ export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, move_image!
-export reference_image_uid, set_reference_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name, resolve_value_name

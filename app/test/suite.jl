@@ -653,66 +653,34 @@ end
     rm(proj.root; recursive=true)
 end
 
-# ── Reference image: a SET-level nomination, deliberately not a task param ────────────────────────
-# The user picks the image they judge representative; a consumer (first: the 8-bit import) derives
-# its numbers from it. The load-bearing property is that "no usable reference" is ONE answer — a
-# consumer must not have to re-check set membership after a delete or a move.
-@testset "reference image" begin
-    proj = create_project!(name = "ref-$(rand(1000:9999))")
+# ── Starred: a plain per-image bookmark ───────────────────────────────────────────────────────────
+# ANY number of images can be starred, and nothing downstream reads it — it drives the Starred row
+# filter and nothing else. It replaced a SET-level single "reference image" nomination, from which
+# the 8-bit import used to derive one intensity window for the whole set; that coupling is gone, so
+# the load-bearing property here is just that the flag round-trips and is independent per image.
+@testset "starred images" begin
+    proj = create_project!(name = "star-$(rand(1000:9999))")
     s    = add_set!(proj; name = "set")
     img1 = add_image!(s; name = "a")
     img2 = add_image!(s; name = "b")
 
-    @test isnothing(reference_image_uid(s))                     # unset is the normal state
+    @test img1.starred == false                                 # not starred is the default
+    @test img2.starred == false
 
-    set_reference_image!(s, img1.uid)
-    @test reference_image_uid(s) == img1.uid
-    reloaded = load_project(proj.uid)
-    rs = reloaded._sets[1]
-    @test reference_image_uid(rs) == img1.uid                   # persisted through meta
-
-    set_reference_image!(s, img2.uid)                           # one per set — re-nominating moves it
-    @test reference_image_uid(s) == img2.uid
-
-    set_reference_image!(s, nothing)                            # and can be cleared
-    @test isnothing(reference_image_uid(s))
-    @test !haskey(s.meta, Cecelia.REFERENCE_IMAGE_KEY)          # cleared, not left as an empty string
-
-    # A reference pointing outside the set is a bug, not a state to persist.
-    @test_throws ErrorException set_reference_image!(s, "not-in-set")
-
-    # ...and one that LEAVES the set reads as unset rather than as a dangling uid, so every consumer
-    # gets the same answer without re-checking membership itself.
-    set_reference_image!(s, img1.uid)
-    delete_image!(s, img1.uid)
-    @test isnothing(reference_image_uid(s))
-
-    rm(proj.root; recursive=true)
-end
-
-# ── The set's derived intensity window ────────────────────────────────────────────────────────────
-# Cached on the set by the importer once the REFERENCE image has been converted, so every later
-# image lands in the same space — including one imported long afterwards, when re-deriving is not
-# possible because the 16-bit transient is long gone.
-@testset "set intensity window" begin
-    proj = create_project!(name = "win-$(rand(1000:9999))")
-    s    = add_set!(proj; name = "set")
-    img  = add_image!(s; name = "a")
-
-    @test !haskey(s.meta, Cecelia.SET_INTENSITY_WINDOW_KEY)      # absent until a reference converts
-
-    s.meta[Cecelia.SET_INTENSITY_WINDOW_KEY] = Dict{String,Any}(
-        "min" => 0.0, "max" => 1500.0, "fromImage" => img.uid, "leeway" => 1.5)
-    save!(s)
+    img1.starred = true
+    img2.starred = true                                         # multi-select: not one per set
+    save!(img1); save!(img2)
 
     rs = load_project(proj.uid)._sets[1]
-    w  = rs.meta[Cecelia.SET_INTENSITY_WINDOW_KEY]
-    @test w["max"] == 1500.0
-    @test w["fromImage"] == img.uid                              # provenance: WHICH image set it
-    @test w["leeway"] == 1.5                                     # ...and with how much headroom
+    @test all(i -> i.starred, rs._images)                       # persisted through ccid.json
+
+    img1.starred = false
+    save!(img1)
+    reloaded = load_project(proj.uid)._sets[1]._images
+    @test count(i -> i.starred, reloaded) == 1                  # independent per image
+
     rm(proj.root; recursive=true)
 end
-
 @testset "move_image! (manifest-only, no data moved)" begin
     proj = create_project!(name="move-test-$(rand(1000:9999))")
     a = add_set!(proj; name="set-A")
@@ -1281,11 +1249,11 @@ end
     iH = add_image!(sS; name="h-1", meta=Dict{String,Any}("ori_path"=>"/tmp/h.tif"))
     append_run_log!(iH, "segment.cellpose", "seg"; at="2026-07-22T11:00:00")
     write_qc(iH, "segment.cellpose", "seg",
-             [Dict{String,Any}("level"=>"warn","code"=>"rescale.hot_pixel",
-                               "short"=>"Channel $i may have a hot pixel","long"=>"l",
+             [Dict{String,Any}("level"=>"warn","code"=>"cellpose.channel_blank",
+                               "short"=>"Channel $i is saturated","long"=>"l",
                                "detail"=>Dict{String,Any}("channel"=>i)) for i in 0:3])
     b2 = capture_context!(projS; date=d)
-    @test occursin("↳ may have a hot pixel — ch 0-3 ($(iH.uid))", b2)
+    @test occursin("↳ is saturated — ch 0-3 ($(iH.uid))", b2)
 
     rm(projS.root; recursive=true)
 end
@@ -2400,32 +2368,36 @@ end
     @test !is_reserved_value_name("stroma.branch")   # dot-suffix is the old R convention; not reserved
 end
 
-# ── Include/exclude (+ note) round-trip ──────────────────────────────────────
-# Guards: new images default to included; excluded flag + note survive save!/init_object; and a
-# legacy ccid.json with neither field loads as included (the accessor never sees a missing field).
-@testset "Image included/note round-trip" begin
+# ── Per-image user flags (included / note / starred) round-trip ──────────────
+# Guards: new images default to included + unstarred; the flags survive save!/init_object; and a
+# legacy ccid.json with none of the keys loads as included (the accessor never sees a missing field).
+@testset "Image included/note/starred round-trip" begin
     proj = create_project!(name="incl-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
     img  = add_image!(s; name="img")
     @test image_included(img)                 # default: included
     @test img.note == ""
+    @test img.starred == false                # default: not starred
 
     img.included = false
     img.note = "bad drift reference channel"
+    img.starred = true
     save!(img)
     r = init_object(proj.uid, img.uid)
     @test r isa CciaImage
     @test !image_included(r)
     @test r.note == "bad drift reference channel"
+    @test r.starred
 
-    # legacy file (no included/note keys) → defaults to included, empty note
+    # legacy file (none of the keys) → included, empty note, unstarred
     ccid = joinpath(r._dir, "ccid.json")
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-    delete!(raw, "included"); delete!(raw, "note")
+    delete!(raw, "included"); delete!(raw, "note"); delete!(raw, "starred")
     open(ccid, "w") do io; JSON3.write(io, raw); end
     legacy = init_object(proj.uid, img.uid)
     @test image_included(legacy)
     @test legacy.note == ""
+    @test legacy.starred == false
     rm(proj.root; recursive=true)
 end
 
@@ -7005,7 +6977,7 @@ end
 
         # Loud failures, not a user-visible "{channel}".
         @test_throws ErrorException Cecelia.qc_text("no.such.key")
-        @test_throws ErrorException Cecelia.qc_text("rescale.channel_flat")   # missing `channel`
+        @test_throws ErrorException Cecelia.qc_text("output.canvas_expansion")  # missing `pct`
 
         # House style (docs/UI.md): `short` is a fragment, `long` is a sentence. Checked here
         # because the frontend ratchet cannot see Julia strings.
@@ -7162,63 +7134,62 @@ end
         rm(src; force = true); rm(dst; force = true)
     end
 
-    @testset "rescale (16→8-bit) findings" begin
-        mk_ch(i; span = 100.0, clipHigh = 0.0, trueMax = 100, p999 = 100) =
-            Dict{String,Any}("index" => i, "rangeSpan" => span, "clipHighFrac" => clipHigh,
-                             "trueMax" => trueMax, "p999" => p999)
-        meta = Dict{String,Any}("rescale8bit" => Dict{String,Any}("channels" => [
-            mk_ch(0),                                  # healthy → no finding
-            mk_ch(1; span = 0.0),                      # flat
-            mk_ch(2; clipHigh = 0.05),                 # clips bright signal
-            mk_ch(3; trueMax = 1000, p999 = 100),      # hot pixel (max ≫ p99.9)
-        ]))
-
-        fs    = Cecelia.rescale_qc_findings(meta)
-        codes = Dict(f["detail"]["channel"] => f["code"] for f in fs)
-        @test length(fs) == 3
-        @test !haskey(codes, 0)
-        @test codes[1] == "rescale.channel_flat"
-        @test codes[2] == "rescale.channel_clipped"
-        @test codes[3] == "rescale.hot_pixel"
-
-        m = Cecelia.rescale_metrics(meta)
-        @test m["nChannelsFlat"] == 1
-        @test m["nChannelsClipped"] == 1
-        @test !haskey(m, "nChannels")                 # channel count is a base import metric
-
-        # base import metric — present for EVERY import (from SizeC/SizeZ/SizeT)
+    @testset "import metrics" begin
+        # base import metric — present for EVERY import (from SizeC/SizeZ/SizeT). An odd channel
+        # count or dimensionality vs cohort peers means the wrong file was imported.
         bm = Cecelia.import_metrics(Dict{String,Any}("SizeC" => 4, "SizeZ" => 13, "SizeT" => 20))
         @test bm == Dict{String,Any}("nChannels" => 4, "nZ" => 13, "nT" => 20)
         @test Cecelia.import_metrics(Dict{String,Any}()) === nothing
 
-        # unconverted image (no rescale8bit) → no rescale findings, no rescale metric
-        @test isempty(Cecelia.rescale_qc_findings(Dict{String,Any}()))
-        @test Cecelia.rescale_metrics(Dict{String,Any}()) === nothing
+        # partial metadata: only the keys that are present are banked
+        @test Cecelia.import_metrics(Dict{String,Any}("SizeC" => 2)) ==
+              Dict{String,Any}("nChannels" => 2)
 
         # JSON3 round-trip — the real path (meta read back from ccid.json has Symbol keys)
-        rt     = JSON3.read(JSON3.write(meta))
+        rt     = JSON3.read(JSON3.write(Dict{String,Any}("SizeC" => 4, "SizeZ" => 13)))
         rtmeta = Dict{String,Any}(String(k) => v for (k, v) in rt)
-        @test length(Cecelia.rescale_qc_findings(rtmeta)) == 3
-        @test Cecelia.rescale_metrics(rtmeta)["nChannelsFlat"] == 1
+        @test Cecelia.import_metrics(rtmeta)["nChannels"] == 4
 
-        # ── Saturated at ACQUISITION ────────────────────────────────────────────────────────────
-        # 4 of 9 real movies hit this. It must not be reported as a rescale problem: telling the
-        # user to widen the window is bad advice when the detector already threw the values away.
-        satmeta = Dict{String,Any}("rescale8bit" => Dict{String,Any}("channels" => [
-            merge(mk_ch(0; clipHigh = 0.05), Dict{String,Any}("saturated" => true,
-                                                              "robustMax" => 4095)),
-            merge(mk_ch(1; clipHigh = 0.05), Dict{String,Any}("saturated" => false,
-                                                              "robustMax" => 900)),
-        ]))
-        sfs = Dict(f["detail"]["channel"] => f["code"] for f in Cecelia.rescale_qc_findings(satmeta))
-        @test sfs[0] == "rescale.channel_saturated"     # NOT channel_clipped, though it also clips
-        @test sfs[1] == "rescale.channel_clipped"
+    end
 
-        sm = Cecelia.rescale_metrics(satmeta)
-        @test sm["nChannelsSaturated"] == 1
-        # windowNeeded EXCLUDES the saturated channel — letting a 4095 ceiling through would pin the
-        # whole set's window to the detector maximum and crush every other image.
-        @test sm["windowNeeded"] == 900
+    # Julia and Python each carry the compressor table — a bioformats2raw command line cannot read a
+    # Python constant, and the API serves the list to Settings. Same arrangement as the calibration
+    # writers (CLAUDE.md -> *Calibration - three copies, one stamp*): two copies, one contract test.
+    @testset "image compressor: the two tables agree" begin
+        py = read(joinpath(@__DIR__, "..", "..", "python", "cecelia", "utils", "zarr_utils.py"), String)
+
+        # every Julia choice exists in the Python dict with the SAME cname/clevel/shuffle
+        for c in Cecelia.IMAGE_COMPRESSOR_CHOICES
+            m = match(Regex("'" * c.name * "': *dict\\(cname='(\\w+)', *clevel=(\\d+), *shuffle='(\\w+)'\\)"), py)
+            @test !isnothing(m)
+            isnothing(m) && continue
+            @test m.captures[1] == c.cname
+            @test parse(Int, m.captures[2]) == c.clevel
+            @test (m.captures[3] == "shuffle") == c.shuffle
+        end
+
+        # ...and neither side has a choice the other lacks
+        py_names = Set(String(m.captures[1]) for m in
+                       eachmatch(r"'([\w-]+)': +dict\(cname=", py))
+        @test py_names == Set(c.name for c in Cecelia.IMAGE_COMPRESSOR_CHOICES)
+
+        # the defaults match, on both sides
+        @test occursin("IMAGE_COMPRESSOR_DEFAULT = '$(Cecelia.IMAGE_COMPRESSOR_DEFAULT)'", py)
+        @test Cecelia.image_compressor() in [c.name for c in Cecelia.IMAGE_COMPRESSOR_CHOICES]
+
+        # bioformats2raw is handed the numeric blosc shuffle; numcodecs names it
+        flags = Cecelia.bf2raw_compression_flags("zstd-shuffle")
+        @test flags[1:2] == ["--compression", "blosc"]
+        props = Dict(split(flags[i], "=")[1] => split(flags[i], "=")[2] for i in 4:2:length(flags))
+        @test props == Dict("cname" => "zstd", "clevel" => "3", "shuffle" => "1")
+        @test Dict(split(f, "=")[1] => split(f, "=")[2]
+                   for f in Cecelia.bf2raw_compression_flags("zstd")[4:2:end])["shuffle"] == "0"
+
+        # an unknown name falls back rather than erroring - a typo in custom.toml must not fail a
+        # multi-hour import
+        @test Cecelia.bf2raw_compression_flags("nope") ==
+              Cecelia.bf2raw_compression_flags(Cecelia.IMAGE_COMPRESSOR_DEFAULT)
+        @test_throws ArgumentError Cecelia.set_image_compressor!("nope")
     end
 
     @testset "count metrics" begin

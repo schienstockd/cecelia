@@ -40,11 +40,13 @@ That is worth being blunt about, because it rules out a whole family of tempting
 
 ## Open — needs a scientific decision, not a code change
 
-1. **The 8-bit input is the actual cause.** Both versions of this image are `uint8`; the 8-bit conversion
-   happens at import, and AF correction works on what is left. Correcting the 16-bit source *before* the
-   conversion would give the correction real precision. This is a pipeline-ORDER question, not something
-   the AF task can fix locally. Unchanged by the mechanism change — if anything it is now the *only*
-   precision issue left, since the output no longer adds one of its own.
+1. **The 8-bit input is the actual cause — and the cause is now historical.** Both versions of this
+   image are `uint8` because they were imported while the import converted to 8-bit. That conversion has
+   since been **removed** (images keep their acquired bit depth — `docs/FUTURE.md`), so this is no longer
+   a pipeline-ORDER question for anything imported from now on: AF sees the full-depth data. It stays
+   open only for images already converted, and for those the fix is a re-import rather than anything the
+   AF task can do. If the speckle is still visible on a freshly imported 16-bit movie, then the input
+   precision was never the cause and (2) is where to look.
 
 2. **Is CH4 a useful AF reference for CH1 here?** It is above its own background for 1.45% of voxels, so
    the correction is inactive almost everywhere. Under the ratio that made it "closer to a 17× gain than
@@ -58,6 +60,26 @@ That is worth being blunt about, because it rules out a whole family of tempting
    and does not blur the corrected signal — unlike the old Gaussian, which blurred the output. It would
    barely help here: with the competitor at background 98.6% of the time there is almost nothing to
    smooth.
+
+4. **A set-wide ceiling waits on a mechanism that does not exist yet.** AF's derived ceiling has a
+   real comparability problem — measured **1.71x** across the nine `kSUFux` movies (one experiment, one
+   channel pair, identical settings), and the existing AF QC is provably blind to it, which is why
+   `ceiling` is banked as a cohort metric. The fix is not a typed absolute window in raw intensity
+   units: AF's ceiling is a dimensionless ratio (~15–21 here) — the gain knob that was deliberately
+   removed.
+
+   **There is no set-wide intensity mechanism to reuse — every attempt at one was removed.** #443
+   landed a set-level `referenceImage` nomination and #445 made the 8-bit import derive a set-wide
+   window from it; both were removed, and then the whole 8-bit conversion was removed with them
+   (images are kept at their acquired bit depth — recorded as a non-goal in `docs/FUTURE.md`, with the
+   measurements and the five window designs that failed). The star survives as a plain multi-select
+   bookmark with no consumer.
+
+   So if AF needs a set-wide ceiling it has to derive one itself. Two things carry over from that
+   work, both hard-won: a per-CHANNEL gain skews the cross-channel ratio the analysis measures, and a
+   nominated reference is a guess that either clips the brighter images or wastes range on all of
+   them. Note also that (1) and (2) above are unchanged by the input now being 16-bit rather than
+   8-bit — that removes the input-precision limit, but not the output-mapping question.
 
 ## Why this is not just a TODO item
 

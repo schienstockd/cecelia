@@ -252,7 +252,7 @@ describe('uncoveredControls', () => {
 //
 // Before adding: is the removed explanation in `docs/`? That was true of every one of the ~100
 // strings shortened in the two sweeps — pseudoreplication in PLOTS.md, chain failure policy in
-// SCHEDULER.md, resource pools in MODULES.md, import staging in IMPORT_RESCALE_PLAN.md. If the fact
+// SCHEDULER.md, resource pools in MODULES.md, import staging on `_stage_source!`. If the fact
 // matters, it belongs there, and the UI can then be short without losing it.
 const ALLOWED_LONG: string[] = []
 

@@ -44,7 +44,8 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useTaskDefsStore } from '../stores/taskDefs'
-import { isExcluded, isImported } from '../utils/inclusion'
+import { isExcluded } from '../utils/inclusion'
+import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters } from '../utils/rowFilters'
 import { funsRunAcross, wasProcessedWith, funModuleLabel, type ProcMode } from '../utils/runLog'
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
@@ -136,23 +137,26 @@ const taskKey = computed(() => `cc-task-open:${props.module ?? 'default'}`)
 const taskOpen = ref(localStorage.getItem(`cc-task-open:${props.module ?? 'default'}`) === '1')
 watch(taskOpen, v => { try { localStorage.setItem(taskKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 
-// ── Hide-excluded toggle ────────────────────────────────────────────────────────
-// Excluded images are shown greyed by DEFAULT (not hidden). This toggle — the button next to Filter
-// — hides them entirely when the user wants a clean, run-only list. Persisted per module.
-const hideExcludedKey = computed(() => `cc-hide-excluded:${props.module ?? 'default'}`)
-const hideExcluded = ref(localStorage.getItem(`cc-hide-excluded:${props.module ?? 'default'}`) === '1')
-watch(hideExcluded, v => { try { localStorage.setItem(hideExcludedKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+// ── Row filters (Excluded / Imported / Starred) ─────────────────────────────────
+// One persisted on/off toggle per filter, declared as data in utils/rowFilters.ts and rendered by a
+// single v-for below — see that file for why they aren't three hand-written blocks. Excluded images
+// are shown greyed by DEFAULT (not hidden); each toggle hides its rows only when switched on.
+const rowFilterActive = ref<Record<string, boolean>>(Object.fromEntries(
+  ROW_FILTERS.map(f => [f.id, localStorage.getItem(rowFilterKey(f.id, props.module)) === '1'])))
+watch(rowFilterActive, v => {
+  for (const f of ROW_FILTERS) {
+    try { localStorage.setItem(rowFilterKey(f.id, props.module), v[f.id] ? '1' : '0') } catch { /* ignore */ }
+  }
+}, { deep: true })
+// the filters worth showing, with their current count resolved once for the button + its tooltip
+const rowFilters = computed(() => {
+  const imgs = activeSet.value?.images ?? []
+  return ROW_FILTERS.filter(f => f.visible(imgs))
+    .map(f => ({ def: f, count: f.count(imgs), images: imgs }))
+})
+// separate from the filter toggle above: the set header always states how many images are excluded,
+// whether or not the Excluded filter is being used to hide them
 const excludedCount = computed(() => (activeSet.value?.images ?? []).filter(isExcluded).length)
-
-// ── Imported-only toggle ────────────────────────────────────────────────────────
-// A newly-added image sits un-imported (no OME-ZARR yet) until its import task runs. This toggle —
-// the counterpart to Excluded — hides the not-yet-imported ones so the list shows only images that
-// are ready to process/view. Persisted per module.
-const hideUnimportedKey = computed(() => `cc-hide-unimported:${props.module ?? 'default'}`)
-const hideUnimported = ref(localStorage.getItem(`cc-hide-unimported:${props.module ?? 'default'}`) === '1')
-watch(hideUnimported, v => { try { localStorage.setItem(hideUnimportedKey.value, v ? '1' : '0') } catch { /* ignore */ } })
-const importedCount = computed(() => (activeSet.value?.images ?? []).filter(isImported).length)
-const unimportedCount = computed(() => (activeSet.value?.images ?? []).length - importedCount.value)
 
 // ── Processed-with filter ────────────────────────────────────────────────────────
 // "Which images have been processed with function X?" — derived from each image's automatic run log
@@ -227,12 +231,11 @@ const filteredUids = computed<string[] | undefined>(() => {
   const attrActive = props.showFilter && hasApplied.value
   const procOn     = props.showFilter && procActive.value
   // Nothing narrowing the list → let ImageTable show everything (excluded still render, greyed).
-  if (!attrActive && !procOn && !hideExcluded.value && !hideUnimported.value) return undefined
+  if (!attrActive && !procOn && !anyRowFilterActive(rowFilterActive.value)) return undefined
   const imgs = activeSet.value?.images ?? []
   return imgs
     .filter(img => {
-      if (hideExcluded.value && isExcluded(img)) return false
-      if (hideUnimported.value && !isImported(img)) return false
+      if (hiddenByRowFilters(img, rowFilterActive.value)) return false
       if (procOn && !wasProcessedWith(img.runLog, procFun.value, procMode.value)) return false
       if (!attrActive) return true
       const matches = Object.entries(appliedFilters.value).every(([key, vals]) =>
@@ -344,22 +347,13 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">CSV</span>
             </button>
 
-            <!-- Excluded toggle: excluded images show greyed by default; this hides them entirely -->
-            <button v-if="excludedCount > 0"
-              class="filter-toggle" :class="{ active: hideExcluded }"
-              @click="hideExcluded = !hideExcluded"
-              v-tooltip.left="hideExcluded ? `Show ${excludedCount} excluded image(s) (greyed)` : `Hide ${excludedCount} excluded image(s)`">
-              <i :class="['pi', hideExcluded ? 'pi-eye-slash' : 'pi-eye']" />
-              <span class="filter-label">Excluded {{ excludedCount }}</span>
-            </button>
-
-            <!-- Imported toggle: hide images that haven't been imported yet (no OME-ZARR) -->
-            <button v-if="unimportedCount > 0"
-              class="filter-toggle" :class="{ active: hideUnimported }"
-              @click="hideUnimported = !hideUnimported"
-              v-tooltip.left="hideUnimported ? `Show all (${unimportedCount} not yet imported)` : `Show only imported images (hide ${unimportedCount} not yet imported)`">
-              <i :class="['pi', hideUnimported ? 'pi-check-circle' : 'pi-circle']" />
-              <span class="filter-label">Imported {{ importedCount }}</span>
+            <!-- Row filters (Excluded / Imported / Starred) — declared in utils/rowFilters.ts -->
+            <button v-for="f in rowFilters" :key="f.def.id"
+              class="filter-toggle" :class="{ active: rowFilterActive[f.def.id] }"
+              @click="rowFilterActive[f.def.id] = !rowFilterActive[f.def.id]"
+              v-tooltip.left="f.def.tip(rowFilterActive[f.def.id], f.images)">
+              <i :class="['pi', rowFilterActive[f.def.id] ? f.def.iconOn : f.def.iconOff]" />
+              <span class="filter-label">{{ f.def.label }} {{ f.count }}</span>
             </button>
 
             <!-- Task: filter to images a given function has been run on (own dropdown) -->

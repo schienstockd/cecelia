@@ -52,6 +52,48 @@ export function formatBytes(n: number): string {
   return `${s} ${units[i]}`
 }
 
+/** Compression the image OME-ZARRs we write use. Advanced, and rendered as a COMPARISON TABLE rather
+ *  than a dropdown: the trade-off is the only reason there is a choice, so the numbers have to be on
+ *  screen at the point of deciding. Every field below is a display string measured and formatted by
+ *  the BACKEND (app/src/config.jl → IMAGE_COMPRESSOR_CHOICES) — the frontend never computes or
+ *  restates a number, so there is one place the measurements live. */
+export interface CompressorChoice {
+  name: string
+  label: string
+  size: string        // resulting store size, e.g. "0.64 GB"
+  ratio: string       // how much smaller than raw, e.g. "2.74x" — SIZE, not speed
+  write: string       // whole-store write time, e.g. "5.1 s"
+  read: string        // warm per-plane read, e.g. "1.7 ms"
+  url: string         // the codec's own site
+}
+
+export interface CompressorSettings {
+  current: string
+  default: string
+  measuredOn: string  // one short line naming what every row was measured on
+  docsUrl: string     // the shuffle filter is Blosc's, not the codec's
+  choices: CompressorChoice[]
+}
+
+export async function fetchCompressor(): Promise<CompressorSettings> {
+  const res = await fetch('/api/storage/compressor')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as CompressorSettings
+}
+
+/** Applies to stores written from here on — existing ones are untouched. */
+export async function setCompressor(name: string): Promise<string> {
+  const res = await fetch('/api/storage/compressor/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return (data as any).current as string
+}
+
 export async function fetchStorageSummary(projectUid: string): Promise<StorageSummary> {
   const res = await fetch(`/api/storage/summary?projectUid=${encodeURIComponent(projectUid)}`)
   const data = await res.json().catch(() => ({}))

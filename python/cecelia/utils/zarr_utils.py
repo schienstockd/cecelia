@@ -29,6 +29,93 @@ from copy import copy
 import cecelia.utils.slice_utils as slice_utils
 
 
+#: Compressors an IMAGE store may be written with, by name. Selectable in Settings → Storage; the one
+#: in force reaches this module through the `CECELIA_IMAGE_COMPRESSOR` env var (set by `run_py`), so a
+#: task runner never has to thread it through. Every value is measured on the same real 16-bit
+#: acquisition — `4kS67f/LUkCpP`, 64x4x13x512x512, 12-bit data in 16-bit words, whole store rewritten:
+#:
+#:   name            store     smaller-by   write   warm read/plane
+#:   zstd-shuffle    0.636 GB   2.74x         5.1s   1.7 ms      <- default
+#:   zstd            0.768 GB   2.27x         5.0s   1.7 ms
+#:   lz4-shuffle     0.944 GB   1.85x         4.6s   1.35 ms
+#:   zstd-max        0.601 GB   2.90x        36.9s   1.6 ms
+#:
+#: The ratio column is SIZE (store vs raw), not speed — they are easy to misread side by side. On read,
+#: the spread across all four is 1.35-1.7 ms per plane, i.e. lz4 is ~1.25x faster than the default
+#: while its store is 1.48x larger.
+#:
+#: `zstd-shuffle` is the default because the win is the SHUFFLE filter, and it is nearly free: shuffle
+#: groups each pixel's high bytes together, and in 12-bit data stored in 16-bit words the high byte is
+#: near-constant, so it collapses. Plain `zstd` on the same data measured 2.27x — i.e. the filter is
+#: the whole difference — for 0.1s of the 5s write.
+#:
+#: The honest costs of the default, for anyone choosing: warm per-plane reads are ~0.3 ms slower than
+#: `lz4-shuffle` (1.7 vs 1.35 ms, consistent over three runs), while cold and sequential reads are
+#: inside run-to-run noise because the smaller store offsets the extra CPU. `zstd-max` is level 9: it
+#: buys a further 5% for a 7x longer write — exposed for an archival re-write, not for routine use.
+IMAGE_COMPRESSOR_CHOICES = {
+    'zstd-shuffle': dict(cname='zstd', clevel=3, shuffle='shuffle'),
+    'zstd':         dict(cname='zstd', clevel=3, shuffle='noshuffle'),
+    'lz4-shuffle':  dict(cname='lz4',  clevel=5, shuffle='shuffle'),
+    'zstd-max':     dict(cname='zstd', clevel=9, shuffle='shuffle'),
+}
+
+#: The default when nothing is configured. Also what an external consumer of the `cecelia` package
+#: (e.g. coastal) gets, since it runs with no env var set.
+IMAGE_COMPRESSOR_DEFAULT = 'zstd-shuffle'
+
+#: Env var carrying the configured choice. Read per call rather than at import, so flipping the
+#: setting takes effect on the next task without restarting anything.
+IMAGE_COMPRESSOR_ENV = 'CECELIA_IMAGE_COMPRESSOR'
+
+#: LABEL stores are NOT selectable — plain zstd, no blosc and no shuffle. The opposite answer to the
+#: image default, for a structural reason: label planes are >99% zero, so what compresses them is a
+#: long-range match over the whole plane, and blosc's small blocks plus the shuffle interleave both
+#: break those runs up. Measured on two real `uint32` label stores (`4kS67f/LUkCpP` T and B, 0.7%
+#: non-zero): plain zstd 1273-2019x against blosc/zstd-3+shuffle's 794-1145x.
+#:
+#: Left out of Settings on purpose. In absolute terms both are tiny (0.14 vs 0.22 MB for that store),
+#: so there is nothing to tune — the constant exists so that "one codec for every store" doesn't get
+#: applied to labels on the assumption it must be better.
+LABEL_COMPRESSOR = dict(cname='zstd', clevel=3, shuffle='noshuffle')
+
+
+def image_compressor_name():
+    """The configured image-compressor choice, falling back to `IMAGE_COMPRESSOR_DEFAULT`.
+
+    An unrecognised value falls back rather than raising: this is read on the write path of a
+    long-running task, and failing an hour-long import over a typo in a config file would be worse
+    than writing it with the default.
+    """
+    name = os.environ.get(IMAGE_COMPRESSOR_ENV, '').strip()
+    return name if name in IMAGE_COMPRESSOR_CHOICES else IMAGE_COMPRESSOR_DEFAULT
+
+
+def store_compressor(kind='image'):
+    """The codec every store writer must pass to `create_array`/`open_array` — the ONE place the
+    compression of anything we write on disk is decided.
+
+    ``kind``: ``'image'`` for intensity data, ``'labels'`` for a label store. Images honour the
+    Settings choice (see `IMAGE_COMPRESSOR_CHOICES`); labels are fixed (see `LABEL_COMPRESSOR`).
+
+    Before this existed, every writer simply took whatever the library defaulted to at the time, so
+    what was on disk recorded the zarr version that wrote it rather than a decision: bioformats2raw
+    stores are `blosc/lz4-5` (jzarr's default), stores written under zarr-python 2 are also
+    `blosc/lz4-5` (its default), and everything written since the zarr 3 migration is plain `zstd`
+    (its v2 default). Three codecs, no intent behind any of them.
+
+    Returned as a numcodecs codec, which is what `create_array` takes for a `zarr_format=2` store.
+    """
+    if kind not in ('image', 'labels'):
+        raise ValueError(f"unknown store kind {kind!r}; expected 'image' or 'labels'")
+    spec = IMAGE_COMPRESSOR_CHOICES[image_compressor_name()] if kind == 'image' else LABEL_COMPRESSOR
+    from numcodecs import Blosc, Zstd
+    if spec['shuffle'] == 'noshuffle' and spec['cname'] == 'zstd':
+        # plain zstd, NOT blosc-wrapped — blosc's blocking is exactly what costs us on labels
+        return Zstd(level=spec['clevel'])
+    return Blosc(cname=spec['cname'], clevel=spec['clevel'], shuffle=Blosc.SHUFFLE)
+
+
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
     """Open a zarr store — an image version or a label set — as a list of pyramid levels.
 
@@ -445,7 +532,7 @@ def _rename_store(src, dest):
 
 def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks=None,
                              store_path=None, ignore_channel=False, ignore_time=False,
-                             copy_values=True, remove_previous=False):
+                             copy_values=True, remove_previous=False, kind='image'):
     if im_chunks is None:
         im_chunks = chunks(reference_zarr)
 
@@ -474,6 +561,7 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
         chunks=im_chunks,
         dtype=native_dtype(im_array.dtype),
         zarr_format=2,
+        compressor=store_compressor(kind),
     )
 
     if copy_values is True:
@@ -715,8 +803,12 @@ def write_calibration(path, dim_utils, axes=None):
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
-                       squeeze=False, idx_adjust=0, axes=None):
-    """``axes``: explicit axis letters for the array being written, overriding the ones derived
+                       squeeze=False, idx_adjust=0, axes=None, kind='image'):
+    """``kind``: ``'image'`` (intensity data, the default) or ``'labels'``. It picks the compressor —
+    see `store_compressor`; the two need opposite settings and the caller is the only one that knows
+    which it is writing. A label caller that forgets it loses ~40% of the compression, silently.
+
+    ``axes``: explicit axis letters for the array being written, overriding the ones derived
     from ``dim_utils``. Pass this whenever the stored array's rank differs from the source image's
     — e.g. a LABEL store (no channel axis), or one where Z or T has been collapsed.
 
@@ -747,7 +839,8 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read.
         pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
-            "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype)
+            "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype),
+            compressor=store_compressor(kind)
         )
         # Rechunk the SOURCE to the destination grid before storing. `da.store(lock=False)` is only safe
         # when each dest chunk has exactly one writer; im_array's own (auto) chunking does NOT align with
@@ -759,7 +852,9 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         da.store(im_array.rechunk(pchunks), dest, lock=False)
         im_chunks = list(pchunks)
     elif isinstance(im_array, zarr.Array):
-        dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks, dtype=native_dtype(im_array.dtype))
+        dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks,
+                                            dtype=native_dtype(im_array.dtype),
+                                            compressor=store_compressor(kind))
         dest[:] = im_array[:]
         im_chunks = chunks(im_array)
     else:
@@ -768,13 +863,13 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
             reference_zarr=reference_zarr,
             im_chunks=im_chunks,
             store_path=os.path.join(filepath, "0"),
-            ignore_channel=ignore_channel)
+            ignore_channel=ignore_channel, kind=kind)
 
     if nscales > 1:
         write_multiscale_pyramid(
             multiscales_zarr, im_array, dim_utils, nscales, im_chunks,
             x_idx=x_idx, y_idx=y_idx, ignore_channel=ignore_channel,
-            squeeze=squeeze, idx_adjust=idx_adjust)
+            squeeze=squeeze, idx_adjust=idx_adjust, kind=kind)
 
 
 _DERIVE_T = object()   # sentinel: derive the time axis from dim_utils
@@ -782,7 +877,7 @@ _DERIVE_T = object()   # sentinel: derive the time axis from dim_utils
 
 def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales, im_chunks,
                              x_idx=None, y_idx=None, t_idx=_DERIVE_T, ignore_channel=False,
-                             squeeze=False, idx_adjust=0):
+                             squeeze=False, idx_adjust=0, kind='image'):
     """Write downsampled pyramid levels 1..nscales-1 into an already-created multiscales group,
     slicing ``level_source`` (numpy / dask / an on-disk zarr level-0) with power-of-two XY strides.
 
@@ -819,7 +914,8 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
         # a chunk larger than the axis — only the chunk layout changes, never the pixel values
         dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(im_chunks, dest_shape))
         dest = multiscales_zarr.create_array(
-            str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype))
+            str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype),
+            compressor=store_compressor(kind))
         if t_idx is None:
             dest[:] = _read(tuple(x))
         else:
@@ -830,7 +926,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
 
 
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
-                                 nscales=1, keyword='datasets', mode='w'):
+                                 nscales=1, keyword='datasets', mode='w', kind='image'):
     """Create a multiscales group + an EMPTY, per-plane-chunked level-0 array on disk, write the
     NGFF ``multiscales`` metadata, and return ``(group, level0, pchunks)``.
 
@@ -853,7 +949,8 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
 
     pchunks = plane_chunks(tuple(shape), dim_utils)
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,
-                                           dtype=native_dtype(dtype))
+                                           dtype=native_dtype(dtype),
+                                           compressor=store_compressor(kind))
     return multiscales_zarr, level0, pchunks
 
 

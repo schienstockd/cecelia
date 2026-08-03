@@ -9,12 +9,14 @@ import { napariState, notebooksState, previewState, stateInfo, formatUptime, typ
 import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
-import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, type StorageSummary } from '../utils/storage'
+import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
+         type StorageSummary, type CompressorSettings } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import CcToggle from '../components/CcToggle.vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
 const showPackages = ref(false)
 
@@ -26,6 +28,40 @@ const storage      = ref<StorageSummary | null>(null)
 const storageScan  = ref(false)
 const storageBusy  = ref(false)
 const storageError = ref('')
+
+// Image-store compression (advanced). Server-side setting, not a browser preference — it decides how
+// every store the backend writes is encoded, so it lives in custom.toml like the pool limits, and the
+// choice list is served rather than duplicated here.
+const compressor      = ref<CompressorSettings | null>(null)
+const compressorBusy  = ref(false)
+const compressorError = ref('')
+
+async function loadCompressor() {
+  try { compressor.value = await fetchCompressor() }
+  catch { /* advanced, optional — a failure here must not break the Settings page */ }
+}
+
+// Column labels only — every value is a display string the backend measured and formatted.
+const COMPRESSOR_COLUMNS: SelectionColumn[] = [
+  { key: 'label', label: 'Codec' },
+  { key: 'size',  label: 'Store' },
+  { key: 'ratio', label: 'vs raw' },
+  { key: 'write', label: 'Write' },
+  { key: 'read',  label: 'Read/plane' },
+  { key: 'url',   label: 'Docs', kind: 'link' },
+]
+
+function compressorTip(row: Record<string, any>) {
+  return row.name === compressor.value?.default ? 'The measured default' : 'Use this codec for new stores'
+}
+
+async function changeCompressor(name: string) {
+  if (!compressor.value || name === compressor.value.current) return
+  compressorBusy.value = true; compressorError.value = ''
+  try { compressor.value.current = await setCompressor(name) }
+  catch (e: any) { compressorError.value = e?.message ?? 'Could not change compression' }
+  finally { compressorBusy.value = false }
+}
 
 async function scanStorage() {
   const uid = projectMeta.current?.uid
@@ -156,6 +192,7 @@ function replKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runRepl() }
 }
 onMounted(loadDiag)
+onMounted(loadCompressor)
 
 // ── System: service control panel ─────────────────────────────────────────────
 // Live status of the backend's child processes + per-component and global controls. Status is
@@ -442,6 +479,24 @@ async function switchWt(path: string) {
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
     <section class="settings-section">
       <h2 class="section-title">Storage</h2>
+
+      <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
+           trade-off is the only reason there is a choice, so the measured numbers belong on screen at
+           the point of deciding. Every value is a display string from the backend. -->
+      <div v-if="compressor" class="field">
+        <div class="cmp-head">
+          <span class="svc-name">Image compression</span>
+          <span class="field-hint cc-muted cc-fs-xs">{{ compressor.measuredOn }}</span>
+          <a :href="compressor.docsUrl" target="_blank" rel="noopener"
+             class="cmp-link cc-fs-xs" v-tooltip.top="'Blosc: the shuffle filter'">Blosc <i class="pi pi-external-link" /></a>
+        </div>
+        <SelectionTable :columns="COMPRESSOR_COLUMNS" :rows="compressor.choices"
+                        :model-value="compressor.current" :disabled="compressorBusy"
+                        :row-tooltip="compressorTip"
+                        @update:model-value="changeCompressor" />
+        <span class="field-hint cc-muted cc-fs-xs">Applies to new stores only</span>
+      </div>
+      <span v-if="compressorError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ compressorError }}</span>
 
       <div class="field">
         <div class="field-row">
@@ -826,6 +881,13 @@ async function switchWt(path: string) {
   margin: 0 0 1.75rem;
 }
 
+.cmp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+.cmp-link { margin-left: auto; }
 .settings-section {
   margin-bottom: 2rem;
 }

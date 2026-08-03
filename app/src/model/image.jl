@@ -27,6 +27,12 @@ mutable struct CciaImage
     # somehow selected. `note` is a free-text reason the user can leave (why it was excluded).
     included::Bool
     note::String
+    # A plain user bookmark — "I like this one". ANY number of images in a set can be starred, and
+    # nothing downstream reads it: it does not affect selection, runs, or processing. It exists so a
+    # long import can be narrowed to the handful worth looking at, via the Starred row filter that
+    # sits beside Excluded/Imported. Deliberately not a nomination — the 8-bit import once derived a
+    # set-wide intensity window from a single starred "reference", and that coupling is gone.
+    starred::Bool
     _dir::String                      # {proj}/1/{uid}/ — runtime only
     # runtime-only pop_df result cache (keyed by request hash; values are DataFrames).
     # Mirrors R cciaImage `private$filteredPopDT`. Not serialised; cleared via
@@ -41,7 +47,7 @@ function CciaImage(; uid=gen_uid(), name="", status="pending", dir="")
               Dict{String,Vector{String}}(),      # branch_labels (Decision 6)
               Dict{String,Any}(),                 # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
-              true, "",                           # included (default), note
+              true, "", false,                    # included (default), note, starred
               dir,
               Dict{String,Any}())                 # _pop_df_cache (runtime only)
 end
@@ -336,6 +342,7 @@ function save!(img::CciaImage)
         "meta"           => img.meta,
         "included"       => img.included,
         "note"           => img.note,
+        "starred"        => img.starred,
     )
     write_json_atomic(state_file(img), d)
 end
@@ -493,8 +500,8 @@ function _load_image(dir::String)::CciaImage
         icn,
         to_spaths("attr"),
         Dict{String,Any}(get(d, "meta", Dict{String,Any}())),
-        # Legacy images (pre-inclusion) have neither field → default to included, no note.
-        Bool(get(d, "included", true)), String(get(d, "note", "")),
+        # Legacy images (pre-inclusion) have none of these → included, no note, not starred.
+        Bool(get(d, "included", true)), String(get(d, "note", "")), Bool(get(d, "starred", false)),
         dir,
         Dict{String,Any}(),                 # _pop_df_cache (runtime only)
     )

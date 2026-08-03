@@ -92,6 +92,13 @@ sibling and that is renamed onto the final path only once the pyramid is complet
 `zarr_utils.staged_store` idiom, which every store writer in the codebase uses (see the *Image /
 OME-ZARR access* rule in `CLAUDE.md`).
 
+A label store is also written with a **different compressor from an image store** — plain zstd rather
+than the image default of blosc+byte-shuffle. Not an oversight: label planes are >99% zero, so what
+compresses them is a long-range match across the whole plane, and blosc's small blocks plus the byte
+shuffle both break those runs up (measured 1273-2019x against 794-1145x on two real stores). Both
+label writers therefore pass `kind='labels'` to `zarr_utils.store_compressor`; see the constants there
+before "unifying" the two.
+
 The reason is specific to re-running a value_name that is **already registered**. The writer used to
 `rmtree` its target and then fill it over minutes, so cancelling that re-run left `ccid.json`
 advertising a store with most of its frames missing. On a multi-level image the next read raised
@@ -108,11 +115,11 @@ rather than waiting to be found.
 
 **The sweep detects structurally, not by name**, because a name list only ever covers the writers
 someone remembered. `*.partial`/`*.superseded` catches everything that opted into `staged_store` — AF,
-drift, cellpose-correct, crop, rescale. **Import does not opt in**: on the 16-bit path
-`bf2raw_out == zarr_out`, so bioformats2raw writes straight to the FINAL name and a cancel leaves a
+drift, cellpose-correct, crop. **Import does not opt in**: bioformats2raw writes straight to the
+FINAL name and a cancel leaves a
 half-written store called `ccidImage.ome.zarr` — which a name-based sweep actively *skipped* as a real
-store — plus `ccidImage.16bit.tmp.ome.zarr` and `_stage_src` (a full local copy of the source, often
-the biggest of the three). So on top of the name fast path:
+store — plus `_stage_src`, a full local copy of the source that is often larger than the store itself.
+So on top of the name fast path:
 
 | `why` | Test |
 |---|---|

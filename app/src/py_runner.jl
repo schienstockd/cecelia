@@ -79,7 +79,13 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     pythonpath = py_root
     custom_py  = _custom_modules_pydir()
     isdir(custom_py) && (pythonpath = string(custom_py, Sys.iswindows() ? ";" : ":", py_root))
-    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => pythonpath)
+    # The configured image-store compressor travels as an env var rather than a param, so every
+    # runner's zarr write picks it up through `zarr_utils.store_compressor` without each task having
+    # to declare and forward it. Read per call on the Python side, so flipping the Settings choice
+    # applies to the next task with no restart.
+    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`,
+                  "PYTHONPATH" => pythonpath,
+                  "CECELIA_IMAGE_COMPRESSOR" => image_compressor())
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

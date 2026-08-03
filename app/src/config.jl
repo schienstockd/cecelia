@@ -349,3 +349,103 @@ napari_discrete_gpu()::Bool =
 
 tasks_concurrent_limit()::Int =
     Int(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "concurrentLimit", 4))
+
+# ── Image store compression ──────────────────────────────────────────────────────────────────────
+
+"""
+Compressor choices for an IMAGE store, mirroring `zarr_utils.IMAGE_COMPRESSOR_CHOICES`.
+
+Julia needs its own copy for two reasons: bioformats2raw is handed flags on a command line (it cannot
+read a Python constant), and the API serves the list to Settings. Kept in the SAME order as the Python
+dict, and asserted equal by `app/test/suite.jl` → *"import metrics"* — same arrangement as the
+calibration writers (CLAUDE.md → *Calibration — three copies, one stamp*). If you change one, that
+test is the contract.
+
+Each entry carries its MEASURED numbers as display strings (`size`/`write`/`read`), because Settings
+renders them as a comparison table rather than a bare dropdown — the trade-off is the whole reason
+there is a choice, so hiding it behind a name would make the control decorative. Serving them
+pre-formatted keeps the numbers stated in exactly one place; the frontend never computes or restates
+them.
+
+Measured identically for every row: `4kS67f/LUkCpP` (64x4x13x512x512, 12-bit data in 16-bit words,
+1.745 GB raw), whole store rewritten. `read` is a warm per-plane read, the only read difference that
+survived three repeat runs — cold and sequential reads were inside run-to-run noise, because a smaller
+store offsets the extra CPU. `url` is the codec's own site so a user can check what they're choosing.
+"""
+const IMAGE_COMPRESSOR_CHOICES = [
+    (name = "zstd-shuffle", cname = "zstd", clevel = 3, shuffle = true,
+     label = "zstd + shuffle", size = "0.64 GB", ratio = "2.74x", write = "5.1 s", read = "1.7 ms",
+     url = "https://facebook.github.io/zstd/"),
+    (name = "zstd",         cname = "zstd", clevel = 3, shuffle = false,
+     label = "zstd",          size = "0.77 GB", ratio = "2.27x", write = "5.0 s", read = "1.7 ms",
+     url = "https://facebook.github.io/zstd/"),
+    (name = "lz4-shuffle",  cname = "lz4",  clevel = 5, shuffle = true,
+     label = "lz4 + shuffle", size = "0.94 GB", ratio = "1.85x", write = "4.6 s", read = "1.35 ms",
+     url = "https://lz4.org/"),
+    (name = "zstd-max",     cname = "zstd", clevel = 9, shuffle = true,
+     label = "zstd level 9",  size = "0.60 GB", ratio = "2.90x", write = "36.9 s", read = "1.6 ms",
+     url = "https://facebook.github.io/zstd/"),
+]
+
+#: What every row was measured on, shown as the table's caption. One line, no prose.
+const IMAGE_COMPRESSOR_MEASURED_ON = "1.7 GB 16-bit timecourse, whole store"
+
+#: The byte-shuffle filter belongs to Blosc, not to zstd/lz4 — link it separately.
+const IMAGE_COMPRESSOR_DOCS_URL = "https://www.blosc.org/"
+
+const IMAGE_COMPRESSOR_DEFAULT = "zstd-shuffle"
+
+"""
+    image_compressor() -> String
+
+The configured image-store compressor choice (`[zarr].imageCompressor`), or the default when unset or
+unrecognised. Falls back rather than erroring: a typo in `custom.toml` must not fail every write.
+
+Label stores are deliberately not configurable — see `zarr_utils.LABEL_COMPRESSOR`.
+"""
+function image_compressor()::String
+    name = string(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "imageCompressor",
+                      IMAGE_COMPRESSOR_DEFAULT))
+    any(c -> c.name == name, IMAGE_COMPRESSOR_CHOICES) ? name : IMAGE_COMPRESSOR_DEFAULT
+end
+
+"""
+    set_image_compressor!(name) -> String
+
+Persist `name` as `[zarr].imageCompressor` in the user's `custom.toml` and hot-reload config, so the
+next task writes with it — no restart. Rejects an unknown name (the caller validates for the API's
+400). Existing stores are untouched; `python/cecelia/utils/rechunk_zarr.py` re-lands them.
+"""
+function set_image_compressor!(name::AbstractString)::String
+    nm = strip(String(name))
+    any(c -> c.name == nm, IMAGE_COMPRESSOR_CHOICES) ||
+        throw(ArgumentError("unknown compressor '$nm'"))
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    z   = get(cfg, "zarr", Dict{String,Any}())
+    z["imageCompressor"] = nm
+    cfg["zarr"] = z
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    nm
+end
+
+"""
+    bf2raw_compression_flags([name]) -> Vector{String}
+
+bioformats2raw CLI flags that make it write the SAME compressor our own Python writers use.
+
+bioformats2raw defaults to `blosc/lz4-5`, which on real 16-bit acquisition data is 33% larger than the
+default choice for no read-speed benefit that survives measurement. The import is the one store we do
+NOT write through `zarr_utils`, so it is the one that has to be told explicitly — otherwise an
+imported original and every correction derived from it are encoded differently.
+"""
+function bf2raw_compression_flags(name::AbstractString = image_compressor())::Vector{String}
+    i = findfirst(c -> c.name == name, IMAGE_COMPRESSOR_CHOICES)
+    c = IMAGE_COMPRESSOR_CHOICES[isnothing(i) ? 1 : i]
+    ["--compression", "blosc",
+     "--compression-properties", "cname=$(c.cname)",
+     "--compression-properties", "clevel=$(c.clevel)",
+     "--compression-properties", "shuffle=$(c.shuffle ? 1 : 0)"]
+end

@@ -48,6 +48,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
 | Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
+| Pick ONE option where numbers decide it | `components/SelectionTable.vue` | a `<select>` that hides the trade-off, or an inline `<table>` |
 | Movie output options (fps + res) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:scale`) | a per-panel pair of sliders |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
@@ -987,9 +988,23 @@ optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/
 - **Hard-skipped in the backend too.** Belt-and-suspenders for run paths that bypass the checkboxes
   (chain resume, REPL): `_drop_excluded` (`api/src/sockets.jl`) filters excluded uids before dispatch
   and logs each skip. Set via `POST /api/images/inclusion/set`; `project.setInclusion` reflects it live.
-- **Hide-excluded toggle.** Next to the **Filter** button, `ModuleLayout` shows an **Excluded N**
-  toggle (`pi-eye`/`pi-eye-slash`) that hides excluded rows entirely (default: show them greyed).
-  Persisted per module like the filter panel.
+- **Hide-excluded toggle.** One of the row filters below (default: show excluded rows, greyed).
+
+**Row filters — add one by adding a table row, not a component.** The on/off toggles next to the
+**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Starred**) are declared
+as data in `frontend/src/utils/rowFilters.ts` (`ROW_FILTERS`) and rendered by ONE `v-for` in
+`ModuleLayout`. Each entry supplies its id, label, both icons, the `hides(img)` predicate, its count,
+whether the button is worth showing at all, and a two-state tooltip. `ModuleLayout` holds a single
+`rowFilterActive` bag, persisted per module under `cc-hide-<id>:<module>`.
+**Do not hand-write a new toggle** — that is how this became three near-identical blocks of ref +
+watch + computed + template. Add a `RowFilterDef`; the persistence, the button, the count and the
+`filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
+processed-with filters.
+
+**Star.** A plain per-image bookmark (`CciaImage.starred`, `isStarred`) — click the star in any row,
+any number per set. It drives the Starred row filter and **nothing else**: no effect on selection,
+runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
+intensity window was derived from; that whole mechanism is gone — see `docs/FUTURE.md`.)
 
 **Attribute extraction — regex + builder** (`MetadataPanel.vue` → *Extract via regex*). Pulls an
 attr value out of each image's filename (or original path) with a JavaScript regex: the first

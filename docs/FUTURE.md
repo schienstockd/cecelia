@@ -235,35 +235,45 @@ and a real parent/child hierarchy for the auto-created branch-type pops.
 
 **Reference:** `docs/todo/SPATIAL_ANISOTROPY_PLAN.md` → *Known limitation*; `docs/POPULATION.md`.
 
-## Two-phase import: derive the 8-bit window from a whole set, not one reference
+## Reducing image bit depth on import (8-bit conversion)
 
-**What.** Convert every image in a set to its 16-bit transient, pool the histograms, derive one
-intensity window, then rescale all of them and delete the transients. Exact, single-pass, and it
-deletes the leeway guess entirely.
+**What.** Convert images to 8-bit at import to shrink them, choosing an intensity window automatically.
 
-**Why deferred.** The shipped design derives the window from one user-nominated *reference* image
-(`CciaSet.meta["referenceImage"]`) times a leeway multiplier. That is a guess — measured across nine
-real movies, the non-saturated ceilings spanned **609-1498 (2.46x)**, so a single nomination often
-will not cover its set, and the default (1.7) only decides how often a second pass is needed. Two
-phases would need none.
+**Why NOT — this is a non-goal, not a deferral.** It was built, measured and removed. Two findings
+killed it, both on real data:
 
-It is deferred rather than rejected, on two counts that both turned out weaker than they first
-looked: peak disk (~24 GB of transients for nine images, against ~98 GB free — affordable) and
-"import is image-scoped" (set-scoped tasks already exist). The real reason is that **nothing has
-measured whether the window matters to the analysis it feeds**. The reference mechanism was built
-to fix a real defect (per-channel windows differing 3.5x within an image, 3x across images); going
-further is optimising a number whose downstream impact is unknown.
+1. **The size win it was for is mostly available losslessly.** Measured whole-store on a real 16-bit
+   acquisition: the codec alone (`blosc/zstd-3` + byte shuffle vs bioformats2raw's `blosc/lz4-5`) takes
+   33% off with no pixel change and no extra write time. Discarding 8 bits then buys only a further
+   27% — not the ~2x the design assumed.
+2. **Every possible window is wrong in some way.** Per-channel skews the cross-channel ratio the
+   analysis measures; one window per image leaves a dim channel with `its_max / brightest_max * 255`
+   levels (measured: 87/255); a set-wide window needs a number nobody can produce without eyeballing a
+   histogram, or a nominated reference that measurement showed spans 2.46x across nine movies. So the
+   real choice was "low dynamic range **or** break the ratio" — and a reporter that is genuinely off
+   must read as off.
 
-**Revisit when.** Segmentation or confetti-identity results turn out to be sensitive to the 8-bit
-window — or when a set routinely needs the second import pass, which the
-`importImages.omezarr` QC now reports (`windowNeeded` per image; the set's true requirement is the
-max across it). If neither happens, the reference + QC loop is enough.
+**Revisit when.** Only if storage becomes a binding constraint that lossless compression cannot meet —
+and then the honest form is a fixed divide by the detector's bit depth (data-independent, identical for
+every channel/image/set, exactly invertible), not an automatic window. On the data measured, that puts
+signal near 50/255.
 
-**Also worth knowing:** 4 of those 9 movies had a channel **saturated at acquisition**. No window,
-derived however cleverly, recovers those — so there is a ceiling on what this whole line of work can
+**Also worth knowing:** 4 of 9 real movies had a channel **saturated at acquisition**. No window,
+derived however cleverly, recovers those — there was always a ceiling on what this line of work could
 buy.
 
-**Reference:** `intensity_utils.reference_window` / `is_saturated`, `qc.jl::rescale_metrics`.
+**Five window designs were tried and removed**, which is the reason this is a non-goal rather than a
+"needs more thought": two hand-tuned percentiles (a different gain per channel, and at the default of
+100 one hot pixel setting the window); a typed absolute window (nobody can produce the number); a
+set-wide window derived from a nominated reference image × a leeway multiplier (import ORDER became
+load-bearing, and the nomination was a guess); a per-channel window (justified by a recorded window
+that nothing downstream ever read); and one shared window per image (correct about the ratio, and the
+dim-channel cost above is then unavoidable arithmetic).
+
+**Reference:** `zarr_utils.store_compressor` (the measured codec table that replaced it);
+`intensity_utils` retains the whole-stack histogram helpers the work produced, now used by AF
+correction and segmentation normalisation. The removed pieces — `image_window`, `is_saturated`
+(structural detection of clipping at acquisition), `rescale_stack_to_uint8` — are in git history.
 
 ---
 
