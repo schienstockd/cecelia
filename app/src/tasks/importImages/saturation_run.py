@@ -56,8 +56,8 @@ def run(params):
             stats['index'] = i
             channels.append(stats)
             log.log(f'   ch{i}: {"SATURATED" if stats["saturated"] else "ok"} '
-                    f'(top occupied value {stats["topValue"]}, '
-                    f'{stats["topCount"]} voxels = {stats["topFrac"] * 100:.4f}%)')
+                    f'(top occupied value {stats["topValue"]}, {stats["topCount"]} voxels '
+                    f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
         result = {'channels': channels}
     except Exception as e:
         # Advisory QC on a store that already converted successfully: report and move on. A

@@ -135,6 +135,22 @@ port is incomplete without it. 🔹 needs-input
 
 ## Backlog
 
+**#00094** — **Clipping is reported as a voxel fraction, which nobody can act on**
+The import check (`importImages.omezarr` → `saturation_qc_findings`) tells you a channel clipped at the
+detector and what fraction of its signal voxels piled at the ceiling. Measured over all 36 channels of
+the nine `kSUFux` movies, the four that clip sit at 3.9-7.2e-5 of signal (0.004-0.007%) — real clipping
+of trivial extent. There is no material case in any data we have, so the level at which a finding fires
+(`_SATURATION_WARN_SIGNAL_FRAC`, 1% of signal) is deliberately a smoke alarm ~140x above anything
+observed, not a calibrated threshold. It says so at the constant.
+
+The quantity a person can answer is not a voxel fraction: it is **how many CELLS have clipped voxels in
+that channel**. One affected cell in ten matters when you are comparing means; 500 voxels spread over a
+377 M-voxel movie may not. That needs labels, so it belongs at `segment.measureLabels` (or
+`tracking.track_measures`) rather than at import — the import pass can only say clipping is present.
+
+Doing this would also give the import threshold something to be calibrated AGAINST, instead of the
+current situation where it can only be set from what would obviously be damage.
+
 **#00090** — **A third of a drift-corrected stack can be empty, and every task still processes it**
 Measured 2026-07-31 on `k3Tx90` (project `kSUFux`… actually `4kS67f`, 201×20×544×548): drift correction
 expands the canvas and pads with zeros, and on that image **z 0–2 and z 16–20 are all-zero across every

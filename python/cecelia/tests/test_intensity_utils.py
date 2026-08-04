@@ -152,6 +152,34 @@ class TestIntensityUtils(unittest.TestCase):
         clean = iu.saturation_stats(self._tail(2000))
         self.assertFalse(clean['saturated'])
 
+    def test_the_signal_denominator_is_not_diluted_by_empty_frame(self):
+        """THE reason `clippedSignalFrac` exists. Padding a channel with background must not change how
+        clipped it is — but it changes `topFrac`, because that divides by every voxel. Measured on the
+        nine kSUFux movies (~95% background) the all-voxel figure lands at 1e-6, which says as much
+        about how much blank frame there is as about the clipping."""
+        h = self._clipped(4000, clip_at=1200)
+        padded = h.copy()
+        padded[0] += 100 * int(h.sum())              # a far emptier frame, same recorded signal
+
+        a, b = iu.saturation_stats(h), iu.saturation_stats(padded)
+        self.assertAlmostEqual(a['clippedSignalFrac'], b['clippedSignalFrac'], places=9)
+        self.assertLess(b['topFrac'], a['topFrac'] / 50)   # the all-voxel figure collapses
+        self.assertEqual(a['signalVoxels'], b['signalVoxels'])
+
+    def test_the_signal_fraction_is_larger_than_the_all_voxel_one(self):
+        """Sanity on direction: signal voxels are a SUBSET, so the same clipping is a bigger fraction
+        of them. On the real movies: 3.9-7.2e-5 of signal against 1.1-1.4e-6 of everything."""
+        s = iu.saturation_stats(self._clipped(4000, clip_at=1200))
+        self.assertGreater(s['clippedSignalFrac'], s['topFrac'])
+        self.assertGreater(s['signalVoxels'], 0)
+
+    def test_saturation_stats_on_a_flat_or_empty_channel(self):
+        """No signal to divide by → 0.0, not a ZeroDivisionError on the import path."""
+        for h in (np.zeros(4096, dtype=np.int64), np.eye(1, 4096, 7, dtype=np.int64)[0]):
+            s = iu.saturation_stats(h)
+            self.assertEqual(s['clippedSignalFrac'], 0.0)
+            self.assertFalse(s['saturated'])
+
     def test_triangle_threshold_degenerate_histograms(self):
         self.assertEqual(iu.triangle_threshold(np.zeros(16, np.int64)), 0.0)
         one = np.zeros(16, np.int64); one[7] = 5

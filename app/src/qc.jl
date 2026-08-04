@@ -285,24 +285,29 @@ end
 const _Z_RATIO_MIN = 0.02
 const _Z_RATIO_MAX = 50
 
-# Materiality floor for the clipping FINDING: the fraction of a channel's voxels sitting at the
-# detector ceiling above which it is worth interrupting someone.
+# Level at which clipping raises a FINDING, as a fraction of the channel's SIGNAL voxels (those above
+# the derived background) — see `intensity_utils.saturation_stats`, which reports both denominators.
 #
-# **This is a chosen number, not a fitted one, and it should be re-set by the first real case.**
-# `intensity_utils.is_saturated` decides whether a channel clipped AT ALL — structural, measured, and
-# it stays the gate on detection. But detection is not the same as materiality: measured over all 36
-# channels of the nine `kSUFux` movies (one session), the four it flags hold 415-534 voxels of ~377 M
-# at the ceiling — 1.1-1.4e-6. That is real clipping of trivial extent, and "lower the gain" is not
-# an actionable thing to tell someone about 500 voxels, on 4 of every 9 imports.
+# **This is a smoke alarm, not a calibrated threshold, and it cannot be calibrated from the data in
+# hand.** The number was re-derived rather than guessed once: measured over all 36 channels of the nine
+# `kSUFux` movies, the four that clip hold 3.9-7.2e-5 of their SIGNAL voxels at the ceiling (1.1-1.4e-6
+# of all voxels — the all-voxel figure is diluted by ~95% empty frame, which is why no threshold on it
+# could be argued about). Against signal the worst case is 0.007%. So that session contains no MATERIAL
+# clipping at all, on either denominator, and any level between the observed trace and 1% would be
+# separating "trace" from "nothing" rather than "material" from "trace".
 #
-# 1e-4 is ~37 000 voxels on an image that size: unambiguously truncated structure rather than a few
-# hot cells, and ~70x above the worst trace case observed. Nothing in that session would warn. It is
-# set from what would damage a MEASUREMENT, because there is no material case in hand to fit to.
+# 1% of signal voxels is therefore chosen to be ~140x above anything actually acquired: it exists to
+# catch unmistakable damage — a channel driven far into saturation — and to stay silent otherwise. It is
+# NOT a claim about where clipping starts to matter. The first genuinely clipped acquisition should
+# replace it.
 #
-# The metric (`saturation_metrics`) is banked regardless of this floor: a trace-level count is still
-# worth having, because the cohort comparison is relative and will surface an image clipping far more
-# than its session peers without anyone choosing an absolute level.
-const _SATURATION_WARN_FRAC = 1e-4
+# The number a user can act on is not a voxel fraction at all: it is how many CELLS have clipped voxels,
+# which needs labels and so belongs at measure time. Recorded as the successor in docs/TODO.md.
+#
+# The metrics are banked regardless of this level, and that is the point of the split: trace-level
+# counts are still worth having because the cohort comparison is RELATIVE, so it surfaces an image
+# clipping far more than its session peers without anyone choosing an absolute level.
+const _SATURATION_WARN_SIGNAL_FRAC = 1e-2
 
 _cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
 _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
@@ -399,17 +404,19 @@ function saturation_qc_findings(meta::AbstractDict)
     fs = Dict{String,Any}[]
     for ch in _saturation_channels(meta)
         get(ch, "saturated", false) === true || continue
-        # detected AND material — see _SATURATION_WARN_FRAC. A trace pile-up is recorded in the
-        # metrics but does not raise a finding.
-        frac = _cal_num(get(ch, "topFrac", nothing))
-        (isnothing(frac) || frac < _SATURATION_WARN_FRAC) && continue
+        # detected AND unmistakable — see _SATURATION_WARN_SIGNAL_FRAC. A trace pile-up is recorded in
+        # the metrics but does not raise a finding. Normalised by SIGNAL voxels, not all voxels.
+        frac = _cal_num(get(ch, "clippedSignalFrac", nothing))
+        (isnothing(frac) || frac < _SATURATION_WARN_SIGNAL_FRAC) && continue
         i = _cal_int(get(ch, "index", nothing), 0)
         push!(fs, qc_finding("warn", "import.channel_saturated"; channel = i,
-            # the COUNT, not a percentage: measured on a real session the clipped fraction is ~1e-6,
-            # which rounds to "0.0001%" and tells the user nothing. "534 voxels at 4095" is judgeable.
+            # the COUNT plus the SIGNAL-relative percentage. Not the all-voxel fraction: measured on a
+            # real session that is ~1e-6, which rounds to "0.0001%" and says more about how much blank
+            # frame there is than about the clipping.
             detail = Dict{String,Any}("channel"        => i,
                                       "topValue"       => _cal_num(get(ch, "topValue", nothing)),
-                                      "clippedVoxels"  => _cal_num(get(ch, "topCount", nothing)))))
+                                      "clippedVoxels"  => _cal_num(get(ch, "topCount", nothing)),
+                                      "clippedSignalPct" => round(frac * 100, digits = 3))))
     end
     fs
 end
@@ -431,8 +438,10 @@ end
 """
     saturation_metrics(meta) -> Union{Dict,Nothing}
 
-Cohort-comparable saturation counts: `nChannelsSaturated` and `maxClippedFrac` (the worst channel's
-clipped fraction). `nothing` when the check didn't run.
+Cohort-comparable saturation counts: `nChannelsSaturated`, plus the worst channel's clipped fraction
+against its SIGNAL voxels (`maxClippedSignalFrac` — the one to compare, since it does not move with how
+much empty frame an acquisition contains) and against all voxels (`maxClippedFrac`, kept because it is
+already banked). `nothing` when the check didn't run.
 
 Cohort-comparable because both describe the ACQUISITION, not a parameter anyone typed — so an image
 clipping far more than its session peers is a real gain/expression difference. Measured across nine
@@ -442,13 +451,18 @@ outlier flag should surface.
 function saturation_metrics(meta::AbstractDict)
     chans = _saturation_channels(meta)
     isempty(chans) && return nothing
-    n = 0; worst = 0.0
+    n = 0; worst = 0.0; worst_sig = 0.0
     for ch in chans
         get(ch, "saturated", false) === true && (n += 1)
         v = _cal_num(get(ch, "topFrac", nothing))
         isnothing(v) || (worst = max(worst, v))
+        vs = _cal_num(get(ch, "clippedSignalFrac", nothing))
+        isnothing(vs) || (worst_sig = max(worst_sig, vs))
     end
-    Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst)
+    # `maxClippedSignalFrac` is the cohort-interesting one — it does not move with how much empty frame
+    # an acquisition happens to contain. `maxClippedFrac` stays because it is already banked.
+    Dict{String,Any}("nChannelsSaturated" => n, "maxClippedFrac" => worst,
+                     "maxClippedSignalFrac" => worst_sig)
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale

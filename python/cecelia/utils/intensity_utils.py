@@ -132,21 +132,41 @@ def is_saturated(hist, min_count=None):
     return bool(int(h[top]) > float(np.median(below)))
 
 
-def saturation_stats(hist):
+def saturation_stats(hist, background_method='triangle'):
     """`is_saturated` plus the numbers behind the verdict, JSON-friendly for QC.
 
     `topValue` is where the pile-up sits — the detector's effective ceiling, which is worth reporting
     because it is NOT the dtype maximum on sub-16-bit sensor data.
+
+    **Two denominators, and `clippedSignalFrac` is the one to reason with.** `topFrac` divides by every
+    voxel in the channel, and these images are ~95% background, so it is diluted by empty space: on the
+    nine `kSUFux` movies the clipped channels come out at 1.1-1.4e-6, a number no threshold can be
+    argued about because it says as much about how much blank frame there is as about the clipping.
+    `clippedSignalFrac` divides by the voxels ABOVE the derived background (`background_threshold`), so
+    it answers "how much of what this channel actually recorded got truncated" — 3.9-7.2e-5 for those
+    same channels. Both are kept: `topFrac` because the cohort metric already banks it.
+
+    Measured caveat, so nobody reads more into the change than it earns: the better denominator did NOT
+    separate the flagged channels more cleanly (a 1.5x gap to the highest unflagged one, against 1.9x
+    for `topFrac`). It is a more meaningful quantity, not a sharper discriminator.
     """
     h = np.asarray(hist)
     total = int(h.sum())
     nz = np.nonzero(h)[0]
     top = int(nz[-1]) if nz.size else 0
+    n_top = int(h[top]) if nz.size else 0
+    signal = 0
+    if nz.size > 1:
+        bg = background_threshold(h, method=background_method)
+        lo = int(np.ceil(bg))
+        signal = int(h[lo:].sum()) if lo < h.size else 0
     return {
         'saturated': bool(is_saturated(h)),
         'topValue': top,
-        'topCount': int(h[top]) if nz.size else 0,
-        'topFrac': (int(h[top]) / total) if total else 0.0,
+        'topCount': n_top,
+        'topFrac': (n_top / total) if total else 0.0,
+        'signalVoxels': signal,
+        'clippedSignalFrac': (n_top / signal) if signal else 0.0,
     }
 
 

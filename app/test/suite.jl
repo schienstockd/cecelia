@@ -7290,13 +7290,16 @@ end
     end
 
     @testset "clipping-at-acquisition findings" begin
-        mk(i, sat; top = 4095, frac = 0.0, n = 0) =
+        # `sigfrac` is the one the finding gates on — clipped voxels over SIGNAL voxels. `frac` (over
+        # ALL voxels) is still banked, so both are set.
+        mk(i, sat; top = 4095, frac = 0.0, n = 0, sigfrac = 0.0) =
             Dict{String,Any}("index" => i, "saturated" => sat, "topValue" => top,
-                             "topCount" => n, "topFrac" => frac)
+                             "topCount" => n, "topFrac" => frac, "clippedSignalFrac" => sigfrac)
         meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
-            mk(0, false; top = 1032, frac = 1.0e-6),
-            mk(1, true;  top = 4095, frac = 0.00018, n = 534),   # clipped at the 12-bit ceiling
-            mk(2, false; top = 2854, frac = 1.0e-6),
+            mk(0, false; top = 1032, frac = 1.0e-6, sigfrac = 1.0e-5),
+            # unmistakably clipped: 2% of this channel's SIGNAL voxels piled at the 12-bit ceiling
+            mk(1, true;  top = 4095, frac = 0.00018, n = 534, sigfrac = 0.02),
+            mk(2, false; top = 2854, frac = 1.0e-6, sigfrac = 1.0e-5),
         ]))
 
         fs = Cecelia.saturation_qc_findings(meta)
@@ -7309,9 +7312,12 @@ end
         # the COUNT is what a reader can judge; the fraction is ~1e-6 and rounds away
         @test fs[1]["detail"]["clippedVoxels"] == 534.0
 
+        @test fs[1]["detail"]["clippedSignalPct"] == 2.0     # reported against SIGNAL, not all voxels
+
         m = Cecelia.saturation_metrics(meta)
         @test m["nChannelsSaturated"] == 1
         @test m["maxClippedFrac"] == 0.00018
+        @test m["maxClippedSignalFrac"] == 0.02
 
         # the check didn't run (pre-existing image, or a non-integer store) → say nothing at all
         @test isempty(Cecelia.saturation_qc_findings(Dict{String,Any}()))
@@ -7330,19 +7336,29 @@ end
         # 377 M. No finding (telling someone to lower the gain over 500 voxels is not actionable), but
         # the metric MUST still record it: the cohort comparison is relative, so it is what surfaces an
         # image clipping far more than its session peers.
+        # 7.2e-5 of SIGNAL voxels is the worst real case measured across nine movies — three orders
+        # below the smoke-alarm level, so it must not warn while still being banked.
         trace = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
-            mk(0, true; top = 4095, frac = 1.4e-6, n = 534),
+            mk(0, true; top = 4095, frac = 1.4e-6, n = 534, sigfrac = 7.2e-5),
         ]))
         @test isempty(Cecelia.saturation_qc_findings(trace))
         tm = Cecelia.saturation_metrics(trace)
         @test tm["nChannelsSaturated"] == 1
         @test tm["maxClippedFrac"] == 1.4e-6
+        @test tm["maxClippedSignalFrac"] == 7.2e-5
 
-        # …and just above the floor it does warn
+        # …and just above the level it does warn
         material = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
-            mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000),
+            mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000, sigfrac = 1.1e-2),
         ]))
         @test length(Cecelia.saturation_qc_findings(material)) == 1
+
+        # the ALL-voxel fraction must not be what decides it: a channel with a large all-voxel fraction
+        # but trace signal clipping stays quiet, and vice versa. This is the whole point of the change.
+        allvox = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
+            mk(0, true; top = 4095, frac = 0.5, n = 999, sigfrac = 1.0e-6),
+        ]))
+        @test isempty(Cecelia.saturation_qc_findings(allvox))
 
         # a channel with no recorded fraction is not guessed at
         noneframe = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
