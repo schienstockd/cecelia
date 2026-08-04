@@ -277,6 +277,30 @@ correction, segmentation normalisation and the import saturation check. `image_w
 **brought back for its own sake**: clipping at acquisition is worth reporting whatever the bit depth,
 and it is now a standard QC pass on every import (`saturation_run.py`, `qc.jl::saturation_qc_findings`).
 
+## Flag clipping per CELL, not as a voxel fraction
+
+**What.** Report how many CELLS have clipped voxels in a channel, at `segment.measureLabels` (or
+`tracking.track_measures`), instead of only what fraction of a channel's voxels piled at the detector
+ceiling at import.
+
+**Why it is better.** A voxel fraction is not answerable. "0.004% of signal voxels clipped" gives a
+user nothing to decide; "17 of 2 400 cells have truncated intensity in CH2" does — one affected cell in
+ten matters when you are comparing means, while 500 clipped voxels spread over a 377 M-voxel movie may
+not. It would also give the import check's threshold something real to be calibrated against: today
+`_SATURATION_WARN_SIGNAL_FRAC` is deliberately a smoke alarm ~140x above anything measured, because no
+material clipping case exists in any data we have (worst observed: 0.007% of signal voxels, across all
+36 channels of nine movies).
+
+**Why deferred.** It needs labels, and specifically labels good enough to trust a per-cell count from —
+so it waits on segmentation being reliable on real data (Dominik, 2026-08-04). Building it against
+uncertain segmentation would produce a number nobody can act on either, for a different reason.
+
+**Revisit when.** Segmentation is dependable on real acquisitions. The import check stays as it is until
+then: detection + metrics on every import, a finding only for unmistakable damage.
+
+**Reference:** `qc.jl::saturation_qc_findings` / `_SATURATION_WARN_SIGNAL_FRAC`,
+`intensity_utils.saturation_stats` (both denominators), `#456`/`#462`.
+
 ---
 
 ## Adding entries
