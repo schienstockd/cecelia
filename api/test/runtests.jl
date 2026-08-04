@@ -820,6 +820,59 @@ end
     end
 end
 
+@testset "API: image stores (codec + on-disk size per version)" begin
+    # The whole route over a hand-built project: what the metadata modal renders per stored file. The
+    # shapes matter as much as the numbers — a version whose store is GONE must keep its row (bytes 0,
+    # no codec ⇒ "—" in the modal) instead of dropping it or failing the call for the versions that
+    # do read. Sizes are asserted as lower bounds: `_dir_bytes` reports disk BLOCKS, so the walked
+    # total is legitimately larger than the bytes written.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        puid, iuid = "TESTSTORES", "IMG1"
+        mkpath(joinpath(tmp, puid, "1", iuid))
+        write(joinpath(tmp, puid, "project.json"),
+              JSON3.write((; uid = puid, name = "T", set_uids = String[])))
+        # one real store (flat layout: level-0 array is `0`), one registered but absent
+        store = joinpath(tmp, puid, "0", iuid, "live.ome.zarr")
+        mkpath(joinpath(store, "0"))
+        write(joinpath(store, "0", ".zarray"),
+              """{"compressor":{"id":"blosc","cname":"zstd","clevel":3,"shuffle":1}}""")
+        write(joinpath(store, "0", "0.0"), rand(UInt8, 20_000))
+        # two label files under one value_name (base + nuc) — the row's size is their sum
+        mkpath(joinpath(tmp, puid, "1", iuid, "labels"))
+        write(joinpath(tmp, puid, "1", iuid, "labels", "A.zarr"), rand(UInt8, 8_000))
+        write(joinpath(tmp, puid, "1", iuid, "labels", "A.nuc.zarr"), rand(UInt8, 4_000))
+        write(state_file(joinpath(tmp, puid), iuid), JSON3.write(Dict{String,Any}(
+            "class"    => "CciaImage",
+            "filepath" => Dict{String,Any}("default" => "live.ome.zarr",
+                                           "cpCorrected" => "gone.ome.zarr",
+                                           "_active" => "default"),
+            "labels"   => Dict{String,Any}("A" => ["A.zarr", "A.nuc.zarr"]))))
+
+        st, body = api_image_stores(
+            HTTP.Request("GET", "/api/images/stores?projectUid=$puid&imageUid=$iuid"))
+        @test st == 200
+        d = JSON3.read(body)
+        # the store that reads: Settings' own label for that codec + a walked size
+        @test d.versions.default.label == "zstd + shuffle"
+        @test d.versions.default.bytes >= 20_000
+        # the store that doesn't: row kept, size 0, codec fields absent (the modal shows "—")
+        @test d.versions.cpCorrected.bytes == 0
+        @test !haskey(d.versions.cpCorrected, :label)
+        # label sets are sized too, summed across the value_name's files
+        @test d.labels.A.bytes >= 12_000
+
+        @test api_image_stores(HTTP.Request("GET", "/api/images/stores"))[1] == 400
+        @test api_image_stores(
+            HTTP.Request("GET", "/api/images/stores?projectUid=NOPE&imageUid=NOPE"))[1] == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: plot-spec per-page popType narrowing" begin
     # ONE spec serves several pages, each offering its own subset of the population families. The
     # narrowing happens server-side so the frontend needs no per-page knowledge — it renders a picker
@@ -2662,8 +2715,8 @@ end
         "/api/gating/plotdata", "/api/gating/plotmeta",
         "/api/gating/popmap", "/api/gating/stats",
         "/api/health", "/api/images",
-        "/api/images/compression", "/api/images/geometry",
-        "/api/images/meta",
+        "/api/images/geometry", "/api/images/meta",
+        "/api/images/stores",
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
         "/api/movies", "/api/napari/gpu",

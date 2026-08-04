@@ -24,8 +24,7 @@ end
 # Size of one version's on-disk store (zarr dir or a plain file), 0 if missing.
 function _version_bytes(img::CciaImage, filename)::Int
     isnothing(filename) && return 0
-    path = joinpath(img_zero_dir(img), string(filename))
-    isdir(path) ? _dir_bytes(path) : (isfile(path) ? filesize(path) : 0)
+    _path_bytes(joinpath(img_zero_dir(img), string(filename)))
 end
 
 # ── Per-image storage ─────────────────────────────────────────────────────────
@@ -146,7 +145,7 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
     freed  = 0
     if !isnothing(target)
         p     = candidates[target]
-        freed = isdir(p) ? _dir_bytes(p) : (isfile(p) ? filesize(p) : 0)
+        freed = _path_bytes(p)
         on_log("[INFO] Removing: $p")
         rm(p; recursive = true)
         on_log("[INFO] Done.")

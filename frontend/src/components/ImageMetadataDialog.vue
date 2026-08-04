@@ -11,6 +11,7 @@ import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { formatBytes } from '../utils/storage'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -41,20 +42,30 @@ const channels = computed(() => img.value.channelNames?.filter(c => c && c.lengt
 // valueName → filename, active first. The active version is the zarr the app currently reads.
 const versions = computed(() => Object.entries(img.value.filepaths ?? {}))
 
-// How each version's pixels are ENCODED on disk. Fetched rather than stored: the codec is a property
-// of the store, and a store can be re-landed on a different one (rechunk_zarr.py) without anything in
-// ccid.json changing. Read from the level-0 `.zarray`, so it is one small file read per version.
-// Failure is silent — this dialog is read-only information and must still open if a store is missing.
-const compression = ref<Record<string, { label: string } | null>>({})
+// What each stored version IS on disk: how its pixels are ENCODED, and how much space it takes.
+// Fetched rather than stored: the codec is a property of the store (which can be re-landed on a
+// different one by rechunk_zarr.py without anything in ccid.json changing), and the size can only be
+// known by walking it. Awaited AFTER the modal is on screen, never before — the walk is the expensive
+// part (a few hundred ms per store warm, seconds cold on a multi-GB version), so the sizes fill in a
+// moment later rather than delaying the dialog. Failure is silent — this dialog is read-only
+// information and must still open if a store is missing.
+type StoreInfo = { bytes: number, label?: string }
+const stores = ref<{ versions: Record<string, StoreInfo | null>, labels: Record<string, StoreInfo> }>(
+  { versions: {}, labels: {} })
 onMounted(async () => {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
   try {
-    const res = await fetch(`/api/images/compression?projectUid=${encodeURIComponent(projectUid)}`
+    const res = await fetch(`/api/images/stores?projectUid=${encodeURIComponent(projectUid)}`
                             + `&imageUid=${encodeURIComponent(img.value.uid)}`)
-    if (res.ok) compression.value = (await res.json()).versions ?? {}
+    if (res.ok) {
+      const j = await res.json()
+      stores.value = { versions: j.versions ?? {}, labels: j.labels ?? {} }
+    }
   } catch { /* display-only */ }
 })
+// 0 bytes means "not measured yet / store missing", not an empty store — show it as unknown.
+const size = (s: StoreInfo | null | undefined) => (s && s.bytes > 0 ? formatBytes(s.bytes) : '—')
 const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
@@ -119,18 +130,21 @@ const copy = (key: string, value: string) => copyValue(value, key)
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
         </div>
-        <!-- ONE grid for versions + labels: the codec column is as wide as the longest label across
-             all rows, so a row-to-row difference in codec length can't resize the filename box. -->
+        <!-- ONE grid for versions + labels: the codec and size columns are as wide as the longest
+             entry across all rows, so a row-to-row difference in either can't resize the filename
+             box. A label row's size is the sum of its files (base + nuc); it shows no codec. -->
         <div class="md-files">
           <template v-for="[vn, fn] in versions" :key="'v-' + vn">
             <span class="md-file-vn cc-muted">{{ vn }}</span>
             <code class="md-code">{{ fn }}</code>
-            <span class="md-codec cc-muted cc-fs-xs">{{ compression[vn]?.label ?? '—' }}</span>
+            <span class="md-codec cc-muted cc-fs-xs">{{ stores.versions[vn]?.label ?? '—' }}</span>
+            <span class="md-size cc-muted cc-fs-xs">{{ size(stores.versions[vn]) }}</span>
           </template>
           <template v-for="[vn, fns] in labels" :key="'l-' + vn">
             <span class="md-file-vn cc-muted">labels · {{ vn }}</span>
             <code class="md-code">{{ fns.join(', ') }}</code>
             <span class="md-codec" />
+            <span class="md-size cc-muted cc-fs-xs">{{ size(stores.labels[vn]) }}</span>
           </template>
         </div>
       </section>
@@ -196,10 +210,12 @@ const copy = (key: string, value: string) => copyValue(value, key)
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
 .md-files {
-  display: grid; grid-template-columns: 6rem minmax(0, 1fr) max-content;
+  display: grid; grid-template-columns: 6rem minmax(0, 1fr) max-content max-content;
   gap: 0.25rem 0.5rem; align-items: baseline;
 }
 .md-codec { white-space: nowrap; }
+/* right-aligned so the numbers line up column-wise, which is the only way sizes compare at a glance */
+.md-size { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .md-file-vn { overflow-wrap: anywhere; }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
