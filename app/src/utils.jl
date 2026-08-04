@@ -126,6 +126,20 @@ function _dir_bytes(path::String)::Int
     end
 end
 
+"""
+    _path_bytes(path) -> Int
+
+On-disk size of one stored thing, whether it is a directory (walked with `_dir_bytes`) or a plain
+file, and 0 when it is neither. Every "how big is this on disk" caller needs exactly this ternary —
+an image version is a zarr DIRECTORY while a label set can be a single file — so it lives here once
+instead of being re-spelled per call site (storage accounting, version removal, the metadata modal).
+
+Note it is a directory WALK, not a stat: ~10k chunk files for a 4 GB image version. Cheap enough to
+answer on demand (~0.05–0.3 s warm, ~2 s cold per store here), too expensive to fold into listing.
+"""
+_path_bytes(path::AbstractString) =
+    isdir(path) ? _dir_bytes(String(path)) : (isfile(path) ? Int(filesize(path)) : 0)
+
 # ── Release-bundle integrity ──────────────────────────────────────────────────────────────────────
 
 """

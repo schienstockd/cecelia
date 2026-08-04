@@ -170,12 +170,24 @@ function _describe_compressor(comp)
     (label = label, codec = cname, level = level, shuffle = shuffle)
 end
 
-# GET /api/images/compression?projectUid=&imageUid= → {versions: {valueName: {label,codec,…}}}
+# GET /api/images/stores?projectUid=&imageUid=
+#   → {versions: {valueName: {bytes, label?, codec?, level?, shuffle?} | null},
+#      labels:   {valueName: {bytes}}}
 #
-# EVERY version at once, because the only consumer (the image-metadata modal) lists them all — one
-# call rather than one per version. A version whose store is missing or unreadable is reported as
-# `null` rather than omitted, so the modal can say "—" against it instead of silently dropping a row.
-function api_image_compression(req::HTTP.Request)
+# What each of this image's stored things IS on disk: how its pixels are encoded, and how much space
+# it takes. EVERY version at once, because the only consumer (the image-metadata modal) lists them
+# all — one call rather than one per version. A version with no registered filepath is reported as
+# `null` rather than omitted, so the modal can say "—" against it instead of silently dropping a row;
+# a version whose store is missing or unreadable keeps its entry but omits the codec fields (and
+# reports 0 bytes), which is the same "—" in the modal without losing the size of the ones that read.
+#
+# `bytes` is the expensive half — a directory walk per store (`_path_bytes`). MEASURED on a real image
+# (3 versions of ~4 GB / 10k chunks each + 3 label sets): 0.24 s for the whole call warm, and ~2 s per
+# store on a cold cache. That is affordable HERE and only here: the modal is opened deliberately, one
+# image at a time, and fills this section in after it is already on screen.
+# Do NOT fold it into `/api/images` (the listing) — that would walk every store in the project on
+# every project open. Settings → Storage does the project-wide walk, on demand, for that reason.
+function api_image_stores(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     project_uid = get(q, "projectUid", "")
     image_uid   = get(q, "imageUid", "")
@@ -186,19 +198,39 @@ function api_image_compression(req::HTTP.Request)
     (isdir(proj_dir) && isfile(meta)) || return 404, JSON3.write((; error = "Image not found"))
 
     raw = read_ccid_raw(meta)
-    fp  = get(raw, "filepath", nothing)
-    fp isa AbstractDict || return 200, JSON3.write((; versions = Dict{String,Any}()))
     out = Dict{String,Any}()
-    for vn in versioned_keys(fp)
-        fn = versioned_get_field(raw, "filepath", vn)
-        isnothing(fn) && (out[vn] = nothing; continue)
-        zp = joinpath(proj_dir, "0", image_uid, string(fn))
-        c  = isdir(zp) ? store_compression(zp) : nothing
-        out[vn] = isnothing(c) ? nothing :
-                  Dict{String,Any}("label" => c.label, "codec" => c.codec,
-                                   "level" => c.level, "shuffle" => c.shuffle)
+    fp  = get(raw, "filepath", nothing)
+    if fp isa AbstractDict
+        for vn in versioned_keys(fp)
+            fn = versioned_get_field(raw, "filepath", vn)
+            isnothing(fn) && (out[vn] = nothing; continue)
+            zp    = joinpath(proj_dir, "0", image_uid, string(fn))
+            entry = Dict{String,Any}("bytes" => Cecelia._path_bytes(zp))
+            c     = isdir(zp) ? store_compression(zp) : nothing
+            if !isnothing(c)
+                entry["label"]   = c.label;  entry["codec"]   = c.codec
+                entry["level"]   = c.level;  entry["shuffle"] = c.shuffle
+            end
+            out[vn] = entry
+        end
     end
-    200, JSON3.write((; versions = out))
+
+    # Label stores live in the metadata dir (`1/<uid>/labels/`) and one value_name can register
+    # several files (base + nuc), so a row's size is their sum. No codec: these are written by the
+    # segmentation writer with the `labels` compressor, which the store itself already reports and
+    # nothing in the modal asks for.
+    lbl  = get(raw, "labels", nothing)
+    lout = Dict{String,Any}()
+    if lbl isa AbstractDict
+        for (k, v) in lbl
+            isnothing(v) && continue
+            fns = v isa AbstractVector ? v : [v]
+            lout[String(k)] = Dict{String,Any}("bytes" => sum(
+                Cecelia._path_bytes(joinpath(proj_dir, "1", image_uid, "labels", string(fn)))
+                for fn in fns; init = 0))
+        end
+    end
+    200, JSON3.write((; versions = out, labels = lout))
 end
 
 # GET /api/images/geometry?projectUid=&imageUid=&valueName= → {sizeX,sizeY,sizeZ,sizeT,valueName}

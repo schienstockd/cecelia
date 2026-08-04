@@ -2589,6 +2589,19 @@ end
 
 # ── Storage reclaim — free every non-active image version, keep the active one ───────
 @testset "Storage reclaim" begin
+    # _path_bytes is the ONE "how big is this on disk" answer, shared by storage accounting, version
+    # removal and the image-metadata modal — a directory is walked, a plain file is stat'd, and
+    # anything absent is 0 rather than an error (a caller listing versions must not throw on a store
+    # that isn't there).
+    mktempdir() do d
+        f = joinpath(d, "one.bin"); write(f, rand(UInt8, 4096))
+        sub = joinpath(d, "store"); mkpath(joinpath(sub, "0"))
+        write(joinpath(sub, "0", "chunk"), rand(UInt8, 8192))
+        @test Cecelia._path_bytes(f) >= 4096                     # file: at least its bytes
+        @test Cecelia._path_bytes(sub) >= 8192                   # dir: walked, not stat'd (a dir stat is ~4 KB)
+        @test Cecelia._path_bytes(joinpath(d, "nope")) == 0      # absent, not an error
+    end
+
     # pure policy: everything except the active version
     @test Set(Cecelia.reclaimable_versions(Dict{String,Any}(
         "default"=>"a", "afCorrected"=>"b", "cpCorrected"=>"c", "_active"=>"cpCorrected"))) ==
