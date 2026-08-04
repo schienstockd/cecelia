@@ -91,10 +91,20 @@ function _ensure_preview!()::Bool
                 return true
             elseif ok
                 @warn "Replacing preview worker: it speaks protocol $protocol, this backend needs " *
-                      "$PREVIEW_PROTOCOL (its code predates a change to the reply shape or the " *
-                      "previewable tasks)"
-                try; close!(probe); catch e
-                    @warn "Could not stop the stale preview worker" exception = e
+                      "$PREVIEW_PROTOCOL (its code predates a change to what a preview answers — " *
+                      "the reply shape, the previewable tasks, or a bug fixed since)"
+                # Kill by PORT, not `close!(probe)` — the probe was only ever pinged, so its `proc` is
+                # nothing and `close!` is a silent no-op. The stale worker then keeps the port, the
+                # replacement cannot bind, and its readiness ping is answered by the very process we
+                # meant to remove: a relaunch loop that serves the old code. Same reason and same
+                # helper as the napari bridge in `_ensure_viewer!`.
+                Cecelia._kill_listeners_on_port(PREVIEW_PORT)
+                # …and WAIT for it to let go. The kill is asynchronous, so launching straight away races
+                # the old process's exit: the replacement loses the bind and dies, which `launch!` reports
+                # as an error the user sees once before the next attempt succeeds. Cheap to just wait.
+                for _ in 1:20
+                    first(_preview_ping(probe)) || break
+                    sleep(0.25)
                 end
             end
         end
@@ -238,12 +248,15 @@ function api_preview_run(body_bytes::Vector{UInt8})
     catch
         nothing
     end
+    # Loaded unconditionally: the params translation needs it, and so do the channel DISPLAY names,
+    # which only `ccid.json` knows (see `preview_request` — deriving them in the worker instead is what
+    # made every corrected layer render grey).
+    img_for_params = try
+        init_object(project_uid, image_uid)      # already validated against the open image above
+    catch e
+        return 500, JSON3.write((; error = "could not load image metadata: " * sprint(showerror, e)))
+    end
     if task !== nothing
-        img_for_params = try
-            init_object(project_uid, image_uid)      # already validated against the open image above
-        catch e
-            return 500, JSON3.write((; error = "could not load image metadata: " * sprint(showerror, e)))
-        end
         params = try
             preview_params_for_run(task, params, img_for_params)
         catch e
@@ -252,6 +265,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
                 code = "params-not-previewable"))
         end
     end
+    chan_names = something(channel_names(img_for_params; value_name = in_value_name), String[])
 
     reply = try
         _with_preview() do
@@ -259,7 +273,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
             w === nothing && error("preview worker is not running")
             send(w, preview_request(open_image.zarrPath, open_image.taskDir, params, region;
                                     value_name = value_name,
-                                    fun_name = String(get(data, "funName", ""))))
+                                    fun_name = String(get(data, "funName", "")),
+                                    channel_names = chan_names))
         end
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))

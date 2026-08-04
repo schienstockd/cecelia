@@ -123,6 +123,30 @@ class PreviewWorkerAfTest(unittest.TestCase):
         self.assertEqual(out['region']['T'], [0, 1])
         self.assertEqual(out['region']['X'], [2, 18])
 
+    def test_the_request_channel_names_win_over_the_stores_ome_xml(self):
+        """THE GREY-LAYER BUG. napari names its layers from `ccid.json`, the authoritative copy; the
+        worker was naming `source` from the store's OME-XML, a copy that is routinely stale. On a real
+        image the store still said CH1..CH4 while the viewer showed SHG/nuc-GFP/mem-TOM/CD169-Kat, so
+        `source` pointed at a layer that does not exist, the colormap mirror silently found nothing, and
+        every corrected channel rendered grey against a magenta original.
+
+        The fixture reproduces exactly that: its OME-XML is CH1..CH4.
+        """
+        names = ['SHG', 'nuc-GFP', 'mem-TOM', 'CD169-Kat']
+        out = self._request({'2': {'competingChannels': [3]}}, channelNames=names)
+        self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
+        layer, = out['layers']
+        self.assertEqual(layer['source'], 'mem-TOM')      # the layer napari actually has
+        self.assertEqual(layer['name'], 'mem-TOM AF')     # and the corrected layer says which channel
+        self.assertNotIn('CH3', layer['name'])
+
+    def test_without_given_names_the_ome_xml_is_the_fallback(self):
+        """A REPL or test driving the worker directly sends no names — that must still work, and must
+        still be a FALLBACK rather than a second source of truth."""
+        out = self._request({'2': {'competingChannels': [3]}})
+        layer, = out['layers']
+        self.assertEqual(layer['source'], 'CH3')
+
     def test_a_combination_with_no_competitor_is_skipped(self):
         out = self._request({'1': {'competingChannels': [2]}, '3': {'competingChannels': []}})
         self.assertEqual(len(out['layers']), 1)

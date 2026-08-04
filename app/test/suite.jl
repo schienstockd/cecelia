@@ -8669,6 +8669,21 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             @test direct["taskDir"] == "/somewhere/meta"
             @test direct["outputValueName"] == "B"
             @test direct["region"]["z"] == 8
+
+            # Channel DISPLAY names travel with the request, because `ccid.json` is the only
+            # authoritative copy — the worker deriving them from the store's OME-XML instead is what
+            # made every corrected AF layer render grey (its `source` named a layer that did not
+            # exist). Sent only when known: an empty list would overwrite the fallback with nothing.
+            @test !haskey(direct, "channelNames")
+            named = Cecelia.preview_request(
+                "/somewhere/open.ome.zarr", "/somewhere/meta",
+                Dict("models" => Dict()), region; channel_names = ["SHG", "mem-TOM"])
+            @test named["channelNames"] == ["SHG", "mem-TOM"]
+
+            # and the image form fills them in from ccid, per the version being previewed
+            img.im_channel_names["default"] = ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
+            from_img = Cecelia.preview_request(img, Dict("models" => Dict()), region)
+            @test from_img["channelNames"] == ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
         end
     end
 
@@ -8804,6 +8819,34 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
         # not alive until launched — `preview_alive` must never report true for a null process
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
+    end
+
+    @testset "a stale preview worker is stopped by port, not by handle" begin
+        # THE BUG THIS PINS. On a protocol mismatch the backend must remove the worker holding :7656.
+        # It only ever PINGED that process, so the handle it has is a bare `PreviewWorker()` with no
+        # `proc` — and `close!` on that is a silent no-op. Kill-by-handle therefore left the stale
+        # worker listening, the replacement could not bind, and the replacement's readiness ping was
+        # answered by the process being replaced: a relaunch loop serving the old code, strictly worse
+        # than the mismatch. So the adoption path must kill by PORT, like `_ensure_viewer!` does.
+        adopted = Cecelia.PreviewWorker()          # exactly what `_ensure_preview!` probes with
+        @test adopted.proc === nothing
+        Cecelia.close!(adopted)                    # no-op, and must not throw pretending otherwise
+        @test adopted.proc === nothing
+
+        # `_kill_listeners_on_port` is the one helper for this (never inline kill/lsof/taskkill), and
+        # the mismatch branch in the API layer has to use it. Source-level because that branch needs a
+        # live stale worker to exercise.
+        api_src = read(joinpath(dirname(dirname(pathof(Cecelia))), "..", "api", "src",
+                                "preview_api.jl"), String)
+        @test occursin("_kill_listeners_on_port(PREVIEW_PORT)", api_src)
+        # CODE only — the comment above that call names `close!(probe)` to say why it is wrong, and a
+        # naive text search cannot tell an explanation from the thing it warns about.
+        api_code = filter(l -> !startswith(strip(l), "#"), split(api_src, '\n'))
+        @test !any(l -> occursin("close!(probe)", l), api_code)
+
+        # And readiness is the protocol, not merely a reply — the other half of the same loop.
+        preview_src = read(joinpath(dirname(pathof(Cecelia)), "preview.jl"), String)
+        @test occursin("protocol == PREVIEW_PROTOCOL", preview_src)
     end
 
     @testset "language boundaries agree on their protocol" begin
