@@ -302,7 +302,8 @@ const _Z_RATIO_MAX = 50
 # replace it.
 #
 # The number a user can act on is not a voxel fraction at all: it is how many CELLS have clipped voxels,
-# which needs labels and so belongs at measure time. Recorded as the successor in docs/TODO.md.
+# which needs labels and so belongs at measure time. Deferred until segmentation is reliable on real
+# data — recorded as this threshold's successor in docs/FUTURE.md.
 #
 # The metrics are banked regardless of this level, and that is the point of the split: trace-level
 # counts are still worth having because the cohort comparison is RELATIVE, so it surfaces an image
