@@ -2664,7 +2664,7 @@ end
 # asserted by NAME rather than by count, so adding a new analysis dir to the image layout fails here
 # until it is deliberately classified (Decision 7 — a delete-list would have leaked it silently).
 @testset "Analysis reset keeps the image and drops the numbers" begin
-    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json"])
+    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "gating"])
 
     proj = create_project!(name="reset-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
@@ -2682,12 +2682,15 @@ end
     img.label_props = Dict("A"=>"A.h5ad")
     save!(img)
 
-    # … and one file in every derived location, incl. the two keeps
-    for sub in ("labels", "labelProps", "gating", "populations", "stats", "mesh", "qc", "cl")
+    # … and one file in every derived location, plus the things the keep-list protects
+    for sub in ("labels", "labelProps", "populations", "stats", "mesh", "qc", "cl",
+                "spatialGraph", "spatialStats", "branchLabels")
         mkpath(joinpath(img._dir, sub))
         write(joinpath(img._dir, sub, "x.bin"), rand(UInt8, 1024))
     end
     write(joinpath(img._dir, "runlog.json"), "[]")
+    mkpath(joinpath(img._dir, "gating"))
+    write(joinpath(img._dir, "gating", "A.json"), "{}")        # hand-drawn gates — must SURVIVE
 
     # the storage box's number IS what a reset would free — one accounting, so the box can't promise
     # bytes the reset doesn't deliver
@@ -2699,14 +2702,17 @@ end
     @test freed == predicted
     @test analysis_bytes_of(img) == 0                              # nothing derived left to free
     @test freed > 0
-    @test "labels" in dropped && "gating" in dropped && "qc" in dropped
-    for sub in ("labels", "labelProps", "gating", "populations", "stats", "mesh", "qc", "cl")
+    @test "labels" in dropped && "qc" in dropped && "spatialGraph" in dropped
+    for sub in ("labels", "labelProps", "populations", "stats", "mesh", "qc", "cl",
+                "spatialGraph", "spatialStats", "branchLabels")
         @test !ispath(joinpath(img._dir, sub))
     end
     # the keep-list survives, by name
     @test isfile(joinpath(img._dir, "ccid.json"))
     @test isfile(joinpath(img._dir, "runlog.json"))
-    @test !("ccid.json" in dropped) && !("runlog.json" in dropped)
+    # gate polygons are user work, not output: a re-run under the same value_name reuses them
+    @test isfile(joinpath(img._dir, "gating", "A.json"))
+    @test !("ccid.json" in dropped) && !("runlog.json" in dropped) && !("gating" in dropped)
 
     # NO store is shed — that is remove_image_version!'s job (Decision 9)
     @test isdir(zdir)

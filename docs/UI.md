@@ -1043,7 +1043,14 @@ import and the intermediates are what you no longer need.
 Deleting a label set takes its **companions**: the registered labels zarr, the branch-label zarr, and
 every `labelProps/` sidecar derived from that name (`{vn}__tracks.h5ad`, `{vn}__branch.h5ad`,
 `{vn}.clustfeatures.json`, …). Prefix-driven (`{vn}.` / `{vn}__`) so a companion added later is swept
-too, and so value_name `B` can't eat `B2.h5ad`.
+too, and so value_name `B` can't eat `B2.h5ad` — every `labelProps/` filename is built from the props
+path (`img_label_props_path` / `img_track_props_path` / `img_branch_props_path`, and clustfeatures via
+an extension swap), so the prefix rule is exhaustive by construction rather than by inspection.
+
+**What a label-set delete deliberately does NOT take:** `gating/{vn}.json` — gate polygons are user
+work, not output, so re-running the segmentation under the same name brings the strategy back. And
+`spatialGraph/{suffix}.h5ad` / `spatialStats/{suffix}.json`, which are keyed by **run suffix, not
+value_name** (the graph pools across segmentations), so there is no per-value_name file to take.
 
 The modal **collects a plan and emits it**; the execution, the `k/N` readout and the toast stay in
 `ImageFileActions`. Its own footer button carries the arm/confirm, so no scope is ever one click from

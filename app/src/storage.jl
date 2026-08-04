@@ -131,11 +131,17 @@ the `analysis keep-list` testset fails until it is made.
 - `runlog.json` — the record of what was RUN (Decision 8). Kept on purpose, which means the image
   table's run tag reflects **history, not current state**: an image whose outputs are gone still shows
   its last successful run. Losing the provenance is worse than a stale-looking tag.
+- `gating/` — the gate definitions (`{vn}.json`, `{vn}__tracks.json`). Hand-drawn polygons are **user
+  work, not derived output**: nothing can regenerate them, and re-running a segmentation under the same
+  value_name makes the existing strategy apply to the new cells. This is also what
+  `/api/images/labels/delete` does when it drops a single label set, so the two scopes agree — neither
+  destroys gates (Decision 13).
 
 `qc/` is NOT kept: its findings score outputs that no longer exist, so keeping them would assert a QC
-verdict about nothing.
+verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/` and the
+rest ARE output — every one is recomputable from the labels plus a task run.
 """
-const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json"])
+const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating"])
 
 """
     analysis_bytes_of(img) -> Int

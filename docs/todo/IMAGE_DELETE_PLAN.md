@@ -6,9 +6,9 @@ four scopes*, `docs/OBJECTMODEL.md` → *Dropping the analysis*, `docs/MODULES.m
 `docs/API.md`. Supersedes `docs/TODO.md` **#00094**. Dominik, 2026-08-04.
 
 **What shipped, against the phases below:** `DeleteImagesDialog.vue` (four scopes) + the plan/execute
-split with `ImageFileActions`; `utils/imageDelete.ts` (intersection, `default`-last, surviving
-new-active — 12 tests); `reset_image_analysis!` + `analysis_bytes_of` + `ANALYSIS_KEEP` in
-`app/src/storage.jl` (27 assertions, keep-list pinned by name); routes
+split with `ImageFileActions`; `utils/imageDelete.ts` (union + per-image active resolution,
+`default`-last — 20 tests); `reset_image_analysis!` + `analysis_bytes_of` + `ANALYSIS_KEEP` in
+`app/src/storage.jl` (30 assertions, keep-list pinned by name); routes
 `/api/images/version/remove` + `/api/images/analysis/reset`; the `hidden` task-spec flag filtered in
 `useTaskDefs`; the ViewerPanel label delete removed; and `analysisBytes` in the Settings storage box.
 
@@ -100,7 +100,8 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A delete-list silently leaks whatever
    analysis dir is added next. The keep-list is pinned by a package test that fails when a new sibling
    appears.
-8. **The keep-list is `ccid.json` + `runlog.json`** (Dominik: keep the run log). Consequence, accepted
+8. **The keep-list is `ccid.json` + `runlog.json` + `gating/`** (Dominik: keep the run log; gating added
+   as Decision 13). Consequence, accepted
    deliberately: the image-table run tag then reflects **history, not current state** — an image whose
    outputs are gone still shows "last run: Cleanup · Cellpose correct". That is preferable to losing
    the record of what was done. `qc/` does **not** survive (my call, not Dominik's): its findings score
@@ -120,6 +121,16 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    removing it first is fine — but removing the others first and `default` last, in a loop that ends up
    taking all of them, is what correctly un-imports the image at the end rather than mid-loop. Assert
    the ordering in a package test.
+
+13. **Gate definitions are never destroyed by either delete scope** (Dominik, 2026-08-05). `gating/{vn}.json`
+   is hand-drawn user work, not derived output: nothing regenerates it, and re-running a segmentation
+   under the same value_name makes the existing strategy apply to the new cells. So
+   `/api/images/labels/delete` leaves it, and `gating/` joined `ANALYSIS_KEEP`. The two scopes now agree;
+   before this, an analysis reset silently destroyed every gate in the project's images.
+
+   Also settled while enumerating this: `spatialGraph/{suffix}.h5ad` and `spatialStats/{suffix}.json` are
+   keyed by **run suffix, not value_name** (the graph pools across segmentations), so a per-label-set
+   delete has nothing of theirs to take. They ARE dropped by an analysis reset, being recomputable.
 
 ## Architecture
 

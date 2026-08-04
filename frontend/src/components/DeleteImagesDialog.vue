@@ -210,15 +210,16 @@ function onScopeChange(v: string) {
         Not on every image, skipped where absent: {{ partialLabels.join(', ') }}.
       </p>
       <p class="del-note cc-muted">
-        Deletes each set's labels, measurements, tracks and skeleton output. Populations and gating that
-        read them are left behind and will resolve to nothing.
+        Deletes each set's labels, measurements, tracks and skeleton output. Gating strategies are kept —
+        re-run the segmentation under the same name and they apply again.
       </p>
     </template>
 
     <!-- All analysis -->
     <p v-else class="del-note cc-muted">
-      Deletes segmentations, measurements, populations, gating, clustering and spatial output. The
-      images and their versions stay, so the pipeline can be re-run from clean. The run history is kept.
+      Deletes segmentations, measurements, populations, clustering and spatial output. The images and
+      their versions stay, so the pipeline can be re-run from clean. Gating strategies and the run
+      history are kept.
     </p>
 
     <template #footer>
