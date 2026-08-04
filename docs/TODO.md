@@ -199,6 +199,49 @@ Worth settling when it's built:
 - **Where it lands**: not inside the project tree (it's an artefact, not data), so it wants a
   destination picker like `default_export_dir()`. Task rail + progress, staged output.
 
+**#00094** — 🔹 needs-input — **Structure the image-cleanup surfaces; no way to drop analysis without the image**
+Deleting *parts* of an image has grown five separate entry points in four places, with no shared model
+of what an image is made of and no single view of what it costs on disk (Dominik, 2026-08-04):
+
+| Entry point | Granularity | Deletes |
+|---|---|---|
+| `importImages.remove` task ("Remove image data") | one version, one image (task rail + chains) | one registered image version, via `remove_image_version!` |
+| Settings → Storage → **Free up space** | **every** non-active version in the project, one click | same core, via `reclaim_inactive!` |
+| Settings → Data patches → *Remove leftover stores* | unreachable debris | staging dirs, unregistered/truncated stores (`store_sweep`) |
+| napari ViewerPanel → label delete | one label set, one image | `labels/*.zarr` + `labelProps/*.h5ad` (`POST /api/images/labels/delete`) |
+| Import action bar → **Delete** (#471) | the image selection | **everything**: `{proj}/0/{uid}` + `{proj}/1/{uid}` |
+
+The deletion *cores* are already shared and fine — `remove_image_version!` (`app/src/storage.jl:125`)
+backs both the task and the Settings reclaim; `store_sweep.summarise` backs both the debris number and
+the patch that frees it. The problem is above them: **five doors, four locations, two different mental
+models** (per-version vs per-image), and the gaps that fall out of that:
+
+- **Nothing drops derived analysis wholesale.** The ViewerPanel handles one label set; `gating/`,
+  `populations/`, `stats/`, `mesh/`, `spatialGraph/`, `spatialStats/`, `cl/`, `branchLabels/` have no
+  delete anywhere. "Re-run this from clean" is only reachable via **Copy to new image…**, which
+  duplicates the zarr and mints a new uid.
+- **The storage box can't see analysis.** `StorageSummary.imageBytes` is image OME-ZARRs only, so the
+  one screen that reports disk usage is silent about `1/{uid}` entirely.
+- **No partial delete of the pixels.** `delete_image!` (`app/src/model/set.jl:103`) `rm -r`s both dirs
+  or nothing.
+
+**The structured version** is one per-image storage breakdown — imported zarr, each derived version,
+labels + labelProps, gating/populations, stats/mesh/spatial, debris — with bytes per component and the
+ability to drop any subset, reusing the existing cores rather than adding a sixth path. The two shapes
+originally asked for then fall out of it as presets:
+
+- **Drop pixels, keep numbers** — reclaims essentially all the disk on a finished image. Needs a new
+  *archived* state: napari, crop, the preview worker and every task must refuse it honestly instead of
+  erroring on a missing store. The work is in the UI and the guards, not the delete.
+- **Drop numbers, keep image** — keep `ccid.json` + the imported zarr, clear the `labels` /
+  `label_props` / `branch_labels` registrations under a `commit_state!` transaction. Decide separately
+  whether derived *image* versions go too (resetting `filepath._active`) and whether `runlog.json`
+  stays — keeping it shows a last-run tag on an image with no output.
+
+Either way use a **keep-list** (`ccid.json` is the only non-derived file in `1/{uid}`), never a
+delete-list — a delete-list silently leaks whatever analysis dir is added next — and pin it in a
+package test. Big enough that picking it up should start with a `docs/todo/*_PLAN.md`.
+
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener
