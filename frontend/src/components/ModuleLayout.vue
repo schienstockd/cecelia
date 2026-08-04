@@ -8,7 +8,6 @@
   ─────
     module        string?   Passed to ImageTable for per-module column config.
     allowManage   bool      SetBar: show New/Rename/Delete set controls (default: false).
-    allowDelete   bool      ImageTable: show per-image delete button (default: false).
     showAttrs     bool      ImageTable: show attr columns (default: false).
     editableMeta  bool      ImageTable: allow inline attr/channel-name editing — Metadata page ONLY
                             (default: false; every other page shows these read-only).
@@ -18,7 +17,10 @@
 
   Slots
   ─────
-    #actions  { hasSet }                        — extra items in the action bar.
+    #actions  { hasSet, setUid, selectedUids,
+                selectUids }                    — extra items in the action bar. The selection is
+                                                  passed in so a bar item can ACT on it (Import's
+                                                  copy/move/remove); `selectUids([])` clears it.
     #right    { setUid, selectedUids,
                 selectedNames }                 — the right-hand panel.
     #plots    { setUid, selectedUids,
@@ -60,7 +62,6 @@ import CcToggle from './CcToggle.vue'
 const props = withDefaults(defineProps<{
   module?:      string
   allowManage?: boolean
-  allowDelete?: boolean
   showAttrs?:   boolean
   editableMeta?: boolean
   showFilter?:  boolean
@@ -73,7 +74,6 @@ const props = withDefaults(defineProps<{
   cohortFuns?:  string[]  // explicit cohort funs for the "Check cohort" button (custom pages); overrides COHORT_STAGES
 }>(), {
   allowManage: false,
-  allowDelete: false,
   showAttrs:   false,
   editableMeta: false,
   showFilter:  true,
@@ -314,7 +314,8 @@ const visibleUids = computed<string[]>(() =>
 
         <!-- action bar: image count + (merged) filter toggle on the right -->
         <div class="action-bar">
-          <slot name="actions" :has-set="!!activeSet" />
+          <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
+            :selected-uids="selectedUids" :select-uids="selectUids" />
 
           <span class="image-count cc-muted" v-if="activeSet">
             <template v-if="showFilter && filteredUids">
@@ -434,7 +435,6 @@ const visibleUids = computed<string[]>(() =>
               :setUid="activeSet.uid"
               :module="module"
               :selection-scope="selScope"
-              :allow-delete="allowDelete"
               :show-attrs="showAttrs"
               :editable-meta="editableMeta"
               :single-select="singleSelect"

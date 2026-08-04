@@ -731,14 +731,13 @@ const { defs, reload } = useTaskDefs('segment')   // category = the task JSON's 
 |------|---------|----------------|
 | `module` | — | Always set; passed to ImageTable for per-module column config |
 | `allow-manage` | `false` | `true` for Import (New/Rename/Delete set controls visible) |
-| `allow-delete` | `false` | `true` for Import (per-image delete button in table) |
 | `show-attrs` | `false` | `true` for modules where attr columns (treatment, genotype…) are useful |
 | `show-filter` | `true` | `false` for Import and other modules where filtering doesn't apply |
 | `no-set-hint` | `"Select a set…"` | Custom empty-state message |
 
 **Slots:**
 
-- `#actions="{ hasSet }"` — items injected into the action bar before the image count (e.g. "Add images" button). `hasSet` is `true` when a set is active — use it to disable the button.
+- `#actions="{ hasSet, setUid, selectedUids, selectUids }"` — items injected into the action bar before the image count (e.g. "Add images" button). `hasSet` is `true` when a set is active — use it to disable the button. The selection is passed in so a bar item can **act on it** (Import's Copy / Move / Delete, see *File operations*); `selectUids([])` clears it afterwards.
 - `#right="{ setUid, selectedUids, selectedNames }"` — the right-hand panel. All three slot props are computed inside `ModuleLayout`; the module page does not need its own refs for them.
 - `#plots="{ setUid, selectedUids, selectedNames, selectUids, orderedUids }"` — **the module's plot canvas.** `ModuleLayout` wraps it in ONE consistent, collapse-persisted `CollapsibleSection` (label via the `plotsLabel` prop, default `'Plots'`). **Do not wrap it yourself** — this is what makes every module page's plot canvas collapse the same way. This is the canonical place for the summary/gating/cluster canvas. `selectUids(uids)` drives the table selection from the canvas; `orderedUids` is the visible image list in table order (filtered/hide-excluded applied) — used by the gating prev/next (`«`/`»`) buttons to step selection through the list.
 - `#below-table="{ setUid, selectedUids, selectedNames, selectUids }"` — extra *custom* content below the plots (rare). Wrap each piece in `<CollapsibleSection>` yourself; multiple sections supported.
@@ -973,11 +972,37 @@ panel body scrolls when the sections together exceed the height.
 |------|------|-------|
 | `setUid` | `string` | Required. Drives the image list from the project store. |
 | `module` | `string?` | Selects per-module column config (status column label, etc.) |
-| `allow-delete` | `bool` | Show per-row delete button. Default: `false`. |
 | `show-attrs` | `bool` | Show attr columns. Default: `false`. |
 | `filter-uids` | `string[]?` | When set, only these UIDs are shown. Managed by `ModuleLayout`. |
 
 Emits `selectionChange(uids: string[])`. `ModuleLayout` handles this internally.
+
+**File operations live in the action bar, not in the rows.** Copy / Move / Delete act on the whole
+checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Import page's
+`#actions` slot — next to *Add images*, where a file manager puts them. Two rules follow:
+
+- **They are Import-only.** Creating, re-filing and removing images is import-time curation; no other
+  module page mounts `ImageFileActions`, so an analysis page cannot delete or move an image. **Crop to
+  new image…** stays in the row's ⋯ menu (it needs the one image you clicked) but is likewise gated to
+  `module === 'import'` — it creates an image too.
+- **The ⋯ menu is per-image only.** Metadata, physical size, crop, copy UID, include/exclude, run
+  history — anything that applies to *one* row. An action that reads "do this to the images I ticked"
+  belongs in the action bar. That split is what keeps the menu short; it previously held Copy and Move
+  as well, each one image at a time.
+
+Both dialogs take the *selection*: `CopyDialog.vue` (`images: CciaImage[]`) dispatches one
+`editImages.copyImage` task per image, and Move walks `/api/images/move` per image (both routes are
+per-image).
+
+**Progress on a bulk action comes from one of two places, never neither.** Copy goes over the **task
+rail**, so the task console, the progress bar and the universal toast are free — but a batch must use
+`taskStore.addMany(items, toastLabel)`, not N × `add()`, or `lastStarted` fires one "running in the
+background" toast *per image*. Move and Delete are plain HTTP loops with no rail entry, so they report
+themselves: a `k/N` `.cc-readout` beside the buttons while the loop runs, plus a `useToast()` line at
+the end (and on partial failure, "k of N — see the log"). A destructive loop with no visible counter is
+indistinguishable from a hang; `rm -r` on a multi-GB zarr is seconds per image. The "existing set OR new set by name" destination — the dropdown plus its collision check —
+is the shared `utils/setDestination.ts` (`resolveSetDestination`/`destinationParams`), used by both;
+don't re-validate it inline.
 
 **Metadata warning icon.** A row shows a `pi-exclamation-triangle` next to the image name when
 `metadataWarning(img)` (`frontend/src/lib/imageMetadataWarnings.ts` — the single source of truth,
