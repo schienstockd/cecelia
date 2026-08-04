@@ -794,6 +794,17 @@ const { defs, reload: reloadDefs } = useTaskDefs('myCategory')   // must match J
 
 `useTaskDefs('myCategory')` fetches `GET /api/tasks/definitions?category=myCategory` on mount and returns `{ defs, loading, reload }`. Pass `defs` to `TaskRunner` and `:on-reload-defs="reload"` — `TaskRunner` shows a **Reload** button when `defs` is empty so the user can recover without navigating away. The category string must match the value in the JSON specs' `"task"` field (or more precisely, the category grouping in the API's definition endpoint — currently the directory name under `app/src/tasks/`).
 
+### Either half of the panel can take the whole panel
+
+`TaskRunner` stacks two halves — the **function runner** (function + params + run + pool) and the module's
+**task list** — and on a laptop screen neither gets enough vertical room. Two toggles at the top of the
+panel expand one of them; each also un-expands its own half, so whichever one is hidden can always be
+brought back. A module page gets this for free — nothing to wire.
+
+It uses the shared two-half-panel primitive (`usePaneExpand` + `PaneExpandBar`), which the batch-movies
+panel uses too — **don't add a third variant of this toggle**. Full contract, both consumers, and why the
+halves are hidden by a CSS rule rather than a per-element guard: `docs/UI.md` → *Two-half side panels*.
+
 > **Functions not showing on the module page?** `useTaskDefs` fetches on mount and auto-retries up to 5 times (2 s apart) if the server is still starting. If defs are still empty after that, `TaskRunner` shows a **Reload** button — click it to retry. The most common causes: (1) the Julia server isn't running yet; (2) a task JSON file has a syntax error (check the Julia console for `Skipping malformed task spec` warnings); (3) `api/src/routes.jl` was changed but the server wasn't restarted — those files are not Revise-tracked.
 
 ### Remembering task params
