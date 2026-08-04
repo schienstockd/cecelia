@@ -72,6 +72,7 @@ class PreviewWorkerAfTest(unittest.TestCase):
         shape = [self.SHAPE['size_t'], self.SHAPE['size_c'], self.SHAPE['size_z'],
                  self.SHAPE['size_y'], self.SHAPE['size_x']]
         du.calc_image_dimensions(shape)
+        self.du = du
 
         rng = np.random.default_rng(7)
         data = np.full(shape, 40, dtype=np.uint16)
@@ -146,6 +147,85 @@ class PreviewWorkerAfTest(unittest.TestCase):
         out = self._request({'2': {'competingChannels': [3]}})
         layer, = out['layers']
         self.assertEqual(layer['source'], 'CH3')
+
+    def test_backgrounds_are_derived_once_per_channel_not_once_per_combination(self):
+        """THE COLD-START COST. A background level depends on the image, the channel and the method —
+        not on which combination is asking. Keying the whole `AfWeightStats` by (target, competitors)
+        re-derived the same numbers once per combination: a 3-channel setup asks for {1,2,3} three times
+        over and paid a full pass over the movie each time. Measured on `zolIMa/2h06xA`, 26.9 s per
+        pass -> 80.7 s for the preview the user actually configured.
+
+        Counted rather than timed, so it cannot go flaky on a loaded machine.
+        """
+        calls = []
+        real = self.worker.correction_utils.af_weight_stats
+
+        def counting(data, dim_utils, channels, **kw):
+            calls.append(list(channels))
+            return real(data, dim_utils, channels, **kw)
+
+        self.worker.correction_utils.af_weight_stats = counting
+        self.addCleanup(setattr, self.worker.correction_utils, 'af_weight_stats', real)
+        self.worker.STATE._af.clear()
+
+        out = self._request({'1': {'competingChannels': [2, 3]},
+                             '2': {'competingChannels': [1, 3]},
+                             '3': {'competingChannels': [1, 2]}})
+        self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
+        self.assertEqual(len(out['layers']), 3)
+
+        # ONE pass, over the union — combinations 2 and 3 are free
+        self.assertEqual(len(calls), 1, f'derived {len(calls)}x, expected 1: {calls}')
+        self.assertEqual(sorted(calls[0]), [1, 2, 3])
+
+        # ...and a repeat request derives nothing at all
+        calls.clear()
+        self._request({'2': {'competingChannels': [1, 3]}})
+        self.assertEqual(calls, [])
+
+        # a different method is a genuinely different value, so it must MISS
+        self._request({'2': {'competingChannels': [1, 3]}},
+                      params={'afCombinations': {'2': {'competingChannels': [1, 3]}},
+                              'backgroundMethod': 'otsu'})
+        self.assertEqual(len(calls), 1, 'switching background method must miss the cache')
+
+    def test_the_assembled_stats_match_a_single_derivation(self):
+        """Assembling per-channel cache entries must produce exactly what one combined pass produces —
+        otherwise the speedup silently changes the correction."""
+        self.worker.STATE._af.clear()
+        warm = self.worker.STATE.af_stats(
+            self.im_path, None, self.du, 1, [2, 3], 'triangle')
+        direct = self.worker.correction_utils.af_weight_stats(
+            self.worker.STATE.image_zarr(self.im_path)[0], self.du, [1, 2, 3],
+            background_method='triangle',
+            spatial_stride=self.worker.AF_PREVIEW_STRIDE,
+            timepoints=self.worker._preview_timepoints(self.du))
+        self.assertEqual(warm.backgrounds, direct.backgrounds)
+        self.assertEqual(warm.saturated, direct.saturated)
+        self.assertEqual((warm.nbins, warm.exponent), (direct.nbins, direct.exponent))
+
+    def test_the_timepoint_budget_caps_frames_and_is_a_noop_when_short(self):
+        """Runs stay EXACT — the budget is the preview's alone. `None` means "read them all"."""
+        self.assertIsNone(self.worker._preview_timepoints(self.du))      # 2 frames <= budget
+        self.assertIsNone(self.worker._preview_timepoints(self.du, max_frames=0))
+        picked = self.worker._preview_timepoints(self.du, max_frames=1)
+        self.assertEqual(len(picked), 1)
+        self.assertLessEqual(max(picked), self.SHAPE['size_t'] - 1)
+
+    def test_cellpose_is_not_imported_for_an_af_preview(self):
+        """AF correction is numpy; cellpose + torch cost 3.1 s the AF path never needs. The worker was
+        built for segmentation and grew a second backend, so the import sat at module level and every
+        backend paid for every other backend's dependencies."""
+        fresh = _load_worker()
+        self.assertIsNone(fresh._CELLPOSE, 'cellpose must not load at import time')
+        fresh.execute_command({
+            'type': 'preview', 'imPath': self.im_path, 'taskDir': self.dir,
+            'funName': 'cleanupImages.afCorrect', 'outputValueName': 'afCorrected',
+            'params': {'afCombinations': {'2': {'competingChannels': [3]}},
+                       'backgroundMethod': 'triangle'},
+            'region': {'xy': {'X': [2, 18], 'Y': [2, 20]}, 'z': 0, 't': 0, 'ndisplay': 2},
+        })
+        self.assertIsNone(fresh._CELLPOSE, 'an AF preview must not pull in cellpose')
 
     def test_a_combination_with_no_competitor_is_skipped(self):
         out = self._request({'1': {'competingChannels': [2]}, '3': {'competingChannels': []}})

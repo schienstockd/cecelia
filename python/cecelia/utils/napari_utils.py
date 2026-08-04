@@ -519,6 +519,46 @@ def _json_scalar(v):
   return str(v)  # last resort: never let an unexpected type break json.dumps of a snapshot
 
 
+def capture_layer_props(layer):
+  """One layer's display props as JSON-safe scalars — the per-layer half of ``capture_view_state``.
+
+  Separate because two callers need exactly this and neither wants the rest of a view snapshot: the
+  task preview re-applies a layer's props across a re-preview (it removes and re-adds its layers, which
+  would otherwise reset the contrast the user just set), and it must NOT restore the camera or the T/Z
+  position — a re-preview happens *because* those moved.
+  """
+  props = {}
+  for k in _VIEW_LAYER_KEYS:
+    if not hasattr(layer, k):
+      continue
+    val = getattr(layer, k)
+    if val is None:
+      continue
+    if k == 'colormap':
+      val = getattr(val, 'name', None)  # store the settable NAME, not the ColorArray object
+      if val is None:
+        continue
+    props[k] = _json_scalar(val)
+  return props
+
+
+def apply_layer_props(layer, props):
+  """Set display props back onto ``layer`` — the per-layer half of ``apply_view_state``.
+
+  Every ``setattr`` is guarded: a prop can be unsettable on this layer type, and a restored
+  ``contrast_limits`` can fall outside the new data's range (exactly the task-preview case, where each
+  re-preview brings a differently-scaled block). Skipping beats raising — the layer is already on
+  screen and a lost contrast window is a smaller loss than a failed preview.
+  """
+  for k, v in (props or {}).items():
+    if v is None:
+      continue
+    try:
+      setattr(layer, k, v)
+    except Exception:
+      pass
+
+
 def capture_view_state(viewer):
   """Capture a JSON-safe view snapshot from ``viewer`` — camera, dims (incl. the T/Z slider position),
   and each layer's display props (colormap by NAME, contrast, visibility, …). Duck-typed: reads only
@@ -536,21 +576,7 @@ def capture_view_state(viewer):
       dims[k] = _json_scalar(getattr(viewer.dims, k))
     except Exception:
       pass
-  layers = {}
-  for layer in viewer.layers:
-    props = {}
-    for k in _VIEW_LAYER_KEYS:
-      if not hasattr(layer, k):
-        continue
-      val = getattr(layer, k)
-      if val is None:
-        continue
-      if k == 'colormap':
-        val = getattr(val, 'name', None)  # store the settable NAME, not the ColorArray object
-        if val is None:
-          continue
-      props[k] = _json_scalar(val)
-    layers[layer.name] = props
+  layers = {layer.name: capture_layer_props(layer) for layer in viewer.layers}
   return {'camera': camera, 'dims': dims, 'layers': layers}
 
 
@@ -588,14 +614,7 @@ def apply_view_state(viewer, snapshot):
   for name, props in (snapshot.get('layers') or {}).items():
     if layers is None or name not in layers:
       continue
-    layer = layers[name]
-    for k, v in props.items():
-      if v is None:
-        continue
-      try:
-        setattr(layer, k, v)
-      except Exception:
-        pass
+    apply_layer_props(layers[name], props)
   return True
 
 

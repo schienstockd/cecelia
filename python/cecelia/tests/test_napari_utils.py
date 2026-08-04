@@ -241,6 +241,33 @@ class CaptureViewStateTest(unittest.TestCase):
         self.assertFalse(snap['layers']['ch1']['visible'])
 
 
+class LayerPropsHalfTest(unittest.TestCase):
+    """The per-layer half on its own. Extracted because the task preview needs exactly this and must NOT
+    restore the camera or the T/Z position — a re-preview happens BECAUSE those moved."""
+
+    def test_capture_and_apply_one_layer_without_a_view_snapshot(self):
+        src = FakeVLayer('x', visible=False, colormap=_Cmap('green'), contrast_limits=[50.0, 800.0])
+        props = napari_utils.capture_layer_props(src)
+        json.dumps(props)                                       # same JSON-safety as the whole snapshot
+        self.assertEqual(props['colormap'], 'green')            # by NAME
+        self.assertFalse(props['visible'])
+
+        dst = FakeVLayer('x', visible=True, colormap=_Cmap('red'), contrast_limits=[0.0, 1.0])
+        napari_utils.apply_layer_props(dst, props)
+        self.assertEqual(dst.contrast_limits, [50.0, 800.0])
+        self.assertEqual(dst.colormap, 'green')
+        self.assertFalse(dst.visible)
+
+    def test_apply_tolerates_nothing_and_unsettable_props(self):
+        dst = FakeVLayer('x', visible=True)
+        napari_utils.apply_layer_props(dst, None)               # no previous preview to restore
+        napari_utils.apply_layer_props(dst, {})
+        # an unsettable prop must be skipped, not raised: a restored contrast window can fall outside a
+        # re-previewed block's range, and losing it beats failing the preview
+        napari_utils.apply_layer_props(dst, {'no_such_attr_at_all': 1})
+        self.assertTrue(dst.visible)
+
+
 class ApplyViewStateTest(unittest.TestCase):
     def test_round_trip_and_colormap_change(self):
         src = FakeVViewer([FakeVLayer('ch0', visible=True, colormap=_Cmap('green'),

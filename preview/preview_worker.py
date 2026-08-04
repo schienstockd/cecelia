@@ -44,9 +44,12 @@ import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.block_transfer import encode_block
 import cecelia.utils.script_utils as script_utils
-from cecelia.utils.cellpose_utils import CellposeUtils
 from cecelia.utils.dim_utils import DimUtils
-from cecelia.utils.segmentation_utils import count_labels
+
+# `cellpose_utils` is imported LAZILY, by the cellpose backend only — see `_cellpose_imports`. It pulls
+# in cellpose and torch (3.1 s of the worker's import cost, measured warm), and AF correction needs
+# neither: `af_correct_frame` is numpy. The worker was built for segmentation and grew a second backend,
+# so the import stayed at module level and every backend paid for every other backend's dependencies.
 
 # Timepoints read for the whole-image normalisation statistic. Measured on `EaMaVq` (201 frames,
 # single-level): exact = 30.6 s, 20 frames = 3.3 s, and the resulting mask counts were IDENTICAL at
@@ -61,6 +64,56 @@ NORM_FRAMES = 20
 #: max of the percentile window this all replaced, which is biased low by construction and so could
 #: never be made cheap. Runs stay exact: they pass no stride.
 AF_PREVIEW_STRIDE = (2, 4)
+
+
+def _preview_timepoints(dim_utils, max_frames=NORM_FRAMES):
+    """At most `max_frames` timepoints, evenly strided — or None for "read them all".
+
+    The AF analogue of `SegmentationUtils._subsample_time`: same ceil-stride policy and the same
+    `NORM_FRAMES` budget, expressed as the index list `af_weight_stats` takes rather than a sliced
+    array. Two spellings because the two APIs differ, one policy.
+
+    The AF path had NO time budget while the cellpose path had had one all along, which is most of why
+    a first AF preview felt broken and a first cellpose preview did not. Measured on
+    `zolIMa/2h06xA` (181 x 4 x 31 x 1024 x 1024), on top of `AF_PREVIEW_STRIDE`:
+
+        all 181 frames  26.6 s      backgrounds {1: 24, 2: 20, 3: 31}
+        20 frames        2.9 s      IDENTICAL
+        10 frames        1.4 s      IDENTICAL
+        5 frames         0.7 s      IDENTICAL
+
+    Byte-identical for the same reason the spatial stride is: every value is an interior histogram
+    threshold, and subsampling does not move one as long as the channel still has a background
+    population to find it in. Runs stay EXACT — they pass no budget, as they pass no stride.
+    """
+    if not dim_utils.is_timeseries():
+        return None
+    total = int(dim_utils.dim_val('T'))
+    if not max_frames or max_frames < 1 or total <= max_frames:
+        return None
+    stride = -(-total // max_frames)                  # ceil → at most max_frames frames
+    return list(range(0, total, stride))
+
+
+_CELLPOSE = None
+
+
+def _cellpose_imports():
+    """The segmentation stack, imported on first use and remembered.
+
+    Deferred because it costs 3.1 s of cellpose + torch (measured warm) that an AF-only session never
+    needs — and a resident worker pays its imports where the user is waiting, at toggle-on. Both callers
+    are already cellpose-only paths, so no AF request can reach this.
+
+    Cheap to keep resident once loaded, which is the whole premise of this process; the point is only
+    that it is not loaded for a task that has no use for it.
+    """
+    global _CELLPOSE
+    if _CELLPOSE is None:
+        from cecelia.utils.cellpose_utils import CellposeUtils
+        from cecelia.utils.segmentation_utils import count_labels
+        _CELLPOSE = (CellposeUtils, count_labels)
+    return _CELLPOSE
 
 #: Reply-shape + backend-set version. The backend refuses to adopt a worker that doesn't match and
 #: relaunches instead — see `_ensure_preview!`. 1: single `mask` field, cellpose only.
@@ -81,6 +134,13 @@ AF_PREVIEW_STRIDE = (2, 4)
 #:    (b) the REQUEST now carries `channelNames` from `ccid.json`, the only authoritative copy — an
 #:    adopted protocol-4 worker ignores the field and falls back to the store's stale OME-XML, which
 #:    renders every corrected channel grey.
+#:
+#: NOT bumped for the AF cold-start work (per-channel background cache, `_preview_timepoints`, lazy
+#: cellpose import), and that restraint is the rule working rather than an oversight. The rule is
+#: "bump when an adopted older peer would ANSWER differently" — an old worker here answers the same
+#: backgrounds (measured byte-identical) and the same reply shape, just slower. Bumping anyway would
+#: cost every user a fresh 18 s of imports to fix nothing, which is precisely the adoption this
+#: version exists to allow. A version that moves on every commit is a version nobody can reason about.
 PROTOCOL = 5
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
@@ -132,6 +192,7 @@ class PreviewState:
     def segmenter(self, params, dim_utils):
         """A fresh `CellposeUtils` per preview — params change every time, and that is the point —
         but carrying the loaded-model dict across, so switching a threshold doesn't reload a model."""
+        CellposeUtils, _ = _cellpose_imports()
         seg = CellposeUtils(params, dim_utils)
         seg._model_cache = self._model_cache
         return seg
@@ -164,29 +225,52 @@ class PreviewState:
     def af_stats(self, im_path, levels, dim_utils, channel_idx, competing_channels, method):
         """The correction's global values — one background level per participating channel — cached.
 
-        The AF analogue of `norm_params`, and the same bargain: deriving these costs a full pass over
-        the movie (tens of seconds), against **5-7 ms** to correct one visible plane with them. So the
-        first preview of an image is slow and every one after it is instant.
+        The AF analogue of `norm_params`, and the same bargain: deriving these costs a pass over the
+        movie, against **5-7 ms** to correct one visible plane with them. So the first preview of an
+        image is slow and every one after it is instant.
 
-        The key is what the values actually depend on: the image, the participating channels, and the
-        background method. Nothing else — so switching the method correctly misses the cache, and moving
-        the view correctly hits it.
+        CACHED PER CHANNEL, not per combination. A background level depends on the image, the channel
+        and the method — plus the two preview-only budgets below, which are module CONSTANTS and so are
+        deliberately absent from the key. Make either one a parameter and it has to join the key, or a
+        preview will keep serving values derived at the old budget. Keying the
+        whole `AfWeightStats` by `(target, competitors)` therefore re-derived the SAME numbers once per
+        combination: a three-channel AF setup asks for {1,2,3} three times over (target 1 vs 2,3; target
+        2 vs 1,3; target 3 vs 1,2), and paid a full pass each time. Measured on `zolIMa/2h06xA`, one
+        pass 26.9 s → **80.7 s** for the preview the user actually configured.
 
-        `AF_PREVIEW_STRIDE` is the one concession to the cold start, and it is safe because every value
-        here is now an interior threshold over a histogram, which subsampling does not move. (It was
-        safe before for a more delicate reason — the ceiling was a COUNT-thresholded max rather than a
-        true max — and that reason is gone along with the ceiling.)
+        So the cache holds one entry per channel and the stats are assembled from it; only genuinely
+        missing channels are derived, in a single pass over their union. The second and third
+        combinations of that setup now cost nothing.
+
+        `AF_PREVIEW_STRIDE` and `_preview_timepoints` are the two concessions to the cold start, and both
+        are safe because every value here is an interior threshold over a histogram, which subsampling
+        does not move. (It was safe before for a more delicate reason — the ceiling was a
+        COUNT-thresholded max rather than a true max — and that reason is gone along with the ceiling.)
         """
         competing = script_utils.channel_indices(
             competing_channels, f'competingChannels for channel {channel_idx}', _AF_TRANSLATOR)
         channels = script_utils.channel_indices(
             [channel_idx], 'the target channel', _AF_TRANSLATOR) + competing
-        key = (im_path, int(channel_idx), tuple(sorted(competing)), method)
-        if key not in self._af:
-            self._af[key] = correction_utils.af_weight_stats(
-                self.image_zarr(im_path)[0], dim_utils, channels,
-                background_method=method, spatial_stride=AF_PREVIEW_STRIDE)
-        return self._af[key]
+
+        missing = [ch for ch in dict.fromkeys(channels) if (im_path, ch, method) not in self._af]
+        if missing:
+            # one pass over the union of what is not yet known, never per combination
+            derived = correction_utils.af_weight_stats(
+                self.image_zarr(im_path)[0], dim_utils, missing,
+                background_method=method, spatial_stride=AF_PREVIEW_STRIDE,
+                timepoints=_preview_timepoints(dim_utils))
+            for ch in missing:
+                # nbins and exponent are image-wide rather than per-channel, but they are two ints and
+                # carrying them here keeps this to ONE cache — a second one keyed by image would have to
+                # be invalidated in step with this, for nothing
+                self._af[(im_path, ch, method)] = (
+                    derived.backgrounds[ch], derived.saturated[ch], derived.nbins, derived.exponent)
+
+        entries = [self._af[(im_path, ch, method)] for ch in channels]
+        return correction_utils.AfWeightStats(
+            backgrounds={ch: entries[i][0] for i, ch in enumerate(channels)},
+            saturated={ch: entries[i][1] for i, ch in enumerate(channels)},
+            nbins=entries[0][2], exponent=entries[0][3])
 
 
 STATE = PreviewState()
@@ -402,6 +486,7 @@ def _preview_cellpose(ctx):
         masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
                                  real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
+        _, count_labels = _cellpose_imports()
         counts[match_as] = count_labels(masks)
 
     if block is None:

@@ -65,7 +65,7 @@ const label = computed(() => {
         @click="preview.pinned = !preview.pinned"
         v-tooltip.left="preview.pinned
           ? 'Unpin — follow the view again'
-          : 'Pin this result — stop re-previewing when the view moves'"
+          : 'Pin — stop following the view'"
       >
         <i class="pi" :class="preview.pinned ? 'pi-lock' : 'pi-lock-open'" />
       </button>

@@ -215,6 +215,14 @@ to the shared helpers `cecelia.utils.napari_utils.capture_view_state(viewer)` /
 `apply_view_state(viewer, snapshot)`; `apply` skips missing layers and unsettable attrs (guarded
 `setattr`), so a snapshot degrades gracefully when the reopened image has fewer layers.
 
+**The per-layer half is separately callable** — `capture_layer_props(layer)` / `apply_layer_props(layer,
+props)`, which the whole-viewer pair is built from. The task preview needs exactly that and nothing
+else: it removes and re-adds its layers on every re-preview, which reset any contrast window the user
+had set, and a re-preview is triggered *by* a T/Z move — so it must restore the layer props while
+explicitly NOT restoring the camera or slider position. Restored last, after the source-colormap mirror,
+so a colormap picked by hand outranks the default. Use these rather than reading display attributes
+directly; a second copy of the key list is how the two drift.
+
 We store this **own schema**, not napari-animation's `ViewerState` objects, whose captured dicts hold
 napari enums / pint `Unit`s / `ColorArray`s that tie stored data to napari internals across versions —
 settable scalars stay durable, human-readable and GUI-editable. Commands: `capture_view_state`,

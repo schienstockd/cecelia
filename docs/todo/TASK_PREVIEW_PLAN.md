@@ -343,6 +343,11 @@ Measured, not assumed. Each of these cost a real experiment:
 | End-to-end in the live viewer | first preview ~10 s, then **0.14–0.38 s** per parameter change |
 | bioformats2raw with a `.ome.zarr.partial` output | **works** — exit 0, valid store; only our own `open_as_zarr` breaks on it |
 | Label-plane transfer, 590² uint32 / 676 cells (1.39 MB) | zlib-1 → **66 KB in 2.8 ms**; zlib-6 → 29 KB in 7.9 ms |
+| AF stats, one pass, 181×4×31×1024² at `AF_PREVIEW_STRIDE` | **26.9 s** exact; **2.9 s** at a 20-frame budget, **0.7 s** at 5 |
+| AF backgrounds, exact vs time-budgeted | **byte-identical** at 20/10/5 frames — interior histogram thresholds don't move |
+| AF stats keyed per COMBINATION vs per channel | 3-channel setup: **80.7 s → 26.9 s** (the same {1,2,3} derived three times) |
+| First AF preview, 3 combinations, end to end | **~84 s → 6.4 s**; second preview 0.05 s either way |
+| `cellpose_utils` import, which AF never needs | **3.1 s** warm — deferred to the cellpose backend (`_cellpose_imports`) |
 | Realistic dense 2048² mask, 41 616 cells | **1.29 MB** on the wire — over the `websockets` 1 MiB default, hence the explicit `max_size` |
 | Full-extent lazy array: zeros+setitem vs `da.pad` | **8.4k tasks vs 93k** for `(201,21,544,548)` — and pad won't let us pick the chunking |
 | A 1.29 MB reply through `send` (HTTP.jl WS) → re-serialised → decoded in Python | **1.3 s**, 41 616 labels intact |
