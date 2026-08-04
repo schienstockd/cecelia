@@ -6,6 +6,8 @@ import { useLogStore } from '../../stores/log'
 import { metadataWarning } from '../../lib/imageMetadataWarnings'
 import { buildFieldRegex, buildLookaroundRegex, extractWith,
          type FieldPos, type CtxClass, type ExtractKind } from '../../utils/regexBuilder'
+import { parseChannelNameList, channelNamesAsText, referenceCandidates,
+         splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
 import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
@@ -241,25 +243,51 @@ async function assignGroupSequences() {
 // ── Channel names ──────────────────────────────────────────────────────────────
 
 const channelNameList = ref('')
+const channelRefUid   = ref('')
+
+const channelNames = computed(() => parseChannelNameList(channelNameList.value))
+// Only images that already carry names can serve as a reference (utils/channelNames).
+const channelRefs = computed(() => referenceCandidates(setImages.value))
+
+// Picking a reference FILLS the list field rather than assigning straight away — same contract as the
+// regex builder above: the control writes the real value into the visible input, so what gets written
+// is on screen and editable before Assign. One field, one apply path.
+function copyChannelsFromReference() {
+  const src = setImages.value.find(i => i.uid === channelRefUid.value)
+  if (src) channelNameList.value = channelNamesAsText(src)
+}
+
+// Targets whose KNOWN channel count contradicts the list are left out — see splitByChannelCount for
+// why writing a name for a channel that isn't there is worse than skipping the image. Surfaced before
+// Assign (the hint below) as well as after (the log line), so a mismatch isn't a surprise.
+const channelSplit = computed(() =>
+  splitByChannelCount(setImages.value.filter(i => targetUids.value.includes(i.uid)),
+                      channelNames.value.length))
 
 async function assignChannelNames() {
-  const names = channelNameList.value.split('\n').map(s => s.trim()).filter(Boolean)
+  const names = channelNames.value
   if (!names.length) return
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
+  const { apply, skipped } = channelSplit.value
+  const uids = apply.map(i => i.uid)
+  if (!uids.length) {
+    log.warn(skippedChannelCountMsg(skipped, names.length), { source: 'metadata' }); return
+  }
 
   const res = await fetch('/api/images/channelnames', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectUid, imageUids: targetUids.value, channelNames: names }),
+    body: JSON.stringify({ projectUid, imageUids: uids, channelNames: names }),
   })
   const body = await res.json().catch(() => ({})) as { error?: string; values?: Record<string, string> }
   if (!res.ok) { log.error(body.error ?? `HTTP ${res.status}`, { source: 'metadata' }); return }
 
-  for (const uid of targetUids.value)
+  for (const uid of uids)
     project.updateImageMeta(uid, { channelNames: names })
 
-  log.info(`Set ${names.length} channel name(s) on ${targetUids.value.length} image(s).`, { source: 'metadata' })
+  log.info(`Set ${names.length} channel name(s) on ${uids.length} image(s).`, { source: 'metadata' })
+  if (skipped.length) log.warn(skippedChannelCountMsg(skipped, names.length), { source: 'metadata' })
 }
 
 
@@ -490,16 +518,33 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div class="section-title cc-eyebrow">Channel names</div>
 
       <div class="field-col">
+        <!-- Copy from a reference image: fills the field below, so the names are visible and editable
+             before Assign writes them (same contract as the regex builder). -->
+        <div class="field-row">
+          <select class="field-input flex1" v-model="channelRefUid" @change="copyChannelsFromReference"
+            :disabled="channelRefs.length === 0"
+            v-tooltip.bottom="'Copy channel names from this image'">
+            <option value="">— from reference image —</option>
+            <option v-for="i in channelRefs" :key="i.uid" :value="i.uid">
+              {{ i.name }} ({{ i.channelNames?.length }})
+            </option>
+          </select>
+        </div>
+
         <textarea class="field-textarea" v-model="channelNameList" rows="4"
           placeholder="One channel name per line…"
           v-tooltip.bottom="'Assign these channel names to the selected images (or all if none selected)'" />
         <div class="field-row">
-          <button class="cc-btn cc-btn-ghost" :disabled="!channelNameList.trim()"
+          <button class="cc-btn cc-btn-ghost" :disabled="!channelNames.length"
             @click="assignChannelNames"
             v-tooltip.bottom="'Set channel names on the target images'">
             Assign channels
           </button>
+          <span v-if="channelNames.length" class="cc-readout">{{ channelSplit.apply.length }} image(s)</span>
         </div>
+        <p v-if="channelNames.length && channelSplit.skipped.length" class="section-hint cc-muted-warn">
+          {{ channelSplit.skipped.length }} target(s) don't have {{ channelNames.length }} channels — skipped.
+        </p>
       </div>
 
       <p class="section-hint cc-muted">Or edit channel names directly in the image table.</p>
