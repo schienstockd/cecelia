@@ -1396,7 +1396,9 @@ by the scheduler's own id.
   silently relaunch the task with the JSON spec's defaults — which is why the row is only offered Re-run
   once they are known. A snapshot that carries none (a backend predating the field, or a param set that
   can't be written as JSON — the route publishes `null` rather than a partial one) sets `paramsUnknown`
-  on the row, which withholds the button and shows a `pi-cloud-download` badge saying why.
+  on the row, which withholds the button. **No badge marks that**: it needs a backend older than the
+  field to happen at all, and a permanent icon on every adopted row to explain a case nobody meets is
+  the kind of standing UI noise `UI copy — keep it short` exists to prevent.
 - **One predicate decides it — `canRerunTask` (`utils/taskRerun.ts`).** Both surfaces that draw the
   button (the per-module `TaskList`, the `/tasks` manager) call it. They had their own copies and had
   already drifted: the manager offered Re-run on a **chain node**, whose `params` are `{}` because chain

@@ -172,8 +172,6 @@ const FILTERS: ChipOption[] = [
                 <span class="row-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
                 {{ t.label }}
               </span>
-              <i v-if="t.paramsUnknown" class="pi pi-cloud-download adopted-badge cc-muted cc-fs-2xs"
-                 v-tooltip.right="'Already running when this tab opened — no re-run'" />
               <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
             </div>
             <div class="row-image cc-muted cc-fs-xs">{{ t.imageName }}</div>
@@ -382,7 +380,6 @@ const FILTERS: ChipOption[] = [
 .chain-pill .pi { font-size: var(--cc-fs-3xs); flex-shrink: 0; }
 .chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
-.adopted-badge { flex-shrink: 0; }   /* size via cc-fs-2xs — don't shadow cc-muted here */
 .row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 .row-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
