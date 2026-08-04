@@ -1025,6 +1025,18 @@ Three rules that are easy to get wrong in a template live in the pure, tested
   `_active` there would leave `ccid.json` naming a version that was never registered. For the same
   reason the "becomes un-imported" warning counts *images*, not the selection.
 
+**One conflict blocks; a skip only warns.** The distinction is whether the user's stated intent can be
+honoured:
+
+- **Blocking** (`activeMismatches` → confirm greyed): an image keeps a version but *not* the one chosen
+  to stay active. Substituting another version per image would look like it worked while quietly
+  leaving that image on something the user didn't choose, so the modal says which count is affected and
+  waits. An image that loses *every* version is **not** a conflict — it has no active to set, and that
+  un-import is a legitimate outcome, warned about separately.
+- **Non-blocking** (`partialNames` → a note): a version or label set that simply isn't on every selected
+  image. It is applied where present and skipped elsewhere, which is the whole point of union
+  semantics; the chip badge plus the note make the skip visible.
+
 The versions scope **pre-selects every non-active version** — once a corrected version exists, the raw
 import and the intermediates are what you no longer need.
 

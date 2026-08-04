@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   versionCounts, labelCounts, orderDefaultLast,
   survivingVersions, resolveNewActive, unimportsImage,
+  survivorCounts, activeMismatches, partialNames,
 } from './imageDelete'
 
 const IMG = (versions: string[], labels: string[] = []) => ({
@@ -84,5 +85,44 @@ describe('unimportsImage', () => {
     expect(unimportsImage(['default', 'cp'], ['default', 'cp'])).toBe(true)
     expect(unimportsImage(['default', 'cp'], ['cp'])).toBe(false)
     expect(unimportsImage([], [])).toBe(false)
+  })
+})
+
+describe('survivorCounts', () => {
+  it('counts which versions each image would keep', () => {
+    expect(survivorCounts([IMG(['default', 'cp']), IMG(['default'])], ['default']))
+      .toEqual([{ name: 'cp', count: 1 }])
+  })
+
+  it('offers default first when it survives', () => {
+    expect(survivorCounts([IMG(['default', 'cp']), IMG(['default', 'cp'])], ['cp']))
+      .toEqual([{ name: 'default', count: 2 }])
+  })
+})
+
+describe('activeMismatches', () => {
+  it('counts images that survive but lack the chosen active version', () => {
+    // remove `default` from both: A keeps cp, B keeps af. Choosing cp cannot be honoured on B, which
+    // still has a version — so it is a real conflict, not an un-import.
+    expect(activeMismatches([IMG(['default', 'cp']), IMG(['default', 'af'])], ['default'], 'cp')).toBe(1)
+  })
+
+  it('is zero when every surviving image has the chosen version', () => {
+    expect(activeMismatches([IMG(['default', 'cp']), IMG(['default', 'cp'])], ['default'], 'cp')).toBe(0)
+  })
+
+  it('does not count an image that un-imports — there is no active to set', () => {
+    expect(activeMismatches([IMG(['default'])], ['default'], 'cp')).toBe(0)
+  })
+
+  it('does not count an image with no versions at all', () => {
+    expect(activeMismatches([{ filepaths: null }], ['default'], 'cp')).toBe(0)
+  })
+})
+
+describe('partialNames', () => {
+  it('lists the names that are not on every selected image', () => {
+    expect(partialNames([{ name: 'A', count: 1 }, { name: 'B', count: 3 }], 3)).toEqual(['A'])
+    expect(partialNames([{ name: 'B', count: 3 }], 3)).toEqual([])
   })
 })

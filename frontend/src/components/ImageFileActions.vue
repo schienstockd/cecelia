@@ -187,9 +187,10 @@ async function runPlan(plan: DeletePlan) {
     const ordered = orderDefaultLast(plan.valueNames)
     await runPerImage('Deleting versions', 'Deleted image versions', async (img, projectUid) => {
       const own = Object.keys(img.filepaths ?? {})
-      // The plan's `newActive` is a PREFERENCE picked from the union across the selection, so it may
-      // not exist on this image — resolve against this image's own versions or `_active` would name a
-      // version that was never registered here (Decision 6, union semantics).
+      // The modal BLOCKS the case where a surviving image lacks the chosen active version, so this
+      // resolve is a guard rather than a policy: it still runs because the store can have moved since
+      // the modal opened, and because an image that loses every version has no active to set at all.
+      // Never send a name this image doesn't have — `_active` would point at something unregistered.
       const newDefault = resolveNewActive(own, plan.valueNames, plan.newActive,
                                           img.activeValueName ?? '') || DEFAULT_VALUE_NAME
       for (const valueName of ordered) {

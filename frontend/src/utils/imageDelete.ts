@@ -80,3 +80,34 @@ export function resolveNewActive(all: string[], removing: string[],
 export function unimportsImage(all: string[], removing: string[]): boolean {
   return all.length > 0 && survivingVersions(all, removing).length === 0
 }
+
+/**
+ * Versions that would still exist after the removal, with how many selected images keep each — the
+ * candidates for "keep active", counted so the user can see which ones every image actually has.
+ */
+export function survivorCounts(images: HasVersions[], removing: string[]): NameCount[] {
+  return unionCounts(images.map(i =>
+    survivingVersions(Object.keys(i.filepaths ?? {}), removing)))
+}
+
+/**
+ * Images that would keep at least one version but NOT the chosen active one — the case that must
+ * BLOCK the delete rather than resolve itself.
+ *
+ * With union semantics the chosen active comes from across the selection, so an image can survive the
+ * removal without ever having had that version. Falling back to another version there looks like it
+ * worked while quietly leaving that image on something the user didn't choose. An image with no
+ * survivors at all is NOT counted: it un-imports, so there is no active to set, and that is a
+ * legitimate outcome warned about separately.
+ */
+export function activeMismatches(images: HasVersions[], removing: string[], active: string): number {
+  return images.filter(i => {
+    const left = survivingVersions(Object.keys(i.filepaths ?? {}), removing)
+    return left.length > 0 && !left.includes(active)
+  }).length
+}
+
+/** Names not present on every selected image — the ones that will be skipped somewhere. */
+export function partialNames(counts: NameCount[], total: number): string[] {
+  return counts.filter(c => c.count < total).map(c => c.name)
+}

@@ -84,6 +84,17 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    that image's `_active` would name a version that was never registered), and the **"becomes
    un-imported" warning counts images**, not the selection (taking `default` can strip one image of
    everything while another keeps its corrected version).
+
+12. **A conflict blocks, a skip only warns** (Dominik, 2026-08-04). The test is whether the user's
+   stated intent can be honoured at all:
+   - **Blocks** (confirm greyed, `activeMismatches`): an image keeps a version but not the one chosen
+     to stay active. Per-image substitution was the original behaviour and it is worse than a block —
+     it reads as success while leaving that image on a version the user did not pick. An image that
+     loses *every* version is explicitly NOT a conflict: there is no active to set, and the un-import
+     is a legitimate outcome with its own warning.
+   - **Warns only** (`partialNames`): a version or label set that isn't on every selected image. Applied
+     where present, skipped elsewhere — that is the point of Decision 6, so blocking would undo it. The
+     chip badge (`k/n`) plus a note carry it. Label sets never block for any reason.
 7. **"All analysis" uses a KEEP-list, never a delete-list.** Everything under `1/{uid}` except the
    keep-list (`labels/ labelProps/ gating/ populations/ mesh/ branchLabels/ spatialGraph/ spatialStats/
    stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A delete-list silently leaks whatever

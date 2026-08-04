@@ -22,8 +22,8 @@ import BaseModal from './BaseModal.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import {
-  versionCounts, labelCounts, resolveNewActive, unimportsImage, DEFAULT_VALUE_NAME,
-  type NameCount,
+  versionCounts, labelCounts, resolveNewActive, unimportsImage, survivorCounts,
+  activeMismatches, partialNames, DEFAULT_VALUE_NAME, type NameCount,
 } from '../utils/imageDelete'
 import type { CciaImage } from '../stores/project'
 
@@ -96,8 +96,17 @@ function onVersionsChange(v: string[]) {
   newActive.value = resolveNewActive(versionNames.value, v, newActive.value || commonActive.value)
 }
 const versionOptions = computed<ChipOption[]>(() => versions.value.map(nameChip))
-const survivorOptions = computed<ChipOption[]>(() =>
-  versionNames.value.filter(v => !pickedVersions.value.includes(v)).map(v => ({ value: v, label: v })))
+// The "keep active" candidates, badged like the version chips so it's visible which survive everywhere
+const survivors = computed(() => survivorCounts(props.images, pickedVersions.value))
+const survivorOptions = computed<ChipOption[]>(() => survivors.value.map(nameChip))
+// BLOCKING: an image that keeps a version but not the CHOSEN one. Falling back per image would look
+// like it worked while leaving that image on something the user didn't pick, so the confirm is greyed
+// until the choice is one those images can take (or the selection narrows).
+const activeConflicts = computed(() =>
+  activeMismatches(props.images, pickedVersions.value, newActive.value))
+// NON-BLOCKING: names that simply aren't on every selected image and get skipped there
+const partialVersions = computed(() => partialNames(versions.value, n.value))
+const partialLabels   = computed(() => partialNames(labels.value, n.value))
 // Un-import is per IMAGE, not per selection: with a union list, taking `default` can strip one image
 // of everything while another still has its corrected version. Count the images it happens to, so the
 // warning is true rather than all-or-nothing.
@@ -111,7 +120,8 @@ const pickedLabels = ref<string[]>([])
 const canConfirm = computed(() =>
   scope.value === 'images'   ? n.value > 0
   : scope.value === 'analysis' ? n.value > 0
-  : scope.value === 'versions' ? pickedVersions.value.length > 0
+  // versions: the active-version conflict blocks; a skipped name does not
+  : scope.value === 'versions' ? pickedVersions.value.length > 0 && activeConflicts.value === 0
   : pickedLabels.value.length > 0)
 
 const confirmLabel = computed(() => {
@@ -170,11 +180,19 @@ function onScopeChange(v: string) {
           @update:model-value="v => newActive = v as string"
           v-tooltip.right="'Which surviving version becomes the active one'" />
       </div>
+      <!-- BLOCKS: an image keeps a version, but not the one chosen to stay active -->
+      <p v-if="activeConflicts > 0" class="del-note cc-muted-warn">
+        {{ activeConflicts }} of {{ n }} image(s) do not have "{{ newActive }}" to keep active. Select a
+        version they all share, or delete from fewer images.
+      </p>
+      <p v-if="partialVersions.length" class="del-note cc-muted">
+        Skipped where absent: {{ partialVersions.join(', ') }}.
+      </p>
       <p v-if="unimportCount > 0" class="del-note cc-muted-warn">
         {{ unimportCount }} of {{ n }} image(s) lose every version and become un-imported — their
         analysis stays, but nothing can be viewed or re-run until they are imported again.
       </p>
-      <p v-else class="del-note cc-muted">
+      <p v-if="activeConflicts === 0 && unimportCount === 0" class="del-note cc-muted">
         Frees the deleted versions on disk. Analysis is not touched — Settings → Storage reports the bytes.
       </p>
     </template>
@@ -187,6 +205,10 @@ function onScopeChange(v: string) {
           :model-value="pickedLabels" @update:model-value="v => pickedLabels = v as string[]"
           v-tooltip.right="'A set only some images have is skipped for the rest'" />
       </div>
+      <!-- Warns but never blocks: a set only some images have is simply skipped for the rest -->
+      <p v-if="partialLabels.length" class="del-note cc-muted-warn">
+        Not on every image, skipped where absent: {{ partialLabels.join(', ') }}.
+      </p>
       <p class="del-note cc-muted">
         Deletes each set's labels, measurements, tracks and skeleton output. Populations and gating that
         read them are left behind and will resolve to nothing.
