@@ -14,7 +14,12 @@ export interface ReclaimableImage {
 export interface StorageSummary {
   diskTotal: number
   diskAvailable: number
-  imageBytes: number   // image OME-ZARR stores only — not labels/labelProps/other task-dir data
+  imageBytes: number   // image OME-ZARR stores only (the project's `0/` dir)
+  /** Everything DERIVED (`1/{uid}` minus ccid.json + runlog.json) — segmentations, measurements,
+   *  gating, clustering, spatial output. Reported so the storage box isn't silent about the half of
+   *  the project it used to ignore; never auto-freed, because dropping analysis is a deliberate
+   *  per-image act in the Import page's Delete modal (docs/todo/IMAGE_DELETE_PLAN.md Decision 5). */
+  analysisBytes?: number
   reclaimableBytes: number
   reclaimable: ReclaimableImage[]
   /** Bytes nothing can reach: leftovers a cancelled/crashed run abandoned (staging dirs, import

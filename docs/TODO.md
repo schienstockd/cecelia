@@ -199,14 +199,6 @@ Worth settling when it's built:
 - **Where it lands**: not inside the project tree (it's an artefact, not data), so it wants a
   destination picker like `default_export_dir()`. Task rail + progress, staged output.
 
-**#00094** — **Structured image delete: one modal on Import, one automatic sweep in Settings**
-Deleting *parts* of an image has five entry points across four places (the `importImages.remove` task,
-Settings → Storage *Free up space*, the Data patches debris sweep, the napari ViewerPanel label delete,
-and the Import action-bar Delete), with two different mental models and no way to drop derived analysis
-wholesale. Design + locked decisions + phases: **`docs/todo/IMAGE_DELETE_PLAN.md`**. Target is two
-sites — a structured delete modal on the Import page (whole images / versions + new active / label sets
-/ all analysis) and Settings for automatic whole-project reclaim.
-
 **#00002** — **Auto-follow in task manager**
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener

@@ -15,13 +15,15 @@
 import { ref, computed } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import BaseModal from './BaseModal.vue'
-import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CopyDialog from './CopyDialog.vue'
+import DeleteImagesDialog, { type DeletePlan } from './DeleteImagesDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { isImported } from '../utils/inclusion'
+import { orderDefaultLast, resolveNewActive, DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 import { resolveSetDestination, destinationParams } from '../utils/setDestination'
+import type { CciaImage } from '../stores/project'
 
 const props = defineProps<{ setUid: string; uids: string[] }>()
 const emit  = defineEmits<{ (e: 'done'): void }>()
@@ -122,44 +124,117 @@ async function doMove() {
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
-// DELETE, not remove: `delete_image!` (app/src/model/set.jl) rm -r's both {proj}/0/{uid} (the converted
-// OME-ZARR) and {proj}/1/{uid} (labels, labelProps, gating sidecars). Only the original microscope file,
-// which lives outside the project, survives. The copy has to say so — the old per-row ✕ called it
-// "Remove … the original file is not deleted", which is true and reads as though nothing is lost.
-const deleting = ref(false)
+// The button opens `DeleteImagesDialog`, which collects a PLAN; this executes it. Four scopes, four
+// routes, ONE loop carrying the k/N readout + toast — so progress reporting is written once
+// (docs/UI.md → File operations) and the modal only decides what should happen.
+//
+// Whole-image delete is a real delete: `delete_image!` (app/src/model/set.jl) rm -r's both
+// {proj}/0/{uid} (every image store) and {proj}/1/{uid} (labels, labelProps, gating, …). Only the
+// original microscope file, which lives outside the project, survives.
+const showDelete = ref(false)
 
-async function doDelete() {
-  if (deleting.value) return
+async function post(url: string, body: unknown): Promise<Record<string, any>> {
+  const res = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const parsed = await res.json().catch(() => ({})) as { error?: string }
+  if (!res.ok) throw new Error(parsed.error ?? `HTTP ${res.status}`)
+  return parsed as Record<string, any>
+}
+
+// One loop for the three per-image scopes; `step` is whatever that scope does to one image.
+async function runPerImage(verb: string, summary: string,
+                           step: (img: CciaImage, projectUid: string) => Promise<void>) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
-  deleting.value = true
-  const targets = [...images.value]     // snapshot: deleteImage() shrinks the set as we go
+  const targets = [...images.value]   // snapshot: deleting an image mutates the set as we go
   let done = 0
-  busy.value = { verb: 'Deleting', done: 0, total: targets.length }
+  busy.value = { verb, done: 0, total: targets.length }
   try {
     for (const img of targets) {
-      const res = await fetch('/api/images/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, setUid: props.setUid, imageUid: img.uid }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      project.deleteImage(props.setUid, img.uid)
+      await step(img, projectUid)
       done++
-      busy.value = { verb: 'Deleting', done, total: targets.length }
+      busy.value = { verb, done, total: targets.length }
     }
-    log.info(`Deleted ${done} image(s) and their analysis.`, { source: 'import' })
+    log.info(`${summary} for ${done} image(s).`, { source: 'import' })
     toast.add({ severity: 'success', summary: 'Deleted', life: 2500,
-                detail: `${done} image(s) and their analysis` })
+                detail: `${summary} — ${done} image(s)` })
   } catch (e) {
-    log.error(`Failed to delete image (${done} deleted): ${e instanceof Error ? e.message : String(e)}`,
+    log.error(`${verb} failed after ${done} image(s): ${e instanceof Error ? e.message : String(e)}`,
       { source: 'import' })
     toast.add({ severity: 'error', summary: 'Delete failed', life: 4000,
-                detail: `${done} of ${targets.length} deleted — see the log` })
+                detail: `${done} of ${targets.length} done — see the log` })
   } finally {
     busy.value = null
-    deleting.value = false
+    emit('done')
+  }
+}
+
+async function runPlan(plan: DeletePlan) {
+  if (busy.value) return
+
+  if (plan.scope === 'images') {
+    await runPerImage('Deleting', 'Deleted images and their analysis', async (img, projectUid) => {
+      await post('/api/images/delete', { projectUid, setUid: props.setUid, imageUid: img.uid })
+      project.deleteImage(props.setUid, img.uid)
+    })
+    return
+  }
+
+  if (plan.scope === 'versions') {
+    // `default` LAST so the safe-primary un-import lands at the end of this image's loop rather than
+    // mid-way (docs/todo/IMAGE_DELETE_PLAN.md Decision 11).
+    const ordered = orderDefaultLast(plan.valueNames)
+    await runPerImage('Deleting versions', 'Deleted image versions', async (img, projectUid) => {
+      const own = Object.keys(img.filepaths ?? {})
+      // The plan's `newActive` is a PREFERENCE picked from the union across the selection, so it may
+      // not exist on this image — resolve against this image's own versions or `_active` would name a
+      // version that was never registered here (Decision 6, union semantics).
+      const newDefault = resolveNewActive(own, plan.valueNames, plan.newActive,
+                                          img.activeValueName ?? '') || DEFAULT_VALUE_NAME
+      for (const valueName of ordered) {
+        if (!(img.filepaths ?? {})[valueName]) continue     // not on this image → skip it
+        const body = await post('/api/images/version/remove',
+          { projectUid, imageUid: img.uid, valueName, newDefault })
+        if (body.image) project.updateImageMeta(img.uid, body.image as Partial<CciaImage>)
+      }
+    })
+    return
+  }
+
+  if (plan.scope === 'labels') {
+    await runPerImage('Deleting label sets', 'Deleted label sets', async (img, projectUid) => {
+      for (const valueName of plan.valueNames) {
+        if (!(img.labels ?? {})[valueName]) continue
+        const body = await post('/api/images/labels/delete', { projectUid, imageUid: img.uid, valueName })
+        if (body.image) project.updateImageMeta(img.uid, body.image as Partial<CciaImage>)
+        else            project.removeLabelSet(img.uid, valueName)
+      }
+    })
+    return
+  }
+
+  // analysis: ONE bulk request (the route takes imageUids), so there is no per-image step to count
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  const targets = [...images.value]
+  busy.value = { verb: 'Deleting analysis', done: 0, total: targets.length }
+  try {
+    const body = await post('/api/images/analysis/reset',
+      { projectUid, imageUids: targets.map(i => i.uid) })
+    for (const [uid, image] of Object.entries(body.images ?? {})) {
+      project.updateImageMeta(uid, image as Partial<CciaImage>)
+    }
+    busy.value = { verb: 'Deleting analysis', done: targets.length, total: targets.length }
+    log.info(`Deleted the analysis of ${targets.length} image(s).`, { source: 'import' })
+    toast.add({ severity: 'success', summary: 'Deleted', life: 2500,
+                detail: `Analysis of ${targets.length} image(s)` })
+  } catch (e) {
+    log.error(`Failed to delete analysis: ${e instanceof Error ? e.message : String(e)}`,
+      { source: 'import' })
+    toast.add({ severity: 'error', summary: 'Delete failed', life: 4000, detail: 'See the log' })
+  } finally {
+    busy.value = null
     emit('done')
   }
 }
@@ -182,13 +257,15 @@ async function doDelete() {
       <i class="pi pi-arrows-h" /> Move
     </button>
 
-    <ConfirmDeleteButton :disabled="n === 0 || converting || !!busy"
-      :title="converting ? 'Wait for the import to finish'
-        : 'Delete the selected images and their analysis (source files are kept)'"
-      armed-title="Click again to delete — cannot be undone"
-      @confirm="doDelete">
-      Delete
-    </ConfirmDeleteButton>
+    <!-- opens the structured modal; the confirm lives on its footer, so this is never one click from
+         a deletion (docs/todo/IMAGE_DELETE_PLAN.md Decision 1) -->
+    <button class="cc-btn cc-btn-danger-ghost" :disabled="n === 0 || converting || !!busy"
+      @click="showDelete = true"
+      v-tooltip.bottom="n === 0 ? 'Select images to delete'
+        : converting ? 'Wait for the import to finish'
+        : 'Delete images, versions, label sets or analysis'">
+      <i class="pi pi-trash" /> Delete
+    </button>
 
     <!-- k/N while a move/delete loop runs; Copy reports through the task rail instead -->
     <span v-if="busy" class="cc-readout cc-fs-xs busy-readout"
@@ -196,6 +273,9 @@ async function doDelete() {
       <i class="pi pi-spin pi-spinner" /> {{ busyText }}
     </span>
   </span>
+
+  <DeleteImagesDialog v-if="showDelete && n > 0" :images="images"
+    @confirm="runPlan" @close="showDelete = false" />
 
   <!-- no `done` here: a copy leaves the source rows in place, so the selection stays valid -->
   <CopyDialog v-if="showCopy && n > 0" :images="images" :set-uid="setUid" @close="showCopy = false" />

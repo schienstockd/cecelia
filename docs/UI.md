@@ -990,9 +990,55 @@ checkbox **selection** and are rendered by `components/ImageFileActions.vue` in 
   belongs in the action bar. That split is what keeps the menu short; it previously held Copy and Move
   as well, each one image at a time.
 
-Both dialogs take the *selection*: `CopyDialog.vue` (`images: CciaImage[]`) dispatches one
+Every dialog takes the *selection*: `CopyDialog.vue` (`images: CciaImage[]`) dispatches one
 `editImages.copyImage` task per image, and Move walks `/api/images/move` per image (both routes are
 per-image).
+
+### Deleting is one modal with four scopes
+
+**There are exactly two places that delete image data**, and that is a deliberate ceiling
+(`docs/todo/IMAGE_DELETE_PLAN.md`): the Import page's **Delete** modal (`DeleteImagesDialog.vue`) for
+anything per-image, and **Settings → Storage** for the automatic whole-project reclaim. It used to be
+five, spread across four screens.
+
+The modal offers four scopes, radio-selected because they answer different questions and must not be
+silently combinable. Each maps to one route, and `ImageFileActions.vue` runs it over the selection:
+
+| Scope | Deletes | Route |
+|---|---|---|
+| Whole images | the image stores **and** everything derived | `/api/images/delete` |
+| Versions | specific image versions + which one stays active | `/api/images/version/remove` |
+| Label sets | specific segmentations + their measurements | `/api/images/labels/delete` |
+| All analysis | everything derived, keeping the images | `/api/images/analysis/reset` |
+
+Three rules that are easy to get wrong in a template live in the pure, tested
+`utils/imageDelete.ts` — **use it, don't re-derive them**:
+
+- Names are offered as the **union** across the selection, each chip badged `k/n` when only some
+  images carry it, and skipped for the images that don't. An intersection hides the name entirely:
+  select three images where two carry `B` and one doesn't, and `B` becomes undeletable until you
+  re-select. The badge is what keeps the skip visible rather than silent.
+- `default` is removed **last**, so `remove_image_version!`'s safe-primary un-import lands at the end
+  of the loop rather than mid-way.
+- The version that stays active is resolved **per image** (`resolveNewActive(own, removing, preferred,
+  current)`). With a union list the user's pick may not exist on every image, and writing it into
+  `_active` there would leave `ccid.json` naming a version that was never registered. For the same
+  reason the "becomes un-imported" warning counts *images*, not the selection.
+
+The versions scope **pre-selects every non-active version** — once a corrected version exists, the raw
+import and the intermediates are what you no longer need.
+
+Deleting a label set takes its **companions**: the registered labels zarr, the branch-label zarr, and
+every `labelProps/` sidecar derived from that name (`{vn}__tracks.h5ad`, `{vn}__branch.h5ad`,
+`{vn}.clustfeatures.json`, …). Prefix-driven (`{vn}.` / `{vn}__`) so a companion added later is swept
+too, and so value_name `B` can't eat `B2.h5ad`.
+
+The modal **collects a plan and emits it**; the execution, the `k/N` readout and the toast stay in
+`ImageFileActions`. Its own footer button carries the arm/confirm, so no scope is ever one click from
+deleting. Two surfaces were removed once it covered them: the napari **ViewerPanel** no longer deletes
+a label set (the viewer shows and hides layers; it does not curate the disk), and the
+`importImages.remove` **task** is `hidden` from the module page — see *MODULES.md → hidden tasks*; it
+stays registered, REPL-runnable and valid as a chain node.
 
 **Progress on a bulk action comes from one of two places, never neither.** Copy goes over the **task
 rail**, so the task console, the progress bar and the universal toast are free — but a batch must use

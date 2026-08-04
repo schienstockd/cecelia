@@ -514,9 +514,19 @@ async function switchWt(path: string) {
 
       <template v-if="storage">
         <div class="stor-line">
-          <span v-tooltip.top="'Total size of the image OME-ZARRs in this project (not labels or other analysis data)'">Images in project</span>
+          <span v-tooltip.top="'Total size of the image OME-ZARRs in this project'">Images in project</span>
           <strong>{{ formatBytes(storage.imageBytes) }}</strong>
           <span>Disk free</span><strong>{{ formatBytes(storage.diskAvailable) }} / {{ formatBytes(storage.diskTotal) }}</strong>
+        </div>
+
+        <!-- Derived output, reported but never freed from here: dropping analysis is a deliberate
+             per-image act in the Import page's Delete modal (IMAGE_DELETE_PLAN Decision 5). -->
+        <div v-if="storage.analysisBytes" class="stor-line">
+          <span v-tooltip.top="'Segmentations, measurements, gating, clustering and spatial output'">Analysis</span>
+          <strong>{{ formatBytes(storage.analysisBytes) }}</strong>
+          <span class="field-hint cc-muted cc-fs-xs">
+            drop it per image in Import → Delete → All analysis
+          </span>
         </div>
 
         <!-- Leftovers a cancelled/crashed run abandoned — bytes nothing in the UI can reach. Shown

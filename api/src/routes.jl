@@ -1488,6 +1488,71 @@ function api_images_move(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true, toSetUid=to_set_uid, toSetName=to_name, createdSet=created))
 end
 
+# POST /api/images/version/remove {projectUid, imageUid, valueName, newDefault}
+# Delete ONE image version's store and clear its ccid.json entry, re-pointing `_active` at
+# `newDefault`. A thin adapter over `remove_image_version!` (app/src/storage.jl) — the same core the
+# `importImages.remove` task and the storage reclaim use, so there is one deletion path, not three.
+# The caller loops for several versions and must order `default` LAST (docs/todo/IMAGE_DELETE_PLAN.md
+# Decision 11), so the safe-primary un-import lands at the end rather than mid-loop.
+function api_images_version_remove(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    image_uid   = String(get(body, :imageUid,   ""))
+    value_name  = String(get(body, :valueName,  ""))
+    new_default = String(get(body, :newDefault, VERSIONED_DEFAULT_VAL))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
+    isempty(value_name)  && return 400, JSON3.write((; error="valueName required"))
+
+    isdir(joinpath(projects_dir(), project_uid)) ||
+        return 404, JSON3.write((; error="Project not found: $project_uid"))
+    img = init_object(project_uid, image_uid)
+    img isa CciaImage || return 404, JSON3.write((; error="Image not found: $image_uid"))
+
+    res = remove_image_version!(img, value_name, new_default)
+    isnothing(res) && return 404, JSON3.write((; error="No version '$value_name' on this image"))
+    freed, cleared = res
+
+    fresh = init_object(project_uid, image_uid)
+    @info "Removed image version" value_name new_default image=image_uid project=project_uid freed
+    200, JSON3.write((; ok=true, freedBytes=freed, cleared=cleared,
+                        image = fresh isa CciaImage ? _image_payload(fresh) : nothing))
+end
+
+# POST /api/images/analysis/reset {projectUid, imageUids: [...]}
+# Drop everything DERIVED from each image, keeping the image itself: every child of `1/{uid}` except
+# the keep-list, plus the `labels`/`label_props`/`branch_labels` registrations. Touches no image store
+# — shedding a version is /api/images/version/remove's job (IMAGE_DELETE_PLAN Decision 9). Core:
+# `reset_image_analysis!` (app/src/storage.jl).
+function api_images_analysis_reset(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    image_uids = get(body, :imageUids, nothing)
+    (image_uids isa AbstractVector && !isempty(image_uids)) ||
+        return 400, JSON3.write((; error="imageUids (non-empty) required"))
+    isdir(joinpath(projects_dir(), project_uid)) ||
+        return 404, JSON3.write((; error="Project not found: $project_uid"))
+
+    freed  = 0
+    images = Dict{String,Any}()
+    for uid in image_uids
+        img = init_object(project_uid, string(uid))
+        img isa CciaImage || continue
+        f, _ = reset_image_analysis!(img)
+        freed += f
+        fresh = init_object(project_uid, string(uid))
+        fresh isa CciaImage && (images[string(uid)] = _image_payload(fresh))
+    end
+
+    @info "Reset image analysis" n=length(images) project=project_uid freed
+    200, JSON3.write((; ok=true, freedBytes=freed, images=images))
+end
+
 # ── Metadata management ───────────────────────────────────────────────────────
 
 function _parse_meta_request(body_bytes)
@@ -1592,30 +1657,37 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
 
     raw = read_ccid_raw(ccid)
 
-    # Delete zarr files registered under labels[valueName]
-    labels_dict = get(raw, "labels", Dict{String,Any}())
-    label_entry = get(labels_dict, value_name, get(labels_dict, Symbol(value_name), nothing))
-    label_dir   = joinpath(task_dir, "labels")
-    if !isnothing(label_entry)
-        for fn in (label_entry isa AbstractVector ? label_entry : [string(label_entry)])
-            p = joinpath(label_dir, string(fn))
+    # Registered stores: labels[vn] under labels/, branch_labels[vn] under branchLabels/. Branch label
+    # sets share the value_name of the segmentation they were skeletonised from, so they go with it —
+    # leaving `branchLabels/` behind is exactly the orphan this route exists to prevent.
+    for (field, subdir) in (("labels", "labels"), ("branch_labels", "branchLabels"))
+        entries = get(raw, field, Dict{String,Any}())
+        entry   = get(entries, value_name, get(entries, Symbol(value_name), nothing))
+        isnothing(entry) && continue
+        for fn in (entry isa AbstractVector ? entry : [string(entry)])
+            p = joinpath(task_dir, subdir, string(fn))
             ispath(p) && rm(p; recursive = true)
         end
     end
 
-    # Delete h5ad registered under label_props[valueName]
-    label_props = get(raw, "label_props", Dict{String,Any}())
-    h5ad_fn = get(label_props, value_name, get(label_props, Symbol(value_name), nothing))
-    if !isnothing(h5ad_fn)
-        h5ad_path = joinpath(task_dir, "labelProps", string(h5ad_fn))
-        isfile(h5ad_path) && rm(h5ad_path)
+    # labelProps sidecars: the registered `{vn}.h5ad` PLUS every companion derived from it —
+    # `{vn}__tracks.h5ad`, `{vn}__branch.h5ad`, `{vn}.clustfeatures.json`, `{vn}__tracks.clustfeatures.json`.
+    # Prefix-driven rather than a suffix list, so a companion added later is swept too; the `.`/`__`
+    # boundary is what stops value_name "B" from eating "B2.h5ad".
+    props_dir = joinpath(task_dir, "labelProps")
+    if isdir(props_dir)
+        for f in readdir(props_dir)
+            (startswith(f, value_name * ".") || startswith(f, value_name * "__")) || continue
+            p = joinpath(props_dir, f)
+            isfile(p) && rm(p)
+        end
     end
 
     # Commit under the image's lock, and only now — the deletes above can be a multi-GB label store,
     # which must not be held under it. Re-derive from the FRESH raw inside the transaction so a
     # concurrent task's registration isn't clobbered (`raw` above is only used to find what to delete).
     commit_state!(task_dir) do fresh
-        for field in ("labels", "label_props")
+        for field in ("labels", "label_props", "branch_labels")
             entries = get(fresh, field, Dict{String,Any}())
             fresh[field] = Dict{String,Any}(String(k) => v for (k, v) in entries
                                             if string(k) != value_name)

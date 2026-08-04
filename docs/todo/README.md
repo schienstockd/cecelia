@@ -71,7 +71,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   extends `PlotDataResponse` with `comparisons?` — no new route. Sets the `StatsResult` contract
   reused by `WHATS_NEW_PLAN.md` and `SKETCH_ENGINE_PLAN.md`. Supersedes
   `docs/prompts/stats-on-plots-prompt.md`.
-- `IMAGE_DELETE_PLAN.md` — collapse the five image-deletion entry points to **two**: a structured
+- `IMAGE_DELETE_PLAN.md` — **BUILT** (2026-08-04; kept as the rationale record). Collapsed the five image-deletion entry points to **two**: a structured
   delete modal on the Import page (whole images / versions + new active / label sets / all analysis)
   and Settings for automatic whole-project reclaim. Unlists the `importImages.remove` task rather than
   deleting it (the chain suite's real-task workhorse) and scraps the ViewerPanel label delete. New core

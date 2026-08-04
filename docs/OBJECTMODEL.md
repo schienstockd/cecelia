@@ -185,6 +185,26 @@ other version remains**. Removing `default` while a corrected variant is still p
 channel names/dims that variant inherits from `default` via versioned fallback — this is what makes
 "reclaim the original to free space, keep the corrected one" safe.
 
+**Dropping the analysis instead** — `reset_image_analysis!` (`storage.jl`) is the mirror operation and
+the two are strictly orthogonal: it deletes every child of `1/{uid}` **except `ANALYSIS_KEEP`**
+(`ccid.json` + `runlog.json`) and clears the `labels` / `label_props` / `branch_labels` registrations,
+while touching **no image store at all** — `filepath`, `imChannelNames`, `meta`, `attr`, the inclusion
+flags and `status` are left exactly as they were. So an image can be re-run from clean without
+re-importing or duplicating its zarr.
+
+Two details worth knowing:
+
+- It is a **keep-list, not a delete-list**. `ccid.json` is the only non-derived file in the dir, so a
+  delete-list would silently leak whatever analysis dir is added next. The `analysis keep-list`
+  assertion in `app/test/suite.jl` fails until a new sibling is deliberately classified.
+- `runlog.json` **survives**, which means the image table's run tag then describes *history, not current
+  state* — an image whose outputs are gone still shows its last successful run. Deliberate: losing the
+  record of what was done is worse than a stale-looking tag. `qc/` does not survive, since its findings
+  score outputs that no longer exist.
+
+`analysis_bytes_of(img)` reports what a reset would free, and is what the Settings storage box shows as
+**Analysis** — one accounting, so the box can't promise bytes the reset doesn't deliver.
+
 ### Julia API
 
 ```julia

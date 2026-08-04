@@ -1,7 +1,16 @@
 # Structured image delete — one modal on Import, one automatic sweep in Settings
 
-Status: **planning** (no branch). Supersedes `docs/TODO.md` **#00094**, which recorded the problem;
-this holds the design. Dominik, 2026-08-04.
+Status: **BUILT** — all four phases landed in one change (2026-08-04). Kept as the record of *why* the
+shape is what it is; the durable "how it works" now lives in `docs/UI.md` → *Deleting is one modal with
+four scopes*, `docs/OBJECTMODEL.md` → *Dropping the analysis*, `docs/MODULES.md` → *`hidden`*, and
+`docs/API.md`. Supersedes `docs/TODO.md` **#00094**. Dominik, 2026-08-04.
+
+**What shipped, against the phases below:** `DeleteImagesDialog.vue` (four scopes) + the plan/execute
+split with `ImageFileActions`; `utils/imageDelete.ts` (intersection, `default`-last, surviving
+new-active — 12 tests); `reset_image_analysis!` + `analysis_bytes_of` + `ANALYSIS_KEEP` in
+`app/src/storage.jl` (27 assertions, keep-list pinned by name); routes
+`/api/images/version/remove` + `/api/images/analysis/reset`; the `hidden` task-spec flag filtered in
+`useTaskDefs`; the ViewerPanel label delete removed; and `analysisBytes` in the Settings storage box.
 
 ## Goal
 
@@ -42,7 +51,11 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    - **Whole images** — today's behaviour (`/api/images/delete`, both dirs).
    - **Image versions** — a multi-select list of value names + a "new active version" picker
      (`remove_image_version!` already takes `new_default`).
-   - **Label sets** — a multi-select list (`/api/images/labels/delete` per set).
+   - **Label sets** — a multi-select list (`/api/images/labels/delete` per set). That route now also
+     sweeps the set's **companions**: the branch-label zarr (`branch_labels[vn]`, a separate registry
+     that had no delete anywhere before) and every `labelProps/` sidecar derived from the name
+     (`__tracks`, `__branch`, `.clustfeatures.json`). Prefix-driven, so a companion added later goes
+     too. Deleting a segmentation used to leave those as files nothing could reach.
    - **All analysis ("the numbers")** — keep `ccid.json` + the image stores, drop everything derived.
 3. **`importImages.remove` is UNLISTED from the UI, not deleted** (confirmed by Dominik, 2026-08-04,
    after the cost below surfaced). It stays registered and runnable — the duplicate *entry* goes, the
@@ -59,9 +72,18 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
 5. **Settings → Storage is untouched.** It is the *automatic, whole-project* site ("free every non-active
    version", "sweep debris"); the modal is the *deliberate, per-image* site. Neither grows the other's
    job. Its one gap — `imageBytes` ignores `1/{uid}` — is fixed by Phase 4, not by moving anything.
-6. **Multi-image selection resolves names by intersection**, like `CopyDialog.vue`: with several images
-   selected, the version and label-set lists offer only names *every* selected image carries, and the
-   modal says so. A name present on some images only is not silently skipped.
+6. **Multi-image selection resolves names by UNION, skipping the images that lack the name**
+   (Dominik, 2026-08-04, superseding the original intersection rule). Select three images where two
+   carry `B` and one doesn't: `B` is offered, and applied to the two that have it. Intersection was
+   worse than the problem it avoided — it made `B` undeletable until the selection was narrowed, and
+   the silent-no-op worry it was guarding against is answered by badging each chip `k/n` when the name
+   isn't on every image.
+
+   Two consequences, both real bugs if missed: the **new-active version must be resolved per image**
+   (the user's pick comes from the union, so it may not exist on a given image, and writing it into
+   that image's `_active` would name a version that was never registered), and the **"becomes
+   un-imported" warning counts images**, not the selection (taking `default` can strip one image of
+   everything while another keeps its corrected version).
 7. **"All analysis" uses a KEEP-list, never a delete-list.** Everything under `1/{uid}` except the
    keep-list (`labels/ labelProps/ gating/ populations/ mesh/ branchLabels/ spatialGraph/ spatialStats/
    stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A delete-list silently leaks whatever
