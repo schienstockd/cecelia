@@ -1097,6 +1097,58 @@ end
     end
 end
 
+# Deleting a label set must take its COMPANIONS with it. Before this, the route removed `labels[vn]`
+# and `label_props[vn]` and left `{vn}__tracks.h5ad`, `{vn}__branch.h5ad`, the branch zarr and the
+# clustfeatures sidecars behind as files nothing could reach — invisible, and counted as analysis
+# forever. The prefix rule is what makes it complete; the "B2 survives" case is what stops it being
+# too greedy.
+@testset "API: deleting a label set sweeps its tracks/branch/cluster companions" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-del-labels")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="a")
+
+        labels_dir = joinpath(img._dir, "labels");       mkpath(labels_dir)
+        branch_dir = joinpath(img._dir, "branchLabels"); mkpath(branch_dir)
+        props_dir  = joinpath(img._dir, "labelProps");   mkpath(props_dir)
+        mkpath(joinpath(labels_dir, "B.zarr")); write(joinpath(labels_dir, "B.zarr", "c"), "x")
+        mkpath(joinpath(branch_dir, "B.zarr")); write(joinpath(branch_dir, "B.zarr", "c"), "x")
+        for f in ("B.h5ad", "B__tracks.h5ad", "B__branch.h5ad",
+                  "B.clustfeatures.json", "B__tracks.clustfeatures.json",
+                  "B2.h5ad")                                  # B2 must NOT be swept by the "B" prefix
+            write(joinpath(props_dir, f), "x")
+        end
+        img.labels        = Dict("B"=>["B.zarr"], "B2"=>["B2.zarr"])
+        img.label_props   = Dict("B"=>"B.h5ad", "B2"=>"B2.h5ad")
+        img.branch_labels = Dict("B"=>["B.zarr"])
+        save!(img)
+
+        st, body = _post(api_images_delete_labels,
+                         Dict("projectUid"=>proj.uid, "imageUid"=>img.uid, "valueName"=>"B"))
+        @test st == 200 && JSON3.read(body).ok == true
+
+        @test !ispath(joinpath(labels_dir, "B.zarr"))                       # cell labels
+        @test !ispath(joinpath(branch_dir, "B.zarr"))                       # branch labels — the gap
+        for f in ("B.h5ad", "B__tracks.h5ad", "B__branch.h5ad",
+                  "B.clustfeatures.json", "B__tracks.clustfeatures.json")
+            @test !isfile(joinpath(props_dir, f))
+        end
+        @test isfile(joinpath(props_dir, "B2.h5ad"))                        # a sibling name survives
+
+        ri = init_object(proj.uid, img.uid)
+        @test !haskey(ri.labels, "B") && !haskey(ri.branch_labels, "B")     # registrations cleared
+        @test !haskey(ri.label_props, "B")
+        @test haskey(ri.labels, "B2")                                       # B2 still registered
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: task log + history" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()
@@ -2747,11 +2799,13 @@ end
         "/api/gating/pop/delete", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
         "/api/images/attr/create", "/api/images/attr/delete",
-        "/api/images/attr/set", "/api/images/channelnames",
+        "/api/images/analysis/reset", "/api/images/attr/set",
+        "/api/images/channelnames",
         "/api/images/delete", "/api/images/inclusion/set",
         "/api/images/labels/delete", "/api/images/meta/resync",
         "/api/images/meta/set", "/api/images/move",
         "/api/images/register", "/api/images/value-name-check",
+        "/api/images/version/remove",
         "/api/import/register-legacy", "/api/import/scan-legacy",
         "/api/lablog/append", "/api/lablog/capture",
         "/api/lablog/dismiss", "/api/napari/apply-movie-config",
@@ -2827,7 +2881,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 92
+    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 94
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

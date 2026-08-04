@@ -18,7 +18,10 @@ export function useTaskDefs(category: string) {
       const res = await fetch(`/api/tasks/definitions?category=${encodeURIComponent(category)}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as Record<string, TaskDef[]>
-      defs.value = data[category] ?? []
+      // `hidden` tasks stay registered and runnable (REPL, chains) but are kept out of the module
+      // page's function list — their job has a purpose-built UI. Filtered HERE, not at the route:
+      // ChainModule and the taskDefs label store fetch the same endpoint and must still see them.
+      defs.value = (data[category] ?? []).filter(d => !d.hidden)
     } catch (e) {
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, RETRY_DELAY))

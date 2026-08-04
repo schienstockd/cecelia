@@ -4,6 +4,7 @@
   "label": "Remove image data",
   "category": "Manage images",
   "env": ["local"],
+  "hidden": true,
   "resource_pool": "cpu",
   "params": [
     {

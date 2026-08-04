@@ -14,7 +14,6 @@ import {
 } from '../composables/useNapariAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napariAutoShow'
 import type { TitleCardCfg } from '../utils/batchMovie'
-import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
 
@@ -411,35 +410,6 @@ async function toggleLabel(valueName: string) {
   }
 }
 
-// two-click delete → the shared ConfirmDeleteButton (arms trash → warning, second click deletes).
-async function deleteLabel(valueName: string) {
-  const uid        = projectStore.napariImageUid
-  const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid) return
-
-  // Hide in napari first if visible
-  const files = napariImage.value?.labels?.[valueName] ?? []
-  if (visibleLabels.value[valueName] && files.length) {
-    await apiPushLabels({ labels: { [valueName]: files }, show: false,
-                          cache: settings.napariLabelsCache })
-  }
-
-  try {
-    const res = await fetch('/api/images/labels/delete', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ projectUid, imageUid: uid, valueName }),
-    })
-    if (res.ok) {
-      projectStore.removeLabelSet(uid, valueName)
-      const next = { ...visibleLabels.value }
-      delete next[valueName]
-      visibleLabels.value = next
-      settings.setLabelVisibility(uid, next)
-    }
-  } catch {}
-}
-
 function onTaskStatus(data: Record<string, unknown>) {
   const status = String(data.status ?? '')
   if (!settings.napariUpdateImage) return
@@ -642,10 +612,9 @@ onUnmounted(() => {
                 @click="toggleLabel(row.valueName)"
                 v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Napari' : 'Show labels in Napari'"
               ><i class="pi pi-eye" /></button>
-              <ConfirmDeleteButton class="row-act"
-                title="Delete label set from disk"
-                armed-title="Click again to permanently delete this label set"
-                @confirm="deleteLabel(row.valueName)" />
+              <!-- No delete here. Deleting a label set is one scope of the Import page's Delete modal
+                   (docs/todo/IMAGE_DELETE_PLAN.md Decision 4) — the viewer shows and hides layers, it
+                   does not curate what exists on disk. -->
             </template>
           </div>
         </div>
@@ -833,17 +802,12 @@ onUnmounted(() => {
 }
 .viewer-label-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .opt-btn.danger:hover { border-color: var(--cc-danger); color: var(--cc-danger); }
-/* row action icons (eye / directions / trash): hidden until the row is hovered to keep the narrow
-   sidebar uncluttered; an ACTIVE toggle (shown layer/tracks) stays visible so state is readable */
+/* row action icons (eye / directions): hidden until the row is hovered to keep the narrow sidebar
+   uncluttered; an ACTIVE toggle (shown layer/tracks) stays visible so state is readable */
 .row-act { opacity: 0; transition: opacity 0.12s; }
 /* hover-reveal: the row's actions stay hidden until hover, but an ENGAGED one must always show
    (it is the only indication the layer/track is on). Keyed on .cc-btn-on, the state primitive. */
 .viewer-label-row:hover .row-act, .row-act.cc-btn-on { opacity: 1; }
-/* the delete affordance is the shared ConfirmDeleteButton (its own .cc-del button); apply the same
-   hover-reveal to it via :deep, and keep it visible while armed so the confirm step never vanishes. */
-.viewer-label-row :deep(.cc-del) { opacity: 0; transition: opacity 0.12s; }
-.viewer-label-row:hover :deep(.cc-del), .viewer-label-row :deep(.cc-del.armed) { opacity: 1; }
-
 /* ── Option toggles ──────────────────────────────────────────────────── */
 
 .viewer-opts {

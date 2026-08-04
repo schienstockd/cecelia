@@ -2658,6 +2658,83 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Analysis reset: drop everything derived, keep the image ────────────────────
+# The other half of the delete story (docs/todo/IMAGE_DELETE_PLAN.md): `remove_image_version!` sheds
+# STORES, `reset_image_analysis!` sheds NUMBERS, and neither may do the other's job. The keep-list is
+# asserted by NAME rather than by count, so adding a new analysis dir to the image layout fails here
+# until it is deliberately classified (Decision 7 — a delete-list would have leaked it silently).
+@testset "Analysis reset keeps the image and drops the numbers" begin
+    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "gating"])
+
+    proj = create_project!(name="reset-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="a")
+
+    # an image store (must survive) …
+    zdir = joinpath(img_zero_dir(img), "import.ome.zarr"); mkpath(zdir)
+    write(joinpath(zdir, "chunk"), rand(UInt8, 2048))
+    img.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
+    img.im_channel_names = Dict{String,Any}("default"=>["ch0"], "_active"=>"default")
+    img.meta   = Dict{String,Any}("SizeC"=>1, "SizeT"=>1, "SizeZ"=>3)
+    img.attr   = Dict{String,Any}("treatment"=>"CTRL")
+    img.status = "done"
+    img.labels = Dict("A"=>["A.zarr"])          # not versioned — a plain valueName → files map
+    img.label_props = Dict("A"=>"A.h5ad")
+    save!(img)
+
+    # … and one file in every derived location, plus the things the keep-list protects
+    for sub in ("labels", "labelProps", "populations", "stats", "mesh", "qc", "cl",
+                "spatialGraph", "spatialStats", "branchLabels")
+        mkpath(joinpath(img._dir, sub))
+        write(joinpath(img._dir, sub, "x.bin"), rand(UInt8, 1024))
+    end
+    write(joinpath(img._dir, "runlog.json"), "[]")
+    mkpath(joinpath(img._dir, "gating"))
+    write(joinpath(img._dir, "gating", "A.json"), "{}")        # hand-drawn gates — must SURVIVE
+
+    # the storage box's number IS what a reset would free — one accounting, so the box can't promise
+    # bytes the reset doesn't deliver
+    predicted = analysis_bytes_of(img)
+    @test predicted > 0
+
+    freed, dropped = reset_image_analysis!(img)
+
+    @test freed == predicted
+    @test analysis_bytes_of(img) == 0                              # nothing derived left to free
+    @test freed > 0
+    @test "labels" in dropped && "qc" in dropped && "spatialGraph" in dropped
+    for sub in ("labels", "labelProps", "populations", "stats", "mesh", "qc", "cl",
+                "spatialGraph", "spatialStats", "branchLabels")
+        @test !ispath(joinpath(img._dir, sub))
+    end
+    # the keep-list survives, by name
+    @test isfile(joinpath(img._dir, "ccid.json"))
+    @test isfile(joinpath(img._dir, "runlog.json"))
+    # gate polygons are user work, not output: a re-run under the same value_name reuses them
+    @test isfile(joinpath(img._dir, "gating", "A.json"))
+    @test !("ccid.json" in dropped) && !("runlog.json" in dropped) && !("gating" in dropped)
+
+    # NO store is shed — that is remove_image_version!'s job (Decision 9)
+    @test isdir(zdir)
+
+    ri = init_object(proj.uid, img.uid)
+    @test ri isa CciaImage
+    @test Cecelia.versioned_get(ri.filepath, "default") == "import.ome.zarr"   # version untouched
+    @test ri.filepath["_active"] == "default"
+    @test ri.status == "done"                                                  # still imported
+    @test ri.meta["SizeC"] == 1                                                # calibration/dims kept
+    @test ri.attr["treatment"] == "CTRL"                                       # annotations kept
+    # the analysis REGISTRATIONS are cleared, so nothing points at a deleted file
+    @test isempty(ri.labels)
+    @test isempty(ri.label_props)
+
+    # idempotent: a second reset on an already-clean image is a no-op, not an error
+    freed2, dropped2 = reset_image_analysis!(ri)
+    @test freed2 == 0 && isempty(dropped2)
+
+    rm(proj.root; recursive=true)
+end
+
 # ── A task crash is recorded in the per-image log, not just the console ──────
 # Regression: a Julia-side failure (caught in _execute_job!) used to only @warn to the console —
 # it never reached {img._dir}/logs/{fun}.log, so a crashed task looked like it just stopped

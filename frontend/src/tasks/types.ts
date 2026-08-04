@@ -48,6 +48,12 @@ export interface TaskDef {
                           // the whiteboard Live view auto-shows a QC thumbnail linked to this node
   requires?: { axes?: string[] }  // task-applicability gate: axis codes the image must carry (e.g. ["T"]);
                                   // absent = applies to any image. See utils/taskGating.ts + docs/MODULES.md.
+  hidden?: boolean        // keep this task OUT of the module page's function list, while leaving it
+                          // registered, runnable from the REPL, and available as a chain node. For a
+                          // task whose job a purpose-built UI now does better — `importImages.remove`
+                          // is the Delete modal's versions scope. Filtered in `useTaskDefs` (the
+                          // module-page path) and NOWHERE else on purpose: the chain whiteboard and
+                          // the label store read the same route and must still see it.
   previewable?: boolean   // can the task preview run this task's compute over the visible region?
                           // DECLARED in Julia (`task_previewable`, tasks/task.jl) and stamped onto the
                           // spec by the definitions route — never inferred from the params here, which

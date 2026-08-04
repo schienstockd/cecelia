@@ -69,13 +69,15 @@ of versions that would be removed. Shape mirrors what the frontend renders + pos
 """
 function project_storage_summary(proj_uid::String)::Dict{String,Any}
     proj = load_project(proj_uid)
-    reclaimable   = Dict{String,Any}[]
-    total_reclaim = 0
-    image_bytes   = 0   # image OME-ZARR versions only — NOT labels/labelProps/other task-dir data
+    reclaimable    = Dict{String,Any}[]
+    total_reclaim  = 0
+    image_bytes    = 0   # image OME-ZARR versions only (the `0/` dir)
+    analysis_bytes = 0   # everything DERIVED (the `1/` dir minus ANALYSIS_KEEP)
 
     for s in proj._sets, img in s._images
         st = image_storage(img)
-        image_bytes += sum(v.bytes for v in st.versions; init = 0)
+        image_bytes    += sum(v.bytes for v in st.versions; init = 0)
+        analysis_bytes += analysis_bytes_of(img)
         if !isempty(st.reclaimable) && st.reclaimableBytes > 0
             push!(reclaimable, Dict{String,Any}(
                 "imageUid"      => img.uid,
@@ -95,7 +97,12 @@ function project_storage_summary(proj_uid::String)::Dict{String,Any}
     Dict{String,Any}(
         "diskTotal"        => ds.total,
         "diskAvailable"    => ds.available,
-        "imageBytes"       => image_bytes,   # image stores only (see above) — not the whole project dir
+        "imageBytes"       => image_bytes,   # image stores only (the `0/` dir)
+        # Everything DERIVED, so the one screen that reports disk usage isn't silent about the half of
+        # the project it can't otherwise see. Reported, never auto-freed: dropping analysis is a
+        # deliberate per-image act in the Import page's Delete modal, not something a project-wide
+        # "free up space" button should do (docs/todo/IMAGE_DELETE_PLAN.md Decision 5).
+        "analysisBytes"    => analysis_bytes,
         "reclaimableBytes" => total_reclaim,
         "reclaimable"      => reclaimable,
         # Leftovers a cancelled/crashed run abandoned: staging dirs, import scratch, unregistered and
@@ -105,6 +112,89 @@ function project_storage_summary(proj_uid::String)::Dict{String,Any}
         # uses this same detector.
         "debris"           => store_debris_summary(proj),
     )
+end
+
+# ── Analysis reset ────────────────────────────────────────────────────────────
+
+"""
+    ANALYSIS_KEEP
+
+The only entries under an image's metadata dir (`1/{uid}`) that are NOT analysis output, and therefore
+the only ones `reset_image_analysis!` keeps.
+
+A KEEP-list, deliberately, not a delete-list (`docs/todo/IMAGE_DELETE_PLAN.md` Decision 7): a
+delete-list silently leaks whatever analysis dir is added next — a new `spatialStats/`-alike would
+survive a reset nobody realised had stopped being complete. Adding a sibling here is a decision, and
+the `analysis keep-list` testset fails until it is made.
+
+- `ccid.json` — identity, calibration, versioned filepaths. Not output.
+- `runlog.json` — the record of what was RUN (Decision 8). Kept on purpose, which means the image
+  table's run tag reflects **history, not current state**: an image whose outputs are gone still shows
+  its last successful run. Losing the provenance is worse than a stale-looking tag.
+- `gating/` — the gate definitions (`{vn}.json`, `{vn}__tracks.json`). Hand-drawn polygons are **user
+  work, not derived output**: nothing can regenerate them, and re-running a segmentation under the same
+  value_name makes the existing strategy apply to the new cells. This is also what
+  `/api/images/labels/delete` does when it drops a single label set, so the two scopes agree — neither
+  destroys gates (Decision 13).
+
+`qc/` is NOT kept: its findings score outputs that no longer exist, so keeping them would assert a QC
+verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/` and the
+rest ARE output — every one is recomputable from the labels plus a task run.
+"""
+const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating"])
+
+"""
+    analysis_bytes_of(img) -> Int
+
+On-disk size of everything DERIVED for one image: its metadata dir minus `ANALYSIS_KEEP`, i.e. exactly
+what `reset_image_analysis!` would free. Walks the tree, so it belongs behind the on-demand storage
+scan, not on a per-request path.
+"""
+function analysis_bytes_of(img::CciaImage)::Int
+    isdir(img._dir) || return 0
+    sum((_path_bytes(joinpath(img._dir, e)) for e in readdir(img._dir) if !(e in ANALYSIS_KEEP));
+        init = 0)
+end
+
+"""
+    reset_image_analysis!(img; on_log) -> (freed_bytes, dropped::Vector{String})
+
+Drop everything derived from an image while keeping the image itself: `rm -r` every child of
+`1/{uid}` except `ANALYSIS_KEEP`, then clear the analysis registrations in `ccid.json`
+(`labels`, `label_props`, `branch_labels`).
+
+**Touches no image store.** `filepath` (and every version it registers), `imChannelNames`, `meta`,
+`attr`, `included`/`note`/`starred` and `status` are all left exactly as they were — shedding a store
+is `remove_image_version!`'s job, and the two are deliberately orthogonal
+(`docs/todo/IMAGE_DELETE_PLAN.md` Decision 9: the derived version is the one you keep, so dropping the
+numbers must leave every store intact).
+
+Same lock discipline as `remove_image_version!`: the deletes can be many GB, so they run OUTSIDE the
+image lock and the single `commit_state!` afterwards re-reads fresh inside it.
+"""
+function reset_image_analysis!(img::CciaImage; on_log::Function = _ -> nothing)::Tuple{Int,Vector{String}}
+    isdir(img._dir) || return (0, String[])
+
+    freed   = 0
+    dropped = String[]
+    for entry in readdir(img._dir)
+        entry in ANALYSIS_KEEP && continue
+        p = joinpath(img._dir, entry)
+        freed += _path_bytes(p)
+        on_log("[INFO] Removing: $p")
+        rm(p; recursive = true)
+        push!(dropped, entry)
+    end
+
+    # One commit, re-read inside the lock so a concurrent task's registration isn't clobbered.
+    commit_state!(img) do raw
+        for field in ("labels", "label_props", "branch_labels")
+            haskey(raw, field) && (raw[field] = Dict{String,Any}())
+        end
+    end
+
+    on_log("[INFO] Dropped $(length(dropped)) analysis entr$(length(dropped) == 1 ? "y" : "ies").")
+    (freed, dropped)
 end
 
 # ── Shared removal core ───────────────────────────────────────────────────────

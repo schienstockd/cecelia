@@ -376,6 +376,27 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 Limits are starting defaults only — each is adjustable live in Settings, so throttle whenever you
 need (e.g. drop `io` to 1 when importing over a slow network share).
 
+### `hidden` — a registered task with no module-page entry
+
+```json
+{ "fun_name": "importImages.remove", "hidden": true }
+```
+
+Keeps the task **out of the module page's function list** while leaving it fully registered: runnable
+from the REPL via `run_task`, dispatchable over the WS rail, and available as a **chain node**. Use it
+when a purpose-built UI now does the task's job better, but the task itself still earns its place.
+
+The one user today is `importImages.remove` ("Remove image data"): the Import page's Delete modal owns
+that interaction now (`docs/UI.md` → *Deleting is one modal with four scopes*), but the task is still a
+legitimate chain step — correct an image, then free the original — and it is the package suite's
+real-task workhorse for chain end-to-end, fault-isolation and scope tests, which is why it was hidden
+rather than deleted.
+
+**Filtered in `useTaskDefs` (the module-page path) and nowhere else, on purpose.** The chain whiteboard
+and the `taskDefs` label store hit the same `/api/tasks/definitions` and must still see hidden tasks —
+the whiteboard to offer the node, the label store to resolve its name for run tags. Filtering at the
+route would silently take the chain capability away too, which is the opposite of the intent.
+
 ### Requires-axes — axis-shape gating
 
 A task that only makes sense on a particular image shape (a timelapse for tracking, a Z-stack for
