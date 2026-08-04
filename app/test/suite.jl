@@ -2775,6 +2775,13 @@ end
     try
         @test timedwait(() -> any(r -> r.id == tid && r.status == "running", list_tasks()), 30.0) === :ok
         row = only(filter(r -> r.id == tid, list_tasks()))
+        # The snapshot's FIELD NAMES are a contract with two independent consumers that share no runtime:
+        # `_reconcile_snapshot!` (api/task_console.jl) and `adoptableTasks`
+        # (frontend/src/utils/runningTasks.ts), each of which silently blanks a column if one is renamed.
+        # Pinned here so a rename fails a test instead — the frontend pins its own half in
+        # runningTasks.test.ts.
+        @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :chain_run_id, :chain_node_id,
+                            :status, :queued_at, :started_at]), Set(keys(row)))
         # both are ISO-8601 UTC to the millisecond — one wire format for the whole rail
         @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.queued_at)
         @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.started_at)
@@ -2792,6 +2799,16 @@ end
     @test !any(r -> r.id == tid, list_tasks())            # record gone…
     @test !isnothing(task_started_at(tid))                # …but the start outlived it
     forget_task_start!(tid)
+
+    # A chain node reports WHICH node it is, not just which run — the GUI keys a chain row
+    # `runId::nodeId::imageUid`, so a snapshot row without the node id can't be matched to one and the
+    # same work would be listed twice (once adopted, once from the chain events).
+    rec = Cecelia._register_task!("cn$(rand(1000:9999))", "segment.cellpose", "gpu", img.uid,
+                                 "run1", _ -> nothing; chain_node_id = "n3")
+    let row = only(filter(r -> r.id == rec.id, list_tasks()))
+        @test row.chain_run_id == "run1" && row.chain_node_id == "n3"
+    end
+    Cecelia._deregister_task!(rec.id)
 
     # a task still QUEUED has a queue time and NO start — so a client shows a wait, not a run of 0s
     rec = Cecelia._register_task!("q$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
