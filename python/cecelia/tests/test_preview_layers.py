@@ -168,6 +168,40 @@ class PreviewLayersTest(unittest.TestCase):
         added = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
         self.assertNotEqual(tuple(added[0].contrast_limits), (0, 10))
 
+    def test_a_contrast_window_survives_a_re_preview(self):
+        """THE BUG. A re-preview removes and re-adds its layers, so every one reset the contrast the
+        user had just set — and a re-preview is what moving the T or Z slider triggers, while scrolling
+        through t and z is exactly how you judge a correction. Set it once, scroll, lose it.
+        """
+        added = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        added[0].contrast_limits = (12, 640)                 # the user dials in a window
+        again = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        self.assertEqual(tuple(again[0].contrast_limits), (12, 640))
+
+    def test_a_hand_picked_colormap_outranks_the_source_mirror(self):
+        """The mirror is a DEFAULT, not a policy. Re-imposing the source's colour on every scroll would
+        undo a deliberate choice the user can only have made after seeing the mirrored one."""
+        self.v.layers['CH1'].colormap = 'magenta'
+        added = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        self.assertEqual(added[0].colormap.name, 'magenta')  # mirrored on first show
+        added[0].colormap = 'green'                          # ...then overridden by hand
+        again = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        self.assertEqual(again[0].colormap.name, 'green')
+
+    def test_a_hidden_preview_layer_stays_hidden(self):
+        added = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        added[0].visible = False
+        again = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        self.assertFalse(again[0].visible)
+
+    def test_props_are_restored_by_NAME_so_a_changed_channel_set_gets_defaults(self):
+        """Keyed by layer name: a parameter change that corrects a different channel finds nothing to
+        restore, rather than inheriting a window dialled in for another channel's scale."""
+        first = self._show([self._layer('image', 'CH1 AF', 'uint16', 900, source='CH1')])
+        first[0].contrast_limits = (12, 640)
+        other = self._show([self._layer('image', 'CH2 AF', 'uint16', 400, source='CH2')])
+        self.assertNotEqual(tuple(other[0].contrast_limits), (12, 640))
+
     def test_an_unknown_or_absent_source_still_previews(self):
         """Best-effort: a closed channel, or a pre-protocol-3 worker sending no `source`, must cost the
         colour and nothing else. The preview is the point; the colour is a courtesy."""

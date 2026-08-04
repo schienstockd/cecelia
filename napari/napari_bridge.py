@@ -585,6 +585,15 @@ class NapariState:
             self._detach_view_listener()
             return
 
+        # Carry the user's display settings across the re-preview. Replacing the layers is what resets
+        # them: moving the T or Z slider fires `viewChanged` → re-preview → remove + re-add, so a
+        # contrast window the user had just dialled in was wiped every time they scrolled — while
+        # scrolling through t/z is exactly how you judge a correction. Keyed by layer NAME, so a
+        # parameter change that outputs different channels simply finds nothing to restore.
+        kept = {name: napari_utils.capture_layer_props(self._viewer.layers[name])
+                for name in sorted(getattr(self, "_preview_layers", set()))
+                if name in self._viewer.layers}
+
         # replace the previous preview wholesale: a parameter change can alter which channels a task
         # even outputs, so leaving stale layers behind would show a mix of two parameter sets
         self._remove_preview_layers(stem)
@@ -630,6 +639,12 @@ class NapariState:
                 self._mirror_source_colormap(layer, spec.get("source"))
             else:
                 raise ValueError(f"unknown preview layer kind {kind!r}")
+
+            # Last, so the user's own adjustment outranks the defaults above — including a colormap they
+            # changed by hand, which should not be reverted to the source channel's on every scroll.
+            # Guarded inside `apply_layer_props`: a restored contrast window can fall outside the new
+            # block's range, and skipping it is better than failing the preview.
+            napari_utils.apply_layer_props(layer, kept.get(layer_name))
 
             self._preview_layers.add(layer_name)
             added.append(layer)
