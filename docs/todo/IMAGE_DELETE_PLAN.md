@@ -44,8 +44,9 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
      (`remove_image_version!` already takes `new_default`).
    - **Label sets** — a multi-select list (`/api/images/labels/delete` per set).
    - **All analysis ("the numbers")** — keep `ccid.json` + the image stores, drop everything derived.
-3. **`importImages.remove` is UNLISTED from the UI, not deleted.** It stays registered and runnable.
-   Reason: `app/test/suite.jl` uses it as its real-task workhorse in ~15 testsets (chain end-to-end,
+3. **`importImages.remove` is UNLISTED from the UI, not deleted** (confirmed by Dominik, 2026-08-04,
+   after the cost below surfaced). It stays registered and runnable — the duplicate *entry* goes, the
+   task does not. `app/test/suite.jl` uses it as its real-task workhorse in ~15 testsets (chain end-to-end,
    fault isolation, scope resolution, `_spec_output_value_name`, registry dispatch) *because* it does
    genuine ccid.json + disk work with no external binary, and it is a legitimate **chain node** (a
    pipeline that corrects an image and then frees the original). Deleting the struct would rip out the
@@ -61,11 +62,31 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
 6. **Multi-image selection resolves names by intersection**, like `CopyDialog.vue`: with several images
    selected, the version and label-set lists offer only names *every* selected image carries, and the
    modal says so. A name present on some images only is not silently skipped.
-7. **"All analysis" uses a KEEP-list, never a delete-list.** `ccid.json` is the only non-derived file in
-   `1/{uid}`; everything else (`labels/ labelProps/ gating/ populations/ mesh/ branchLabels/
-   spatialGraph/ spatialStats/ stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A
-   delete-list silently leaks whatever analysis dir is added next. The keep-list is pinned by a package
-   test that fails when a new sibling appears.
+7. **"All analysis" uses a KEEP-list, never a delete-list.** Everything under `1/{uid}` except the
+   keep-list (`labels/ labelProps/ gating/ populations/ mesh/ branchLabels/ spatialGraph/ spatialStats/
+   stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A delete-list silently leaks whatever
+   analysis dir is added next. The keep-list is pinned by a package test that fails when a new sibling
+   appears.
+8. **The keep-list is `ccid.json` + `runlog.json`** (Dominik: keep the run log). Consequence, accepted
+   deliberately: the image-table run tag then reflects **history, not current state** — an image whose
+   outputs are gone still shows "last run: Cleanup · Cellpose correct". That is preferable to losing
+   the record of what was done. `qc/` does **not** survive (my call, not Dominik's): its findings score
+   outputs that no longer exist, so keeping them would assert a QC verdict about nothing.
+9. **The analysis reset never touches image versions**, and the versions scope never touches analysis —
+   two orthogonal scopes. Rationale (Dominik): *the derived version is the one you keep; once everything
+   is derived you no longer need the raw and the intermediates.* So dropping the numbers must leave
+   every store intact, and shedding stores is a separate, deliberate act.
+10. **The versions scope pre-selects every NON-ACTIVE version**, with the new-active picker defaulting
+   to the version that is already active. This follows from Decision 9's rationale: the common case is
+   "I have my corrected image, drop the raw and the intermediates", which is exactly
+   `reclaimable_versions` (`app/src/storage.jl`) — the modal is that same reclaim, scoped to the
+   selection and reviewable, rather than whole-project and automatic. Nothing is deleted without the
+   confirm, so a pre-selection is a suggestion, not an action.
+11. **Multi-version removal orders `default` LAST.** Removing `default` while other versions remain is
+   safe (`remove_image_version!`'s safe-primary rule only un-imports when nothing survives), so
+   removing it first is fine — but removing the others first and `default` last, in a loop that ends up
+   taking all of them, is what correctly un-imports the image at the end rather than mid-loop. Assert
+   the ordering in a package test.
 
 ## Architecture
 
@@ -75,9 +96,10 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
 # app/src/storage.jl — beside remove_image_version!, sharing its lock discipline
 reset_image_analysis!(img::CciaImage; on_log) -> (freedBytes, dropped::Vector{String})
 ```
-`rm -r`s every child of `img._dir` except the keep-list (Decision 7), then in ONE `commit_state!`
-clears the analysis registrations (`labels`, `label_props`, `branch_labels`) while leaving `filepath`,
-`imChannelNames`, `meta`, `attr`, `included`/`note`/`starred` and `status` alone. Same discipline as
+`rm -r`s every child of `img._dir` except the keep-list — `ccid.json` + `runlog.json`, Decisions 7 and
+8 — then in ONE `commit_state!` clears the analysis registrations (`labels`, `label_props`,
+`branch_labels`) while leaving `filepath` **entirely alone** (Decision 9: no store is shed here), plus
+`imChannelNames`, `meta`, `attr`, `included`/`note`/`starred` and `status`. Same discipline as
 `remove_image_version!`: delete outside the lock (multi-GB), commit inside it, re-read fresh.
 
 **Routes** (`api/src/routes.jl`, registered in `server.jl`, added to the route-list test):
@@ -111,14 +133,8 @@ is mostly checking that the *backend* tasks refuse a filepath-less image cleanly
 
 ## Open questions
 
-- **Does `runlog.json` survive an analysis reset?** Keeping it means the table shows a last-run tag for
-  an image with no output; dropping it loses the provenance of what *was* done. Leaning keep, and let
-  the run tag be honest about history rather than current state.
-- **Does the analysis reset also drop derived image *versions*** (`ccidDriftCorrected.ome.zarr`), or is
-  that strictly the versions scope? Leaning strictly-versions — one scope, one meaning.
-- **Multi-version removal ordering.** Removing several versions in one go must not trip the
-  safe-primary rule mid-loop (remove `default` first while others remain → fine; remove others first
-  then `default` → un-imports). Fix by ordering `default` last, and test it.
+None outstanding — the three that were open (run-log survival, whether the reset sheds versions,
+multi-version ordering) are Decisions 8, 9 and 11, answered by Dominik 2026-08-04.
 
 ## Reservations
 
