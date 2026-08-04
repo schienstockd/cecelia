@@ -522,6 +522,9 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                      task_id          = tid,
                      pool_name        = node.resource_pool,
                      chain_run_id     = run.id,
+                     # …and WHICH node, so a client can match this task to the node it sees in
+                     # `chain:node:*` events (the GUI keys a chain row `runId::nodeId::imageUid`).
+                     chain_node_id    = node.id,
                      on_log           = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
                      on_status_change = rec -> begin
                          # Mirror the pool worker picking up the job into the node state,

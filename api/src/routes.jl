@@ -1108,12 +1108,54 @@ end
 # GET /api/images/tasklog?projectUid&imageUid&fun → the raw task log for one fun on one image.
 # Reads {img._dir}/logs/{fun}.log (written by _wrap_log_with_file in the scheduler). Read-only;
 # backs the MCP observer's get_task_log tool. Returns exists=false + "" when no log exists yet.
+# The per-image task log is CUMULATIVE: one file per (image, fun_name), appended by every run, with each
+# line stamped in LOCAL time by `_wrap_log_with_file`. A caller that wants ONE run's output — the GUI
+# backfilling the log of a task that was already running when the tab connected — passes that task's
+# `started_at`, and the slice happens HERE: this is the process whose clock wrote the stamps, so it is the
+# only place where the local/UTC comparison has a single answer.
+#
+# Julia's stdlib carries no timezone database (and TimeZones.jl is not a dependency), so the offset is
+# taken as `now() - now(UTC)`, rounded to the minute. That is the CURRENT offset, so a run that straddled a
+# DST change could be sliced up to an hour off — acceptable for a live task's log, which is what this is for.
+_tasklog_local_offset() = round(Dates.now() - Dates.now(UTC), Dates.Minute)
+
+const _TASKLOG_STAMP = r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]"
+
+"""
+    _tasklog_since(content, since) -> String
+
+Keep only the lines a run wrote, given its ISO-8601 UTC start (`TASK_TS_FORMAT`).
+
+An UNSTAMPED line inherits the previous line's fate rather than being dropped on its own, so a log line
+that itself contained a newline survives intact. An unparseable `since` returns the content untouched — a
+backfill showing too much beats one showing nothing.
+"""
+function _tasklog_since(content::AbstractString, since::AbstractString)
+    t0 = try
+        DateTime(String(since), TASK_TS_FORMAT) + _tasklog_local_offset()
+    catch
+        return String(content)
+    end
+    out  = IOBuffer()
+    keep = false
+    for line in split(String(content), '\n'; keepempty=true)
+        m = match(_TASKLOG_STAMP, line)
+        if !isnothing(m)
+            ts   = try DateTime(m.captures[1], dateformat"yyyy-mm-dd HH:MM:SS") catch; nothing end
+            keep = isnothing(ts) ? keep : ts >= t0
+        end
+        keep && println(out, line)
+    end
+    String(take!(out))
+end
+
 function api_images_tasklog(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
     project_uid = get(query, "projectUid", "")
     image_uid   = get(query, "imageUid", "")
     fun         = get(query, "fun", "")
+    since       = get(query, "since", "")
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
     isempty(fun)         && return 400, JSON3.write((; error="fun required"))
@@ -1131,6 +1173,7 @@ function api_images_tasklog(req::HTTP.Request)
     isfile(logfile) || return 200, JSON3.write((; projectUid=project_uid, imageUid=image_uid,
                                                   fun, exists=false, content=""))
     content = read(logfile, String)
+    isempty(since) || (content = _tasklog_since(content, since))
     200, JSON3.write((; projectUid=project_uid, imageUid=image_uid, fun,
                         exists=true, content, bytes=sizeof(content)))
 end

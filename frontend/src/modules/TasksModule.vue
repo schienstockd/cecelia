@@ -10,6 +10,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import { moduleColor } from '../utils/taskModule'
+import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 
@@ -63,6 +64,14 @@ watch(
 
 function select(t: TaskEntry) {
   selectedId.value = t.id
+  // An adopted row (rebuilt after a reload) only has lines from when this tab connected — the rest is on
+  // disk. Fetched when the row is actually opened rather than on adoption, so twenty rows don't fire
+  // twenty requests for output nobody looked at.
+  if (t.adopted && !t.log.length) {
+    void fetchLogBackfill({
+      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
+    }).then(lines => { if (lines.length) tasks.setLog(t.id, lines) })
+  }
 }
 
 function cancelTask(t: TaskEntry) {
@@ -85,8 +94,11 @@ function rerun(t: TaskEntry) {
 // scheduler-backed tasks. A data patch (module 'maintenance') is a non-scheduler producer of the same
 // task frames — it has no fun_name the scheduler knows, so it can't be rerun here (relaunch it from
 // Settings → Data patches instead).
+// …and an ADOPTED row (rebuilt from GET /api/tasks after a reload) has no params — `rerun` sends them, so
+// offering it would silently relaunch the task with JSON defaults instead of what it is actually running.
 const canRerun = (t: TaskEntry) =>
-  (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') && t.module !== 'maintenance'
+  (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') &&
+  t.module !== 'maintenance' && !t.adopted
 
 async function copyLog() {
   if (!selected.value?.log.length) return
@@ -166,6 +178,8 @@ const FILTERS: ChipOption[] = [
                 <span class="row-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
                 {{ t.label }}
               </span>
+              <i v-if="t.adopted" class="pi pi-cloud-download adopted-badge cc-muted cc-fs-2xs"
+                 v-tooltip.right="'Already running when this tab opened — no log or rerun'" />
               <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
             </div>
             <div class="row-image cc-muted cc-fs-xs">{{ t.imageName }}</div>
@@ -374,6 +388,7 @@ const FILTERS: ChipOption[] = [
 .chain-pill .pi { font-size: var(--cc-fs-3xs); flex-shrink: 0; }
 .chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.adopted-badge { flex-shrink: 0; }   /* size via cc-fs-2xs — don't shadow cc-muted here */
 .row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 .row-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

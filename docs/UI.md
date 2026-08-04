@@ -1329,6 +1329,48 @@ through that same `dispatch`. The reconstruction lives in `utils/taskReconcile.t
   frame reaches you like any other. Do **not** add a second poller; `taskReconcile.ts` owns
   `/api/tasks/recent` and `utils/runningTasks.ts` owns `/api/tasks`.
 
+### …and work that started before this tab did is adopted, not ignored
+
+The other half of the same problem. The `tasks` store is built purely from WS events **this tab**
+received, and nothing ever asked what was already running — so a page reload mid-run (or a second tab, or
+the app opened on another machine) showed an **empty** task list while the backend segmented 20 images,
+and each terminal frame then landed on a row that didn't exist (`setStatus` matches by id and returns
+early). The tasks never appeared, not even as they finished — while the plots refreshed anyway, because
+`bumpDataVersion` keys off the frame's `imageUid` rather than a row.
+
+So on every (re)connect — and again when a project loads, since the socket usually opens first — the ws
+store fetches `GET /api/tasks` and adopts the in-flight set (`adoptableTasks` in `utils/runningTasks.ts`,
+the module that already owns that endpoint). Adopted rows show a true elapsed (the snapshot carries
+`started_at`), take live progress/log frames from then on, and **can be cancelled** — `task:cancel` goes
+by the scheduler's own id.
+
+- **They are marked `adopted`, and Re-run is withheld.** The snapshot has no params and `rerun()` sends
+  them, so the button would silently relaunch the task with JSON defaults. A `pi-cloud-download` badge
+  says so on the row.
+- **The log backfills from disk on first open** (`utils/taskLogBackfill.ts`). The scheduler tees every line
+  to `{img._dir}/logs/{fun_name}.log`, so the output from before this tab connected is not lost — but that
+  file is CUMULATIVE (one per image+fun, appended by every run), so the fetch passes the task's
+  `started_at` as `since` and the server slices it. Slicing is server-side because the file's stamps are
+  local time and the server is the process whose clock wrote them (`_tasklog_since`). Fetched lazily, on
+  the click that opens the log — twenty adopted rows must not fire twenty requests for output nobody
+  asked to see. No `started_at` (a queued task, an older backend) → no fetch, because the unsliced file
+  would show a previous run's output as this row's.
+- **Chain nodes are adopted under the key their own frames use** (`runId::nodeId::imageUid`), so the next
+  `chain:node:*` frame updates that row instead of adding a second one — which is why `list_tasks()`
+  reports `chain_node_id`. A node with no node id is skipped: a **set-scope** node bypasses `run_task`, so
+  it has no record at all. (The chain *board* recovers a reloaded run separately and more completely, from
+  the run's own persisted state via `/api/chains/run` — it has every node, not just the in-flight ones.
+  This is only the task list's copy.)
+- **Also skipped**: a row this tab already tracks (its own entry is richer — matched on the scheduler id,
+  which for a chain row lives on `backendTaskId`), an image the loaded project doesn't have (the snapshot
+  carries no `projectUid`, so it may be another project's work), and anything not `queued`/`running`.
+- **It does NOT copy the console's retire-on-miss rule.** `api/task_console.jl` drops a row that vanishes
+  from the snapshot and tallies it "ended", because it may never see the terminal frame; the browser has
+  the outcome poll above and recovers the *real* outcome instead of guessing.
+- `runningTaskCount()` still counts the **whole** snapshot, including the rows adoption drops — "is the
+  backend busy?" is a different question from "what can this tab show?", and a quit must warn about a
+  chain node mid-write.
+
 ### Task elapsed time — the backend's timestamps, one formatter, one clock
 
 **A task's start and end come from the backend, not from when this tab received a frame.** `task:status`

@@ -1378,6 +1378,42 @@ end
     end
 end
 
+# ── One run's slice of a cumulative task log ───────────────────────────────────
+# `logs/{fun}.log` is appended to by EVERY run of that fun on that image, and its lines are stamped in
+# LOCAL time. The GUI backfills the log of a task that was already running when the tab connected, and it
+# knows only that task's UTC `started_at` — so the slice happens server-side, where the clock that wrote
+# the stamps lives. Without it a backfilled row would show output from previous runs as its own.
+@testset "API: task log sliced from a run's start" begin
+    off  = _tasklog_local_offset()                       # what the writer's stamps are offset by
+    # a stamp N seconds ago, written the way `_wrap_log_with_file` writes them
+    stamp(secs) = Dates.format(Dates.now(UTC) + off - Dates.Second(secs), "yyyy-mm-dd HH:MM:SS")
+    iso(secs)   = iso_utc(Dates.now(UTC) - Dates.Second(secs))
+
+    log = """
+    [$(stamp(600))] old run: starting
+    [$(stamp(590))] old run: done
+    [$(stamp(60))] this run: starting
+    a bare continuation line
+    [$(stamp(10))] this run: 5/20
+    """
+    log = join(lstrip.(split(strip(log), '\n')), '\n') * '\n'
+
+    kept = _tasklog_since(log, iso(120))                 # this run started 2 minutes ago
+    @test occursin("this run: starting", kept)
+    @test occursin("this run: 5/20", kept)
+    @test !occursin("old run", kept)                     # ← the whole point
+    # an unstamped line belongs to the line above it, so a multi-line message isn't torn apart
+    @test occursin("a bare continuation line", kept)
+
+    # a start BEFORE everything keeps everything; one after everything keeps nothing
+    @test occursin("old run: starting", _tasklog_since(log, iso(9999)))
+    @test strip(_tasklog_since(log, iso(-60))) == ""
+
+    # garbage `since` degrades to the whole file — showing too much beats showing nothing
+    @test _tasklog_since(log, "not a timestamp") == log
+    @test _tasklog_since("", iso(120)) == ""
+end
+
 @testset "API: custom modules status/reload" begin
     # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
     st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))

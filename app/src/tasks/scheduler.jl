@@ -36,6 +36,7 @@ function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
            image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
+           chain_node_id=rec.chain_node_id,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
            started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs)
          for rec in values(_TASKS)]
@@ -256,6 +257,12 @@ mutable struct TaskRecord
     pool_name::String
     image_uid::String
     chain_run_id::String                    # "" for standalone tasks; run.id for chain nodes
+    # The chain NODE this task is, alongside the run it belongs to. Reported so a client can correlate the
+    # task with the node it sees in chain events: the GUI keys a chain row `runId::nodeId::imageUid`, so
+    # without this it cannot match a snapshot row to one and would list the same work twice. "" for a
+    # standalone task, and for a set-scope chain node (those bypass `run_task`, so they have no record at
+    # all — see `_execute_set_scope_node!` in chain.jl).
+    chain_node_id::String
     status::Symbol                          # :queued | :running | :done | :failed | :cancelled
     # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
     # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
@@ -278,11 +285,12 @@ const _TASKS      = Dict{String, TaskRecord}()
 const _TASKS_LOCK = ReentrantLock()
 
 function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
-                         live_outputs::Vector{LiveOutput} = LiveOutput[])
+                         live_outputs::Vector{LiveOutput} = LiveOutput[],
+                         chain_node_id::String = "")
     # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
     # so any start still on record belongs to the previous run and must not be inherited.
     forget_task_start!(id)
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, :queued,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, chain_node_id, :queued,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
@@ -498,6 +506,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   task_id::String            = gen_uid(),
                   pool_name::String          = "",
                   chain_run_id::String       = "",
+                  chain_node_id::String      = "",
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
@@ -513,7 +522,8 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     pool      = _pool(pool_name)
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
-                                 live_outputs = _live_outputs_for(task, params))
+                                 live_outputs = _live_outputs_for(task, params),
+                                 chain_node_id = chain_node_id)
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)
@@ -537,6 +547,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   task_id::String            = gen_uid(),
                   pool_name::String          = "",
                   chain_run_id::String       = "",
+                  chain_node_id::String      = "",
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
@@ -555,7 +566,8 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     pool      = _pool(pool_name)
     rep       = first(imgs)
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
-                                 live_outputs = _live_outputs_for(task, params))
+                                 live_outputs = _live_outputs_for(task, params),
+                                 chain_node_id = chain_node_id)
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)
@@ -579,6 +591,7 @@ function run_task(proj_uid::String, img_uid::String;
                   task_id::String            = gen_uid(),
                   pool_name::String          = "",
                   chain_run_id::String       = "",
+                  chain_node_id::String      = "",
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
@@ -586,7 +599,8 @@ function run_task(proj_uid::String, img_uid::String;
     task = _task_from_fun_name(fun_name)
     img  = init_object(proj_uid, img_uid)
     img isa CciaImage || error("UID '$img_uid' in project '$proj_uid' is not an image")
-    run_task(task, img, params; task_id, pool_name, chain_run_id, on_log, on_progress, on_process, on_status_change)
+    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id,
+             on_log, on_progress, on_process, on_status_change)
 end
 
 """

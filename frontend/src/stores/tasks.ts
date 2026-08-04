@@ -24,6 +24,10 @@ export interface TaskEntry {
   chainRunId?:   string
   chainNodeId?:  string
   chainName?:    string
+  // Rebuilt from `GET /api/tasks` rather than watched live (utils/runningTasks.ts) — this tab did not
+  // launch it, so it has no params and no earlier log lines. Re-run must stay disabled: `rerun()` sends
+  // `params`, and an empty one would silently re-run the task with JSON defaults.
+  adopted?: boolean
   // The SCHEDULER task id this row ran as. Same as `id` for a client-dispatched task (we mint the id and
   // send it), but a chain row is keyed by a synthetic `runId::nodeId::imageUid`, so its backend id is
   // only knowable from the `taskId` the chain frames carry. Needed to match a row against a backend
@@ -61,6 +65,17 @@ export const useTaskStore = defineStore('tasks', () => {
    * late, and a frame for a task that started before this tab connected has no local equivalent at all.
    * Falling back to `new Date()` keeps a producer whose start the backend never noted working as before.
    */
+  /**
+   * Replace a row's log wholesale — for backfilling an adopted row from the on-disk log
+   * (`utils/taskLogBackfill.ts`). Replaces rather than appends so a second open can't duplicate what the
+   * first one fetched, and PREPENDS nothing: the fetched slice already covers the run up to now, and any
+   * lines that arrived live since are re-included by the same slice.
+   */
+  function setLog(id: string, lines: string[]) {
+    const t = tasks.value.find(t => t.id === id)
+    if (t) t.log = lines
+  }
+
   function setStatus(id: string, status: TaskStatus, at: { startedAt?: Date; finishedAt?: Date } = {}) {
     const t = tasks.value.find(t => t.id === id)
     if (!t) return
@@ -128,6 +143,31 @@ export const useTaskStore = defineStore('tasks', () => {
   // Used by TaskList jump button to tell TasksModule which task to highlight
   const jumpToId = ref<string | null>(null)
 
+  /**
+   * Add rows for work already in flight on the backend (`utils/runningTasks.ts` → `adoptableTasks`).
+   *
+   * The store is otherwise built purely from WS events THIS tab received, so a reload mid-run left it
+   * empty while the backend kept working — and the terminal frames then had no row to land on. These
+   * entries are marked `adopted` so the UI can withhold what they cannot support (Re-run), and get a
+   * `seq` like any other row so the numbering stays monotonic.
+   *
+   * Idempotent by id: it runs on every (re)connect, and a row this tab launched always wins.
+   */
+  function adopt(rows: Array<Omit<TaskEntry, 'seq' | 'log' | 'adopted' | 'params' | 'taskName'> &
+                             { taskName?: string }>) {
+    for (const r of rows) {
+      if (tasks.value.some(t => t.id === r.id)) continue
+      tasks.value.unshift({
+        ...r,
+        taskName: r.taskName ?? r.funName,
+        params:   {},
+        log:      [],
+        seq:      ++_seqRef.value,
+        adopted:  true,
+      })
+    }
+  }
+
   // Upsert a task entry from a chain WS event. Creates on first event (usually :queued),
   // updates status thereafter. startedAt is only set on :running (real pool-slot start), so a node
   // waiting for a GPU slot shows :queued with no elapsed time — and it comes from the frame
@@ -184,5 +224,5 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addFromChainEvent, appendLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, adopt, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })

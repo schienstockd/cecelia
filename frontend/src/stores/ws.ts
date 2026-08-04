@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
@@ -7,6 +7,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
+import { fetchInFlightTasks, adoptableTasks } from '../utils/runningTasks'
 import { parseRailTime } from '../utils/taskElapsed'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -74,6 +75,7 @@ export const useWsStore = defineStore('ws', () => {
       outcomeSince = ''
       recovered.clear()
       startOutcomePoll()
+      void adoptInFlight()
       ping()
     }
 
@@ -97,6 +99,42 @@ export const useWsStore = defineStore('ws', () => {
       useLogStore().error('WebSocket error — check that Julia server is running on port 8080', { source: 'ws' })
     }
   }
+
+  /**
+   * Pull the backend's in-flight set into the task list.
+   *
+   * The other half of the same idea as `startOutcomePoll`: this store only ever learns about tasks from
+   * frames it happened to receive, so a reload (or a second tab, or another machine) mid-run showed an
+   * empty task list while the backend was busy — and the terminal frames then landed on rows that didn't
+   * exist. Runs on every (re)connect, because a reconnect can mean the backend restarted OR that this tab
+   * was away while work carried on.
+   *
+   * The browser half of the task console's `_reconcile_snapshot!` — same route, same fields, mirrored
+   * because the clients share no runtime. It deliberately does NOT copy the console's retire-on-miss rule:
+   * `startOutcomePoll` recovers the REAL outcome of a row that vanished, rather than guessing "ended".
+   */
+  async function adoptInFlight() {
+    const projectUid = useProjectMetaStore().current?.uid ?? ''
+    if (!projectUid) return                      // nothing to resolve image names against yet
+    const rows = await fetchInFlightTasks()
+    if (!rows.length) return
+    const project = useProjectStore()
+    const imageNames: Record<string, string> = {}
+    for (const set of project.sets) for (const img of set.images) imageNames[img.uid] = img.name
+    const defs = useTaskDefsStore()
+    void defs.ensureLoaded()                     // fire-and-forget; labelFor falls back to the fun name
+    const tasks = useTaskStore()
+    const known = new Set(tasks.tasks.map(t => t.backendTaskId || t.id))
+    tasks.adopt(adoptableTasks(rows, {
+      projectUid, imageNames, labelFor: (f: string) => defs.labelFor(f),
+    }, id => known.has(id)))
+  }
+
+  // A reload races: the socket usually opens BEFORE the project finishes loading, and until it has, a
+  // snapshot row can't be resolved to an image name (so `adoptInFlight` declines). Retry when a project
+  // appears — which also covers switching projects, where the other project's in-flight work belongs in
+  // the list too.
+  watch(() => useProjectMetaStore().current?.uid, uid => { if (uid) void adoptInFlight() })
 
   // ONE path for every task/chain frame — whether it arrived on the socket or was RECONSTRUCTED from
   // the backend's outcome ring (see startOutcomePoll). That's what makes the backstop a fix for all five

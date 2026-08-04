@@ -488,7 +488,11 @@ alongside the result. It matters because **a chain run emits no `task:status` fr
 `chain:node:*` keyed by `runId::nodeId::imageUid`, and emitting parallel `task:status` frames would give
 every chain node a second row in the Task Manager. But chain nodes *are* registered in `_TASKS`, so they
 appear in `GET /api/tasks` and hence in the task console — which without `task_id` could only ever
-report them as "finished, outcome unseen". It is `""`, never `nothing`, when there is no task to
+report them as "finished, outcome unseen". The record also carries **`chain_node_id`** (passed down from
+the executor's `run_task` call), reported on the snapshot for the mirror-image reason: the GUI keys a chain
+row `runId::nodeId::imageUid`, so a snapshot row that names only the *run* cannot be matched to one, and a
+reloaded tab adopting it would list the same node twice. A set-scope node bypasses `run_task` entirely, so
+it has no record and no node id — clients must treat that as "not adoptable", never guess. It is `""`, never `nothing`, when there is no task to
 correlate (skipped/cancelled before submission; set-scope and incremental nodes bypass `run_task`
 entirely) — consumers must treat that as "no correlation available". The bridge reads it through
 `_ev_task_id`, so a hand-fired REPL event that omits the field can't take chain telemetry down.

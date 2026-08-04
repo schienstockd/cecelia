@@ -9,6 +9,7 @@ import { TASK_STATUS } from '../lib/taskStatus'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 
@@ -27,10 +28,19 @@ const { isCopied, copy } = useCopyFlash()
 const items = computed(() => tasks.forModule(props.module, projectMeta.current?.uid))
 
 
-function toggleLog(id: string) {
+async function toggleLog(t: TaskEntry) {
+  const id = t.id
   if (expanded.value.has(id)) expanded.value.delete(id)
   else expanded.value.add(id)
   expanded.value = new Set(expanded.value)
+  // An adopted row only has what arrived since this tab connected; the rest is on disk. Fetched on the
+  // first open, not on adoption — twenty rows must not fire twenty requests for output nobody opened.
+  if (t.adopted && !t.log.length && expanded.value.has(id)) {
+    const lines = await fetchLogBackfill({
+      projectUid: t.projectUid, imageUid: t.imageUid, funName: t.funName, startedAt: t.startedAt,
+    })
+    if (lines.length) tasks.setLog(id, lines)
+  }
 }
 
 // icon + colour from the canonical map (lib/taskStatus.ts); tooltips stay local (more descriptive here)
@@ -104,6 +114,8 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
             <span class="task-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
             <i v-if="t.chainRunId" class="pi pi-sitemap chain-badge"
                v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`" />
+            <i v-if="t.adopted" class="pi pi-cloud-download chain-badge"
+               v-tooltip.right="'Already running when this tab opened — no log or rerun'" />
             {{ t.label }}
           </span>
           <span class="task-image cc-muted cc-fs-xs" v-tooltip.right="`UID: ${t.imageUid}`">
@@ -119,9 +131,9 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
 
         <div class="task-actions">
           <button
-            v-if="t.log.length"
+            v-if="t.log.length || t.adopted"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="toggleLog(t.id)"
+            @click="toggleLog(t)"
             v-tooltip.left="expanded.has(t.id) ? 'Hide log' : 'Show task log'"
           >
             <i :class="['pi', expanded.has(t.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
@@ -137,7 +149,7 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
           </button>
 
           <button
-            v-if="!t.chainRunId && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')"
+            v-if="!t.chainRunId && !t.adopted && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="rerun(t)"
             v-tooltip.left="'Rerun this task with the same parameters'"
