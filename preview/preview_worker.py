@@ -74,7 +74,14 @@ AF_PREVIEW_STRIDE = (2, 4)
 #:    `af_correct_frame`, so it would keep serving RATIO previews — hollowed-out overlapping cells and
 #:    all — against a backend that believes it is showing the new method. Silently, and the preview's
 #:    entire purpose is to agree with the run.
-PROTOCOL = 4
+#: 5: two fixes, one of which has no shape at all. (a) `af_channel_indices` had moved to `script_utils`
+#:    and the call here still used the old name, so every AF preview died on `AttributeError` — a fix
+#:    INSIDE the worker is exactly the case adoption gets wrong and nothing else can catch, so it earns
+#:    a bump on its own; see `PREVIEW_PROTOCOL` in `app/src/preview.jl` for the behavioural rule.
+#:    (b) the REQUEST now carries `channelNames` from `ccid.json`, the only authoritative copy — an
+#:    adopted protocol-4 worker ignores the field and falls back to the store's stale OME-XML, which
+#:    renders every corrected channel grey.
+PROTOCOL = 5
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -300,13 +307,14 @@ class PreviewContext:
     """
 
     __slots__ = ('im_path', 'task_dir', 'value_name', 'params', 'levels', 'dim_utils',
-                 'axis_len', 'bounds', 'fallback2d')
+                 'axis_len', 'bounds', 'fallback2d', 'given_names')
 
     def __init__(self, im_path, task_dir, value_name, params, levels, dim_utils,
-                 axis_len, bounds, fallback2d):
+                 axis_len, bounds, fallback2d, given_names=None):
         self.im_path, self.task_dir, self.value_name = im_path, task_dir, value_name
         self.params, self.levels, self.dim_utils = params, levels, dim_utils
         self.axis_len, self.bounds, self.fallback2d = axis_len, bounds, fallback2d
+        self.given_names = list(given_names or ())
 
     def crop(self):
         """The visible region of the image, all channels, as `[C, Y, X]`."""
@@ -325,7 +333,20 @@ class PreviewContext:
         return axes, [int(x) for x in full], shape
 
     def channel_names(self):
-        """Channel names from the OME-XML, so a layer can be named after the channel it corrects."""
+        """Display name per channel index, for naming a layer after the channel it corrects.
+
+        The request's `channelNames` WINS. `ccid.json` is authoritative for channel names — they are
+        user-editable — so only Julia knows them, and the store's OME-XML is a different copy that is
+        routinely out of date: on a real image it still read `CH1..CH4` while the viewer showed
+        `SHG`/`nuc-GFP`/`mem-TOM`/`CD169-Kat`, which named the corrected layer `CH3 AF` and pointed its
+        `source` at a layer that does not exist — so the colormap mirror found nothing and every
+        corrected channel came out grey.
+
+        OME-XML remains the fallback for a caller that sends no names (a REPL or test driving the worker
+        directly). It is a fallback, not a second source of truth.
+        """
+        if self.given_names:
+            return list(self.given_names)
         try:
             px = ome_xml_utils.parse_meta(self.im_path).images[0].pixels
             return [c.name or f'ch{i}' for i, c in enumerate(px.channels)]
@@ -484,7 +505,8 @@ def preview(msg):
         raise ValueError(f'empty preview region: {region.get("xy")!r}')
 
     ctx = PreviewContext(im_path, task_dir, value_name, params, levels, dim_utils,
-                         axis_len, bounds, fallback2d)
+                         axis_len, bounds, fallback2d,
+                         given_names=msg.get('channelNames'))
     out = backend(ctx)
     out.setdefault('hasSignal', True)
     out.setdefault('noSignalWhy', '')

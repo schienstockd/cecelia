@@ -28,14 +28,15 @@ const PREVIEW_PORT   = 7656
 #
 # Stale code presented as a bare "Preview failed": a worker predating the AF backend ignored
 # `funName`, fell through to the segmentation path and raised "no models in preview params", with
-# nothing anywhere reporting that the process was old. Bump BOTH sides together whenever the reply shape
-# or the set of previewable tasks changes.
+# nothing anywhere reporting that the process was old.
 #
-# 4 is also the first bump where a stale worker would NOT fail loudly: it carries the old ratio
-# `af_correct_frame`, so it would keep returning well-formed ratio previews — hollowed-out overlapping
-# cells and all — while the backend believes the power weight is being shown. A preview that silently
-# disagrees with the run is the one outcome this feature must never produce.
-const PREVIEW_PROTOCOL = 4
+# So the rule is BEHAVIOURAL, not structural: bump BOTH sides together whenever an adopted older worker
+# would answer differently — a changed reply shape, a changed set of previewable tasks, OR a bug fixed
+# inside the worker. The version is the only thing that can refuse a process we did not start, so
+# anything we would not want served from the old code has to move it. 5 is that case with nothing else
+# attached: the reply shape is identical to 4, and the fix (a preview crashing on every AF request) is
+# invisible to any check but this one.
+const PREVIEW_PROTOCOL = 5
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
@@ -65,9 +66,16 @@ end
 """
     launch!(w::PreviewWorker) -> PreviewWorker
 
-Start the worker and wait until it answers a ping. The wait is generous on purpose: the process
-imports torch and cellpose before it can serve anything (~18 s measured), which is the cost being
-amortised — a short timeout would just make the first toggle look broken.
+Start the worker and wait until it answers a ping **with our own protocol**. The wait is generous on
+purpose: the process imports torch and cellpose before it can serve anything (~18 s measured), which is
+the cost being amortised — a short timeout would just make the first toggle look broken.
+
+Readiness is the protocol, not merely a reply, because the port may already be held by a worker running
+older code. That process answers a ping perfectly, so a reply-only check reports "connected" for a
+process we did not start and cannot use — while the one we just spawned has already died unable to bind.
+The result is a relaunch loop that keeps serving the stale worker, which is strictly worse than the
+mismatch it was meant to repair. A dead child is also detected directly, so a bind failure surfaces in a
+second rather than after the full 90.
 """
 function launch!(w::PreviewWorker)::PreviewWorker
     # PYTHONPATH pins `import cecelia.*` to THIS checkout's `python/`, exactly as `run_py` does for
@@ -79,16 +87,32 @@ function launch!(w::PreviewWorker)::PreviewWorker
     w.proc = run(addenv(`$(python_bin_path()) $PREVIEW_WORKER`, "PYTHONPATH" => _python_dir()),
                  wait=false)
     deadline = time() + 90
+    squatter = nothing
     while time() < deadline
         try
-            send(w, Dict("type" => "ping"))
-            @info "Preview worker connected" port=w.port
-            return w
+            reply = send(w, Dict("type" => "ping"))
+            protocol = Int(get(reply, "protocol", 1))
+            if protocol == PREVIEW_PROTOCOL
+                @info "Preview worker connected" port=w.port
+                return w
+            end
+            # Someone else holds the port. Keep waiting — it may be on its way out (a kill is async, and
+            # the process we just spawned cannot bind until it goes) — but remember what answered so the
+            # timeout can name the cause instead of blaming the launch.
+            squatter = protocol
         catch
-            sleep(0.5)
         end
+        if !process_running(w.proc)
+            error("Preview worker exited immediately" *
+                  (squatter === nothing ? "" :
+                   " — port $(w.port) is held by a worker speaking protocol $squatter, which is why it " *
+                   "could not bind. Stop that process (Settings → Restart stops it with the backend)."))
+        end
+        sleep(0.5)
     end
-    error("Preview worker did not start within 90 seconds")
+    error("Preview worker did not start within 90 seconds" *
+          (squatter === nothing ? "" :
+           " — port $(w.port) is answering with protocol $squatter, not $PREVIEW_PROTOCOL"))
 end
 
 """
@@ -129,7 +153,8 @@ function preview_request(img::CciaImage, params::AbstractDict, region::AbstractD
     im_path = img_filepath(img, in_value_name)
     isnothing(im_path) && error("no image filepath for valueName='$in_value_name'")
     preview_request(im_path, img._dir, params, region;
-                    value_name = value_name, fun_name = fun_name)
+                    value_name = value_name, fun_name = fun_name,
+                    channel_names = something(channel_names(img; value_name = in_value_name), String[]))
 end
 
 """
@@ -143,11 +168,22 @@ store supplies both, or neither.
 
 The API separately refuses to preview at all when the open version isn't the one the task would read —
 see `api/src/preview_api.jl`. That check is what makes this pairing safe rather than merely consistent.
+
+`channel_names` is the DISPLAY name per channel index, and Julia has to supply it: `ccid.json` is
+authoritative for channel names (they are user-editable), so it is the only half of this conversation
+that knows them. The worker used to read them from the store's OME-XML instead, which is a different copy
+— on a real image that copy still said `CH1..CH4` while the viewer, named from `ccid.json`, showed
+`SHG`/`nuc-GFP`/`mem-TOM`/`CD169-Kat`. The corrected layer was therefore called `CH3 AF`, and its
+`source` pointed at a layer named `CH3` that does not exist, so the colormap mirror silently found
+nothing and every corrected channel rendered GREY — the one thing that makes it useless to compare
+against its original. Same shape as the calibration rule: several copies exist, exactly one is
+authoritative, and nobody re-derives it.
 """
 function preview_request(im_path::AbstractString, task_dir::AbstractString,
                          params::AbstractDict, region::AbstractDict;
                          value_name::AbstractString = VERSIONED_DEFAULT_VAL,
-                         fun_name::AbstractString = "")::Dict{String,Any}
+                         fun_name::AbstractString = "",
+                         channel_names::AbstractVector{<:AbstractString} = String[])::Dict{String,Any}
     req = Dict{String,Any}(
         "type"            => "preview",
         "imPath"          => String(im_path),
@@ -156,6 +192,7 @@ function preview_request(im_path::AbstractString, task_dir::AbstractString,
         "region"          => Dict{String,Any}(String(k) => v for (k, v) in region),
         "params"          => Dict{String,Any}(String(k) => v for (k, v) in params),
     )
+    isempty(channel_names) || (req["channelNames"] = String[String(n) for n in channel_names])
     # which compute to run. The worker dispatches on it (`preview_worker._BACKENDS`) because the params
     # alone cannot say: a `models` bag means cellpose and an `afCombinations` bag means AF correction,
     # and inferring the task from the shape of its params is exactly the guess `task_previewable`

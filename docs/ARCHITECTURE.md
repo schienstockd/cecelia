@@ -45,6 +45,14 @@ live server does not always reload it.
 the `language boundaries agree on their protocol` testset — before it existed the preview pair had been
 bumped by hand three times and the fourth was nearly missed.
 
+**When to bump is BEHAVIOURAL, not structural: whenever an adopted older peer would answer
+differently.** A changed message shape is the obvious case; a bug fixed *inside* an adopted process is
+the one that gets missed, and it is the worse of the two. `PREVIEW_PROTOCOL` 5 is exactly that — the
+reply shape is byte-identical to 4, and the only change is that AF preview no longer dies on an
+`AttributeError`. Left unbumped, a backend carrying the fix adopts the broken worker and serves the bug,
+which is how the fix appeared not to work at all. The version is the only thing that can refuse a
+process we did not start, so anything we would not want served from the old code has to move it.
+
 Why versions at all, rather than trusting the processes to match: a mismatch is **never a clean
 failure**. A stale peer answers the handshake perfectly and then misreads the actual work. The three
 real occurrences read as `unexpected keyword argument 'mask'`, a bare `Preview failed`, and

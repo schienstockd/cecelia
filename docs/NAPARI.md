@@ -125,7 +125,8 @@ Errors are returned as `{"type": "error", "msg": "..."}` — `send()` raises on 
 
 `ping` reports `protocol`, and `_ensure_viewer!` **only adopts a bridge whose value matches**
 `NAPARI_PROTOCOL` (`app/src/napari.jl`); a mismatch kills the port listener and relaunches. Bump both
-whenever the surface changes shape — a new or renamed command, a changed argument, a changed reply.
+whenever an adopted older bridge would answer differently — a new or renamed command, a changed
+argument, a changed reply, or a bug fixed in the bridge itself.
 
 This exists because adoption is deliberate: the bridge outlives a backend crash or Ctrl-C so the user
 keeps their viewer window, which also means it can be running code from before a branch switch. That is
