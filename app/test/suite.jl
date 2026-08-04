@@ -2770,7 +2770,8 @@ end
     _HOLD_TASK_GO[] = Channel{Nothing}(1)
     tid  = "hold$(rand(1000:9999))"
     seen = TaskRecord[]
-    th = Threads.@spawn run_task(_HoldTask(), img, Dict{String,Any}();
+    th = Threads.@spawn run_task(_HoldTask(), img, Dict{String,Any}("modelType" => "cyto3",
+                                                                    "diameter"  => 17);
                                  task_id = tid, on_status_change = rec -> push!(seen, rec))
     try
         @test timedwait(() -> any(r -> r.id == tid && r.status == "running", list_tasks()), 30.0) === :ok
@@ -2781,7 +2782,10 @@ end
         # Pinned here so a rename fails a test instead — the frontend pins its own half in
         # runningTasks.test.ts.
         @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :chain_run_id, :chain_node_id,
-                            :status, :queued_at, :started_at]), Set(keys(row)))
+                            :status, :queued_at, :started_at, :params]), Set(keys(row)))
+        # …and the params it was SUBMITTED with, which is what lets a client that didn't launch the task
+        # offer Re-run: with only the fun_name it would relaunch on the JSON spec's defaults instead.
+        @test row.params == Dict{String,Any}("modelType" => "cyto3", "diameter" => 17)
         # both are ISO-8601 UTC to the millisecond — one wire format for the whole rail
         @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.queued_at)
         @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", row.started_at)
@@ -2814,6 +2818,44 @@ end
     rec = Cecelia._register_task!("q$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
     @test isnothing(rec.started_at)
     @test only(filter(r -> r.id == rec.id, list_tasks())).started_at == ""
+    # …and a task registered with no params reports an EMPTY set, never a missing field: the frontend
+    # reads an absent `params` as "unknown, withhold Re-run" and an empty one as "this task takes none".
+    @test only(filter(r -> r.id == rec.id, list_tasks())).params == Dict{String,Any}()
+    Cecelia._deregister_task!(rec.id)
+
+    # The whole snapshot is written in ONE JSON3.write, so an unserialisable param value would throw and
+    # take `/api/tasks` down for every row — no adoption, no console reconcile, and a quit busy-check
+    # that reads idle. Params from the GUI are parsed JSON and always fine; a REPL-dispatched run can
+    # put anything in the dict. Published as `null` instead, which the client reads as "unknown".
+    rec = Cecelia._register_task!("np$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing;
+                                  params = Dict{String,Any}("fn" => sin, "diameter" => 17))
+    let row = only(filter(r -> r.id == rec.id, list_tasks()))
+        @test isnothing(row.params)                      # all-or-nothing — NOT a partial dict
+        @test JSON3.write(row) isa String                # the endpoint still answers
+    end
+    Cecelia._deregister_task!(rec.id)
+
+    # …and the nested shapes params actually take DO survive (a group param is a dict of dicts), plus the
+    # ones Julia code writes naturally, so a REPL-dispatched run isn't denied Re-run over a tuple.
+    nested = Dict{String,Any}("models" => Any["cyto3", "nuclei"], "opts" => Dict("d" => 17, "gpu" => true),
+                              "unset" => nothing, "name" => :cellpose,
+                              "range" => (1, 10), "shape" => (w = 5, h = 6))
+    rec = Cecelia._register_task!("ok$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing;
+                                  params = nested)
+    let row = only(filter(r -> r.id == rec.id, list_tasks()))
+        @test row.params == nested
+        @test JSON3.write(row) isa String
+    end
+    Cecelia._deregister_task!(rec.id)
+
+    # A whitelist, NOT a `try JSON3.write` probe: JSON3 throws on a Function but happily serialises a
+    # plain struct INTO AN OBJECT, so a probe would publish that and a client would Re-run on a value
+    # that is not what the task ran with. Anything whose JSON form isn't the value it came from must
+    # read as unknown — which is why this is a predicate over shapes, not an attempted write.
+    @test !Cecelia._json_writable(img)
+    rec = Cecelia._register_task!("st$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing;
+                                  params = Dict{String,Any}("img" => img))
+    @test isnothing(only(filter(r -> r.id == rec.id, list_tasks())).params)
     Cecelia._deregister_task!(rec.id)
     rm(proj.root; recursive=true)
 end

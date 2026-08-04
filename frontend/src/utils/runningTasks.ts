@@ -38,6 +38,12 @@ export interface InFlightTaskRow {
   /** ISO-8601 UTC; `started_at` is `''` until a pool slot admits the task */
   queued_at?: string
   started_at?: string
+  /**
+   * What the task was submitted with — what makes Re-run possible on a row this tab didn't launch.
+   * ABSENT (not `{}`) from a backend that predates it, and the two must not be conflated: a task whose
+   * spec has no params legitimately reports `{}`, so only `undefined` means "unknown".
+   */
+  params?: Record<string, unknown>
 }
 
 /** What a row needs from the app to become a task-list entry. */
@@ -66,6 +72,8 @@ export interface AdoptedTask {
   chainNodeId?: string
   /** the scheduler's id — how a later frame or a recovered outcome matches this row */
   backendTaskId: string
+  /** the submitted params, or `undefined` when the snapshot didn't carry them (older backend) */
+  params?: Record<string, unknown>
 }
 
 const ACTIVE = new Set(['queued', 'running'])
@@ -136,6 +144,10 @@ export function adoptableTasks(
       // The scheduler's own start, so the elapsed is right from the first render rather than counting
       // from when this tab noticed. `''`/absent = queued, or a backend too old to send it.
       startedAt:  r.started_at ? new Date(r.started_at) : undefined,
+      // Only a real object counts. Left `undefined` otherwise, which is what withholds Re-run — an
+      // older backend sends nothing, and defaulting to `{}` would present "no params" as the answer.
+      ...(r.params && typeof r.params === 'object' && !Array.isArray(r.params)
+          ? { params: r.params as Record<string, unknown> } : {}),
     })
   }
   return out
