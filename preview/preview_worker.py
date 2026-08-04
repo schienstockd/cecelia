@@ -425,8 +425,9 @@ def _preview_af(ctx):
     for ch in sorted(combos):
         # same coercion + diagnosis the run uses: a channel NAME here means the Julia translator did not
         # run, which is a stale-backend symptom rather than a bad parameter
-        competing = correction_utils.af_channel_indices(
-            combos[ch].get('competingChannels'), 'competingChannels', for_channel=ch)
+        competing = script_utils.channel_indices(
+            combos[ch].get('competingChannels'), f'competingChannels for channel {ch}',
+            _AF_TRANSLATOR)
         if not competing:
             continue
         stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method)
