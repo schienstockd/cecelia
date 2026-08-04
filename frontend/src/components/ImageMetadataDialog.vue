@@ -119,17 +119,20 @@ const copy = (key: string, value: string) => copyValue(value, key)
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
         </div>
-        <div v-for="[vn, fn] in versions" :key="'v-' + vn" class="md-file">
-          <span class="md-file-vn cc-muted">{{ vn }}</span>
-          <code class="md-code">{{ fn }}</code>
-          <span v-if="compression[vn]" class="md-codec cc-muted cc-fs-xs">{{ compression[vn]!.label }}</span>
-        </div>
-        <template v-if="labels.length">
-          <div v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-file">
+        <!-- ONE grid for versions + labels: the codec column is as wide as the longest label across
+             all rows, so a row-to-row difference in codec length can't resize the filename box. -->
+        <div class="md-files">
+          <template v-for="[vn, fn] in versions" :key="'v-' + vn">
+            <span class="md-file-vn cc-muted">{{ vn }}</span>
+            <code class="md-code">{{ fn }}</code>
+            <span class="md-codec cc-muted cc-fs-xs">{{ compression[vn]?.label ?? '—' }}</span>
+          </template>
+          <template v-for="[vn, fns] in labels" :key="'l-' + vn">
             <span class="md-file-vn cc-muted">labels · {{ vn }}</span>
             <code class="md-code">{{ fns.join(', ') }}</code>
-          </div>
-        </template>
+            <span class="md-codec" />
+          </template>
+        </div>
       </section>
 
       <section v-if="attrs.length" class="md-section">
@@ -192,9 +195,12 @@ const copy = (key: string, value: string) => copyValue(value, key)
 }
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
-.md-file { display: flex; align-items: baseline; gap: 0.5rem; }
+.md-files {
+  display: grid; grid-template-columns: 6rem minmax(0, 1fr) max-content;
+  gap: 0.25rem 0.5rem; align-items: baseline;
+}
 .md-codec { white-space: nowrap; }
-.md-file-vn { flex-shrink: 0; min-width: 6rem; }
+.md-file-vn { overflow-wrap: anywhere; }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
 </style>
