@@ -17,7 +17,6 @@ import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import CropDialog from './CropDialog.vue'
-import CopyDialog from './CopyDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
@@ -25,7 +24,6 @@ const props = defineProps<{
   module?: string      // when provided, shows a per-module status column
   showAttrs?: boolean  // show per-channel + attr columns
   editableMeta?: boolean // allow inline editing of attr + channel-name cells (Metadata page only)
-  allowDelete?: boolean
   filterUids?: string[] // when provided, restricts visible rows to these UIDs
   singleSelect?: boolean // radio-style: at most one image selected (e.g. gating)
   selectionScope?: string // namespace for remembering the selection (e.g. module name)
@@ -49,16 +47,11 @@ const metaDialogUid = ref<string | null>(null)
 const metaDialogImg = computed(() =>
   metaDialogUid.value ? (images.value.find(i => i.uid === metaDialogUid.value) ?? null) : null)
 
-// crop dialog (per-image, napari-free) — draw a rectangle on the coloured MIP, set z/t, save a new image
+// crop dialog (per-image, napari-free) — draw a rectangle on the coloured MIP, set z/t, save a new image.
+// Import page only: crop CREATES an image, which is an import-time operation (see the actions menu).
 const cropDialogUid = ref<string | null>(null)
 const cropDialogImg = computed(() =>
   cropDialogUid.value ? (images.value.find(i => i.uid === cropDialogUid.value) ?? null) : null)
-
-// copy dialog (per-image) — duplicate one version into a new image in a new/existing set (drops derived
-// data). A re-import shortcut; dispatched over the task rail like crop.
-const copyDialogUid = ref<string | null>(null)
-const copyDialogImg = computed(() =>
-  copyDialogUid.value ? (images.value.find(i => i.uid === copyDialogUid.value) ?? null) : null)
 
 // Two distinct affordances, kept visually separate: the warning (any module, always visible when
 // flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
@@ -83,7 +76,6 @@ function pageIconFor(): { tip: string } | null {
 // ── Selection ─────────────────────────────────────────────────────────────────
 
 const selected  = ref<Set<string>>(new Set())
-const deleteUid = ref<string | null>(null)
 const napariLoading = ref<Set<string>>(new Set())
 // Copy UID from the row's actions menu. The menu closes on click, so there's nothing to flash —
 // just the copy (via the shared helper, which keeps the non-secure-context fallback).
@@ -225,9 +217,11 @@ function lastRunTag(img: CciaImage) {
   }
 }
 // ── Row actions overflow menu (⋯) ───────────────────────────────────────────────
-// Collapses the per-row action icons (metadata, crop, move, copy-UID, include, run-log) into one
-// popover so the name column can stay narrow — and scales cleanly as we add actions. Shares the
-// same TeleportPopover as the run-log (escapes the table's scroll/transform clipping).
+// Collapses the per-row action icons (metadata, crop, copy-UID, include, run-log) into one popover so
+// the name column can stay narrow. Shares the same TeleportPopover as the run-log (escapes the table's
+// scroll/transform clipping). PER-IMAGE actions only — the file operations that apply to a SELECTION
+// (copy / move / remove) live in the Import page's action bar (ImageFileActions.vue), which is also
+// what keeps this menu short.
 const actionsUid    = ref<string | null>(null)
 const actionsAnchor = ref<HTMLElement | null>(null)   // the clicked ⋯ button (drives placement)
 const actionsImg    = computed(() => actionsUid.value ? (images.value.find(i => i.uid === actionsUid.value) ?? null) : null)
@@ -419,92 +413,6 @@ function toggle(uid: string) {
   commit()
 }
 
-// ── Delete ────────────────────────────────────────────────────────────────────
-
-function confirmDelete(uid: string) { deleteUid.value = uid }
-
-async function doDelete() {
-  if (!deleteUid.value) return
-  const uid = deleteUid.value
-  const img = images.value.find(i => i.uid === uid)
-  deleteUid.value = null
-  const projectUid = projectMeta.current?.uid
-  if (projectUid) {
-    try {
-      const res = await fetch('/api/images/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, setUid: props.setUid, imageUid: uid }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    } catch (e) {
-      log.error(`Failed to delete image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
-      return
-    }
-  }
-  project.deleteImage(props.setUid, uid)
-  selected.value.delete(uid)
-  commit()
-  log.info(`Removed "${img?.name}".`, { source: 'import' })
-}
-
-// ── Move to another set ─────────────────────────────────────────────────────────
-// Manifest-only on the backend — no image data moves on disk (see /api/images/move). The picker
-// offers every OTHER set in the project plus a "New set…" option (empty target => create by name).
-const moveUid       = ref<string | null>(null)   // image being moved (opens the inline picker)
-const moveTargetUid = ref('')                     // '' = create a new set from moveNewName
-const moveNewName   = ref('')
-const moving        = ref(false)
-const moveImg = computed(() =>
-  moveUid.value ? (images.value.find(i => i.uid === moveUid.value) ?? null) : null)
-const otherSets = computed(() => project.sets.filter(s => s.uid !== props.setUid))
-
-function startMove(uid: string) {
-  moveUid.value = uid
-  moveTargetUid.value = otherSets.value[0]?.uid ?? ''   // default to first other set, else new-set mode
-  moveNewName.value = ''
-}
-
-async function doMove() {
-  if (!moveUid.value) return
-  const uid  = moveUid.value
-  const img  = images.value.find(i => i.uid === uid)
-  const newName = moveNewName.value.trim()
-  if (!moveTargetUid.value && !newName) {
-    log.warn('Pick a set or enter a new set name.', { source: 'import' }); return
-  }
-  if (!moveTargetUid.value && project.sets.some(s => s.name === newName)) {
-    log.warn(`A set named "${newName}" already exists.`, { source: 'import' }); return
-  }
-  const projectUid = projectMeta.current?.uid
-  if (!projectUid) return
-  moving.value = true
-  try {
-    const res = await fetch('/api/images/move', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid, imageUid: uid, fromSetUid: props.setUid,
-        ...(moveTargetUid.value ? { toSetUid: moveTargetUid.value } : { newSetName: newName }),
-      }),
-    })
-    const body = await res.json().catch(() => ({})) as
-      { toSetUid?: string; toSetName?: string; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    project.ensureSet(body.toSetUid!, body.toSetName ?? newName)   // no-op if it already existed
-    project.moveImage(props.setUid, body.toSetUid!, uid)
-    selected.value.delete(uid)
-    commit()
-    log.info(`Moved "${img?.name}" to "${body.toSetName ?? newName}".`, { source: 'import' })
-    moveUid.value = null
-  } catch (e) {
-    log.error(`Failed to move image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
-  } finally {
-    moving.value = false
-  }
-}
-
 // ── Napari ────────────────────────────────────────────────────────────────────
 
 const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
@@ -619,32 +527,6 @@ onUnmounted(stopResize)
 </script>
 
 <template>
-  <!-- delete confirmation -->
-  <div v-if="deleteUid" class="delete-confirm">
-    <span>Remove <strong>{{ images.find(i => i.uid === deleteUid)?.name }}</strong>?</span>
-    <button class="cc-btn cc-btn-danger-ghost" @click="doDelete"
-      v-tooltip.right="'Remove from the set; the original file is not deleted'">
-      Remove
-    </button>
-    <button class="cc-btn cc-btn-ghost" @click="deleteUid = null">Cancel</button>
-  </div>
-
-  <!-- move to another set -->
-  <div v-if="moveUid" class="move-bar">
-    <span>Move <strong>{{ moveImg?.name }}</strong> to</span>
-    <select class="move-select" v-model="moveTargetUid"
-      v-tooltip.right="'Destination set (data is not copied — only the set membership changes)'">
-      <option v-for="s in otherSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
-      <option value="">＋ New set…</option>
-    </select>
-    <input v-if="!moveTargetUid" class="move-name-input" v-model="moveNewName" v-tooltip.right="'Name for the new set'"
-      placeholder="New set name…" @keydown.enter="doMove" @keydown.escape="moveUid = null" autofocus />
-    <button class="cc-btn cc-btn-primary" @click="doMove" :disabled="moving">
-      <i v-if="moving" class="pi pi-spin pi-cog" /><template v-else>Move</template>
-    </button>
-    <button class="cc-btn cc-btn-ghost" @click="moveUid = null">Cancel</button>
-  </div>
-
   <div v-if="images.length === 0" class="cc-empty cc-empty-lg">
     <i class="pi pi-images empty-icon" />
     <p class="empty-title">No images yet</p>
@@ -739,9 +621,6 @@ onUnmounted(stopResize)
 
         <!-- fixed: per-module status -->
         <th v-if="module" class="col-fixed col-status">Status</th>
-
-        <!-- fixed: delete -->
-        <th v-if="allowDelete" class="col-fixed col-actions" />
       </tr>
     </thead>
 
@@ -890,17 +769,6 @@ onUnmounted(stopResize)
             {{ statusConfig[imageModuleStatus(img)!]?.label }}
           </span>
         </td>
-
-        <td v-if="allowDelete" class="col-fixed col-actions" @click.stop>
-          <button
-            class="action-btn cc-btn cc-btn-bare cc-btn-icon del-btn"
-            @click="confirmDelete(img.uid)"
-            v-tooltip.left="'Remove this image from the set'"
-            :disabled="img.status === 'converting'"
-          >
-            <i class="pi pi-times" />
-          </button>
-        </td>
       </tr>
     </tbody>
   </table>
@@ -916,9 +784,6 @@ onUnmounted(stopResize)
   <CropDialog v-if="cropDialogImg" :image="cropDialogImg" :set-uid="setUid"
     @close="cropDialogUid = null" />
 
-  <CopyDialog v-if="copyDialogImg" :image="copyDialogImg" :set-uid="setUid"
-    @close="copyDialogUid = null" />
-
   <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
   <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end">
     <div v-if="actionsImg" class="actions-menu">
@@ -929,17 +794,10 @@ onUnmounted(stopResize)
       <button class="actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
         <i class="pi pi-info-circle" /> Metadata
       </button>
-      <button class="actions-item" :disabled="!isImported(actionsImg)"
+      <!-- crop CREATES an image → Import page only, like copy/move/remove in the action bar -->
+      <button v-if="module === 'import'" class="actions-item" :disabled="!isImported(actionsImg)"
         @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
         <i class="pi pi-image" /> Crop to new image…
-      </button>
-      <button class="actions-item" :disabled="!isImported(actionsImg)"
-        @click.stop="isImported(actionsImg) && runAction(() => copyDialogUid = actionsImg!.uid)">
-        <i class="pi pi-copy" /> Copy to new image…
-      </button>
-      <button v-if="allowDelete" class="actions-item"
-        @click.stop="runAction(() => startMove(actionsImg!.uid))">
-        <i class="pi pi-arrows-h" /> Move to another set…
       </button>
       <button class="actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID
@@ -971,12 +829,6 @@ onUnmounted(stopResize)
 
 <style scoped>
 /* ── Layout ──────────────────────────────────────────────────────────────────── */
-
-.delete-confirm {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.5rem 1rem; background: #7f1d1d22;
-  border-bottom: 1px solid #7f1d1d55; font-size: var(--cc-fs-md); flex-shrink: 0;
-}
 
 /* the one genuinely RICH empty state (icon + title + hint + CTA); the chrome comes from
    .cc-empty .cc-empty-lg, only the icon/title/hint/CTA details are local */
@@ -1060,7 +912,6 @@ onUnmounted(stopResize)
 .image-table thead .col-check,
 .image-table thead .col-viewer,
 .image-table thead .col-name  { background: var(--cc-bg); z-index: 3; }  /* header above body */
-.col-actions{ width: 36px; min-width: 36px; text-align: center; }
 .col-ch-name { text-align: center; }
 
 /* Resizable columns — width set dynamically via inline style */
@@ -1233,23 +1084,6 @@ th:hover .resize-handle::after { opacity: 1; }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
 .viewer-active { opacity: 1 !important; color: #f97316; }
 .viewer-active:hover { color: #fb923c; background: #f9731622; }
-
-/* ── Delete button ───────────────────────────────────────────────────────────── */
-
-.action-btn { opacity: 0; transition: opacity 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
-.image-row:hover .action-btn { opacity: 1; }
-.action-btn:disabled { opacity: 0.25 !important; cursor: not-allowed; }
-.del-btn:hover { background: #7f1d1d55; color: #fca5a5; }
-
-/* ── Buttons: use the global .cc-btn utilities (style.css) ─────────────────────── */
-
-.move-bar {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.5rem 1rem; background: var(--cc-surface-1);
-  border-bottom: 1px solid var(--cc-border); font-size: var(--cc-fs-md); flex-shrink: 0;
-}
-.move-select { min-width: 160px; }
-.move-name-input { width: 180px; border-color: var(--cc-accent); }
 
 /* ⋯ actions button: faintly visible at rest (discoverable), full on hover/open */
 .actions-btn { opacity: 0.5; }

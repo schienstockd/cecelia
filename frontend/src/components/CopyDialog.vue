@@ -1,10 +1,10 @@
 <!--
-  CopyDialog — "Copy image", opened from the Copy action on each ImageTable row. Duplicates ONE image
-  version into a NEW image (fresh uid) in a new or existing set, dropping all derived data — a re-import
-  shortcut so a pipeline can be re-run from a clean copy without re-importing the microscope file. Wraps
-  a version picker (like CropDialog) + a destination-set picker (like ImageTable's move bar) in a modal,
-  then dispatches editImages.copyImage over the task rail (background + universal toast + task console)
-  and closes immediately — the copy appears in the target set when the task finishes.
+  CopyDialog — "Copy images", opened from the Copy action in the Import page's action bar. Duplicates
+  one version of each selected image into a NEW image (fresh uid) in a new or existing set, dropping all
+  derived data — a re-import shortcut so a pipeline can be re-run from a clean copy without re-importing
+  the microscope file. Wraps a version picker (like CropDialog) + the shared destination-set picker in a
+  modal, then dispatches one editImages.copyImage per image over the task rail (background + universal
+  toast + task console) and closes immediately — the copies appear in the target set as the tasks finish.
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
@@ -14,9 +14,10 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useTaskStore } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
+import { resolveSetDestination, destinationParams } from '../utils/setDestination'
 import type { CciaImage } from '../stores/project'
 
-const props = defineProps<{ image: CciaImage; setUid: string }>()
+const props = defineProps<{ images: CciaImage[]; setUid: string }>()
 const emit  = defineEmits<{ (e: 'close'): void }>()
 
 const project     = useProjectStore()
@@ -25,14 +26,24 @@ const taskStore   = useTaskStore()
 const ws          = useWsStore()
 const log         = useLogStore()
 
-// Every registered version/iteration of this image is a valid copy source; default to the active one
-// (mirrors CropDialog). Empty → the backend falls back to 'default'.
-const valueNames = computed(() => Object.keys(props.image.filepaths ?? {}))
+const single = computed(() => props.images.length === 1 ? props.images[0] : null)
+
+// Every registered version/iteration is a valid copy source. With several images selected only the
+// versions they ALL carry can be copied in one go, so the picker offers the intersection.
+const valueNames = computed(() => {
+  const lists = props.images.map(i => Object.keys(i.filepaths ?? {}))
+  if (!lists.length) return []
+  return lists.reduce((common, names) => common.filter(n => names.includes(n)))
+})
 const selectedValueName = ref(defaultValueName())
 function defaultValueName(): string {
   const names = valueNames.value
+  const img = single.value
+  // One image: default to the active version (mirrors CropDialog). Several: the imported original,
+  // since "the active version" is per image and would mean something different for each.
+  if (!img) return names.includes('default') ? 'default' : (names[0] ?? '')
   const nonDefault = names.filter(n => n !== 'default')
-  return props.image.activeValueName && names.includes(props.image.activeValueName) ? props.image.activeValueName
+  return img.activeValueName && names.includes(img.activeValueName) ? img.activeValueName
     : nonDefault.length > 0 ? nonDefault[nonDefault.length - 1]
     : names.includes('default') ? 'default' : (names[0] ?? '')
 }
@@ -45,32 +56,30 @@ const targetUid   = ref('')                       // '' = create a new set from 
 const newName     = ref('')
 const copying     = ref(false)
 
-function copyImage() {
-  if (copying.value) return
-  const newSetName = newName.value.trim()
-  if (!targetUid.value && !newSetName) {
-    log.warn('Pick a set or enter a new set name.', { source: 'copy' }); return
-  }
-  if (!targetUid.value && project.sets.some(s => s.name === newSetName)) {
-    log.warn(`A set named "${newSetName}" already exists.`, { source: 'copy' }); return
-  }
+function copyImages() {
+  if (copying.value || !props.images.length) return
+  const dest = resolveSetDestination(project.sets, targetUid.value, newName.value)
+  if (!dest.ok) { log.warn(dest.error, { source: 'copy' }); return }
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
-  const params = {
-    valueName: selectedValueName.value || 'default',
-    ...(targetUid.value ? { toSetUid: targetUid.value } : { newSetName }),
-  }
+  const params = { valueName: selectedValueName.value || 'default', ...destinationParams(dest) }
   copying.value = true
-  const task = taskStore.add({
-    module: 'copy', label: 'Copy image', imageUid: props.image.uid,
-    imageName: props.image.name || props.image.uid,
-    status: 'queued', taskName: 'copyImage', funName: 'editImages.copyImage', params, projectUid,
+  // One task per image — the copy task is per-image, and the rail shows N of them. addMany (not N ×
+  // add) so the batch raises ONE "running in the background" toast instead of one per image. The FIRST
+  // task creates the set when in new-set mode; the rest resolve the same name to it server-side.
+  const label = props.images.length > 1 ? `Copy ${props.images.length} images` : 'Copy image'
+  const entries = taskStore.addMany(props.images.map(img => ({
+    module: 'copy', label: 'Copy image', imageUid: img.uid,
+    imageName: img.name || img.uid,
+    status: 'queued' as const, taskName: 'copyImage', funName: 'editImages.copyImage', params, projectUid,
+  })), label)
+  entries.forEach((task, i) => {
+    ws.send({
+      type: 'task:run', taskId: task.id, funName: 'editImages.copyImage', params,
+      imageUid: props.images[i].uid, projectUid, setUid: props.setUid, poolName: 'io',
+    })
   })
-  ws.send({
-    type: 'task:run', taskId: task.id, funName: 'editImages.copyImage', params,
-    imageUid: props.image.uid, projectUid, setUid: props.setUid, poolName: 'io',
-  })
-  log.info('Copying image → new image in the set (appears when the task finishes).', { source: 'copy' })
+  log.info(`Copying ${props.images.length} image(s) — they appear when the tasks finish.`, { source: 'copy' })
   emit('close')   // runs in the background — don't sit on the dialog
 }
 </script>
@@ -78,7 +87,8 @@ function copyImage() {
 <template>
   <BaseModal width="460px" @close="$emit('close')">
     <template #title>
-      <i class="pi pi-copy" /> Copy — {{ image.name }}
+      <i class="pi pi-copy" />
+      Copy — {{ single ? single.name : `${images.length} images` }}
       <span v-if="selectedValueName" class="copy-version-tag">{{ selectedValueName }}</span>
     </template>
 
@@ -90,8 +100,8 @@ function copyImage() {
     </div>
 
     <div class="copy-row">
-      <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copy (data IS duplicated on disk)'">To set</span>
-      <select v-model="targetUid" class="copy-select" v-tooltip.right="'Set the copy is placed in'">
+      <span class="copy-lbl cc-muted" v-tooltip.right="'Where to put the copies (data IS duplicated on disk)'">To set</span>
+      <select v-model="targetUid" class="copy-select" v-tooltip.right="'Set the copies are placed in'">
         <option v-for="s in allSets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
         <option value="">＋ New set…</option>
       </select>
@@ -99,7 +109,7 @@ function copyImage() {
     <div v-if="!targetUid" class="copy-row">
       <span class="copy-lbl cc-muted" />
       <input class="copy-name-input" v-model="newName" placeholder="New set name…"
-             v-tooltip.right="'Name for the new set'" @keydown.enter="copyImage" autofocus />
+             v-tooltip.right="'Name for the new set'" @keydown.enter="copyImages" autofocus />
     </div>
 
     <p class="copy-hint cc-muted">
@@ -108,8 +118,8 @@ function copyImage() {
 
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="$emit('close')">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="copying" @click="copyImage">
-        <i class="pi pi-copy" /> Copy image
+      <button class="cc-btn cc-btn-primary" :disabled="copying" @click="copyImages">
+        <i class="pi pi-copy" /> Copy {{ images.length > 1 ? `${images.length} images` : 'image' }}
       </button>
     </template>
   </BaseModal>

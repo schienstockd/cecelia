@@ -6,6 +6,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import FileBrowser from '../components/FileBrowser.vue'
+import ImageFileActions from '../components/ImageFileActions.vue'
 import LegacyMigrateDialog from '../components/LegacyMigrateDialog.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
@@ -97,11 +98,10 @@ async function onFilesSelected(paths: string[]) {
   <ModuleLayout
     module="import"
     :allow-manage="true"
-    :allow-delete="true"
     :show-filter="false"
     no-set-hint="Create a set to get started."
   >
-    <template #actions="{ hasSet }">
+    <template #actions="{ hasSet, setUid, selectedUids, selectUids }">
       <button
         class="cc-btn cc-btn-primary"
         :disabled="!hasSet"
@@ -122,6 +122,11 @@ async function onFilesSelected(paths: string[]) {
       >
         <i class="pi pi-history" /> Migrate legacy project
       </button>
+
+      <!-- the standard file operations, applied to the whole checkbox selection. Import ONLY — no other
+           module page can delete or re-file an image (see ImageFileActions.vue). -->
+      <ImageFileActions v-if="setUid" :set-uid="setUid" :uids="selectedUids"
+        @done="selectUids([])" />
     </template>
 
     <template #right="{ selectedUids, selectedNames }">

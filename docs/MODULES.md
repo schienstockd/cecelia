@@ -833,7 +833,6 @@ Whiteboard chain nodes are unaffected — their params live in the per-project c
 | `show-attrs` | `false` | Show attribute columns and filter in the image table |
 | `show-filter` | `false` | Show the text filter row above the image table |
 | `allow-manage` | `false` | Show set management controls |
-| `allow-delete` | `false` | Show image delete buttons |
 | `no-set-hint` | `''` | Text shown when no set is selected |
 
 ### Custom actions
@@ -847,6 +846,10 @@ To add a button above the table (e.g. "Add images"):
   </button>
 </template>
 ```
+
+The slot also receives `{ setUid, selectedUids, selectUids }`, so a bar item can act on the current
+selection — that is where the Import page's Copy / Move / Delete live (`ImageFileActions.vue`; see
+`docs/UI.md` → *File operations*). Per-image actions go in the row's ⋯ menu instead.
 
 ### Below-table content
 

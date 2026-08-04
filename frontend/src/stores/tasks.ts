@@ -58,6 +58,23 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
+  /**
+   * Dispatch a BATCH as one user action: N real task entries, but ONE toast. `add()` bumps
+   * `lastStarted` every call, so a bulk dispatch (Copy across a 20-image selection) would stack 20
+   * identical "running in the background" toasts — use this instead whenever one click fans out.
+   * `toastLabel` is what that single toast says (e.g. "Copy 20 images"); the entries keep their own
+   * per-image labels in the task console.
+   */
+  function addMany(items: Array<Omit<TaskEntry, 'id' | 'log' | 'seq'>>, toastLabel?: string): TaskEntry[] {
+    const entries: TaskEntry[] = items.map(t =>
+      ({ ...t, id: shortId(), log: [], seq: ++_seqRef.value }))
+    // reversed so the highest seq ends up at the head, exactly as N successive add() calls would leave it
+    tasks.value.unshift(...[...entries].reverse())
+    const last = entries[entries.length - 1]
+    lastStarted.value = last ? { ...last, label: toastLabel ?? last.label } : null
+    return entries
+  }
+
   function appendLog(id: string, line: string) {
     const t = tasks.value.find(t => t.id === id)
     if (t) t.log.push(line)
@@ -233,5 +250,5 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, adopt, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
