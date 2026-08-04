@@ -4,8 +4,7 @@ import {
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination,
   warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
-  type PreviewContext, type PreviewStatus,
-} from './taskPreview'
+  type PreviewContext, type PreviewStatus, previewFailureLog } from './taskPreview'
 
 const ctx = (over: Partial<PreviewContext> = {}): PreviewContext => ({
   projectUid: 'p', imageUid: 'img1', valueName: 'A', funName: 'segment.cellpose',
@@ -464,5 +463,47 @@ describe('warmPollAction', () => {
   it('the poll interval is well under the timeout, or the wait would never retry', () => {
     expect(WORKER_WARM_POLL_MS).toBeGreaterThan(0)
     expect(WORKER_WARM_POLL_MS).toBeLessThan(WORKER_WARM_TIMEOUT_MS / 10)
+  })
+})
+
+
+describe('previewFailureLog — a failure has to be readable, not hover-only', () => {
+  // The bug: AF preview died with an AttributeError from the worker. The message travelled intact
+  // through Julia, the API and the store, and stopped one `v-tooltip` short of being readable — the
+  // user saw "Preview failed" and had no hint there was anything to hover.
+  const ATTR = "preview worker: AttributeError: module 'cecelia.utils.correction_utils' " +
+               "has no attribute 'af_channel_indices'"
+
+  it('sends a real failure to the console at error level, with the full text as detail', () => {
+    const e = previewFailureLog({ message: ATTR })
+    expect(e).not.toBeNull()
+    expect(e!.level).toBe('error')          // error, not warn — this is what raises the unread badge
+    expect(e!.message).toBe('Preview failed')
+    expect(e!.detail).toBe(ATTR)            // the whole thing, not a truncation
+    expect(e!.source).toBe('preview')
+  })
+
+  it('a timeout is a warn — a slow machine as often as a fault, and it has its own readout', () => {
+    const e = previewFailureLog({ message: 'The preview worker did not start.', code: 'timeout' })
+    expect(e!.level).toBe('warn')
+  })
+
+  it('the headline matches what the control says, so console and button agree', () => {
+    // same ERROR_SHORT lookup previewNotice uses
+    const code = 'params-not-previewable'
+    expect(previewFailureLog({ message: 'x', code })!.message)
+      .toBe(previewNotice(null, { message: 'x', code }).short)
+  })
+
+  it('logs nothing when there is no failure', () => {
+    expect(previewFailureLog(null)).toBeNull()
+    expect(previewFailureLog({ message: '' })).toBeNull()
+    expect(previewFailureLog({ message: '   ' })).toBeNull()   // a cleared error must not log
+  })
+
+  it('a blocker is NOT a failure — logging "no image open" would train users to ignore the console', () => {
+    // blockers never reach this function; the store only calls it from a catch. Pinned so a future
+    // refactor that starts routing blockers here has to make the decision deliberately.
+    expect(previewFailureLog({ message: '', code: 'image-mismatch' })).toBeNull()
   })
 })

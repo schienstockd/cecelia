@@ -22,9 +22,9 @@ import {
   previewBlocker, previewNotice, previewSummary, baseOnlyWarning, tilingWarning,
   compositeWarning, warmPollAction,
   PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
-  type PreviewContext, type PreviewStatus, type PreviewBlocker,
-} from '../utils/taskPreview'
+  type PreviewContext, type PreviewStatus, type PreviewBlocker, previewFailureLog } from '../utils/taskPreview'
 import { useWsStore } from './ws'
+import { useLogStore } from './log'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
@@ -59,6 +59,24 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   const errorCode = ref('')
   /** true between toggle-on and the worker answering — its imports take ~18 s, so this is visible */
   const starting = ref(false)
+
+  const log = useLogStore()
+
+  /**
+   * Record a failure: the readout AND the error console.
+   *
+   * One helper because three paths set `error` and every one of them was readout-only. The notice shows
+   * ≤4 words with the specifics in a tooltip, which is how an `AttributeError` from the worker reached
+   * the user as a bare "Preview failed" — the text was there, one hover away, with nothing saying so.
+   * `previewFailureLog` (pure, unit-tested) decides the level and the headline so the console and the
+   * button cannot disagree.
+   */
+  function fail(message: string, code = '') {
+    error.value = message
+    errorCode.value = code
+    const entry = previewFailureLog({ message, code })
+    if (entry) log[entry.level](entry.message, { detail: entry.detail, source: entry.source })
+  }
 
   /** Forget the last result. Called whenever it stops describing what is on screen. */
   function clearResult() {
@@ -133,8 +151,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // result must go with it. "12 cells" beside "Wrong version open" reads as twelve cells in THIS
     // version; the count no longer describes anything we accepted.
     onError: e => {
-      error.value = e instanceof Error ? e.message : String(e)
-      errorCode.value = (e as SvcError)?.code ?? ''
+      fail(e instanceof Error ? e.message : String(e), (e as SvcError)?.code ?? '')
       starting.value = false
       clearResult()
     },
@@ -188,8 +205,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
           return
         case 'abandon':
           starting.value = false
-          error.value = 'The preview worker did not start.'
-          errorCode.value = 'timeout'
+          fail('The preview worker did not start.', 'timeout')
           return
         default:
           warmTimer = setTimeout(tick, WORKER_WARM_POLL_MS)
@@ -215,7 +231,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
       // toggle-on rather than making the user's first parameter change look like a 10 s hang
       await previewApi.start()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      fail(e instanceof Error ? e.message : String(e))
     }
     await refreshStatus()
     request()
@@ -233,7 +249,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
       // removes the layer AND stops the worker — the only thing that releases the model's VRAM
       await previewApi.stop(context.value?.valueName)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      fail(e instanceof Error ? e.message : String(e))
     }
     await refreshStatus()
   }
