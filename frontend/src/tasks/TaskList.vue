@@ -12,6 +12,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
+import { canRerunTask } from '../utils/taskRerun'
 
 const props       = defineProps<{ module: string }>()
 const tasks       = useTaskStore()
@@ -114,8 +115,8 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
             <span class="task-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
             <i v-if="t.chainRunId" class="pi pi-sitemap chain-badge"
                v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`" />
-            <i v-if="t.adopted" class="pi pi-cloud-download chain-badge"
-               v-tooltip.right="'Already running when this tab opened — no log or rerun'" />
+            <i v-if="t.paramsUnknown" class="pi pi-cloud-download chain-badge"
+               v-tooltip.right="'Already running when this tab opened — no re-run'" />
             {{ t.label }}
           </span>
           <span class="task-image cc-muted cc-fs-xs" v-tooltip.right="`UID: ${t.imageUid}`">
@@ -149,7 +150,7 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
           </button>
 
           <button
-            v-if="!t.chainRunId && !t.adopted && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')"
+            v-if="canRerunTask(t)"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
             @click="rerun(t)"
             v-tooltip.left="'Rerun this task with the same parameters'"

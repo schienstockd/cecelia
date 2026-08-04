@@ -1391,9 +1391,16 @@ the module that already owns that endpoint). Adopted rows show a true elapsed (t
 `started_at`), take live progress/log frames from then on, and **can be cancelled** — `task:cancel` goes
 by the scheduler's own id.
 
-- **They are marked `adopted`, and Re-run is withheld.** The snapshot has no params and `rerun()` sends
-  them, so the button would silently relaunch the task with JSON defaults. A `pi-cloud-download` badge
-  says so on the row.
+- **They support Re-run, because the snapshot carries the params the run was submitted with**
+  (`list_tasks()` → `GET /api/tasks`). `rerun()` sends `params`, so without them the button would
+  silently relaunch the task with the JSON spec's defaults — which is why the row is only offered Re-run
+  once they are known. A snapshot that carries none (a backend predating the field, or a param set that
+  can't be written as JSON — the route publishes `null` rather than a partial one) sets `paramsUnknown`
+  on the row, which withholds the button and shows a `pi-cloud-download` badge saying why.
+- **One predicate decides it — `canRerunTask` (`utils/taskRerun.ts`).** Both surfaces that draw the
+  button (the per-module `TaskList`, the `/tasks` manager) call it. They had their own copies and had
+  already drifted: the manager offered Re-run on a **chain node**, whose `params` are `{}` because chain
+  rows are built from `chain:node:*` frames — so the click relaunched the node standalone on defaults.
 - **The log backfills from disk on first open** (`utils/taskLogBackfill.ts`). The scheduler tees every line
   to `{img._dir}/logs/{fun_name}.log`, so the output from before this tab connected is not lost — but that
   file is CUMULATIVE (one per image+fun, appended by every run), so the fetch passes the task's

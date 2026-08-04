@@ -13,6 +13,7 @@ import { moduleColor } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
+import { canRerunTask } from '../utils/taskRerun'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
@@ -90,15 +91,8 @@ function rerun(t: TaskEntry) {
             params: t.params, imageUid: t.imageUid, projectUid: t.projectUid })
 }
 
-// Rerun goes through the scheduler (task:restart → handle_task_run), so it only applies to
-// scheduler-backed tasks. A data patch (module 'maintenance') is a non-scheduler producer of the same
-// task frames — it has no fun_name the scheduler knows, so it can't be rerun here (relaunch it from
-// Settings → Data patches instead).
-// …and an ADOPTED row (rebuilt from GET /api/tasks after a reload) has no params — `rerun` sends them, so
-// offering it would silently relaunch the task with JSON defaults instead of what it is actually running.
-const canRerun = (t: TaskEntry) =>
-  (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') &&
-  t.module !== 'maintenance' && !t.adopted
+// Shared with the per-module task list — one predicate, in utils/taskRerun.ts (see its header).
+const canRerun = (t: TaskEntry) => canRerunTask(t)
 
 async function copyLog() {
   if (!selected.value?.log.length) return
@@ -178,8 +172,8 @@ const FILTERS: ChipOption[] = [
                 <span class="row-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
                 {{ t.label }}
               </span>
-              <i v-if="t.adopted" class="pi pi-cloud-download adopted-badge cc-muted cc-fs-2xs"
-                 v-tooltip.right="'Already running when this tab opened — no log or rerun'" />
+              <i v-if="t.paramsUnknown" class="pi pi-cloud-download adopted-badge cc-muted cc-fs-2xs"
+                 v-tooltip.right="'Already running when this tab opened — no re-run'" />
               <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
             </div>
             <div class="row-image cc-muted cc-fs-xs">{{ t.imageName }}</div>

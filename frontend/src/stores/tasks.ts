@@ -25,9 +25,14 @@ export interface TaskEntry {
   chainNodeId?:  string
   chainName?:    string
   // Rebuilt from `GET /api/tasks` rather than watched live (utils/runningTasks.ts) — this tab did not
-  // launch it, so it has no params and no earlier log lines. Re-run must stay disabled: `rerun()` sends
-  // `params`, and an empty one would silently re-run the task with JSON defaults.
+  // launch it, so it has no earlier log lines (backfilled from disk on first open) and its params come
+  // from the snapshot rather than from the dispatch that created it.
   adopted?: boolean
+  // Set only when `params` is a PLACEHOLDER rather than what the run was submitted with — an adopted row
+  // whose snapshot carried none (a backend predating `list_tasks().params`). `rerun()` sends `params`, so
+  // this withholds Re-run: an empty dict would silently relaunch with the JSON spec's defaults. Absent on
+  // every row this tab dispatched, so the common path needs no flag.
+  paramsUnknown?: boolean
   // The SCHEDULER task id this row ran as. Same as `id` for a client-dispatched task (we mint the id and
   // send it), but a chain row is keyed by a synthetic `runId::nodeId::imageUid`, so its backend id is
   // only knowable from the `taskId` the chain frames carry. Needed to match a row against a backend
@@ -148,22 +153,26 @@ export const useTaskStore = defineStore('tasks', () => {
    *
    * The store is otherwise built purely from WS events THIS tab received, so a reload mid-run left it
    * empty while the backend kept working — and the terminal frames then had no row to land on. These
-   * entries are marked `adopted` so the UI can withhold what they cannot support (Re-run), and get a
-   * `seq` like any other row so the numbering stays monotonic.
+   * entries are marked `adopted` (the log then backfills from disk on first open) and get a `seq` like
+   * any other row so the numbering stays monotonic.
+   *
+   * The snapshot carries the submitted `params`, so an adopted row supports Re-run like any other. A row
+   * that arrives WITHOUT them is flagged `paramsUnknown` and keeps Re-run withheld — see the field.
    *
    * Idempotent by id: it runs on every (re)connect, and a row this tab launched always wins.
    */
   function adopt(rows: Array<Omit<TaskEntry, 'seq' | 'log' | 'adopted' | 'params' | 'taskName'> &
-                             { taskName?: string }>) {
+                             { taskName?: string; params?: Record<string, unknown> }>) {
     for (const r of rows) {
       if (tasks.value.some(t => t.id === r.id)) continue
       tasks.value.unshift({
         ...r,
         taskName: r.taskName ?? r.funName,
-        params:   {},
+        params:   r.params ?? {},
         log:      [],
         seq:      ++_seqRef.value,
         adopted:  true,
+        ...(r.params ? {} : { paramsUnknown: true }),
       })
     }
   }

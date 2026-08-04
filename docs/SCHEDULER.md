@@ -645,6 +645,16 @@ moment a pool slot is acquired), both UTC, both published by `list_tasks()` → 
 ISO-8601 strings. `started_at − queued_at` is therefore the real queue wait, which is what makes a task
 blocked on a busy GPU read as *waiting* rather than as a run of zero seconds.
 
+The record also carries the **`params` the run was submitted with** (post-`_flatten_sections`, so the
+shape `run_task` consumed — and flattening is idempotent, so it can be handed straight back). Same
+motivation one step further on: a client that didn't launch the task knew its `fun_name` but nothing
+about its configuration, so it had to withhold Re-run rather than relaunch on the JSON defaults. They are
+published all-or-nothing (`_publishable_params` → `null` if any value isn't a JSON-native shape), because
+`GET /api/tasks` writes the whole snapshot in one `JSON3.write`: one unserialisable value would otherwise
+throw and take the endpoint down for every row. It whitelists shapes rather than attempting the write,
+because attempting it doesn't fail where it must — JSON3 throws on a `Function` but serialises a plain
+struct into an object, and a client would then Re-run on that object as if it were the param.
+
 But the record dies with the task, and the duration is mostly wanted afterwards — the chain bridge fires
 `node:done` only once `run_task` has returned *and deregistered*, and a dropped terminal frame is
 recovered from `recent_tasks` minutes later. So the start is also banked on the rail, beside the outcomes

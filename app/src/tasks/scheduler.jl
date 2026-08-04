@@ -31,6 +31,11 @@ about its output.
 admits the task. They make the snapshot answer "how long has this been going?" — which a client
 otherwise has to guess from when it first saw the row, so a console or tab that attached mid-run could
 only ever report a lower bound.
+
+`params` are the ones the run was submitted with, so a client that did not launch the task can still
+offer Re-run rather than withholding it (`utils/runningTasks.ts`). Same reasoning as the timestamps:
+the alternative is a client guessing, and a guessed param set is a silently different run. `nothing`
+(JSON `null`) when they can't be published — see `_publishable_params`.
 """
 function list_tasks()
     lock(_TASKS_LOCK) do
@@ -38,9 +43,41 @@ function list_tasks()
            image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
            chain_node_id=rec.chain_node_id,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
-           started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs)
+           started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs,
+           params=_publishable_params(rec.params))
          for rec in values(_TASKS)]
     end
+end
+
+# `nothing` unless EVERY value survives JSON — the whole snapshot is written in one `JSON3.write`
+# (`/api/tasks`), so one unserialisable value would throw and take the endpoint down for every row:
+# no adoption in the browser, no task-console reconcile, and a quit/export busy-check that reads idle.
+# Params normally arrive parsed from JSON and are always fine; a REPL-dispatched task (`run_task` is
+# documented as REPL-driveable) can put anything in the dict.
+#
+# All-or-nothing, deliberately: dropping just the offending key would publish a param set that LOOKS
+# complete, and a client would then offer Re-run on it — a silently different run, which is exactly what
+# publishing params is here to prevent. `nothing` reads as "unknown" and withholds the button, while an
+# empty dict keeps meaning "this task takes no params".
+# A WHITELIST of the JSON-native shapes, not a `try JSON3.write` probe — deliberately, because the probe
+# does not fail where it needs to. JSON3 throws on a `Function`, but serialises a plain struct into an
+# object (`Fake(1,"x")` → `{"a":1,"b":"x"}`), so a probe would PUBLISH that and a client would re-run on
+# it. Anything whose JSON form isn't the value it came from must read as unknown, not as a param.
+# The cost is the other direction, and the safe one: a serialisable type nobody whitelisted (a `Date`)
+# withholds Re-run rather than corrupting it. Tuples are in because Julia code writes them naturally —
+# a REPL-dispatched run is the only way a non-JSON value gets in here at all.
+#
+# (A PREDICATE — not to be confused with `_json_safe` in api/src/plotting_api.jl, which CONVERTS a
+# payload by nulling non-finite floats. Different job, so a different name.)
+_json_writable(v)::Bool =
+    v isa AbstractString || v isa Symbol || v isa Real || v isa Bool || isnothing(v) ||
+    (v isa NamedTuple && all(_json_writable, values(v))) ||           # → a JSON object, like a dict
+    ((v isa AbstractVector || v isa Tuple) && all(_json_writable, v)) ||
+    (v isa AbstractDict && all(p -> (p.first isa AbstractString || p.first isa Symbol) &&
+                                    _json_writable(p.second), v))
+
+function _publishable_params(params::Dict{String,Any})
+    all(p -> _json_writable(p.second), params) ? params : nothing
 end
 
 """
@@ -279,6 +316,12 @@ mutable struct TaskRecord
     # Resolved once at submit time from the task + its params, because the record outlives the
     # params dict and a viewer asking "what can I watch right now?" must not re-derive it.
     live_outputs::Vector{LiveOutput}
+    # The params this run was submitted with, post-`_flatten_sections` — i.e. the shape `run_task`
+    # actually consumed, and (flattening being idempotent) the shape it can be handed back in.
+    # Published by `list_tasks()` so a client that did NOT launch the task can still offer Re-run:
+    # without it a browser tab that reloaded mid-run knows the task's `fun_name` but nothing about
+    # how it was configured, and re-running it would silently substitute the JSON spec's defaults.
+    params::Dict{String,Any}
 end
 
 const _TASKS      = Dict{String, TaskRecord}()
@@ -286,13 +329,14 @@ const _TASKS_LOCK = ReentrantLock()
 
 function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
-                         chain_node_id::String = "")
+                         chain_node_id::String = "",
+                         params::Dict{String,Any} = Dict{String,Any}())
     # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
     # so any start still on record belongs to the previous run and must not be inherited.
     forget_task_start!(id)
     rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, chain_node_id, :queued,
                      Dates.now(UTC), nothing, nothing,
-                     on_status_change, live_outputs)
+                     on_status_change, live_outputs, params)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
     rec
 end
@@ -523,7 +567,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id)
+                                 chain_node_id = chain_node_id, params = params)
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)
@@ -567,7 +611,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     rep       = first(imgs)
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id)
+                                 chain_node_id = chain_node_id, params = params)
     _set_status!(rec, :queued)
 
     done_ch     = Channel{Any}(1)

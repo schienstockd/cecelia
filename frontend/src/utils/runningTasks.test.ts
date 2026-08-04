@@ -88,8 +88,33 @@ describe('adoptableTasks', () => {
   })
 
   it('skips a task this tab already tracks', () => {
-    // its own entry is richer — params (so Re-run works), log, seq
+    // its own entry is richer — log, seq, and the params as dispatched
     expect(adoptableTasks([row()], ctx, id => id === 'sched1')).toEqual([])
+  })
+
+  // Params are what makes Re-run possible on a row this tab didn't launch: without them the button
+  // would relaunch the task with the JSON spec's defaults while looking like a faithful repeat.
+  it('carries the submitted params through', () => {
+    const [t] = adoptableTasks([row({ params: { modelType: 'cyto3', diameter: 17 } })], ctx, none)
+    expect(t.params).toEqual({ modelType: 'cyto3', diameter: 17 })
+  })
+
+  it('leaves params UNDEFINED when the snapshot has none, rather than defaulting to {}', () => {
+    // `{}` is a legitimate answer for a task whose spec has no params, so an older backend's silence
+    // must stay distinguishable from it — the store turns only `undefined` into "Re-run withheld".
+    expect(adoptableTasks([row()], ctx, none)[0].params).toBeUndefined()
+    expect(adoptableTasks([row({ params: undefined })], ctx, none)[0].params).toBeUndefined()
+  })
+
+  it('keeps an empty param set as an empty param set', () => {
+    expect(adoptableTasks([row({ params: {} })], ctx, none)[0].params).toEqual({})
+  })
+
+  it('ignores a params value that is not an object', () => {
+    const bad = (p: unknown) => adoptableTasks([row({ params: p as Record<string, unknown> })], ctx, none)[0].params
+    expect(bad(null)).toBeUndefined()
+    expect(bad('cyto3')).toBeUndefined()
+    expect(bad([1, 2])).toBeUndefined()          // an array would spread into positional junk
   })
 
   it('adopts a chain node under the key its own frames will use', () => {

@@ -224,7 +224,15 @@ recovered, not tolerated*.
 console and `adoptableTasks` (`frontend/src/utils/runningTasks.ts`) in the browser, which adopts the
 in-flight set on connect so a reloaded tab lists work it never watched start. `chain_node_id` exists for
 that consumer: a chain row is keyed `runId::nodeId::imageUid` in the GUI, so adopting a node needs the node,
-not just the run. The field names are
+not just the run. `params` exists for it too — the params the run was submitted with, so an adopted row can
+offer **Re-run** instead of withholding it; without them the client knows the `fun_name` but not the
+configuration, and re-running would silently substitute the JSON spec's defaults. They are published
+**all-or-nothing**: `null` if any value isn't a JSON-native shape (`_publishable_params`), because the
+whole snapshot is one `JSON3.write` and a partial set would be re-run as if complete. That check is a
+whitelist rather than an attempted write — JSON3 throws on a `Function` but turns an arbitrary struct
+into an object, which a probe would then publish as if it were the param. `{}` (a task that takes no
+params) and `null` (unknown) are therefore different answers, and the client must not conflate them. The
+field names are
 therefore a contract with two clients that share no runtime — pinned on both sides (*Scheduler records
 queued/started timestamps* in the package suite, `runningTasks.test.ts` in the frontend) so a rename fails
 a test rather than silently blanking a column. The browser deliberately omits the console's
