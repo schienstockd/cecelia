@@ -157,6 +157,49 @@ export interface PreviewNotice {
   warn: boolean
 }
 
+/** A log-store entry for a preview failure, or `null` when there is nothing worth logging. */
+export interface PreviewLogEntry {
+  level: 'warn' | 'error'
+  message: string
+  detail: string
+  source: 'preview'
+}
+
+/**
+ * Should this preview failure also go to the error console, and how loudly?
+ *
+ * **Because the notice alone was not enough.** `previewNotice` puts the problem in ≤4 words and the
+ * specifics in `detail`, which the control renders as a TOOLTIP — so when AF preview died with
+ * `AttributeError: module 'cecelia.utils.correction_utils' has no attribute 'af_channel_indices'`, the
+ * user saw "Preview failed" and nothing else, with no hint there was anything to hover. The message had
+ * travelled intact from the worker through Julia through the API into the store, and stopped one
+ * `v-tooltip` short of being readable. (The store's own comment already said "a failed preview must be
+ * visible, not a console-only unhandled rejection" — the intent was right, the volume was not.)
+ *
+ * `error` rather than `warn` for a genuine failure, because that is what raises the console's unread
+ * badge — the thing that says "something is written down". A **timeout** is a warn: the worker not
+ * starting in 180 s is worth recording but it is a slow machine as often as a fault, and it already has
+ * its own readout.
+ *
+ * Returns `null` for anything that is not a failure at all, so a cleared error never logs. Blockers are
+ * deliberately absent: "no image open" is visible in the viewer, and logging it would teach the user to
+ * ignore the console.
+ */
+export function previewFailureLog(
+  error: { message?: string; code?: string } | null,
+): PreviewLogEntry | null {
+  const message = error?.message?.trim()
+  if (!error || !message) return null
+  const code = error.code ?? ''
+  return {
+    level: code === 'timeout' ? 'warn' : 'error',
+    // the headline matches what the control says, so the console and the button agree
+    message: ERROR_SHORT[code] ?? 'Preview failed',
+    detail: message,
+    source: 'preview',
+  }
+}
+
 export function previewNotice(
   blocker: PreviewBlocker | null,
   error: { message?: string; code?: string } | null,
