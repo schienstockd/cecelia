@@ -43,13 +43,49 @@ conceptual split:
 |---|---|---|
 | **release** `v0.1.0` | **the default.** A version a user installs and can name | the heartbeat, and any fix a user is waiting on (bump the patch) |
 | **rc tag** `v0.1.0-rcN` | a build you intend to **soak before promoting** | bracketing a risky refactor; a candidate you will re-cut as a release |
+| **milestone** (M-entry) | a coarse "shippable state" note in MILESTONES.md | only at big boundaries (a capability lands, v1.0 freeze) — **not** every tag |
 
 **Prefer a plain release.** The rc ladder was the default for nine tags and never converged, because
 none of them were candidates *for* anything — they were snapshots wearing a candidate's label, while
 being the only thing users could install. A prerelease also flags "don't rely on this" to the exact
 people relying on it, and GitHub's `releases/latest` never resolves while every tag is a prerelease.
 If a user hits a bug you have already fixed, that is a **patch release** (`v0.1.1`), not an rc.
-| **milestone** (M-entry) | a coarse "shippable state" note in MILESTONES.md | only at big boundaries (a capability lands, v1.0 freeze) — **not** every tag |
+
+### An rc is not the quiet option — both channels ship it
+
+The distinction is **intent, not size**. Nothing mechanical makes a prerelease safer, and it is worth
+knowing exactly what `-rcN` does and does not change before reaching for it.
+
+| Tag | in-app updater | `install.sh` one-liner |
+|---|---|---|
+| `v0.1.1` | offered | installed |
+| `v0.1.1-rc1` | **offered** | **installed** |
+
+- **The updater does not filter prereleases.** `api_update_check` (`api/src/update_api.jl`) skips only
+  *drafts* and takes the max by `VersionNumber`. A prerelease sorts below its own release but *above* the
+  previous one, so `v"0.1.1-rc1" > v"0.1.0"` — every install already on 0.1.0 is offered the rc.
+- **Neither does the installer.** `install.sh` deliberately does **not** use `releases/latest` (that
+  404s while every tag is a prerelease, which was true for nine tags). It calls `/repos/…/releases` and
+  takes the first `tag_name` — the newest *published* release, prereleases included.
+
+So `-rcN` buys you the GitHub prerelease label and a "don't rely on this" signal, and nothing else: the
+build still goes to everyone, both to existing installs and to the next person who runs the one-liner.
+Two consequences:
+
+1. **An rc is not a safety valve.** If the hesitation is "this might break someone", a prerelease does
+   not achieve that. Cut nothing, or cut a release you are willing to stand behind.
+2. **An rc must actually be promoted.** It only earns the label if re-cutting it as `vX.Y.Z` is a real
+   plan with an end — otherwise it is another snapshot wearing a candidate's label, which is exactly how
+   the nine-tag ladder happened.
+
+**Wanting a rollback anchor before a risky change is a plain release cut *before* the merge** — already
+one of the event triggers below — not a candidate published after it.
+
+> **Latent inconsistency, if you ever backport.** The two paths order releases differently: the updater
+> takes the max **by version**, the installer takes the newest **by date**. Publish `v0.2.0` and then a
+> `v0.1.2` patch off an older line, and a new install gets `v0.1.2` while an existing one is offered
+> `v0.2.0`. Nothing today does this — pre-1.0 the heartbeat only ever moves forward — but the two are not
+> the same rule, and only one of them is version-aware.
 
 ## The semi-schedule (heartbeat)
 

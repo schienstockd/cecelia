@@ -162,8 +162,11 @@ Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{
 404s; the raw path on `main` is always available. `install.{sh,ps1}` then resolve the newest
 published release themselves via the GitHub API (`/repos/…/releases`, newest first — *includes*
 prereleases) and download that tag's `cecelia.tar.gz`. `CECELIA_VERSION=v0.1.0-rcN` pins a specific
-tag. Once a stable (non-prerelease) release is cut, `releases/latest` also starts working, but the
-API-resolve path keeps working for RC-only states — so no installer change is needed at that point.
+tag. Since `v0.1.0` (2026-08-05) `releases/latest` resolves, but the installers keep the API-resolve path —
+it also works in an RC-only state, so no installer change was needed. **One consequence worth knowing:
+the installer therefore installs a prerelease** (newest by date), and so does the in-app updater (max by
+version, and a prerelease outranks the release before it). `-rcN` is a label, not a quieter channel —
+see `docs/RELEASING.md` → *An rc is not the quiet option*.
 They then install Pixi + Juliaup if missing, run `pixi install` (which resolves the GPU variant
 per-OS from `pixi.toml`'s platform-gated torch) + `julia --project=api instantiate`, and create the
 launcher.
