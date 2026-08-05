@@ -381,7 +381,8 @@ artifact: it's native code tied to the exact **platform/arch + Julia + package v
 build stamps `deps.so.stamp` (`{julia, hash(Manifest.toml)}`, `pluto/sysimage_stamp.jl`); after an
 update the image is detected **stale** and rebuilt automatically, and `launch.jl` refuses to hand a
 stale image to workers (a Julia-version mismatch would break them). *Optional* release optimisation
-(TODO #00070): build the `-full` image per platform in CI and ship it in the bundle so even the first
+(`docs/TODO.md` → *Ship a prebuilt Notebooks sysimage in the bundle*): build the `-full` image per
+platform in CI and ship it in the bundle so even the first
 open is instant — it falls through to the on-first-run build wherever no prebuilt image is present.
 Because the image is stamped, a shipped one that predates the user's Julia/deps still self-heals.
 
@@ -419,7 +420,7 @@ alongside the fast paths, which is how official Julia binaries ship.
 so every user's precompiled code is compiled on the CPU that will run it — which is why a Windows
 user pays precompilation once at install and never again. Nothing currently ships prebuilt.
 
-**The trigger to watch is TODO #00070** (build the `-full` sysimage per platform in CI and ship it
+**The trigger to watch is** `docs/TODO.md` → *Ship a prebuilt Notebooks sysimage in the bundle* (build the `-full` sysimage per platform in CI and ship it
 in the bundle). The moment that lands, or the constructor bundle carries a warmed depot, a
 `native`-compiled artifact would be rejected on any user whose CPU differs from the build
 machine's — recompiling on first run, or on *every* launch if the bundle is read-only, with nothing

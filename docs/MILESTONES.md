@@ -17,6 +17,36 @@ git-tag, and attach the built artifacts to a GitHub release (see ROADMAP Phases 
 
 ---
 
+## M2 — Distribution + analysis breadth (2026-08-05)
+
+- **Version:** `0.1.0` — the first **plain** release. Every prior tag was an `-rcN`; nine of them never
+  converged, and since Julia sorts an `rc10` prerelease *below* `rc9` as a string, no further rc could
+  have reached an installed client. This tag outranks every prerelease and makes `releases/latest`
+  resolve for the first time.
+- **Packaging:** git tag `v0.1.0` → `release.yml` publishes a ~6 MB portable bundle (prebuilt frontend,
+  `VERSION`, `pixi.toml`/`pixi.lock`) + a SHA-256. `install.sh` / `install.ps1` provision Pixi + Julia
+  and fetch bioformats2raw (~190 MB) and the `ceceliaModels` cellpose checkpoints (~26 MB) at install
+  time. In-app update check + staged apply on launch.
+- **Landed** since M1 (498 commits):
+  - **Distribution end-to-end** — installers, desktop launcher, `pixi run app`, checksum-verified
+    self-update. ROADMAP Phases 4 and 5.
+  - **Clustering** — cells, tracks and spatial regions as first-class populations in the one
+    population manager (ROADMAP Phase 2), with heatmap + UMAP canvas plots.
+  - **Spatial analysis** — neighbour graphs, region clustering, cell–cell contact statistics.
+  - **Statistics on plots** — hypothesis tests, Prism-parity brackets, Compact Letter Display, CSV
+    export; all surviving PDF/PNG/SVG export.
+  - **Branching / skeleton analysis** with anisotropy in µm, and the custom-checkpoint path
+    (`ccia.fluo`) that makes its real fibrous-tissue workflow reachable on a fresh install.
+  - **Task preview** — a resident worker running a task's own compute over the visible region.
+  - **Notebooks** (Pluto) and the **MCP observer** for read-only assistant access.
+  - **Import correctness** — the acquired bit depth is kept, the store codec is an explicit decision,
+    detector clipping is flagged, and calibration reaches NGFF + OME-XML + ccid consistently.
+  - **UI unification with enforcement** — one button/toggle/status vocabulary, semantic scenario
+    utilities, and build-failing detectors for copy length, copy style and tooltip coverage.
+- **Known limitations at this milestone:** written almost entirely by AI and not yet independently
+  tested by another user; native constructor/menuinst installers not built (the shell installers cover
+  all three OSes); system-scope install unverified on a second machine.
+
 ## M1 — Analysis spine (2026-06-27)
 
 - **Version:** `0.0.0` (pre-release dev)

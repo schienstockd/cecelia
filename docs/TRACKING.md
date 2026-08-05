@@ -231,7 +231,7 @@ is `live.cell.speed` present in the cell `obs` **and** the `{value_name}__tracks
 existing. A cached run is skipped; `forceRecompute=true` overrides. **The tracking task owns
 invalidation** — when btrack writes new `track_id`s it drops any stale `live.cell.*` /
 `live.track.*` obs columns (`tracking_utils.py._write_back` via the `drop_obs` chain verb, see
-`docs/DATAMODEL.md` and TODO #00028); `track_measures` likewise drops any leftover broadcast
+`docs/DATAMODEL.md`); `track_measures` likewise drops any leftover broadcast
 `live.track.*` from the cell obs when it runs. Re-running the composite recomputes against the
 fresh tracking and rewrites the track table.
 
@@ -275,5 +275,5 @@ Still deferred:
 3. **Track-gating canvas in the Tracking module (3e)** — the gating scatter + population manager
    with `popType="track"`, reusing the extracted canvas shell; conditional manager option-groups.
 
-Tracked as TODO #00021. All of it builds on the `track_id` + measures already written — nothing
+Tracked in `docs/TODO.md`. All of it builds on the `track_id` + measures already written — nothing
 above needs to change.

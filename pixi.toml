@@ -181,7 +181,7 @@ app = "python app.py"
 # Fetch custom cellpose checkpoints (schienstockd/ceceliaModels → <repo>/models/cellposeModels/).
 # Mirrors the install.sh/.ps1 fetch (bioformats2raw pattern; not in git — see .gitignore /models/).
 # `--ref` and `--dest` override the branch + target dir. See docs/SEGMENTATION.md → Custom
-# cellpose checkpoints, TODO #00087.
+# cellpose checkpoints.
 models-fetch = "python scripts/models_fetch.py"
 
 # Dump every front-facing string (SFCs + task specs + Julia QC text) to UI_COPY_INVENTORY.md, with

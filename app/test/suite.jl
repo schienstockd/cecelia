@@ -191,7 +191,7 @@ end
     end
 end
 
-# ── Custom cellpose model resolver (TODO #00087) ─────────────────────────────
+# ── Custom cellpose model resolver ───────────────────────────────────────────
 # A user-placed checkpoint under `<config_dir>/models/cellposeModels/{name}` is picked up
 # by the cellpose Julia handler and passed to Python as an absolute file path (which
 # `cellpose_utils.py::_get_model` loads via `pretrained_model=…`). No shell-outs, no
@@ -881,7 +881,7 @@ end
 end
 
 # ── commit_state!: registering an output is atomic against a concurrent registration ────────
-# THE lost-update bug (was TODO #00003). Every task used to hand-roll re-read → poke → write, so
+# THE lost-update bug. Every task used to hand-roll re-read → poke → write, so
 # two tasks finishing on one image both read the old dict and the second write dropped the first's
 # field. `write_json_atomic` alone does NOT fix this — each write is individually intact; the
 # second is simply built on stale data.
@@ -5075,7 +5075,7 @@ end
 # ── Summary-canvas population picker (plot_pop_types / plot_population_groups) ──
 # The logic the /api/plots/populations route delegates to — pure, so tested here (the route is a
 # thin wrapper). Covers granularity→pop_type selection, cross-image + cross-pop_type union/dedup,
-# derived-pop injection, and pop_type tagging (the track-pops-in-the-picker fix, docs/TODO #00043).
+# derived-pop injection, and pop_type tagging (the track-pops-in-the-picker fix; docs/POPULATION.md).
 @testset "plot population picker" begin
     # pop_type selection by granularity
     @test plot_pop_types("live", "cell") == ["live"]
@@ -6809,7 +6809,7 @@ end
     @test length(st) == nrow(df)
 
     # regression: an EMPTY measure selection from the GUI arrives as `Vector{Union{}}` (not
-    # Vector{String}); fit must not MethodError on the normalise/scale step. (#00051)
+    # Vector{String}); fit must not MethodError on the normalise/scale step.
     let stu = hmm_fit_states(df, ["live.cell.speed", "live.cell.angle"]; num_states=2, time_col="t",
                              scale_measures=Union{}[], normalise=Dict{String,String}())
         @test count(!ismissing, stu) == count(!ismissing, st)

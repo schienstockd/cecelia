@@ -91,8 +91,8 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 > on its own merits.
 
 **Hard blocker before *any* external handoff:** a root `LICENSE` (GPL-3-or-later) + third-party
-acknowledgements (celltrackR GPL-2) — TODO #00060. Fine to skip for personal rc's; required the moment
-someone else installs it.
+acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.md`, and the
+`license` key in `app/Project.toml` are all in place.
 
 ### One-time constraint: everything shipped so far is stuck behind `v0.1.0-rc9`
 

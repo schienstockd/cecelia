@@ -123,7 +123,7 @@ end
 # use we build it here in the BACKGROUND while notebooks stay usable (slow first plot until it lands).
 # The freshly-built image is picked up by launch.jl on the NEXT server launch — we don't restart a
 # running server out from under an open session. Mirrors the server lifecycle above (one tracked proc,
-# atexit cleanup). See docs/NOTEBOOKS.md and TODO #00070.
+# atexit cleanup). See docs/NOTEBOOKS.md.
 # The stamp format has ONE implementation — pluto/sysimage_stamp.jl — and this file uses it rather
 # than keeping a parallel copy (paths, Manifest fingerprint and both stamp readers used to be
 # duplicated here, "kept trivially in sync" by hand). It is deliberately dependency-free so it can be

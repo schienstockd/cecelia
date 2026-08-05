@@ -3,7 +3,7 @@
 Status: **BUILT** — all four phases landed in one change (2026-08-04). Kept as the record of *why* the
 shape is what it is; the durable "how it works" now lives in `docs/UI.md` → *Deleting is one modal with
 four scopes*, `docs/OBJECTMODEL.md` → *Dropping the analysis*, `docs/MODULES.md` → *`hidden`*, and
-`docs/API.md`. Supersedes `docs/TODO.md` **#00094**. Dominik, 2026-08-04.
+`docs/API.md`. Grew out of a `docs/TODO.md` item, deleted when this shipped. Dominik, 2026-08-04.
 
 **What shipped, against the phases below:** `DeleteImagesDialog.vue` (four scopes) + the plan/execute
 split with `ImageFileActions`; `utils/imageDelete.ts` (union + per-image active resolution,

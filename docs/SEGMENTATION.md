@@ -418,7 +418,8 @@ overloads it beside its struct, and there is a `CompositeTask` overload because 
   matching *deletes* base labels that found no nucleus, so the run finds **fewer** cells than the
   preview shows — the warning says which case you're in. Not run because `_compute_iou_matrix` is
   quadratic: 1.8 s at 100×100 labels, **26.9 s at 400×400**, against a 0.14–0.38 s preview (see
-  `docs/TODO.md` #00093 — the real pipeline pays this per timepoint too).
+  `docs/TODO.md` → *`_compute_iou_matrix` is quadratic in cell count* — the real pipeline pays this per
+  timepoint too).
 - **Not tiled like the run.** `SegmentationUtils` tiles at `blockSize` and re-stitches labels split
   across each seam; the preview segments the visible region as ONE tile. Where a seam would cross the
   region the run's mask is two inferences plus an IoU re-join and the preview's is one, so counts and

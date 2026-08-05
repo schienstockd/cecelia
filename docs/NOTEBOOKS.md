@@ -232,7 +232,7 @@ ignores a stale image (falls back to slow-first-plot rather than handing workers
 and the status endpoint reports `stale` so the page shows a **Rebuild** button — same flow as first-run.
 `_classify_sysimage` (in `notebooks_api.jl`) is the pure, tested classifier: `ready` / `stale` /
 `building` / `error` / `absent`. Release packaging (ship a prebuilt image per platform vs. build on
-first run): see `docs/SHIPPING.md` and TODO #00070.
+first run): see `docs/SHIPPING.md` and `docs/TODO.md` → *Ship a prebuilt Notebooks sysimage in the bundle*.
 
 **Which recipe built it (`variant`).** Both builds write the same `deps.so`, but the deps-only one
 excludes `Cecelia` so workers load it from source, while `-full` bakes it in. That made them

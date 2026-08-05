@@ -54,11 +54,12 @@ scikit-image 0.26.0, numba 0.65.1). Audited 2026-07-27 for cohesion.
 **Upstream dependency (NOT in this PR, but load-bearing for real use):** the segmentation input to
 branching, on real fibrous images (dendritic cells, SHG collagen, FRC networks), was produced by
 the custom Cellpose model **`ccia.fluo`** in the old R version (`inst/models/cellposeModels/ccia.fluo`,
-~26 MiB). The current `segment/cellpose.json` hardcodes cellpose's four built-in models; no path for
-custom checkpoints. Tracked as **TODO #00087** — needs a custom-model slot in the cellpose task and a
-delivery mechanism for `ccia.fluo` (and any other bundled checkpoints). Branching is technically
-usable without it (any binary label set skeletonises fine), but the real workflow — "segment SHG →
-branch it" — is blocked on #00087. Schedule before advertising branching for its intended use case.
+~26 MiB). **RESOLVED** (2026-08-05): custom checkpoints are drop-in. The model picker is populated at serve time
+from `list_cellpose_models()`, any name outside cellpose's built-ins resolves through
+`cellpose_model_path` (user dir → bundled dir) and is loaded by the Python runner as
+`CellposeModel(pretrained_model=<path>)`; `install.sh`/`install.ps1` fetch `ceceliaModels` at install
+time and `pixi run models-fetch` does the same for a clone. So the real workflow — "segment SHG →
+branch it" — is available to a new user. See `docs/SEGMENTATION.md` → *Custom cellpose checkpoints*.
 
 ---
 

@@ -373,9 +373,9 @@ observer is read-only summary-first by design.
 3. **The `uns` key rename is breaking** for anything already banked. Nothing in-tree reads the old
    names, and no notebook exists yet, so the blast radius is Dominik's own EaMaVq run — which
    needs re-running anyway (item 1).
-4. **`ccia.fluo` still blocks the workflow for a new user** (TODO #00087, BRANCHING_PLAN). EaMaVq
-   has a usable `SHG` segmentation so this is testable today, but "segment SHG → branch → quiver"
-   from scratch is still gated on the custom-model slot.
+4. **`ccia.fluo` reaches a new user** (resolved 2026-08-05): the installers fetch `ceceliaModels` and
+   the picker lists any checkpoint in the models dir, so "segment SHG → branch → quiver" from scratch
+   is available. Verified by reading the chain end-to-end, not yet by running it on a fresh install.
 5. **`segmentation_qc.json` declares `groupByOptions: ["t"]`** while the columns API reports
    `["centroid_t"]`, so its LOESS trend chart is unreachable. A one-word fix, deliberately NOT
    applied here — it would enable a chart nobody asked for. Its own change if the trend is wanted.

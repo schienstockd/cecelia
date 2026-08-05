@@ -1,6 +1,6 @@
 # In-app crop panel — replace the napari 3D crop
 
-**Status:** planned (2026-07-22). Supersedes TODO #00079 ("improve the 3D-crop UX"). Decision by Dominik:
+**Status:** planned (2026-07-22). Supersedes the "improve the 3D-crop UX" TODO item. Decision by Dominik:
 the napari-driven crop has a low ceiling (napari only edits shapes in 2-D, the projection collapses all
 channels to one grayscale MIP, and the 2D↔3D dance is clunky). **Remove the napari crop path entirely**
 and do the crop **in the app**.
@@ -107,9 +107,9 @@ Python bridge and the Julia renderer read the same file. Unblocks the colour req
   `CROP_LAYER`/`CROP_MIP_LAYER` consts and `_crop_*` state + the `crop_*` command dispatch.
 - Delete the `/api/napari/crop-*` routes (`server.jl`) and their `napari_api.jl` handlers.
 - Delete the ViewerPanel "3D crop" section + its `crop*` refs/functions (the interim polish added while
-  scoping #00079 is throwaway — superseded here).
+  scoping that item is throwaway — superseded here).
 - Docs: replace `docs/NAPARI.md` → "3D crop" with a pointer to the new panel; add the panel to
-  `docs/UI.md`/`INVENTORY.md`; delete TODO #00079.
+  `docs/UI.md`/`INVENTORY.md`; delete the superseded TODO item.
 - Done when: no `crop` references remain in the napari bridge/api, and the in-app panel is the only crop.
 
 ## Open questions (settle before the phase that hits them)

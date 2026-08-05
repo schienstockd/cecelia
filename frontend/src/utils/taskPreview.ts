@@ -246,7 +246,7 @@ export const FALLBACK_2D_WARN = {
  * takes **1.8 s at 100×100 labels and 26.9 s at 400×400** — it is quadratic in cell count. A warm
  * preview is 0.14–0.38 s, so matching would cost 5×–100× the entire preview and get worse the more
  * cells there are. Honest and fast beats complete and unusable. (That cost is also paid per timepoint
- * by every real nuc+cyto RUN — see TODO #00093.)
+ * by every real nuc+cyto RUN — see docs/TODO.md → `_compute_iou_matrix` is quadratic in cell count.)
  *
  * `removeUnmatched` changes the advice, so it changes the text: with it on, matching DELETES base labels
  * that found no nucleus, so the run genuinely finds fewer cells than the preview shows. With it off the
@@ -332,7 +332,8 @@ export function previewSummary(
 
   // A zero that means "there is nothing here" must never read as "your parameters found nothing" —
   // on a drift-corrected stack a padded plane returns 0 cells and looks exactly like too large a
-  // diameter, so the user retunes against a region that could never produce a mask (TODO #00090).
+  // diameter, so the user retunes against a region that could never produce a mask (docs/TODO.md →
+  // A third of a drift-corrected stack can be empty).
   // The 2D-fallback warning yields to this one: no point explaining z-stitching for an empty region.
   if (cells === 0 && signal && signal.hasSignal === false) {
     warn = signal.noSignalWhy === 'padding' ? 'No image data here' : 'Region is blank'

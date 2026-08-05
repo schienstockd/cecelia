@@ -296,7 +296,7 @@ LabelPropsView(path).add_obs(df).save()       # df has a `label` column + value 
 - **`drop_obs(lp, names)`** stages obs columns to delete (idempotent — names absent from the file
   are ignored). Use to invalidate derived columns whose source changed — the tracking task drops
   stale `live.cell.*` / `live.track.*` measures when it writes new `track_id`s, so a re-track
-  doesn't leave measures computed against the previous tracking (`docs/TODO.md` #00028). Combine
+  doesn't leave measures computed against the previous tracking. Combine
   with `add_obs` in one chain; `save!` applies drops and adds together.
 - **`save!(lp)`** (Julia) / **`save()`** (Python) is the terminal write — flush staged columns in
   one open/write/close. Julia writes each as a `/obs/<name>` float64 dataset with
@@ -315,7 +315,7 @@ matrix is a full rewrite, not a cheap append). Building a new `.h5ad` from measu
 (`X` + `var` + `obsm`) is the producing task's job and is done in Python via `anndata`
 (`python/cecelia/utils/measure_utils.py`) — the "Python owns the files it produces" boundary. Gating
 needs only `:vars` columns to be gateable today, so measures that must be gateable are deferred to
-the phase that settles per-track storage (`docs/TODO.md` #00021), not force-written to `X` here.
+the phase that settles per-track storage, not force-written to `X` here.
 
 This is also a hard rule in `CLAUDE.md` (*H5AD / cell-data access*).
 

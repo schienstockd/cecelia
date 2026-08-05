@@ -75,7 +75,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   delete modal on the Import page (whole images / versions + new active / label sets / all analysis)
   and Settings for automatic whole-project reclaim. Unlists the `importImages.remove` task rather than
   deleting it (the chain suite's real-task workhorse) and scraps the ViewerPanel label delete. New core
-  `reset_image_analysis!` (keep-list, not delete-list). Supersedes `docs/TODO.md` #00094.
+  `reset_image_analysis!` (keep-list, not delete-list). Grew out of a since-deleted `docs/TODO.md` item.
 - `SKETCH_ENGINE_PLAN.md` — the **feijoa** play repo
   (`github.com/schienstockd/feijoa`, `~/cc-workspace/feijoa`) where sketches are authored for
   cecelia's tip cards. Not yet wired into cecelia — the plan documents the git-dep + conditional

@@ -2,7 +2,7 @@
 
 **Status: BUILT** — shipped in #437 (2026-08-01) with two consumers, `segment.cellpose` and
 `cleanupImages.afCorrect`. Denoise is deliberately not a consumer; see *Denoise waits for coastal*.
-`docs/TODO.md` #00089 is retired accordingly, and the durable half is promoted into
+The originating `docs/TODO.md` item is retired accordingly, and the durable half is promoted into
 `docs/SEGMENTATION.md` → *Previewing params BEFORE a run (the task preview)*.
 
 **This file is kept for the measurements, not the plan.** Everything below that reads as a decision was
@@ -269,7 +269,7 @@ knowing.
 - **Is a 25 s first preview acceptable?** → **Yes, warmed at toggle-on** so the wait is attributable.
   `normaliseToWhole=false` was rejected: a faster preview that disagrees with the run is what Decision 5
   exists to prevent. AF pays a comparable cold cost for its own globals (~11 s measured).
-- **An empty region reads as "0 cells", which is misleading.** → **Split out as `docs/TODO.md` #00090**,
+- **An empty region reads as "0 cells", which is misleading.** → **Split out as `docs/TODO.md` → *A third of a drift-corrected stack can be empty***,
   which is the wider bug (every task processes the padding, ~38% of GPU time on one image). `#435` landed
   `zarr_utils.read_valid_box` as the mechanism.
 - **Model load latency** → **not a factor (0.2 s).** The worker holds one model at a time.
@@ -296,7 +296,7 @@ because side notes in a conversation do not survive it:
 | A preview's scratch store accumulated with nothing owning it | **removed the store entirely** (Decision 3) |
 | `store_sweep` matches NAMES, so it only sees writers that opted into `staged_store` — import writes straight to the final name and slips through | its own item: detect incompleteness structurally (unregistered store, or declared-but-absent pyramid levels), not by name |
 | The Settings cleanup needs to announce itself, not be knowledge | report leftover bytes in the existing storage box |
-| 8 of 21 planes on a drift-corrected image are empty and every task processes them | `docs/TODO.md` **#00090** — pipeline-wide, not preview-specific |
+| 8 of 21 planes on a drift-corrected image are empty and every task processes them | `docs/TODO.md` → *A third of a drift-corrected stack can be empty* — pipeline-wide, not preview-specific |
 | The preview only handles the `base` model type, so a nuc+cyto run is not what the run produces | stated limitation, to fix or surface |
 | Nothing exposes which image the viewer has open, so out-of-band callers guess (I guessed wrong three times) | the API status route |
 | The worker is a fourth resident process with no pixi task, service-panel entry, or `stop` wiring | operational surface |

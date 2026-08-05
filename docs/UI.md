@@ -1774,7 +1774,7 @@ Chain events flow: `_update_node_state!` (Julia) → `subscribe_chain_events!` s
 The synthetic task ID is `runId::nodeId::imageUid` — stable across updates so the same entry is updated in place. Chain tasks appear in `TaskList` with a purple `pi-sitemap` badge. The rerun button is suppressed for chain tasks (they're driven by `run_chain`, not the task queue).
 
 `addFromChainEvent` stores `label` from `opts.label` (which may be empty — the backend events
-don't include a `label` field yet; see TODO #00018). Fallback is `fn.split('.').pop()`.
+don't include a `label` field yet). Fallback is `fn.split('.').pop()`.
 
 **Cancel from TaskList**: when `t.chainRunId` is set, the cancel button sends `chain:cancel {runId}`
 over WS and calls `cancelChainRun(runId)` in the task store (which marks all tasks with that
@@ -1997,7 +1997,7 @@ factored out of the gating page so every module canvas reuses them unchanged:
   that key, so open plots **persist across navigation** (re-binds the same panels instead of starting
   empty). Cleared on project open/close. ⚠️ **Seed default panels only when the canvas is empty**
   (`if (panels.value.length === 0) add()`) — an unconditional `add()` in `onMounted` stacks duplicates
-  every remount (the Gate↔Tracking 2→4→6 bug, #00044).
+  every remount (the Gate↔Tracking 2→4→6 bug).
 
 ---
 

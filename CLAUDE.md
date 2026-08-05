@@ -107,8 +107,10 @@ Completed prompt files are kept in a `previous-prompts/` folder in the **workspa
   the loosest edges, so orphans drift into it: a deliberate non-goal, or something conditional on a
   trigger that may never fire, belongs in `docs/FUTURE.md`. There's a routing table at the top of
   `docs/TODO.md` — check it before adding an entry.
-- IDs are stable so code comments can cite them (`# see TODO #00020`) — increment the highest. They
-  are not sacred: renumber to resolve a collision, and note it in the item.
+- Items are keyed by **title**, not a number. Cite one as `docs/TODO.md` → *Title*. Numeric IDs were
+  retired 2026-08-05 (half the code comments citing one pointed at a deleted item — see the note in
+  `docs/TODO.md`). **From code, prefer the permanent reference** — a `docs/<AREA>.md` section or a
+  `docs/todo/X_PLAN.md` path, which cannot dangle when the work ships.
 
 ## Parked plans (`docs/todo/`)
 

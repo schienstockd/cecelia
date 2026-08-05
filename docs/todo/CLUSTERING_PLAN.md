@@ -36,7 +36,7 @@ canvas is mostly assembly.
 3. **jFWePN e2e spot-check** — tick→membership set-wide, trackclust expand-to-cells (backend verified
    this session via the `_expand_tracks_to_cells` fix), napari colour-by-`clusters.{suffix}`.
 
-**Done since (2026-07-01):** Canvas export/theme cleanup (**#00061**) — DPR-aware export scale,
+**Done since (2026-07-01):** Canvas export/theme cleanup — DPR-aware export scale,
 UMAP now composites into its PNG (ancestor-background clear), UMAP + heatmap honour the dark-theme
 knob, gate-plot x-axis label no longer clipped by the footer. Installer 404 fix (prerelease-aware
 bootstrap) also merged.
@@ -111,7 +111,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
   toggles (clust points / trackclust ribbons); HMM behaviour plots (states / transitions) on the
   canvas; styling generalised (`PlotOptions` + `PopulationPanelShell` + `plots/export.ts`/`overlays.ts`),
   duplicate/export on every cluster + gate plot. **See "Current state & remaining (2026-07-01)" at the
-  top for the live status + the short remaining list** (sub-clustering, #00061 cleanup, umap-learn pin,
+  top for the live status + the short remaining list** (sub-clustering, the canvas-export cleanup, umap-learn pin,
   e2e spot-check).
 
 ## Goal

@@ -38,7 +38,7 @@ task_previewable(::CellposeSegment) = true
 # Cellpose's built-in model names. Anything outside this set is treated as a *custom* checkpoint name
 # and resolved via `cellpose_model_path` into a file path the Python runner loads with
 # `CellposeModel(pretrained_model=<path>)` — see `cellpose_utils.py::_get_model` (its
-# `os.path.isfile(model_type)` branch is the pickup point). See TODO #00087.
+# `os.path.isfile(model_type)` branch is the pickup point). See docs/SEGMENTATION.md → *Custom cellpose checkpoints*.
 const BUILTIN_CELLPOSE_MODELS = ("cyto3", "cyto2", "cyto", "nuclei")
 
 """

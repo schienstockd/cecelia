@@ -2,7 +2,7 @@
 
 Status (updated 2026-07-24): A–G + F1/F2 **done/merged**. **Phase H (movie title card) DONE** across
 all three entry points (H1 primitive, H2 batch, H3 single record, H4 animation) — see the H section
-below. Supersedes the ad-hoc parts of the image-strip tasks (#00032 legend, #00036 zoom-to-source) —
+below. Supersedes the ad-hoc parts of the image-strip tasks (strip legend, zoom-to-source) —
 both now live on the shared snapshot foundation.
 
 ## Goal
@@ -123,13 +123,13 @@ matches how figures are actually made; F2 is the advanced follow-on.
 - **~~A. Snapshot atom~~ — DONE** — `capture_view_state()` + `apply_view_state(json)` in the bridge
   (whitelist + sanitise + only-present-layers filter); capture folded into the screenshot reply;
   round-trip tested (incl. colormap change). Camera + T/Z + contrast + colormap restore.
-- **~~B. Zoom-to-source (#00036)~~ — DONE** — each strip frame stores `{imageUid, valueName, snapshot,
+- **~~B. Zoom-to-source~~ — DONE** — each strip frame stores `{imageUid, valueName, snapshot,
   colourBy}`; `ImageStripView.zoomToSource` reopens the image + `POST /api/napari/apply-view-state`
   restores the exact view, then **re-pushes the tracks/pops** the frame had — derived from the snapshot's
   overlay layer names (`utils/overlayLayers`) + the captured colour-by, via `utils/napariOverlays`
   (show-tracks/show-populations/colour-labels). (Fixes: overlays weren't restored because the board's
   ViewerPanel may be closed, so open alone only recreated channel layers.) Durable across sessions.
-- **~~C. Strip legend (#00032)~~ — DONE** *(needs A, G)* — channel + population + colour-by colour swatches
+- **~~C. Strip legend~~ — DONE** *(needs A, G)* — channel + population + colour-by colour swatches
   below each frame, from the snapshot + a read-only legend, toggled in the ⚙.
   - **~~Backbone (S1)~~ + ~~channel section~~:** the shared model `utils/viewLegend.ts` + `ViewLegend.vue`.
   - **~~Populations + colour-by sections~~:** captured with the screenshot via `POST /api/napari/overlay-legend`
