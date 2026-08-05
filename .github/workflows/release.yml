@@ -52,7 +52,10 @@ jobs:
           ls -lh out/
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        # v3 = the same action on the Node 24 runtime (v3.0.0 was runtime-only; `v2` is pinned to
+        # the 2.x line and still declares node20, which GitHub now force-runs on 24 with a
+        # deprecation warning). Inputs below are unchanged between the two majors.
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             out/cecelia.tar.gz
