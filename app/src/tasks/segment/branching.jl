@@ -82,15 +82,9 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
     # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a
     # corrected image with extra/renamed channels resolves correctly.
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", nothing)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
-    fibre_channels_raw = get(params, "fibreChannels", [])
-    fibre_indices = Int[]
-    for ch in fibre_channels_raw
-        idx = findfirst(==(String(ch)), ch_names)
-        isnothing(idx) || push!(fibre_indices, idx - 1)
-    end
+    ch_names = ccid_channel_names(raw, nothing)          # nothing → the ACTIVE version
+    fibre_indices = channel_indices(get(params, "fibreChannels", []), ch_names;
+                                    what = "fibreChannels")
     # Only `anisotropySource="channel"` reads raw pixels; "skeleton"/"mask" work off the labels, so
     # an empty fibreChannels is only a problem for the channel source.
     aniso_source = string(get(params, "anisotropySource", "skeleton"))

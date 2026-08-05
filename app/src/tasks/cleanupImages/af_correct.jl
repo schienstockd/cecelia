@@ -21,9 +21,7 @@ output. Silently dropped rather than rejected because the two lists are separate
 the same channel in both is an easy slip with one obvious intent.
 """
 function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Dict{String,Any}
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
+    ch_names = ccid_channel_names(raw)
 
     af_combos_raw = get(params, "afCombinations", nothing)
     af_combos = Dict{String,Any}()
@@ -32,31 +30,17 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
     for (k, v) in af_combos_raw
         entry = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
 
-        # competingChannels: channel names → 0-based indices (an already-translated index passes
-        # through, so this is idempotent — a REPL or chain caller may hand back a converted dict)
-        idx_channels = Int[]
-        for ch in get(entry, "competingChannels", [])
-            if ch isa Integer
-                push!(idx_channels, Int(ch))
-                continue
-            end
-            idx = findfirst(==(String(ch)), ch_names)
-            isnothing(idx) || push!(idx_channels, idx - 1)
-        end
+        # competingChannels / targetChannel → 0-based indices via the one resolver (model/image.jl).
+        # Idempotent on integers, so a REPL or chain caller may hand back a converted dict; `unique`
+        # is the resolver's default because a channel named twice would square its term into the
+        # weight's denominator a second time.
+        idx_channels = channel_indices(get(entry, "competingChannels", []), ch_names;
+                                       what = "competingChannels")
 
-        # targetChannel: resolve name → 0-based index → use as the af_combos key
         raw_target = get(entry, "targetChannel", [])
         delete!(entry, "targetChannel")
-        combo_key = String(k)
-        if !isempty(raw_target)
-            q = first(raw_target)
-            if q isa Integer
-                combo_key = string(Int(q))
-            else
-                idx = findfirst(==(String(q)), ch_names)
-                isnothing(idx) || (combo_key = string(idx - 1))
-            end
-        end
+        target_sel = channel_indices(raw_target, ch_names; what = "targetChannel")
+        combo_key = isempty(target_sel) ? String(k) : string(first(target_sel))
 
         # the target competes with the OTHERS, never with itself — see the docstring
         target_idx = tryparse(Int, combo_key)

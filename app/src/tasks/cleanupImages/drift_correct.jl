@@ -53,22 +53,27 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
 
-    # Convert driftChannel from channel name to 0-based index
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
-
-    drift_channel_raw = get(params, "driftChannel", nothing)
+    # driftChannel → 0-based index, through the ONE resolver (`channel_index`, model/image.jl).
+    #
+    # This used to fall back to index 0 whenever the name did not resolve, which is the worst possible
+    # default: channel 0 here is SHG at 99.5% zeros, so the whole timelapse would be registered against
+    # noise with nothing in the log to say so. The reference channel is worth about 2x in shift jitter
+    # (measured on `zolIMa/2h06xA`: Y sd 1.86 px registering on CD169-Kat vs 0.93 px on mem-TOM), so
+    # this is a parameter that has to be right rather than defaulted.
+    ch_names = ccid_channel_names(raw)
+    # channelSelection stores an array even when multiple=false
+    drift_sel = channel_indices(get(params, "driftChannel", nothing), ch_names;
+                                what = "driftChannel")
     drift_channel_idx = 0
-    if !isnothing(drift_channel_raw)
-        # channelSelection stores as array even when multiple=false
-        raw_ch = drift_channel_raw isa AbstractVector ? drift_channel_raw :
-                 [drift_channel_raw]
-        if !isempty(raw_ch) && !isempty(ch_names)
-            ch_str = String(raw_ch[1])
-            idx = findfirst(==(ch_str), ch_names)
-            isnothing(idx) || (drift_channel_idx = idx - 1)
-        end
+    if isempty(drift_sel)
+        # The task JSON defaults `driftChannel` to `[]`, so "nothing picked" is a reachable GUI state
+        # and index 0 stays the fallback rather than becoming an error. But SAY so — silence here is
+        # what let a whole movie register against SHG unnoticed.
+        on_log("[WARN] No drift reference channel selected — registering on channel 0" *
+               (isempty(ch_names) ? "" : " ('$(first(ch_names))')") *
+               ". Pick the brightest, most structured channel: the estimate is only as good as it is.")
+    else
+        drift_channel_idx = first(drift_sel)
     end
 
     on_log("[INFO] Input:       $im_path")

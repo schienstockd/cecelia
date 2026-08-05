@@ -44,6 +44,7 @@ export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log
 export read_dismissed, set_dismissed!
 export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
+export channel_index, channel_indices, ccid_channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
 export with_transaction, commit_state!

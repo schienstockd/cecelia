@@ -1788,6 +1788,77 @@ end
     @test !(Cecelia.qc_finding("warn", "x.y", "s", "l")["long"] |> isempty)
 end
 
+@testset "one resolver turns channel names into indices" begin
+    # SIX handlers had hand-rolled `findfirst(==(String(ch)), ch_names)` and drifted into three
+    # different behaviours, all silently wrong: an already-resolved index crashed four of them, an
+    # unmatched name was dropped by five, and `drift_correct` fell back to index 0 — which on a
+    # resonance-scanner movie means registering the whole timelapse against SHG at 99.5% zeros.
+    names = ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
+
+    @test Cecelia.channel_index("mem-TOM", names) == 2          # 0-BASED, for the Python side
+    @test Cecelia.channel_index("SHG", names) == 0
+    @test Cecelia.channel_indices(["CD169-Kat", "nuc-GFP"], names) == [3, 1]   # order preserved
+
+    # idempotent: an index passes through, so translating a chain dict twice is a no-op
+    @test Cecelia.channel_index(2, names) == 2
+    @test Cecelia.channel_indices([2, "CD169-Kat"], names) == [2, 3]
+
+    # a single value, not a vector — `channelSelection` with multiple=false still arrives as one
+    @test Cecelia.channel_indices("mem-TOM", names) == [2]
+
+    # deduped by default: a channel named twice would square its term into the AF denominator
+    @test Cecelia.channel_indices(["mem-TOM", "mem-TOM"], names) == [2]
+    @test Cecelia.channel_indices(["mem-TOM", "mem-TOM"], names; unique_only = false) == [2, 2]
+
+    # "nothing selected" is a legitimate state each task judges for itself (branching only needs
+    # fibreChannels for anisotropySource="channel") — not an error
+    @test Cecelia.channel_indices(nothing, names) == Int[]
+    @test Cecelia.channel_indices([], names) == Int[]
+
+    # AN UNMATCHED NAME RAISES, and the message names what was available. This is the deliberate
+    # behaviour change from silent-drop: a channel the user named and we cannot find is not a thing
+    # to guess about.
+    err = try; Cecelia.channel_index("CH3", names); nothing; catch e; e; end
+    @test err isa ErrorException
+    @test occursin("CH3", err.msg) && occursin("mem-TOM", err.msg)
+    @test_throws ErrorException Cecelia.channel_indices(["nuc-GFP", "nope"], names)
+    # ...including when the image registered no names at all, rather than silently indexing nothing
+    @test_throws ErrorException Cecelia.channel_index("nuc-GFP", String[])
+
+    # A case-only difference is the common real cause: two images from ONE experiment shipped
+    # `mem-TOM` (zolIMa/eQRnwU) and `mem-Tom` (zolIMa/fXgbTl), so a chain built on one fails on the
+    # other. Still an error — the match stays exact, guessing is what this resolver removes — but the
+    # message names the near match so it is a five-second fix.
+    cased = try; Cecelia.channel_index("mem-TOM", ["SHG", "nuc-GFP", "mem-Tom"]); nothing
+            catch e; e end
+    @test cased isa ErrorException
+    @test occursin("mem-Tom", cased.msg) && occursin("case", cased.msg)
+
+    # ccid_channel_names reads the versioned field; `nothing` asks for the ACTIVE version
+    raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+        "default" => names, "corrected" => ["a", "b"], "_active" => "corrected"))
+    @test Cecelia.ccid_channel_names(raw) == names                  # default
+    @test Cecelia.ccid_channel_names(raw, nothing) == ["a", "b"]    # active
+    @test Cecelia.ccid_channel_names(Dict{String,Any}()) == String[]
+
+    # NO SEVENTH COPY. The detector, not just the extraction — this is the second time this file has
+    # had to count these sites, and grep-based guesses were wrong both times.
+    src_root = dirname(pathof(Cecelia))
+    offenders = String[]
+    for (root, _, files) in walkdir(joinpath(src_root, "tasks"))
+        for f in files
+            endswith(f, ".jl") || continue
+            body = read(joinpath(root, f), String)
+            for line in split(body, '\n')
+                startswith(strip(line), "#") && continue
+                occursin(r"findfirst\(==\(String\(", line) &&
+                    push!(offenders, relpath(joinpath(root, f), src_root))
+            end
+        end
+    end
+    @test isempty(offenders)
+end
+
 @testset "AF params are just channels" begin
     # The spec grew into a bag of ~20 numbers while fitting individual datasets and was never
     # revisited. A combination is now the two things it is actually about; everything else is derived
@@ -8604,10 +8675,16 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # idempotent: already-translated indices survive a second pass (a REPL/chain caller)
             @test Cecelia.cellpose_models_for_python(got, raw)["0"]["cellChannels"] == [2]
 
-            # a channel the image does not have is dropped, not turned into a bogus index
+            # A channel the image does not have RAISES — it is never turned into a bogus index, and no
+            # longer silently dropped either. Dropping satisfied the letter of "don't fabricate an
+            # index" while still segmenting: on no channels, or on whichever of the pair survived. The
+            # message names what was available, exactly like the missing-checkpoint case below; both are
+            # "a param we cannot resolve", and this file already prefers raising for that.
             bad = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
                 "cellChannels" => ["CH9"], "nucChannels" => [])))
-            @test Cecelia.cellpose_models_for_python(bad, raw)["0"]["cellChannels"] == Int[]
+            bad_err = try; Cecelia.cellpose_models_for_python(bad, raw); nothing; catch e; e end
+            @test bad_err isa ErrorException
+            @test occursin("CH9", bad_err.msg) && occursin("CH1", bad_err.msg)
 
             # a missing CUSTOM checkpoint raises with a message worth showing, rather than failing
             # deep inside cellpose — the second translation the preview used to skip
@@ -8908,10 +8985,21 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             img.im_channel_names["default"] = ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
             save!(img)
 
-            # the real saved shape from a live project: channel NAMES, including one ("CH4") that is
-            # not in this image's channel list at all — it resolves to nothing, exactly as the run does
-            params = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+            # A name this image does not have RAISES rather than dropping out of the competitor list.
+            # Dropping looked harmless but changes the correction silently: the weight's denominator
+            # loses a term, so every corrected voxel is wrong by an amount nothing reports. Naming a
+            # channel that isn't there is a stale saved param, and the fix is to re-pick it.
+            stale = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
                 "competingChannels" => ["CH4", "CD169-Kat"],
+                "targetChannel"     => ["mem-TOM"])))
+            stale_err = try
+                Cecelia.preview_params_for_run(Cecelia.AfCorrect(), stale, img); nothing
+            catch e; e end
+            @test stale_err isa ErrorException
+            @test occursin("CH4", stale_err.msg) && occursin("CD169-Kat", stale_err.msg)
+
+            params = Dict{String,Any}("afCombinations" => Dict("1" => Dict{String,Any}(
+                "competingChannels" => ["CD169-Kat"],
                 "targetChannel"     => ["mem-TOM"])))
             out = Cecelia.preview_params_for_run(Cecelia.AfCorrect(), params, img)
             # targetChannel re-keys the combination to the channel being corrected (mem-TOM → 2)

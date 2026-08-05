@@ -25,24 +25,17 @@ function _run_task(task::CellposeCorrect, img::CciaImage, params::Dict{String,An
         return nothing
     end
 
-    # Channel names → 0-based indices
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
+    ch_names = ccid_channel_names(raw)
 
     models_json      = get(params, "models", nothing)
     models_converted = Dict{String,Any}()
     if !isnothing(models_json)
         for (k, v) in models_json
             m = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
-            raw_channels = get(m, "modelChannels", [])
-            idx_channels = Int[]
-            for ch in raw_channels
-                ch_str = String(ch)
-                idx = findfirst(==(ch_str), ch_names)
-                isnothing(idx) || push!(idx_channels, idx - 1)
-            end
-            m["modelChannels"] = idx_channels
+            # names → 0-based indices via the one resolver (model/image.jl); idempotent, and an
+            # unmatched name raises instead of quietly denoising a different set of channels
+            m["modelChannels"] = channel_indices(get(m, "modelChannels", []), ch_names;
+                                                 what = "modelChannels")
             models_converted[String(k)] = m
         end
     end
