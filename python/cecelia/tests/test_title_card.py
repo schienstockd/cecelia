@@ -67,6 +67,55 @@ class RenderCardFrameTests(unittest.TestCase):
         self.assertEqual(arr.shape, (120, 200, 3))
 
 
+class FontCoverageTests(unittest.TestCase):
+    """The font must render the characters real title cards actually contain.
+
+    Titles are built as `name — attr — attr` with an EM DASH (U+2014) in api/src/napari_api.jl, and
+    notes/attributes are free user text (µm, °, accents). Pillow's built-in Aileron covers little more
+    than ASCII, so every title card shipped `.notdef` boxes where the separators were.
+
+    A missing glyph is NOT an exception and NOT a zero-size mask — it is the font's `.notdef` box,
+    which has a perfectly ordinary width. So coverage is asserted by comparing against a character
+    the font certainly lacks: if `—` draws the same bitmap as a CJK ideograph, both are the box.
+    """
+
+    def _mask(self, font, ch):
+        import numpy as np
+        m = font.getmask(ch)
+        if not m.size[0]:
+            return None
+        return np.array(m, dtype=np.uint8).reshape(m.size[1], m.size[0])
+
+    def _is_notdef(self, font, ch):
+        got, missing = self._mask(font, ch), self._mask(font, "中")   # 中 — not in any Latin font
+        if got is None or missing is None:
+            return got is None
+        return got.shape == missing.shape and (got == missing).all()
+
+    def test_renders_em_dash_and_not_a_box(self):
+        font = tc._font(28)
+        self.assertFalse(self._is_notdef(font, "—"), "em dash renders as .notdef — title cards show boxes")
+
+    def test_renders_the_other_characters_user_text_carries(self):
+        font = tc._font(28)
+        for ch in ("µ", "°", "é", "–", "…"):     # µ ° é en-dash ellipsis
+            self.assertFalse(self._is_notdef(font, ch), f"{ch!r} renders as .notdef")
+
+    def test_ascii_still_renders(self):
+        font = tc._font(28)
+        self.assertFalse(self._is_notdef(font, "A"))
+
+    def test_detector_catches_the_font_we_regressed_from(self):
+        # Guards the assertions above: prove the check FAILS on Pillow's built-in, so a future reorder
+        # of _font back to load_default-first is caught rather than silently passing.
+        from PIL import ImageFont
+        try:
+            builtin = ImageFont.load_default(size=28)
+        except TypeError:
+            self.skipTest("Pillow < 10 has no scalable built-in")
+        self.assertTrue(self._is_notdef(builtin, "—"))
+
+
 class WrapTests(unittest.TestCase):
     def _draw(self):
         from PIL import Image, ImageDraw

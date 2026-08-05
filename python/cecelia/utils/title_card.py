@@ -37,20 +37,40 @@ _FG_NOTE   = (170, 170, 180)
 _SWATCH_BORDER = (255, 255, 255)
 
 
-def _font(size):
-    """A font at ``size`` px. Prefers the scalable built-in (Pillow ≥ 10), then a bundled TrueType,
-    then the fixed default — so we never hard-depend on a font file being present."""
-    size = max(8, int(size))
+#: A real TrueType is tried BEFORE Pillow's built-in, and the order matters. `load_default(size=…)`
+#: succeeds on every Pillow >= 10, so putting it first made the TrueType branch below dead code — and
+#: the built-in (Aileron) covers little more than ASCII. Titles are `name — attr — attr` (EM DASH,
+#: U+2014, from `_title_card_content` in api/src/napari_api.jl), so every real title card rendered
+#: `.notdef` boxes where the separators were: Aileron's mask for `—` is bitmap-identical to its mask
+#: for `中`, which is how a missing glyph looks. Notes and attribute values are user text and can hold
+#: anything (µm, °, accents), so ASCII-only was never enough here.
+#:
+#: matplotlib's bundled copy is listed first because it is an in-env absolute path — present on every
+#: platform the app ships to, unlike a bare name, which needs the OS font dirs to hold it. The bare
+#: names stay as a fallback for a slim env without matplotlib.
+def _font_candidates():
     try:
-        return ImageFont.load_default(size=size)          # Pillow ≥ 10 scales the built-in
-    except TypeError:
+        import matplotlib
+        from pathlib import Path
+        yield str(Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans.ttf")
+    except Exception:
         pass
-    for name in ("DejaVuSans.ttf", "Arial.ttf", "LiberationSans-Regular.ttf"):
+    yield from ("DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Arial.ttf")
+
+
+def _font(size):
+    """A font at ``size`` px. Prefers a real TrueType with non-ASCII coverage, then the scalable
+    built-in (Pillow >= 10), then the fixed default — so we never hard-depend on a font file."""
+    size = max(8, int(size))
+    for name in _font_candidates():
         try:
             return ImageFont.truetype(name, size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)          # Pillow >= 10 scales the built-in
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def _hex_rgb(value):
