@@ -104,7 +104,7 @@ export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
-export AfCorrect, DriftCorrect, CompositeTask
+export AfCorrect, DriftCorrect, TemporalSmooth, CompositeTask
 export CropImage
 export CopyImage
 
@@ -186,6 +186,7 @@ include("tasks/importImages/migrateLegacy.jl")
 include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
+include("tasks/cleanupImages/temporal_smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")

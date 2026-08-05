@@ -1690,6 +1690,55 @@ end
     @test isempty(Cecelia._branching_qc_findings(5))
 end
 
+@testset "Temporal smoothing QC" begin
+    # Both findings key off the persisted python stats, so the helper is fed exactly what
+    # temporal_smooth_run.py writes. Photon-limited input: zeros fall from ~90% to ~5%, no clipping.
+    worked = Dict{String,Any}(
+        "gain" => 2.4, "clippedVoxels" => 0,
+        "zeroFracIn"  => Dict{String,Any}("0" => 0.91, "1" => 0.88),
+        "zeroFracOut" => Dict{String,Any}("0" => 0.06, "1" => 0.05))
+    @test isempty(Cecelia._temporal_smooth_qc_findings(worked))
+
+    # Gain clipping — the bright end of every smoothed channel is now flat.
+    clipped = merge(worked, Dict{String,Any}("clippedVoxels" => 1234))
+    f = Cecelia._temporal_smooth_qc_findings(clipped)
+    @test length(f) == 1 && f[1]["code"] == "smooth.gain_clipped" && f[1]["level"] == "warn"
+    @test f[1]["short"] == "Dynamic-range gain clipped 1234 voxels"  # the count is IN the message
+    @test occursin("Restore dynamic range", f[1]["long"]) # the action, imperative
+    @test f[1]["detail"] isa AbstractDict
+    # from the catalog, so it re-renders at read time like every other finding
+    @test haskey(Cecelia.QC_TEXT, "smooth.gain_clipped")
+    @test f[1]["key"] == "smooth.gain_clipped"
+
+    # Dense input — nothing sparse to fill, so the step bought nothing. Info, not warn.
+    dense = Dict{String,Any}(
+        "gain" => 1.0, "clippedVoxels" => 0,
+        "zeroFracIn"  => Dict{String,Any}("0" => 0.02),
+        "zeroFracOut" => Dict{String,Any}("0" => 0.00))
+    fd = Cecelia._temporal_smooth_qc_findings(dense)
+    @test length(fd) == 1 && fd[1]["code"] == "smooth.no_effect" && fd[1]["level"] == "info"
+    @test haskey(Cecelia.QC_TEXT, "smooth.no_effect")
+
+    # advisory only, per docs/MODULES.md — never an error, never a gate
+    @test all(x -> x["level"] in ("info", "warn"),
+              vcat(Cecelia._temporal_smooth_qc_findings(clipped), fd))
+
+    # Metrics reduce the per-channel dicts to the WORST channel — a step that filled one channel and
+    # left another sparse is the case worth seeing.
+    m = Cecelia._temporal_smooth_metrics(worked)
+    @test m["zeroFracInMax"]  == 0.91
+    @test m["zeroFracOutMax"] == 0.06
+    @test m["gain"] == 2.4 && m["clippedVoxels"] == 0
+
+    # Missing stats must not throw — the helper runs on whatever python managed to write.
+    @test Cecelia._temporal_smooth_metrics(Dict{String,Any}())["gain"] == 1.0
+    @test isempty(Cecelia._temporal_smooth_qc_findings(Dict{String,Any}()))
+
+    # Deliberately NOT cohort: the input is the drift-corrected store, whose zero fraction includes
+    # the canvas padding drift correction added, so the outlier detector would rank images by shake.
+    @test !haskey(COHORT_METRICS, "cleanupImages.temporalSmooth")
+end
+
 @testset "AF correction QC — the exemption that got retired" begin
     # This task carried a QC-EXEMPT comment calling itself the weakest exemption in the codebase.
     # It now has exactly ONE finding: the correction has no free parameter left to land badly, so the
@@ -3137,6 +3186,7 @@ end
     @test Cecelia._spec_output_value_name(CellposeCorrect(), "fallback") == "cpCorrected"
     @test Cecelia._spec_output_value_name(DriftCorrect(),    "fallback") == "driftCorrected"
     @test Cecelia._spec_output_value_name(AfCorrect(),       "fallback") == "afCorrected"
+    @test Cecelia._spec_output_value_name(TemporalSmooth(),  "fallback") == "temporalSmoothed"
     # A task that declares no top-level outputValueName falls back to the caller's default
     @test Cecelia._spec_output_value_name(RemoveImage(), "fallback") == "fallback"
 end
@@ -4184,6 +4234,7 @@ end
     @test _task_from_fun_name("cleanupImages.cellposeCorrect") isa CellposeCorrect
     @test _task_from_fun_name("cleanupImages.afCorrect")       isa AfCorrect
     @test _task_from_fun_name("cleanupImages.driftCorrect")    isa DriftCorrect
+    @test _task_from_fun_name("cleanupImages.temporalSmooth")  isa TemporalSmooth
     @test _task_from_fun_name("segment.cellpose")              isa CellposeSegment
     @test _task_from_fun_name("segment.measureLabels")         isa MeasureLabels
     composite = _task_from_fun_name("cleanupImages.afDriftCorrect")

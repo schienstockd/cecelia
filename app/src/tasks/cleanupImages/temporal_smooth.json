@@ -1,0 +1,66 @@
+{
+  "task": "temporalSmooth",
+  "fun_name": "cleanupImages.temporalSmooth",
+  "label": "Temporal smoothing",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "outputValueName": "temporalSmoothed",
+  "requires": { "axes": ["T"] },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to smooth",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "tip": "Use a drift-corrected version — frames must be aligned"
+    },
+    {
+      "key": "channels",
+      "label": "Channels to smooth",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Unselected channels are copied through unchanged — leave SHG/THG out"
+    },
+    {
+      "key": "spatialSigma",
+      "label": "Spatial sigma (px)",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 4.0,
+      "step": 0.5,
+      "tip": "xy Gaussian before the temporal statistic — 0 keeps less signal than no smoothing"
+    },
+    {
+      "key": "temporalFrames",
+      "label": "Temporal window (frames)",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "step": 2,
+      "tip": "Full centred width, forced odd. 1 disables the temporal term"
+    },
+    {
+      "key": "temporalStat",
+      "label": "Temporal statistic",
+      "type": "select",
+      "default": "median",
+      "options": [
+        { "label": "Median", "value": "median" },
+        { "label": "Mean",   "value": "mean" }
+      ],
+      "tip": "Median rejects a cell that moved through the window; mean inflates masks ~34%"
+    },
+    {
+      "key": "restoreDynamicRange",
+      "label": "Restore dynamic range",
+      "type": "bool",
+      "default": true,
+      "tip": "One gain for all smoothed channels, so cross-channel ratios hold"
+    }
+  ]
+}
