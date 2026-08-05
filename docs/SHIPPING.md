@@ -338,10 +338,29 @@ The cu124 wheel index carries only Linux/Windows wheels, so `torch`/`torchvision
 `[target.linux-64.*]` / `[target.win-64.*]` with that index and in `[target.osx-arm64.*]` from the
 default index (MPS/CPU). A single global cu124 index would make macOS unsolvable.
 
-### coastal is dropped for now
-`coastal` (live-cell seg/tracking) was an editable install from a non-git sibling path
-(`~/cc-workspace/coastal`), so a committed lockfile can't fetch it. Omitted to keep the env
-reproducible; re-add later as an editable path-dep (dev) or a git/PyPI dep (shipping).
+### coastal is a git dependency (2026-08-05)
+`coastal` (live-cell seg/tracking) is declared in `[pypi-dependencies]` as
+`{ git = "https://github.com/schienstockd/coastal.git" }`. cecelia consumes its model-free smoothing
+engine from `cleanupImages.temporalSmooth` (see `docs/todo/SMOOTHING_PLAN.md`).
+
+It was previously omitted, and the stated reason was specific: it was an editable install from a
+*non-git* sibling path (`~/cc-workspace/coastal`), so a committed lockfile could not fetch it. That
+blocker is gone — the repo has a remote — so this is the "git dep (shipping)" option this section
+already prescribed, not a reversal.
+
+Two things to keep true:
+
+* **Pin a `rev`, not a branch, before tagging a release.** A branch ref lets `pixi lock` silently
+  follow `main`, which is fine in dev and wrong for a reproducible build.
+* **The source-level dependency direction stays coastal → cecelia.** coastal imports cecelia's IO and
+  napari helpers *lazily* and keeps `coastal/` array-only; this entry is only cecelia consuming
+  coastal's algorithms, which import nothing from cecelia. Do not let it become mutual — coastal's CI
+  installs base+dev only and will catch a stray `import cecelia` in `coastal/` (it did).
+
+It adds `cma` and `hmmlearn` to the lock, and `opencv-python-headless` — headless is load-bearing:
+the GUI build sets `QT_QPA_PLATFORM_PLUGIN_PATH` to its own Qt5 plugins on import, which is
+ABI-incompatible with napari's PyQt5 xcb plugin and segfaults the viewer. No torch conflict: coastal
+declares bare `torch` and cecelia's per-platform index entry wins.
 
 ### cvxopt is pinned from conda-forge (not PyPI)
 `cvxopt` is a transitive dependency of `btrack`. PyPI ships **no macOS-arm64 wheel** for it, so a
