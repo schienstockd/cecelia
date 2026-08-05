@@ -398,10 +398,39 @@ const _OME_DERIVED_META_KEYS = (
     "TimeIncrement", "TimeIncrementUnit",
 )
 
+"""
+Reconcile the channel names a fresh store read produced with the ones already in `ccid.json`.
+
+Channel names are the one "authoritative re-read" value a human routinely edits, and the edit lives
+ONLY in ccid.json: bioformats2raw writes the vendor's own labels (`CH1`…`CHn`) into the store's
+`omero.channels[].label`, so re-reading a store ALWAYS yields placeholders — never the names the
+user typed. Taking the fresh read verbatim on a *re*-import therefore silently reverts every rename,
+which is the same failure the fill-only merge guards against for a human calibration correction
+(see `resync_ome_meta!`), with a nastier tail: saved task params reference channels BY NAME
+(`af_combinations_for_python`, `cellpose_models_for_python`), so a reset turns a live `"CD169-Kat"`
+into a name that is no longer in the list and resolves to nothing instead of erroring.
+
+So the fresh names are taken only when there is nothing to preserve (first import, or an image
+un-imported by `remove_image_version!`), or when the count no longer matches — stored names cannot
+describe a store with a different channel count, and the fresh ones are then the only valid list.
+Deliberate renaming stays the API's job (`set_channel_names!`).
+
+Returns `:set` (fresh names written) or `:kept` (existing names preserved).
+"""
+function _merge_channel_names!(raw::Dict{String,Any}, fresh)::Symbol
+    fresh_names = collect(String, fresh)
+    stored      = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
+    if stored isa AbstractVector && !isempty(stored) && length(stored) == length(fresh_names)
+        return :kept
+    end
+    versioned_set_field!(raw, "imChannelNames", fresh_names)
+    :set
+end
+
 # `overwrite`:
-#   true  (import) — re-read is authoritative: clear the derived keys first (see
+#   true  (import) — re-read is authoritative for the DERIVED keys: clear them first (see
 #          `_OME_DERIVED_META_KEYS`) so a value THIS read no longer produces can't linger as a
-#          zombie, and take the fresh channel names.
+#          zombie. Channel names are the documented exception — see `_merge_channel_names!`.
 #   false (backfill / `resync_ome_meta!`) — fill-only: set a key ONLY when it's genuinely absent,
 #          never clobber a value already on disk. That value may be a human correction, or the
 #          ImageJ-TIFF Z auto-fix, both of which live only in ccid.json and are NOT reproducible by
@@ -414,9 +443,11 @@ const _OME_DERIVED_META_KEYS = (
 function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       zarr_filename::Union{String,Nothing} = nothing,
                                       value_name::String = VERSIONED_DEFAULT_VAL,
-                                      overwrite::Bool = true)::Dict{String,Any}
+                                      overwrite::Bool = true,
+                                      on_log::Function = _ -> nothing)::Dict{String,Any}
     merged = Dict{String,Any}()
     isempty(zarr_meta) && isnothing(zarr_filename) && return merged
+    ch_action = :none
     try
         commit_state!(img) do raw
             m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
@@ -427,7 +458,7 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
             end
             for (k, v) in zarr_meta
                 if k == "channel_names"
-                    overwrite && versioned_set_field!(raw, "imChannelNames", collect(String, v))
+                    overwrite && (ch_action = _merge_channel_names!(raw, v))
                 elseif overwrite || !haskey(m, k)
                     m[k] = v
                 end
@@ -439,6 +470,12 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
         end
     catch e
         @warn "Could not update image metadata" exception = e
+    end
+    # A re-import keeping the user's names is invisible otherwise — the store and ccid.json now
+    # disagree by design, so say which list won and what the other one was.
+    if ch_action === :kept
+        on_log("[INFO] Kept the existing channel names; the store labels its channels " *
+               join(collect(String, zarr_meta["channel_names"]), ", "))
     end
     merged
 end
@@ -730,7 +767,8 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     _update_image_status!(img, "done")
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
                                 zarr_filename = basename(zarr_out),
-                                value_name    = value_name)
+                                value_name    = value_name,
+                                on_log        = on_log)
     # bank calibration QC (missing/untrustworthy physical sizes) — the single source the image-table
     # indicator, whiteboard, lab log and MCP all read (replaces the frontend's own re-derivation).
     write_metadata_qc!(img)

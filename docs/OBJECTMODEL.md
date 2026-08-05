@@ -135,7 +135,7 @@ This is what lets a project be imported under a new uid, copied, or renamed (`re
 | `kind` | String | Always `"static"` for now |
 | `status` | String | `pending` → `converting` → `done` \| `failed` |
 | `filepath` | versioned dict | Relative filenames inside `0/{uid}/` |
-| `imChannelNames` | versioned dict | Lists of channel name strings |
+| `imChannelNames` | versioned dict | Lists of channel name strings. A rename lives **only** here and survives a re-import — see *Channel names are not re-read* below |
 | `labels` | versioned dict | Paths to label zarrs inside `1/{uid}/data/` |
 | `label_props` | versioned dict | Paths to label property files |
 | `attr` | flat dict | User-defined string metadata (used for filtering) |
@@ -184,6 +184,19 @@ Several fields (`filepath`, `imChannelNames`, `labels`, `label_props`) follow th
 other version remains**. Removing `default` while a corrected variant is still present keeps the
 channel names/dims that variant inherits from `default` via versioned fallback — this is what makes
 "reclaim the original to free space, keep the corrected one" safe.
+
+**Channel names are not re-read** — `_merge_channel_names!`
+(`app/src/tasks/importImages/omezarr.jl`) is the one place that decides. An import's metadata merge is
+otherwise authoritative, but bioformats2raw always writes the *vendor's* labels (`CH1`…`CHn`) into the
+store's `omero.channels[].label`, so re-reading a store can never reproduce a rename. Taking the fresh
+read verbatim on a **re**-import therefore reverted every renamed channel — silently, and worse than
+cosmetically: saved task params reference channels **by name**
+(`af_combinations_for_python`, `cellpose_models_for_python`), so a reset turned a live `"CD169-Kat"`
+into a name no longer in the list, which resolves to nothing instead of erroring. The rule: take the
+fresh names only when there is nothing to preserve (first import, or an image un-imported by
+`remove_image_version!`) or when the channel **count** changed — stored names cannot describe a store
+with a different count. Keeping the stored list is logged, since the store and `ccid.json` then
+disagree by design. Renaming stays `set_channel_names!`/`POST /api/images/channelnames`.
 
 **Dropping the analysis instead** — `reset_image_analysis!` (`storage.jl`) is the mirror operation and
 the two are strictly orthogonal: it deletes every child of `1/{uid}` **except `ANALYSIS_KEEP`**
