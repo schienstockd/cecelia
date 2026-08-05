@@ -122,7 +122,7 @@ custom_toml_path(dev_dir::Union{String,Nothing} = nothing)::String =
 # custom fluorescence model that segments dendritic / SHG stroma (upstream of the branching task).
 # The Julia handler resolves a user-selected model NAME to its FILE PATH before calling the
 # Python runner, so cellpose's own `os.path.isfile(model_type)` branch (`cellpose_utils.py`) picks
-# the custom path up automatically. See TODO #00087.
+# the custom path up automatically. See docs/SEGMENTATION.md → *Custom cellpose checkpoints*.
 
 """Absolute directory for user cellpose checkpoints. Just a path — no I/O, no side-effects."""
 cellpose_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =

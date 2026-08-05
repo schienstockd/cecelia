@@ -99,7 +99,7 @@ Old-R reference: `plotCharsServer.R`, `plotFlowGatingServer.R`, `clustPopulation
   track h5ad's `var` measures (speed × meanTurningAngle etc.).
 - Membership: selected gate → `track_id`s → expand to all member cells → napari highlight
   (reuse the Phase-1 linked-brushing path). Show tracks in napari (Tracks layer) — design here.
-- Docs: `docs/TRACKING.md`, `docs/POPULATION.md` (close out TODO #00021).
+- Docs: `docs/TRACKING.md`, `docs/POPULATION.md` (close out the per-track storage item).
 - **CHECK-IN:** gate a track pop on speed/angle; napari highlights exactly those tracks' cells.
 
 ### Phase 4 — Universal canvas

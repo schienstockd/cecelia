@@ -326,7 +326,8 @@ def _region_signal(im_path, bounds, tile):
 
     "0 cells" is ambiguous and the ambiguity is expensive: on a drift-corrected stack, aiming at a
     padded plane returns 0 cells and looks EXACTLY like a diameter that is too large, so the user
-    retunes parameters against a region that could never produce a mask (see TODO #00090, which this
+    retunes parameters against a region that could never produce a mask (see docs/TODO.md → A third of a
+    drift-corrected stack can be empty, which this
     was measured on).
 
     Two checks, authoritative first:

@@ -21,8 +21,8 @@ data. It is a ground-up reimplementation of the original R/Shiny
 ## Install & run
 
 **Install**, then **run** — Cecelia asks where to keep your projects on first launch, so there's
-nothing to configure by hand. Image import works out of the box too — **bioformats2raw and Java are
-bundled** in the release.
+nothing to configure by hand. Image import works out of the box too — Java ships in the
+environment and the installer fetches **bioformats2raw** for you.
 
 The installer sets up [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
 downloads the latest release, and provisions the environment (a few GB on first run; later launches

@@ -598,8 +598,8 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   there, but no wheel/drag handler is wired to change the extents (the canvas-level zoom in
   `useCanvasZoom` is a CSS transform over the whole panel, a different thing). Tracked in
   `docs/FUTURE.md` → *Interactive pan/zoom on the gating plots* — re-scope before picking it up, as the
-  original write-up still described the removed regl camera. (It cited `docs/TODO.md` #00003, which was
-  a duplicate id; the real #00003 was per-image commit locking, now done.)
+  original write-up still described the removed regl camera. (It cited a `docs/TODO.md` ID that had been
+  issued twice — one of the collisions behind retiring numeric IDs.)
 - **Active panel + manager link.** `GatingPlots` tracks an `activePanel` index (orange border
   via `.panel.active`); clicking a panel activates it; the active panel watches `selectedPop`
   and sets its parent so the manager selection "shows up on the plot".

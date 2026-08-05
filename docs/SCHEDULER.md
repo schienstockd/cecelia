@@ -217,7 +217,8 @@ registered `run_task(task, imgs, …)` overload, so it has a `TaskRecord` and ca
 
 Impact is currently nil — no real set-scope subprocess task exists (only mock/plot tasks). When the
 first one lands (e.g. HMM training), give the chain's multi-image path a `TaskRecord` + `chain_run_id`
-like the per-image path: **TODO #00020**.
+like the per-image path: `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on
+chain cancel*.
 
 ---
 

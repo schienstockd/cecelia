@@ -270,7 +270,7 @@ Clients tracked in `_ws_clients::Set` guarded by `_ws_clients_lock`.
 | C→S | `task:run` | `taskId`, `projectUid`, `imageUid`, `module`, `task`, `params`, `poolName` | `sockets.jl` → `handle_task_run`; `poolName` (string) overrides the task-spec `resource_pool` when non-empty — set by the pool dropdown in `TaskRunner.vue` |
 | C→S | `task:cancel` | `taskId` | `sockets.jl` → `kill_task` — kills the individual task subprocess |
 | C→S | `chain:run` | `projectUid`, `chain`, `imageUids` | `sockets.jl` → `handle_chain_run` — starts a chain run in a `Threads.@spawn`; does not block the WS thread |
-| C→S | `chain:cancel` | `runId` | `sockets.jl` → `cancel_chain_run!(runId)` — sets the cancelled flag; nodes check it between steps (does **not** kill currently-executing subprocesses — see TODO #00016) |
+| C→S | `chain:cancel` | `runId` | `sockets.jl` → `cancel_chain_run!(runId)` — sets the cancelled flag; nodes check it between steps (does **not** kill currently-executing subprocesses — see `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on chain cancel*) |
 | S→C | `chain:run:started` | `runId`, `projectUid` | broadcast when a chain run begins |
 | S→C | `chain:run:done` | `runId`, `projectUid` | broadcast when `run_chain` returns successfully |
 | S→C | `chain:run:failed` | `runId`, `projectUid`, `error` | broadcast on unhandled error in `run_chain` |

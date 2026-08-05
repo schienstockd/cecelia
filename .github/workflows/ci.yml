@@ -6,7 +6,7 @@ name: CI
 #
 # Runs the full chain on Linux, Windows and macOS-arm64 so platform-specific breakage is caught
 # before release, not by a tester: missing PyPI wheels forcing a source build (e.g. cvxopt on
-# macOS-arm64, TODO #00062), the platform-gated torch index, and the Windows path/process helpers
+# macOS-arm64), the platform-gated torch index, and the Windows path/process helpers
 # (and it proves the Julia server actually boots + serves on Win/Mac). The repo is public, so
 # GitHub-hosted runners are free on all OSes — no minute metering, hence the full matrix.
 #
@@ -187,7 +187,7 @@ jobs:
         uses: julia-actions/cache@v3
 
       # Instantiate the *server* project (api → pulls Cecelia from ../app). This precompiles
-      # everything the server loads (incl. PythonCall/CondaPkg on first use — see TODO #00056).
+      # everything the server loads (incl. PythonCall/CondaPkg on first use).
       - name: Instantiate Julia (server env)
         run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
 

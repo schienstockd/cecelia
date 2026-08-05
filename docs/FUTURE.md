@@ -137,9 +137,9 @@ data→px through the same `viewExtents`, and every layer already redraws when i
 `viewExtents` — not a matrix-replication job. Hit-testing needs no change (`GateOverlay` already maps
 through the same extents).
 
-**Reference:** `docs/POPULATION.md` → *Gating plot — rendering & UX hacks*. (Was `docs/TODO.md`
-`#00087`, and before that a duplicate `#00003`; moved here because a deliberate non-goal is not open
-work.)
+**Reference:** `docs/POPULATION.md` → *Gating plot — rendering & UX hacks*. (Was a `docs/TODO.md`
+item; moved here because a deliberate non-goal is not open work. It carried a numeric ID that had
+already been issued twice — one of the collisions that got numeric IDs retired, see `docs/TODO.md`.)
 
 ---
 
@@ -158,7 +158,7 @@ structure the observer needs in order to spot outliers (Dominik).
 **Revisit when:** the payload trim proves insufficient in practice. Then add it as an explicit opt-in
 for the "compare T vs B across the set" question only — per-image stays the default.
 
-**Reference:** `docs/ai-assist/OBSERVER.md`. (Was `docs/TODO.md` `#00084`; moved here because it is
+**Reference:** `docs/ai-assist/OBSERVER.md`. (Was a `docs/TODO.md` item; moved here because it is
 conditional on something that may never happen.)
 
 ---

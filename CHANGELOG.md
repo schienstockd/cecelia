@@ -15,6 +15,67 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.0] — 2026-08-05
+
+**The first plain release.** Everything before this was an `-rcN` snapshot; nine of them never
+converged, and because Julia sorts an `rc10` prerelease *below* `rc9` as a string, no further rc could
+have reached an installed client at all. This tag ends that: it outranks every prerelease, and
+`releases/latest` resolves for the first time.
+
+498 commits since `v0.1.0-rc9`. Highlights:
+
+### Added
+- **Statistics on summary plots** — between-group hypothesis tests (Mann-Whitney / Kruskal-Wallis by
+  default, t/ANOVA opt-in), Prism-parity brackets with p-value labels, Compact Letter Display as
+  hoverable HTML overlays that survive PDF/PNG/SVG export, a Compare-groups toggle, which test `auto`
+  picked, a sibling `{name}.stats.csv` per plot, and raw+stats zipped into one download.
+- **Task preview** — a resident worker (`:7656`) runs a task's *own* compute over the visible region so
+  parameters can be judged before a full run. Previewability is a declared task trait; re-previews are
+  debounced on view change with a visible state, contrast windows survive moving T/Z, corrected
+  channels keep their original's name and colour, and a failure says why somewhere readable.
+- **Branching / skeleton analysis** (`segment.branching`) — skeleton extraction, a `branch` pop type
+  with per-branch-type filter populations, anisotropy via `skimage.feature.structure_tensor` expressed
+  in µm, napari skeleton + branch-type visualisation, and notebook readouts for the orientation field.
+- **Spatial analysis + region clustering** — neighbour graphs, neighbourhood-composition region
+  clustering with a `region` pop type, cell–cell contact statistics, and a CODEX-style contact heatmap.
+- **Structured image delete** — one modal on the Import page with four scopes (whole images, versions
+  with the new active picked, label sets with their companions, all analysis), replacing five deletion
+  entry points spread across four screens. `reset_image_analysis!` drops derived output while keeping
+  the image and never touching gate definitions.
+- **Image file operations on the selection** — Copy / Move / Delete in the Import action bar instead of
+  hidden at the end of each table row, applied to every checked image at once.
+- **Copy an image version into a new image/set** (`editImages.copyImage`) — a re-import shortcut.
+- **Custom cellpose checkpoints are drop-in** — `ccia.fluo` (fluorescence, for dendritic/SHG stroma)
+  is fetched at install time; any checkpoint dropped into the models dir appears in the picker without
+  a restart.
+- **What's New + tip of the day** — a release-notes modal on launch, with feijoa sketches on the cards.
+- **Observer / MCP** — one-click terminal setup for Claude, shadowed-entry detection and repair.
+- **A set reference image**, nominated by the user, plus axis-based task gating (replacing the
+  project-wide static/live distinction).
+- **QC**: clipped-detector channels flagged on every import; AF's derived ceiling banked.
+
+### Changed
+- **The acquired bit depth is kept** — the 16→8-bit import conversion is gone as a non-goal, and the
+  store codec is now an explicit, measured decision surfaced in Settings.
+- **Every Julia↔Python boundary is versioned**, not just the preview worker.
+- **UI unification** — one `.cc-btn` family, one `CcToggle`, one task-status colour map, semantic
+  scenario utilities (`.cc-muted` / `.cc-readout` / `.cc-empty` …) with detectors that fail the build
+  on a hand-rolled variant, and a tooltip *coverage* ratchet on top of the length one.
+- **Storage reporting** — the Settings storage box now accounts for derived analysis, not just images.
+
+### Fixed
+- **`rc10` sorted below `rc9`**, so the updater told every client it was up to date. Prerelease digits
+  now compare numerically.
+- **Staged updates apply on every launch**, not only the first.
+- **A worktree's Python env could resolve `cecelia` into a different checkout** — `PYTHONPATH` is
+  pinned per checkout, and the shutdown path now stops every resident child.
+- **Calibration**: the time scale reaches NGFF metadata and napari; both zarr layouts resolve when
+  syncing; OME-XML is written into staged stores instead of being silently skipped.
+- **Python text I/O declares UTF-8**, so Windows stops decoding sources as cp1252.
+- **A store is identified by structure, not file extension**; the debris sweep finds what is
+  incomplete rather than what is named `.partial`.
+- Numerous AF-correction, import-window, QC-text, tooltip-layout and task-param fixes.
+
 ## [0.1.0-rc9] — 2026-07-21
 
 ### Added
@@ -177,7 +238,8 @@ _Changes on `main` that have not yet been tagged in a release._
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...v0.1.0
 [0.1.0-rc9]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...v0.1.0-rc9
 [0.1.0-rc8]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc7...v0.1.0-rc8
 [0.1.0-rc7]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc6...v0.1.0-rc7

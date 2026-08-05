@@ -43,7 +43,7 @@ smoothing). States written as **numeric integer codes** (fast to gate/filter, au
 categorical); transitions as **categorical strings**. Set-scope wiring (`task_scope`,
 `run_task(imgs)`, `task:run` `imageUids`, `BehaviourModule` TaskRunner + `labelPropsColsSelection`
 widget) landed too and is reused by Phase 2. **Dropped** (no-ops): `skipTimesteps`/`subtrackOverlap`
-+ `seed` → TODO #00047. **Not yet:** `hmmHybrid` standalone (transitions already does cross-model
++ `seed` → `docs/TODO.md` → *Temporal downsampling / overlapping tracklets for behaviour*. **Not yet:** `hmmHybrid` standalone (transitions already does cross-model
 hybrid), `createPseudotime` (stretch), interpretive state relabelling (deferred to clustering).
 
 Original design notes (kept for reference):
@@ -62,10 +62,13 @@ Original design notes (kept for reference):
 Module page `BehaviourModule.vue` follows `GatingModule.vue` (ModuleLayout + TaskRunner +
 useTaskDefs + persisted view state); states surface in the existing summary-plot canvas.
 
-## Phase 2 — Cell & track clustering (akin to gating)
+## Phase 2 — Cell & track clustering (akin to gating) — **LANDED**
 
 "Akin to gating" = clusters become **populations in the same population manager**, not a parallel
-UI.
+UI. Shipped: `clustPops.cluster` (cells) and `clustTracks.cluster` (tracks) with `clust`/`trackclust`
+pop types, a shared scanpy engine, heatmap + UMAP canvas plots, and `clustRegions.cluster` on top
+(spatial regions, a `region` pop type — beyond the original scope). See `docs/todo/CLUSTERING_PLAN.md`
+and `docs/POPULATION.md`.
 
 - **Cell clustering — `clustPopulations.leiden`** (Python/scanpy; port `leidenClustering.R`):
   normalise → optional batch correction → Leiden → UMAP/PCA. Clusters land as populations; UMAP in
@@ -74,13 +77,18 @@ UI.
   `clusterTracks.R`): k-means/hierarchical on the per-track table — one point per track, cluster
   members expand to their cells. Track clusters become track populations.
 
-## Phase 3 — Freeze v1.0
+## Phase 3 — Freeze v1.0 — **the only phase still ahead**
 
-Hardening only. Version bump `0.0.0 → 1.0.0`, `CHANGELOG.md`, per-task smoke/validation tests,
-docs pass, root `LICENSE`. Record the freeze as a milestone (below). Scope-freeze the post-v1
-backlog.
+Hardening only. Per-task smoke/validation tests, docs pass, scope-freeze the post-v1 backlog, record
+the freeze as a milestone (below). `CHANGELOG.md` and the root `LICENSE` (GPL-3-or-later) + third-party
+acknowledgements are DONE. The 1.0 bar is **fitness for the science being done with it**, not R-parity
+— see `docs/RELEASING.md` → *Versioning*.
 
-## Phase 4 — Packaging & distribution (Linux/macOS/Windows)
+> Phases 4 and 5 below shipped ahead of this one: packaging and self-update were needed to get the tool
+> onto other machines, which the freeze does not gate. The phase numbers are historical order, not
+> dependency order.
+
+## Phase 4 — Packaging & distribution (Linux/macOS/Windows) — **LANDED**
 
 Ship Cecelia as a **primary Julia package that carries a GUI and bootstraps its own Python env** —
 the same model as the old R `cecelia` (a package that provisions its heavy Python deps). Frontend
@@ -95,13 +103,21 @@ Detailed plan + current state: **`docs/SHIPPING.md`**.
   at same-origin `:8080` (DONE) and a small `app.py` launcher opens the default browser. **No Tauri**
   (rejected: Rust + webkit build pain), **no Electron** (rejected: bundled Chromium). Native installer
   + desktop icon come from conda `constructor` + menuinst (Phase 2, per-OS/CI build).
-- **CI**: GitHub Actions matrix building per-platform release artifacts.
+- **CI**: GitHub Actions matrix building per-platform release artifacts — DONE (`ci.yml` on three
+  OSes, `release.yml` publishes the bundle + a SHA-256 on every `v*` tag).
+- **Installers — DONE**: `install.sh` / `install.ps1` provision Pixi + Julia, fetch bioformats2raw and
+  the `ceceliaModels` cellpose checkpoints, and register a desktop launcher; `pixi run app` opens the
+  browser at `:8080`. Constructor/menuinst native installers remain the only unbuilt piece.
 
-## Phase 5 — Self-update via GitHub
+## Phase 5 — Self-update via GitHub — **LANDED**
 
 Releases tagged with semver; app checks the GitHub Releases API, pulls a newer release, re-syncs
 the Julia Manifest + Python lockfile, uses the prebuilt frontend asset. Update-on-launch with
 confirmation, not silent. (Adapts the old `updateCecelia.R` intent to a GitHub-release source.)
+
+**Shipped**: `api/src/update_api.jl` + the header update badge + Settings install button; the staged
+update applies on launch, and the downloaded bundle is checksum-verified. `VERSION` is written into
+the bundle by `release.yml` so an installed app knows what it is running.
 
 ---
 
@@ -122,4 +138,4 @@ more segmentation (StarDist/Mesmer/donblo/watershed/blob/iLEE/branching), more c
 (drift/AF/N2V/stripe/registration/filters), spatial analysis (neighbours/contacts/regions/meshes/
 distances), classifiers (object + pixel), signal peaks, flow (FCS) import, model training (N2V),
 region clustering, infra (HPC offload, mflux backup, launchpad), more import (Xenium/cellToLocation,
-normalise/rescale/crop/split). See `docs/TODO.md` #00036–#00038 and `docs/FUTURE.md`.
+normalise/rescale/crop/split). See `docs/TODO.md` and `docs/FUTURE.md`.

@@ -1,6 +1,6 @@
 # ── track_props — per-track property table (compute-on-read) ─────────────────────
 #
-# Ports R `cciaImage$tracksInfo` (docs/TRACKING.md, TODO #00029). A track's properties are its
+# Ports R `cciaImage$tracksInfo` (docs/TRACKING.md). A track's properties are its
 # motility measures (precomputed in {vn}__tracks.h5ad) PLUS on-read aggregates of any per-CELL
 # column (intensity, morphology, hmm.state, …) over the track's cells. Compute-on-read — nothing
 # extra is stored, so track properties never go stale and need no re-run when new cell measures

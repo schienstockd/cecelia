@@ -5,7 +5,7 @@ Status: **planning** (branch `feat/multipage-analysis-canvas`). This is a parked
 
 ## Goal
 
-Turn the universal Analysis page (`/analysis`, TODO #00036, already built as a thin `SummaryCanvas`
+Turn the universal Analysis page (`/analysis`, already built as a thin `SummaryCanvas`
 with `module=null`) into a **tabbed, multipage analysis workspace**:
 
 - **One interface to every plot** — summary plots (all module specs) *and* interactive plots (UMAP,
@@ -209,7 +209,7 @@ labelled child name+%, arranged via `ggarrange(nrow, ncol)` (user-set grid).
   (inputs, the R lineage), the napari-screenshot slot, and PDF export. Cross-reference from `CLAUDE.md`
   doc table, `docs/UI.md` (§ Analysis-plot canvas), `docs/PLOTS.md`, `docs/POPULATION.md`, `docs/NAPARI.md`.
 - Update `docs/UI.md` (tabs + interactive-in-universal), `docs/API.md` (if `/api/gating/hierarchy`
-  lands), `docs/TODO.md` (close #00036 follow-ups; the interactive-family routing note).
+  lands), `docs/TODO.md` (the Analysis-board follow-ups; the interactive-family routing note).
 
 ## Open questions / risks
 
@@ -226,7 +226,7 @@ labelled child name+%, arranged via `ggarrange(nrow, ncol)` (user-set grid).
 ## Third-party / license
 
 `pdf-lib` (MIT) — add to the third-party acknowledgements list at the shipping/cleanup pass
-(see `project_license` / TODO #00060).
+(see `LICENSE` + `THIRD_PARTY.md`, both in place).
 
 ## Phase G — Include the clustering plots (UMAP + cluster heatmap)
 

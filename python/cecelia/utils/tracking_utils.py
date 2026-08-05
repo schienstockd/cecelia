@@ -193,7 +193,7 @@ class BayesianTrackingUtils:
 
         # invalidate stale track measures: new tracks make any cached live.cell.* / live.track.*
         # columns (written by tracking.track_measures against the *previous* tracking) wrong.
-        # The tracking task owns this invalidation (docs/TODO.md #00028, porting spec Step 5).
+        # The tracking task owns this invalidation (docs/TRACKING.md, porting spec Step 5).
         stale = [c for c in view.adata.obs.columns
                  if c.startswith("live.cell.") or c.startswith("live.track.")]
         if stale:

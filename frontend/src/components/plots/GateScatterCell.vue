@@ -263,7 +263,7 @@ defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
 <style scoped>
 /* capture host for PNG export: the axis labels/ticks live in this padding (relative to .panel-plot,
    at negative offsets), so exporting THIS element — not .panel-plot — includes the x/y axis names
-   instead of clipping them at the edge (#00061). */
+   instead of clipping them at the edge. */
 .plot-capture { position: relative; flex: 1; min-height: 218px; min-width: 0; display: flex; box-sizing: border-box;
   padding: 18px 22px 50px 84px; }
 /* light theme for PDF export (dark theme is on-screen only): dark ink/border on the white ground */
