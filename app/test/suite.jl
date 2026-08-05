@@ -7189,6 +7189,54 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         rm(proj.root; recursive = true)
     end
 
+    # ── A re-import must NOT revert renamed channels ────────────────────────────────────────────
+    # bioformats2raw always writes the vendor's own CH1..CHn into the store's omero labels, so the
+    # fresh read never reproduces a rename — and saved task params reference channels by name.
+    @testset "import keeps renamed channel names" begin
+        proj = create_project!(name = "meta-chan-$(rand(1000:9999))")
+        s    = add_set!(proj; name = "set")
+        img  = add_image!(s; name = "img")
+
+        # First import: nothing stored yet → take the fresh read.
+        Cecelia._merge_zarr_meta_into_ccid!(img,
+            Dict{String,Any}("SizeC" => 4,
+                             "channel_names" => ["CH1", "CH2", "CH3", "CH4"]); overwrite = true)
+        r = init_object(proj.uid, img.uid)
+        @test channel_names(r) == ["CH1", "CH2", "CH3", "CH4"]
+
+        # The user renames them (the API path).
+        set_channel_names!(r, ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]; check_length = false)
+        save!(r)
+
+        # Re-import of the same source: same channel count → the renames survive, and the task
+        # says so rather than reverting silently.
+        logged = String[]
+        Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+            Dict{String,Any}("SizeC" => 4,
+                             "channel_names" => ["CH1", "CH2", "CH3", "CH4"]);
+            overwrite = true, on_log = l -> push!(logged, l))
+        r2 = init_object(proj.uid, img.uid)
+        @test channel_names(r2) == ["SHG", "nuc-GFP", "mem-TOM", "CD169-Kat"]
+        @test any(l -> occursin("Kept the existing channel names", l), logged)
+
+        # A source whose channel count changed: the stored list cannot describe it → take the fresh
+        # names (and stay silent, nothing was preserved).
+        logged2 = String[]
+        Cecelia._merge_zarr_meta_into_ccid!(r2,
+            Dict{String,Any}("SizeC" => 2, "channel_names" => ["CH1", "CH2"]);
+            overwrite = true, on_log = l -> push!(logged2, l))
+        r3 = init_object(proj.uid, img.uid)
+        @test channel_names(r3) == ["CH1", "CH2"]
+        @test isempty(logged2)
+
+        # Fill-only (resync) never touches channel names at all, whatever the count.
+        Cecelia._merge_zarr_meta_into_ccid!(r3,
+            Dict{String,Any}("channel_names" => ["nope", "nope2"]); overwrite = false)
+        @test channel_names(init_object(proj.uid, img.uid)) == ["CH1", "CH2"]
+
+        rm(proj.root; recursive = true)
+    end
+
     # ── resync_ome_meta! end-to-end: fill-only into ccid, then push the merge back to the zarr ──
     @testset "resync_ome_meta! fill-only" begin
         proj = create_project!(name = "meta-resync-$(rand(1000:9999))")
