@@ -528,7 +528,6 @@ function api_napari_record_timelapse(body_bytes::Vector{UInt8})
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     fps         = Int(get(data, :fps, 15))
-    scale       = get(data, :scale, 1)
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
 
@@ -550,7 +549,7 @@ function api_napari_record_timelapse(body_bytes::Vector{UInt8})
 
     _with_viewer() do
         try
-            resp = record_timelapse!(v, path; fps = fps, scale = scale, title_card = card)
+            resp = record_timelapse!(v, path; fps = fps, title_card = card)
             200, JSON3.write((; ok = true, path = path,
                 frames = get(resp, "frames", 0), nTimepoints = get(resp, "n_timepoints", 0)))
         catch e
@@ -569,7 +568,6 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     fps         = Int(get(data, :fps, 15))
-    scale       = Int(get(data, :scale, 1))
     keyframes   = get(data, :keyframes, nothing)
     (keyframes === nothing || length(keyframes) < 2) &&
         return 400, JSON3.write((; error = "need at least 2 keyframes"))
@@ -589,7 +587,7 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
 
     _with_viewer() do
         try
-            resp = record_keyframes!(v, path, keyframes; fps = fps, scale = scale, title_card = card)
+            resp = record_keyframes!(v, path, keyframes; fps = fps, title_card = card)
             200, JSON3.write((; ok = true, path = path,
                 frames = get(resp, "frames", 0), keyframes = get(resp, "keyframes", 0)))
         catch e
@@ -869,7 +867,7 @@ end
 # record the T-sweep to an attr-named mp4, emit task:progress/log so it drives the existing task UI. `rep`
 # = representative uid for status/result. Errors on one image are logged and the batch continues.
 function run_batch_movies(task_id::String, project_uid::String, image_uids::Vector{String},
-                          config, file_attrs::Vector{String}, fps::Int, scale)
+                          config, file_attrs::Vector{String}, fps::Int)
     n   = length(image_uids)
     rep = isempty(image_uids) ? "" : first(image_uids)
     done = 0; errors = String[]
@@ -906,7 +904,7 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
                 _apply_movie_config!(project_uid, uid, img, config)
                 v = _viewer()
                 v === nothing && error("Napari not running")
-                record_timelapse!(v, path; fps = fps, scale = scale, t_start = t_start, t_end = t_end,
+                record_timelapse!(v, path; fps = fps, t_start = t_start, t_end = t_end,
                                   title_card = _title_card_content(img, config))
             end
             done += 1

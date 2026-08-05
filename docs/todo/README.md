@@ -74,6 +74,12 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   reconfiguration (5.0 → 5.4%), exponent, scale normalisation. Open: which channels are genuinely
   mutually exclusive, whether dendrites are a deliverable, and **scoring any of this on the QC-gate
   yardstick** (`SEG_QUALITY_PLAN.md` Decision 1) — which this session did not do.
+- `MOVIE_OUTPUT_SIZE_PLAN.md` — explicit X/Y pixel fields for a rendered movie, replacing the deleted
+  1–3× `res` multiplier. The multiplier was not a supersample: napari-animation `ndi.zoom`s the
+  canvas-sized screenshot, so `2×` bought 4× the pixels and **no detail**. napari's own
+  `Viewer.screenshot(size=…)` renders at a requested size, but napari-animation never passes it — so
+  the fix is to own the frame loop (keeping its interpolation) rather than thread `size` upstream.
+  Removal has shipped; the replacement is unstarted and nothing depends on it.
 - `CLUSTERING_PLAN.md` — Leiden clustering (cells + tracks), GPU/RAPIDS parked. Cited from
   `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
 - `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export

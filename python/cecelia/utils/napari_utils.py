@@ -675,10 +675,11 @@ def _maybe_prepend_title(viewer, path, title_card):
 
 
 def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
-                     canvas_only=True, scale=1, t_start=0, t_end=None, title_card=None):
+                     canvas_only=True, t_start=0, t_end=None, title_card=None):
   """Record ``viewer``'s T-sweep (dims slider index ``t_axis_index``) from ``t_start``..``t_end``
   (default the full ``n_timepoints`` range) to ``path`` (an ``.mp4``), one frame per timepoint, at
-  ``fps``. ``canvas_only`` excludes the napari UI chrome; ``scale`` supersamples (2 = 2× resolution).
+  ``fps``. ``canvas_only`` excludes the napari UI chrome; output is the canvas size (see
+  docs/todo/MOVIE_OUTPUT_SIZE_PLAN.md for why there is no resolution knob).
   ``title_card`` (Phase H) optionally prepends a description slide after recording. Returns the number
   of frames written. Raises ``ValueError`` for a single-timepoint stack. Ports the old R
   ``generateMovies`` T-playback: two keyframes (first/last T) + linear slider interpolation."""
@@ -699,12 +700,12 @@ def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
   anim = Animation(viewer)
   _set_t(t0); anim.capture_keyframe()
   _set_t(t1); anim.capture_keyframe(steps=(t1 - t0))   # one interpolated frame per timepoint between
-  anim.animate(path, fps=int(fps), canvas_only=canvas_only, scale_factor=scale)
+  anim.animate(path, fps=int(fps), canvas_only=canvas_only)
   _maybe_prepend_title(viewer, path, title_card)        # Phase H: optional description slide
   return (t1 - t0) + 1
 
 
-def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, scale=1, title_card=None):
+def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, title_card=None):
   """Render an interpolated keyframe animation to ``path`` (mp4). Each keyframe carries a saved view
   state (``{"viewState": {...}, "steps": N}``); we apply it to ``viewer`` and capture it as a
   napari-animation keyframe with ``steps`` interpolated frames FROM the previous keyframe — so the
@@ -721,7 +722,7 @@ def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, scale
     apply_view_state(viewer, kf.get("viewState") or {})
     steps = 15 if i == 0 else max(1, int(kf.get("steps", 15)))   # first keyframe: no in-transition
     anim.capture_keyframe(steps=steps)
-  anim.animate(path, fps=int(fps), canvas_only=canvas_only, scale_factor=scale)
+  anim.animate(path, fps=int(fps), canvas_only=canvas_only)
   # Phase H4: the animation card carries its OWN Channels section (a union across all keyframes, built
   # by the frontend), so _maybe_prepend_title uses that and does not read the live viewer here.
   _maybe_prepend_title(viewer, path, title_card)

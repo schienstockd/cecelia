@@ -107,13 +107,10 @@ const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
   if (currentSetUid.value) settings.setPopVisible(currentSetUid.value, popType, v) }
-// timelapse-recording params (per set): frame rate + resolution supersample factor
+// timelapse-recording params (per set): frame rate
 const movieFps = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).fps : 15,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { fps: v }) } })
-const movieScale = computed<number>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).scale : 1,
-  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { scale: v }) } })
 // Title card (Phase H, H3) — per-set, merge-patched so each control keeps the others' values.
 const movieTitleCard = computed<TitleCardCfg>(() =>
   currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).titleCard : { enabled: true, note: '', durationSec: 3 })
@@ -220,7 +217,7 @@ async function recordTimelapse() {
     }
     const res = await fetch('/api/napari/record-timelapse', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, fps: movieFps.value, scale: movieScale.value, titleCard }),
+      body: JSON.stringify({ projectUid, imageUid: uid, fps: movieFps.value, titleCard }),
     })
     if (!res.ok) { log.error(`Record timelapse failed: ${await _resError(res)}`, { source: 'napari' }); return }
     const j = (await res.json()) as { path?: string; frames?: number }
@@ -679,7 +676,7 @@ onUnmounted(() => {
       <div class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <MovieOutputControls v-model:fps="movieFps" v-model:scale="movieScale" />
+          <MovieOutputControls v-model:fps="movieFps" />
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording }" :disabled="recording"
                   @click="recordTimelapse"
                   v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">

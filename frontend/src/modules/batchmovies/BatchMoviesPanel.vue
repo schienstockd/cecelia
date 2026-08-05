@@ -1,7 +1,7 @@
 <!--
   Batch-movie authoring + run (F1.3 "make a movie for all images", docs/todo/ANIMATION_PLAN.md → F1).
   Author ONE config — which channels + colormap, which overlays (tracks / track-clusters / populations),
-  a colour-by measure, fps/scale, and which attributes name the output file — then Generate one attr-named
+  a colour-by measure, fps, and which attributes name the output file — then Generate one attr-named
   mp4 per selected image. The batch drives the single shared napari viewer sequentially (see
   api/src/napari_api.jl → run_batch_movies): it TAKES OVER the viewer for a while, so we warn while it runs.
 
@@ -9,7 +9,7 @@
   task list as the bottom — sharing the same `PaneExpandBar` primitive (`utils/paneExpand.ts`), so either
   can take the whole panel instead of scrolling past the other.
 
-  Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps/scale
+  Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps
   reuse the same per-set movie config as the ViewerPanel recorder. Progress/cancel ride the normal task
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
@@ -56,10 +56,9 @@ const segNames     = computed(() => uniq(imgs.value.flatMap(i => Object.keys(i.l
 // ── persisted config (per set) ────────────────────────────────────────────────
 const cfg = computed(() => setUid.value ? settings.getBatchMovieConfig(setUid.value) : {})
 function patch(p: Record<string, unknown>) { if (setUid.value) settings.setBatchMovieConfig(setUid.value, p) }
-// fps/scale reuse the ViewerPanel recorder's per-set config
-const movie = computed(() => setUid.value ? settings.getMovieConfig(setUid.value) : { fps: 15, scale: 1 })
+// fps reuses the ViewerPanel recorder's per-set config
+const movie = computed(() => setUid.value ? settings.getMovieConfig(setUid.value) : { fps: 15 })
 const fps   = computed<number>({ get: () => movie.value.fps,   set: v => setUid.value && settings.setMovieConfig(setUid.value, { fps: v }) })
-const scale = computed<number>({ get: () => movie.value.scale, set: v => setUid.value && settings.setMovieConfig(setUid.value, { scale: v }) })
 
 const valueName    = computed<string>({ get: () => cfg.value.valueName ?? '',        set: v => patch({ valueName: v }) })
 const colourBy     = computed<string>({ get: () => cfg.value.colourBy ?? '',         set: v => patch({ colourBy: v }) })
@@ -205,7 +204,7 @@ function generate() {
   })
   ws.send({
     type: 'movie:batch', taskId: t.id, projectUid, imageUids: uids,
-    config: buildConfig(), fileAttrs: fileAttrs.value, fps: fps.value, scale: scale.value,
+    config: buildConfig(), fileAttrs: fileAttrs.value, fps: fps.value,
   })
   log.info(`Batch movies started for ${uids.length} image(s) — napari will be busy for a bit`, { source: 'napari' })
 }
@@ -313,7 +312,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <!-- Movie — the same controls as the viewer recorder and the animation page -->
       <section class="bm-sec">
         <h4>Movie</h4>
-        <MovieOutputControls v-model:fps="fps" v-model:scale="scale" />
+        <MovieOutputControls v-model:fps="fps" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 

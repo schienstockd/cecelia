@@ -197,7 +197,6 @@ function handle_movie_batch(ws, data)
     attrs_raw   = get(data, :fileAttrs, nothing)
     file_attrs  = attrs_raw === nothing ? String[] : collect(String, attrs_raw)
     fps         = Int(get(data, :fps, 15))
-    scale       = get(data, :scale, 1)
     if isempty(image_uids)
         ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
         ws_status(ws, task_id, "failed", ""; fun="movie:batch", pool="viewer")
@@ -205,7 +204,7 @@ function handle_movie_batch(ws, data)
     end
     _batch_register!(task_id)
     @async try
-        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps, scale)
+        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps)
     catch e
         @warn "batch movies crashed" exception = e
         ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")

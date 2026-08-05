@@ -235,7 +235,7 @@ async function render() {
     }
     const res = await fetch('/api/napari/record-animation', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, scale: anim.scale, titleCard }),
+      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, titleCard }),
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok) { log.error(`Render failed: ${j?.error ?? res.status}`, { source: 'napari' }); return }
@@ -249,7 +249,7 @@ async function render() {
 <template>
   <ModulePage title="Animation" layout="scroll">
     <template #controls>
-      <MovieOutputControls v-model:fps="anim.fps" v-model:scale="anim.scale" />
+      <MovieOutputControls v-model:fps="anim.fps" />
       <TitleCardControls v-model="anim.titleCard" />
       <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
               v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
