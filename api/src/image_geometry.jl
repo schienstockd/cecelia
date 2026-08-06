@@ -77,6 +77,14 @@ function _zarr_byte_order(arr)::Char
     end
     (dt isa AbstractString && !isempty(dt)) ? first(dt) : '|'
 end
+# Why a zarr v3 store correctly answers '|' (never swap) rather than needing the codec parsed:
+# v3 does not put byte order in the dtype at all — `metadata.dtype` is a plain `"uint16"`, and the
+# order lives in the `bytes` codec INSIDE the codec pipeline. That pipeline is Zarr.jl's to execute,
+# and it does: a v3 store and a v2 store written from the same source decode to IDENTICAL pixels
+# (asserted in the *"API: zarr byte order"* testset). The v2 case is the odd one out — there the
+# order is metadata Zarr.jl parses for the eltype and then ignores, which is the whole bug this
+# function exists for. So v3 needs no branch here; adding one would double-swap.
+
 
 """
     read_ngff_axes(attrs_dir) -> Vector{String}
@@ -85,18 +93,19 @@ NGFF axis names from a group's `.zattrs` (`multiscales[0].axes[].name`), lowerca
 Metadata only (JSON), never pixels. Falls back to a sensible order by ndims when absent.
 """
 function read_ngff_axes(attrs_dir::AbstractString)
-    p = joinpath(attrs_dir, ".zattrs")
-    if isfile(p)
-        try
-            d = JSON3.read(read(p, String))
-            ms = get(d, :multiscales, nothing)
-            if !isnothing(ms) && !isempty(ms)
-                ax = get(first(ms), :axes, nothing)
-                !isnothing(ax) && return [lowercase(string(get(a, :name, ""))) for a in ax]
-            end
-        catch
-            # fall through to the by-rank default
+    # `ngff_multiscales` (app/src/tasks/importImages/omezarr.jl) is the ONE Julia resolver for both
+    # zarr formats: v2 keeps NGFF attrs top-level in `.zattrs`, v3/NGFF 0.5 nests them under
+    # `attributes.ome` in `zarr.json`. Reading `.zattrs` directly made every v3 store answer EMPTY
+    # here, and `axis_dims` then silently guessed the order by rank — right for a standard 5D stack,
+    # wrong (with no error) for anything else. See docs/todo/ZARR_V3_PLAN.md.
+    try
+        ms = ngff_multiscales(attrs_dir)
+        if !isnothing(ms)
+            ax = get(first(ms), :axes, nothing)
+            !isnothing(ax) && return [lowercase(string(get(a, :name, ""))) for a in ax]
         end
+    catch
+        # fall through to the by-rank default
     end
     String[]
 end
@@ -169,29 +178,98 @@ dual-format): a flat store's level-0 array is `<store>/0`, a bioformats2raw seri
 and both have a `0/` child so the path tells you nothing.
 """
 function store_compression(zarr_path::AbstractString)
-    zarray = nothing
-    for candidate in (joinpath(zarr_path, "0", ".zarray"),        # flat: level 0 IS "0"
-                      joinpath(zarr_path, "0", "0", ".zarray"))   # series: "0" is the group wrapper
-        isfile(candidate) && (zarray = candidate; break)
+    meta = nothing
+    for candidate in (joinpath(zarr_path, "0"),        # flat: level 0 IS "0"
+                      joinpath(zarr_path, "0", "0"))   # series: "0" is the group wrapper
+        m = zarr_array_meta(candidate)          # discriminates array-vs-group itself, per format
+        if !isnothing(m)
+            meta = m; break
+        end
     end
-    isnothing(zarray) && return nothing
+    isnothing(meta) && return nothing
     try
-        comp = get(JSON3.read(read(zarray, String)), :compressor, nothing)
-        return _describe_compressor(comp)
+        fmt    = Int(get(meta, :zarr_format, 2))
+        chunks = _chunk_shape(meta)
+        if fmt >= 3
+            # For a SHARDED array the two shapes mean different things and must not be swapped: the
+            # outer `chunk_grid` is the SHARD (one file on disk), and the sharding codec's own
+            # `chunk_shape` is the CHUNK (the unit of compression and of a random read). Unsharded, the
+            # outer grid IS the chunk.
+            comp, inner_chunk = _v3_codecs(meta)
+            desc = _describe_compressor(comp)
+            sharded = !isnothing(inner_chunk) && !isempty(inner_chunk)
+            return (; desc..., zarrFormat = fmt,
+                    chunks = sharded ? inner_chunk : chunks,
+                    shard  = sharded ? chunks : nothing)
+        end
+        desc = _describe_compressor(get(meta, :compressor, nothing))
+        return (; desc..., zarrFormat = fmt, chunks = chunks, shard = nothing)
     catch
         return nothing
     end
 end
 
+# Chunk shape as a plain Vector{Int}. v2 spells it `chunks`; v3 `chunk_grid.configuration.chunk_shape`.
+# For a SHARDED v3 array that is the SHARD shape — the inner chunk shape comes from the sharding
+# codec's own `chunk_shape` (see `_v3_codecs`), which is the number a user comparing chunk sizes
+# across formats actually wants.
+function _chunk_shape(meta)
+    haskey(meta, :chunks) && return collect(Int, meta[:chunks])
+    grid = get(meta, :chunk_grid, nothing)
+    isnothing(grid) && return Int[]
+    cfg = get(grid, :configuration, nothing)
+    isnothing(cfg) && return Int[]
+    collect(Int, get(cfg, :chunk_shape, Int[]))
+end
+
+# Flatten a v3 codec pipeline to `(compressor_like, inner_chunk_shape)`, where `compressor_like` is
+# shaped like a v2 `compressor` object so ONE describer serves both formats. `sharding_indexed` wraps
+# the real codecs, so the compression lives one level in, and its `chunk_shape` is the INNER chunk
+# (the caller pairs that with the outer grid, which is the shard). `nothing` inner ⇒ not sharded.
+function _v3_codecs(meta)
+    codecs = get(meta, :codecs, nothing)
+    isnothing(codecs) && return (nothing, nothing)
+    shard = nothing
+    for c in codecs
+        name = string(get(c, :name, ""))
+        cfg  = get(c, :configuration, nothing)
+        if name == "sharding_indexed" && !isnothing(cfg)
+            shard  = collect(Int, get(cfg, :chunk_shape, Int[]))   # the INNER chunk shape
+            codecs = get(cfg, :codecs, [])                          # descend into the wrapped codecs
+            break
+        end
+    end
+    for c in codecs
+        name = string(get(c, :name, ""))
+        name in ("bytes", "crc32c", "transpose") && continue        # not compression
+        cfg = get(c, :configuration, nothing)
+        # present it in the v2 shape (`id`, plus the codec's own keys) for `_describe_compressor`
+        merged = Dict{Symbol,Any}(:id => name)
+        isnothing(cfg) || for (k, v) in pairs(cfg); merged[Symbol(k)] = v; end
+        return (merged, shard)
+    end
+    (nothing, shard)
+end
+
 # numcodecs config → what to show. Two shapes reach here: blosc (`cname`/`clevel`/`shuffle`) and a
 # bare codec like zstd (`level`). `compressor: null` is a real, valid value — an uncompressed store.
+# blosc's `shuffle` is an INT in zarr v2 metadata (0/1/2) and a NAME in v3
+# ("noshuffle"/"shuffle"/"byteshuffle"/"bitshuffle"). One normaliser, because `_describe_compressor`
+# serves both formats — `Int("shuffle")` would have thrown, and the caller's catch-all would have
+# reported the whole store as having no compression.
+function _shuffle_on(v)::Bool
+    v isa AbstractString && return !(lowercase(String(v)) in ("noshuffle", "none", "0"))
+    v isa Real && return Int(v) != 0
+    false
+end
+
 function _describe_compressor(comp)
     isnothing(comp) && return (label = "none", codec = "none", level = 0, shuffle = false)
     comp isa AbstractDict || return nothing
     id      = string(get(comp, :id, "?"))
     cname   = haskey(comp, :cname) ? string(comp[:cname]) : id
     level   = Int(get(comp, :clevel, get(comp, :level, 0)))
-    shuffle = Int(get(comp, :shuffle, 0)) != 0
+    shuffle = _shuffle_on(get(comp, :shuffle, 0))
     # zstd treats level 0 as "the library default", which is 3 — so a store written at 0 must not read
     # as a different setting from one written at 3. Same normalisation the rechunk sweep uses.
     (cname == "zstd" && level == 0) && (level = 3)

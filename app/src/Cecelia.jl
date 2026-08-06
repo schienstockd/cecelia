@@ -93,6 +93,10 @@ export task_requires_axes, task_applies, task_applicability_reason, TaskApplicab
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
+# The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
+# `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
+# the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
+export ngff_group_attrs, ngff_multiscales, zarr_array_meta
 export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
