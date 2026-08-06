@@ -9441,3 +9441,36 @@ end
         @test lowercase(tip) != lowercase(String(get(p, :label, "")))
     end
 end
+
+@testset "bioformats2raw format flags" begin
+    # The import is the ONLY place the store format is chosen; derived stores inherit it
+    # (docs/todo/ZARR_V3_PLAN.md D9).
+    @test isempty(Cecelia.bf2raw_format_flags("0.4", "auto"))      # default = the command we always ran
+    @test Cecelia.bf2raw_format_flags("0.5", "auto") == ["--ngff-version", "0.5"]
+    @test Cecelia.bf2raw_format_flags("0.5", "1024") ==
+          ["--ngff-version", "0.5", "--shard-width", "1024", "--shard-height", "1024"]
+
+    # Sharding is NGFF 0.5 only, and is dropped for 0.4 rather than raising: they are separate controls
+    # and switching the version back must still produce a working import.
+    @test isempty(Cecelia.bf2raw_format_flags("0.4", "1024"))
+
+    # unparseable / absurd falls back to upstream's default rather than raising
+    for bad in ("banana", "0", "-8", "16", "")
+        @test Cecelia.bf2raw_format_flags("0.5", bad) == ["--ngff-version", "0.5"]
+    end
+
+    # Every option the spec offers must resolve, and there must be NO option claiming to disable
+    # sharding: --shard-width cannot be turned off, so bioformats2raw shards every v3 store (verified
+    # against 0.12.1 — a 0.5 import with no shard flag still produces a sharding_indexed codec), and an
+    # "off" option would be a lie.
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    for key in ("ngffVersion", "shardSize")
+        prm  = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
+        vals = [string(get(o, :value, o)) for o in prm.options]
+        @test string(prm.default) in vals
+        @test !isempty(String(get(prm, :tip, "")))
+    end
+    shard = only(filter(p -> get(p, :key, "") == "shardSize", collect(adv.params)))
+    @test !any(lowercase(string(get(o, :value, o))) in ("none", "off", "0") for o in shard.options)
+end

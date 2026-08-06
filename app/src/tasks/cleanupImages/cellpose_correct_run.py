@@ -61,7 +61,8 @@ def run(params):
     # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
     with zarr_utils.staged_store(im_correction_path) as staging:
         group, output_image, pchunks = zarr_utils.open_multiscales_for_writing(
-            staging, im_dat[0].shape, im_dat[0].dtype, dim_utils, nscales=len(im_dat))
+            staging, im_dat[0].shape, im_dat[0].dtype, dim_utils, nscales=len(im_dat),
+            reference_zarr=im_path)   # inherit the source's zarr format (ZARR_V3_PLAN D9)
         out_dtype = output_image.dtype   # native (writer forces byte order via zarr_utils.native_dtype)
         zarr_utils.copy_stream(output_image, im_dat[0], dim_utils)
 

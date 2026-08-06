@@ -753,8 +753,12 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     chunk_flags = bf2raw_chunk_flags(get(params, "chunkSize", "auto"))
     on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
 
+    # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
+    fmt_flags = bf2raw_format_flags(get(params, "ngffVersion", "0.4"), get(params, "shardSize", "none"))
+    on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2)" : join(fmt_flags, " "))")
+
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $eff_src $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

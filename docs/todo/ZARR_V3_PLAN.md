@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built** (read, report, write + sharding). Phase 4 (measure, then defaults) is the remainder. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -202,7 +202,38 @@ Surface, per image version and label set: **zarr format**, **NGFF version**, **c
 `store_compression` → `GET /api/images/stores` path that the modal already renders; do not add a
 route. Keep the copy to values, not prose (`docs/UI.md` → *UI copy*).
 
-### Phase 3 — Write
+### Phase 3 — Write ✅ built
+
+Done: `store_codecs` (the v3 codec-list shape of the same decision), `_codec_kwargs` (picks
+`compressor=` vs `compressors=` per format, plus `shards=`), `store_encoding_of` (D9 inheritance,
+accepting a path **or an open zarr node** — `cropImage_run` passes an open array, and handling only
+paths made it silently write a v2 crop of a v3 image). `create_multiscales`,
+`open_multiscales_for_writing`, `create_zarr_from_ndarray` and `write_multiscale_pyramid` take the
+format; where a group is in hand it is derived FROM the group, since a sub-array that disagreed with
+its group would be unreadable.
+
+Every writer inherits: the four corrections (af/drift/cellpose/temporal_smooth) pass
+`reference_zarr=im_path`, crop already passed its source array, the segmentation LABEL writer reads
+`params['imPath']`, and `rechunk_zarr` **preserves** the source format — it rewrites an existing store,
+so hardcoding v2 there would have silently downgraded a v3 store while claiming only to rechunk it, and
+its verbatim `attrs` copy would have put `ome`-nested metadata into a v2 container where it reads as no
+multiscales at all.
+
+Import params: `ngffVersion` (0.4/0.5) and `shardSize`. **There is no "off" for sharding** —
+`--shard-width` defaults to 1024 and cannot be disabled, so bioformats2raw shards every v3 store
+(verified: a 0.5 import with no shard flag still produces a `sharding_indexed` codec). The control sets
+the SIZE; an option claiming to disable it would be a lie, and a test asserts none exists.
+
+The `store_compressor` convention detector was correctly failing on all of this and now recognises
+`compressors=` and `**_codec_kwargs(...)`, and polices the v3 codec classes — re-verified by mutation
+that it still catches an uncovered `create_array`.
+
+Still open: `write_calibration` / `set_ngff_axes` / `write_valid_box` write NGFF metadata for **v2
+only**, so a v3 store gets its calibration on creation but a later re-stamp
+(`resync_ome_meta!` / `sync_zarr_calibration!`) would write it to the wrong place. That is the last
+write-side gap and it is the risky one (`CLAUDE.md` → *Calibration — three copies, one stamp*).
+
+### Phase 3 — Write (original scope)
 
 * `store_compressor(kind, zarr_format, shard_shape)` (D5); `create_multiscales` /
   `open_multiscales_for_writing` / `create_zarr_from_ndarray` take a format.

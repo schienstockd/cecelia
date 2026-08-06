@@ -178,6 +178,27 @@ class InheritFormatTest(unittest.TestCase):
             self.assertEqual(fmt, zarr_utils.store_format(out))
             np.testing.assert_array_equal(self.arr, np.asarray(zarr_utils.open_as_zarr(out)[0][0][:]))
 
+    def test_an_open_zarr_array_is_accepted_as_the_reference(self):
+        # cropImage_run passes `reference_zarr=im_dat[0]` — an OPEN ARRAY, not a path. Handling only
+        # paths made that caller fall back to v2 silently, writing a v2 crop of a v3 image.
+        for fmt in (2, 3):
+            src = os.path.join(self.tmp, f'open{fmt}.ome.zarr')
+            zarr_utils.create_multiscales(self.dark, src, dim_utils=self.du, nscales=1, zarr_format=fmt)
+            level0 = zarr_utils.open_as_zarr(src)[0][0]
+            self.assertEqual({'zarr_format': fmt}, zarr_utils.store_encoding_of(level0),
+                             f'open v{fmt} array as reference')
+
+    def test_a_crop_style_derived_write_keeps_the_source_format(self):
+        # the whole D9 chain through create_multiscales' own reference_zarr path
+        for fmt in (2, 3):
+            src = os.path.join(self.tmp, f'cropsrc{fmt}.ome.zarr')
+            zarr_utils.create_multiscales(self.dark, src, dim_utils=self.du, nscales=1, zarr_format=fmt)
+            level0 = zarr_utils.open_as_zarr(src)[0][0]
+            out = os.path.join(self.tmp, f'cropped{fmt}.ome.zarr')
+            zarr_utils.create_multiscales(self.dark, out, dim_utils=self.du, nscales=1,
+                                          reference_zarr=level0)
+            self.assertEqual(fmt, zarr_utils.store_format(out), f'crop of a v{fmt} source')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -55,6 +55,44 @@
             }
           ],
           "tip": "Auto keeps one chunk per plane (1024, capped to the frame) \u2014 leave it unless advised"
+        },
+        {
+          "key": "ngffVersion",
+          "label": "OME-NGFF version",
+          "type": "select",
+          "default": "0.4",
+          "options": [
+            {
+              "value": "0.4",
+              "label": "0.4 \u2014 zarr v2 (default)"
+            },
+            {
+              "value": "0.5",
+              "label": "0.5 \u2014 zarr v3, enables sharding"
+            }
+          ],
+          "tip": "0.4 is what every existing image uses; 0.5 unlocks sharding"
+        },
+        {
+          "key": "shardSize",
+          "label": "Shard size",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (1024)"
+            },
+            {
+              "value": "512",
+              "label": "512 px"
+            },
+            {
+              "value": "2048",
+              "label": "2048 px"
+            }
+          ],
+          "tip": "NGFF 0.5 always shards; this sets the size (one file per shard)"
         }
       ]
     }

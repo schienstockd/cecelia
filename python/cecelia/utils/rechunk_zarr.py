@@ -45,7 +45,7 @@ import dask.array as da
 import zarr
 
 # `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
-from cecelia.utils.zarr_utils import plane_chunks, store_compressor
+from cecelia.utils.zarr_utils import plane_chunks, store_compressor, _codec_kwargs, _group_format
 
 
 def _levels(group):
@@ -107,13 +107,18 @@ def rechunk_store(path, xy_tile=512, replace=False, force=False, kind='image'):
     tmp = path.rstrip("/") + ".rechunk_tmp"
     if os.path.exists(tmp):
         shutil.rmtree(tmp)
-    dst = zarr.open_group(tmp, mode="w", zarr_format=2)
+    # PRESERVE the source's zarr format. This rewrites an existing store, so hardcoding v2 here would
+    # silently DOWNGRADE a v3 store to v2 while claiming only to have rechunked it — and `dst.attrs`
+    # below copies the source attrs verbatim, so a v3 store's `ome`-nested metadata would land in a v2
+    # container and read as having no multiscales at all. See docs/todo/ZARR_V3_PLAN.md D9.
+    src_fmt = _group_format(src)
+    dst = zarr.open_group(tmp, mode="w", zarr_format=src_fmt)
     dst.attrs.update(dict(src.attrs))                         # multiscales metadata, verbatim
     for k in levels:
         s = src[k]
         ch = plane_chunks(s.shape, xy_tile=xy_tile)
         d = dst.create_array(k, shape=s.shape, chunks=ch, dtype=s.dtype,
-                             compressor=store_compressor(kind))
+                             **_codec_kwargs(kind, src_fmt))
         da.store(da.from_array(s, chunks=ch), d, lock=False)  # streams level→level, plane-chunked
     # copy any non-array members verbatim (e.g. an `OME/` metadata subgroup); levels + dotfiles handled
     for entry in os.listdir(path):

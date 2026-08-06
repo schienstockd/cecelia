@@ -189,13 +189,24 @@ def store_encoding_of(reference_path):
     must still get the label codec rather than the image's. Two separate axes; conflating them would
     undo the measured label-codec decision.
 
+    Accepts a PATH **or an already-open** zarr array/group, because callers pass both: the correction
+    runners hand over `im_path`, while `cropImage_run` passes `reference_zarr=im_dat[0]`, an open array.
+    Treating only paths would make that caller silently fall back to v2 and write a v2 crop of a v3
+    image — the exact inconsistency D9 exists to stop, and invisible because nothing errors.
+
     Falls back to v2 when the reference is missing or unreadable rather than raising — a derived write
     must not fail because a source's metadata could not be parsed, and v2 is what every store was until
     bioformats2raw 0.12.
     """
     fmt = None
     try:
-        fmt = store_format(reference_path) if reference_path else None
+        if reference_path is None or reference_path == '':
+            fmt = None
+        elif isinstance(reference_path, (str, bytes, os.PathLike)):
+            fmt = store_format(os.fspath(reference_path))
+        else:
+            # an open zarr node carries its own format; prefer that over guessing from a path
+            fmt = int(reference_path.metadata.zarr_format)
     except Exception:
         fmt = None
     return {'zarr_format': fmt if fmt in (2, 3) else 2}

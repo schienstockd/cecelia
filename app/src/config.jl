@@ -500,6 +500,47 @@ function bf2raw_chunk_flags(value)::Vector{String}
 end
 
 """
+    bf2raw_format_flags(ngff_version, shard_size) -> Vector{String}
+
+bioformats2raw `--ngff-version` / `--shard-*` flags. Empty for the default (`"0.4"`, no shard), so an
+unchanged import produces the exact command it always did.
+
+The import is the ONLY place the store format is chosen; every derived store inherits it from its
+source (`docs/todo/ZARR_V3_PLAN.md` D9). That is what keeps this answerable — the user decides once
+per image, not again on every correction, crop and label set.
+
+**Sharding applies only to NGFF 0.5** and is silently dropped for 0.4 rather than raising: the two are
+separate controls in the UI, and a user who sets a shard size and then switches back to 0.4 should get
+a working import, not an error.
+
+**There is no "off".** `--shard-width` defaults to 1024 and cannot be disabled, so bioformats2raw shards
+EVERY v3 store — verified against 0.12.1: a 0.5 import with no shard flag still produces a
+`sharding_indexed` codec. The control therefore sets the shard SIZE, and `"auto"` means "pass nothing,
+take the 1024 default" (itself capped to the frame). An option claiming to turn sharding off would be a
+lie, which is why there is not one.
+
+Which size is *best* is unmeasured — Phase 4's job. A shard is one file holding many chunks, so writing
+one chunk rewrites the whole shard: safe for an import (written once, sequentially) and potentially
+expensive for anything filling a store incrementally (D8). `"auto"` defers to upstream rather than
+naming a number chosen to look decisive.
+"""
+function bf2raw_format_flags(ngff_version, shard_size)::Vector{String}
+    v = strip(string(ngff_version))
+    flags = String[]
+    (isempty(v) || v == "0.4") || append!(flags, ["--ngff-version", v])
+    # v2 (NGFF 0.4) has no sharding — drop it rather than emit a flag the CLI will reject
+    v == "0.5" || return flags
+    sh = lowercase(strip(string(shard_size)))
+    # "auto" (and anything unparseable) passes nothing: bioformats2raw's own 1024 default, capped to the
+    # frame. Same call as the chunk flags — a bad value must not fail a long import.
+    (isempty(sh) || sh == "auto") && return flags
+    n = tryparse(Int, sh)
+    (isnothing(n) || n < 32) && return flags
+    append!(flags, ["--shard-width", string(n), "--shard-height", string(n)])
+    flags
+end
+
+"""
     bf2raw_compression_flags([name]) -> Vector{String}
 
 bioformats2raw CLI flags that make it write the SAME compressor our own Python writers use.

@@ -144,7 +144,8 @@ def run(params):
 
     with zarr_utils.staged_store(out_path) as staging:
         group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
-            staging, shape, level_in.dtype, dim_utils, nscales=len(im_dat))
+            staging, shape, level_in.dtype, dim_utils, nscales=len(im_dat),
+            reference_zarr=im_path)   # inherit the source's zarr format (ZARR_V3_PLAN D9)
 
         for z in range(nz):
             # Rolling cache of SPATIALLY smoothed planes for this z, keyed by timepoint. Bounded by
