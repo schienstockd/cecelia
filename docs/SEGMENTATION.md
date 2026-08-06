@@ -359,6 +359,15 @@ the stacking UI, and `_write_tile_to_arr` fills only unlabelled pixels, so a sec
 what the first missed without overwriting it. Splitting cells from apoptotic bodies afterwards is a
 **gating** decision, not a segmentation parameter.
 
+**Measured, first end-to-end run** (`zolIMa/fXgbTl`, 31 T × 32 Z × 420 × 441, mem-TOM, one tile):
+training 67 s; segmentation **689 s**; 6220 objects, 175–222 per timepoint with no drift. On the
+mid-plane that is 37/28/34 objects against an intensity watershed's 33/29/29 — within ~10%, with
+visibly better separation of touching cells. Cost scales with pixels × planes, so the uncropped
+`Dml3RG` (~5.9× the XY area) is over an hour for the same frame count: this is an overnight task,
+which is what the preview is for. The size distribution is bimodal — mode 4–5 µm against an 11 µm
+cell — i.e. the small-particle population dominates by COUNT; splitting those off is gating, not a
+segmentation parameter. Reproduced by `docs/todo/flow-seg-experiments/first_task_run.py`.
+
 Design record: [`docs/todo/COASTAL_SEGMENTATION_PLAN.md`](todo/COASTAL_SEGMENTATION_PLAN.md);
 evidence and dead ends: [`docs/todo/SEGMENTATION_OPEN_PROBLEM.md`](todo/SEGMENTATION_OPEN_PROBLEM.md).
 

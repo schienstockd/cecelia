@@ -94,8 +94,9 @@ def _training_sequence(im_dat, dim_utils, params, log):
 def run(params):
     log = script_utils.get_logfile_utils(params)
 
-    from coastal.flow import prepare_data_for_unet_batch
-    from coastal.train import train_with_metrics, save_model
+    # All three live in coastal.train — `prepare_data_for_unet_batch` reads as a flow helper and is
+    # not one, which cost an end-to-end run to find (unit tests stub coastal, so nothing caught it).
+    from coastal.train import prepare_data_for_unet_batch, train_with_metrics, save_model
 
     movies = list(params['movies'])
     scales = [int(s) for s in params['temporalScales']]
