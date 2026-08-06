@@ -354,6 +354,25 @@ bundled (an empty vault means a picker with only "None"), and only `.pt` files a
 a shared project can name a model this machine lacks; the task fails with that message rather than
 falling back to another model.
 
+**The border is a coastline, and `labelSmoothing` is the right answer to it.** Region growing makes
+per-pixel decisions on the affinity field, so the frontier comes out fractal — measured on real
+output: median roughness 1.47, p90 1.96, worst 3.31, where roughness is perimeter over the perimeter
+of a circle of equal area and a perfect disc on this pixel grid scores 1.01.
+
+Two source-level fixes were tried and rejected on measurements, so do not re-try them without new
+evidence:
+
+* `probBlurSigma` does **nothing** to the border (1.44 → 1.43 → 1.49 → 1.55 at σ 0/1/2/3 — it gets
+  worse). The coastline is not the thresholded probability mask being ragged.
+* `embeddingBlurSigma` genuinely cleans it, by eating the dim periphery. Median object diameter goes
+  10.3 µm → 8.9 → 7.7 at σ 1.5 → 3.0 → 5.0, against an expected cell of ~11 µm, and the whole-frame
+  area roughly halves. A clean border on a cell too small to be a cell is a worse answer than an ugly
+  border on the right one. Confirmed by eye in napari across four label versions.
+
+So coastal defaults to `labelSmoothing` **1.5** — cosmetic, honest about being cosmetic, and it keeps
+the size. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
+changing a shipped task's default would alter existing pipelines.
+
 **Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
 label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis
 downstream. The composite (`segment.coastal` → `segment.measureLabels`) is what the Segment page is
