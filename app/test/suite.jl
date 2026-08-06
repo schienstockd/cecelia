@@ -358,6 +358,43 @@ end
     @test out["0"]["model"] == @__FILE__
 end
 
+# ── COHORT_METRICS (Julia) vs COHORT_STAGES (frontend) ───────────────────────
+# The two lists were kept in step by a comment, and the comment did not work: `segment.coastal` was
+# added to COHORT_METRICS and not to COHORT_STAGES, so the Segment page's cohort check silently
+# skipped every coastal run. Nothing failed — the button was just quietly less useful than it looked,
+# which is the worst shape for a bug to have.
+#
+# The rule is scoped, not total. A category with NO entry in COHORT_STAGES has deliberately no cohort
+# button (Import banks metrics and offers none), so it is exempt. But once a page offers the button,
+# it must cover every cohort-bearing fun in its category — that is the case this catches.
+@testset "cohort stages cover their category's cohort metrics" begin
+    ts_path = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "cohortStages.ts")
+    if !isfile(ts_path)
+        @test_skip "cohortStages.ts not found"
+    else
+        src = read(ts_path, String)
+        body = match(r"COHORT_STAGES:\s*Record<string,\s*string\[\]>\s*=\s*\{(.*?)\n\}"s, src)
+        @test !isnothing(body)
+
+        stages = Dict{String,Vector{String}}()
+        for m in eachmatch(r"(\w+)\s*:\s*\[([^\]]*)\]", body.captures[1])
+            stages[m.captures[1]] = [String(x.captures[1])
+                                     for x in eachmatch(r"'([^']+)'", m.captures[2])]
+        end
+        @test !isempty(stages)
+
+        # every fun the frontend lists must actually bank cohort metrics
+        unknown = [f for fs in values(stages) for f in fs if !haskey(COHORT_METRICS, f)]
+        @test isempty(unknown)
+
+        # …and every cohort-bearing fun in a category that HAS a button must be listed
+        listed = Set(f for fs in values(stages) for f in fs)
+        missing_funs = [f for f in keys(COHORT_METRICS)
+                        if haskey(stages, first(split(f, "."))) && !(f in listed)]
+        @test isempty(missing_funs)
+    end
+end
+
 # ── Optical-flow training (opticalFlow.train) ────────────────────────────────
 # The scales are the single most consequential parameter of the pipeline AND the one that fails
 # silently: the set a model is trained on must be the set inference feeds it, and coastal does not

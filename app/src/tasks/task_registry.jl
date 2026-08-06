@@ -127,6 +127,9 @@ _COMPOSITE_SPEC_PATHS["cleanupImages.afDriftCorrect"] =
 _COMPOSITE_SPEC_PATHS["segment.cellposeMeasure"] =
     joinpath(@__DIR__, "segment", "cellpose_measure.json")
 
+_COMPOSITE_SPEC_PATHS["segment.coastalMeasure"] =
+    joinpath(@__DIR__, "segment", "coastal_measure.json")
+
 _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
     joinpath(@__DIR__, "tracking", "bayesian_track_measures.json")
 
@@ -160,6 +163,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
+        "segment.coastalMeasure"            => CompositeTask("segment.coastalMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.smooth"              => Smooth(),

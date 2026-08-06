@@ -125,6 +125,7 @@ function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)}
       <li v-for="m in models" :key="m.name" class="vault-row">
         <div class="vault-main">
           <input v-if="editing === m.name" v-model="draft" class="vault-rename" autofocus
+                 v-tooltip.top="'Enter to rename, Esc to cancel'"
                  @keyup.enter="commitRename(m)" @keyup.esc="editing = null" @blur="commitRename(m)" />
           <span v-else class="vault-name" @dblclick="startRename(m)">{{ m.stem }}</span>
           <span class="cc-readout">{{ trainedOn(m) }}</span>
@@ -146,14 +147,14 @@ function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)}
 .vault { display: flex; flex-direction: column; gap: 0.4rem; }
 .vault-bar { display: flex; align-items: center; gap: 0.6rem; }
 .vault-dir { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-             max-width: 40ch; font-size: 0.75rem; }
+             max-width: 40ch; }
 .vault-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
               gap: 0.2rem; }
 .vault-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.4rem;
-             border-radius: 4px; }
-.vault-row:hover { background: var(--cc-surface-hover, rgba(255, 255, 255, 0.04)); }
+             border-radius: var(--cc-radius-sm); }
+.vault-row:hover { background: var(--cc-surface-2); }
 .vault-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .vault-name { font-weight: 500; cursor: text; }
 .vault-rename { width: 20ch; }
-.vault-meta { font-size: 0.75rem; white-space: nowrap; }
+.vault-meta { white-space: nowrap; }
 </style>

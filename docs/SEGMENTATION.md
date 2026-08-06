@@ -354,6 +354,11 @@ bundled (an empty vault means a picker with only "None"), and only `.pt` files a
 a shared project can name a model this machine lacks; the task fails with that message rather than
 falling back to another model.
 
+**Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
+label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis
+downstream. The composite (`segment.coastal` → `segment.measureLabels`) is what the Segment page is
+for, and it is the entry a user should normally pick.
+
 **Two passes = two model groups.** Not a coastal feature. The repeatable `models` group already is
 the stacking UI, and `_write_tile_to_arr` fills only unlabelled pixels, so a second group picks up
 what the first missed without overwriting it. Splitting cells from apoptotic bodies afterwards is a
