@@ -44,6 +44,7 @@ export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log
 export read_dismissed, set_dismissed!
 export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
+export channel_index, channel_indices, ccid_channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
 export with_transaction, commit_state!
@@ -103,7 +104,7 @@ export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
-export AfCorrect, DriftCorrect, CompositeTask
+export AfCorrect, DriftCorrect, TemporalSmooth, CompositeTask
 export CropImage
 export CopyImage
 
@@ -185,6 +186,7 @@ include("tasks/importImages/migrateLegacy.jl")
 include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
+include("tasks/cleanupImages/temporal_smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")

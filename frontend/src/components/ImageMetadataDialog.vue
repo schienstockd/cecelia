@@ -209,8 +209,12 @@ const copy = (key: string, value: string) => copyValue(value, key)
 }
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
+/* Version column is 9rem, not 6rem: `temporalSmoothed` (16 chars) wrapped to two lines at 6rem, which
+   misaligned it against its own filename box. Fixed rather than `max-content` on purpose — the labels
+   rows below render "labels · {vn}" and a long label set would otherwise squeeze the filename. Long
+   names still wrap; 9rem just moves the threshold past the value names we actually produce. */
 .md-files {
-  display: grid; grid-template-columns: 6rem minmax(0, 1fr) max-content max-content;
+  display: grid; grid-template-columns: 9rem minmax(0, 1fr) max-content max-content;
   gap: 0.25rem 0.5rem; align-items: baseline;
 }
 .md-codec { white-space: nowrap; }

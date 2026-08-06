@@ -66,6 +66,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## Julia app (`app/src/`)
 
+- **Channel name → 0-based index (Julia)**: `channel_index` / `channel_indices` / `ccid_channel_names` (`app/src/model/image.jl`) — the ONE translation from a `channelSelection` param (which stores NAMES) to the indices Python wants. Idempotent on integers; an unmatched name RAISES with the available names. Six task handlers had hand-rolled `findfirst(==(String(ch)), ch_names)` in three mutually inconsistent, silently-wrong variants (index crashed four, unmatched name dropped by five, `drift_correct` fell back to channel 0). Guarded by the `no seventh copy` detector. Python mirror: `script_utils.channel_indices`. See `docs/MODULES.md` → *`channelSelection`*.
 - **Object model**: `model/image.jl` (`CciaImage` + path accessors `img_filepath`/`img_label_props_path`/`img_track_props_path`/`img_branch_props_path`/`img_branch_labels_dir`/`img_branch_labels_path`/`img_physical_sizes`), `model/set.jl` (`CciaSet`, `init_object`), `model/project.jl` (`CciaProject`, `with_transaction`).
 - **Versioned fields**: `helpers.jl` — `versioned_get`/`versioned_set!`/`versioned_keys`/`versioned_active` (the `{value_name => …, "_active" => …}` convention; the one family for both `Dict{String,String}` path dicts and `Any`/JSON3 raw dicts), plus `read_ccid_raw(path)` (the one ccid.json read+Symbol-key normalize).
 - **H5AD chain**: `label_props.jl` (see Data access) + `tracking/track_props.jl` (compute-on-read per-track table, auto categorical/numeric detection).

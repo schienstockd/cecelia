@@ -62,9 +62,7 @@ corrected variant inherits them by versioned fallback and may carry no list of i
 """
 function cellpose_models_for_python(params::AbstractDict, raw::AbstractDict;
                                     on_log::Function = _ -> nothing)::Dict{String,Any}
-    channel_names_raw = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
-    ch_names = channel_names_raw isa AbstractVector ?
-               collect(String, channel_names_raw) : String[]
+    ch_names = ccid_channel_names(raw)
 
     models_json = get(params, "models", nothing)
     out = Dict{String,Any}()
@@ -73,18 +71,9 @@ function cellpose_models_for_python(params::AbstractDict, raw::AbstractDict;
     for (k, v) in models_json
         m = Dict{String,Any}(String(ck) => cv for (ck, cv) in v)
         for field in ("cellChannels", "nucChannels")
-            raw_chs = get(m, field, [])
-            idx_chs = Int[]
-            for ch in raw_chs
-                # already an index (a REPL/test caller, or a re-translated dict) → keep it
-                if ch isa Integer
-                    push!(idx_chs, Int(ch))
-                    continue
-                end
-                idx = findfirst(==(String(ch)), ch_names)
-                isnothing(idx) || push!(idx_chs, idx - 1)
-            end
-            m[field] = idx_chs
+            # one resolver (model/image.jl): already-resolved indices pass through, so a REPL/test
+            # caller or a re-translated chain dict is idempotent; an unmatched name raises
+            m[field] = channel_indices(get(m, field, []), ch_names; what = field)
         end
         model_name = String(get(m, "model", ""))
         if !isempty(model_name) && !(model_name in BUILTIN_CELLPOSE_MODELS) && !isfile(model_name)

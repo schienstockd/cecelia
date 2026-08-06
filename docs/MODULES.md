@@ -469,6 +469,21 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "driftChannel", "label": "Drift channel", "type": "channelSelection", "multiple": false, "default": [] }
 ```
 
+> **It stores channel NAMES, and Python wants 0-based indices — translate with the one resolver.**
+> `channel_indices(params["myChannels"], ch_names; what = "myChannels")` and its single-value sibling
+> `channel_index` (both `app/src/model/image.jl`, with `ccid_channel_names(raw)` for the names). It is
+> idempotent on integers, so a REPL/test/chain caller handing back a translated dict is fine, and an
+> **unmatched name raises** naming the available channels.
+>
+> Do NOT hand-roll `findfirst(==(String(ch)), ch_names)`. Six handlers did, and drifted into three
+> behaviours that were each silently wrong: an already-resolved index crashed four of them
+> (`String(::Int64)`), an unmatched name was dropped by five (so a stale saved param quietly segmented
+> on the wrong channels, or corrected against a denominator missing a term), and `drift_correct` fell
+> back to **index 0** — registering a whole timelapse against SHG at 99.5% zeros. The `no seventh copy`
+> detector in the `one resolver turns channel names into indices` testset fails on a new one. The Python
+> counterpart is `script_utils.channel_indices`, which catches the mirror-image failure: a *name*
+> arriving where an index was due, meaning this translation never ran.
+
 **`valueNameSelection`** — picks from registered image versions. Add `"field": "labels"` to list segmentation label sets (`img.labels` keys) instead of the default image-version keys:
 ```json
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }

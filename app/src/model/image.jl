@@ -285,6 +285,88 @@ function channel_names(img::CciaImage; value_name=nothing)::Union{Vector{String}
     isnothing(v) ? nothing : collect(String, v)
 end
 
+# ── Channel name → 0-based index ──────────────────────────────────────────────
+#
+# THE ONE resolver for "a `channelSelection` param holds names; Python wants indices". Six task
+# handlers had hand-rolled `findfirst(==(String(ch)), ch_names)` — `cellpose_correct`, `drift_correct`,
+# `af_correct` (twice), `segment/cellpose`, `segment/branching` — and they had drifted into three
+# different behaviours, every one of them silently wrong:
+#
+#   * an already-resolved INDEX crashed four of them (`String(::Int64)` → MethodError), because a REPL
+#     caller, a test, or a re-translated chain dict hands back what the first pass produced;
+#   * an unmatched NAME was silently DROPPED by five — so a stale name in a saved chain quietly
+#     segmented on the wrong channels, or on none;
+#   * and `drift_correct` silently fell back to index 0, which on a resonance-scanner movie means
+#     registering the whole timelapse against SHG at 99.5% zeros. Measured on `zolIMa/2h06xA`: the
+#     reference channel is worth ~2x in shift jitter (Y sd 1.86 px on CD169-Kat vs 0.93 on mem-TOM),
+#     so picking it by accident is not a small error.
+#
+# So: idempotent on integers, and an unmatched name RAISES with the available names. That is a
+# deliberate behaviour change from silent-drop — a channel the user named and we could not find is
+# not a thing to guess about. The Python counterpart is `script_utils.channel_indices`, which catches
+# the mirror-image failure (a NAME arriving where an index was due, i.e. this never ran).
+
+"""
+    channel_index(ch, ch_names; what="channel") -> Int
+
+Resolve one channel to its **0-based** index. `ch` may be a name (looked up in `ch_names`) or an
+already-resolved `Integer`, which passes through — so translating twice is a no-op.
+
+Raises when a name is not among `ch_names`, naming what was available.
+"""
+function channel_index(ch, ch_names::AbstractVector{<:AbstractString};
+                       what::AbstractString = "channel")::Int
+    ch isa Integer && return Int(ch)
+    name = String(ch)
+    idx = findfirst(==(name), ch_names)
+    if isnothing(idx)
+        # Case-only differences are the common real cause and the match stays EXACT anyway: two images
+        # from the same experiment shipped `mem-TOM` and `mem-Tom`, so a chain built on one would fail
+        # on the other. Naming the near match makes that a five-second fix instead of a puzzle — but it
+        # is a hint, not a silent coercion. Guessing which channel was meant is what this resolver exists
+        # to stop doing.
+        near = findfirst(n -> lowercase(n) == lowercase(name), ch_names)
+        error("$what: no channel named '$name' in this image. Available: " *
+              (isempty(ch_names) ? "(none registered)" : join(ch_names, ", ")) *
+              (isnothing(near) ? "" : ". Did you mean '$(ch_names[near])'? (differs only in case)") *
+              ". Channel names are per image version — a saved chain may name a channel this version " *
+              "does not have.")
+    end
+    idx - 1
+end
+
+"""
+    channel_indices(chs, ch_names; what="channels", unique_only=true) -> Vector{Int}
+
+`channel_index` over a collection, preserving order. Deduplicates by default: a channel named twice
+would otherwise be counted twice, which for the AF weight squares its term into the denominator a
+second time. Pass `unique_only=false` where multiplicity is meaningful.
+
+A `nothing` or empty input gives `Int[]` — "no channels selected" is a legitimate state that each
+task judges for itself (branching only needs `fibreChannels` for `anisotropySource="channel"`).
+"""
+function channel_indices(chs, ch_names::AbstractVector{<:AbstractString};
+                         what::AbstractString = "channels",
+                         unique_only::Bool = true)::Vector{Int}
+    isnothing(chs) && return Int[]
+    seq = chs isa AbstractVector ? chs : [chs]
+    out = Int[channel_index(c, ch_names; what = what) for c in seq]
+    unique_only ? unique(out) : out
+end
+
+"""
+    ccid_channel_names(raw, value_name=VERSIONED_DEFAULT_VAL) -> Vector{String}
+
+Channel names straight off a `ccid.json` dict, for a task handler that has `raw` rather than a loaded
+`CciaImage`. The same three lines were repeated in all six handlers; `nothing` for `value_name` means
+the ACTIVE version (what `segment/branching` wants — a corrected image with renamed channels).
+"""
+function ccid_channel_names(raw::AbstractDict,
+                            value_name = VERSIONED_DEFAULT_VAL)::Vector{String}
+    v = versioned_get_field(raw, "imChannelNames", value_name)
+    v isa AbstractVector ? collect(String, v) : String[]
+end
+
 # ── State file — the object owns its own path ─────────────────────────────────
 # Ported from the old R `reactivePersistentObject.R`, where the state file was private to the object
 # (`private$getStateFile()`) and everything — save, load, and the `.lock` — derived from it. That

@@ -40,6 +40,21 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Current parked plans
 
+- `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.temporalSmooth` (σ=1 gaussian + centred 3-frame
+  temporal median, one shared kernel per channel); the `smooth → AF → drift` composite is still open.
+  Needed because AF's triangle background
+  lands **inside the signal** on resonance-scanner data: the reference channel kept **8.6%** of its
+  signal, ~80% after. Effectively the port of R's `slidingWindowCorrect` (whose window was off-by-one and
+  off-centre). Deliberately not called "denoise" — that word belongs to the learned restorers.
+  Measured on `zolIMa/fXgbTl` (16-bit, the operative case) + `eQRnwU` (8-bit). Negative results worth not
+  re-deriving: coastal's `denoise_preserving_ratio` is the *worst* arm here, the Cellpose-3 net was
+  **repaired and still dropped** (ties on ratio preservation once normalised through one shared window —
+  that objection is retracted — but inflates masks 199 vs 140 px, 2 merges vs 0, at 31x the cost),
+  **16-bit does not fix it** (max 522 of 65535 — photon-limited, not
+  bit-depth-limited), a **spatial** median is catastrophic (it rejects sparse photon counts as outliers),
+  and a "cells are merging" claim was **retracted** — the overlap test found 1 true merge and 0 lost
+  objects, the count drop was 74 noise specks. Status: task built and run on a full movie; composite,
+  and the drift-on-smoothed / smooth-the-trajectory follow-ups, still open.
 - `CLUSTERING_PLAN.md` — Leiden clustering (cells + tracks), GPU/RAPIDS parked. Cited from
   `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
 - `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export
