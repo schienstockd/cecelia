@@ -189,3 +189,45 @@ class PostProcessOnACropTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StackedModelGroupsFillTest(unittest.TestCase):
+    """Stacking model groups is how multi-pass segmentation is expressed — a second group with a
+    smaller diameter picks up what the first missed. Every group's labels are offset by the running
+    `max_labels[match_as]`, so a later group's IDs are always numerically larger; merging with
+    `np.maximum` therefore let the later group win every overlapping pixel and eat the first pass's
+    cells. The merge must fill only unlabelled pixels instead."""
+
+    def _seg(self):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        return SegmentationUtils.__new__(SegmentationUtils)   # no zarr/taskDir needed
+
+    def _write(self, arr, masks):
+        self._seg()._write_tile_to_arr(
+            arr, masks, 0, None, 0, 1, (slice(0, arr.shape[0]), slice(0, arr.shape[1])))
+        return arr
+
+    def test_later_group_does_not_overwrite_an_earlier_one(self):
+        first = np.zeros((4, 4), dtype=np.uint32)
+        first[:, :2] = 3                      # pass 1 found a cell, label 3
+        second = np.zeros((4, 4), dtype=np.uint32)
+        second[:, :3] = 9                     # pass 2 overlaps it AND extends right, label 9 > 3
+
+        out = self._write(first.copy(), second)
+
+        self.assertTrue((out[:, :2] == 3).all(), 'pass 1 labels were overwritten by pass 2')
+        self.assertTrue((out[:, 2] == 9).all(), 'pass 2 did not fill the unlabelled gap')
+        self.assertTrue((out[:, 3] == 0).all())
+
+    def test_writing_into_empty_is_unchanged(self):
+        """Within one group the write regions are disjoint, so the destination is always 0 and the
+        behaviour must be identical to the previous np.maximum merge."""
+        masks = np.array([[0, 1], [2, 2]], dtype=np.uint32)
+        out = self._write(np.zeros((2, 2), dtype=np.uint32), masks)
+        np.testing.assert_array_equal(out, masks)
+
+    def test_zero_in_the_later_group_never_erases(self):
+        """A later group predicting background must not delete an earlier group's cell."""
+        first = np.full((3, 3), 5, dtype=np.uint32)
+        out = self._write(first.copy(), np.zeros((3, 3), dtype=np.uint32))
+        self.assertTrue((out == 5).all())

@@ -33,6 +33,16 @@ class SegmentationUtils:
 
     LABEL_DTYPE = np.uint32
 
+    # Frames either side of t that `predict_slice` needs. 0 = the tile only, which is every
+    # algorithm that segments a single timepoint (cellpose). A TEMPORAL algorithm — one whose
+    # prediction for t depends on t±r, e.g. optical-flow metrics — sets this and the base supplies
+    # the window. Declared by the SUBCLASS so the base never special-cases a particular method.
+    #
+    # The window is read at TILE extent, not whole frames: widening the per-timepoint read would
+    # hold r*2+1 full frames in RAM (~300 MB each on a 1036x1055x35x4ch uint16 movie), destroying
+    # the property that peak memory is one frame. See docs/todo/COASTAL_SEGMENTATION_PLAN.md.
+    TEMPORAL_RADIUS = 0
+
     def __init__(self, params, dim_utils):
         self.params = params
         self.dim_utils = dim_utils
@@ -55,8 +65,20 @@ class SegmentationUtils:
         self.task_dir = params['taskDir']
         self.output_value_name = params.get('outputValueName', 'default')
 
-    def predict_slice(self, tile, model_params, norm_params=None):
-        """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask."""
+    def predict_slice(self, tile, model_params, norm_params=None,
+                      context=None, context_index=None):
+        """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
+
+        `context`/`context_index` are passed ONLY when the subclass sets `TEMPORAL_RADIUS > 0`, so a
+        subclass that does not want them never has to accept them (cellpose does not, and neither
+        does any existing third-party subclass).
+
+        context:       the same tile through time, [W, ...tile axes], W <= 2*TEMPORAL_RADIUS+1
+        context_index: index of `tile`'s own timepoint within `context`. NOT always the middle —
+                       the window is TRUNCATED at the start and end of the movie rather than
+                       reflected or edge-padded, because repeating a frame invents zero motion and
+                       mirroring invents motion outright.
+        """
         raise NotImplementedError
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -104,6 +126,12 @@ class SegmentationUtils:
         in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
+
+        # Axis indices on the FULL input array (time axis still present) — the in-RAM frame has T
+        # dropped, so its indices cannot address other timepoints. Only used for temporal context.
+        ia_t = dim_utils.im_dim_order.index('T') if 'T' in dim_utils.im_dim_order else None
+        ia_y = dim_utils.im_dim_order.index('Y')
+        ia_x = dim_utils.im_dim_order.index('X')
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -158,7 +186,20 @@ class SegmentationUtils:
 
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
-                        masks = self.predict_slice(tile, model_params, norm_p)
+
+                        if self.TEMPORAL_RADIUS > 0 and ia_t is not None:
+                            # tile-extent reads across the clamped window; truncated at the movie
+                            # edges, never reflected or edge-padded (see predict_slice docstring)
+                            lo = max(0, t - self.TEMPORAL_RADIUS)
+                            hi = min(T - 1, t + self.TEMPORAL_RADIUS)
+                            context = np.stack([
+                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx)
+                                for t2 in range(lo, hi + 1)])
+                            masks = self.predict_slice(tile, model_params, norm_p,
+                                                       context=context, context_index=t - lo)
+                        else:
+                            # unchanged call for every non-temporal subclass
+                            masks = self.predict_slice(tile, model_params, norm_p)
                         masks = self._crop_masks(masks, crop_yx, is_3d)
 
                         if np.any(masks > 0):
@@ -259,14 +300,29 @@ class SegmentationUtils:
             return masks[pt:Y - pb if pb else None, pl:X - pr if pr else None]
 
     def _write_tile_to_arr(self, arr, masks, t, la_t, la_y, la_x, write_yx):
-        """Merge tile into label array via np.maximum."""
+        """Merge a tile into the label array, KEEPING whatever is already labelled there.
+
+        Stacking model groups is how multi-pass segmentation is expressed: a second group with a
+        smaller diameter picks up cells the first missed. `predict_from_zarr` loops the repeatable
+        `models` group, and every group's labels are offset by the running `max_labels[match_as]`,
+        so a later group's IDs are always numerically LARGER than an earlier group's.
+
+        This used to merge with `np.maximum`, which therefore let the later group win every
+        overlapping pixel — a small-diameter second pass silently ate the first pass's cells. Nobody
+        wants that, so the merge fills only unlabelled pixels.
+
+        Within a single group this is a no-op: `_create_xy_tiles` write regions are
+        `(slice(y, y1), slice(x, x1))` with `x = x1` advancing, i.e. exactly tiling and disjoint
+        (only the READ regions overlap, and `_crop_masks` removes that padding). So the destination
+        is always 0 there and `np.maximum`, assignment and fill-only all agree.
+        """
         idx = [slice(None)] * arr.ndim
         if la_t is not None:
             idx[la_t] = t
         idx[la_y] = write_yx[0]
         idx[la_x] = write_yx[1]
         idx = tuple(idx)
-        arr[idx] = np.maximum(arr[idx], masks)
+        arr[idx] = np.where(arr[idx] > 0, arr[idx], masks)
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 
