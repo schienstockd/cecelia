@@ -89,8 +89,8 @@ function _spec_path(::DriftCorrect)
     joinpath(@__DIR__, "cleanupImages", "drift_correct.json")
 end
 
-function _spec_path(::TemporalSmooth)
-    joinpath(@__DIR__, "cleanupImages", "temporal_smooth.json")
+function _spec_path(::Smooth)
+    joinpath(@__DIR__, "cleanupImages", "smooth.json")
 end
 
 function _spec_path(::CropImage)
@@ -152,7 +152,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
-        "cleanupImages.temporalSmooth"      => TemporalSmooth(),
+        "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),

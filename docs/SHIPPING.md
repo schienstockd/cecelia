@@ -341,7 +341,7 @@ default index (MPS/CPU). A single global cu124 index would make macOS unsolvable
 ### coastal is a git dependency (2026-08-05)
 `coastal` (live-cell seg/tracking) is declared in `[pypi-dependencies]` as
 `{ git = "https://github.com/schienstockd/coastal.git" }`. cecelia consumes its model-free smoothing
-engine from `cleanupImages.temporalSmooth` (see `docs/todo/SMOOTHING_PLAN.md`).
+engine from `cleanupImages.smooth` (see `docs/todo/SMOOTHING_PLAN.md`).
 
 It was previously omitted, and the stated reason was specific: it was an editable install from a
 *non-git* sibling path (`~/cc-workspace/coastal`), so a committed lockfile could not fetch it. That

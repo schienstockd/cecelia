@@ -130,7 +130,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} saturated",
         long  = "Input voxels are clipped at the top of the range, so their true value is already lost — lower the gain or laser power and reacquire."),
 
-    # temporal smoothing (_temporal_smooth_qc_findings). Both findings are about the STEP rather than
+    # smoothing (_smooth_qc_findings). Both findings are about the STEP rather than
     # the input: it always "succeeds", it just may have overshot the dtype or bought nothing.
     "smooth.gain_clipped" => (
         short = "Dynamic-range gain clipped {value} voxels",

@@ -1,6 +1,6 @@
 # Smoothing task: make AF work on photon-starved data
 
-**Status:** **built** as `cleanupImages.temporalSmooth` (2026-08-05) — the standalone task, not the
+**Status:** **built** as `cleanupImages.smooth` (2026-08-05; renamed from `temporalSmooth` 2026-08-06) — the standalone task, not the
 composite. Measurements are real (2026-08-04) on `zolIMa/fXgbTl` (16-bit, the operative case),
 `eQRnwU` (8-bit crop) and `2h06xA` (full movie). Run end-to-end through the real task on the full
 `zolIMa/Dml3RG` movie (drift-corrected, 181×4×35×1036×1055, ~30 min). See *What was built* below for
@@ -293,14 +293,20 @@ params a user tunes, and the preview reads whichever store the viewer has open.
 
 ## What was built — and where it diverged from the design above
 
-Shipped as **`cleanupImages.temporalSmooth`** (`temporal_smooth.{jl,json,_run.py}`, output value name
-`temporalSmoothed`, store `ccidTemporalSmoothed.ome.zarr`). Differences from the design, each
-deliberate:
+Shipped as **`cleanupImages.smooth`** (`smooth.{jl,json,_run.py}`, output value name `smoothed`,
+store `ccidSmoothed.ome.zarr`). Differences from the design, each deliberate:
+
+> **Legacy value name.** Images smoothed before 2026-08-06 carry the value name `temporalSmoothed`
+> and a `ccidTemporalSmoothed.ome.zarr` store. Nothing breaks — a value name is a free-form key, so
+> those versions stay listed, selectable and readable; they simply keep the old label while new runs
+> produce `smoothed`. No migration has been run (`zolIMa/fXgbTl` and `zolIMa/Dml3RG` still hold the
+> old name, and `fXgbTl` has it `_active`). Renaming them means rewriting the `filepath` map in
+> `ccid.json` **and** the store directory together, so it belongs in a data patch, not a manual edit.
 
 | Design above | Built | Why |
 |---|---|---|
-| task `smooth` | **`temporalSmooth`** | leaves the name free for a future spatial-only or other smoother, rather than one task owning the generic word |
-| `requires: {}`, temporal term self-disables | **`requires.axes: ["T"]`** | the task is *named* for its temporal term; a static image has nothing for it to do, so gating is honest rather than offering a run that silently degrades to a plain gaussian |
+| task `smooth` | **`smooth`** | shipped as `temporalSmooth` to leave the generic word free for a future spatial-only smoother; **reverted to the design's `smooth` on 2026-08-06** — the name overstated the temporal term, which is one optional parameter (`temporalFrames=1` disables it), and the spatial term is the one that does the work |
+| `requires: {}`, temporal term self-disables | **`requires.axes: ["T"]`** | kept after the rename, though the justification weakened with it: the gate is now stricter than the name implies, since `smooth` with `temporalFrames=1` is a perfectly meaningful spatial-only run that a static image is still refused. Revisit if a spatial-only use case appears |
 | — | **`restoreDynamicRange` (bool, default on)** | averaging lowers the maximum, and on an integer store the background estimate then loses the precision it needs. ONE gain across all smoothed channels, so cross-channel ratios hold. Measured 1.94 on `Dml3RG`, 0 voxels clipped |
 | `uniform_filter1d` over T | **`coastal.smooth`** (git dep), streamed per z-plane with a rolling cache of spatially-smoothed planes | the engine already existed in coastal and holds the spatial-then-temporal ordering invariant; duplicating it here would have been the second implementation |
 | QC: triangle background before/after | **QC: zero-voxel fraction before/after** (+ `gain`, `clippedVoxels`) | see the open item below — this is a proxy, and arguably the weaker choice |
@@ -334,7 +340,7 @@ Two follow-ups, neither done:
   correlate (filling zeros is how the background estimate gets a population to find), but only the
   triangle number answers "will AF work now", which is the task's entire justification. The sampled
   planes needed to compute it are already read for the gain estimate, so this is a small change to
-  `temporal_smooth_run.py` — it just needs a re-run to bank the number on an existing store.
+  `smooth_run.py` — it just needs a re-run to bank the number on an existing store.
 - ~~**16-bit** might fix this on its own.~~ **Answered: no.** Measured on `zolIMa/fXgbTl` — raw 16-bit
   keeps 12.6% / 46.3% / 8.6% of signal, the same failure as 8-bit, because the observed max is 522 of
   65535. Bit depth was never the constraint. This task is needed for **signal**, not smoothness. (16-bit

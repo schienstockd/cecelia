@@ -64,6 +64,16 @@ The phased plan below ran to a conclusion. Summary of what we found:
 > Read `docs/todo/SEGMENTATION_OPEN_PROBLEM.md` before building on the flow premise. This is a *scope*
 > correction, not a refutation: motion may still be informative for motile cells (e.g. `EaMaVq`'s
 > T cells), which has not been measured.
+>
+> **Revised later the same day.** The at-chance velocity readings were taken at frame-to-frame lag,
+> where the true displacement (0.18 px) is below Farneback's ~0.5–1 px detection floor *on this data*
+> — but only because the input was **temporally** denoised, which destroys short-lag information.
+> With spatial-only denoising (σ≈1 px, no temporal averaging) flow beats a no-motion baseline by 29%
+> at 15 s against a negative placebo, flat out to 4 min. So coastal's `mag_1/2/4/8` lags are fine;
+> the input was the problem, and a temporally-smoothed store must NOT be fed to the flow metrics.
+> Flow does not, however, beat plain intensity at finding the cells (AUC 0.958 vs 0.980) — so the
+> target is **instance separation**, not foreground. Full detail + the circularity caveats in
+> `SEGMENTATION_OPEN_PROBLEM.md` → the two 2026-08-06 sections.
 
 The phases below are kept as the historical record of how we got here.
 

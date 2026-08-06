@@ -209,7 +209,7 @@ const copy = (key: string, value: string) => copyValue(value, key)
 }
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
-/* Version column is 9rem, not 6rem: `temporalSmoothed` (16 chars) wrapped to two lines at 6rem, which
+/* Version column is 9rem, not 6rem: `driftCorrected`/`temporalSmoothed` wrapped to two lines at 6rem, which
    misaligned it against its own filename box. Fixed rather than `max-content` on purpose — the labels
    rows below render "labels · {vn}" and a long label set would otherwise squeeze the filename. Long
    names still wrap; 9rem just moves the threshold past the value names we actually produce. */
