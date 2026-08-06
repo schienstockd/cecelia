@@ -40,6 +40,45 @@ function open_level0(zarr_path::AbstractString)
 end
 
 """
+    read_native(arr, idx...) -> Array
+
+Read a block out of a Zarr.jl array **with the stored byte order applied**. ALWAYS read pixels through
+this — never `arr[idx...]` directly.
+
+`bioformats2raw` writes big-endian arrays (`>u2` for uint16), and every raw imported `default` version
+in a cecelia project is one. Zarr.jl parses that descriptor for the *element type* but hands back the
+bytes **unswapped**, so `eltype(arr) === UInt16` while the values are byte-swapped garbage: a true 63
+reads as 16128, and 98% of a real frame lands above a contrast ceiling that should have clipped none of
+it. There is no error — the preview just renders saturated white noise. Python is immune because numpy
+honours the `>u2` descriptor on read, which is why this only ever bit the Julia preview path.
+
+`ntoh`/`ltoh` are no-ops when the store's order already matches the host, so this is correct on a
+big-endian machine too, and a no-op for 1-byte dtypes (`|u1`).
+
+See `docs/NAPARI.md` → *Byte order (big-endian zarr)* for the other half of this trap (the writers
+force native order via `zarr_utils.native_dtype`, so corrected/cropped versions are little-endian).
+"""
+function read_native(arr, idx...)
+    blk = arr[idx...]
+    order = _zarr_byte_order(arr)
+    order == '>' && return ntoh.(blk)
+    order == '<' && return ltoh.(blk)
+    blk                                          # '|' (not applicable, 1-byte) or unknown → as-is
+end
+
+# Leading character of the numpy dtype descriptor in the array's zarr metadata: '>' big, '<' little,
+# '|' not-applicable. Zarr.jl v2 metadata keeps it as the raw string (e.g. ">u2"); anything else
+# (a v3 store, a future metadata shape) answers '|' so we never swap on a guess.
+function _zarr_byte_order(arr)::Char
+    dt = try
+        getfield(arr.metadata, :dtype)
+    catch
+        return '|'
+    end
+    (dt isa AbstractString && !isempty(dt)) ? first(dt) : '|'
+end
+
+"""
     read_ngff_axes(attrs_dir) -> Vector{String}
 
 NGFF axis names from a group's `.zattrs` (`multiscales[0].axes[].name`), lowercased, C-order.

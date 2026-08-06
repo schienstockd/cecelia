@@ -20,30 +20,72 @@
 
 using Zarr, JSON3, PNGFiles, ColorTypes, FixedPointNumbers
 
-# Named colormap → base RGB for the additive channel blend. The additive primaries napari uses for
-# multichannel display are linear ramps, so intensity × base-RGB reproduces them. Unknown/perceptual
-# names fall back to gray (rare for raw channels; revisit with a LUT if needed).
+# ── Channel colour ────────────────────────────────────────────────────────────────
+# A channel's colour comes from napari, as a LUT (`colormap_lut` in the props JSON: black→colour stops
+# that this renderer interpolates). napari is the authority on its own palette, so we do not re-derive
+# it — it has ~30 colormaps and the user can pick any of them, so a name table here can never be
+# complete. It was not: `bop blue` was missing, hit the unknown-name fallback, and rendered napari's
+# blue SHG channel as full WHITE — the worst possible fallback, because white adds to all three
+# accumulators and washes the composite out.
+#
+# CMAP_RGB stays as the fallback for props files written BEFORE the LUT was saved, so existing images
+# render correctly without being re-opened in napari. Values are napari's own LUT end colours
+# (`napari.utils.colormaps.AVAILABLE_COLORMAPS[name].colors[-1]`) — all of these are linear ramps from
+# black (verified: max deviation 0.007), so a 2-stop LUT reproduces them exactly. napari's remaining
+# colormaps are NOT ramps from black — the perceptual ones (viridis/turbo/…) and the `I *` set, which
+# run WHITE→colour — so they cannot be approximated from a name at all and fall back to gray here.
+# Only a props file with `colormap_lut` renders those faithfully.
 const CMAP_RGB = Dict(
     "red" => (1f0, 0f0, 0f0), "green" => (0f0, 1f0, 0f0), "blue" => (0f0, 0f0, 1f0),
     "cyan" => (0f0, 1f0, 1f0), "magenta" => (1f0, 0f0, 1f0), "yellow" => (1f0, 1f0, 0f0),
     "gray" => (1f0, 1f0, 1f0), "grey" => (1f0, 1f0, 1f0), "white" => (1f0, 1f0, 1f0),
+    "hilo" => (1f0, 1f0, 1f0), "nan" => (1f0, 1f0, 1f0),
+    "bop blue"   => (0.12549f0,  0.678431f0, 0.972549f0),
+    "bop orange" => (0.972549f0, 0.678431f0, 0.12549f0),
+    "bop purple" => (0.580392f0, 0.12549f0,  0.580392f0),
 )
 const DEFAULT_CMAPS = ["red", "green", "blue", "yellow"]
 
+# One channel's colour ramp: `n` in [0,1] → RGB. Stop 1 is the colour at zero intensity.
+const Lut = Vector{NTuple{3,Float32}}
+
+# Resolve a spec's colour field to a LUT. A Vector of stops (from `colormap_lut`) is used as-is; a
+# String is a colormap NAME resolved through CMAP_RGB into a 2-stop black→base ramp.
+_as_lut(v::Lut) = v
+_as_lut(name::AbstractString) =
+    NTuple{3,Float32}[(0f0, 0f0, 0f0), get(CMAP_RGB, lowercase(name), (1f0, 1f0, 1f0))]
+_as_lut(v::AbstractVector) = NTuple{3,Float32}[
+    (Float32(s[1]), Float32(s[2]), Float32(s[3])) for s in v]
+
+# Sample a LUT at `n` ∈ [0,1] with linear interpolation between stops. A 2-stop black→base ramp reduces
+# to exactly `n .* base`, which is what the additive channel primaries need.
+@inline function _lut_at(lut::Lut, n::Float32)
+    K = length(lut)
+    K == 0 && return (0f0, 0f0, 0f0)
+    K == 1 && return lut[1]
+    p = n * (K - 1)
+    i = min(floor(Int, p), K - 2)
+    f = p - i
+    a, b = lut[i + 1], lut[i + 2]
+    (a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2]), a[3] + f * (b[3] - a[3]))
+end
+
 # Read the viewer's per-channel display specs from the JSON layer-props file (Phase 0). Returns a vector
-# of (lo, hi, cmap_name, visible) in channel order, or `nothing` if the file is missing/unreadable.
+# of (lo, hi, colour, visible) in channel order, or `nothing` if the file is missing/unreadable.
+# `colour` is the saved `colormap_lut` when present, else the `colormap` NAME (see CMAP_RGB above).
 function layer_display_specs(props_path::AbstractString)
     isfile(props_path) || return nothing
     try
         d = JSON3.read(read(props_path, String))
         imgs = get(d, :Image, nothing)
         imgs === nothing && return nothing
-        specs = Tuple{Float64,Float64,String,Bool}[]
+        specs = Tuple{Float64,Float64,Any,Bool}[]
         for e in imgs
-            cl = get(e, :contrast_limits, [0.0, 1.0])
-            push!(specs, (Float64(cl[1]), Float64(cl[2]),
-                          lowercase(String(get(e, :colormap, "gray"))),
-                          Bool(get(e, :visible, true))))
+            cl  = get(e, :contrast_limits, [0.0, 1.0])
+            lut = get(e, :colormap_lut, nothing)
+            colour = (lut !== nothing && !isempty(lut)) ? _as_lut(lut) :
+                     lowercase(String(get(e, :colormap, "gray")))
+            push!(specs, (Float64(cl[1]), Float64(cl[2]), colour, Bool(get(e, :visible, true))))
         end
         isempty(specs) ? nothing : specs
     catch
@@ -51,22 +93,23 @@ function layer_display_specs(props_path::AbstractString)
     end
 end
 
-# Pure: composite a (C, H, W) float array + per-channel (lo, hi, cmap, visible) specs → H×W RGB{N0f8}
-# via clip-to-contrast, colourise, additive blend. Unit-testable without any IO/zarr.
+# Pure: composite a (C, H, W) float array + per-channel (lo, hi, colour, visible) specs → H×W RGB{N0f8}
+# via clip-to-contrast, colourise through the channel's LUT, additive blend. `colour` is a colormap
+# name or a LUT (see `_as_lut`). Unit-testable without any IO/zarr.
 function composite_rgb(chw::AbstractArray{<:Real,3}, specs::AbstractVector)
     C, H, W = size(chw)
     acc = zeros(Float32, 3, H, W)
     @inbounds for c in 1:C
-        lo, hi, cmap, vis = specs[c]
+        lo, hi, colour, vis = specs[c]
         vis || continue
-        base = get(CMAP_RGB, cmap, (1f0, 1f0, 1f0))
+        lut = _as_lut(colour)
         rng = Float32(hi - lo); rng = rng == 0f0 ? 1f0 : rng
-        r, gg, b = base
         for j in 1:W, i in 1:H
             n = clamp((Float32(chw[c, i, j]) - Float32(lo)) / rng, 0f0, 1f0)
-            r  != 0f0 && (acc[1, i, j] += n * r)
-            gg != 0f0 && (acc[2, i, j] += n * gg)
-            b  != 0f0 && (acc[3, i, j] += n * b)
+            r, g, b = _lut_at(lut, n)
+            acc[1, i, j] += r
+            acc[2, i, j] += g
+            acc[3, i, j] += b
         end
     end
     [RGB{N0f8}(clamp(acc[1, i, j], 0, 1), clamp(acc[2, i, j], 0, 1), clamp(acc[3, i, j], 0, 1))
@@ -96,7 +139,10 @@ function render_preview_frame(zarr_path::AbstractString, props_path::AbstractStr
         hi = clamp(ceil(Int,  clamp(z_hi_frac, 0, 1) * nz),     lo, nz)
         idx[jz] = lo:max(1, cld(hi - lo + 1, z_keep)):hi
     end
-    sub = arr[idx...]                            # reads; the scalar t-dim is dropped
+    # `read_native`, never `arr[idx...]` — a raw bioformats2raw store is big-endian and Zarr.jl does not
+    # swap it (see image_geometry.jl). Reading it unswapped turned every `default` version into
+    # saturated white noise.
+    sub = read_native(arr, idx...)               # reads; the scalar t-dim is dropped
 
     # names of the REMAINING Julia dims (t dropped), so we can permute to canonical (c, y, x)
     names = [caxes_or_fallback(caxes, nd)[nd - j + 1] for j in 1:nd]

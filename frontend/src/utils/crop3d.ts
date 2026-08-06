@@ -84,3 +84,16 @@ export function cropBoxFromRect(rect: NormRect, info: CropInfo,
   if (info.nT > 1 && rangeCrops(t)) { const ti = fracToIndexRange(tPct.lo, tPct.hi, info.nT); box.t0 = ti.i0; box.t1 = ti.i1 }
   return box
 }
+
+/**
+ * Cache/identity key for one rendered preview frame. **The version (`valueName`) is part of the key.**
+ * It used to be `${t}|${zLo}|${zHi}` only, which made a frame from one image version indistinguishable
+ * from another's at the same slider position: switching version left an in-flight request for the OLD
+ * store to resolve, match the key check, and paint the old version's picture under the new version's
+ * label. Versions do not even share a frame extent (drift correction expands the canvas), so they are
+ * never interchangeable. Pure — unit-tested.
+ */
+export function frameCacheKey(valueName: string, t: number, zPct: { lo: number; hi: number }): string {
+  const z = normalizeRange(zPct.lo, zPct.hi)
+  return `${valueName}|${t}|${z.lo.toFixed(4)}|${z.hi.toFixed(4)}`
+}

@@ -1550,6 +1550,30 @@ class NapariState:
             return bool(v)
         return v                                   # blending (str); colormap handled by the caller
 
+    # Max stops kept for `colormap_lut`. napari's additive channel primaries (red/green/…/bop blue) are
+    # 2-entry ramps and stay exact at any cap; the 256-entry perceptual maps (viridis/turbo/…) resample
+    # to 64 with a worst-case error of 2/255 — invisible in a preview thumbnail. (The one outlier is
+    # `gist_earth`, a stepped terrain map, at 24/255; it is not a channel colormap.)
+    _LUT_MAX_STOPS = 64
+
+    @classmethod
+    def _colormap_lut(cls, colormap):
+        """napari colormap → black→colour stops the Julia preview renderer can interpolate.
+
+        The renderer cannot resolve a colormap by NAME without duplicating napari's palette here, and
+        that duplication silently broke: `bop blue` was missing from its table and rendered as WHITE.
+        napari owns its colormaps, so it exports the actual colours and the renderer just interpolates.
+        Covers the perceptual maps and the white→colour `I *` set too, which no name table could
+        approximate. See `api/src/image_render.jl`.
+        """
+        cols = np.asarray(colormap.colors, dtype=float)[:, :3]
+        n = len(cols)
+        if n > cls._LUT_MAX_STOPS:                 # resample uniformly; 2-stop ramps are never touched
+            src = np.linspace(0.0, 1.0, n)
+            tgt = np.linspace(0.0, 1.0, cls._LUT_MAX_STOPS)
+            cols = np.stack([np.interp(tgt, src, cols[:, k]) for k in range(3)], axis=1)
+        return [[round(float(v), 4) for v in stop] for stop in cols]
+
     def save_layer_props(self, filepath: str):
         props = {"Image": []}
         _keys = [
@@ -1558,10 +1582,17 @@ class NapariState:
         ]
         for layer in self._viewer.layers:
             if type(layer).__name__ == "Image":
-                props["Image"].append({
+                entry = {
                     k: (layer.colormap.name if k == "colormap" else self._jsonable(k, getattr(layer, k)))
                     for k in _keys
-                })
+                }
+                # The name is kept for the viewer's own restore (`colormap` is settable by name); the LUT
+                # is what the Julia renderer reads. An exotic colormap must not fail the whole save.
+                try:
+                    entry["colormap_lut"] = self._colormap_lut(layer.colormap)
+                except Exception as e:
+                    print(f"[props] could not export LUT for {layer.colormap.name!r}: {e}", flush=True)
+                props["Image"].append(entry)
         # viewer dims position (the T/Z slider) so the image reopens on the same frame/slice
         try:
             props["dims"] = {"current_step": [int(x) for x in self._viewer.dims.current_step]}
