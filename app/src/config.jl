@@ -468,6 +468,38 @@ end
 _bf2raw_lib_dir(bin::AbstractString = bioformats2raw_bin()) = joinpath(dirname(dirname(bin)), "lib")
 
 """
+    bf2raw_chunk_flags(value) -> Vector{String}
+
+bioformats2raw `--tile-width`/`--tile-height` flags for the configured chunk size, or **empty for
+`"auto"`**.
+
+Auto deliberately passes NOTHING and lets bioformats2raw apply its own default of 1024 — because that
+default is already *capped to the frame*: a 512×512 acquisition gets 512×512 chunks, a 1024×1024 one
+gets 1024×1024. That is exactly the rule we want (one chunk per plane, up to 1024) and it needs no
+knowledge of the source dimensions, which we do not have at this point anyway — the image has not been
+converted yet, so there is no store to measure.
+
+Why one chunk per plane is the target rather than something smaller: napari slices per (t,c,z) and
+draws whole planes, so a plane that is one chunk is one read. The same reasoning is written down in
+`zarr_utils.plane_chunks`, which chunks our OWN writes that way. Smaller chunks only pay off for
+routine sub-region reads, which nothing in the app does — segmentation reads tiles that are at least
+its own block size.
+
+A 1024×1024 `uint16` chunk is 2 MB. 2048 is 8 MB, which is a lot to fetch for a viewport showing far
+less; it is offered for the rare very large frame, not as an upgrade.
+
+Anything unparseable falls back to auto rather than raising — the same call as
+`bf2raw_compression_flags`: a typo must not fail an hour-long import.
+"""
+function bf2raw_chunk_flags(value)::Vector{String}
+    s = lowercase(strip(string(value)))
+    (isempty(s) || s == "auto") && return String[]
+    n = tryparse(Int, s)
+    (isnothing(n) || n < 32) && return String[]
+    ["--tile-width", string(n), "--tile-height", string(n)]
+end
+
+"""
     bf2raw_compression_flags([name]) -> Vector{String}
 
 bioformats2raw CLI flags that make it write the SAME compressor our own Python writers use.

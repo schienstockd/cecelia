@@ -9398,3 +9398,46 @@ end
         @test isapprox(m2["TimeIncrement"], 30.0; rtol = 1e-6)
     end
 end
+
+@testset "bioformats2raw chunk flags" begin
+    # These flags were the bug: `chunkSizeX`/`chunkSizeY` existed in omezarr.json and were read by
+    # NOTHING — no tile flag ever reached the CLI, so a user who chose 512 still got bioformats2raw's
+    # 1024. One `chunkSize` param now, and it is passed.
+    @test Cecelia.bf2raw_chunk_flags("512") == ["--tile-width", "512", "--tile-height", "512"]
+    @test Cecelia.bf2raw_chunk_flags(1024)  == ["--tile-width", "1024", "--tile-height", "1024"]
+
+    # "auto" passes NOTHING on purpose: bioformats2raw's own default is 1024 ALREADY CAPPED to the
+    # frame, which is exactly the rule we want (one chunk per plane, up to 1024) and needs no source
+    # dimensions — which we do not have, since the image is not converted yet.
+    @test isempty(Cecelia.bf2raw_chunk_flags("auto"))
+    @test isempty(Cecelia.bf2raw_chunk_flags("AUTO"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(""))
+
+    # unparseable / absurd falls back to auto rather than raising — same call as the compression
+    # flags: a bad value must not fail an hour-long import
+    @test isempty(Cecelia.bf2raw_chunk_flags("banana"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(0))
+    @test isempty(Cecelia.bf2raw_chunk_flags(-8))
+    @test isempty(Cecelia.bf2raw_chunk_flags(16))       # below 32: not a sane chunk
+
+    # every option the task spec offers must actually resolve (a spec/handler drift here is silent —
+    # the import would just ignore the choice, which is the bug this whole testset exists for)
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    cs   = only(filter(p -> get(p, :key, "") == "chunkSize", collect(adv.params)))
+    vals = [string(get(o, :value, o)) for o in cs.options]
+    @test "auto" in vals
+    @test string(cs.default) in vals
+    for v in vals
+        @test v == "auto" ? isempty(Cecelia.bf2raw_chunk_flags(v)) :
+                            Cecelia.bf2raw_chunk_flags(v) == ["--tile-width", v, "--tile-height", v]
+    end
+
+    # and the tips must not merely restate the label — that is what made these params guesswork
+    for p in vcat(collect(spec.params), collect(adv.params))
+        get(p, :type, "") == "section" && continue
+        tip = String(get(p, :tip, ""))
+        @test !isempty(tip)
+        @test lowercase(tip) != lowercase(String(get(p, :label, "")))
+    end
+end

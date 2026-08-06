@@ -3,7 +3,9 @@
   "fun_name": "importImages.omezarr",
   "label": "Convert to OME-ZARR",
   "category": "import",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "io",
   "params": [
     {
@@ -14,14 +16,14 @@
       "max": 10,
       "default": 2,
       "step": 1,
-      "tip": "Resolution levels in the image pyramid"
+      "tip": "Downscaled copies for fast zoomed-out viewing; 2-3 suits a 512-1024 px frame"
     },
     {
       "key": "stageLocal",
       "label": "Copy to local scratch first",
       "type": "bool",
       "default": false,
-      "tip": "Copy the source locally first — much faster over a network share"
+      "tip": "Copy the source locally first \u2014 much faster over a network share"
     },
     {
       "key": "advanced",
@@ -30,24 +32,29 @@
       "collapsed": true,
       "params": [
         {
-          "key": "chunkSizeX",
-          "label": "Chunk size X",
-          "type": "int",
-          "min": 64,
-          "max": 2048,
-          "default": 1024,
-          "step": 64,
-          "tip": "Zarr chunk size in X"
-        },
-        {
-          "key": "chunkSizeY",
-          "label": "Chunk size Y",
-          "type": "int",
-          "min": 64,
-          "max": 2048,
-          "default": 1024,
-          "step": 64,
-          "tip": "Zarr chunk size in the Y dimension"
+          "key": "chunkSize",
+          "label": "Chunk size",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (recommended)"
+            },
+            {
+              "value": "512",
+              "label": "512 px"
+            },
+            {
+              "value": "1024",
+              "label": "1024 px"
+            },
+            {
+              "value": "2048",
+              "label": "2048 px"
+            }
+          ],
+          "tip": "Auto keeps one chunk per plane (1024, capped to the frame) \u2014 leave it unless advised"
         }
       ]
     }

@@ -724,8 +724,14 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     compression = bf2raw_compression_flags()
     on_log("[INFO] Compression: $(image_compressor())")
 
+    # Chunk (bioformats2raw calls it the TILE) size. This param existed in the JSON for a long time as
+    # `chunkSizeX`/`chunkSizeY` and was read by NOTHING — no tile flag ever reached the CLI, so a user
+    # who set 512 still got bioformats2raw's 1024. One control now, and it is actually passed.
+    chunk_flags = bf2raw_chunk_flags(get(params, "chunkSize", "auto"))
+    on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
+
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $eff_src $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $eff_src $zarr_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)
