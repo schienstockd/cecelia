@@ -1,22 +1,28 @@
-# Segmenting CD169⁺ macrophages in intravital movies — an open problem
+# Segmenting intravital movies — CD169⁺/MERTK⁺ macrophages and germinal-centre B cells
 
-**Status:** **negative result 2026-08-06, then substantially revised the same day.** Read the two
-2026-08-06 sections before anything else. Net position: **optical flow works on this data at 15 s**
-(positive control + a mask-free photometric test), the earlier at-chance velocity readings were taken
-in the one regime where it cannot see, and **temporal** denoising — not the lag — was the confound.
-But flow does **not** beat plain intensity as a foreground cue, so the open problem is *instance
-separation*, not finding the cells. No code shipped, nothing to revert; this file
-exists so the next attempt starts from what has been ruled out rather than re-deriving it. All numbers
-are on `zolIMa/fXgbTl` (16-bit, drift-corrected then `temporalSmoothed`, 31×4×32×420×441, 0.331 ×
-0.331 × 2.0 µm, 15 s frame interval). Channels: `1 = nuc-GFP`, `2 = mem-TOM`, `3 = CD169-Kat`.
+**Status:** **active, 2026-08-06.** Started as a negative result and largely reversed by one finding:
+the 8-bit cast in front of Farneback was manufacturing background motion, so every velocity
+measurement in this document taken before that was fixed is unreliable. **Read
+*2026-08-06 — the 8-bit cast was destroying the flow signal* first** — it lists exactly which
+numbers above it survive. After the fix, coastal's flow segmenter went from ~7× to ~3×
+over-segmentation on mem-TOM, and the remaining gap is in region growing, not in flow.
 
-> `temporalSmoothed` throughout this file is the **pre-rename** value name of the store these
-> measurements were taken on. The task is now `cleanupImages.smooth` and writes `smoothed`;
-> the existing stores keep the old label. See `SMOOTHING_PLAN.md` → *Legacy value name*.
+All numbers are on `zolIMa/fXgbTl` (16-bit, drift-corrected; 31×4×32×420×441, 0.331 × 0.331 × 2.0 µm,
+15 s frame interval) — a crop of `Dml3RG` in the `OLifi6` set. Channels: `1 = nuc-GFP`,
+`2 = mem-TOM`, `3 = CD169-Kat`.
 
-**Continues** `SEG_QUALITY_PLAN.md` Phase 3 (coastal-native segmentation, task #17) and **challenges
-one of its premises** — see *The finding that matters* below. **Depends on the AF/smoothing work in**
-`SMOOTHING_PLAN.md` (built) and `AF_QUANTISATION.md`.
+> **Two different cell populations, two opposite conclusions — do not mix them up.**
+> `mem-TOM` = **motile germinal-centre B cells**, 2.95 µm/min. `CD169-Kat` = **sessile resident
+> macrophages**, 0.27 µm/min. Findings about one say nothing about the other, and an earlier version
+> of this document conflated them. (The Kat channel is named `CD169-Kat` in `ccid.json` while the
+> filenames say `MERTK` — unresolved, and it does not affect the measurements.)
+
+> `temporalSmoothed` throughout this file is the **pre-rename** value name of the store some
+> measurements were taken on. The task is now `cleanupImages.smooth` and writes `smoothed`; the
+> existing stores keep the old label. See `SMOOTHING_PLAN.md` → *Legacy value name*.
+
+**Continues** `SEG_QUALITY_PLAN.md` Phase 3 (coastal-native segmentation). **Depends on the
+AF/smoothing work in** `SMOOTHING_PLAN.md` (built) and `AF_QUANTISATION.md`.
 
 ## Goal
 
@@ -27,6 +33,11 @@ follows is what was measured, what is ruled out, and which directions remain ope
 ---
 
 ## The finding that matters
+
+> ⚠️ **Superseded in part.** Every velocity row in the table below was computed through the 8-bit
+> cast that manufactured background motion — see the 2026-08-06 section. The *sessile* conclusion
+> still holds for the **Kat** channel, but it was never true of mem-TOM, and "velocity is at
+> chance" is now better explained by the cast than by the biology.
 
 `SEG_QUALITY_PLAN.md` Phase 3 set the north star as coastal's flow + temporal-embedding segmenter,
 reasoning that it "has the right inductive bias for moving-cell data". **On this image class that
@@ -66,6 +77,9 @@ separate them however the mask was drawn, and it does not.
 ## What was tried and what it produced
 
 ### 1. coastal flow segmentation on `temporalSmoothed` (no AF)
+
+> ⚠️ **Superseded.** Re-run after the 8-bit fix with spatial-only smoothing: 88/83 objects, not
+> 167/182. See *Retraining after the fix*.
 
 Config: `intensity_weight=0.0, foreground_weight=1.0, temporal_weight=2.0, confetti_weight=0.0,
 variance_as_input=False`, metric set `mag_1/2/4/8`, 30 epochs, `LearnedAffinityInference` at coastal's
@@ -123,180 +137,102 @@ targets in it.
 
 ---
 
-## 2026-08-06 — flow was never given a fair test, and at the right lag it works
+## 2026-08-06 — the 8-bit cast was destroying the flow signal
 
-**This section partly overturns the AUC verdict above.** Measured on `Dml3RG` mem-TOM (`OLifi6`,
-16-bit drift-corrected, 181 frames — `fXgbTl` is a 31-frame crop of this same image), single mid-z
-plane, 512² window, using coastal's own Farneback call.
+**This section supersedes three intermediate conclusions reached earlier the same day.** They are
+not reproduced here because they were all downstream of one defect; what follows is the corrected
+account. Read the *What was measured through the broken path* warning before trusting any number
+above this line.
 
-The AUC table scores flow *fields against an intensity mask*, which is circular (trap 1) and cannot
-separate two hypotheses that need opposite responses: **the cells do not move** vs **flow cannot see
-the motion**. Two mask-free tests separate them.
+### The defect
 
-**Positive control — shift a real frame of this data by a known amount and ask Farneback to recover
-it.** Same image, same noise. Recovery is *exact* at every input quality (0.25 px → 0.25, 4 px →
-4.00). So flow is not broken here; the earlier verdict is not a flow-implementation artefact. What
-the control also gives is the **detection floor**, via the photometric gain (below):
+Every flow field in this document before today was computed through
+`np.array(frames, dtype=np.uint8)` (coastal `flow.py`), and `normalize_and_project` quantised to
+uint8 as well. **Quantising a smoothed, low-amplitude background to 8 bits manufactures staircase
+gradients, and Farneback tracks them.** Measured on `fXgbTl` mem-TOM, median `|v|` inside cells vs
+background, same frames, same everything but the cast:
 
-| input | 0.25 px | 0.5 px | 1 px | 2 px | 4 px |
-|---|---|---|---|---|---|
-| raw (single frame) | −45.6% | 2.7% | 98.9% | 97.8% | 95.9% |
-| accumulate 16 frames | −27.3% | 11.9% | 87.6% | 78.4% | 70.2% |
-| `temporalSmoothed` | **7.6%** | **37.3%** | 93.8% | 92.1% | 89.0% |
-
-**The floor is ~0.5–1 px**, and `temporalSmoothed` is the only input with sub-pixel sensitivity.
-
-**Photometric test — does the flow field predict the other frame better than assuming nothing
-moved?** (Warp the later frame by the flow, compare to the earlier one. Note Farneback's convention
-is `I_a(x) ≈ I_b(x + flow(x))`: warping `a` and comparing to `b` applies the error twice and fakes a
-negative result — that mistake was made and caught here.) A dense field has 2 DOF per pixel and can
-reduce residual by fitting noise, so every number is paired with a **placebo**: the same test using
-a flow field from a *different, equally-separated* frame pair of the same movie.
-
-| input | lag | min | \|v\| px | gain | placebo |
-|---|---|---|---|---|---|
-| raw | 1 | 0.2 | 2.04 | 13.6% | 2.4% |
-| raw | 32 | 8.0 | 9.02 | 18.7% | 1.7% |
-| accum ×16 | 1 | 0.2 | 0.18 | −56.3% | −64.6% |
-| accum ×16 | 8 | 2.0 | 2.01 | 2.1% | −13.6% |
-| accum ×16 | 16 | 4.0 | 7.17 | 24.4% | −0.9% |
-| accum ×16 | 32 | 8.0 | 11.53 | 26.0% | 1.4% |
-| `temporalSmoothed` | 2 | 0.5 | 1.68 | 17.7% | −15.2% |
-| `temporalSmoothed` | 8 | 2.0 | 6.62 | **32.2%** | −10.5% |
-| `temporalSmoothed` | 16 | 4.0 | 9.68 | **32.6%** | −6.0% |
-
-**Conclusion: optical flow carries real, verifiable signal on this data — but only at lags of
-~0.5–4 min, and only on denoised input.** At frame-to-frame lag on clean input the true displacement
-is 0.18 px, *below* the 0.5–1 px floor, which is exactly why every per-frame velocity metric scored
-at chance. That was a true reading of an unmeasurable quantity, not a broken method.
-
-**Two cautions before building on this.**
-
-- **The raw row is overfitting, and it shows what the metric cannot rule out.** Raw claims +13.6% at
-  lag 1, where the accumulated input independently establishes the true displacement is 0.18 px —
-  below the floor. Placebo ≈ 0 does *not* clear this: the placebo controls for a generic flow field,
-  not for the matched field fitting this specific pair's speckle. Trust a row only when the gain
-  rises with lag, the placebo stays flat, **and** `|v|` clears the detection floor. That admits
-  `temporalSmoothed` at lag ≥ 2 and accumulate-×16 at lag ≥ 16; it excludes every raw row.
-- **Forward–backward inconsistency is ~45% of `|v|`** at the useful lags (e.g. 2.96 px against 6.62
-  px at `temporalSmoothed` lag 8). The field is only partially coherent — this is **deformation, not
-  translation**, consistent with the IoU decay below. That may well be the right supervisory signal
-  for a cytoplasmic reporter, but it should not be described as cell motion.
-
-### Correction, same day: the lag axis was fine — the DENOISING was the confound
-
-The paragraph this replaces recommended moving coastal to lags of 8/16/32/64 frames. **That was
-wrong, and it was wrong for a measurement reason worth recording.** The accumulation arm compared
-`mean(frames c−8…c+8)` against `mean(frames c−7…c+9)` — windows sharing **15 of 16 frames**. Its
-0.18 px lag-1 reading was window overlap, not motion. Temporal denoising destroys exactly the
-short-lag information the short-lag measurement is trying to read.
-
-Re-measured with **spatial-only denoising and no temporal averaging at any lag** (so lag-1 means
-two genuinely independent frames), mem-TOM:
-
-| input | lag | \|v\| px | µm/min | gain | placebo |
-|---|---|---|---|---|---|
-| no denoise | 1 (15 s) | 2.04 | 2.70 | 13.6% | 2.4% |
-| **spatial σ=1 px** | **1 (15 s)** | **2.22** | **2.95** | **29.0%** | −5.6% |
-| spatial σ=1 px | 8 (2 min) | 7.37 | 1.22 | 32.3% | −6.2% |
-| spatial σ=1 px | 16 (4 min) | 10.54 | 0.87 | 34.7% | −4.2% |
-| spatial σ=6 px | 1 (15 s) | 1.20 | 1.59 | 7.6% | −4.4% |
-| `smoothed` (σ=1px + 3-frame median) | 1 (15 s) | 0.73 | 0.96 | 3.3% | −22.8% |
-
-**The gain is flat from 15 s onward (29→35%), not rising with lag.** With σ=1 px the detection
-floor drops below 0.25 px (+24.8% gain on a known 0.25 px shift), so 2.22 px at 15 s clears it ~9×.
-Three consequences:
-
-- **coastal's `mag_1/2/4/8` lags were never the problem.** Keep them. The input was.
-- **Temporal smoothing is the wrong preprocessing for flow** — `smoothed` drops the 15 s gain from
-  29% to 3.3%, because its 3-frame median shares 2 of 3 frames. Denoising for intensity segmentation
-  and denoising for flow want opposite things: use `smoothed` for the former, **spatial-only σ≈1 px**
-  for the latter. Do not feed the flow metrics a temporally-smoothed store.
-- **σ≈1 px is a sweet spot, not "more is better".** At σ=6 px the control recovers only 0.69 px of a
-  true 1.0 px shift (30% underestimate) and gain collapses — heavy blur removes the texture Farneback
-  locks onto.
-
-Speed falls monotonically with lag (2.95 µm/min at 15 s → 0.41 at 8 min). Sub-linear, so this is
-**incoherent local deformation, not migration** — which reconciles it with the 0.27 µm/min sessile
-finding above: a cell that stays put while its membrane ruffles. Both readings are correct at their
-own timescale. **This also vindicates the 15 s acquisition choice**: there is real signal at 15 s
-that 30 s sampling would sample half as densely.
-
-### But flow does NOT beat intensity as a foreground cue — and that reframes the target
-
-`|v|` on `fXgbTl` at σ=1 µm scores AUC **0.958** against the cell/background mask (vs the 0.53–0.61
-this document originally recorded), cell/background `|v|` ratio 16–35×. That looks decisive and is
-not, for two reasons:
-
-- **Farneback returns ~0 where there is no gradient.** Blurred shot noise is featureless, so
-  background `|v|` collapses to 0.17 px. `|v|` is then a de-facto *texture* detector, and the mask is
-  intensity-derived — trap 1, again.
-- **Plain intensity wins anyway: AUC 0.980** at the same σ, on the same mask. (The 0.996 for
-  cell-scale-smoothed intensity is meaningless — that operation *is* how the mask was built.)
-
-So on this test flow adds nothing beyond a threshold, **and the test is too circular to settle it in
-either direction.** Do not run another variant of it. What survives is the mask-free result: the flow
-field at 15 s is real and verifiable.
-
-### And the instance-separation idea is dead too — killed by looking at it
-
-Proposed and tested within the hour. `|shear|` and `|divergence|` of the 15 s flow field, scored at
-watershed cell boundaries vs cell interiors on `fXgbTl`:
-
-| field | boundary | interior | ratio | separation AUC |
+| spatial σ | float32 cell / bg | ratio | via uint8 | ratio |
 |---|---|---|---|---|
-| shear / strain rate | 0.531 | 0.547 | **0.97** | **0.528** |
-| \|divergence\| | 0.381 | 0.413 | 0.92 | — |
+| 1.0 px | 2.27 / 0.62 | **3.67** | 2.43 / 2.70 | **0.90** |
+| 1.5 px | 2.09 / 0.11 | **18.7** | 2.58 / 2.53 | **1.02** |
+| 2.0 px | 1.42 / 0.018 | 78.6 | 2.68 / 1.67 | 1.60 |
+| 3.0 px | 0.34 / 0.001 | 400 | 2.58 / 0.18 | 14.6 |
 
-Deformation is *very slightly lower* at boundaries than inside cells, and the histograms overlap
-almost completely. **Figure:** `~/Downloads/TMP/flow_3_boundary_hypothesis_fXgbTl.png` — and the
-figure shows why more clearly than the table: the shear field is **speckle-scale texture, not
-cell-scale structure**. It has no features the size of a cell boundary to place anywhere.
+Through uint8 the background *flows as fast as the cells* — spurious motion of ~2.5 px. **This is
+the likely explanation for the entire at-chance velocity table at the top of this document**
+(`mag_*` 0.58–0.61, `|v|` 0.53–0.58). Those metrics were not measuring cell motion against
+background; they were measuring quantisation noise against quantisation noise.
 
-*Caveat, stated because it limits the claim:* the 26 watershed objects in that field are mostly
-**isolated**, so "cell–cell boundary" there is largely cell–background boundary. The specific
-hypothesis was about *touching* cells, and this field barely has any — the test is underpowered for
-it. What is not caveated is the visible scale of the field.
+Removed in coastal PR #19. Farneback accepts float32 directly — the 8-bit step was never needed.
+An AST detector (`tests/test_no_8bit_funnel.py`) fails on a new 8-bit cast of image data.
 
-**The wider read across `flow_1_what_flow_sees_fXgbTl.png`:** at every denoising level the `|v|`
-field is dominated by structure at the **speckle** scale, spatially modulated by where there is
-signal. That is what a noise-realisation difference looks like, not a cell velocity field — and it
-is the same mechanism behind both positive results above: `|v|` scoring AUC 0.958 (texture detector)
-and the +29% photometric gain (a dense field fitting its own pair's noise, which the placebo does
-not control for). Treat both as **upper bounds**, not measurements of cell motion.
+### What was measured through the broken path — do not trust these
 
-**Net, for the next attempt:** on this image class there is no cell-scale coherent motion for flow to
-exploit — established now with a positive control and mask-free tests rather than a circular AUC.
-Flow is not the lever for segmenting sessile macrophages. The premise was built for *moving* cells,
-and that case is still unmeasured (`EaMaVq` T cells) — test it there before concluding anything about
-optical-flow segmentation in general.
+Everything in *The finding that matters* and *What was tried* above, plus the intermediate
+2026-08-06 tables that have been removed. Specifically suspect:
 
-**The reframe that follows from the numbers:** *foreground is not the open problem.* Intensity finds
-these cells — 6 lines of scipy gets 21–26 objects on Kat and 31–35 on mem-TOM, and AUC 0.98. What
-intensity cannot do is **separate touching cells into instances**, and that is where a deformation
-field is the natural cue (neighbouring cells ruffle independently, so shear/divergence should peak at
-the boundary between them). coastal's `ForegroundLoss` is supervised by brightness at cell scale —
-i.e. by the thing intensity already does well. **Flow belongs in the embedding/boundary head, not the
-prob head.** That is the next thing to test, and it needs a metric that scores *instance separation*,
-not foreground overlap — which is also the answer to open question 3 below.
+- the velocity AUC rows (0.51–0.61) — see above;
+- the photometric-gain-vs-lag tables and the claim that σ≈1 px was the optimum. The optimum was
+  measured through the path that inflated background flow, and it is not 1 px;
+- the claim that `|v|` is "speckle-scale texture" and loses to intensity (AUC 0.958 vs 0.980);
+- the shear/divergence boundary test (separation AUC 0.528).
 
-**Supporting measurement — the binding constraint is photons, not the segmenter.** A single raw
-plane is 5–15% nonzero: the cells are clouds of individual detected photons, so every edge/flow
-method is being fed shot noise. Accumulating frames (mem-TOM, `Dml3RG`): SNR 1.97 (×1) → 3.63 (×4)
-→ 4.60 (×8) → 5.29 (×16) → 5.82 (×32), with `temporalSmoothed` best at **6.70**. Object count is
-flat at 31–35 throughout, so *count* does not reveal this — the contours do. The cells hold still
-long enough to afford the window: IoU(mask₀, mask_t) is 0.71–0.78 at 4 min.
+**What still stands:** the rigid-shift positive control (Farneback recovers a known 0.25–4.0 px
+shift almost exactly, in *both* paths — 0.2395 float32 vs 0.2407 uint8), so the machinery was never
+broken; and the mechanism behind *temporal smoothing is the wrong preprocessing for flow* (a
+3-frame median makes consecutive lag-1 windows share 2 of 3 frames — an overlap argument that does
+not depend on the cast, though its measured magnitude does).
 
-**Long-baseline motion, measured on the full 181 frames** (three images, mem-TOM/Kat, drift control
-= bulk shift of the densest channel). Over 45 min the cells still cover 41–64% of their starting
-footprint, and displacement at 16 min is 1.5–5.9 µm against a 0.4–1.3 µm bulk-tissue floor. They
-deform in place; they do not migrate. `ldYr8J` is the outlier (IoU 0.17 at 45 min) and its drift
-control blows up past t=128 — check that image before using it as evidence.
+### The biology, corrected
 
-Reproduce: `flow_rigour.py`, `flow_lag_clean.py`, `flow_foreground.py`, `temporal_accum.py`,
-`motion_baseline.py` (session scratchpad).
+**`mem-TOM` in `fXgbTl` is motile germinal-centre B cells**, measured at **2.95 µm/min** at 15 s.
+The sessile finding elsewhere in this document (0.27 µm/min, the 45-min footprint test, the IoU
+decay) is the **Kat channel** — resident macrophages — and does not transfer. An earlier reading of
+the sub-linear displacement-vs-lag falloff as "incoherent deformation, not migration" was wrong: a
+persistent random walk produces exactly that falloff, and it is what GC B cells do. So on mem-TOM
+the flow premise is sound and the cells genuinely move.
 
----
+### Retraining after the fix
+
+coastal segmenter, `fXgbTl` mem-TOM, single mid-z plane, 31 frames, 30 epochs, spatial-only
+smoothing, `intensity_weight=1.0`, `foreground_weight=1.0`, `variance_as_input=False`,
+`LearnedAffinityInference` with `prob_blur_sigma=1.5`. Objects at t=2 (trained) / t=24 (held out):
+
+| configuration | t=2 | t=24 |
+|---|---|---|
+| original run (temporally smoothed, uint8, `intensity_weight=0`) | 167 | 182 |
+| float32 flow, σ=1 px | 162 | 187 |
+| **float32 flow, σ=3 px** | **88** | **83** |
+| — of which the prob head alone (components ≥50 px) | 44 | 39 |
+| intensity baseline (6 lines of scipy) | 29 | 30 |
+
+**Over-segmentation ~7× → ~3×.** Two things moved it, and neither is the metric set or the lag:
+removing the 8-bit cast, and the spatial sigma — whose real optimum was hidden by the cast.
+
+### Where the remaining fragments come from
+
+Figure: `~/Downloads/TMP/flow_5_where_fragments_fXgbTl.png`. **The prob head is essentially right** —
+44/39 cell-shaped blobs against a 29/30 baseline, visibly tracking the cells. **Region growing then
+roughly doubles the count** (44 → 88, 39 → 83). So the flow inputs and the learned representation
+are no longer the bottleneck; the seed-based region growing is, which matches coastal's own
+`docs/SEGMENTATION.md` ("this — not the inference parameters — is why ~86% of detections are
+fragments").
+
+**Next lever:** the region-growing parameters (`seed_size`, `affinity_threshold`,
+`merge_affinity_threshold`), and a finer sigma sweep between 2 and 4 px now that the distortion is
+gone. **Not** the metric set, the lag, or the loss weights — all three have now been varied with no
+effect.
+
+### Still open
+
+- Nothing above has been scored on the **QC gate**, which `SEG_QUALITY_PLAN.md` Decision 1 makes
+  *the* seg-quality metric. `zolIMa` has no segmentation, no labelProps and no gating sidecar, so
+  the yardstick has no infrastructure on this data. Object count against a scipy baseline is a
+  weaker proxy and is what every number here uses.
+- One z-plane, one crop, one channel, two frames scored. Cells move through the plane in 3D and a
+  2D slice cannot see that.
+- The AF findings in *What was tried* were not re-examined after the cast fix.
 
 ## Ruled out — do not re-derive
 
@@ -306,12 +242,11 @@ Reproduce: `flow_rigour.py`, `flow_lag_clean.py`, `flow_foreground.py`, `tempora
   in the AF-on-raw arm.
 - **The AF weight exponent.** `p = 1/2/8` was already compared upstream; not the lever.
 - **Scale normalisation across channels.** Spread is only 1.54×; changed retention 8.2% → 8.4%.
-- **Lucas–Kanade instead of Farneback, as segmentation input.** Velocity AUC 0.53–0.58 vs 0.58–0.61.
-  Indistinguishable — but **read the 2026-08-06 section first**: both were computed at frame-to-frame
-  lag, where the true displacement (0.18 px) is below the ~0.5–1 px detection floor. The two
-  implementations are indistinguishable *because neither can measure a sub-floor quantity*, which is
-  not the same as flow being useless here. Swapping implementation is still not the lever; swapping
-  **lag and input** is.
+- **Lucas–Kanade instead of Farneback, as segmentation input.** *Reason withdrawn.* Both scored at
+  chance (0.53–0.61) because both were fed 8-bit-quantised frames whose background flowed as fast as
+  the cells — not because the two implementations are equivalent, and not because there is no motion.
+  Untested since the fix. Still not an obvious lever (Farneback now works), but it is no longer
+  *ruled out on evidence*.
 - **Adopting OpticalFlow3D to obtain `rel`.** A plain 3D structure tensor on the `temporalSmoothed`
   store reproduces it: AUC 0.941 vs 0.965, Spearman 0.959, 2.4 s vs 6.8 s per timepoint, no optical
   flow and no new dependency.
@@ -364,9 +299,10 @@ Listed because each produced a confident, wrong intermediate answer, and several
    intensity-derived mask, on one plane of one image. Before any of the directions below is called
    better, it should be scored on the established yardstick. This is the biggest methodological gap in
    this document.
-4. **Is the sessile finding specific to CD169?** `EaMaVq` (spleen, the `SEG_QUALITY_PLAN` image) is a
-   different class. Motion may well be informative for T cells. Do not generalise "flow does not work"
-   beyond resident macrophages without measuring.
+4. ~~**Is the sessile finding specific to CD169?**~~ **Answered 2026-08-06: yes.** `mem-TOM` in the
+   same image is motile germinal-centre B cells at 2.95 µm/min. Never generalise a motility finding
+   across channels. `EaMaVq` T cells remain unmeasured but are no longer the only motile test case —
+   `fXgbTl` mem-TOM is one, in the image already in hand.
 
 ---
 
@@ -401,12 +337,22 @@ implementation is upstream's, we never ported it). Two caveats:
     only in-plane components. Upsampling z 6× would be inventing data. See
     `SPATIAL_ANISOTROPY_PLAN.md`.
 
-**Not recommended:** more coastal metric-set or hyperparameter sweeps. The AUC table says the inputs
-are the problem, not the tuning.
+**Not recommended:** more coastal *metric-set* or *lag* sweeps — both have now been varied with no
+effect once the 8-bit cast was removed. (The earlier version of this line cited the AUC table as the
+reason; that table is unreliable, but the conclusion happens to survive for a different reason.) The
+sweep that IS worth doing is spatial sigma between 2 and 4 px, plus the region-growing parameters —
+see *Where the remaining fragments come from*.
 
 ---
 
 ## Reproduction recipes
+
+Scripts for the 2026-08-06 work are committed at
+[`flow-seg-experiments/`](flow-seg-experiments/) — `flow_seg_run.py` (retrain + baseline comparison)
+and `diagnose_fragments.py` (sigma sweep + where the fragments are made). They are in the repo
+because the previous session's scripts were lost to a scratchpad, which is what the recipes below
+exist to work around. Figures: `~/Downloads/TMP/flow_{1..5}_*_fXgbTl.png`. The earlier one-off
+scorers below predate the 8-bit fix — keep the recipe, distrust the numbers they produced.
 
 The session's scripts were in an ephemeral scratchpad and are gone; these two are the load-bearing
 ones. Both need the pixi env and `PYTHONPATH=python`.
