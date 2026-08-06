@@ -585,6 +585,13 @@ end
     # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
     # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
     @test occursin("get_module_params", fp) && occursin("suggest", fp)
+    # The artifacts it can author are named, so the agent knows they exist — the prompt listed
+    # neither for a while, and an unmentioned tool is an unused one.
+    @test occursin("create_notebook", fp) && occursin("create_chain", fp)
+    # …and the boundary is stated: authoring a chain is not running it. This is the line that keeps
+    # the assistant from telling a user their pipeline has started.
+    @test occursin("cannot start", fp) || occursin("cannot rename", fp)
+    @test occursin("press Run", fp)
 end
 
 @testset "AI observer session sidecar (tokens + clear)" begin
@@ -3218,6 +3225,72 @@ end
     @test loaded.edges[1].to   == "n2"
 
     rm(proj.root; recursive=true)
+end
+
+# ── Template validation (author-time, for every author that isn't the whiteboard) ──
+# The whiteboard can't produce an invalid template; the REPL, a hand-edited file and Claude (via the
+# MCP `create_chain`) can. Before this, a typo'd fn or a dangling edge surfaced only when the USER
+# pressed Run — see the header comment in chain.jl → Template validation.
+@testset "validate_chain_template" begin
+    node(id, fn; kw...) = ChainNode(; id=id, fn=fn, kw...)
+    ok_node(id) = node(id, "importImages.remove";
+                       params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))
+    tpl(nodes, edges; starts=String[]) = ChainTemplate("t", nodes, edges, starts)
+
+    # A well-formed template validates, and returns nothing (not a value to test against)
+    @test validate_chain_template(
+        tpl([ok_node("n1"), ok_node("n2")], [ChainEdge("n1", "n2")])) === nothing
+
+    # SPARSE params must pass — this is how a non-GUI author writes a node: set only what you mean
+    # to change and let the whiteboard fill the rest from the spec defaults on load (applyTemplate).
+    # If this ever fails, Claude is forced to restate every default, which is the bug.
+    @test validate_chain_template(
+        tpl([node("n1", "tracking.bayesian_tracking";
+                  params=Dict{String,Any}("maxSearchRadius"=>35))], ChainEdge[])) === nothing
+    @test validate_chain_template(tpl([node("n1", "importImages.remove")], ChainEdge[])) === nothing
+
+    bad(t) = @test_throws ChainTemplateError validate_chain_template(t)
+
+    bad(tpl(ChainNode[], ChainEdge[]))                              # nothing to run
+    bad(tpl([node("", "importImages.remove")], ChainEdge[]))        # empty id
+    bad(tpl([ok_node("n1"), ok_node("n1")], ChainEdge[]))           # duplicate id
+    bad(tpl([node("n1", "importImages.nope")], ChainEdge[]))        # unknown fn
+    bad(tpl([node("n1", "importImages.remove"; scope="picnic")], ChainEdge[]))
+    bad(tpl([node("n1", "importImages.remove"; barrier_policy="maybe")], ChainEdge[]))
+    bad(tpl([node("n1", "importImages.remove"; resource_pool="gpu-light")], ChainEdge[]))
+
+    # Both edge endpoints. A dangling `from` is a run-time KeyError in _topo_sort; a dangling `to`
+    # silently never runs (in-degree never reaches 0) — the worse of the two, so both are errors.
+    bad(tpl([ok_node("n1")], [ChainEdge("ghost", "n1")]))
+    bad(tpl([ok_node("n1")], [ChainEdge("n1", "ghost")]))
+    bad(tpl([ok_node("n1")], [ChainEdge("n1", "n1")]))              # self-dependency
+    bad(tpl([ok_node("n1"), ok_node("n2")],                         # cycle
+            [ChainEdge("n1", "n2"), ChainEdge("n2", "n1")]))
+    bad(tpl([ok_node("n1")], ChainEdge[]; starts=["ghost"]))        # startTargets must be a node
+    bad(tpl([node("n1", "tracking.bayesian_tracking";               # param out of spec range
+                  params=Dict{String,Any}("maxSearchRadius"=>9999))], ChainEdge[]))
+
+    # A configured pool name and the inherit-from-spec empty string are both fine
+    @test validate_chain_template(
+        tpl([node("n1", "importImages.remove"; resource_pool="gpu")], ChainEdge[])) === nothing
+    @test validate_chain_template(
+        tpl([node("n1", "importImages.remove"; resource_pool="")], ChainEdge[])) === nothing
+
+    # The message names the offending node, so a rejected author knows what to fix
+    err = try validate_chain_template(tpl([node("bad-one", "importImages.nope")], ChainEdge[]))
+          catch e; e end
+    @test err isa ChainTemplateError
+    @test occursin("bad-one", err.msg) && occursin("importImages.nope", err.msg)
+
+    # Roots = where a run begins. The whiteboard draws no start dot for a template with neither a
+    # start target nor a saved position, so an authored chain gets its roots filled from this.
+    @test chain_root_ids(tpl([ok_node("a"), ok_node("b")], [ChainEdge("a", "b")])) == ["a"]
+    @test chain_root_ids(tpl([ok_node("a")], ChainEdge[])) == ["a"]
+    # template order is preserved, and a fan-in has one root per unfed branch
+    @test chain_root_ids(tpl([ok_node("a"), ok_node("b"), ok_node("c")],
+                             [ChainEdge("a", "c"), ChainEdge("b", "c")])) == ["a", "b"]
+    @test isempty(chain_root_ids(tpl([ok_node("a"), ok_node("b")],       # a cycle has no root
+                                     [ChainEdge("a", "b"), ChainEdge("b", "a")])))
 end
 
 # ── Chain run — template frozen, per-image state, pipelining ─────────────

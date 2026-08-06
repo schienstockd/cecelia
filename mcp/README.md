@@ -1,10 +1,15 @@
-# Cecelia MCP observer server (Phase 1 — read-only)
+# Cecelia MCP observer server
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that gives Claude **read-only**
-access to a running Cecelia project — project state, images, task logs, QC, and the lab log — plus a
-single **append-only** write to the lab log. This is Phase 1 ("Observer") of the arc in
-[`docs/ai-assist/OBSERVER.md`](../docs/ai-assist/OBSERVER.md); the write phases (`submit_task`,
-`adjust_params`, `acknowledge_flag`) are deliberately **not** wired here.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that gives Claude **read** access
+to a running Cecelia project — project state, images, task logs, QC, lineage, populations, measures,
+and the lab log — plus a small set of **additive** writes: lab-log entries, Pluto notebooks, and a
+whiteboard chain template. See *The no-mutation guarantee* below for the exact list and why each one
+is recoverable.
+
+Claude can **design** work but never **start** it: there is no `submit_task` and no way to launch a
+chain run. That is the arc in [`docs/ai-assist/OBSERVER.md`](../docs/ai-assist/OBSERVER.md) — Phase 1
+(observe) and Phase 2 (actionable assist) have shipped; `submit_task` / `adjust_params` /
+`acknowledge_flag` remain deliberately **not** wired.
 
 It's a **standalone stdio process** (Python + [FastMCP](https://github.com/modelcontextprotocol/python-sdk))
 that talks to the Julia API over HTTP. It is separate infra, not part of the `cecelia` Python package
@@ -18,7 +23,7 @@ mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
-    server.py    # FastMCP server — wires the client into 9 read tools + poll_observations + append_lab_log
+    server.py    # FastMCP server — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
@@ -54,6 +59,7 @@ mcp/
 | `get_observer_stats()` | *(in-process)* | session throttle/cost state without draining (surfaced count, cap, throttled, token estimate) |
 | `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write 1/2** — appends a dated `[Claude]` entry, append-only |
 | `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write 2/2** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
+| `create_chain(project_uid, name, nodes, edges, start_targets=None)` | `POST /api/chains/create` | **write 5/5** — authors a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-**validated** (unknown task / dangling edge / cycle / out-of-range param → 400 naming the offender). Params may be sparse. **There is no tool to run it** — the user launches it from the whiteboard |
 
 ## Live observation — the 10-attempts pattern (Slice B)
 
@@ -88,12 +94,33 @@ history.
 
 ## The no-mutation guarantee
 
-Every request goes through `ALLOWED_ROUTES` in `client.py`. The only non-GET routes on it are
-`POST /api/lablog/append` (append-only) and `POST /api/notebooks/write` (create-only — 409 on an
-existing name). Both are **additive / non-destructive**: no allow-listed route can edit or delete
-project data (no h5ad, gates, ccid.json, or existing notebooks). A call to any other route raises
-`DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite fails loudly
-rather than a project being silently mutated. `test_client.py` asserts those two are the only writes.
+Every request goes through `ALLOWED_ROUTES` in `client.py`. The non-GET routes on it are
+`POST /api/lablog/append` (append-only), `POST /api/notebooks/{write,describe,revise}` (create-only /
+description-text-only / snapshot-then-overwrite) and `POST /api/chains/create` (create-only +
+validated). All are **additive / non-destructive**: no allow-listed route can edit or delete project
+data (no h5ad, gates, ccid.json, or an existing notebook's content or chain). A call to any other
+route raises `DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite
+fails loudly rather than a project being silently mutated. `test_client.py` asserts the exact write
+set, and changing that list is the deliberate gate on widening what Claude can do.
+
+### Claude designs; the user runs
+
+There is no `run_chain` / `submit_task` tool, and adding one is not a small decision — a chain run's
+nodes replace the store/h5ad for their `value_name`, so it would be the first action here that can
+destroy results. Today that boundary is enforced by the **transport**, not by a rule: launching a
+chain is the WebSocket message `chain:run` (`api/src/sockets.jl`) with no HTTP route at all, and this
+client speaks only HTTP. `test_client.py` and `test_server.py` pin both halves (no launch route
+reachable, no launch tool registered).
+
+Two related routes are also deliberately absent: `/api/chains/save` (an unguarded overwrite — that
+one is the whiteboard saving the user's own canvas) and `/api/chains/{rename,delete}`. Renaming or
+removing the user's chain is an in-place mutation; both are GUI-only. A "revision" from Claude is a
+NEW chain beside the original, which the user compares on the canvas and then keeps or deletes.
+
+Note what makes that cheap for chains specifically: a `ChainRun` stores a **content-hashed copy** of
+the template it ran, so past runs are unaffected by any later edit, rename or delete of a template.
+Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHEDULER.md` →
+*Template vs run record* and *Who may author a template, and who may run one*.
 
 ## Running it
 

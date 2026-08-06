@@ -1075,6 +1075,100 @@ end
     end
 end
 
+# Chain authoring from outside the whiteboard (Claude via the MCP) + rename. The two properties that
+# matter: create NEVER overwrites a chain the user wired, and an invalid template is rejected HERE
+# rather than mid-run, after the user pressed Run on something they didn't write.
+@testset "API: chain create (create-only + validated) and rename" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-chains")
+        uid  = proj.uid
+        rm_params = Dict("valueName"=>"default", "newDefault"=>"default")
+        node(id) = Dict("id"=>id, "fn"=>"importImages.remove", "params"=>rm_params)
+        tmpl(name, nodes, edges) = Dict("name"=>name, "nodes"=>nodes, "edges"=>edges)
+        create(t) = _post(api_chains_create, Dict("projectUid"=>uid, "template"=>t))
+        path(name) = joinpath(tmp, uid, "settings", "chains", "$(name).json")
+
+        # guards
+        @test create(nothing)[1] == 400
+        @test _post(api_chains_create, Dict("projectUid"=>uid))[1] == 400            # no template
+        @test _post(api_chains_create, Dict("template"=>tmpl("x", [node("n1")], [])))[1] == 400
+        @test create(tmpl("", [node("n1")], []))[1] == 400                           # no name
+        @test _post(api_chains_create,
+                    Dict("projectUid"=>"nope",
+                         "template"=>tmpl("x", [node("n1")], [])))[1] == 404
+
+        # a name is a filename — path traversal must not resolve anywhere
+        for bad in ("../../evil", "a/b", "..", ".hidden")
+            @test create(tmpl(bad, [node("n1")], []))[1] == 400
+        end
+
+        # happy path
+        st, body = create(tmpl("pipeline", [node("n1"), node("n2")],
+                               [Dict("from"=>"n1", "to"=>"n2")]))
+        @test st == 200
+        @test JSON3.read(body).nodeCount == 2
+        @test isfile(path("pipeline"))
+
+        # CREATE-ONLY: the whole point — an outside author cannot replace the user's chain
+        @test create(tmpl("pipeline", [node("n1")], []))[1] == 409
+
+        # …while the whiteboard's own save still overwrites verbatim (unchanged behaviour)
+        @test _post(api_chains_save,
+                    Dict("projectUid"=>uid, "template"=>tmpl("pipeline", [node("n9")], [])))[1] == 200
+
+        # VALIDATION, and the message names the offender so the author can fix it
+        st, body = create(tmpl("bad-fn", [Dict("id"=>"oops", "fn"=>"importImages.nope")], []))
+        @test st == 400
+        err = String(JSON3.read(body).error)
+        @test occursin("oops", err) && occursin("importImages.nope", err)
+        @test create(tmpl("dangling", [node("n1")], [Dict("from"=>"n1","to"=>"ghost")]))[1] == 400
+        @test create(tmpl("cyclic", [node("n1"), node("n2")],
+                          [Dict("from"=>"n1","to"=>"n2"), Dict("from"=>"n2","to"=>"n1")]))[1] == 400
+        @test !isfile(path("bad-fn"))          # a rejected template leaves nothing on disk
+
+        # SPARSE params are accepted — an outside author sets only what it means to; the whiteboard
+        # fills the rest from the spec defaults when it loads the template.
+        @test create(tmpl("sparse", [Dict("id"=>"n1", "fn"=>"tracking.bayesian_tracking",
+                                          "params"=>Dict("maxSearchRadius"=>35))], []))[1] == 200
+
+        # startTargets is FILLED with the roots when the author omits it. Without it the whiteboard
+        # draws no start dot (buildStartGraph returns null with no target and no saved position), so the
+        # chain opens with nothing marking where a run begins — which is how the first authored chain
+        # reached the user. Execution is unchanged either way; this is for the editor.
+        @test create(tmpl("pipeline-is-rooted", [node("first"), node("second")],
+                          [Dict("from"=>"first", "to"=>"second")]))[1] == 200
+        @test JSON3.read(read(path("pipeline-is-rooted"), String)).startTargets == ["first"]
+        # an explicit startTargets is respected (starting a run part-way in)
+        rooted = tmpl("pipeline-mid", [node("a"), node("b")], [Dict("from"=>"a", "to"=>"b")])
+        rooted["startTargets"] = ["b"]
+        @test create(rooted)[1] == 200
+        @test JSON3.read(read(path("pipeline-mid"), String)).startTargets == ["b"]
+
+        # ── rename ──
+        ren(from, to) = _post(api_chains_rename,
+                              Dict("projectUid"=>uid, "name"=>from, "newName"=>to))
+        @test ren("pipeline", "")[1] == 400                     # newName required
+        @test ren("ghost", "whatever")[1] == 404                # source must exist
+        @test ren("pipeline", "sparse")[1] == 409               # target must not
+        @test ren("pipeline", "../evil")[1] == 400              # guarded on both names
+        @test ren("pipeline", "pipeline")[1] == 200             # no-op, not an error
+
+        st, body = ren("pipeline", "pipeline-v2")
+        @test st == 200 && String(JSON3.read(body).name) == "pipeline-v2"
+        @test isfile(path("pipeline-v2")) && !isfile(path("pipeline"))
+        # the `name` FIELD moves too — else the whiteboard saves the renamed chain back under the old
+        # name and the rename silently undoes itself on the next save
+        @test String(JSON3.read(read(path("pipeline-v2"), String)).name) == "pipeline-v2"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: project delete" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()
@@ -2794,7 +2888,8 @@ end
         "/api/app/restart", "/api/app/shutdown",
         "/api/app/switch-worktree", "/api/board-assets/copy",
         "/api/board-assets/delete", "/api/board-assets/save",
-        "/api/chains/delete", "/api/chains/save",
+        "/api/chains/create", "/api/chains/delete",
+        "/api/chains/rename", "/api/chains/save",
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
@@ -2880,7 +2975,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 92
+    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 94
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

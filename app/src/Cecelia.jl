@@ -125,6 +125,7 @@ export subscribe_chain_events!, unsubscribe_chain_events!
 # ── Chain executor ─────────────────────────────────────────────────────────────
 export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState
 export load_chain_template, save_chain_template!, load_template_from_cache
+export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run
 export run_chain
 export chain_node, make_chain
