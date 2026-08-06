@@ -190,6 +190,16 @@ Worth settling when it's built:
 - **Where it lands**: not inside the project tree (it's an artefact, not data), so it wants a
   destination picker like `default_export_dir()`. Task rail + progress, staged output.
 
+### Auto-layout a chain whose nodes have no saved positions
+`positions` is frontend-only sidecar data the whiteboard adds (`ChainModule.vue` `currentTemplate`);
+a template authored anywhere else — the REPL, or Claude via the MCP `create_chain` — has none, so
+`applyTemplate` falls back to `{x: 80 + i*220, y: 120}`: one horizontal row in template order. Fine
+for a linear pipeline, but a branching DAG lands as a straight line with crossing edges the user has
+to untangle by dragging. Fix by laying out the DAG on load when positions are absent — and **reuse the
+layered layout already in the Live tab** (`ChainModule.vue`, "Layered layout of the run's DAG"), don't
+write a second one. Deliberately not done when chain authoring shipped: dragging works, and one
+layout algorithm serving two callers is a better change than a rushed second one.
+
 ### Auto-follow in task manager
 Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
 work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener

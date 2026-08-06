@@ -27,8 +27,17 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
             "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
+            "create_chain",
         ):
             self.assertIn(tool, self.names)
+
+    def test_no_tool_can_start_work(self):
+        # Claude designs, the user runs. No tool may launch a chain or submit a task — enforced by the
+        # transport (launching is a WS message; this server speaks HTTP) but asserted here so adding
+        # one is a deliberate act with a failing test in front of it.
+        for forbidden in ("run_chain", "start_chain", "start_chain_run", "submit_task", "run_task",
+                          "rename_chain", "delete_chain", "save_chain"):
+            self.assertNotIn(forbidden, self.names)
 
 
 if __name__ == "__main__":

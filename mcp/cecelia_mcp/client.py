@@ -4,13 +4,22 @@ Every request goes through an explicit ALLOW-LIST of (method, path) pairs. That 
 observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/lablog/append``
 (append-only), ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
 overwrites), ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in the
-registry sidecar — not its cells), and ``POST /api/notebooks/revise`` (which SNAPSHOTS the current
+registry sidecar — not its cells), ``POST /api/notebooks/revise`` (which SNAPSHOTS the current
 notebook first — a restorable version — then overwrites its cells; it's how a notebook gets a new
-version, never a "-v2" copy). All four are recoverable / non-destructive to project & analysis data:
-no allow-listed route can touch cell data, images, gates, or QC, and revise can't lose a notebook's
-content (the pre-revision state is always snapshotted). Any attempt to call a route not on the list
-raises ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails
-loudly in tests rather than silently mutating a project.
+version, never a "-v2" copy), and ``POST /api/chains/create`` (create-only + server-validated —
+writes a chain TEMPLATE the user then runs themselves). All five are recoverable / non-destructive to
+project & analysis data: no allow-listed route can touch cell data, images, gates, or QC, revise
+can't lose a notebook's content (the pre-revision state is always snapshotted), and a template is
+inert until a human presses Run. Any attempt to call a route not on the list raises
+``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails loudly in
+tests rather than silently mutating a project.
+
+Note what is deliberately ABSENT: there is no way to *start* a chain run. Launching is a WebSocket
+message (``chain:run``) with no HTTP route at all, and this client speaks only HTTP — so "Claude
+designs, the user runs" is a property of the transport, not a rule Claude has to remember. Likewise
+absent: ``/api/chains/save`` (an unguarded overwrite — that route is the whiteboard saving the user's
+own canvas) and ``/api/chains/rename``/``/api/chains/delete`` (renaming or removing the user's chain
+is an in-place mutation; both are GUI-only).
 
 Uses only the Python standard library (urllib) so this module — and its tests — carry no third-party
 dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these calls into tools.
@@ -53,6 +62,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/notebooks/write"),  # write 2/4 — create-only (409 on existing); serialises cells to a Pluto notebook
         ("POST", "/api/notebooks/describe"),  # write 3/4 — edits ONLY a notebook's description string (registry sidecar); not its content
         ("POST", "/api/notebooks/revise"),  # write 4/4 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/chains/create"),  # write 5/5 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
     }
 )
 
@@ -62,7 +72,45 @@ ALLOWED_ROUTES = frozenset(
 # (env/resource_pool/task/category) and per-param widget internals (option lists, field bindings,
 # visibility conditions) — is bloat Claude doesn't need, so `get_module_params` strips it at the MCP
 # boundary. The shared /api/tasks/definitions route is untouched (the frontend still gets full specs).
-_PARAM_KEEP = ("key", "label", "type", "default", "min", "max", "step", "tip")
+_PARAM_KEEP = ("key", "label", "type", "default", "min", "max", "step", "tip",
+               # `field`/`popScope` say WHAT a selection param wants (which versioned field, cells vs
+               # tracks). The option LIST is live project state, not in the spec, so these are the only
+               # hint available for the params that matter most when wiring a chain — which
+               # segmentation feeds which tracking. Without them a selection param is just a name.
+               "field", "popScope")
+
+# A `select`'s enum is short (2–6 entries across every task spec today); this is a bloat backstop, not a
+# real limit. Keeping the whole list matters — a truncated enum reads as "these are the valid values".
+_MAX_SELECT_OPTIONS = 24
+
+
+def _trim_param(p: dict) -> dict:
+    """One param spec → the fields worth keeping (see `_PARAM_KEEP`), plus `options` for a `select` and
+    the CHILDREN of a `group` / `section`.
+
+    A `select`'s `options` is a SHORT static enum and the only statement of its legal values — and the
+    server validates against it (`_validate_leaf` in app/src/tasks/task.jl), so without it the caller can
+    only echo the default or get a 400. That is different from the project-derived pickers
+    (channelSelection / popSelection / valueNameSelection), whose candidates are live project state, are
+    not in the spec at all, and have to be looked up per project — see `get_module_params`' docstring for
+    which tool answers which. Capped so a pathological list can't bloat the payload.
+
+    **Recursion is not optional.** `group` and `section` params hold their real knobs in a nested
+    `params` list, and `params` is not a kept field — so a non-recursive trim reported `{"key": "models",
+    "type": "group"}` and NOTHING inside it. For cellpose that hid every meaningful knob (`cellDiameter`
+    with its µm label and 1–500 range, `cellChannels`, `nucChannels`, `model`), which is exactly the set
+    an author needs. The server validates nested params (`_validate_params_against_spec` recurses), so
+    hiding them also meant a 400 was reachable on a param the caller could not see.
+    """
+    out = {k: p[k] for k in _PARAM_KEEP if k in p}
+    if p.get("type") == "select" and isinstance(p.get("options"), list):
+        out["options"] = [
+            o.get("value") if isinstance(o, dict) else o
+            for o in p["options"][:_MAX_SELECT_OPTIONS]
+        ]
+    if p.get("type") in ("group", "section") and isinstance(p.get("params"), list):
+        out["params"] = [_trim_param(c) for c in p["params"] if isinstance(c, dict)]
+    return out
 
 
 def _trim_module_params(raw: dict) -> dict:
@@ -73,10 +121,7 @@ def _trim_module_params(raw: dict) -> dict:
             {
                 "fun_name": spec.get("fun_name", ""),
                 "label": spec.get("label", ""),
-                "params": [
-                    {k: p[k] for k in _PARAM_KEEP if k in p}
-                    for p in spec.get("params", [])
-                ],
+                "params": [_trim_param(p) for p in spec.get("params", [])],
             }
             for spec in specs
         ]
@@ -277,3 +322,15 @@ class CeceliaClient:
         if description:
             body["description"] = description
         return self._request("POST", "/api/notebooks/revise", body=body)
+
+    def create_chain(self, project_uid: str, name: str, nodes: list, edges: list,
+                     start_targets: list | None = None):
+        # Create-only (409 if the name exists) and server-validated (400 naming the offending node or
+        # edge). Writes a chain TEMPLATE only — there is no route to run it, so the user launches it
+        # from the whiteboard. Params may be sparse; the whiteboard merges each task's spec defaults
+        # when it loads the template.
+        template: dict = {"name": name, "nodes": nodes, "edges": edges}
+        if start_targets:
+            template["startTargets"] = start_targets
+        return self._request("POST", "/api/chains/create",
+                             body={"projectUid": project_uid, "template": template})

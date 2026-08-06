@@ -1661,7 +1661,9 @@ pre-selects the matching pool from `/api/pools`.
 
 Route `/chain` → `frontend/src/modules/ChainModule.vue`.
 
-The whiteboard is the visual authoring tool for chain templates. It reads and writes the same `chains/<name>.json` format that `run_chain` and `save_chain_template!` use from the REPL — one format, two authoring paths.
+The whiteboard is the visual authoring tool for chain templates. It reads and writes the same `chains/<name>.json` format that `run_chain` and `save_chain_template!` use from the REPL — one format, **three** authoring paths: the whiteboard, the REPL, and Claude via the MCP `create_chain`. Only the whiteboard is a verbatim overwrite (`POST /api/chains/save`, the user saving their own canvas); the MCP route is create-only and validated, and **nothing but the whiteboard can start a run**. See `docs/SCHEDULER.md` → *Who may author a template, and who may run one*.
+
+Because a template authored elsewhere carries no `positions` (that key is whiteboard-only sidecar data), `applyTemplate` falls back to laying its nodes out in one row — see `docs/TODO.md` → *Auto-layout a chain whose nodes have no saved positions*.
 
 `ChainModule` is wrapped in `<KeepAlive>` in `App.vue` so navigating to other pages and back does **not** reset unsaved edits. Edits only clear on an explicit reload (↻ button) or chain switch.
 
@@ -1671,7 +1673,9 @@ The whiteboard is the visual authoring tool for chain templates. It reads and wr
 Left (190px)               Center (flex)             Right (260px, opens on click)
 ────────────────           ──────────────────────    ───────────────────────────
 Chain selector             @vue-flow/core canvas     Node config panel
-+ New / Reload / Save      Node palette drop target  - Scope select
++ New / Rename / Delete    Node palette drop target  - Scope select
+  / Start dot / Reload
+  / Save
 Task palette               Background grid           - Barrier policy (set nodes)
 (by category,              Nodes + edges             - Resource pool dropdown
 draggable)                                             (from /api/pools)

@@ -1,8 +1,13 @@
-"""Cecelia MCP observer server (Phase 1 — read-only).
+"""Cecelia MCP observer server.
 
 Exposes the running Cecelia project to Claude over stdio: project state, images, task logs, QC, and
-the lab log — plus a single append-only write to the lab log. No other mutation is possible; the
-enforced allow-list lives in ``cecelia_mcp.client.ALLOWED_ROUTES``.
+the lab log — plus a small set of additive writes (lab-log append, notebooks, and a chain TEMPLATE).
+No destructive mutation is possible; the enforced allow-list lives in
+``cecelia_mcp.client.ALLOWED_ROUTES``.
+
+Note the split that shapes this server: Claude can DESIGN work but never START it. ``create_chain``
+authors a pipeline the user then runs from the whiteboard; there is no run/submit tool, because
+launching is a WebSocket message and this server speaks only HTTP.
 
 Run:   pixi run mcp          (or:  PYTHONPATH=mcp python -m cecelia_mcp.server)
 Talks to the Julia API at $CECELIA_API_URL (default http://127.0.0.1:8080), so `pixi run dev` must
@@ -160,9 +165,32 @@ def get_module_params(category: str = "") -> dict:
     also carry `min`/`max`/`step`. Pass `category` (the part before the dot in a fun_name — e.g.
     "tracking" for "tracking.bayesian_tracking") to get just that module; omit it for all modules.
 
-    Selection-type params (valueNameSelection/popSelection/…) are UI pickers, not numeric knobs — the
-    tunable ones are the int/float params with min/max. Project-independent; static package specs (plus
-    any user drop-in modules). Suggest, cite the current value + range + QC; the user runs it — you don't."""
+    **A `group` or `section` param NESTS its real knobs under its own `params`** — cellpose's diameter and
+    channel assignment live inside its `models` group, not at the top level. When you set one, send it
+    nested the same way (`{"models": {"cellDiameter": 30}}`); that is how the whiteboard stores it and how
+    the task reads it. Read the LABEL as well as the key: a unit usually lives there (`cellDiameter` is
+    labelled "Cell diameter (µm)", so its default of 10 is 10 µm, not 10 px).
+
+    A `select` param also carries `options` — its full list of legal values, which the server validates
+    against, so use one of them verbatim rather than echoing the default.
+
+    **Selection params name live project state, which is NOT in the spec** — their candidates are absent
+    here by design, so resolve them per project before you set one (this is where an under-informed guess
+    usually happens). `type` (plus `field` / `popScope`) tells you which tool answers it:
+
+      | param `type`             | what it wants                  | get the candidates from |
+      |--------------------------|--------------------------------|-------------------------|
+      | `channelSelection`       | a channel of the image         | get_image_info → `channels` |
+      | `valueNameSelection`     | a versioned field's value_name | get_image_info (`field`, e.g. filepaths/labels) + get_analysis_lineage → `segmentations` |
+      | `popSelection`           | a population path              | get_populations (`popScope` cells vs tracks) |
+      | `labelPropsColsSelection`| measure columns                | get_measure_summary → the `measures` names |
+      | `motionDimsSelection`    | motion dims                    | leave at `auto` unless the user says otherwise |
+
+    Two honest limits. A value_name a LATER node will create does not exist yet (segment writes the label
+    set that tracking then reads) — so read the chain's own wiring for those, not the project. And a
+    population produced by a node in the same chain cannot be resolved at author time at all; leave it and
+    say so. Project-independent; static package specs (plus any user drop-in modules). Suggest, cite the
+    current value + range + QC; the user runs it — you don't."""
     return _client.get_module_params(category or None)
 
 
@@ -445,6 +473,56 @@ def revise_notebook(project_uid: str, file: str, cells: list[str], description: 
     capped) — only changes it if you pass a non-empty value. Non-destructive: the pre-revision state is
     always snapshotted, so the user can Restore it."""
     return _client.revise_notebook(project_uid, file, cells, description)
+
+
+@mcp.tool()
+def create_chain(project_uid: str, name: str, nodes: list, edges: list,
+                 start_targets: list | None = None) -> dict:
+    """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
+    it**. There is no run tool: starting a chain is the user's act, in the Chains whiteboard. Say so
+    when you're done ("it's in the Chains whiteboard — have a look and press Run when it looks right"),
+    and never imply it has started.
+
+    `nodes` = `[{id, fn, params?, scope?, barrier_policy?, resource_pool?}]`:
+      - `id` — any short unique string ("seg", "track"); `edges` reference these.
+      - `fn` — a registered fun_name from get_module_params (e.g. "segment.cellpose"). A typo is
+        rejected, not silently accepted.
+      - `params` — **SPARSE: set only what you mean to change.** Every param you omit is filled from
+        the task's spec default when the user opens the chain, so restating defaults is noise. Read
+        get_module_params first so the keys are real and numbers are in range.
+      - `scope` — omit it. It defaults from the task's own spec, so a set-scope (picnic) task like
+        behaviour.hmm or clustTracks.cluster becomes a picnic node on its own.
+      - `resource_pool` — omit unless you mean it (cpu / gpu / io / network); the task spec knows.
+    `edges` = `[{from, to}]` — node id → node id, i.e. "to runs after from". Leave `start_targets`
+    unset: the server fills it with the chain's roots, which is what makes the whiteboard's start dot
+    appear. Pass it only to start a run PART-WAY in (then only that node and its descendants run).
+
+    BEFORE you call this, resolve what is resolvable — a chain built without these is a guess, and the
+    guesses land on the user:
+      1. get_chains — the pipelines they already wired. Match their conventions and their task choices.
+      2. get_analysis_lineage — what actually ran on these images, in order, and the `value_name`s it
+         wrote. This is how you get the pipeline they really use (e.g. denoise BEFORE drift correction)
+         and which stages are already done, instead of assuming a textbook order.
+      3. get_module_params — param keys, ranges, and a `select`'s legal `options`.
+      4. **get_image_info on one of the target images — for the CHANNELS.** A `channelSelection` param
+         (a drift-correction reference channel, cellpose's cell/nuc channels) is unusable without them,
+         and leaving it empty ships a node that cannot work. Its docstring has the full
+         param-type → source table; use it rather than leaving a selection param blank.
+
+    Then say in chat which values you took from where. A param you set from real project state and a
+    param you left at its default are very different things to the person pressing Run.
+
+    CREATE-ONLY: 409 if `name` exists — it can never overwrite a chain the user wired. To offer an
+    alternative to an existing chain, create a NEW one named for what it does (not "-v2"), tell them
+    it sits **beside** the original, and let them compare the two on the canvas and delete the loser.
+    You cannot rename or delete a chain; both are the user's, in the GUI.
+
+    The server validates the shape (unknown fn, dangling edge, cycle, out-of-range param → 400 naming
+    the offender — fix and retry). It CANNOT validate intent: nothing here checks that you wired
+    tracking after a segmentation that exists, and selection params (`valueName`, population pickers)
+    name project state the spec doesn't list. So the user reading the graph before Run is doing real
+    work — write the chain to be read, and flag in chat anything you had to guess."""
+    return _client.create_chain(project_uid, name, nodes, edges, start_targets)
 
 
 @mcp.tool()

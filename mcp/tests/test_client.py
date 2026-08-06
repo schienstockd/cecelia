@@ -44,17 +44,61 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(DisallowedRoute):
             self.c._request("GET", "/api/gating/save")
 
-    def test_writes_are_only_the_four_recoverable_routes(self):
+    def test_writes_are_only_the_five_recoverable_routes(self):
         # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only), notebook
-        # write (create-only), notebook describe (description text only), and notebook revise (snapshots
-        # first, so it's recoverable). None can edit/delete cell data, images, gates, or QC.
+        # write (create-only), notebook describe (description text only), notebook revise (snapshots
+        # first, so it's recoverable), and chain create (create-only + validated — and a template is
+        # inert until a human presses Run). None can edit/delete cell data, images, gates, or QC.
+        #
+        # Changing this list is the GATE on widening what Claude can do to a project. If you are here
+        # to add a route, the question to answer first is whether it can destroy something.
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
         self.assertEqual(writes, [
+            ("POST", "/api/chains/create"),
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),
             ("POST", "/api/notebooks/revise"),
             ("POST", "/api/notebooks/write"),
         ])
+
+    def test_chain_launch_and_in_place_chain_edits_stay_unreachable(self):
+        # The point of the whole design: Claude designs chains, the user runs them. Launching has no
+        # HTTP route at all (it's the `chain:run` WS message), and the routes that would let Claude
+        # overwrite, rename or delete a chain the user wired are deliberately off the list.
+        for method, path in (("POST", "/api/chains/save"),      # unguarded overwrite (whiteboard's own)
+                             ("POST", "/api/chains/rename"),
+                             ("POST", "/api/chains/delete"),
+                             ("POST", "/api/chains/run"),       # does not exist — must not be added
+                             ("POST", "/api/chains/start")):
+            with self.assertRaises(DisallowedRoute):
+                self.c._request(method, path, body={"projectUid": "p"})
+
+    def test_create_chain_posts_a_template(self):
+        nodes = [{"id": "seg", "fn": "segment.cellpose", "params": {"cellDiameter": 30}},
+                 {"id": "trk", "fn": "tracking.bayesian_tracking"}]
+        edges = [{"from": "seg", "to": "trk"}]
+        with _patch_urlopen({"ok": True, "name": "seg-track", "nodeCount": 2}) as u:
+            self.c.create_chain("p", "seg-track", nodes, edges)
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "POST")
+        self.assertTrue(req.full_url.endswith("/api/chains/create"))
+        self.assertEqual(
+            json.loads(req.data.decode()),
+            {"projectUid": "p", "template": {"name": "seg-track", "nodes": nodes, "edges": edges}},
+        )
+
+    def test_create_chain_omits_empty_start_targets(self):
+        # An empty startTargets must not be sent: the server treats a PRESENT-but-empty list the same
+        # as absent today, but sending it invites a future reader to think the chain has a start dot.
+        with _patch_urlopen({"ok": True}) as u:
+            self.c.create_chain("p", "c", [{"id": "n1", "fn": "importImages.remove"}], [])
+        body = json.loads(u.call_args[0][0].data.decode())
+        self.assertNotIn("startTargets", body["template"])
+        with _patch_urlopen({"ok": True}) as u:
+            self.c.create_chain("p", "c", [{"id": "n1", "fn": "importImages.remove"}], [],
+                                start_targets=["n1"])
+        body = json.loads(u.call_args[0][0].data.decode())
+        self.assertEqual(body["template"]["startTargets"], ["n1"])
 
     def test_revise_notebook_posts_cells(self):
         with _patch_urlopen({"ok": True, "file": "speed.jl", "snapshotVersion": 2}) as u:
@@ -165,11 +209,69 @@ class ClientTest(unittest.TestCase):
         self.assertNotIn("resource_pool", spec)
         p_knob, p_sel = spec["params"]
         self.assertEqual((p_knob["min"], p_knob["max"], p_knob["default"]), (1, 200, 20))
-        self.assertNotIn("field", p_sel)            # per-param widget internals stripped
+        # `field` is KEPT — it says what a selection param wants (which versioned field), which is the
+        # only hint available when authoring a chain node, since the option list is live project state
+        # and not in the spec. It was stripped as "widget internals" while Claude could only suggest.
+        self.assertEqual(p_sel["field"], "labels")
         self.assertNotIn("options", p_sel)          # big option lists stripped (the payload win)
         with _patch_urlopen({}) as u:               # no category → all modules
             self.c.get_module_params()
         self.assertNotIn("category", u.call_args[0][0].full_url)
+
+    def test_select_options_are_kept_but_picker_options_are_not(self):
+        # A `select`'s options are a SHORT static enum and the server validates against them
+        # (_validate_leaf), so stripping them left the caller able only to echo the default — it could
+        # not propose a considered value. The project-derived pickers are the opposite case: their
+        # candidates aren't in the spec at all and have to be looked up per project, so there is nothing
+        # useful to keep and the list can be long.
+        raw = {"cleanupImages": [{
+            "fun_name": "cleanupImages.driftCorrect", "label": "Drift",
+            "params": [
+                {"key": "driftNormalisation", "type": "select", "default": "phase",
+                 "options": [{"label": "None", "value": "none"}, {"label": "Phase", "value": "phase"}]},
+                {"key": "driftChannel", "type": "channelSelection", "default": [],
+                 "options": ["ch1", "ch2"]},
+            ],
+        }]}
+        with _patch_urlopen(raw):
+            out = self.c.get_module_params("cleanupImages")
+        p_select, p_channel = out["cleanupImages"][0]["params"]
+        self.assertEqual(p_select["options"], ["none", "phase"])   # values, not {label,value} pairs
+        self.assertNotIn("options", p_channel)
+
+    def test_group_and_section_children_survive_the_trim(self):
+        # A non-recursive trim reported {"key": "models", "type": "group"} and nothing inside — hiding
+        # cellpose's whole knob set (diameter + its µm label + range, cell/nuc channels). An author then
+        # cannot set them, and the server validates nested params anyway, so a 400 was reachable on a
+        # param the caller had never been shown.
+        raw = {"segment": [{"fun_name": "segment.cellpose", "label": "Cellpose", "params": [
+            {"key": "models", "type": "group", "label": "Models", "params": [
+                {"key": "cellDiameter", "type": "int", "label": "Cell diameter (µm)",
+                 "min": 1, "max": 500, "default": 10, "tip": "Expected cell diameter in µm"},
+                {"key": "cellChannels", "type": "channelSelection", "label": "Cell channels",
+                 "default": [], "options": ["a", "b"]},
+            ]},
+            {"key": "imageTiling", "type": "section", "params": [
+                {"key": "blockSize", "type": "int", "min": 128, "max": 4096, "default": 512},
+            ]},
+        ]}]}
+        with _patch_urlopen(raw):
+            out = self.c.get_module_params("segment")
+        group, section = out["segment"][0]["params"]
+        diameter, channels = group["params"]
+        self.assertEqual(diameter["label"], "Cell diameter (µm)")   # the UNIT lives in the label
+        self.assertEqual((diameter["min"], diameter["max"]), (1, 500))
+        self.assertNotIn("options", channels)                      # picker options still stripped
+        self.assertEqual(section["params"][0]["max"], 4096)         # sections recurse too
+
+    def test_select_options_are_capped(self):
+        raw = {"m": [{"fun_name": "m.t", "label": "T", "params": [
+            {"key": "k", "type": "select", "default": "v0",
+             "options": [{"value": f"v{i}"} for i in range(100)]},
+        ]}]}
+        with _patch_urlopen(raw):
+            out = self.c.get_module_params("m")
+        self.assertEqual(len(out["m"][0]["params"][0]["options"]), 24)
 
     def test_available_plots_builds_url_and_drops_unset_module(self):
         self.assertIn(("GET", "/api/plots/definitions"), ALLOWED_ROUTES)
