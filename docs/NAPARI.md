@@ -434,6 +434,16 @@ It used to be an `output_np.astype(...)` line in each correction runner — whic
 
 If a raw (uncorrected) image appears empty, check `zarr_array.dtype` — `>u2` on an x86 machine is the culprit. The original bioformats2raw output is never rewritten; only correction outputs are guaranteed little-endian.
 
+### The Julia side has to do this itself — `read_native`, never `arr[idx...]`
+
+Python is immune on *read*: numpy honours the `>u2` descriptor and converts. **Zarr.jl does not.** It parses the descriptor for the element type but hands back the bytes unswapped, so `eltype(arr) === UInt16` while the values are byte-swapped — silently, with no error. On a real frame a true `63` reads as `16128`, and **98 % of pixels land above a contrast ceiling that should have clipped none of them**, so the whole preview renders saturated white noise.
+
+That is exactly what happened to the in-app crop preview: the raw `default` version of every image rendered as white/coloured speckle while the drift-corrected version (written by our own little-endian writer) looked fine — which is why it presented as "the preview is broken when I switch image version".
+
+Every pixel read in `api/src/image_render.jl` therefore goes through **`read_native(arr, idx...)`** (`api/src/image_geometry.jl`), which applies the stored order via `ntoh`/`ltoh` — no-ops when the store already matches the host, so it is correct on a big-endian machine too. `read_native` reads the order from the raw dtype descriptor Zarr.jl keeps in `arr.metadata.dtype`; an unrecognised metadata shape answers `'|'` and is passed through rather than swapped on a guess. Pinned by *"API: zarr byte order"* in `api/test/runtests.jl`.
+
+Reading pixels with a bare `arr[idx...]` is a bug, not a style choice — same family as the H5AD/zarr reader rules in `CLAUDE.md`.
+
 ---
 
 ## Contrast limits
@@ -575,6 +585,18 @@ Auto-save/load stores napari layer visual properties (contrast limits, colormap,
 Example: `projects/NRUBxU/1/KDIeEm/data/ccidImage.ome.zarr.json`
 
 JSON is the single canonical format (every field is JSON-native) so the in-app crop MIP render (Julia) can read the same colours/contrast the viewer set — see `docs/todo/CROP_PANEL_PLAN.md`. A pre-JSON `.pkl` from before the switch is **migrated on first load** (read once, rewritten as `.json`); nothing is ever written as pickle again.
+
+### `colormap_lut` — napari exports the colour, the renderer does not guess it
+
+Each `Image` entry carries **both** `colormap` (the name, which is what napari's own restore path sets) **and `colormap_lut`** — the colormap's actual colours as up-to-64 `[r,g,b]` stops (`NapariState._colormap_lut`). The Julia preview renderer interpolates those stops; it does not resolve a colour from the name.
+
+It used to, and that was a duplication of napari's palette inside `api/src/image_render.jl` — which broke exactly the way duplications do. napari ships ~30 colormaps and the user can pick any of them, so the name table could never be complete, and it wasn't: **`bop blue` was missing, hit the unknown-name fallback (white), and rendered the SHG channel of every intravital image as full white** — the worst possible fallback, because white adds into all three accumulators and washes the composite out.
+
+- The primaries (`red`…`yellow`, `gray`, `bop *`) are 2-entry ramps from black, so their LUT is exact and tiny.
+- The 256-entry perceptual maps (`viridis`/`turbo`/…) resample to 64 stops — worst case 2/255, invisible in a preview. napari's `I *` set runs **white→colour**, which no name table could have approximated at all.
+- `CMAP_RGB` in `image_render.jl` survives **only** as the fallback for props files written before `colormap_lut` existed, so images render correctly without being re-opened in napari. It now includes the `bop *` end colours. A name it does not know still falls back to gray.
+
+Pinned on both sides: `python/cecelia/tests/test_bridge_layer_props.py` (the export) and *"API: image render composite"* in `api/test/runtests.jl` (the interpolation + LUT-beats-name precedence).
 
 The `data/` directory is created by `mkpath` if it doesn't exist. Only `Image` layers are saved/loaded (labels/points/tracks are not). On load, the T/Z step is **clamped** to the current image's `dims.nsteps` (a different segmentation/shape may have fewer slices) and only the saved axes are overridden.
 

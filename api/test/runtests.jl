@@ -782,6 +782,85 @@ end
     two = composite_rgb(cat(fill(1.0f0, 1, 1, 1), fill(1.0f0, 1, 1, 1); dims = 1),
                               [(0.0, 1.0, "red", true), (0.0, 1.0, "green", true)])
     @test r(two[1, 1]) > 0.9 && g(two[1, 1]) > 0.9 && b(two[1, 1]) == 0
+
+    # ── Channel colour: napari's palette must NOT be guessed by name ──────────────────
+    # `bop blue` was missing from CMAP_RGB and hit the unknown-name fallback (WHITE), which additively
+    # washes the whole composite out — the SHG channel of every intravital image rendered white instead
+    # of blue. Assert napari's own end colour (AVAILABLE_COLORMAPS["bop blue"].colors[-1]).
+    bop = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "bop blue", true)])
+    @test isapprox(r(bop[1, 1]), 0.12549; atol = 0.01)
+    @test isapprox(g(bop[1, 1]), 0.678431; atol = 0.01)
+    @test isapprox(b(bop[1, 1]), 0.972549; atol = 0.01)
+    @test b(bop[1, 1]) - r(bop[1, 1]) > 0.5            # unmistakably blue, not white
+
+    # An explicit LUT (props `colormap_lut`) wins over any name table and is interpolated. A 2-stop
+    # black→base ramp must reduce EXACTLY to `n .* base`, which is what additive primaries need.
+    lut2 = [(0f0, 0f0, 0f0), (1f0, 0f0, 0f0)]
+    half = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut2, true)])
+    @test isapprox(r(half[1, 1]), 0.5; atol = 0.01) && g(half[1, 1]) == 0
+
+    # 3-stop LUT: midpoint intensity lands on the middle stop, quarter interpolates into it
+    lut3 = [(0f0, 0f0, 0f0), (0f0, 1f0, 0f0), (0f0, 0f0, 1f0)]
+    mid = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut3, true)])
+    @test isapprox(g(mid[1, 1]), 1.0; atol = 0.01) && isapprox(b(mid[1, 1]), 0.0; atol = 0.01)
+    qtr = composite_rgb(fill(0.25f0, 1, 1, 1), [(0.0, 1.0, lut3, true)])
+    @test isapprox(g(qtr[1, 1]), 0.5; atol = 0.01)
+    # a white→colour LUT (napari's `I *` set) is honoured at zero intensity — no name table could do this
+    inv = composite_rgb(fill(0.0f0, 1, 1, 1), [(0.0, 1.0, [(1f0, 1f0, 1f0), (0f0, 0f0, 1f0)], true)])
+    @test r(inv[1, 1]) > 0.9 && g(inv[1, 1]) > 0.9
+
+    # layer_display_specs prefers the saved LUT over the colormap NAME (same entry carries both)
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((; Image = [
+            (; contrast_limits = [0.0, 10.0], colormap = "bop blue",
+               colormap_lut = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], visible = true),
+            (; contrast_limits = [1.0, 5.0], colormap = "magenta", visible = false),
+        ])))
+        specs = layer_display_specs(p)
+        @test length(specs) == 2
+        @test specs[1][3] isa AbstractVector && specs[1][3][2] == (1f0, 0f0, 0f0)  # LUT, not the name
+        @test specs[2][3] == "magenta" && specs[2][4] == false                     # no LUT → name kept
+        @test specs[2][1] == 1.0 && specs[2][2] == 5.0
+    end
+    @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
+end
+
+@testset "API: zarr byte order" begin
+    # `read_native` must apply the STORED byte order. bioformats2raw writes big-endian (`>u2`) and
+    # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
+    # version read with plain `arr[...]` is byte-swapped garbage that renders as saturated white noise
+    # (a true 63 reads as 16128; 98% of a real frame exceeded a contrast ceiling that should clip none).
+    # Silent, and invisible in Python, which honours the descriptor. See docs/NAPARI.md → Byte order.
+    # Re-stamp the dtype descriptor the way bioformats2raw would; Zarr.jl keeps it as the raw string.
+    function stamp_order!(p, order)
+        za = JSON3.read(read(joinpath(p, ".zarray"), String), Dict{String,Any})
+        za["dtype"] = order
+        write(joinpath(p, ".zarray"), JSON3.write(za))
+    end
+    vals = UInt16[0x0000, 0x003f, 0x00ff, 0x2800, 0xffff]      # 0, 63, 255, 10240, 65535
+    mktempdir() do d
+        for (i, (order, swaps)) in enumerate((">u2" => true, "<u2" => false))
+            p = joinpath(d, "store$(i)")
+            a = zcreate(UInt16, Zarr.DirectoryStore(p), length(vals); chunks = (length(vals),))
+            a[:] = vals
+            stamp_order!(p, order)
+            got = read_native(zopen(p, "r"), :)
+            @test got == (swaps ? ntoh.(vals) : vals)
+            if order == ">u2"                  # the bug this pins: BE must NOT read as the raw bytes
+                @test got != vals
+                @test got[2] == 0x3f00         # 63 declared big-endian reads as 16128 if left unswapped
+            end
+        end
+        # `|u1` (not-applicable, 1-byte) is passed through untouched — swapping a byte is a no-op, but
+        # the descriptor must not be misread as an order either.
+        p8 = joinpath(d, "store8")
+        b = UInt8[0x00, 0x3f, 0xff]
+        a8 = zcreate(UInt8, Zarr.DirectoryStore(p8), length(b); chunks = (length(b),))
+        a8[:] = b
+        stamp_order!(p8, "|u1")
+        @test read_native(zopen(p8, "r"), :) == b
+    end
 end
 
 @testset "API: module-canvas persistence" begin
