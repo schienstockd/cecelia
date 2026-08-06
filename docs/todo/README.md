@@ -55,6 +55,25 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   and a "cells are merging" claim was **retracted** — the overlap test found 1 true merge and 0 lost
   objects, the count drop was 74 noise specks. Status: task built and run on a full movie; composite,
   and the drift-on-smoothed / smooth-the-trajectory follow-ups, still open.
+- `SEG_QUALITY_PLAN.md` — **make segmentation better, measured objectively** (supersedes "drop the
+  cellpose-3 pin so we can move to Cellpose 4" — that assumed v4 is the fix). Decision 1 is the
+  yardstick: **QC-gate pass-yield**, so no hand annotation is needed. Ran to a conclusion — v3 is at
+  its ceiling (`EaMaVq` 13.4% T / 7.9% B pass, i.e. ~87–92% of labels rejected as over-segmentation),
+  and **Cellpose-SAM is categorically worse on intravital** (0/65 objects pass; no out-of-the-box
+  config found), so **v4 migration is DROPPED** and the `cellpose==3` pin stays. Phase 3 set the north
+  star: coastal as cecelia's own denoise + segmentation engine. Read alongside
+  `SEGMENTATION_OPEN_PROBLEM.md`, which narrows Phase 3's flow premise.
+- `SEGMENTATION_OPEN_PROBLEM.md` — **negative result, not a plan.** Two sessions failed to segment
+  CD169⁺ macrophages on `zolIMa/fXgbTl`; written so the next attempt doesn't re-derive the dead ends.
+  The load-bearing finding **challenges `SEG_QUALITY_PLAN.md` Phase 3's premise**: these cells are
+  effectively sessile (0.27 µm/min), so *every* velocity field — coastal's Farneback **and**
+  OpticalFlow3D's Lucas–Kanade — sits at 0.53–0.61 AUC for cell-vs-background, i.e. chance. Only
+  **spatial-structure** fields separate, and a plain 3D structure tensor gets 0.941 with no flow at
+  all. coastal's flow segmenter over-segmented **7×** versus a six-line intensity baseline (167 vs 22
+  objects). Also ruled out: AF ordering (both directions fail, two different causes), AF competitor
+  reconfiguration (5.0 → 5.4%), exponent, scale normalisation. Open: which channels are genuinely
+  mutually exclusive, whether dendrites are a deliverable, and **scoring any of this on the QC-gate
+  yardstick** (`SEG_QUALITY_PLAN.md` Decision 1) — which this session did not do.
 - `CLUSTERING_PLAN.md` — Leiden clustering (cells + tracks), GPU/RAPIDS parked. Cited from
   `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
 - `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export

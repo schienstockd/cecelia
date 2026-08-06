@@ -57,6 +57,14 @@ The phased plan below ran to a conclusion. Summary of what we found:
   yardstick** for it. Tracked as task #17; supersedes the "which cellpose version" framing entirely.
   The `cellpose==3` pin now stays until coastal provides *both* denoise and segmentation.
 
+> **2026-08-06 — "the right inductive bias for moving-cell data" does not hold on every image class.**
+> On `zolIMa/fXgbTl` the CD169⁺ macrophages are effectively sessile (0.27 µm/min), so every velocity
+> field — coastal's Farneback *and* OpticalFlow3D's Lucas–Kanade — is at chance (AUC 0.53–0.61) for
+> locating them, and coastal's flow segmenter over-segmented 7× versus a six-line intensity baseline.
+> Read `docs/todo/SEGMENTATION_OPEN_PROBLEM.md` before building on the flow premise. This is a *scope*
+> correction, not a refutation: motion may still be informative for motile cells (e.g. `EaMaVq`'s
+> T cells), which has not been measured.
+
 The phases below are kept as the historical record of how we got here.
 
 ## Locked decisions
