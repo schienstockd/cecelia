@@ -21,6 +21,10 @@ function _spec_path(::CellposeSegment)
     joinpath(@__DIR__, "segment", "cellpose.json")
 end
 
+function _spec_path(::CoastalSegment)
+    joinpath(@__DIR__, "segment", "coastal.json")
+end
+
 function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
@@ -132,6 +136,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "importImages.migrateLegacy"        => MigrateLegacy(),
         "cleanupImages.cellposeCorrect"     => CellposeCorrect(),
         "segment.cellpose"                  => CellposeSegment(),
+        "segment.coastal"                   => CoastalSegment(),
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),

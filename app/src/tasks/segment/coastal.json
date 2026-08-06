@@ -1,0 +1,333 @@
+{
+  "task": "coastalSegment",
+  "fun_name": "segment.coastal",
+  "label": "Optical flow segmentation",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "gpu",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to segment",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Usually the smoothed version — flow needs a denoised input"
+    },
+    {
+      "key": "outputValueName",
+      "label": "Output label name",
+      "type": "text",
+      "default": "default",
+      "tip": "Name for the output label set"
+    },
+    {
+      "key": "models",
+      "label": "Segmentation models",
+      "type": "group",
+      "repeatable": true,
+      "default": {
+        "0": {
+          "model": "",
+          "matchAs": "base",
+          "cellChannels": [],
+          "normalise": 99.99,
+          "seedSize": 12,
+          "seedBlurSigma": 0.0,
+          "probThreshold": 0.3,
+          "affinityThreshold": 0.5,
+          "minComponentSize": 20,
+          "stitchThreshold": 0.0,
+          "probBlurSigma": 0.0,
+          "embeddingBlurSigma": 1.5,
+          "mergeAffinityThreshold": 0.65,
+          "mergeMaxDistance": 1.5,
+          "probWeight": 0.3,
+          "maxIter": 200
+        }
+      },
+      "tip": "Add a second entry to run a second pass; it fills gaps the first left",
+      "params": [
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "select",
+          "default": "",
+          "tip": "Trained on the Optical Flow page",
+          "options": [
+            { "label": "None", "value": "" }
+          ]
+        },
+        {
+          "key": "matchAs",
+          "label": "Match as",
+          "type": "select",
+          "default": "base",
+          "tip": "Role of this model's output; one 'base' + one 'nuc' to pair",
+          "options": [
+            { "label": "Base (primary)", "value": "base" },
+            { "label": "Nucleus",        "value": "nuc"  }
+          ]
+        },
+        {
+          "key": "cellChannels",
+          "label": "Cell channels",
+          "type": "channelSelection",
+          "multiple": true,
+          "default": [],
+          "tip": "Channels carrying the cell signal; merged by maximum"
+        },
+        {
+          "key": "seedSize",
+          "label": "Seed window (px)",
+          "type": "int",
+          "min": 3,
+          "max": 101,
+          "step": 1,
+          "default": 12,
+          "tip": "How close two cells may be and still get separate seeds"
+        },
+        {
+          "key": "seedBlurSigma",
+          "label": "Seed blur (σ)",
+          "type": "float",
+          "min": 0.0,
+          "max": 20.0,
+          "step": 0.5,
+          "default": 0.0,
+          "tip": "Raise to merge fragments of one cell; does not move the outline"
+        },
+        {
+          "key": "probThreshold",
+          "label": "Foreground threshold",
+          "type": "float",
+          "min": 0.05,
+          "max": 0.95,
+          "step": 0.05,
+          "default": 0.3,
+          "tip": "Cutoff on the probability map; raise to ignore dim regions"
+        },
+        {
+          "key": "affinityThreshold",
+          "label": "Growing threshold",
+          "type": "float",
+          "min": 0.1,
+          "max": 0.9,
+          "step": 0.05,
+          "default": 0.5,
+          "tip": "Embedding similarity needed to grow into a pixel"
+        },
+        {
+          "key": "minComponentSize",
+          "label": "Min fragment (px)",
+          "type": "int",
+          "min": 0,
+          "max": 1000,
+          "step": 5,
+          "default": 20,
+          "tip": "Remove grown fragments below this size"
+        },
+        {
+          "key": "normalise",
+          "label": "Normalise percentile",
+          "type": "float",
+          "min": 50.0,
+          "max": 100.0,
+          "step": 0.01,
+          "default": 99.99,
+          "tip": "Upper percentile for intensity normalisation"
+        },
+        {
+          "key": "advanced",
+          "label": "Advanced",
+          "type": "section",
+          "collapsed": true,
+          "params": [
+            {
+              "key": "stitchThreshold",
+              "label": "Z-stitch threshold",
+              "type": "float",
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.0,
+              "tip": "IoU for matching labels across Z (3D only)"
+            },
+            {
+              "key": "probBlurSigma",
+              "label": "Probability blur (σ)",
+              "type": "float",
+              "min": 0.0,
+              "max": 20.0,
+              "step": 0.5,
+              "default": 0.0,
+              "tip": "Blurs the outline too — prefer seed blur"
+            },
+            {
+              "key": "embeddingBlurSigma",
+              "label": "Embedding blur (σ)",
+              "type": "float",
+              "min": 0.0,
+              "max": 5.0,
+              "step": 0.5,
+              "default": 1.5,
+              "tip": "Larger merges more during growing"
+            },
+            {
+              "key": "mergeAffinityThreshold",
+              "label": "Merge threshold",
+              "type": "float",
+              "min": 0.1,
+              "max": 0.95,
+              "step": 0.05,
+              "default": 0.65,
+              "tip": "Similarity needed to merge two fragments"
+            },
+            {
+              "key": "mergeMaxDistance",
+              "label": "Merge distance (px)",
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.5,
+              "default": 1.5,
+              "tip": "How far apart fragments may be to merge"
+            },
+            {
+              "key": "probWeight",
+              "label": "Brightness relaxation",
+              "type": "float",
+              "min": 0.0,
+              "max": 0.5,
+              "step": 0.05,
+              "default": 0.3,
+              "tip": "Relaxes the growing threshold in bright regions"
+            },
+            {
+              "key": "maxIter",
+              "label": "Growing iterations",
+              "type": "int",
+              "min": 10,
+              "max": 1000,
+              "step": 10,
+              "default": 200,
+              "tip": "Upper bound; growing usually stops earlier"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "labelModifications",
+      "label": "Label modifications",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "matchThreshold",
+          "label": "Nuc-base match threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "default": 0.3,
+          "tip": "IoU for matching nucleus labels to base labels"
+        },
+        {
+          "key": "removeUnmatched",
+          "label": "Remove unmatched cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove base cells that have no matching nucleus (only with nuc+base pair)"
+        },
+        {
+          "key": "minCellSize",
+          "label": "Min cell size (px)",
+          "type": "int",
+          "min": 0,
+          "max": 100000,
+          "step": 10,
+          "default": 0,
+          "tip": "Remove objects smaller than this many pixels (0 = off)"
+        },
+        {
+          "key": "cellSizeMax",
+          "label": "Max cell size (px)",
+          "type": "int",
+          "min": 0,
+          "max": 10000000,
+          "step": 100,
+          "default": 0,
+          "tip": "Remove objects larger than this many pixels (0 = off)"
+        },
+        {
+          "key": "labelExpansion",
+          "label": "Label expansion (px)",
+          "type": "int",
+          "min": 0,
+          "max": 50,
+          "step": 1,
+          "default": 0,
+          "tip": "Expand label boundaries outward by N pixels (0 = off)"
+        },
+        {
+          "key": "labelErosion",
+          "label": "Label erosion (px)",
+          "type": "int",
+          "min": 0,
+          "max": 50,
+          "step": 1,
+          "default": 0,
+          "tip": "Erode label boundaries inward by N pixels (0 = off)"
+        },
+        {
+          "key": "clearTouchingBorder",
+          "label": "Clear border cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove cells that touch the XY image border"
+        },
+        {
+          "key": "clearDepth",
+          "label": "Clear Z-depth cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove cells touching the first or last Z slice"
+        }
+      ]
+    },
+    {
+      "key": "imageTiling",
+      "label": "Image tiling",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {"$include": "imageTiling"},
+        {
+          "key": "labelOverlap",
+          "label": "Seam stitch threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "default": 0.0,
+          "tip": "IoU for stitching cells split at a tile seam (0 = max merge)"
+        }
+      ]
+    },
+    {
+      "key": "segmentationOptions",
+      "label": "Segmentation options",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "normaliseToWhole",
+          "label": "Global normalisation",
+          "type": "bool",
+          "default": true,
+          "tip": "Keep on — per-tile scaling breaks the trained photometric range"
+        }
+      ]
+    }
+  ]
+}

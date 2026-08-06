@@ -254,6 +254,110 @@ end
     @test all(m.name != "subdir"    for m in clean)
 end
 
+# ── Coastal (optical-flow) model vault ───────────────────────────────────────
+# The same drop-in convention as cellpose, one directory over — but with no built-ins and no
+# bundled slot, because coastal ships no models: a user trains their own on the Optical Flow
+# page. The manifest is the load-bearing part. Inference MUST use the metric set a model was
+# trained on, and coastal fails silently when it doesn't (a missing plane shifts every later
+# channel), so `CoastalUtils` configures itself from the sidecar rather than from task params.
+@testset "coastal model vault" begin
+    td = mktempdir()
+    @test coastal_models_dir(td) == joinpath(td, "models", "coastalModels")
+
+    # Empty vault → empty picker. No built-in fallback to segment with by accident.
+    @test isempty(list_coastal_models(td))
+    @test coastal_model_path("anything.pt", td) === nothing
+    @test coastal_model_path("", td) === nothing
+    @test coastal_model_path("   ", td) === nothing
+
+    dir = joinpath(td, "models", "coastalModels")
+    mkpath(dir)
+    pt = joinpath(dir, "gcMemTom.pt")
+    open(io -> write(io, "stub"), pt, "w")
+    @test coastal_model_path("gcMemTom.pt", td) == pt
+
+    # A checkpoint with no manifest still lists — it just falls back to coastal's defaults.
+    bare = list_coastal_models(td)
+    @test length(bare) == 1
+    @test bare[1].name == "gcMemTom.pt"
+    @test bare[1].label == "gcMemTom"
+    @test isempty(bare[1].manifest)
+    @test isempty(coastal_model_manifest("gcMemTom.pt", td))
+
+    # With a manifest, the picker label says what the model was trained on.
+    write(joinpath(dir, "gcMemTom.json"),
+          """{"channelName":"mem-TOM","temporalScales":[1,2,4,8],"cumulativeWindow":5}""")
+    with_manifest = list_coastal_models(td)
+    @test with_manifest[1].label == "gcMemTom (mem-TOM)"
+    @test with_manifest[1].manifest["cumulativeWindow"] == 5
+    @test with_manifest[1].manifest["temporalScales"] == [1, 2, 4, 8]
+
+    # A corrupt manifest must not take the picker down with it.
+    write(joinpath(dir, "gcMemTom.json"), "{not json")
+    @test isempty(coastal_model_manifest("gcMemTom.pt", td))
+    @test length(list_coastal_models(td)) == 1
+
+    # The sidecar is not an entry of its own, and dotfiles/subdirs are skipped.
+    open(io -> write(io, "hidden"), joinpath(dir, ".DS_Store"), "w")
+    mkpath(joinpath(dir, "subdir.pt"))
+    names = [m.name for m in list_coastal_models(td)]
+    @test names == ["gcMemTom.pt"]
+end
+
+# The coastal picker is ENTIRELY runtime-enumerated — coastal ships no built-in models, so on a
+# fresh install the only option is "None". That empty state has to stay a legible choice rather than
+# a select that rejects its own default, which is what the first version did.
+@testset "CoastalSegment spec dynamic Model options" begin
+    spec = Cecelia._task_spec(CoastalSegment())
+    @test !isnothing(spec)
+    models_group = only(p for p in spec["params"] if get(p, "key", "") == "models")
+    model_sel    = only(p for p in models_group["params"] if get(p, "key", "") == "model")
+    values = [string(o["value"]) for o in model_sel["options"]]
+
+    @test first(values) == ""                       # "None" is always first and always present
+    @test string(first(model_sel["options"])["label"]) == "None"
+    @test validate_params(CoastalSegment(),
+        Dict{String,Any}("models" => Dict{String,Any}(
+            "0" => Dict{String,Any}("model" => "")))) === nothing
+
+    # A name that is not in the vault is rejected — the enumeration is real, and a missing model
+    # must never silently fall back to another one.
+    @test_throws ParamValidationError validate_params(CoastalSegment(),
+        Dict{String,Any}("models" => Dict{String,Any}(
+            "0" => Dict{String,Any}("model" => "__not_in_the_vault__.pt"))))
+end
+
+# Selecting nothing must fail with an instruction, not with a stack trace deep in Python. The
+# missing-model case is the shared one: a config-dir model does not travel with a `.ccbundle`, so
+# opening someone else's project WILL name a model this machine does not have.
+@testset "coastal_models_for_python resolution" begin
+    raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+        "default" => ["CH1", "CH2"], "_active" => "default"))
+
+    @test isempty(Cecelia.coastal_models_for_python(Dict{String,Any}(), raw))
+
+    no_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "", "cellChannels" => ["CH2"])))
+    err = try
+        Cecelia.coastal_models_for_python(no_model, raw); nothing
+    catch e; e end
+    @test err isa ErrorException && occursin("Optical Flow page", err.msg)
+
+    missing_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "__absent__.pt", "cellChannels" => ["CH2"])))
+    err2 = try
+        Cecelia.coastal_models_for_python(missing_model, raw); nothing
+    catch e; e end
+    @test err2 isa ErrorException && occursin("not included in a project export", err2.msg)
+
+    # Channel NAMES become 0-based indices — the translation the preview shares with the run.
+    abs_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => @__FILE__, "cellChannels" => ["CH2"])))
+    out = Cecelia.coastal_models_for_python(abs_model, raw)
+    @test out["0"]["cellChannels"] == [1]
+    @test out["0"]["model"] == @__FILE__
+end
+
 # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a
 # dropped-in checkpoint under `<repo>/models/cellposeModels/` (this worktree has ccia.fluo
 # from `pixi run models-fetch`) appears in the Model select's options — that's what makes

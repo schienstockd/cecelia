@@ -74,11 +74,17 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
    auto-tune per image, and there must be no hidden per-image override. `seed_blur_sigma` is a
    first-class, user-visible param with a documented meaning, not an internal constant.
 
-   Note the calibration this leaves open: `seed_blur 8` matches an intensity baseline on `fXgbTl`
-   (~33 objects vs ~30) while `seed_blur 5` was needed to stop visible merging on `Dml3RG` t=92 —
-   **and `fXgbTl` is a crop of `Dml3RG`**, so this is one image disagreeing with itself across time
-   range and field size, not two images wanting different values. It cannot be resolved by per-image
-   tuning. It needs a real yardstick (Phase 4's QC gate), not a second parameter.
+   **It is an ordinary run parameter** — Dominik, 2026-08-06: *"i just thought we could use seed blur
+   as a normal parameter during function run."* So it ships with a documented default, the user
+   adjusts it for their data like `prob_threshold` or `cellDiameter`, and the preview is how they
+   judge it. No auto-tuning, no calibration table, and **no reason to hold the task on Phase 4**.
+
+   For the record, since it will come up when picking that default: `seed_blur 8` matched an
+   intensity baseline on `fXgbTl` (~33 objects vs ~30) while `5` was needed to stop visible merging
+   on `Dml3RG` t=92 — and `fXgbTl` is a crop of `Dml3RG`, so one image wanted two values across
+   different time ranges and field sizes. That says the *default* is a starting point rather than a
+   calibrated constant, which is exactly what an exposed param is for. Phase 4's QC gate is how we
+   validate the segmenter, not a gate on shipping the knob.
 
 7. **Trained models live in the config dir, like the cellpose vault.** Dominik: *"maybe it should
    just be in config like the cellpose vault. to use it across projects."* So

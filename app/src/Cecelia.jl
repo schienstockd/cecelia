@@ -3,6 +3,7 @@ module Cecelia
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_path, expand_user
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
+export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, IMAGE_COMPRESSOR_CHOICES
@@ -97,6 +98,7 @@ export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
 export CellposeSegment
+export CoastalSegment
 export MeasureLabels
 export Branching
 export BayesianTracking, TrackMeasures
@@ -190,6 +192,7 @@ include("tasks/cleanupImages/smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")
+include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/tracking/bayesian_tracking.jl")

@@ -1,4 +1,7 @@
 import TOML
+# config.jl is included before utils.jl (which also imports it), so declare it here rather than
+# relying on a later include having bound the name by the time a body first runs.
+import JSON3
 
 const _DEFAULT_CONF_PATH = joinpath(@__DIR__, "..", "config.toml")
 const _DOTENV_PATH       = joinpath(@__DIR__, "..", "..", ".env")
@@ -193,6 +196,95 @@ function list_cellpose_models(dev_dir::Union{String,Nothing} = nothing)::Vector{
             push!(out, (name = name, label = "$(name) ($(tag))", source = tag))
             push!(seen, name)
         end
+    end
+    out
+end
+
+# ── Coastal (optical-flow) models ──────────────────────────────────────────────
+# The same drop-in vault as cellpose above, one directory over: `<config_dir>/models/coastalModels/`.
+# It is deliberately NOT a per-project store — a model trained on one movie is meant to be applied
+# across projects (Dominik: *"in config like the cellpose vault. to use it across projects"*).
+#
+# Two differences from cellpose, both consequences of coastal having no built-in models:
+#   * there is nothing bundled and nothing built in, so an empty vault means an empty picker — the
+#     user must train a model on the Optical Flow page first;
+#   * a model is a PAIR: `<name>.pt` plus a `<name>.json` manifest recording the metric set,
+#     temporal scales, cumulative window, source image and channel. Inference must use the metric
+#     set the model was trained on, and coastal fails SILENTLY when it does not (channels shift and
+#     the zero-fill lands at the end), so the manifest is not documentation — it is what
+#     `CoastalUtils` configures itself from.
+#
+# Consequence to accept knowingly: config-dir models do not travel with a `.ccbundle` export, so a
+# shared project references a model the recipient does not have. The task fails loudly on a missing
+# model rather than falling back to an untrained one.
+# See `docs/todo/COASTAL_SEGMENTATION_PLAN.md` decision 7.
+
+"""Absolute directory for user coastal models. Just a path — no I/O, no side-effects."""
+coastal_models_dir(dev_dir::Union{String,Nothing} = nothing)::String =
+    joinpath(config_dir(dev_dir), "models", "coastalModels")
+
+"""
+    coastal_model_path(name) -> String | Nothing
+
+Absolute path to a coastal checkpoint by filename, or `nothing` if it doesn't exist. Unlike
+[`cellpose_model_path`](@ref) there is no bundled fallback: coastal ships no models, so the user
+vault is the only location.
+"""
+function coastal_model_path(name::AbstractString,
+                            dev_dir::Union{String,Nothing} = nothing)::Union{String,Nothing}
+    s = strip(String(name))
+    isempty(s) && return nothing
+    isabspath(s) && isfile(s) && return s
+    p = joinpath(coastal_models_dir(dev_dir), s)
+    isfile(p) ? p : nothing
+end
+
+"""
+    coastal_model_manifest(name) -> Dict{String,Any}
+
+The `<name>.json` sidecar beside a checkpoint, or an empty Dict when there is none (a hand-dropped
+`.pt`). Parsed here rather than in Python because the picker label and `list_coastal_models` need
+it, and because the vault manager shows it without loading torch.
+"""
+function coastal_model_manifest(name::AbstractString,
+                                dev_dir::Union{String,Nothing} = nothing)::Dict{String,Any}
+    path = coastal_model_path(name, dev_dir)
+    isnothing(path) && return Dict{String,Any}()
+    sidecar = string(first(splitext(path)), ".json")
+    isfile(sidecar) || return Dict{String,Any}()
+    try
+        Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(sidecar, String)))
+    catch
+        # A corrupt manifest must not take the picker down with it; the model still lists, and
+        # `CoastalUtils` falls back to coastal's training defaults (and says so).
+        Dict{String,Any}()
+    end
+end
+
+"""
+    list_coastal_models() -> Vector{NamedTuple}
+
+Every coastal model in `<config_dir>/models/coastalModels/`, as `(name, label, source, manifest)`.
+Only `.pt` files count — the `.json` manifests sit beside them and are not separate entries.
+
+This is the enumeration `/api/tasks/definitions` uses to replace the (empty) static options list in
+`coastal.json`'s Model select, and the same list the Optical Flow page's vault manager renders.
+"""
+function list_coastal_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
+    out = NamedTuple[]
+    dir = coastal_models_dir(dev_dir)
+    isdir(dir) || return out
+    for name in sort!(readdir(dir))
+        startswith(name, ".") && continue
+        last(splitext(name)) == ".pt" || continue
+        isfile(joinpath(dir, name)) || continue
+        manifest = coastal_model_manifest(name, dev_dir)
+        # Label carries the one thing that decides whether a model fits an image: what it was
+        # trained on. Kept to a phrase — see docs/UI.md → *UI copy*.
+        ch = get(manifest, "channelName", nothing)
+        stem = first(splitext(name))
+        label = isnothing(ch) || isempty(string(ch)) ? stem : "$(stem) ($(ch))"
+        push!(out, (name = name, label = label, source = "user", manifest = manifest))
     end
     out
 end
