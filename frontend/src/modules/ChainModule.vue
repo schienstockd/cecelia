@@ -31,7 +31,8 @@ import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { isExcluded, includedUids } from '../utils/inclusion'
-import { START_ID, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
+import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
+import { layerLanes, layoutDag, LAYOUT_VARIANTS, type LayoutVariant } from '../utils/dagLayout'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -201,28 +202,8 @@ interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unk
 interface LiveTemplate { nodes: LiveTemplateNode[]; edges: { from: string; to: string }[] }
 const liveTemplate = ref<LiveTemplate | null>(null)
 
-// Topological order of node ids (Kahn) — the execution order used for the columns.
-function topoOrder(nodes: { id: string }[], edges: { from: string; to: string }[]): string[] {
-  const indeg = new Map(nodes.map(n => [n.id, 0]))
-  const succ  = new Map(nodes.map(n => [n.id, [] as string[]]))
-  for (const e of edges) {
-    if (!indeg.has(e.to) || !succ.has(e.from)) continue
-    indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1)
-    succ.get(e.from)!.push(e.to)
-  }
-  const q = nodes.filter(n => (indeg.get(n.id) ?? 0) === 0).map(n => n.id)
-  const out: string[] = []
-  while (q.length) {
-    const id = q.shift()!
-    out.push(id)
-    for (const c of succ.get(id) ?? []) {
-      indeg.set(c, indeg.get(c)! - 1)
-      if (indeg.get(c) === 0) q.push(c)
-    }
-  }
-  for (const n of nodes) if (!out.includes(n.id)) out.push(n.id)  // cycle safety
-  return out
-}
+// topoOrder + the layer/lane maths live in utils/dagLayout.ts — one geometry for the Live grid and the
+// Edit canvas. See its header for why the editor needs it at all.
 
 // Template (column order + edges) for the selected run. A persisted run carries its own FROZEN
 // template (nodes/edges from run.json); a live run fetches the current template by chain name.
@@ -278,23 +259,7 @@ const liveLayout = computed(() => {
     nodes = [...taskNodeIds].map(id => ({ id, fn: '' }))
     edges = []
   }
-  const order = topoOrder(nodes, edges)
-  const preds = new Map(nodes.map(n => [n.id, [] as string[]]))
-  for (const e of edges) preds.get(e.to)?.push(e.from)
-  const layer = new Map<string, number>()
-  for (const id of order) {
-    const ps = preds.get(id) ?? []
-    layer.set(id, ps.length ? Math.max(...ps.map(p => layer.get(p) ?? 0)) + 1 : 0)
-  }
-  const perLayer = new Map<number, number>()
-  const lane = new Map<string, number>()
-  for (const id of order) {
-    const L = layer.get(id)!
-    const k = perLayer.get(L) ?? 0
-    lane.set(id, k)
-    perLayer.set(L, k + 1)
-  }
-  const bandLanes = Math.max(1, ...perLayer.values())
+  const { layer, lane, maxLane: bandLanes } = layerLanes(nodes, edges)
   const imageIds = [...new Set(tasks.map(t => t.imageUid))]
     .sort((a, b) => imageName(a).localeCompare(imageName(b)))
   return { tasks, edges, layer, lane, bandLanes, imageIds }
@@ -621,6 +586,10 @@ function applyTemplate(
   removeEdges(edges.value.map(e => e.id))
   selectedNodeId.value = null
 
+  // Computed once for the whole template, and only consulted where a saved position is missing — a
+  // chain the user has dragged is never re-laid-out. That's their spatial memory of their own pipeline.
+  const autoPos = layoutDag(tmpl.nodes, tmpl.edges.map(e => ({ from: e.from, to: e.to })))
+
   const newNodes: Node[] = tmpl.nodes.map((n, i) => {
     const def = allTaskDefs.value.find(d => d.fun_name === n.fn)
     // Merge saved params over task-def defaults so nodes created before a param was added
@@ -632,7 +601,10 @@ function applyTemplate(
     return {
       id:       n.id,
       type:     n.scope === 'set' ? 'picnic' : 'task',
-      position: positions[n.id] ?? { x: 80 + i * 220, y: 120 },
+      // A template authored outside the whiteboard has no `positions` — lay its DAG out rather than
+      // stacking everything in one row, which hid a fan-out (see utils/dagLayout.ts). Per-node fallback
+      // so a partially-positioned file still places the nodes it does know about.
+      position: positions[n.id] ?? autoPos[n.id] ?? { x: 80 + i * 220, y: 120 },
       data: {
         fn:              n.fn,
         scope:           n.scope,
@@ -1149,6 +1121,33 @@ const selectedNodePoolFromTask = computed(() => {
   return allTaskDefs.value.find(d => d.fun_name === fn)?.resource_pool ?? ''
 })
 
+// ── Auto-layout ───────────────────────────────────────────────────────────────
+// Re-tidies the current canvas on demand. Distinct from the automatic layout in applyTemplate: that one
+// only fills in positions a template never had, while this deliberately OVERWRITES what's there — so it
+// stays a button the user presses, never something that happens to a canvas they arranged. Not saved
+// either: ↻ (reload from disk) restores the previous arrangement as long as they haven't hit Save.
+const layoutMenuOpen = ref(false)
+const layoutBtnEl = ref<HTMLElement | null>(null)
+
+function applyAutoLayout(variant: LayoutVariant) {
+  layoutMenuOpen.value = false
+  // The start dot isn't a task node and has no place in the DAG; keep it where the user put it.
+  const taskNodes = nodes.value.filter(n => !isStartId(n.id))
+  if (!taskNodes.length) return
+  const pos = layoutDag(
+    taskNodes.map(n => ({ id: n.id })),
+    edges.value.filter(e => !touchesStart({ source: e.source, target: e.target }))
+      .map(e => ({ from: e.source, to: e.target })),
+    variant.direction,
+    variant.spec,
+  )
+  for (const n of taskNodes) {
+    const p = pos[n.id]
+    if (p) updateNode(n.id, { position: p })
+  }
+  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'whiteboard' })
+}
+
 // The ↻ button. It used to reload only the ACTIVE chain's content, which is not what its label says and
 // not what someone reaching for it wants: the user who first hit a Claude-authored chain pressed this
 // to make it appear and it couldn't, because the list was never re-read. Both, in list-then-content
@@ -1321,7 +1320,8 @@ onActivated(async () => {
           </select>
           <span v-else class="no-chains-hint cc-muted">No chains yet</span>
         </div>
-        <div class="chain-bar-actions">
+        <!-- One joined group for acting on the chain FILE (new / rename / delete)… -->
+        <div class="chain-bar-actions cc-btn-group">
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             @click="openNameInput('create')"
@@ -1342,6 +1342,11 @@ onActivated(async () => {
             title="Delete this chain template from disk."
             armed-title="Click again to permanently delete this chain"
             @confirm="removeChain" />
+        </div>
+        <!-- …and one for acting on THIS canvas. Two joined groups rather than seven free-floating
+             icons: the palette is 190px, so a flat row of gapped buttons ran out of width the moment a
+             seventh was added. Grouping also says which buttons belong together. -->
+        <div class="chain-bar-actions cc-btn-group">
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || hasStartNode"
@@ -1350,6 +1355,25 @@ onActivated(async () => {
           >
             <i class="pi pi-circle-fill" />
           </button>
+          <button
+            ref="layoutBtnEl"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :class="{ 'qc-on': layoutMenuOpen }"
+            :disabled="!activeChain || !nodes.length"
+            @click="layoutMenuOpen = !layoutMenuOpen"
+            v-tooltip.right="'Tidy the layout — re-positions the nodes (not saved until you Save)'"
+          >
+            <i class="pi pi-sitemap" />
+          </button>
+          <TeleportPopover v-model="layoutMenuOpen" :anchor="layoutBtnEl" placement="bottom-start">
+            <div class="layout-menu">
+              <button v-for="v in LAYOUT_VARIANTS" :key="v.id"
+                class="cc-btn cc-btn-bare layout-menu-item"
+                @click="applyAutoLayout(v)">
+                <i :class="['pi', v.icon]" /> {{ v.label }}
+              </button>
+            </div>
+          </TeleportPopover>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
@@ -1770,11 +1794,25 @@ onActivated(async () => {
   width: 100%;
 }
 
+/* Two `.cc-btn-group` strips (chain-file actions | canvas actions), stacked by `.chain-bar`'s column.
+   `.cc-btn-group` already supplies the joined border, zero gaps and `inline-flex`; all this adds is
+   hugging the content instead of stretching to the full 190px palette width. Seven gapped buttons on
+   one line had run out of room. */
 .chain-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
+  align-self: flex-start;
 }
+
+/* Layout menu — a short list of ACTIONS in a popover. Not a ChipSelect: each row fires an action and
+   none of them persists as a selection (docs/UI.md → UX primitive catalog). */
+.layout-menu { display: flex; flex-direction: column; min-width: 11rem; }
+.layout-menu-item {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--cc-radius-md);
+}
+.layout-menu-item:hover { background: var(--cc-surface-2); }
 
 .chain-select {
   flex: 1;
