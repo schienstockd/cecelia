@@ -327,7 +327,15 @@ function api_image_stores(req::HTTP.Request)
             if !isnothing(c)
                 entry["label"]   = c.label;  entry["codec"]   = c.codec
                 entry["level"]   = c.level;  entry["shuffle"] = c.shuffle
+                # What FORMAT this store is, alongside how it is compressed. Both zarr v2 and v3 will
+                # coexist on disk indefinitely (no converter — ZARR_V3_PLAN D7), so "which is this?"
+                # has to be answerable from the UI rather than by reading zarr.json in a terminal.
+                # `shard` is null for an unsharded store, which is every v2 one.
+                entry["zarrFormat"] = c.zarrFormat
+                entry["chunks"]     = c.chunks
+                entry["shard"]      = c.shard
             end
+            isdir(zp) && (entry["ngffVersion"] = ngff_version(zp))
             out[vn] = entry
         end
     end

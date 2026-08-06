@@ -973,6 +973,23 @@ end
         # label sets are sized too, summed across the value_name's files
         @test d.labels.A.bytes >= 12_000
 
+        # Layout, not just codec: v2 and v3 stores coexist on disk permanently (no converter —
+        # ZARR_V3_PLAN D7), so the modal has to be able to say which a store is and how it is chunked.
+        # `shard` is present-and-null for an unsharded store rather than absent: "not sharded" and "we
+        # could not read it" are different answers and the readout distinguishes them.
+        # This fixture's `.zarray` is hand-written with only a `compressor` and no NGFF attrs, so
+        # `ngffVersion`/`chunks` are legitimately empty here — the point asserted is that the fields are
+        # REPORTED (the modal renders what it gets). Real values are asserted against the ZARRFMT
+        # fixtures in *"API: zarr v2 and v3 read identically"*, which are real bioformats2raw stores.
+        @test d.versions.default.zarrFormat == 2
+        @test isnothing(d.versions.default.shard)
+        @test haskey(d.versions.default, :ngffVersion)
+        @test haskey(d.versions.default, :chunks)
+        # the unreadable store carries none of them, same as its codec fields
+        for k in (:zarrFormat, :ngffVersion, :chunks, :shard)
+            @test !haskey(d.versions.cpCorrected, k)
+        end
+
         @test api_image_stores(HTTP.Request("GET", "/api/images/stores"))[1] == 400
         @test api_image_stores(
             HTTP.Request("GET", "/api/images/stores?projectUid=NOPE&imageUid=NOPE"))[1] == 404
@@ -3178,6 +3195,11 @@ end
 
         # store_compression reports the format, and chunk-vs-shard the right way round. The v3 fixture
         # is sharded with shard != chunk ON PURPOSE — with equal values this assertion cannot fail.
+        # the NGFF spec version each store declares — a different question from the zarr format, and
+        # both are shown side by side in the metadata modal
+        @test ngff_version(v2) == "0.4"
+        @test ngff_version(v3) == "0.5"
+
         c2 = store_compression(v2); c3 = store_compression(v3)
         @test c2.zarrFormat == 2 && isnothing(c2.shard)
         @test c3.zarrFormat == 3

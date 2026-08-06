@@ -99,6 +99,29 @@ function ngff_multiscales(group_dir::AbstractString)
 end
 
 """
+OME-NGFF spec version a store declares (e.g. `"0.4"`, `"0.5"`), or `nothing` when it declares none.
+
+Not the same question as the ZARR format, and the two are not interchangeable even though they move
+together in practice: the zarr format is how the bytes and metadata files are laid out, the NGFF
+version is which image-metadata spec those attributes follow. Reported side by side in the image
+metadata modal so "what is this store?" is answerable without opening a terminal.
+
+0.5 carries it on the `ome` group attribute (which `ngff_group_attrs` has already unwrapped by the
+time we see it); 0.4 and earlier carry it per-multiscales-entry.
+"""
+function ngff_version(zarr_path::AbstractString)
+    base  = series_base(zarr_path)
+    attrs = ngff_group_attrs(base)
+    isnothing(attrs) && return nothing
+    v = get(attrs, :version, nothing)                     # NGFF 0.5 (on the `ome` attribute)
+    isnothing(v) || return string(v)
+    ms = get(attrs, :multiscales, nothing)                # NGFF 0.4 and earlier (per entry)
+    (isnothing(ms) || isempty(ms)) && return nothing
+    mv = get(first(ms), :version, nothing)
+    isnothing(mv) ? nothing : string(mv)
+end
+
+"""
 Metadata of a zarr ARRAY directory (`shape`, `chunks`, dtype/codecs), for either format — `.zarray`
 (v2) or `zarr.json` (v3). `nothing` when unreadable. Both carry `shape`, so a caller that only needs
 the extent can treat them alike; anything format-specific must branch explicitly.
