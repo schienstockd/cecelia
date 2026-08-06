@@ -371,6 +371,28 @@ def ngff_attrs(attrs):
     return inner if isinstance(inner, dict) else attrs
 
 
+def write_ngff_attrs(group, updates):
+    """Merge `updates` into a group's NGFF attributes, **where THIS store keeps them**.
+
+    The write-side twin of `ngff_attrs`. NGFF 0.5 nests everything under `ome`, so writing
+    `group.attrs['multiscales']` on a v3 store puts it at the top level where no reader looks — the
+    store would keep whatever multiscales it already had and silently ignore the update. That is the
+    failure mode for a calibration RE-stamp (`resync_ome_meta!` / `sync_zarr_calibration!`, and
+    `write_calibration` here): the numbers appear to have been written and are not there, which
+    `CLAUDE.md` → *Calibration — three copies, one stamp* exists to prevent.
+
+    Detected from the store's own zarr format rather than a flag, so a caller never has to know.
+    """
+    if _group_format(group) >= 3:
+        existing = dict(group.attrs.get('ome') or {})
+        existing.setdefault('version', '0.5')
+        existing.update(updates)
+        group.attrs['ome'] = existing
+    else:
+        for k, v in updates.items():
+            group.attrs[k] = v
+
+
 def ngff_multiscales(group):
     """The ``multiscales`` list of a zarr group, or ``None`` — version-agnostic (see `ngff_attrs`)."""
     try:
@@ -537,9 +559,10 @@ def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
 
     ms0["axes"] = axes
     ms0["datasets"] = new_datasets
-    g.attrs["multiscales"] = [ms0] if isinstance(ms, list) or ms is None else ms0
+    updates = {"multiscales": [ms0] if isinstance(ms, list) or ms is None else ms0}
     if channels:
-        g.attrs["omero"] = {"channels": [{"label": str(c), "active": True} for c in channels]}
+        updates["omero"] = {"channels": [{"label": str(c), "active": True} for c in channels]}
+    write_ngff_attrs(g, updates)      # v2 top level, v3 under `ome` — see write_ngff_attrs
     return True
 
 
@@ -927,7 +950,7 @@ def write_calibration(path, dim_utils, axes=None):
     built = multiscales_metadata(store_axes, nscales, scale_for_axis=scale_for_axis,
                                  keyword=keyword, unit_for_axis=unit_for_axis)[0]
     g = zarr.open_group(series_base(path), mode='a')
-    g.attrs['multiscales'] = [{**ms, **built}]
+    write_ngff_attrs(g, {'multiscales': [{**ms, **built}]})   # v3 keeps these under `ome`
 
     # OME-XML half — only the calibration attrs; the rest of the sidecar (channels, planes) is the
     # source's and stays untouched.

@@ -228,10 +228,11 @@ The `store_compressor` convention detector was correctly failing on all of this 
 `compressors=` and `**_codec_kwargs(...)`, and polices the v3 codec classes — re-verified by mutation
 that it still catches an uncovered `create_array`.
 
-Still open: `write_calibration` / `set_ngff_axes` / `write_valid_box` write NGFF metadata for **v2
-only**, so a v3 store gets its calibration on creation but a later re-stamp
-(`resync_ome_meta!` / `sync_zarr_calibration!`) would write it to the wrong place. That is the last
-write-side gap and it is the risky one (`CLAUDE.md` → *Calibration — three copies, one stamp*).
+Calibration re-stamps land correctly in both formats via `write_ngff_attrs` — the write-side twin of
+`ngff_attrs`. This was the risky gap: writing `attrs['multiscales']` on a v3 store puts it at the top
+level where **no reader looks**, so the store keeps its OLD multiscales and the update is silently
+ignored — the numbers appear written and are not there (`CLAUDE.md` → *Calibration — three copies, one
+stamp*). Mutation-verified: reverting to the naive top-level write fails both new tests.
 
 ### Phase 3 — Write (original scope)
 

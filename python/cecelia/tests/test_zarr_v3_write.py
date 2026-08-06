@@ -200,5 +200,49 @@ class InheritFormatTest(unittest.TestCase):
             self.assertEqual(fmt, zarr_utils.store_format(out), f'crop of a v{fmt} source')
 
 
+class CalibrationRestampTest(unittest.TestCase):
+    """A calibration RE-stamp must land where the store actually keeps its NGFF attributes.
+
+    This is the dangerous one. Writing `attrs['multiscales']` on a v3 store puts it at the top level,
+    where no reader looks — the store keeps its OLD multiscales and the update is silently ignored. The
+    numbers appear written and are not there (CLAUDE.md → *Calibration — three copies, one stamp*).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dark, self.arr, self.du = _fixture()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_restamp_is_readable_back_in_both_formats(self):
+        for fmt in (2, 3):
+            p = os.path.join(self.tmp, f'restamp{fmt}.ome.zarr')
+            zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=fmt)
+            ok = zarr_utils.set_ngff_axes(p, ['t', 'c', 'z', 'y', 'x'],
+                                          scale={'t': 7.0, 'c': 1.0, 'z': 9.0, 'y': 0.25, 'x': 0.25},
+                                          units={'t': 'second', 'z': 'micrometer',
+                                                 'y': 'micrometer', 'x': 'micrometer'})
+            self.assertTrue(ok, f'v{fmt} restamp reported failure')
+            scale = zarr_utils.read_scale(p)
+            self.assertIsNotNone(scale, f'v{fmt}: restamped scale is unreadable')
+            self.assertAlmostEqual(0.25, float(scale[-1]), places=6,
+                                   msg=f'v{fmt}: restamp did not land where readers look')
+            self.assertEqual(7.0, zarr_utils.read_time_increment(p), f'v{fmt} t interval')
+
+    def test_a_v3_restamp_leaves_no_stale_top_level_copy(self):
+        # the specific silent failure: a top-level `multiscales` on a v3 store is invisible to readers,
+        # so a writer that put it there would leave the OLD values in force under `ome`
+        import zarr
+        p = os.path.join(self.tmp, 'v3clean.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=3)
+        zarr_utils.set_ngff_axes(p, ['t', 'c', 'z', 'y', 'x'],
+                                 scale={'t': 1.0, 'c': 1.0, 'z': 1.0, 'y': 0.75, 'x': 0.75})
+        attrs = dict(zarr.open_group(zarr_utils.series_base(p), mode='r').attrs)
+        self.assertIn('ome', attrs)
+        self.assertNotIn('multiscales', attrs, 'v3 must not carry a top-level multiscales copy')
+        self.assertAlmostEqual(0.75, float(zarr_utils.read_scale(p)[-1]), places=6)
+
+
 if __name__ == '__main__':
     unittest.main()
