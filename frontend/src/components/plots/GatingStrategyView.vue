@@ -185,7 +185,7 @@ defineExpose({ exportImage, exportSvg })
 
 <template>
   <div class="gs-view">
-    <div class="gs-bar cc-panel-controls">
+    <div class="gs-bar cc-row cc-panel-controls">
       <select v-if="imageUids.length > 1" :value="imageUid" @change="setImageUid(($event.target as HTMLSelectElement).value)"
               v-tooltip.bottom="'Image'">
         <option v-for="u in imageUids" :key="u" :value="u">{{ u }}</option>
@@ -230,8 +230,7 @@ defineExpose({ exportImage, exportSvg })
 <style scoped>
 /* position: relative so the overlaid .gs-bar (.cc-panel-controls) anchors to the plot box, not the panel */
 .gs-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.gs-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap;
-  font-size: var(--cc-fs-sm); }
+.gs-bar { padding: 6px 8px; font-size: var(--cc-fs-sm); }
 .gs-bar select { max-width: 9rem; }
 /* ⚙ options popover (hierarchy toggle). margin-left:auto pins the gear to the far right so the popover —
    anchored right:0 — always opens LEFTWARD into the panel and is never clipped at the left edge. */

@@ -27,7 +27,7 @@ read these; do not re-derive one by grep.
 
 | Detector | In | Owns | Bar |
 |---|---|---|---|
-| `findReimplementedScenarios` | `cssScenarios.ts` | scoped rules re-declaring `.cc-muted`/`.cc-empty`/`.cc-eyebrow` | exact list — currently **empty** |
+| `findReimplementedScenarios` | `cssScenarios.ts` | scoped rules re-declaring `.cc-muted`/`.cc-empty`/`.cc-eyebrow`/`.cc-row` | exact list — currently **empty** |
 | `findScopedUtilityOverride` + `utilityRules` | `cssScenarios.ts` | a scoped rule whose selector *is* a global `.cc-*` utility, re-stating a property it declares | must be empty (no allow-list — composition is legal by construction) |
 | `findShadowedUtilities` | `cssScenarios.ts` | a text utility that another class on the SAME element beats on the utility's own role properties, so it does nothing | exact list (9 deliberate overrides, each with its reason) |
 | `findHandRolledIconButtons` | `cssScenarios.ts` | an icon-only `<button>` not built from `.cc-btn` | exact list (2 full-height strip exemptions) |
@@ -56,6 +56,47 @@ are easy to break:
 **The scenario backlog is zero** — ~310 → 132 → 90 → **0** — and the ratchet is an exact empty list
 rather than a shrinking per-file count. New divergence fails immediately, and there is no longer a
 backlog for it to hide in. What follows is the standing not-doing list, not open work.
+
+## The wrapping control row (`.cc-row`) — extracted 2026-08
+
+Measured first, because the previous sweeps taught that a grep count is wrong every time. Across all
+`.vue` files there were **30** rules with `display:flex` + `flex-wrap:wrap`. Classified:
+
+| Group | n | What happened |
+|---|---|---|
+| Wrapping row, `align-items: center` | 19 | **Migrated** to `.cc-row` (+ `-tight`/`-loose`) |
+| Wrapping row, alignment UNSTATED — chip lists, legends, button rows | 7 | **Migrated too** (see below) |
+| Deliberately aligned otherwise | 4 | Not this scenario |
+
+The 26 between them used **17 different gap values, 2.4px to 14.4px**. Nobody chose those against each
+other; each was chosen once, alone. Two-dimensional gaps in four of them (`0.25rem 0.5rem`, `0.4rem
+0.6rem`, `0.15rem 0.5rem`, `1px 8px`) had independently discovered the same thing — a wrapped row wants
+its LINES closer than its items — so the base bakes that in rather than leaving it to be rediscovered.
+
+**One family, and the boundary is the rule's own declaration.** The first pass migrated only the 19 that
+already centred, on the reasoning that adopting `.cc-row` elsewhere would change alignment rather than
+just gap. That was too cautious: the chip lists, legends and button rows never said `align-items`
+because their items are uniform height, so centring is a no-op until the row wraps — where it is the
+improvement. They are the same scenario and now say so. What stays out is the four rules that align
+deliberately, and each is excluded **by what it declares**, not by a path:
+
+| Rule | Declares | Why it is not a `.cc-row` |
+|---|---|---|
+| `.log-entry` | `align-items: baseline` | a log LINE — the timestamp sits on the text baseline |
+| `.tab-bar` | `align-items: stretch` | tabs fill the bar's height; `TabbedCanvas` is its own primitive |
+| `.run-row` | `align-items: stretch` | the two halves stretch to match |
+| `.mp-head` | `justify-content: space-between` | a page header laying out title vs controls, not a row of items |
+
+A path allow-list rots; an exclusion the rule states about itself cannot. Re-measured after the sweep:
+**30 → 4**, and every survivor is one of those four.
+
+**Not swept: the `inline-flex + center + gap` pairing** (~10 sites). Two were genuine wrap units inside a
+migrated row and adopted `.cc-row-group` (`PlateBuilder`'s `.pb-num`, and the movie/title-card groups
+that motivated it); one was dead (`AnimationModule`'s `.anim-fps`, orphaned when the shared control
+replaced its inline fps row) and was deleted. The rest are not wrap units at all — `CcToggle` and
+`ChipSelect` are components, `.svc-pill` is a pill, `.preview-warn`/`.co-terminal-done` are icon+text
+carrying their own severity colour. Same n=2 trap described below: at that sample a real axis and an
+accident of two files are indistinguishable.
 
 ## Deliberately not extracted
 

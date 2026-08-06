@@ -171,10 +171,16 @@ export const useSettingsStore = defineStore('settings', () => {
     // the user can override the default palette; these win over pop/default when colouring. Per-column
     // so different colour-by columns keep independent schemes.
     colourByOverrides?: Record<string, Record<string, string>>
-    // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate.
-    // Per-set like the other viewer prefs. A `scale` supersample lived here and was removed (see
-    // MovieOutputControls.vue); an older prefs file may still carry the key, and it is simply unread.
-    movie?: { fps?: number; titleCard?: TitleCardCfg }   // titleCard: Phase H (H3)
+    // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate;
+    // sizeX/sizeY = output pixels, absent/null = the napari canvas size. Per-set like the other viewer
+    // prefs. A `scale` supersample lived here and was removed (see MovieOutputControls.vue); an older
+    // prefs file may still carry the key, it is simply unread, and the name is deliberately NOT reused —
+    // a stale 1-3 multiplier must never be read as a pixel width.
+    // `suffix` is a filename addition (a movie is named after the IMAGE, so the corrected version and
+    // the raw import would collide). null = never set, so the UI's version-derived default applies;
+    // '' = deliberately cleared, which must survive a reload.
+    movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
+              titleCard?: TitleCardCfg }
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
     // napari each time since a region is image-specific). Only the ranges persist, like other prefs.
     cropZ?: { lo?: number; hi?: number }
@@ -226,12 +232,19 @@ export const useSettingsStore = defineStore('settings', () => {
     delete all[column]
     _patchSet(setUid, { colourByOverrides: all })
   }
-  // timelapse-recording params (per set); defaults match the backend (fps 15)
-  const getMovieConfig = (setUid: string): { fps: number; titleCard: TitleCardCfg } => ({
+  // timelapse-recording params (per set); defaults match the backend (fps 15, size = canvas)
+  const getMovieConfig = (setUid: string): {
+    fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
+  } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
+    sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
+    sizeY: _setPrefs.value[setUid]?.movie?.sizeY ?? null,
+    suffix: _setPrefs.value[setUid]?.movie?.suffix ?? null,
     titleCard: _setPrefs.value[setUid]?.movie?.titleCard ?? { ...TITLE_CARD_DEFAULT },
   })
-  function setMovieConfig(setUid: string, patch: { fps?: number; titleCard?: TitleCardCfg }) {
+  function setMovieConfig(setUid: string,
+                          patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
+                                   suffix?: string | null; titleCard?: TitleCardCfg }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)

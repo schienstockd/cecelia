@@ -26,18 +26,22 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 </script>
 
 <template>
-  <div class="tc">
+  <div class="tc cc-row">
     <CcToggle
       :model-value="modelValue.enabled"
       label="Title card"
       v-tooltip.bottom="'Prepend a slide with the image name, attributes, channels and their colours'"
       @update:model-value="v => patch({ enabled: v })" />
     <template v-if="modelValue.enabled">
-      <input type="range" min="1" max="10" step="1" class="tc-range"
-             :value="modelValue.durationSec"
-             v-tooltip.bottom="'How long the title card shows'"
-             @input="setDuration(($event.target as HTMLInputElement).valueAsNumber)" />
-      <span class="tc-dur cc-readout">{{ modelValue.durationSec }}s</span>
+      <!-- slider + its readout are ONE wrap unit (`.cc-row-group`): the panel is narrow enough that
+           they would otherwise split across lines and read as an orphan number -->
+      <span class="cc-row-group">
+        <input type="range" min="1" max="10" step="1" class="tc-range"
+               :value="modelValue.durationSec"
+               v-tooltip.bottom="'How long the title card shows'"
+               @input="setDuration(($event.target as HTMLInputElement).valueAsNumber)" />
+        <span class="tc-dur cc-readout">{{ modelValue.durationSec }}s</span>
+      </span>
       <input type="text" class="tc-note cc-input-xs" placeholder="note (optional)"
              :value="modelValue.note" v-tooltip.bottom="'Second line on the title card'"
              @input="patch({ note: ($event.target as HTMLInputElement).value })" />
@@ -46,9 +50,9 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 </template>
 
 <style scoped>
-.tc { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-.tc-range { width: 4.5rem; flex-shrink: 0; }
+.tc { min-width: 0; }
+.tc-range { width: 4.5rem; flex: 1 1 3rem; min-width: 2.5rem; }
 .tc-dur { min-width: 1.6rem; }
 /* the note takes the leftover width where there is any, and wraps to its own line where there is not */
-.tc-note { flex: 1; min-width: 6rem; }
+.tc-note { flex: 1 1 8rem; min-width: 6rem; }
 </style>

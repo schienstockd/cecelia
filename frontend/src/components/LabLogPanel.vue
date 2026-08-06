@@ -263,7 +263,7 @@ async function dismissEntry(entry: LabLogEntry) {
     </div>
 
     <!-- controls in two slots: Cecelia (the app's own activity digest) | Claude (the AI assistant) -->
-    <div class="ll-toolbar">
+    <div class="ll-toolbar cc-row">
       <!-- Cecelia: manual capture + auto-on-open + the view toggle for its uid-based digest -->
       <div class="ll-tb-group">
         <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
@@ -417,10 +417,7 @@ async function dismissEntry(entry: LabLogEntry) {
 }
 .ll-save:disabled { opacity: 0.5; cursor: default; }
 
-.ll-toolbar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem;
-  padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
-}
+.ll-toolbar { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
 /* two control slots (Cecelia | Claude), each an inline row; the divider sits between them and the
    whole bar wraps as a unit when the panel is narrow (a group drops to the next line intact). */
 .ll-tb-group { display: inline-flex; align-items: center; gap: 0.5rem; }

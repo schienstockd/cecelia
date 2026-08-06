@@ -88,7 +88,7 @@ const copyCommand = () => copy(fallbackCommand.value)
     <!-- example prompts to try -->
     <div class="co-examples">
       <span class="co-examples-label cc-muted">Try asking</span>
-      <div class="co-chips">
+      <div class="co-chips cc-row cc-row-tight">
         <span v-for="(ex, i) in CLAUDE_EXAMPLES" :key="i" class="co-chip">{{ ex }}</span>
       </div>
     </div>
@@ -131,7 +131,7 @@ const copyCommand = () => copy(fallbackCommand.value)
 
 .co-examples { margin-top: 18px; }
 .co-examples-label { display: block; margin-bottom: 6px; }
-.co-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
 .co-chip {
   font-size: var(--cc-fs-sm); color: var(--cc-text); background: var(--cc-surface-2);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill); padding: 3px 10px;

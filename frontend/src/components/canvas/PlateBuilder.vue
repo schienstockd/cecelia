@@ -66,10 +66,10 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 
 <template>
   <div class="pb">
-    <div class="pb-head">
-      <label class="pb-num cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate columns'"><span>cols</span>
+    <div class="pb-head cc-row">
+      <label class="pb-num cc-row-group cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate columns'"><span>cols</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="cols" @change="cols = clamp(cols)" /></label>
-      <label class="pb-num cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate rows'"><span>rows</span>
+      <label class="pb-num cc-row-group cc-muted cc-fs-xs" v-tooltip.bottom="'Number of plate rows'"><span>rows</span>
         <input type="number" :min="MIN" :max="MAX" v-model.number="rows" @change="rows = clamp(rows)" /></label>
       <span class="pb-hint cc-muted cc-fs-2xs">drag to merge · click a merge to split</span>
     </div>
@@ -91,8 +91,7 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
 
 <style scoped>
 .pb { display: flex; flex-direction: column; gap: 8px; width: 15rem; }
-.pb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pb-num { display: inline-flex; align-items: center; gap: 4px; }
+
 .pb-num input { width: 3rem; padding: 2px 4px; }
 .pb-hint { flex-basis: 100%; opacity: 0.75; }
 /* the plate canvas: an A4-portrait-ish aspect so the preview reads like a page */

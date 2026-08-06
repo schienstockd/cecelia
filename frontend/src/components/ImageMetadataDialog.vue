@@ -120,7 +120,7 @@ const copy = (key: string, value: string) => copyValue(value, key)
 
       <section v-if="channels.length" class="md-section">
         <h4 class="md-h cc-eyebrow">Channels</h4>
-        <ol class="md-chips">
+        <ol class="md-chips cc-row cc-row-tight">
           <li v-for="(c, i) in channels" :key="i" class="md-chip">{{ c }}</li>
         </ol>
       </section>
@@ -201,7 +201,7 @@ const copy = (key: string, value: string) => copyValue(value, key)
 .md-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .md-none { margin: 0; font-style: italic; }
 
-.md-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; counter-reset: ch; }
+.md-chips { list-style: none; margin: 0; padding: 0; counter-reset: ch; }
 .md-chip {
   font-size: var(--cc-fs-sm); color: var(--cc-text);
   background: var(--cc-surface-2); border: 1px solid var(--cc-border);

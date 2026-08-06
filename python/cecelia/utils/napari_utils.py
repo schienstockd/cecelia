@@ -652,6 +652,167 @@ def _visible_channel_legend(viewer):
   return out
 
 
+def canvas_size(viewer):
+  """The size a canvas-only screenshot of ``viewer`` comes out at, as ``(height, width)`` in OUTPUT
+  pixels — i.e. the size a movie is recorded at when no explicit size is asked for. None if it can't be
+  read (a headless/duck-typed viewer).
+
+  Read off the CANVAS widget, not ``viewer._canvas_size``: that model field is only refreshed by a
+  resize event, so before the first one it still holds napari's ``(800, 600)`` default — which is
+  ``(width, height)`` while everything else here is ``(height, width)``. Trusting it reports a
+  TRANSPOSED size for a viewer that hasn't been resized yet, and a transposed placeholder is worse than
+  none. ``VispyCanvas.size`` is documented ``(height, width)`` and always current.
+
+  Then multiply by the device-pixel ratio: the canvas size is in LOGICAL pixels, while a screenshot
+  renders the GL framebuffer, which is ``logical × devicePixelRatio`` (the same arithmetic napari's own
+  ``resize_canvas`` does in reverse). On a HiDPI display those differ by 2×, so the logical size would be
+  wrong on exactly the machines people edit figures on.
+  """
+  try:
+    qt = viewer.window._qt_viewer                    # no public accessor for the canvas widget
+    h, w = (int(v) for v in qt.canvas.size)          # (height, width), as screenshot(size=) takes
+  except Exception:
+    return None
+  if h <= 0 or w <= 0:
+    return None
+  ratio = 1.0
+  for get in (qt.devicePixelRatio, _qt_screen_ratio):
+    try:
+      r = float(get())
+      if r > 0:
+        ratio = r
+        break
+    except Exception:
+      continue
+  return (int(round(h * ratio)), int(round(w * ratio)))
+
+
+def _qt_screen_ratio():
+  """The primary screen's device-pixel ratio — the fallback when the viewer's own widget can't say."""
+  from qtpy.QtGui import QGuiApplication
+  return QGuiApplication.primaryScreen().devicePixelRatio()
+
+
+_STALE_STAGING_S = 3600
+
+
+def _clear_stale_staging(path, older_than_s=_STALE_STAGING_S):
+  """Delete leftover `*.mp4.tmp.mp4` files beside ``path``. Best-effort, and it announces what it removes.
+
+  A cancelled or failed record cleans up after itself. This is for the case that cannot: the bridge
+  process being KILLED mid-render (napari force-quit, a machine going down), which runs no cleanup.
+  Such a file is invisible — `/api/movies` filters `.tmp.` out of the listing — and nothing sweeps it:
+  the `store-debris` patch walks DIRECTORIES in store locations, so a stray file in `movies/` is
+  outside it. Recording is serial on the one viewer, so no other record can own one of these; the age
+  guard is belt-and-braces.
+  """
+  import os
+  import time as _time
+  folder = os.path.dirname(path) or "."
+  try:
+    names = os.listdir(folder)
+  except OSError:
+    return
+  cutoff = _time.time() - older_than_s
+  for name in names:
+    if not name.endswith(".mp4.tmp.mp4"):
+      continue
+    full = os.path.join(folder, name)
+    try:
+      if os.path.getmtime(full) < cutoff:
+        os.remove(full)
+        print(f"[record] removed a leftover partial from a killed run: {name}", flush=True)
+    except OSError:
+      pass
+
+
+class RecordCancelled(Exception):
+  """A recording stopped because the user cancelled it. Carries the frames written before the stop.
+
+  An exception rather than a return value so no caller can mistake a cancelled render for a finished
+  one — the title card must not be prepended, and the staged file must not be promoted."""
+
+  def __init__(self, frames):
+    super().__init__(f"recording cancelled after {frames} frame(s)")
+    self.frames = frames
+
+
+def _render_animation(viewer, anim, path, *, fps, canvas_only, size=None,
+                      on_progress=None, should_cancel=None):
+  """Write ``anim``'s interpolated frames to ``path`` (mp4), one frame at a time. Returns the frame count.
+
+  This is the loop napari-animation's ``animate()`` used to run for us. We own it for one reason: the
+  output size. ``animate()`` exposes only ``scale_factor``, which ``ndi.zoom``s the finished screenshot —
+  pixels without detail. napari's own ``Viewer.screenshot(size=…)`` re-renders the canvas at a requested
+  size, but ``FrameSequence.iter_frames`` never passes one, so the knob we want sits one layer below the
+  one we called. We keep napari-animation for the part worth having — keyframe INTERPOLATION — and do the
+  rendering ourselves. See docs/NAPARI.md.
+
+  ``size`` is ``(height, width)`` or None for the canvas size. **Apply the state first, screenshot
+  second** — that ordering is the whole feature. vispy holds the camera's world rect across a canvas
+  resize, so applying the keyframe at the live canvas size and THEN screenshotting at ``size`` keeps the
+  framing and raises the resolution. Resize the canvas first and each keyframe's ``camera.zoom`` is
+  reinterpreted against the bigger canvas: same magnification, wider field, black margins — a different
+  movie, and the failure would look like a bug in the keyframes.
+
+  ``on_progress(i, total)`` is called per frame (throttle in the caller — this loop does not) and
+  ``should_cancel()`` is polled per frame; a true reading raises ``RecordCancelled``. Together they are
+  what lets a single record behave like a batch on the task rail: a progress bar and a working Cancel.
+
+  **Staged**: frames go to a ``.tmp.mp4`` sibling, promoted onto ``path`` only once the last one is
+  written. A movie is named after the IMAGE, so a re-record targets the path of the previous one — write
+  in place and a cancel (or a crash) replaces a good movie with a file that has no moov atom and plays
+  nowhere. `/api/movies` already hides `.tmp.` names, and nothing sweeps them: the `store-debris` patch
+  walks directories in store locations only. Same scheme as ``title_card.prepend_title_to_movie``.
+  """
+  import os
+  from cecelia.utils.movie_io import coerce_movie_size, crop_to_even, movie_writer
+
+  states = _frame_sequence(anim)
+  hw, notes = coerce_movie_size(size)
+  for n in notes:
+    print(f"[WARN] {n}", flush=True)
+  if hw is not None and not canvas_only:
+    # napari applies `size` to the canvas render only; with the viewer chrome included it is ignored
+    # outright, so say so rather than writing a window-sized movie that claims to be the asked-for one.
+    print("[WARN] a movie size applies to canvas-only recordings — recording at the window size",
+          flush=True)
+    hw = None
+  shot = {"size": hw} if hw is not None else {}
+  total = len(states)
+  print(f"[record] {total} frames at {'x'.join(map(str, reversed(hw))) if hw else 'canvas size'}",
+        flush=True)
+
+  # The temp KEEPS the .mp4 extension — imageio infers the writer format from it, so `atomic_io`'s
+  # `x.mp4.tmp.<uid>` scheme can't be used (same reason, and same name, as the title-card prepend).
+  staging = f"{path}.tmp.mp4"
+  _clear_stale_staging(path)
+  written = 0
+  try:
+    with movie_writer(staging, fps) as out:
+      for i, state in enumerate(states):
+        if should_cancel is not None and should_cancel():
+          raise RecordCancelled(written)
+        state.apply(viewer)                     # the keyframe's framing, at the live canvas size
+        frame = viewer.screenshot(canvas_only=canvas_only, flash=False, **shot)
+        out.append_data(crop_to_even(frame))
+        written += 1
+        if on_progress is not None:
+          on_progress(written, total)
+        if written % 25 == 0:                   # the render can run for minutes; don't go silent
+          print(f"[record] {written}/{total}", flush=True)
+  except BaseException:
+    # Cancelled, or the render/encode died. Either way the staged file is unplayable and the previous
+    # movie at `path` is still intact — leave it that way.
+    try:
+      os.remove(staging)
+    except OSError:
+      pass
+    raise
+  os.replace(staging, path)                     # promote: the movie appears whole or not at all
+  return written
+
+
 def _maybe_prepend_title(viewer, path, title_card):
   """If a title card is enabled, prepend it to the just-recorded movie: add a Channels section read from
   the live viewer (unless the payload ALREADY carries one — the animation page supplies a union across
@@ -675,13 +836,17 @@ def _maybe_prepend_title(viewer, path, title_card):
 
 
 def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
-                     canvas_only=True, t_start=0, t_end=None, title_card=None):
+                     canvas_only=True, size=None, t_start=0, t_end=None, title_card=None,
+                     on_progress=None, should_cancel=None):
   """Record ``viewer``'s T-sweep (dims slider index ``t_axis_index``) from ``t_start``..``t_end``
   (default the full ``n_timepoints`` range) to ``path`` (an ``.mp4``), one frame per timepoint, at
-  ``fps``. ``canvas_only`` excludes the napari UI chrome; output is the canvas size (see
-  docs/todo/MOVIE_OUTPUT_SIZE_PLAN.md for why there is no resolution knob).
-  ``title_card`` (Phase H) optionally prepends a description slide after recording. Returns the number
-  of frames written. Raises ``ValueError`` for a single-timepoint stack. Ports the old R
+  ``fps``. ``canvas_only`` excludes the napari UI chrome. ``size`` is ``(height, width)`` in pixels, or
+  None for the napari canvas size (the default) — see ``_render_animation`` and
+  docs/NAPARI.md.
+  ``title_card`` (Phase H) optionally prepends a description slide after recording. ``on_progress(i,
+  total)``/``should_cancel()`` drive the task rail (see ``_render_animation``); a cancel raises
+  ``RecordCancelled`` and leaves the previous movie untouched. Returns the number of frames written.
+  Raises ``ValueError`` for a single-timepoint stack. Ports the old R
   ``generateMovies`` T-playback: two keyframes (first/last T) + linear slider interpolation."""
   n = int(n_timepoints)
   if n <= 1:
@@ -700,20 +865,22 @@ def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
   anim = Animation(viewer)
   _set_t(t0); anim.capture_keyframe()
   _set_t(t1); anim.capture_keyframe(steps=(t1 - t0))   # one interpolated frame per timepoint between
-  anim.animate(path, fps=int(fps), canvas_only=canvas_only)
+  frames = _render_animation(viewer, anim, path, fps=int(fps), canvas_only=canvas_only, size=size,
+                             on_progress=on_progress, should_cancel=should_cancel)
   _maybe_prepend_title(viewer, path, title_card)        # Phase H: optional description slide
-  return (t1 - t0) + 1
+  return frames
 
 
-def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, title_card=None):
+def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, size=None, title_card=None,
+                     on_progress=None, should_cancel=None):
   """Render an interpolated keyframe animation to ``path`` (mp4). Each keyframe carries a saved view
   state (``{"viewState": {...}, "steps": N}``); we apply it to ``viewer`` and capture it as a
   napari-animation keyframe with ``steps`` interpolated frames FROM the previous keyframe — so the
   movie tweens between views (camera pans/zooms, contrast/colour fades, T scrubbing). The first
   keyframe just starts the sequence (its ``steps`` is ignored). Needs ≥ 2 keyframes. The "super-simple
-  OpenShot" render path; see docs/todo/ANIMATION_PLAN.md (F2/H4). ``scale`` supersamples (2 = 2x
-  resolution), the same knob ``record_timelapse`` has. ``title_card`` (Phase H4) optionally prepends a
-  description slide. Returns the frame count."""
+  OpenShot" render path; see docs/todo/ANIMATION_PLAN.md (F2/H4). ``size`` is ``(height, width)`` or None
+  for the canvas size, as for ``record_timelapse`` (docs/NAPARI.md).
+  ``title_card`` (Phase H4) optionally prepends a description slide. Returns the frame count."""
   if len(keyframes) < 2:
     raise ValueError("record_keyframes needs at least 2 keyframes")
   Animation = _require_napari_animation()
@@ -722,11 +889,12 @@ def record_keyframes(viewer, path, keyframes, *, fps=15, canvas_only=True, title
     apply_view_state(viewer, kf.get("viewState") or {})
     steps = 15 if i == 0 else max(1, int(kf.get("steps", 15)))   # first keyframe: no in-transition
     anim.capture_keyframe(steps=steps)
-  anim.animate(path, fps=int(fps), canvas_only=canvas_only)
+  frames = _render_animation(viewer, anim, path, fps=int(fps), canvas_only=canvas_only, size=size,
+                             on_progress=on_progress, should_cancel=should_cancel)
   # Phase H4: the animation card carries its OWN Channels section (a union across all keyframes, built
   # by the frontend), so _maybe_prepend_title uses that and does not read the live viewer here.
   _maybe_prepend_title(viewer, path, title_card)
-  return sum(max(1, int(kf.get("steps", 15))) for kf in keyframes[1:]) + 1
+  return frames
 
 
 def _require_napari_animation():
@@ -739,3 +907,14 @@ def _require_napari_animation():
       "`pip install cecelia` does not include it."
     ) from e
   return Animation
+
+
+def _frame_sequence(anim):
+  """The interpolated frame states for ``anim`` — napari-animation's own interpolation, which is the
+  part of it we still want (see ``_render_animation`` for the part we replaced).
+
+  Built from the PUBLIC keyframe list rather than reaching for ``anim._frames``: same sequence, no
+  private attribute. States are interpolated lazily on indexing, so iterating stays one frame at a time.
+  A seam of its own (like ``_require_napari_animation``) so tests can stub it without importing napari."""
+  from napari_animation.frame_sequence import FrameSequence
+  return FrameSequence(anim.key_frames)

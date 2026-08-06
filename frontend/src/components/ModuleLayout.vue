@@ -383,7 +383,7 @@ const visibleUids = computed<string[]>(() =>
         <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="attr-filter">
           <div class="filter-row proc-row">
             <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
-            <div class="proc-controls">
+            <div class="proc-controls cc-row">
               <select v-model="procFun" class="proc-select"
                 v-tooltip.bottom="'Only show images this function has been run on'">
                 <option value="">any function…</option>
@@ -644,7 +644,7 @@ const visibleUids = computed<string[]>(() =>
 
 /* processed-with filter row (function picker + ever/last mode) — its own dropdown, no divider */
 .proc-row .filter-key { min-width: 104px; }
-.proc-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
 .proc-select {
   padding: 0.15rem 0.4rem;
   border-radius: var(--cc-radius-sm);

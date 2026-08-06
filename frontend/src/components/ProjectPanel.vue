@@ -347,7 +347,7 @@ function formatDate(iso: string | null): string {
            or import stays visible even when the controls are collapsed. -->
       <template v-if="tab === 'recent'">
         <div v-if="ioTask" class="pp-io pp-io-live">
-          <div class="pp-io-status cc-muted" :class="ioTask.status">
+          <div class="pp-io-status cc-row cc-muted" :class="ioTask.status">
             <span class="pp-io-label">{{ ioTask.label }}</span>
             <span class="pp-io-state">{{ ioTask.status }}</span>
             <div v-if="ioBusy" class="pp-io-bar">
@@ -363,7 +363,7 @@ function formatDate(iso: string | null): string {
         <CollapsibleSection label="Export / import project" :default-open="false"
                             storage-key="cc-pm-io-open" max-height="none">
           <div class="pp-io">
-            <div class="pp-io-dest">
+            <div class="pp-io-dest cc-row">
               <span class="dim cc-muted">Exports to</span>
               <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
               <button class="cc-btn cc-btn-ghost" :disabled="ioBusy" @click="browserMode = 'export'"
@@ -373,7 +373,7 @@ function formatDate(iso: string | null): string {
             </div>
             <p class="pp-io-hint dim cc-muted">Export a project to a portable <code>.ccbundle</code> with the
               <i class="pi pi-download" /> button on any row above. Import one below.</p>
-            <div class="pp-io-import">
+            <div class="pp-io-import cc-row">
               <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
                       @change="pickBundle(($event.target as HTMLSelectElement).value)"
                       v-tooltip.top="'Select a bundle from the export folder'">
@@ -516,17 +516,17 @@ function formatDate(iso: string | null): string {
 .pp-conflict-opts { margin: 0; padding-left: 1.1rem; }
 .pp-conflict-opts li { margin: 0.2rem 0; }
 
-.pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: var(--cc-fs-sm); flex-wrap: wrap; }
+.pp-io-dest { font-size: var(--cc-fs-sm); }
 .pp-io-destpath {
   font-family: var(--cc-mono); font-size: var(--cc-fs-xs); color: var(--cc-text);
   background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: var(--cc-radius-xs);
   max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin-right: auto;   /* push the Change button to the row's right edge (aligns with Import below) */
 }
-.pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
 .pp-io-select { flex: 1 1 180px; }
 .pp-io-path { flex: 2 1 180px; }
-.pp-io-status { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
 .pp-io-state { text-transform: uppercase; font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; }
 .pp-io-status.done  .pp-io-state { color: #34d399; }

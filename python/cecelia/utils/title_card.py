@@ -221,10 +221,12 @@ def prepend_title_to_movie(movie_path, content, *, duration_sec=3.0):
     # leftover from a killed run WOULD match a naive `*.mp4` directory listing, so `/api/movies`
     # filters `.tmp.` names out. See cecelia/utils/atomic_io.py for the general rule.
     tmp = movie_path + ".tmp.mp4"
-    # macro_block_size=1 keeps the card + source frames at their exact (even) dimensions — no resize,
-    # so the appended source frames always match the writer's frame size.
-    with imageio.get_writer(tmp, fps=fps, codec="libx264", quality=8,
-                            macro_block_size=1, pixelformat="yuv420p") as out, \
+    # The SHARED writer (`movie_io.movie_writer`) — the same one the recorders use, because this file is
+    # the card concatenated onto a recording and the two halves must encode identically. Its
+    # macro_block_size=1 keeps the card + source frames at their exact (even) dimensions — no resize, so
+    # the appended source frames always match the writer's frame size.
+    from cecelia.utils.movie_io import movie_writer
+    with movie_writer(tmp, fps) as out, \
             imageio.get_reader(movie_path) as r2:
         for _ in range(n):
             out.append_data(card)

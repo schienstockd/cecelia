@@ -15,7 +15,7 @@
 // them apart; ~60% of the matches wanted `.cc-btn`/`ChipSelect`/the global input base rather than
 // `.cc-card`. A check that wrong either gets ignored or grows an allow-list that stops meaning
 // anything, so card chrome stays a review-time rule in docs/UI.md.
-export type Scenario = 'muted' | 'empty' | 'eyebrow'
+export type Scenario = 'muted' | 'empty' | 'eyebrow' | 'row'
 
 export interface CssRule {
   selector: string
@@ -77,6 +77,31 @@ const TRACKING     = /letter-spacing:/
 // migrate to. Three rules (`.expand-icon`, `.fb-sc-icon`, `.search-wrap .pi-search`) were being flagged
 // with no correct answer to give them.
 const INTERACTIVE  = /cursor:|background(-color)?:|border(-\w+)?:|transition:|:hover|appearance:/
+
+// ── The wrapping control row ──────────────────────────────────────────────────────────────────────
+//
+// `display:flex` + `align-items:center` + `flex-wrap:wrap` + a gap IS `.cc-row`, spelled out. Measured
+// across the app before extracting: 19 rules, 14 different gap values, 2.4px to 14.4px — nobody chose
+// those against each other, they were each chosen once, alone.
+//
+// One family, and the membership rule is what keeps it narrow enough not to need an allow-list:
+//   • `flex-wrap: wrap` excludes every plain flex row in the app (by far the commoner shape).
+//   • a `gap` is what makes it a row of ITEMS rather than a single child.
+//   • alignment must be `center` or UNSTATED. Chip lists, legends and button rows never said
+//     `align-items` — their items are uniform height, so it read as "not needed" rather than as a
+//     decision, and they are the same scenario. A rule that deliberately aligns otherwise is not:
+//     `.log-entry` on `baseline`, `.tab-bar`/`.run-row` on `stretch`, `.mp-head` laying a page header
+//     out with `space-between`. Those four are excluded BY THEIR OWN declaration, so the exclusion
+//     cannot rot the way a path allow-list does.
+//   • `flex-direction: column` is a stack, not a row.
+// Chrome (padding/border/background) is deliberately NOT disqualifying: a toolbar composes
+// `class="ll-toolbar cc-row"` and keeps its own surface — only the layout half moves.
+const FLEX_ROW     = /display:\s*flex/
+const WRAPS        = /flex-wrap:\s*wrap/
+const OTHER_ALIGN  = /align-items:\s*(?!center)[\w-]+/
+const SPREAD       = /justify-content:\s*space-/
+const COLUMN       = /flex-direction:\s*column/
+const HAS_GAP      = /(^|[^-\w])gap:/
 const CONTROL_NAME = /(btn|button|toggle|tab|chip|input|select|gear|caret|swatch|icon|pi-)\b/i
 
 const isTextOnly = (rule: CssRule) =>
@@ -85,6 +110,7 @@ const isTextOnly = (rule: CssRule) =>
 /**
  * Which canonical utility this rule re-implements, if any.
  *
+ * - row     flex + wrap + a gap, aligned centre or not at all = `.cc-row` (+ a density modifier)
  * - muted   dim colour + a hard-coded size = `.cc-muted` (+ a density modifier)
  * - empty   an `*-empty*` selector re-declaring the dim colour = `.cc-empty*`
  * - eyebrow uppercase + tracking + dim = `.cc-eyebrow`
@@ -95,6 +121,11 @@ const isTextOnly = (rule: CssRule) =>
  */
 export function scenarioFor(rule: CssRule): Scenario | null {
   const { selector, body } = rule
+
+  // Layout, so it is checked before the text scenarios and does not care about `isTextOnly`.
+  if (has(body, FLEX_ROW) && has(body, WRAPS) && has(body, HAS_GAP) &&
+      !has(body, OTHER_ALIGN) && !has(body, SPREAD) && !has(body, COLUMN)) return 'row'
+
   if (!isTextOnly(rule) || !has(body, DIM_COLOUR)) return null
 
   if (has(body, UPPERCASE) && has(body, TRACKING)) return 'eyebrow'
@@ -118,6 +149,7 @@ export const SCENARIO_HINT: Record<Scenario, string> = {
   muted:   '.cc-muted + the step (-lg/-md/-xs/-2xs/-3xs), or .cc-readout for a numeric value',
   empty:   '.cc-empty (+ -inline / -overlay / -lg)',
   eyebrow: '.cc-eyebrow (+ -2xs / -3xs)',
+  row:     '.cc-row (+ -tight / -loose), composed with the rule\'s own chrome; .cc-row-group for a label+input that must not split',
 }
 
 // ── Scoped overrides of a global utility ──────────────────────────────────────────────────────────

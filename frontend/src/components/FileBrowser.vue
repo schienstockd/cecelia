@@ -139,7 +139,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
     <!-- shortcuts + breadcrumbs -->
     <template #toolbar>
-      <div v-if="shortcuts.length" class="fb-shortcuts">
+      <div v-if="shortcuts.length" class="fb-shortcuts cc-row cc-row-tight">
         <i class="pi pi-bookmark fb-sc-icon" />
         <button v-for="sc in shortcuts" :key="sc.path" class="fb-shortcut"
           @click="navigate(sc.path)"
@@ -147,7 +147,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           {{ sc.label }}
         </button>
       </div>
-      <div class="fb-breadcrumbs">
+      <div class="fb-breadcrumbs cc-row cc-row-tight">
         <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
           <span v-if="i > 0" class="crumb-sep">/</span>
           <button class="crumb" @click="navigate(crumb.path)"
@@ -278,22 +278,9 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 /* Shell (overlay/box/header/footer) lives in BaseModal; only browser-specific styles remain here. */
 
 /* breadcrumbs */
-.fb-breadcrumbs {
-  display: flex; align-items: center; gap: 0.15rem;
-  padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  font-size: var(--cc-fs-sm);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
+.fb-breadcrumbs { padding: 0.4rem 1rem; border-bottom: 1px solid var(--cc-border); font-size: var(--cc-fs-sm); background: var(--cc-surface-1); flex-shrink: 0; }
 /* shortcuts (home + mount points) */
-.fb-shortcuts {
-  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
-  padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-}
+.fb-shortcuts { padding: 0.4rem 1rem; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }
 .fb-sc-icon { font-size: var(--cc-fs-xs); color: var(--cc-text-dim); margin-right: 0.1rem; }
 .fb-shortcut {
   background: var(--cc-surface-2); border: 1px solid var(--cc-border); cursor: pointer;

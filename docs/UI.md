@@ -49,7 +49,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
 | Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
 | Pick ONE option where numbers decide it | `components/SelectionTable.vue` | a `<select>` that hides the trade-off, or an inline `<table>` |
-| Movie output options (fps + res) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:scale`) | a per-panel pair of sliders |
+| Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
@@ -75,6 +75,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
+| A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
+| A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
 | Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; + a `.cc-fs-*` step) | a bespoke `.*-val`/`.*-num` |
 | Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + a `.cc-fs-*` step) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |

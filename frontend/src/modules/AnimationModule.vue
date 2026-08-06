@@ -3,7 +3,8 @@
 // row/track matrix. Columns = keyframes (captured napari views + duration); rows = channels /
 // populations / camera, all INFERRED from each keyframe's viewState (layers by type + camera). Capture
 // establishes a base "look" (contrast/colormap/framing); add-keyframe copies it; a cell toggle overrides
-// that keyframe's layer.visible. Render interpolates between keyframes → mp4 (POST record-animation).
+// that keyframe's layer.visible. Render interpolates between keyframes → mp4 (WS `movie:record`, which
+// puts the render on the task rail with progress + Cancel).
 // The data model is just an ordered list of viewStates. See docs/todo/ANIMATION_PLAN.md (F2).
 import { ref, computed } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -11,6 +12,8 @@ import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
 import { useSettingsStore } from '../stores/settings'
+import { useTaskStore } from '../stores/tasks'
+import { useWsStore } from '../stores/ws'
 import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../utils/napariOverlays'
 import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
@@ -19,12 +22,18 @@ import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import TitleCardControls from '../components/TitleCardControls.vue'
 import MovieOutputControls from '../components/MovieOutputControls.vue'
+import { movieSizeParams } from '../utils/movieSize'
+import { useNapariStatus } from '../composables/useNapariStatus'
 
 const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
 const log = useLogStore()
 const anim = useAnimationStore()
 const settings = useSettingsStore()
+const tasks = useTaskStore()
+const ws = useWsStore()
+// the canvas size napari would record at, for the size fields' placeholder (shared poll)
+const { canvasSizeX, canvasSizeY } = useNapariStatus()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -233,13 +242,18 @@ async function render() {
       titleCard = await buildTitleCard(projectUid.value, openImageUid.value ?? '', union, openImage.value,
         { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides, includeChannels: true })
     }
-    const res = await fetch('/api/napari/record-animation', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, imageUid: openImageUid.value, keyframes, fps: anim.fps, titleCard }),
+    // Over the task rail (`movie:record` with keyframes), like the viewer's Record and the batch: the
+    // render shows up in the task list with a progress bar and a Cancel instead of blocking here.
+    const t = tasks.add({
+      module: 'animation', label: `Render ${openImage.value?.name ?? 'animation'}`,
+      imageUid: openImageUid.value ?? '', imageName: openImage.value?.name ?? '', status: 'queued',
+      taskName: 'movie.animation', funName: 'movie.animation', params: {}, projectUid: projectUid.value,
     })
-    const j = await res.json().catch(() => ({}))
-    if (!res.ok) { log.error(`Render failed: ${j?.error ?? res.status}`, { source: 'napari' }); return }
-    log.info(`Rendered ${j.frames ?? '?'} frames → ${j.path ?? 'movies/'}`, { source: 'napari' })
+    ws.send({
+      type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: openImageUid.value,
+      keyframes, fps: anim.fps, suffix: anim.suffix, titleCard, apiUrl: window.location.origin,
+      ...movieSizeParams(anim.sizeX, anim.sizeY),
+    })
   } catch (e) {
     log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
   } finally { rendering.value = false }
@@ -249,7 +263,8 @@ async function render() {
 <template>
   <ModulePage title="Animation" layout="scroll">
     <template #controls>
-      <MovieOutputControls v-model:fps="anim.fps" />
+      <MovieOutputControls v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
+                           v-model:suffix="anim.suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
       <TitleCardControls v-model="anim.titleCard" />
       <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
               v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
@@ -351,7 +366,6 @@ async function render() {
 </template>
 
 <style scoped>
-.anim-fps { display: inline-flex; align-items: center; gap: 0.4rem; }
 .anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }

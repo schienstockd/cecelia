@@ -13,7 +13,7 @@ const NAPARI_BRIDGE = joinpath(@__DIR__, "..", "..", "napari", "napari_bridge.py
 # argument, or a changed reply. Asserted equal by the "language boundaries agree on their protocol"
 # testset. Losing the window on a mismatch is recoverable — layer props and the T/Z position are
 # autosaved (`save_layer_props`), so a relaunch reopens where the user was.
-const NAPARI_PROTOCOL = 1
+const NAPARI_PROTOCOL = 2
 # Python interpreter comes from `python_bin_path()` (config default "python3"), resolved within
 # the activated Pixi env — i.e. launch via `pixi run`. No hardcoded venv path; see docs/SHIPPING.md.
 
@@ -285,14 +285,21 @@ preview_region(v::NapariViewer)::Dict{String,Any} =
 
 # ── Movie recording (napari-animation) ──────────────────────────────────────────
 
-# Record the open image's timelapse (T-sweep) to `path` (mp4); returns the bridge reply (frame count +
-# path). `fps`/`scale` control frame rate + supersampling; `t_start`/`t_end` bound the range (default
-# the whole stack). Phase F1 batch-movie primitive — see docs/todo/ANIMATION_PLAN.md.
+# Record the open image's timelapse (T-sweep) to `path` (mp4); returns the bridge reply (frame count,
+# path, and the size actually written). `fps` controls the frame rate; `t_start`/`t_end` bound the range
+# (default the whole stack). `size_x`/`size_y` request an output size in pixels — `nothing` (the default)
+# records at the napari canvas size; see docs/NAPARI.md. `task_id`/`api_url` put the render on the task
+# rail: the bridge posts per-frame progress to `api_url` and polls `task_id` for a cancel. Phase F1 batch-movie
+# primitive — see docs/todo/ANIMATION_PLAN.md.
 record_timelapse!(v::NapariViewer, path::String; fps::Int=15, canvas_only::Bool=true,
-                  scale::Real=1, t_start::Int=0, t_end::Union{Int,Nothing}=nothing,
-                  title_card=nothing)::Dict{String,Any} = begin
+                  size_x::Union{Int,Nothing}=nothing, size_y::Union{Int,Nothing}=nothing,
+                  t_start::Int=0, t_end::Union{Int,Nothing}=nothing, title_card=nothing,
+                  task_id::Union{String,Nothing}=nothing,
+                  api_url::Union{String,Nothing}=nothing)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"record_timelapse", "path"=>path, "fps"=>fps,
-                           "canvas_only"=>canvas_only, "scale"=>scale, "t_start"=>t_start)
+                           "canvas_only"=>canvas_only, "t_start"=>t_start,
+                           "size_x"=>size_x, "size_y"=>size_y,
+                           "task_id"=>task_id, "api_url"=>api_url)
     t_end !== nothing && (cmd["t_end"] = t_end)
     # Phase H: an optional title-card slide prepended to the recording (assembled in api/napari_api.jl;
     # the bridge adds channels from the live viewer and composites it). nothing/disabled → no card.
@@ -302,11 +309,17 @@ end
 
 # Render an interpolated keyframe animation (the "connect animation steps" timeline) to `path` (mp4):
 # `keyframes` = ordered [(; viewState, steps)], each tweened `steps` frames from the previous. Returns
-# the bridge reply (frame count + path). See docs/todo/ANIMATION_PLAN.md (F2).
+# the bridge reply (frame count, path, size written). `size_x`/`size_y` as for `record_timelapse!`.
+# See docs/todo/ANIMATION_PLAN.md (F2).
 record_keyframes!(v::NapariViewer, path::String, keyframes::AbstractVector; fps::Int=15,
-                  canvas_only::Bool=true, scale::Int=1, title_card=nothing)::Dict{String,Any} = begin
+                  canvas_only::Bool=true, size_x::Union{Int,Nothing}=nothing,
+                  size_y::Union{Int,Nothing}=nothing, title_card=nothing,
+                  task_id::Union{String,Nothing}=nothing,
+                  api_url::Union{String,Nothing}=nothing)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"record_keyframes", "path"=>path, "fps"=>fps,
-                           "canvas_only"=>canvas_only, "scale"=>scale, "keyframes"=>keyframes)
+                           "canvas_only"=>canvas_only, "keyframes"=>keyframes,
+                           "size_x"=>size_x, "size_y"=>size_y,
+                           "task_id"=>task_id, "api_url"=>api_url)
     title_card !== nothing && (cmd["title_card"] = title_card)   # Phase H4 description slide
     send(v, cmd)
 end

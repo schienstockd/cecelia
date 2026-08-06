@@ -16,6 +16,8 @@ import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napa
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
+import { movieSizeParams } from '../utils/movieSize'
+import { useNapariStatus } from '../composables/useNapariStatus'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -35,6 +37,13 @@ const segCacheWarn = computed(() => {
     t.module === 'segment' && t.imageUid === uid && (t.status === 'queued' || t.status === 'running')
   )
 })
+
+// Is a recording in flight? The napari viewer is UI-serial — one render at a time — so the Record
+// button reflects the TASK, not a local flag: the render outlives this component's request and its
+// progress/Cancel live in the task list. Covers the batch too, which drives the same viewer.
+const recordingTask = computed(() => taskStore.tasks.some(t =>
+  (t.funName ?? '').startsWith('movie.') && (t.status === 'queued' || t.status === 'running')
+))
 
 // Pull the error message out of a non-ok response (the API sends { error: "..." }).
 async function _resError(res: Response): Promise<string> {
@@ -107,10 +116,27 @@ const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
   if (currentSetUid.value) settings.setPopVisible(currentSetUid.value, popType, v) }
-// timelapse-recording params (per set): frame rate
+// timelapse-recording params (per set): frame rate + output size (null size = the napari canvas size)
 const movieFps = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).fps : 15,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { fps: v }) } })
+const movieSizeX = computed<number | null>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).sizeX : null,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { sizeX: v }) } })
+const movieSizeY = computed<number | null>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).sizeY : null,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { sizeY: v }) } })
+// Filename addition. A movie is named after the IMAGE, so recording the AF-corrected version and then
+// the raw import would overwrite the first — hence a suffix, prefilled with the version SHOWN in napari
+// (`null` = never touched → use that default; `''` = the user cleared it, which must stick).
+const movieSuffixDefault = computed(() =>
+  selectedValueName.value && selectedValueName.value !== 'default' ? selectedValueName.value : '')
+const movieSuffix = computed<string>({
+  get: () => {
+    const stored = currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).suffix : null
+    return stored ?? movieSuffixDefault.value
+  },
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { suffix: v }) } })
 // Title card (Phase H, H3) — per-set, merge-patched so each control keeps the others' values.
 const movieTitleCard = computed<TitleCardCfg>(() =>
   currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).titleCard : { enabled: true, note: '', durationSec: 3 })
@@ -189,15 +215,17 @@ watch(() => settings.napariAutoSaveLayerProps, async enabled => {
 
 
 // One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
-// populations/colour-by are shown) to an .mp4 under the project's movies/ folder. The backend picks the
-// path and returns it; we surface it in the log. Can take a while (one screenshot per timepoint), so the
-// button shows a spinner + is disabled meanwhile. (F1.1 — a config/batch UI comes in F1.2/F1.3.)
+// populations/colour-by are shown) to an .mp4 under the project's movies/ folder.
+//
+// Sent over the WS task rail (`movie:record`), exactly like a batch: the recording appears in the task
+// list with a live progress bar and a working Cancel. It used to be a blocking POST that resolved when
+// the movie was finished — a frozen button, no progress, and no way out of a 4K render started by
+// mistake. The button no longer owns the "in progress" state either; the task list does.
 async function recordTimelapse() {
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
-  if (!uid || !projectUid || recording.value) return
+  if (!uid || !projectUid || recording.value || recordingTask.value) return
   recording.value = true
-  log.info('Recording timelapse… (this can take a moment)', { source: 'napari' })
   try {
     // Title card (Phase H): capture the CURRENT view state (no PNG) and build the payload via the
     // SHARED buildTitleCard — the same path the animation page uses. Channels are added by the recorder
@@ -215,16 +243,20 @@ async function recordTimelapse() {
       titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
         { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
-    const res = await fetch('/api/napari/record-timelapse', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, fps: movieFps.value, titleCard }),
+    const t = taskStore.add({
+      module: 'viewer', label: `Record ${napariImage.value?.name ?? 'movie'}`,
+      imageUid: uid, imageName: napariImage.value?.name ?? '', status: 'queued',
+      taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
     })
-    if (!res.ok) { log.error(`Record timelapse failed: ${await _resError(res)}`, { source: 'napari' }); return }
-    const j = (await res.json()) as { path?: string; frames?: number }
-    log.info(`Recorded ${j.frames ?? '?'} frames → ${j.path ?? 'movies/'}`, { source: 'napari' })
+    ws.send({
+      type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
+      suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin,
+      ...movieSizeParams(movieSizeX.value, movieSizeY.value),
+    })
   } catch (e) {
     log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
   } finally {
+    // the RENDER is the task's business now; this flag only covers assembling the request
     recording.value = false
   }
 }
@@ -457,17 +489,10 @@ function onTaskResult(data: Record<string, unknown>) {
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
 watch(() => projectStore.napariReloadTick, () => reloadViewer())
 
-// Stale-bridge flag: napari is a separate process that survives a backend restart, so after editing
-// napari code you can be looking at old behaviour without knowing. Poll the backend (which compares the
-// bridge's start time to the napari source mtimes) and warn right here, where you'd act on it.
-const bridgeStale = ref(false)
-let bridgeTimer: number | undefined
-async function pollBridge() {
-  try {
-    const s = await (await fetch('/api/napari/status')).json() as { bridgeStale?: boolean }
-    bridgeStale.value = !!s.bridgeStale
-  } catch { bridgeStale.value = false }
-}
+// Bridge status (shared poll — see useNapariStatus): `bridgeStale` warns that napari is running older
+// code than the checkout (it's a separate process that survives a backend restart), and the canvas size
+// is what a movie records at when no size is asked for, shown as the size fields' placeholder.
+const { bridgeStale, canvasSizeX, canvasSizeY, poll: pollBridge } = useNapariStatus()
 async function restartNapari() {
   try {
     const res = await fetch('/api/napari/restart', {
@@ -481,12 +506,10 @@ async function restartNapari() {
 }
 
 onMounted(() => {
-  pollBridge(); bridgeTimer = window.setInterval(pollBridge, 5000)
   ws.on('task:status', onTaskStatus)
   ws.on('task:result', onTaskResult)
 })
 onUnmounted(() => {
-  if (bridgeTimer) clearInterval(bridgeTimer)
   ws.off('task:status', onTaskStatus)
   ws.off('task:result', onTaskResult)
 })
@@ -507,7 +530,7 @@ onUnmounted(() => {
     <!-- Convention: append new toggles at the END of the row. -->
     <div class="viewer-section first">
       <div class="viewer-section-title cc-eyebrow cc-fs-2xs">View</div>
-      <div class="viewer-opts">
+      <div class="viewer-opts cc-row cc-row-tight">
         <button
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': settings.napariUpdateImage }"
           @click="settings.napariUpdateImage = !settings.napariUpdateImage"
@@ -622,7 +645,7 @@ onUnmounted(() => {
          the ribbon toggles show gated / cluster track populations as napari Tracks layers. -->
     <div class="viewer-section">
       <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Populations &amp; tracks</div>
-      <div class="viewer-opts">
+      <div class="viewer-opts cc-row cc-row-tight">
         <button
           v-for="pt in POP_TYPES" :key="pt.key"
           class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': popVisible(pt.key) }"
@@ -653,7 +676,7 @@ onUnmounted(() => {
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>
         <!-- legend for a categorical colour-by: value → colour (a population's colour where one matches) -->
-        <div v-if="legendItems.length" class="cby-legend">
+        <div v-if="legendItems.length" class="cby-legend cc-row">
           <span v-for="item in legendItems" :key="item.key" class="cby-item cc-muted cc-fs-xs"
                 v-tooltip.right="item.editable
                   ? `${item.label} — click the swatch to recolour`
@@ -671,16 +694,19 @@ onUnmounted(() => {
       </div>
 
       <!-- ── Movie: record the CURRENT view over time → mp4 (project's movies/ folder) ──
-           Records exactly what's shown (channels, populations, tracks, colour-by). fps + resolution
-           are per-set; the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3. -->
+           Records exactly what's shown (channels, populations, tracks, colour-by). fps + size + the
+           filename suffix are per-set; the render runs as a task (progress + Cancel in the task list),
+           and the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3. -->
       <div class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <MovieOutputControls v-model:fps="movieFps" />
-          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording }" :disabled="recording"
+          <MovieOutputControls class="movie-controls"
+                               v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
+                               v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
+          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
                   v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">
-            <i :class="['pi', recording ? 'pi-spin pi-spinner' : 'pi-video']" />
+            <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
         </div>
         <div class="movie-row">
@@ -745,15 +771,18 @@ onUnmounted(() => {
 .viewer-select { width: 100%; }
 /* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
 .opt-colourby { font-size: var(--cc-fs-xs); width: 100%; min-width: 0; }
-/* movie recording params — one compact row: fps slider · res slider · record button */
-.movie-row { display: flex; align-items: center; gap: 0.3rem; }
+/* movie recording params — one compact row: fps slider · size fields · record button */
+/* the controls wrap to two or three lines in this narrow panel; Record stays on the FIRST one rather
+   than floating to the vertical middle of them */
+.movie-row { display: flex; align-items: flex-start; gap: 0.3rem; }
+.movie-controls { flex: 1; min-width: 0; }
 .movie-lbl { flex-shrink: 0; }
 .movie-range { flex: 1; min-width: 2.5rem; accent-color: var(--cc-accent-strong); }
 .movie-val { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 1.4rem; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .movie-rec { margin-left: 0.1rem; }
 
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
-.cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }
+.cby-legend { margin-top: 0.25rem; }
 .cby-item { display: inline-flex; align-items: center; gap: 0.25rem; }
 .cby-swatch { width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-border); }
 /* editable swatch: a native colour input squeezed to swatch size (categories with no population) */
@@ -807,11 +836,7 @@ onUnmounted(() => {
 .viewer-label-row:hover .row-act, .row-act.cc-btn-on { opacity: 1; }
 /* ── Option toggles ──────────────────────────────────────────────────── */
 
-.viewer-opts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
+
 
 .opt-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
 .opt-btn:hover        { color: var(--cc-text); border-color: #484f58; }

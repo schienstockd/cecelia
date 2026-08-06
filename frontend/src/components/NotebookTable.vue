@@ -290,7 +290,7 @@ defineExpose({ refresh })
         <!-- Version history / restore panel -->
         <tr v-if="expandedFile === nb.file" class="nbt-history-row">
           <td colspan="5">
-            <div class="nbt-history">
+            <div class="nbt-history cc-row">
               <span v-if="snapsLoading" class="nbt-muted">Loading history…</span>
               <span v-else-if="!snapshots.length" class="nbt-muted">
                 No snapshots yet — click <i class="pi pi-camera" /> to freeze this version.
@@ -359,7 +359,7 @@ defineExpose({ refresh })
 .nbt-active { color: #58a6ff; }
 .nbt-empty { text-align: center; padding: 1rem; }   /* + .cc-muted */
 .nbt-history-row td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
-.nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: var(--cc-fs-md); }
+.nbt-history { font-size: var(--cc-fs-md); }
 .nbt-hist-label { color: var(--cc-text-dim); }
 .nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */
 .nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: .1rem .1rem .1rem .5rem; }

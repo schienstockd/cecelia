@@ -5,7 +5,11 @@ run without importing napari (per docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md). Th
 conventions the cecelia bridge AND coastal both rely on: the list-name guard, contrast-from-sample
 percentiles, and the kwargs forwarded to viewer.add_image / add_labels / add_tracks.
 """
+import os
+import shutil
+import tempfile
 import unittest
+import unittest.mock
 import numpy as np
 
 from cecelia.utils import napari_utils
@@ -374,15 +378,15 @@ class TestBroadcastTrackToCells(unittest.TestCase):
 
 class TestRecordTimelapse(unittest.TestCase):
     """The T-sweep movie primitive — keyframes at first/last T + one interpolated frame per
-    timepoint, then animate(). Napari-free: we stub the Animation class and a duck-typed viewer."""
+    timepoint, then the frame loop. Napari-free: we stub the Animation class, the render loop
+    (exercised in TestRenderAnimation below) and a duck-typed viewer."""
 
     class _FakeAnim:
         instances = []
         def __init__(self, viewer):
-            self.viewer = viewer; self.keyframe_steps = []; self.animated = None
+            self.viewer = viewer; self.keyframe_steps = []
             TestRecordTimelapse._FakeAnim.instances.append(self)
         def capture_keyframe(self, steps=15, **kw): self.keyframe_steps.append(steps)
-        def animate(self, path, **kw): self.animated = (path, kw)
 
     class _FakeDims:
         def __init__(self, ndim): self.current_step = tuple([0] * ndim)
@@ -391,11 +395,27 @@ class TestRecordTimelapse(unittest.TestCase):
         def __init__(self, ndim=3): self.dims = TestRecordTimelapse._FakeDims(ndim)
 
     def _with_fake_anim(self, fn):
-        orig = napari_utils._require_napari_animation
+        """Stub both the Animation class and the render loop; the loop records how it was called.
+
+        `self.rendered` = (path, kwargs). The real loop returns `len(FrameSequence)` = the tween steps
+        after the first keyframe + 1, so the stub computes the same thing from the captured keyframes —
+        the frame count the recorders report must stay the measured one.
+        """
+        orig_a = napari_utils._require_napari_animation
+        orig_r = napari_utils._render_animation
         self._FakeAnim.instances = []
+        self.rendered = None
+
+        def _fake_render(viewer, anim, path, **kw):
+            self.rendered = (path, kw)
+            return sum(anim.keyframe_steps[1:]) + 1
+
         napari_utils._require_napari_animation = lambda: self._FakeAnim
+        napari_utils._render_animation = _fake_render
         try: return fn()
-        finally: napari_utils._require_napari_animation = orig
+        finally:
+            napari_utils._require_napari_animation = orig_a
+            napari_utils._render_animation = orig_r
 
     def test_sweeps_full_range_and_animates(self):
         v = self._FakeViewer(ndim=3)   # [t, y, x]
@@ -404,9 +424,16 @@ class TestRecordTimelapse(unittest.TestCase):
         self.assertEqual(n, 5)                                   # 5 timepoints
         anim = self._FakeAnim.instances[0]
         self.assertEqual(anim.keyframe_steps, [15, 4])           # first (default) + steps = t1-t0 = 4
-        self.assertEqual(anim.animated[0], '/tmp/x.mp4')
-        self.assertEqual(anim.animated[1]['fps'], 10)
+        self.assertEqual(self.rendered[0], '/tmp/x.mp4')
+        self.assertEqual(self.rendered[1]['fps'], 10)
+        self.assertIsNone(self.rendered[1]['size'])              # no size = the canvas size
         self.assertEqual(v.dims.current_step[0], 4)              # slider left at the last timepoint
+
+    def test_size_reaches_the_render_loop(self):
+        v = self._FakeViewer(ndim=3)
+        self._with_fake_anim(lambda: napari_utils.record_timelapse(
+            v, '/tmp/x.mp4', t_axis_index=0, n_timepoints=3, size=(1080, 1920)))
+        self.assertEqual(self.rendered[1]['size'], (1080, 1920))   # (height, width), napari's order
 
     def test_single_timepoint_raises(self):
         # fails fast before the dep is required (no napari-animation needed)
@@ -423,31 +450,224 @@ class TestRecordKeyframes(unittest.TestCase):
         anim = TestRecordTimelapse._FakeAnim  # reuse the fake Animation (records keyframe steps)
         anim.instances = []
         applied = []
+        rendered = []
         orig_a = napari_utils._require_napari_animation
         orig_v = napari_utils.apply_view_state
+        orig_r = napari_utils._render_animation
         napari_utils._require_napari_animation = lambda: anim
         napari_utils.apply_view_state = lambda viewer, vs: applied.append(vs)
+        napari_utils._render_animation = lambda viewer, a, path, **kw: (
+            rendered.append((path, kw)) or sum(a.keyframe_steps[1:]) + 1)
         try:
             n = napari_utils.record_keyframes(object(), '/tmp/a.mp4', keyframes, fps=12)
         finally:
             napari_utils._require_napari_animation = orig_a
             napari_utils.apply_view_state = orig_v
-        return n, anim.instances[0], applied
+            napari_utils._render_animation = orig_r
+        return n, anim.instances[0], applied, rendered[0]
 
     def test_applies_each_view_and_tweens_from_previous(self):
-        n, anim, applied = self._run([
+        n, anim, applied, rendered = self._run([
             {'viewState': {'a': 1}},                 # first: starts the sequence (steps ignored)
             {'viewState': {'a': 2}, 'steps': 10},
             {'viewState': {'a': 3}, 'steps': 5},
         ])
         self.assertEqual(applied, [{'a': 1}, {'a': 2}, {'a': 3}])   # every view applied, in order
         self.assertEqual(anim.keyframe_steps, [15, 10, 5])          # first default; then per-keyframe tween
-        self.assertEqual(anim.animated[1]['fps'], 12)
+        self.assertEqual(rendered[1]['fps'], 12)
         self.assertEqual(n, 10 + 5 + 1)                            # tween frames (skip first) + 1
 
     def test_needs_two_keyframes(self):
         with self.assertRaises(ValueError):
             napari_utils.record_keyframes(object(), '/tmp/a.mp4', [{'viewState': {}}])
+
+
+class TestCanvasSize(unittest.TestCase):
+    """The size a movie records at when none is asked for — reported as the size fields' placeholder.
+
+    Two things are pinned because both were wrong first time. (1) ORDER: `(height, width)`, matching
+    `screenshot(size=)`. `viewer._canvas_size` looks like the obvious source and is NOT usable — until a
+    resize event fires it holds napari's `(800, 600)` default, which is *(width, height)*, so a
+    freshly-opened viewer reported a transposed size (checked against a real offscreen viewer: canvas
+    widget said (600, 800), and so did the screenshot). (2) The device-pixel ratio: the widget is in
+    logical pixels, the screenshot is the GL framebuffer.
+    """
+
+    class _Canvas:
+        def __init__(self, size): self.size = size
+
+    class _Qt:
+        def __init__(self, size, ratio):
+            self.canvas = TestCanvasSize._Canvas(size); self._ratio = ratio
+        def devicePixelRatio(self): return self._ratio
+
+    class _Viewer:
+        def __init__(self, size=(600, 800), ratio=1.0, canvas_size=(800, 600)):
+            self.window = type('W', (), {'_qt_viewer': TestCanvasSize._Qt(size, ratio)})()
+            self._canvas_size = canvas_size      # the transposed default — must NOT be preferred
+
+    def test_reads_the_canvas_widget_in_height_width_order(self):
+        self.assertEqual(napari_utils.canvas_size(self._Viewer()), (600, 800))
+
+    def test_scales_by_the_device_pixel_ratio(self):
+        # a HiDPI screen renders twice the logical size, which is what the movie comes out at
+        self.assertEqual(napari_utils.canvas_size(self._Viewer(size=(600, 800), ratio=2.0)), (1200, 1600))
+
+    def test_unreadable_viewer_reports_nothing(self):
+        # None → the field shows "canvas" rather than a made-up number
+        self.assertIsNone(napari_utils.canvas_size(object()))
+        self.assertIsNone(napari_utils.canvas_size(self._Viewer(size=(0, 0))))
+
+
+class TestRenderAnimation(unittest.TestCase):
+    """The frame loop we own instead of napari-animation's `animate()`.
+
+    The property that matters is the ORDER: apply the interpolated state, THEN screenshot at the
+    requested size. vispy keeps the camera's world rect across a canvas resize, so that order renders
+    the recorded framing at a higher resolution — while resizing first would reinterpret each
+    keyframe's `camera.zoom` against the bigger canvas and silently widen the field of view instead.
+    Both produce a movie; only one is the movie the keyframes describe.
+
+    Napari-free: a duck-typed viewer records the call order, and the writer + FrameSequence are stubbed.
+    """
+
+    class _FakeState:
+        def __init__(self, tag, log): self.tag = tag; self._log = log
+        def apply(self, viewer): self._log.append(('apply', self.tag))
+
+    class _FakeWriter:
+        """Stands in for the imageio writer, and TOUCHES its path — the loop stages then promotes, so a
+        writer that produced no file would make the promote (and its test) meaningless."""
+        def __init__(self, path): self.frames = []; self.path = path
+        def __enter__(self):
+            open(self.path, 'wb').close()
+            return self
+        def __exit__(self, *a): return False
+        def append_data(self, frame): self.frames.append(frame)
+
+    class _FakeViewer:
+        """`screenshot` returns an ODD-sized frame, as a HiDPI canvas can — see crop_to_even."""
+        def __init__(self, log, shape=(101, 65, 4)):
+            self._log = log; self._shape = shape; self.calls = []
+        def screenshot(self, **kw):
+            self._log.append(('screenshot', kw.get('size')))
+            self.calls.append(kw)
+            return np.zeros(self._shape, dtype=np.uint8)
+
+    def _render(self, *, size, canvas_only=True, n=3, on_progress=None, should_cancel=None,
+                pre_existing=None):
+        """Run the loop against stubs in a temp dir. `pre_existing` writes bytes at the FINAL path first,
+        standing in for the movie a re-record would overwrite. Returns the outcome plus the dir."""
+        log = []
+        viewer = self._FakeViewer(log)
+        states = [self._FakeState(i, log) for i in range(n)]
+        self._dir = tempfile.mkdtemp()
+        path = self._path = os.path.join(self._dir, 'x.mp4')   # set BEFORE the run: the raising tests read it
+        if pre_existing is not None:
+            with open(path, 'wb') as fh:
+                fh.write(pre_existing)
+        writer = self._FakeWriter(path + '.tmp.mp4')            # the loop must write to the STAGING path
+        orig = napari_utils._frame_sequence
+        napari_utils._frame_sequence = lambda anim: states      # no napari-animation import needed
+        try:
+            with unittest.mock.patch('cecelia.utils.movie_io.movie_writer', return_value=writer):
+                frames = napari_utils._render_animation(
+                    viewer, object(), path, fps=10, canvas_only=canvas_only, size=size,
+                    on_progress=on_progress, should_cancel=should_cancel)
+        finally:
+            napari_utils._frame_sequence = orig
+        return frames, log, writer, viewer
+
+    def tearDown(self):
+        shutil.rmtree(getattr(self, '_dir', None) or tempfile.mkdtemp(), ignore_errors=True)
+
+    def _leftovers(self):
+        return [f for f in os.listdir(self._dir) if f.endswith('.tmp.mp4')]
+
+    def test_applies_each_state_before_screenshotting_it(self):
+        frames, log, writer, _ = self._render(size=(1080, 1920))
+        self.assertEqual(frames, 3)
+        self.assertEqual(len(writer.frames), 3)
+        # strictly alternating apply → screenshot, never two screenshots against one applied state
+        self.assertEqual(log, [('apply', 0), ('screenshot', (1080, 1920)),
+                               ('apply', 1), ('screenshot', (1080, 1920)),
+                               ('apply', 2), ('screenshot', (1080, 1920))])
+
+    def test_no_size_means_no_size_kwarg(self):
+        _, _, _, viewer = self._render(size=None)
+        self.assertNotIn('size', viewer.calls[0])   # napari then uses the live canvas size
+
+    def test_frames_are_cropped_to_even(self):
+        _, _, writer, _ = self._render(size=(1080, 1920))
+        # the fake canvas hands back 101x65; h.264 would reject both axes
+        self.assertEqual([f.shape[:2] for f in writer.frames], [(100, 64)] * 3)
+
+    def test_size_is_dropped_when_the_chrome_is_included(self):
+        # napari honours `size` only for a canvas-only shot, so passing it with the viewer frame would
+        # write a window-sized movie while claiming the requested one
+        _, _, _, viewer = self._render(size=(1080, 1920), canvas_only=False)
+        self.assertNotIn('size', viewer.calls[0])
+
+    def test_writes_staged_then_promotes(self):
+        # the movie appears whole or not at all: frames go to `x.mp4.tmp.mp4`, renamed on the last one
+        self._render(size=None)
+        self.assertTrue(os.path.exists(self._path))
+        self.assertEqual(self._leftovers(), [])
+
+    def test_reports_progress_per_frame(self):
+        seen = []
+        self._render(size=None, n=4, on_progress=lambda i, total: seen.append((i, total)))
+        self.assertEqual(seen, [(1, 4), (2, 4), (3, 4), (4, 4)])   # throttling belongs to the caller
+
+    def test_cancel_stops_and_leaves_the_previous_movie_intact(self):
+        # THE case this exists for: a movie is named after the image, so a re-record targets the path of
+        # the previous one. Cancelling must not replace a good movie with an unplayable stub.
+        calls = {'n': 0}
+
+        def cancel():
+            calls['n'] += 1
+            return calls['n'] > 2                  # cancel is polled before each frame
+
+        with self.assertRaises(napari_utils.RecordCancelled) as ctx:
+            self._render(size=None, n=6, should_cancel=cancel, pre_existing=b'the previous movie')
+        self.assertEqual(ctx.exception.frames, 2)
+        with open(self._path, 'rb') as fh:
+            self.assertEqual(fh.read(), b'the previous movie')     # untouched
+        self.assertEqual(self._leftovers(), [])                    # and no debris
+
+    def test_a_failed_render_also_leaves_nothing_behind(self):
+        def boom():
+            raise RuntimeError('GL went away')
+
+        with self.assertRaises(RuntimeError):
+            self._render(size=None, should_cancel=boom, pre_existing=b'previous')
+        with open(self._path, 'rb') as fh:
+            self.assertEqual(fh.read(), b'previous')
+        self.assertEqual(self._leftovers(), [])
+
+
+class TestClearStaleStaging(unittest.TestCase):
+    """The one partial a record cannot clean up after itself: the bridge process being KILLED mid-render.
+
+    Nothing else sweeps it — `/api/movies` merely HIDES `.tmp.` names, and the `store-debris` patch walks
+    directories in store locations, so a stray file in `movies/` is outside it. So the next record clears
+    stale ones, with an age guard.
+    """
+
+    def test_removes_only_old_staging_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = os.path.join(d, 'a.mp4.tmp.mp4')
+            new = os.path.join(d, 'b.mp4.tmp.mp4')
+            real = os.path.join(d, 'c.mp4')
+            for f in (old, new, real):
+                open(f, 'wb').close()
+            os.utime(old, (0, 0))                                  # long stale
+            napari_utils._clear_stale_staging(os.path.join(d, 'x.mp4'))
+            left = sorted(os.listdir(d))
+            self.assertEqual(left, ['b.mp4.tmp.mp4', 'c.mp4'])     # real movies never touched
+
+    def test_missing_folder_is_not_an_error(self):
+        napari_utils._clear_stale_staging('/no/such/place/x.mp4')  # best-effort, never fatal
 
 
 class _ClipLayer:
