@@ -46,6 +46,13 @@ class SegmentationUtils:
     def __init__(self, params, dim_utils):
         self.params = params
         self.dim_utils = dim_utils
+        # Physical pixel size, for the params expressed in MICRONS. Those are the ones that describe
+        # a CELL rather than a grid: the same number then means the same biology on every image of a
+        # set, which is the whole point of one parameter value per set. A px value silently means
+        # something different the moment the zoom changes.
+        self.phys_size_x = (dim_utils.im_physical_size('x', default=1.0) if dim_utils else 1.0)
+        self.phys_size_y = (dim_utils.im_physical_size('y', default=self.phys_size_x)
+                            if dim_utils else 1.0)
         self.block_size = int(params.get('blockSize', 512))
         self.overlap = int(params.get('overlap', 64))
         # Z tiling — 0 means no Z tiling (whole stack passed to cellpose, which uses stitch_threshold internally)
@@ -59,7 +66,7 @@ class SegmentationUtils:
         self.cell_size_max = int(params.get('cellSizeMax', 0))
         # Boundary smoothing, in pixels of gaussian sigma. Cosmetic and OFF by default: it changes
         # every measured shape descriptor, so it must be a deliberate choice, not a silent default.
-        self.label_smoothing = float(params.get('labelSmoothing', 0.0))
+        self.label_smoothing = self.px_from_um(params.get('labelSmoothing', 0.0))
         self.label_expansion = int(params.get('labelExpansion', 0))
         self.label_erosion = int(params.get('labelErosion', 0))
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
@@ -67,6 +74,19 @@ class SegmentationUtils:
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
         self.task_dir = params['taskDir']
         self.output_value_name = params.get('outputValueName', 'default')
+
+    def px_from_um(self, um):
+        """Microns → pixels on this image's X axis. 0 stays 0, so "off" survives the conversion."""
+        um = float(um)
+        return 0.0 if um <= 0 else um / max(self.phys_size_x, 1e-6)
+
+    def px_area_from_um2(self, um2):
+        """Square microns → pixel COUNT. Uses both axes: assuming square pixels is fine on this
+        data and wrong in general, and a size filter that is quietly 2x off is hard to spot."""
+        um2 = float(um2)
+        if um2 <= 0:
+            return 0
+        return int(round(um2 / max(self.phys_size_x * self.phys_size_y, 1e-12)))
 
     def predict_slice(self, tile, model_params, norm_params=None,
                       context=None, context_index=None):

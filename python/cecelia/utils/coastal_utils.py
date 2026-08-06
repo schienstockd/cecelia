@@ -156,17 +156,22 @@ class CoastalUtils(SegmentationUtils):
         inference = LearnedAffinityInference(
             self._model_cache[model_path],
             device=self.gpu_device if self.use_gpu else 'cpu',
+            # Thresholds are unitless and pass straight through; everything that describes a
+            # LENGTH or an AREA arrives in microns and is converted here. Coastal's own API is in
+            # pixels — correctly, it is an array library and knows nothing about calibration — so
+            # this boundary is where the unit changes, once.
             affinity_threshold=float(model_params.get('affinityThreshold', 0.5)),
             merge_affinity_threshold=float(model_params.get('mergeAffinityThreshold', 0.65)),
-            merge_max_distance=float(model_params.get('mergeMaxDistance', 1.5)),
+            merge_max_distance=self.px_from_um(model_params.get('mergeMaxDistance', 0.5)),
             prob_weight=float(model_params.get('probWeight', 0.3)),
-            seed_size=int(model_params.get('seedSize', 12)),
+            # a local-maximum WINDOW, so it must be a whole number of pixels and at least 3
+            seed_size=max(3, int(round(self.px_from_um(model_params.get('seedSize', 4.0))))),
             prob_threshold=float(model_params.get('probThreshold', 0.3)),
-            embedding_blur_sigma=float(model_params.get('embeddingBlurSigma', 1.5)),
-            prob_blur_sigma=float(model_params.get('probBlurSigma', 0.0)),
-            seed_blur_sigma=float(model_params.get('seedBlurSigma', 0.0)),
+            embedding_blur_sigma=self.px_from_um(model_params.get('embeddingBlurSigma', 0.5)),
+            prob_blur_sigma=self.px_from_um(model_params.get('probBlurSigma', 0.0)),
+            seed_blur_sigma=self.px_from_um(model_params.get('seedBlurSigma', 2.5)),
             max_iter=int(model_params.get('maxIter', 200)),
-            min_component_size=int(model_params.get('minComponentSize', 20)),
+            min_component_size=self.px_area_from_um2(model_params.get('minComponentSize', 2.0)),
         )
         self._inference_cache[cache_key] = inference
         return inference

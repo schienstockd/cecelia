@@ -3,7 +3,9 @@
   "fun_name": "segment.coastal",
   "label": "Optical flow segmentation",
   "category": "Segment",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "gpu",
   "params": [
     {
@@ -31,16 +33,16 @@
           "matchAs": "base",
           "cellChannels": [],
           "normalise": 99.99,
-          "seedSize": 12,
-          "seedBlurSigma": 0.0,
+          "seedSize": 4.0,
+          "seedBlurSigma": 2.5,
           "probThreshold": 0.3,
           "affinityThreshold": 0.5,
-          "minComponentSize": 20,
+          "minComponentSize": 2.0,
           "stitchThreshold": 0.0,
           "probBlurSigma": 0.0,
-          "embeddingBlurSigma": 1.5,
+          "embeddingBlurSigma": 0.5,
           "mergeAffinityThreshold": 0.65,
-          "mergeMaxDistance": 1.5,
+          "mergeMaxDistance": 0.5,
           "probWeight": 0.3,
           "maxIter": 200
         }
@@ -54,7 +56,10 @@
           "default": "",
           "tip": "Trained on the Optical Flow page",
           "options": [
-            { "label": "None", "value": "" }
+            {
+              "label": "None",
+              "value": ""
+            }
           ]
         },
         {
@@ -64,8 +69,14 @@
           "default": "base",
           "tip": "Role of this model's output; one 'base' + one 'nuc' to pair",
           "options": [
-            { "label": "Base (primary)", "value": "base" },
-            { "label": "Nucleus",        "value": "nuc"  }
+            {
+              "label": "Base (primary)",
+              "value": "base"
+            },
+            {
+              "label": "Nucleus",
+              "value": "nuc"
+            }
           ]
         },
         {
@@ -78,22 +89,22 @@
         },
         {
           "key": "seedSize",
-          "label": "Seed window (px)",
+          "label": "Seed window (µm)",
           "type": "int",
-          "min": 3,
-          "max": 101,
-          "step": 1,
-          "default": 12,
+          "min": 0.5,
+          "max": 30.0,
+          "step": 0.5,
+          "default": 4.0,
           "tip": "How close two cells may be and still get separate seeds"
         },
         {
           "key": "seedBlurSigma",
-          "label": "Seed blur (σ)",
+          "label": "Seed blur (µm)",
           "type": "float",
           "min": 0.0,
-          "max": 20.0,
-          "step": 0.5,
-          "default": 0.0,
+          "max": 10.0,
+          "step": 0.25,
+          "default": 2.5,
           "tip": "Raise to merge fragments of one cell; does not move the outline"
         },
         {
@@ -118,13 +129,13 @@
         },
         {
           "key": "minComponentSize",
-          "label": "Min fragment (px)",
+          "label": "Min fragment (µm²)",
           "type": "int",
-          "min": 0,
-          "max": 1000,
-          "step": 5,
-          "default": 20,
-          "tip": "Remove grown fragments below this size"
+          "min": 0.0,
+          "max": 100.0,
+          "step": 0.5,
+          "default": 2.0,
+          "tip": "Remove grown fragments below this area"
         },
         {
           "key": "normalise",
@@ -154,23 +165,23 @@
             },
             {
               "key": "probBlurSigma",
-              "label": "Probability blur (σ)",
-              "type": "float",
-              "min": 0.0,
-              "max": 20.0,
-              "step": 0.5,
-              "default": 0.0,
-              "tip": "Blurs the outline too — prefer seed blur"
-            },
-            {
-              "key": "embeddingBlurSigma",
-              "label": "Embedding blur (σ)",
+              "label": "Probability blur (µm)",
               "type": "float",
               "min": 0.0,
               "max": 5.0,
-              "step": 0.5,
-              "default": 1.5,
-              "tip": "Larger merges more during growing"
+              "step": 0.25,
+              "default": 0.0,
+              "tip": "Measured to not fix the border; prefer smoothing the outlines"
+            },
+            {
+              "key": "embeddingBlurSigma",
+              "label": "Embedding blur (µm)",
+              "type": "float",
+              "min": 0.0,
+              "max": 3.0,
+              "step": 0.25,
+              "default": 0.5,
+              "tip": "Larger merges more, and shrinks cells onto their bright cores"
             },
             {
               "key": "mergeAffinityThreshold",
@@ -184,12 +195,12 @@
             },
             {
               "key": "mergeMaxDistance",
-              "label": "Merge distance (px)",
+              "label": "Merge distance (µm)",
               "type": "float",
               "min": 0.0,
-              "max": 10.0,
-              "step": 0.5,
-              "default": 1.5,
+              "max": 5.0,
+              "step": 0.25,
+              "default": 0.5,
               "tip": "How far apart fragments may be to merge"
             },
             {
@@ -261,12 +272,12 @@
         },
         {
           "key": "labelSmoothing",
-          "label": "Smooth outlines (\u03c3)",
+          "label": "Smooth outlines (µm)",
           "type": "float",
           "min": 0.0,
-          "max": 5.0,
-          "step": 0.5,
-          "default": 1.5,
+          "max": 3.0,
+          "step": 0.25,
+          "default": 0.5,
           "tip": "Round the growing frontier's coastline; 0 = raw"
         },
         {
@@ -311,7 +322,9 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        {"$include": "imageTiling"},
+        {
+          "$include": "imageTiling"
+        },
         {
           "key": "labelOverlap",
           "label": "Seam stitch threshold",

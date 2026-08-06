@@ -373,6 +373,18 @@ So coastal defaults to `labelSmoothing` **1.5** — cosmetic, honest about being
 the size. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
 changing a shipped task's default would alter existing pipelines.
 
+**Coastal's spatial params are in MICRONS, not pixels.** A seed window or a blur radius describes a
+CELL, so the same number has to mean the same biology on every image of a set — a px value silently
+means something different the moment the zoom changes, which defeats the one-value-per-set rule.
+`SegmentationUtils.px_from_um` / `px_area_from_um2` are the single conversion point (they also back
+cellpose's `cellDiameter`), and coastal's own API stays in pixels, correctly: it is an array library
+and knows nothing about calibration.
+
+Not converted, deliberately: `minCellSize`, `cellSizeMax`, `labelExpansion`, `labelErosion`,
+`blockSize`, `overlap`. They pre-date this and are shared with cellpose, so reinterpreting their
+units would silently change what an existing pipeline's saved value means. The result is a form that
+mixes µm and px — ugly, and the honest option until those are migrated deliberately.
+
 **Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
 label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis
 downstream. The composite (`segment.coastal` → `segment.measureLabels`) is what the Segment page is
