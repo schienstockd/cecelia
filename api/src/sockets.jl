@@ -70,12 +70,15 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "task:cancel"
         task_id = String(get(data, :taskId, ""))
         # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in the
-        # scheduler's _TASKS: batch movies (request_batch_cancel!, stops after the current image) and
-        # background jobs (cancel_job!, kills the subprocess(es) — data patches + project export/import).
+        # scheduler's _TASKS: recordings, single and batch (request_batch_cancel!, which flags the run AND
+        # tells the bridge to stop the frame loop it is in), and background jobs (cancel_job!, kills the
+        # subprocess(es) — data patches + project export/import).
         # So the Task-Manager Cancel button works on all of them, not just scheduler tasks.
         isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_job!(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)
+    elseif type == "movie:record"
+        handle_movie_record(ws, data)
     elseif type == "chain:run"
         handle_chain_run(ws, data)
     elseif type == "chain:cancel"
@@ -181,6 +184,46 @@ function handle_maintenance_run(ws, data)
     end
 end
 
+# A SINGLE recording (the viewer's Record button, or the animation page's render) on the same rail as
+# the batch below: async, `task:progress` per frame, `task:status`/`task:result`, and a Cancel that works.
+# It was a blocking POST until the bridge learned to report progress and take a cancel mid-render — see
+# `run_single_movie`. `keyframes` present ⇒ the interpolated animation, absent ⇒ the open image's T-sweep.
+function handle_movie_record(ws, data)
+    task_id     = String(get(data, :taskId, ""))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    isempty(task_id) && return
+    fps         = Int(get(data, :fps, 15))
+    size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
+    suffix      = String(get(data, :suffix, ""))
+    api_url     = String(get(data, :apiUrl, "http://localhost:8080"))
+    kf_raw      = get(data, :keyframes, nothing)
+    keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
+    fun         = keyframes === nothing ? "movie:record" : "movie:animation"
+    tc          = get(data, :titleCard, nothing)
+    card        = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
+    if isempty(image_uid)
+        ws_log(ws, task_id, "[ERROR] no image to record")
+        ws_status(ws, task_id, "failed", ""; fun=fun, pool="viewer")
+        return
+    end
+    if keyframes !== nothing && length(keyframes) < 2
+        ws_log(ws, task_id, "[ERROR] an animation needs at least 2 keyframes")
+        ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
+        return
+    end
+    _batch_register!(task_id)
+    @async try
+        run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
+                         suffix = suffix, title_card = card, keyframes = keyframes, api_url = api_url)
+    catch e
+        @warn "movie record crashed" exception = e
+        ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
+        ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
+        _batch_clear!(task_id)
+    end
+end
+
 # F1.3 batch movies: apply one authored config across the selected images → one attr-named mp4 each,
 # recorded on the single shared napari viewer. Runs async (recording is minutes-long) and reports over
 # the normal task events (task:progress/log/status/result) keyed by the client's taskId, so it appears
@@ -197,7 +240,8 @@ function handle_movie_batch(ws, data)
     attrs_raw   = get(data, :fileAttrs, nothing)
     file_attrs  = attrs_raw === nothing ? String[] : collect(String, attrs_raw)
     fps         = Int(get(data, :fps, 15))
-    scale       = get(data, :scale, 1)
+    size_x, size_y = _movie_size_params(data)   # blank = the napari canvas size (napari_api.jl)
+    suffix      = String(get(data, :suffix, ""))
     if isempty(image_uids)
         ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
         ws_status(ws, task_id, "failed", ""; fun="movie:batch", pool="viewer")
@@ -205,7 +249,8 @@ function handle_movie_batch(ws, data)
     end
     _batch_register!(task_id)
     @async try
-        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps, scale)
+        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps;
+                         size_x = size_x, size_y = size_y, suffix = suffix)
     catch e
         @warn "batch movies crashed" exception = e
         ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")

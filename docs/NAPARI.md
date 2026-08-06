@@ -155,22 +155,114 @@ the `cellpose==3.1.1.2` pin), imported lazily.
 is the shared primitive: it captures a keyframe at the first T, another at the last (with
 `steps = n-1` → one interpolated frame per timepoint), and calls napari-animation's `Animation.animate`
 (mp4 via imageio-ffmpeg). The bridge (`NapariState.record_timelapse`) resolves the T slider index from
-**Keyframe animation** — `napari_utils.record_keyframes(viewer, path, keyframes, fps, scale)` renders an
+**Recording runs on the task rail, not as a blocking call** — both surfaces send the WS message
+`movie:record` (`handle_movie_record` → `run_single_movie`), exactly as the batch sends `movie:batch`.
+The recording appears in the task list with a live progress bar and a working Cancel. `POST
+/api/napari/record-timelapse` / `record-animation` are **gone**: they blocked for the whole render and
+returned the finished path, so a 4K render started by mistake could not be stopped and showed nothing
+while it ran. Details in *Progress and cancel* below.
+
+**Keyframe animation** — `napari_utils.record_keyframes(viewer, path, keyframes, fps)` renders an
 *interpolated* movie: each keyframe carries a saved `viewState` + `steps`; the bridge applies it and
 captures a napari-animation keyframe with `steps` tween frames from the previous one, so the output
 **interpolates between views** — camera pans/zooms, contrast/colour fades, T-scrub. `record_keyframes!`
-→ `POST /api/napari/record-animation` (`{keyframes:[{viewState,steps}], fps, scale}` → `{project}/movies/
-{imageName}_animation.mp4`). `scale` supersamples exactly as it does for the timelapse recorder — it was
-added when the three movie-producing panels were given one shared control pair, because the animation
-path had simply never passed `Animation.animate`'s `scale_factor` through. This is the render engine
-behind the timeline animation editor (F2). The
+→ `POST /api/napari/record-animation` (`{keyframes:[{viewState,steps}], fps}` → `{project}/movies/
+{imageName}_animation.mp4`). This is the render engine behind the timeline animation editor (F2). The
 per-timepoint recorder below is the simpler single-view case:
 
-`record_timelapse!(v, path; fps, scale)` → `POST /api/napari/record-timelapse`
+`record_timelapse!(v, path; fps)` → `POST /api/napari/record-timelapse`
 saves to `{project}/movies/{imageName}.mp4` (named by the IMAGE — the view can show several
-segmentations at once — falling back to the uid) and returns the frame count + path. `fps` + resolution
-`scale` are per-set sliders in the viewer panel's Movie section. This is **F1.1**
+segmentations at once — falling back to the uid) and returns the frame count + path. `fps` is a per-set
+slider in the viewer panel's Movie section. This is **F1.1**
 of the batch-movie work (see `docs/todo/ANIMATION_PLAN.md`).
+
+### Movie output size — two pixel fields, not a multiplier
+
+Both recorders take an explicit `size_x`/`size_y` in pixels. **Blank means the napari canvas size**,
+which is the default and what every movie was before the fields existed. The three surfaces
+(`ViewerPanel`, `BatchMoviesPanel`, `AnimationModule`) share one control, `MovieOutputControls.vue`, and
+show the live canvas size as the fields' placeholder so the default is a visible number.
+
+**Why not a multiplier.** A 1–3× `res` slider used to live here, tooltipped "resolution supersample".
+It was not one: napari-animation screenshots the canvas at canvas size and then `ndi.zoom`s the frame
+(`frame_sequence.py::iter_frames`), so `2×` bought 4× the pixels, no detail, and 4× the encode. A
+multiplier is the wrong *shape* even implemented correctly — its base is the live canvas, so the same
+"2×" gives a different movie on a laptop and a desktop, and a journal asks for absolute dimensions.
+
+**Why we own the frame loop.** `Animation.animate()` exposes only `scale_factor`; napari's own
+`Viewer.screenshot(size=…)` genuinely re-renders the canvas, but `iter_frames` never passes a size. So
+`napari_utils._render_animation` replaces `animate()` with a ~15-line streaming writer and keeps
+napari-animation for the part worth having — keyframe **interpolation** (`_frame_sequence`, built from
+the public `Animation.key_frames`). This also removed the scipy zoom and gave the recorder its own
+progress logging.
+
+**Order of operations is the feature.** Apply the interpolated state first, screenshot second. vispy
+holds the camera's world **rect** across a canvas resize, so applying the keyframe at the live canvas
+size and *then* screenshotting at `size` keeps the framing and raises the resolution. Resize the canvas
+first and each keyframe's `camera.zoom` is reinterpreted against the bigger canvas: same magnification,
+wider field, black margins. Both produce a movie; only one is the movie the keyframes describe, and the
+wrong one looks like a bug in the keyframes. Pinned by `TestRenderAnimation`.
+
+**Rules the size goes through** (`python/cecelia/utils/movie_io.py` — one helper, unit-tested):
+
+| Rule | Why |
+|---|---|
+| Clamp each axis to `MAX_MOVIE_AXIS` (4096) | a canvas screenshot renders through GL; a size the driver can't allocate comes back as a **blank frame** on some drivers, not an error |
+| Force **even** dimensions, and crop each frame to even | libx264 + yuv420p rejects odd sizes outright, and napari divides the requested size by `devicePixelRatio` and truncates — so a HiDPI frame can come back a pixel off the request |
+| A clamp or an even-fix is **logged**, and the response reports the size that landed | otherwise the user believes they got the number they typed |
+| `size` is dropped when `canvas_only=False` | napari honours it only for a canvas-only shot |
+
+**One writer for every mp4** — `movie_io.movie_writer` (libx264 / yuv420p / quality 8 /
+`macro_block_size=1`). The recorders and `title_card.prepend_title_to_movie` must agree, because the card
+is concatenated onto the recording; they previously did not. imageio's default `macro_block_size=16`
+silently rescales any frame not divisible by 16, which is why "canvas size" used to be *approximate*.
+
+The axis order flips in exactly one place: the UI, the routes and the bridge command speak **X/Y**,
+napari speaks **(height, width)** — `movie_io.size_from_xy`, called from `napari_bridge._movie_size`.
+`GET /api/napari/status` carries `canvasSizeX`/`canvasSizeY` (the ping reply, so no extra round-trip);
+the frontend reads them through the shared `useNapariStatus` composable.
+
+(A still capture is different: `save_screenshot`'s `scale` goes to napari's own `export_figure`, which
+genuinely re-renders and re-fits to the data extent.)
+
+### Progress and cancel
+
+A batch gets progress and a Cancel for free because Julia loops over IMAGES and each image is its own
+bridge call — the events happen *between* calls. A single record is one call, so both have to come from
+inside the frame loop:
+
+* **Progress** — `_render_animation` calls `on_progress(i, total)` per frame; the bridge throttles to one
+  post per 0.4 s (never dropping the final frame) and POSTs `{type: "recordProgress", taskId, frame,
+  total}` to `/api/napari/event`, the same bridge→backend channel the view listener uses. `api_napari_event`
+  relays it as `task:progress`.
+* **Cancel** — `task:cancel` → `request_batch_cancel!` flags the run *and* sends `record_cancel` to the
+  bridge. **The bridge answers that on its asyncio WS thread and never queues it** — the Qt command loop
+  is busy rendering the very recording being cancelled, so a queued cancel would arrive after it finished
+  (measured: flag set 1.5 s into a blocked 6 s command). The frame loop polls the flag per frame and
+  raises `RecordCancelled`. Cancels are keyed by task id so a late one can't kill the next recording.
+* Batch inherits both, so **Cancel now stops the image being recorded** rather than only the ones after
+  it. That image writes no file at all — see below.
+
+### A movie appears whole or not at all
+
+Frames are written to a `{name}.mp4.tmp.mp4` sibling and `os.replace`d onto the real path after the last
+one. A cancel or a crash deletes the staged file, so the previous movie survives untouched.
+
+This is not tidiness: a movie is named after the IMAGE, so a re-record targets the previous movie's path.
+Written in place, a cancelled re-record would leave a file with no moov atom that plays nowhere — and
+**nothing would clean it up**. The `store-debris` patch (Settings → Data patches) walks *directories* in
+store locations (`0/`, `labels/`, `branchLabels/`); a stray file in `movies/` is outside it, and
+`/api/movies` only *hides* `.tmp.` names. The one case a record can't clean up after itself — the bridge
+process being killed mid-render — is swept by the next record (`_clear_stale_staging`, 1 h age guard).
+
+### Filename suffix
+
+`suffix` (free text, sanitised by `_movie_suffix`, capped at 40 chars) is appended before the extension
+in both naming schemes. It exists because a movie is named after the image: record the AF-corrected
+version and then the raw import and the second replaces the first, with nothing in the name to say which
+is which. The UI prefills it with the image VERSION shown in napari (`null` = untouched → use that
+default; `''` = deliberately cleared, which persists), and it is editable — the comparison someone wants
+to label is not always a version.
 
 ### Authored config + batch ("make a movie for all images", F1.2/F1.3)
 

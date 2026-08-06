@@ -72,7 +72,7 @@ const label = computed(() => {
 
     </template>
 
-    <div v-if="preview.enabled" class="tp-status">
+    <div v-if="preview.enabled" class="tp-status cc-row cc-row-tight">
       <span v-if="label" class="cc-readout cc-fs-2xs">{{ label }}</span>
       <!-- why there is no fresh preview. A mismatch between what the viewer shows and what the task
            reads is amber, not muted: it looks exactly like a working preview of the wrong pixels, so
@@ -103,12 +103,6 @@ const label = computed(() => {
 /* stretch, not a hardcoded height — Run's padding stays the single source of the row's height */
 .tp-btn { align-self: stretch; height: auto; min-width: 2.4rem; }
 /* full basis → wraps onto its own line under Run, so a long warning never narrows the Run button */
-.tp-status {
-  flex: 1 0 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
+.tp-status { flex: 1 0 100%; }
 .preview-warn { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.2rem; }
 </style>

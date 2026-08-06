@@ -15,7 +15,7 @@ withDefaults(defineProps<{ sections: LegendSection[]; swatch?: number; vertical?
   <div class="view-legend">
     <div v-for="sec in sections" :key="sec.title" class="vl-section">
       <div v-if="sections.length > 1" class="vl-title">{{ sec.title }}</div>
-      <div class="vl-items" :class="{ vertical }">
+      <div class="vl-items cc-row" :class="{ vertical }">
         <span v-for="it in sec.items" :key="it.label" class="vl-item">
           <span class="vl-swatch" :style="{ background: it.colour, width: swatch + 'px', height: swatch + 'px' }" />
           {{ it.label }}
@@ -29,7 +29,7 @@ withDefaults(defineProps<{ sections: LegendSection[]; swatch?: number; vertical?
 .view-legend { display: flex; flex-direction: column; gap: 3px; }
 .vl-section { display: flex; flex-direction: column; gap: 1px; }
 .vl-title { font-size: 0.82em; font-weight: 700; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
-.vl-items { display: flex; flex-wrap: wrap; gap: 1px 8px; }
+
 /* vertical: one item per line (channel names stacked), left-aligned */
 .vl-items.vertical { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 1px; }
 .vl-item { display: inline-flex; align-items: center; gap: 4px; font-size: 0.9em; white-space: nowrap; }

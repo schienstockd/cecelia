@@ -427,7 +427,7 @@ defineExpose({ capturePage, collectCsvs })
       <!-- controls, grouped so nothing crowds: Layout row (uniform + custom sliders), Plates row
            (varied presets, wraps to two lines), then the data/compare row. -->
       <div class="lc-bar">
-        <div class="lc-row">
+        <div class="lc-row cc-row cc-row-loose">
           <span class="lc-lbl cc-eyebrow">Layout</span>
           <ChipSelect variant="segmented" :options="uniformOptions" :model-value="uniformMatchId"
                       v-tooltip.bottom="'Uniform grids'" aria-label="Uniform grid layout"
@@ -498,7 +498,7 @@ defineExpose({ capturePage, collectCsvs })
               v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only'" />
           </div>
         </div>
-        <div class="lc-row">
+        <div class="lc-row cc-row cc-row-loose">
           <span class="lc-lbl cc-eyebrow">Plates</span>
           <ChipSelect variant="pill" :options="plateOptions" :model-value="plateMatchId"
                       v-tooltip.bottom="'Comic plates — varied-size panels, matched to the sheet orientation'"
@@ -612,7 +612,7 @@ defineExpose({ capturePage, collectCsvs })
 .layout-canvas { display: flex; flex-direction: column; }
 .lc-empty { padding: 20px; }   /* + .cc-muted */
 .lc-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
-.lc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* sits right after the sliders (NOT pushed to the far right) so it doesn't shift when the compare
    dropdown changes width (e.g. "by attribute" adds selects) */
 .lc-right { display: flex; align-items: center; gap: 10px; }

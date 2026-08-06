@@ -2813,8 +2813,7 @@ end
         "/api/napari/colour-branch-labels", "/api/napari/colour-labels",
         "/api/napari/configure-autosave", "/api/napari/event",
         "/api/napari/gpu", "/api/napari/open",
-        "/api/napari/overlay-legend", "/api/napari/record-animation",
-        "/api/napari/record-timelapse", "/api/napari/refresh-labels",
+        "/api/napari/overlay-legend", "/api/napari/refresh-labels",
         "/api/napari/restart", "/api/napari/screenshot",
         "/api/napari/selection-scope", "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
@@ -2881,7 +2880,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 94
+    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 92
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -2894,4 +2893,46 @@ end
     src = read(joinpath(@__DIR__, "..", "src", "server.jl"), String)
     literals = Set(strip(m.match, '"') for m in eachmatch(r"\"/api/[^\"]+\"", src))
     @test literals == Set(vcat(GET_ROUTES, POST_ROUTES, STREAM_ROUTES))
+end
+
+@testset "API: movie output size (blank means the canvas size)" begin
+    # `_movie_size_params` is the ONE reader of a requested movie size for all three surfaces (single
+    # record, keyframe animation, batch). "Blank = the napari canvas size" has to be defined once: a
+    # movie has always come out at canvas size, so an absent field is the default, not an error — and
+    # `nothing` is what reaches `record_timelapse!`, which omits the size and lets napari use the canvas.
+    # The pixel-level validation (clamp, even axes) lives in Python's movie_io.coerce_movie_size.
+    p(json) = _movie_size_params(JSON3.read(json))
+
+    @test p("""{"sizeX":1920,"sizeY":1080}""") == (1920, 1080)
+    @test p("{}") == (nothing, nothing)                     # absent → canvas size
+    @test p("""{"sizeX":1920}""") == (1920, nothing)         # one axis: the caller decides what half means
+    # a blank field arrives as "" from a number input the user cleared — not a parse error, a default
+    @test p("""{"sizeX":"","sizeY":""}""") == (nothing, nothing)
+    @test p("""{"sizeX":"1920","sizeY":"1080"}""") == (1920, 1080)   # strings parse
+    # zero/negative/junk are all "unset" rather than 500s — the size is advisory, never fatal
+    @test p("""{"sizeX":0,"sizeY":0}""") == (nothing, nothing)
+    @test p("""{"sizeX":-4,"sizeY":-4}""") == (nothing, nothing)
+    @test p("""{"sizeX":"wide","sizeY":"tall"}""") == (nothing, nothing)
+    @test p("""{"sizeX":null,"sizeY":null}""") == (nothing, nothing)
+end
+
+@testset "API: movie filename suffix (two movies of one image)" begin
+    # A movie is named after the IMAGE, so recording the AF-corrected version and then the raw import
+    # writes the same path twice — the second silently replaces the first. `_movie_suffix` is the
+    # filename addition that keeps them apart; the frontend prefills it with the shown version, but it
+    # is free text, so it must be sanitised HERE rather than trusted.
+    @test _movie_suffix("corrected") == "_corrected"
+    @test _movie_suffix("") == ""
+    @test _movie_suffix(nothing) == ""
+    @test _movie_suffix("   ") == ""
+    @test _movie_suffix(" raw vs af ") == "_raw_vs_af"        # spaces are not filename material
+    @test _movie_suffix("../../etc/passwd") == "_etc_passwd"   # no separators, no leading dots
+    @test _movie_suffix("__x__") == "_x"                       # no doubled/trailing separators
+    @test _movie_suffix("_") == ""                             # nothing left after stripping
+    @test length(_movie_suffix("a"^200)) == MOVIE_SUFFIX_MAX + 1   # + the leading '_'
+
+    # …and it lands BEFORE the extension in both naming schemes, or the file stops being an .mp4 to
+    # every listing that filters on one.
+    @test endswith(_movie_basename(Dict(), "abc", String[]; suffix = "_corrected"), "abc_corrected.mp4")
+    @test endswith(_movie_basename(Dict("a" => "wt"), "abc", ["a"]; suffix = "_raw"), "wt_abc_raw.mp4")
 end

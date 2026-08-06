@@ -1,37 +1,80 @@
 <script setup lang="ts">
-// Frame rate + resolution for a rendered movie. ONE implementation for the three places that produce
+// Frame rate + output size for a rendered movie. ONE implementation for the three places that produce
 // one — the napari ViewerPanel recorder, BatchMoviesPanel and AnimationModule.
 //
-// The three had drifted in what they even OFFERED, not just how it looked: the viewer and batch panels
-// had fps 1-60 plus a res supersample, while Animation had fps 1-40 and no res at all — not a decision,
-// just the control nobody added. Its render path could always take one (`napari-animation`'s
-// `animate()` has `scale_factor`, which the timelapse recorder was already passing); the parameter is
-// now plumbed through `record_keyframes` so this control means the same thing everywhere.
+// The size is two explicit pixel fields, not a multiplier. A 1-3x `res` slider used to live here and was
+// removed: napari-animation screenshots the canvas and then `ndi.zoom`s the frame, so it bought 4x the
+// pixels and no detail. A multiplier is also the wrong shape even done right — its base is the live
+// canvas, so the same "2x" gives a different movie on a laptop and a desktop, while a journal asks for
+// absolute dimensions. Blank = the napari canvas size (the default), shown as the placeholder so the
+// honest default is visible. See docs/NAPARI.md.
 //
-// Two named v-models rather than one config object, because the three sites store these differently:
-// the viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
+// Named v-models rather than one config object, because the three sites store these differently: the
+// viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
+import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
 
-defineProps<{ fps: number, scale: number }>()
-defineEmits<{ (e: 'update:fps', v: number): void, (e: 'update:scale', v: number): void }>()
+defineProps<{
+  fps: number
+  sizeX: number | null
+  sizeY: number | null
+  // appended to the filename; a movie is named after the IMAGE, so this is what keeps a recording of
+  // the corrected version from overwriting one of the raw import
+  suffix: string
+  // what napari would record at right now (GET /api/napari/status), for the placeholder
+  canvasX?: number | null
+  canvasY?: number | null
+}>()
+const emit = defineEmits<{
+  (e: 'update:fps', v: number): void
+  (e: 'update:sizeX', v: number | null): void
+  (e: 'update:sizeY', v: number | null): void
+  (e: 'update:suffix', v: string): void
+}>()
+
+const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
+  emit(`update:${axis}` as 'update:sizeX', parseMovieAxis((ev.target as HTMLInputElement).value))
 </script>
 
 <template>
-  <div class="mo">
-    <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
-    <input type="range" min="1" max="60" step="1" class="mo-range" :value="fps" v-tooltip.bottom="'Frames per second'"
-           @input="$emit('update:fps', ($event.target as HTMLInputElement).valueAsNumber)" />
-    <span class="mo-val cc-readout">{{ fps }}</span>
+  <!-- `.cc-row` of `.cc-row-group`s (style.css): the row wraps between GROUPS, so it never orphans a
+       label or splits `724 × 722`. The viewer sidebar is narrow enough that this lands as two lines;
+       the Animation page's header keeps them on one — no breakpoint, no per-surface variant. -->
+  <div class="mo cc-row">
+    <span class="cc-row-group">
+      <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
+      <input type="range" min="1" max="60" step="1" class="mo-range" :value="fps" v-tooltip.bottom="'Frames per second'"
+             @input="$emit('update:fps', ($event.target as HTMLInputElement).valueAsNumber)" />
+      <span class="mo-val cc-readout">{{ fps }}</span>
+    </span>
 
-    <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
-    <input type="range" min="1" max="3" step="1" class="mo-range" :value="scale" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'"
-           @input="$emit('update:scale', ($event.target as HTMLInputElement).valueAsNumber)" />
-    <span class="mo-val cc-readout">{{ scale }}×</span>
+    <span class="cc-row-group">
+      <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Output size in pixels; blank = canvas size'">px</span>
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeX ?? ''"
+             :placeholder="movieAxisPlaceholder(canvasX)" v-tooltip.bottom="'Width; blank = canvas width'"
+             @change="onAxis('sizeX', $event)" />
+      <span class="cc-muted cc-fs-2xs">×</span>
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeY ?? ''"
+             :placeholder="movieAxisPlaceholder(canvasY)" v-tooltip.bottom="'Height; blank = canvas height'"
+             @change="onAxis('sizeY', $event)" />
+    </span>
+
+    <span class="cc-row-group mo-grow">
+      <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Added to the file name'">name</span>
+      <input type="text" class="cc-input-2xs mo-txt" :value="suffix" placeholder="suffix"
+             v-tooltip.bottom="'Added to the file name; keeps versions apart'"
+             @change="$emit('update:suffix', ($event.target as HTMLInputElement).value)" />
+    </span>
   </div>
 </template>
 
 <style scoped>
-.mo { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.mo { min-width: 0; }
+/* only the name group absorbs leftover width; the numeric ones keep their intrinsic size */
+.mo-grow { flex: 1 1 8rem; }
 .mo-lbl { flex-shrink: 0; }
-.mo-range { width: 4.5rem; flex-shrink: 0; }
+.mo-range { width: 4.5rem; flex: 1 1 3rem; min-width: 2.5rem; }
 .mo-val { min-width: 1.6rem; }
+/* wide enough for 4 digits PLUS the number spinner — 4096 was clipping at 3.6rem */
+.mo-num { width: 4.2rem; flex-shrink: 0; }
+.mo-txt { flex: 1 1 auto; min-width: 4rem; }
 </style>

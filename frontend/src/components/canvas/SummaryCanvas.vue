@@ -159,7 +159,7 @@ watch(segPops, () => {
   <div class="summary-canvas">
     <div v-if="!imageUid" class="sc-empty cc-muted">Select one or more images above to plot.</div>
     <template v-else>
-      <div class="sc-bar">
+      <div class="sc-bar cc-row cc-row-loose">
         <select class="sc-add" v-tooltip.bottom="'Add a plot'"
                 @change="addPanel(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
           <option value="">+ Plot…</option>
@@ -235,7 +235,7 @@ watch(segPops, () => {
 <style scoped>
 .summary-canvas { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 .sc-empty { padding: 20px; }   /* + .cc-muted */
-.sc-bar { display: flex; align-items: center; gap: 12px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; flex-wrap: wrap; }
+.sc-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .sc-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .sc-add { min-width: 8rem; }
 /* compare cluster: one tight group so the mode + attribute selects read as a unit */

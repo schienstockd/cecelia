@@ -40,6 +40,30 @@ describe('scenarioFor', () => {
       .toBe('eyebrow')
   })
 
+  it('names a hand-rolled wrapping control row', () => {
+    expect(of('.x-bar', 'display: flex; align-items: center; flex-wrap: wrap; gap: 8px;')).toBe('row')
+    // a toolbar's own chrome is not disqualifying — only the LAYOUT half moves to the utility
+    expect(of('.x-bar', 'display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px; background: #000;'))
+      .toBe('row')
+  })
+
+  // The three exclusions are not hypothetical: each is a real rule that was inspected and left alone
+  // (`.log-entry`, `.tab-bar`, `.mp-head`). Requiring all four declarations is what lets the ratchet
+  // stay an exact empty list instead of growing an allow-list.
+  it('leaves rows that are a different scenario alone', () => {
+    expect(of('.x-log', 'display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem;')).toBeNull()
+    expect(of('.x-tabs', 'display: flex; align-items: stretch; flex-wrap: wrap; gap: 2px;')).toBeNull()
+    expect(of('.x-head', 'display: flex; align-items: flex-start; flex-wrap: wrap; gap: 1rem; justify-content: space-between;'))
+      .toBeNull()
+    expect(of('.x-plain', 'display: flex; align-items: center; gap: 8px;')).toBeNull()   // never wraps
+    expect(of('.x-solo', 'display: flex; align-items: center; flex-wrap: wrap;')).toBeNull()   // no items
+  })
+
+  // `row-gap`/`column-gap` longhand and `grid-gap` must not be mistaken for the shorthand this keys on.
+  it('does not fire on a gap-like property name', () => {
+    expect(of('.x', 'display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px;')).toBeNull()
+  })
+
   it('ignores rules that already take colour from a utility', () => {
     expect(of('.x-hint', 'font-size: var(--cc-fs-xs); font-style: italic;')).toBeNull()
     expect(of('.x-empty p', 'margin: 0; font-size: 0.8rem;')).toBeNull()

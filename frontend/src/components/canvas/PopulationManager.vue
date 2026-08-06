@@ -334,7 +334,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 
         <!-- cluster-ID toggles: tick a cluster into this pop (filled = assigned; a cluster lives in
              at most one pop). Tooltip names the owner if it's assigned elsewhere. -->
-        <div v-if="clusterMode && p.filter" class="pm-clusters"
+        <div v-if="clusterMode && p.filter" class="pm-clusters cc-row cc-row-tight"
              :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
                   :class="{ on: popClusterIds(p).includes(id), ro: readonly }" :disabled="readonly"
@@ -475,7 +475,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-filter-badge { font-size: var(--cc-fs-2xs); color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }
-.pm-clusters { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
+.pm-clusters { padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
 .pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: var(--cc-fs-xs); line-height: 1;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); background: var(--cc-surface-1);
   color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }

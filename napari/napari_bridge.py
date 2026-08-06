@@ -27,7 +27,7 @@ from qtpy.QtCore import QTimer
 #                  read_axes, read_scale); light deps, so top-level.
 # ome_xml_utils (read_pixel_unit / read_time_increment) is imported LAZILY where used, so ome-types'
 # pydantic build cost is paid on first image open rather than at bridge startup.
-from cecelia.utils import block_transfer, napari_utils, zarr_utils
+from cecelia.utils import block_transfer, movie_io, napari_utils, zarr_utils
 
 HOST = "localhost"
 PORT = 7655
@@ -53,8 +53,9 @@ _STARTED_AT = time.time()
 #: once as a bare "Preview failed", neither naming the real cause.
 #:
 #: Bump whenever the command surface changes shape: a new/renamed command, a changed argument, or a
-#: changed reply. 1: the surface as of the protocol's introduction.
-PROTOCOL = 1
+#: changed reply. 1: the surface as of the protocol's introduction. 2: the movie recorders take
+#: `size_x`/`size_y` (and `scale` is gone), and `ping` reports the canvas size.
+PROTOCOL = 2
 
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
@@ -1672,32 +1673,74 @@ class NapariState:
                 except Exception: pass
 
     def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
-                         scale=1, t_start: int = 0, t_end=None, title_card=None):
+                         size_x=None, size_y=None, t_start: int = 0, t_end=None, title_card=None,
+                         task_id=None, api_url=None):
         """Record the open image's T-sweep to `path` (mp4). Resolves the T slider index from the image
-        axes and delegates to the shared `napari_utils.record_timelapse` (keyframe→animate). Returns the
-        frame count + path. Raises if the image has no time axis. Phase F1 of the batch-movie work
-        (docs/todo/ANIMATION_PLAN.md); F1.2/F1.3 add per-image config + batch; H adds `title_card`."""
+        axes and delegates to the shared `napari_utils.record_timelapse`. Returns the frame count, the
+        path and the size actually written. Raises if the image has no time axis. Phase F1 of the
+        batch-movie work (docs/todo/ANIMATION_PLAN.md); F1.2/F1.3 add per-image config + batch; H adds
+        `title_card`.
+
+        `size_x`/`size_y` are the requested output WIDTH/HEIGHT in pixels (blank = the canvas size).
+        THIS is the one place the axis order flips: the UI and the routes speak X/Y, napari speaks
+        (height, width) — see `_movie_size`."""
         axes = self._display_axes()                       # non-channel axes, dims.current_step order
         if "t" not in axes:
             raise RuntimeError("this image has no time axis to record")
         n_t = self._time_axis_len()
         if not n_t or n_t <= 1:
             raise RuntimeError("this image has a single timepoint — nothing to sweep")
-        frames = napari_utils.record_timelapse(
-            self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
-            fps=fps, canvas_only=canvas_only, scale=scale, t_start=t_start, t_end=t_end,
-            title_card=title_card)
-        return {"frames": frames, "path": path, "n_timepoints": n_t}
+        size = _movie_size(size_x, size_y)
+        on_progress, should_cancel = _record_hooks(task_id, api_url)
+        try:
+            frames = napari_utils.record_timelapse(
+                self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
+                fps=fps, canvas_only=canvas_only, size=size, t_start=t_start, t_end=t_end,
+                title_card=title_card, on_progress=on_progress, should_cancel=should_cancel)
+        except napari_utils.RecordCancelled as e:
+            # A reply, not an error: the caller asked for this, and the previous movie (if any) is
+            # still on disk untouched — the staged file was removed.
+            return {"cancelled": True, "frames": e.frames, "path": path, "n_timepoints": n_t}
+        finally:
+            _clear_record_cancel(task_id)
+        return {"frames": frames, "path": path, "n_timepoints": n_t,
+                **self._recorded_size(path)}
 
     def record_keyframes(self, path: str, keyframes, fps: int = 15, canvas_only: bool = True,
-                         scale: int = 1, title_card=None):
+                         size_x=None, size_y=None, title_card=None, task_id=None, api_url=None):
         """Render an interpolated keyframe animation to `path` (mp4): each keyframe's saved view state is
         applied + captured with `steps` tween frames from the previous one (camera/contrast/colour/T
         interpolation). The "connect animation steps" render — see docs/todo/ANIMATION_PLAN.md (F2);
-        H4 adds `title_card`. Delegates to the shared `napari_utils.record_keyframes`. Needs ≥2 keyframes."""
-        frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps,
-                                               canvas_only=canvas_only, scale=scale, title_card=title_card)
-        return {"frames": frames, "path": path, "keyframes": len(keyframes)}
+        H4 adds `title_card`. Delegates to the shared `napari_utils.record_keyframes`. Needs ≥2 keyframes.
+        `size_x`/`size_y` as for `record_timelapse` (blank = the canvas size)."""
+        on_progress, should_cancel = _record_hooks(task_id, api_url)
+        try:
+            frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps,
+                                                   canvas_only=canvas_only,
+                                                   size=_movie_size(size_x, size_y),
+                                                   title_card=title_card, on_progress=on_progress,
+                                                   should_cancel=should_cancel)
+        except napari_utils.RecordCancelled as e:
+            return {"cancelled": True, "frames": e.frames, "path": path, "keyframes": len(keyframes)}
+        finally:
+            _clear_record_cancel(task_id)
+        return {"frames": frames, "path": path, "keyframes": len(keyframes),
+                **self._recorded_size(path)}
+
+    def _recorded_size(self, path):
+        """`{"sizeX": w, "sizeY": h}` read back off the finished movie, or `{}`.
+
+        Reported rather than echoed: a clamp, an odd-axis fix or a HiDPI rounding all move the real size
+        away from what was asked for, and the UI should show what LANDED. Best-effort — never fails a
+        recording that already succeeded."""
+        try:
+            import imageio.v2 as imageio
+            with imageio.get_reader(str(path)) as r:
+                h, w = r.get_data(0).shape[:2]
+            return {"sizeX": int(w), "sizeY": int(h)}
+        except Exception as e:
+            print(f"[WARN] could not read back the movie size: {e}", flush=True)
+            return {}
 
     # ── Task dir (needed for labels / props) ──────────────────────────────────
 
@@ -1744,6 +1787,83 @@ def _label_layer_stem(label_filename: str) -> str:
     return name[:-5] if name.endswith(".zarr") else name
 
 
+def _movie_size(size_x, size_y):
+    """Requested movie X/Y → napari's `(height, width)`, or None for "the canvas size"."""
+    return movie_io.size_from_xy(size_x, size_y)
+
+
+# ── Recording: cancel + progress ──────────────────────────────────────────────
+#
+# A record is ONE command, so it occupies the Qt-thread command loop for its whole run (minutes at 4K).
+# Batch movies get a progress bar and a Cancel because Julia loops over IMAGES and each image is its own
+# bridge call — the events happen BETWEEN calls. A single record has no "between", so both have to come
+# from inside the frame loop.
+#
+# Cancel comes in OUT OF BAND: `handle()` answers `record_cancel` on the asyncio WS thread and never
+# queues it, so it lands while the Qt thread is still rendering (measured: flag set at +1.5 s of a
+# blocked 6 s command). The loop polls the flag per frame. Queueing it instead would deliver the cancel
+# *after* the recording it was meant to stop.
+#
+# Cancels are keyed by TASK ID, not a single global flag: a stale "cancel" must not kill the next
+# recording the user starts.
+_record_cancel_lock = threading.Lock()
+_record_cancelled: set = set()
+
+
+def request_record_cancel(task_id):
+    """Flag a recording task as cancelled. Called from the WS thread, read from the Qt thread."""
+    if not task_id:
+        return
+    with _record_cancel_lock:
+        _record_cancelled.add(str(task_id))
+
+
+def _record_cancel_requested(task_id):
+    with _record_cancel_lock:
+        return bool(task_id) and str(task_id) in _record_cancelled
+
+
+def _clear_record_cancel(task_id):
+    with _record_cancel_lock:
+        _record_cancelled.discard(str(task_id))
+
+
+# Minimum gap between progress posts. A frame can render in milliseconds at canvas size, and a POST per
+# frame would cost more than the render; a progress bar needs a couple of updates a second, not 60.
+_PROGRESS_MIN_INTERVAL_S = 0.4
+
+
+def _record_hooks(task_id, api_url):
+    """`(on_progress, should_cancel)` for a recording, or `(None, None)` when it isn't task-driven.
+
+    Progress goes back over the SAME bridge→backend channel the view listener uses
+    (`POST /api/napari/event`), which Julia relays onto the task rail as `task:progress`."""
+    if not task_id:
+        return None, None
+
+    state = {"last": 0.0}
+
+    def on_progress(frame, total):
+        now = time.monotonic()
+        if frame < total and (now - state["last"]) < _PROGRESS_MIN_INTERVAL_S:
+            return                                 # …but never skip the final frame
+        state["last"] = now
+        if not api_url:
+            return
+        body = json.dumps({"type": "recordProgress", "taskId": str(task_id),
+                           "frame": int(frame), "total": int(total)}).encode()
+        try:
+            req = urllib.request.Request(
+                api_url.rstrip("/") + "/api/napari/event", data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2).read()
+        except Exception as e:
+            # Progress is advisory: a backend that went away must not take the recording down with it.
+            print(f"[record] progress POST failed: {e}", flush=True)
+
+    return on_progress, lambda: _record_cancel_requested(task_id)
+
+
 def _remove_layer(viewer: napari.Viewer, name: str):
     if name in viewer.layers:
         viewer.layers.remove(name)
@@ -1755,7 +1875,13 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
     t = cmd.get("type")
     try:
         if t == "ping":
-            return {"type": "pong", "started_at": _STARTED_AT, "protocol": PROTOCOL}
+            # the canvas size rides along on the existing health poll rather than earning its own
+            # command: it is what a movie comes out at when no size is asked for, so the movie controls
+            # show it as their placeholder. None when there is no window yet.
+            hw = napari_utils.canvas_size(state._viewer) if state._viewer is not None else None
+            return {"type": "pong", "started_at": _STARTED_AT, "protocol": PROTOCOL,
+                    "canvas_size_y": hw[0] if hw else None,
+                    "canvas_size_x": hw[1] if hw else None}
 
         elif t == "gl_info":
             return {"type": "gl_info", **_gl_info()}
@@ -1892,15 +2018,18 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
         elif t == "record_timelapse":
             res = state.record_timelapse(cmd["path"], fps=cmd.get("fps", 15),
                                          canvas_only=cmd.get("canvas_only", True),
-                                         scale=cmd.get("scale", 1),
+                                         size_x=cmd.get("size_x"), size_y=cmd.get("size_y"),
                                          t_start=cmd.get("t_start", 0), t_end=cmd.get("t_end"),
-                                         title_card=cmd.get("title_card"))
+                                         title_card=cmd.get("title_card"),
+                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "record_keyframes":
             res = state.record_keyframes(cmd["path"], cmd.get("keyframes", []),
                                          fps=cmd.get("fps", 15), canvas_only=cmd.get("canvas_only", True),
-                                         title_card=cmd.get("title_card"))
+                                         size_x=cmd.get("size_x"), size_y=cmd.get("size_y"),
+                                         title_card=cmd.get("title_card"),
+                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "save_screenshot":
@@ -1951,6 +2080,12 @@ def drain_queue():
 async def handle(websocket):
     async for message in websocket:
         cmd = json.loads(message)
+        if cmd.get("type") == "record_cancel":
+            # NOT queued. The command loop is busy rendering the very recording this cancels, so going
+            # through the queue would deliver it after the render finished — see `request_record_cancel`.
+            request_record_cancel(cmd.get("task_id"))
+            await websocket.send(json.dumps({"type": "ok", "cmd": "record_cancel"}))
+            continue
         resp_q: queue.Queue = queue.Queue()
         command_queue.put((cmd, resp_q))
         # hand off the blocking wait to a worker thread so asyncio stays free

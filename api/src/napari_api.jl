@@ -519,85 +519,25 @@ function api_napari_view_state(body_bytes::Vector{UInt8})
     end
 end
 
-# ── REST: POST /api/napari/record-timelapse ───────────────────────────────────
-# Record the open image's timelapse (T-sweep) to an mp4 under the project's `movies/` dir. F1.1 of the
-# batch-movie work (docs/todo/ANIMATION_PLAN.md): records the CURRENT view (whatever channels/pops/
-# colour-by are shown); F1.2/F1.3 add an authored config + batch over images. Returns the saved path.
-function api_napari_record_timelapse(body_bytes::Vector{UInt8})
-    data        = JSON3.read(String(body_bytes))
-    project_uid = String(get(data, :projectUid, ""))
-    image_uid   = String(get(data, :imageUid, ""))
-    fps         = Int(get(data, :fps, 15))
-    scale       = get(data, :scale, 1)
-    img, err = _gating_image(project_uid, image_uid)
-    err === nothing || return err
-
-    v = _viewer()
-    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
-
-    # save under {project}/movies/{imageName}.mp4 (img._dir = {proj}/1/{uid}). Named by the IMAGE, not a
-    # segmentation — the recording captures the whole current view (which can show several segmentations'
-    # tracks/labels at once), so tagging it with one value_name would be misleading. Fall back to the uid
-    # if the name is blank / unsafe. (F1.3 will switch to attr-based names for batch runs.)
-    path = _movie_named_path(img, image_uid)
-
-    # Phase H (H3): optional title card. Single-record captures the CURRENT view, so the FRONTEND builds
-    # the non-channel sections (title + populations + colour-by) via the shared captureViewLegend path
-    # (same as the analysis-board strip) and sends them here; we pass them through unchanged. The
-    # recorder adds the Channels section from the live viewer (as for batch). nothing/disabled → no card.
-    tc   = get(data, :titleCard, nothing)
-    card = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
-
-    _with_viewer() do
-        try
-            resp = record_timelapse!(v, path; fps = fps, scale = scale, title_card = card)
-            200, JSON3.write((; ok = true, path = path,
-                frames = get(resp, "frames", 0), nTimepoints = get(resp, "n_timepoints", 0)))
-        catch e
-            @warn "record_timelapse failed" exception = e
-            500, JSON3.write((; error = sprint(showerror, e)))
-        end
+# Requested movie output size from a request body: `(size_x, size_y)`, each `nothing` when absent, blank
+# or non-positive — which means "record at the napari canvas size" (the default, and what every movie was
+# before the size fields existed). ONE reader for all three surfaces (single record, animation, batch) so
+# "blank = canvas" is defined once; the pixel-level validation (clamp, even axes) lives in Python's
+# `movie_io.coerce_movie_size`. See docs/NAPARI.md.
+function _movie_size_params(data)
+    read_axis(key) = begin
+        raw = get(data, key, nothing)
+        v = raw === nothing ? nothing : tryparse(Int, string(raw))
+        (v === nothing || v <= 0) ? nothing : v
     end
+    read_axis(:sizeX), read_axis(:sizeY)
 end
 
-# ── REST: POST /api/napari/record-animation ───────────────────────────────────
-# Render an interpolated keyframe animation (the timeline's ordered view snapshots) to an mp4 under the
-# project's movies/ dir. `keyframes` = [{viewState, steps}] in play order; each tweened `steps` frames
-# from the previous (camera/contrast/colour/T interpolation). F2 of the batch-movie work.
-function api_napari_record_animation(body_bytes::Vector{UInt8})
-    data        = JSON3.read(String(body_bytes))
-    project_uid = String(get(data, :projectUid, ""))
-    image_uid   = String(get(data, :imageUid, ""))
-    fps         = Int(get(data, :fps, 15))
-    scale       = Int(get(data, :scale, 1))
-    keyframes   = get(data, :keyframes, nothing)
-    (keyframes === nothing || length(keyframes) < 2) &&
-        return 400, JSON3.write((; error = "need at least 2 keyframes"))
-    img, err = _gating_image(project_uid, image_uid)
-    err === nothing || return err
-
-    v = _viewer()
-    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
-
-    path = _movie_named_path(img, image_uid; suffix = "_animation")
-
-    # Phase H4: optional title card. Like single-record, the FRONTEND builds the non-channel sections
-    # from the FIRST keyframe's view via the shared captureViewLegend path and sends them; we pass them
-    # through unchanged and the recorder adds Channels from that keyframe. nothing/disabled → no card.
-    tc   = get(data, :titleCard, nothing)
-    card = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
-
-    _with_viewer() do
-        try
-            resp = record_keyframes!(v, path, keyframes; fps = fps, scale = scale, title_card = card)
-            200, JSON3.write((; ok = true, path = path,
-                frames = get(resp, "frames", 0), keyframes = get(resp, "keyframes", 0)))
-        catch e
-            @warn "record_keyframes failed" exception = e
-            500, JSON3.write((; error = sprint(showerror, e)))
-        end
-    end
-end
+# Recording is NOT a REST route. `POST /api/napari/record-timelapse` and `record-animation` used to
+# block for the whole render and return the finished path, which meant no progress and no way to stop a
+# 4K render started by mistake. Both are now WS messages (`movie:record`, api/src/sockets.jl →
+# `run_single_movie` below), on the same task rail as the batch. See docs/NAPARI.md → *Movie output size*
+# and docs/API.md.
 
 # ── Batch movies (F1.2 config-apply + F1.3 batch) ─────────────────────────────
 # The "make a movie for all images" workflow (ports the R `generateMovies`, docs/todo/ANIMATION_PLAN.md
@@ -631,17 +571,35 @@ function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = ""
     joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
 end
 
+# A user-supplied filename addition → a safe `_suffix` fragment, or "" for none. Same character rule as
+# the image name above, so one movie name can't be sanitised two ways.
+#
+# It exists because a movie is named after the IMAGE: record the AF-corrected version and then the raw
+# import and the second overwrites the first, with nothing in the name to say which is which. The
+# frontend prefills it with the open image VERSION (the usual reason two movies of one image differ),
+# but it is free text — the comparison someone wants to label is not always a version.
+const MOVIE_SUFFIX_MAX = 40
+function _movie_suffix(raw)::String
+    s = strip(String(raw === nothing ? "" : raw))
+    isempty(s) && return ""
+    safe = replace(s, r"[^A-Za-z0-9._-]+" => "_")
+    safe = strip(safe, ['_', '.'])                      # no leading/trailing separators in a filename
+    isempty(safe) && return ""
+    "_" * first(safe, MOVIE_SUFFIX_MAX)
+end
+
 # Sentinel token in `file_attrs` meaning "the shown channel names joined by '-'" — mirrors the
 # frontend MOVIE_CHANNELS_TOKEN (utils/batchMovie.ts); keep the two in sync.
 const MOVIE_CHANNELS_TOKEN = "__channels__"
 
-# Attr-named output filename: <attr1>_<attr2>_..._<uid>.mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
+# Attr-named output filename: <attr1>_<attr2>_..._<uid>[_suffix].mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
 # `file_attrs` is the ordered list of attribute keys and/or the channels token; `channel_names` are the
 # channels shown in the movie (used only where the token appears, joined by '-'). Blank/missing attrs
 # are dropped; the uid always terminates the name so batch outputs never collide. Falls back to just
 # the uid when no file_attrs are given. Pure (attr dict + uid + channels) → testable.
 function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Vector{String},
-                         channel_names::Vector{String} = String[])::String
+                         channel_names::Vector{String} = String[];
+                         suffix::AbstractString = "")::String
     parts = String[]
     for a in file_attrs
         if a == MOVIE_CHANNELS_TOKEN
@@ -653,7 +611,9 @@ function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Ve
         end
     end
     push!(parts, String(uid))
-    replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * ".mp4"
+    # the user's filename addition goes BEFORE the extension (it arrives already sanitised + `_`-led
+    # from `_movie_suffix`), so the file is still an .mp4 to every listing that filters on the suffix
+    replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * suffix * ".mp4"
 end
 
 # Channels shown in the movie for `img` = the `config.channels` keys (the ones given a colormap),
@@ -667,8 +627,10 @@ function _shown_channel_names(img, config, vn)::Vector{String}
 end
 
 # Full attr-named output path under {proj}/movies/.
-function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[])::String
-    joinpath(_movies_dir(img), _movie_basename(img.attr, img.uid, file_attrs, channel_names))
+function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[];
+                         suffix::AbstractString = "")::String
+    joinpath(_movies_dir(img),
+             _movie_basename(img.attr, img.uid, file_attrs, channel_names; suffix = suffix))
 end
 
 # Apply an authored movie config to ONE image already resolvable by uid (F1.2). Opens the image (contrast
@@ -759,17 +721,33 @@ function api_napari_apply_movie_config(body_bytes::Vector{UInt8})
     end
 end
 
-# ── Batch cancel registry ─────────────────────────────────────────────────────
-# The batch is NOT a scheduler task (napari is a single UI-serial viewer in api/, not a pooled headless
-# job), so `cancel_task!` doesn't reach it. This lightweight flag, keyed by the client's taskId, is set
-# by the `task:cancel` WS handler and checked between images. A cancel can't interrupt an in-progress
-# record (the bridge blocks inside `animate`) — it takes effect after the current image finishes.
+# ── Viewer-task cancel registry ───────────────────────────────────────────────
+# Recordings (single + batch) are NOT scheduler tasks — napari is a single UI-serial viewer in api/, not
+# a pooled headless job — so `cancel_task!` doesn't reach them. This lightweight flag, keyed by the
+# client's taskId, is set by the `task:cancel` WS handler.
+#
+# The flag alone only stops a batch BETWEEN images, because a record occupies the bridge's command loop
+# for its whole run. So cancelling also sends `record_cancel` to the bridge, which answers it on its WS
+# thread WITHOUT queueing (see `request_record_cancel` there) and lets the frame loop see it mid-render.
+# One registry for both surfaces: the Cancel button in the task list must mean the same thing whether
+# the user recorded one movie or forty.
 const _batch_cancel      = Dict{String,Bool}()
 const _batch_cancel_lock = ReentrantLock()
 _batch_register!(id)      = lock(() -> (_batch_cancel[id] = false),                       _batch_cancel_lock)
 _batch_cancelled(id)      = lock(() -> get(_batch_cancel, id, false),                     _batch_cancel_lock)
 _batch_clear!(id)         = lock(() -> delete!(_batch_cancel, id),                        _batch_cancel_lock)
-request_batch_cancel!(id) = lock(() -> (haskey(_batch_cancel, id) && (_batch_cancel[id] = true); nothing), _batch_cancel_lock)
+function request_batch_cancel!(id)
+    known = lock(() -> (haskey(_batch_cancel, id) && (_batch_cancel[id] = true)), _batch_cancel_lock)
+    # Reach the frame loop too. Best-effort and unconditional on `known`: the bridge keys the flag by
+    # task id and clears it when that recording ends, so a cancel for anything else is inert.
+    known === true && try
+        v = _viewer()
+        v === nothing || send(v, Dict{String,Any}("type" => "record_cancel", "task_id" => id))
+    catch e
+        @warn "could not reach napari to cancel the recording" exception = e
+    end
+    nothing
+end
 
 # Append every non-transient, shown pop of `(vn, pt)` to `out` as {valueName, popType, path} — the shape
 # overlay_legend_content consumes. Uses the SAME pop-map primitives the show-tracks handler does, so the
@@ -869,7 +847,9 @@ end
 # record the T-sweep to an attr-named mp4, emit task:progress/log so it drives the existing task UI. `rep`
 # = representative uid for status/result. Errors on one image are logged and the batch continues.
 function run_batch_movies(task_id::String, project_uid::String, image_uids::Vector{String},
-                          config, file_attrs::Vector{String}, fps::Int, scale)
+                          config, file_attrs::Vector{String}, fps::Int;
+                          size_x::Union{Int,Nothing}=nothing, size_y::Union{Int,Nothing}=nothing,
+                          suffix::AbstractString="")
     n   = length(image_uids)
     rep = isempty(image_uids) ? "" : first(image_uids)
     done = 0; errors = String[]
@@ -900,17 +880,30 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
         try
             vn_raw = strip(String(get(config, :valueName, "")))
             chan_names = _shown_channel_names(img, config, isempty(vn_raw) ? nothing : vn_raw)
-            path = _movie_out_path(img, file_attrs, chan_names)
+            # same filename addition as a single record — a corrected batch and a raw batch would
+            # otherwise write the same attr-named files over each other
+            path = _movie_out_path(img, file_attrs, chan_names; suffix = _movie_suffix(suffix))
             ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
-            _with_viewer() do
+            resp = _with_viewer() do
                 _apply_movie_config!(project_uid, uid, img, config)
                 v = _viewer()
                 v === nothing && error("Napari not running")
-                record_timelapse!(v, path; fps = fps, scale = scale, t_start = t_start, t_end = t_end,
-                                  title_card = _title_card_content(img, config))
+                # task_id: the bridge polls the SAME cancel flag per frame, so Cancel now stops the
+                # image being recorded rather than only the ones after it. Per-frame progress is
+                # deliberately NOT relayed here — the batch's bar counts images.
+                record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
+                                  t_start = t_start, t_end = t_end,
+                                  title_card = _title_card_content(img, config),
+                                  task_id = task_id)
             end
-            done += 1
-            ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
+            if get(resp, "cancelled", false) === true
+                # cancelled mid-image: nothing was written (the staged file is removed), so this image
+                # is neither done nor an error — the loop's cancel check ends the run on the next pass
+                ws_log(nothing, task_id, "[$i/$n] cancelled — $(basename(path)) not written")
+            else
+                done += 1
+                ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
+            end
         catch e
             push!(errors, uid)
             ws_log(nothing, task_id, "[ERROR] $uid: $(sprint(showerror, e))")
@@ -922,6 +915,84 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     ws_result(nothing, task_id, rep,
         Dict{String,Any}("done" => done, "total" => n, "errors" => errors, "cancelled" => cancelled))
     ws_status(nothing, task_id, status, rep; image_uids = image_uids, fun="movie:batch", pool="viewer")
+    _batch_clear!(task_id)
+    nothing
+end
+
+# Single recording (timelapse or keyframe animation) on the SAME task rail as the batch: registered for
+# cancel, `task:progress` per frame, `task:status`/`task:result` at the end. Invoked async from the WS
+# layer (`movie:record`).
+#
+# It used to be a blocking POST that returned when the movie was finished, which gave the user a frozen
+# button and no way out of a 4K render they started by accident. The batch already had progress + Cancel
+# purely because it loops over images in Julia and can report between them; a single record has no
+# "between", so the events come from inside the bridge's frame loop instead (`_record_hooks` /
+# `record_cancel` there, relayed by the `recordProgress` branch of `api_napari_event`).
+#
+# `keyframes === nothing` records the open image's T-sweep; otherwise it renders the keyframe animation.
+function run_single_movie(task_id::String, project_uid::String, image_uid::String;
+                          fps::Int = 15, size_x::Union{Int,Nothing} = nothing,
+                          size_y::Union{Int,Nothing} = nothing, suffix::AbstractString = "",
+                          title_card = nothing, keyframes = nothing,
+                          api_url::AbstractString = "http://localhost:8080")
+    animation = keyframes !== nothing
+    fun       = animation ? "movie:animation" : "movie:record"
+    img, err  = _gating_image(project_uid, image_uid)
+    if err !== nothing
+        ws_log(nothing, task_id, "[ERROR] image not found")
+        ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "viewer")
+        _batch_clear!(task_id)
+        return nothing
+    end
+    v = _viewer()
+    if isnothing(v) || !_viewer_alive()
+        ws_log(nothing, task_id, "[ERROR] Napari is not running — open an image first, then record")
+        ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "viewer")
+        _batch_clear!(task_id)
+        return nothing
+    end
+
+    # `_movie_named_path` names by the IMAGE; the user's suffix is what distinguishes two movies of the
+    # same image (the corrected version vs the raw import). The animation marker stays last so the two
+    # kinds still sort together.
+    path = _movie_named_path(img, image_uid;
+                             suffix = _movie_suffix(suffix) * (animation ? "_animation" : ""))
+    ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "viewer")
+    ws_progress(nothing, task_id, 0, 1)          # a real total arrives with the first frame report
+    ws_log(nothing, task_id, "Recording → $(basename(path))")
+
+    status = "done"
+    result = Dict{String,Any}("path" => path)
+    try
+        resp = _with_viewer() do
+            animation ?
+                record_keyframes!(v, path, keyframes; fps = fps, size_x = size_x, size_y = size_y,
+                                  title_card = title_card, task_id = task_id, api_url = api_url) :
+                record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
+                                  title_card = title_card, task_id = task_id, api_url = api_url)
+        end
+        frames = Int(get(resp, "frames", 0))
+        if get(resp, "cancelled", false) === true
+            status = "cancelled"
+            # nothing to clean up here: the bridge stages the file and removes it on cancel, so any
+            # previous movie at this path is still the one on disk
+            ws_log(nothing, task_id, "[CANCELLED] stopped after $frames frame(s) — nothing written")
+        else
+            merge!(result, Dict{String,Any}("frames" => frames,
+                                            "sizeX" => get(resp, "sizeX", nothing),
+                                            "sizeY" => get(resp, "sizeY", nothing)))
+            sz = get(resp, "sizeX", nothing) === nothing ? "" :
+                 " at $(get(resp, "sizeX", 0))x$(get(resp, "sizeY", 0))"
+            ws_log(nothing, task_id, "Recorded $frames frames$sz → $(basename(path))")
+        end
+    catch e
+        status = "failed"
+        @warn "record failed" exception = e
+        ws_log(nothing, task_id, "[ERROR] $(sprint(showerror, e))")
+    end
+    result["cancelled"] = status == "cancelled"
+    ws_result(nothing, task_id, image_uid, result)
+    ws_status(nothing, task_id, status, image_uid; fun = fun, pool = "viewer")
     _batch_clear!(task_id)
     nothing
 end
@@ -1447,6 +1518,16 @@ function api_napari_event(body_bytes::Vector{UInt8})
         return 200, JSON3.write((; ok = true))
     end
 
+    # A recording reporting its frame count. Like viewChanged this carries no image — it is the bridge
+    # talking about work the backend started — and it is what gives a single record a progress bar
+    # (see run_single_movie). Throttled on the bridge side, not here.
+    if evt == "recordProgress"
+        task_id = String(get(data, :taskId, ""))
+        isempty(task_id) || ws_progress(nothing, task_id,
+                                        Int(get(data, :frame, 0)), max(Int(get(data, :total, 1)), 1))
+        return 200, JSON3.write((; ok = true))
+    end
+
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     pop_type    = String(get(data, :popType, "flow"))
@@ -1495,11 +1576,17 @@ function api_napari_status(req::HTTP.Request)
     v = _viewer()
     alive = false
     bridge_started = nothing
+    canvas_x = nothing
+    canvas_y = nothing
     if v !== nothing
         try
             resp = send(v, Dict("type" => "ping"))
             alive = true
             bridge_started = get(resp, "started_at", nothing)
+            # the size a movie records at when none is requested — the movie controls show it as their
+            # placeholder, so the honest default is visible (docs/NAPARI.md)
+            canvas_x = get(resp, "canvas_size_x", nothing)
+            canvas_y = get(resp, "canvas_size_y", nothing)
         catch
         end
     end
@@ -1509,7 +1596,8 @@ function api_napari_status(req::HTTP.Request)
                    (try; _napari_src_mtime() > Float64(bridge_started) + 1.0; catch; false; end)
     200, JSON3.write((; alive = alive, starting = _viewer_starting[],
                         bridgeStartedAt = bridge_started, bridgeUptimeSeconds = bridge_uptime,
-                        bridgeStale = bridge_stale))
+                        bridgeStale = bridge_stale,
+                        canvasSizeX = canvas_x, canvasSizeY = canvas_y))
 end
 
 # ── REST: discrete-GPU toggle ─────────────────────────────────────────────────

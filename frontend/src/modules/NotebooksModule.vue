@@ -184,7 +184,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
           </span>
         </div>
         <div v-else-if="sysimage === 'absent' || sysimage === 'stale' || sysimage === 'error'"
-             class="nb-build-row">
+             class="nb-build-row cc-row cc-row-loose">
           <button class="cc-btn cc-btn-ghost" @click="buildSysimage"
                   v-tooltip.top="'Build a compiled image so the first plot renders fast (~10 min, runs in the background)'">
             <i class="pi pi-bolt" />
@@ -232,6 +232,6 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
   color: var(--cc-text); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
 }
 .nb-note .pi { margin-top: .1rem; color: #58a6ff; }
-.nb-build-row { display: flex; align-items: center; gap: .75rem; margin: .75rem 0 0; flex-wrap: wrap; }
+.nb-build-row { margin: .75rem 0 0; }
 .nb-build-row .nb-hint { margin: 0; }
 </style>

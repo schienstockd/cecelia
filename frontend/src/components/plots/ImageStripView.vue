@@ -310,7 +310,7 @@ defineExpose({ exportImage })
 
 <template>
   <div class="is-view">
-    <div class="is-bar cc-panel-controls">
+    <div class="is-bar cc-row cc-panel-controls">
       <div v-tooltip.bottom="'Strip direction'">
         <ChipSelect variant="segmented" aria-label="Strip direction" :options="orientationOpts"
                     :model-value="orientation" @update:model-value="v => orientation = v as 'h' | 'v'" />
@@ -382,8 +382,7 @@ defineExpose({ exportImage })
 /* position: relative so the overlaid .is-bar (.cc-panel-controls) anchors to the strip box */
 .is-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* angle/width live in a ⚙ popover (below), so the bar stays short and never wraps */
-.is-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap;
-  font-size: var(--cc-fs-sm); }
+.is-bar { padding: 6px 8px; font-size: var(--cc-fs-sm); }
 .is-opts { position: relative; display: inline-flex; }
 /* .is-gear → cc-btn cc-btn-ghost cc-btn-icon */
 .is-gear:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }

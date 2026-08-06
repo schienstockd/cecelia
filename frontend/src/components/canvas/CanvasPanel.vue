@@ -131,12 +131,12 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
       </template>
     </div>
     <!-- IN-FLOW controls (auto-hide OFF, e.g. the gate-drawing page): own rows so they never clip -->
-    <div v-if="!autoHide && slots.actions && !collapsed" class="panel-controls inflow"><slot name="actions" /></div>
+    <div v-if="!autoHide && slots.actions && !collapsed" class="panel-controls cc-row cc-row-tight inflow"><slot name="actions" /></div>
     <!-- body always gets the whole box; in auto-hide mode the controls overlay it (see .cc-panel-controls) -->
     <div v-show="!collapsed" ref="mainEl" class="panel-main">
       <div class="panel-body"><slot /></div>
       <template v-if="autoHide">
-        <div v-if="slots.actions" class="panel-controls cc-panel-controls"><slot name="actions" /></div>
+        <div v-if="slots.actions" class="panel-controls cc-row cc-row-tight cc-panel-controls"><slot name="actions" /></div>
         <div v-if="slots.footer" class="panel-foot cc-panel-controls bottom"><slot name="footer" /></div>
       </template>
     </div>
@@ -176,7 +176,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* controls / footer: shared layout only. The overlay look + hover-reveal live in the global
    .cc-panel-controls utility (style.css); the in-flow look (auto-hide off) is the .inflow variant. */
-.panel-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; }
+.panel-controls { padding: 5px 8px; }
 .panel-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 8px; }
 /* in-flow (auto-hide OFF): solid rows that reserve height, as before */
 .panel-controls.inflow { border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }

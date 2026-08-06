@@ -398,6 +398,30 @@ body {
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .cc-card-2 { background: var(--cc-surface-2); }
 
+/* A row of controls that must WRAP when its container is narrow — a module page's control bar, a panel
+   toolbar, a viewer's option row. Measured before extracting: 19 sites already spelled out
+   `display:flex; align-items:center; flex-wrap:wrap; gap:…`, between them using 14 different gap
+   values from 2.4px to 14.4px, none of them chosen against the others.
+
+   Density is the axis, and it is TWO-dimensional on purpose: a wrapped row wants its lines closer
+   together than its items are apart, which four sites had already discovered separately (`0.25rem
+   0.5rem`, `0.4rem 0.6rem`, `0.15rem 0.5rem`, `1px 8px`). The base encodes that; -tight is dense panel
+   chrome, -loose a page-level bar.
+
+   `min-width: 0` is part of the scenario, not a nicety: without it a flex item with a long label refuses
+   to shrink and pushes the row wider than its container instead of wrapping.
+
+   Only the layout belongs here. A toolbar's own padding/border/background stays in its scoped rule —
+   compose the two (`class="ll-toolbar cc-row"`). Rows that align on `baseline`/`stretch`, or that use
+   `justify-content: space-between` as a page header, are NOT this scenario and keep their own rule. */
+.cc-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.5rem; min-width: 0; }
+.cc-row-tight { gap: 0.15rem 0.3rem; }
+.cc-row-loose { gap: 0.4rem 0.75rem; }
+/* One WRAP UNIT inside a `.cc-row`: a label with its input, a slider with its readout, `724 × 722`.
+   Without it the row breaks anywhere and orphans a label or a lone number on a line of its own — which
+   is exactly how the movie controls read once a size and a filename field joined the fps slider. */
+.cc-row-group { display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0; }
+
 /* ONE density scale, composed with any text scenario: `.cc-muted .cc-fs-xs`, `.cc-eyebrow .cc-fs-2xs`,
    `.cc-readout .cc-fs-2xs`, `.cc-empty-inline .cc-fs-3xs`.
    Each scenario used to carry its own ladder — `.cc-muted-2xs`, `.cc-eyebrow-2xs` and

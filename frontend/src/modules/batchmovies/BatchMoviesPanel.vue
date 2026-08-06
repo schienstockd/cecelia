@@ -1,7 +1,7 @@
 <!--
   Batch-movie authoring + run (F1.3 "make a movie for all images", docs/todo/ANIMATION_PLAN.md → F1).
   Author ONE config — which channels + colormap, which overlays (tracks / track-clusters / populations),
-  a colour-by measure, fps/scale, and which attributes name the output file — then Generate one attr-named
+  a colour-by measure, fps, and which attributes name the output file — then Generate one attr-named
   mp4 per selected image. The batch drives the single shared napari viewer sequentially (see
   api/src/napari_api.jl → run_batch_movies): it TAKES OVER the viewer for a while, so we warn while it runs.
 
@@ -9,7 +9,7 @@
   task list as the bottom — sharing the same `PaneExpandBar` primitive (`utils/paneExpand.ts`), so either
   can take the whole panel instead of scrolling past the other.
 
-  Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps/scale
+  Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps
   reuse the same per-set movie config as the ViewerPanel recorder. Progress/cancel ride the normal task
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
@@ -30,6 +30,8 @@ import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import { usePaneExpand } from '../../composables/usePaneExpand'
 import TitleCardControls from '../../components/TitleCardControls.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
+import { movieSizeParams } from '../../utils/movieSize'
+import { useNapariStatus } from '../../composables/useNapariStatus'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -38,6 +40,8 @@ const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const tasks       = useTaskStore()
 const ws          = useWsStore()
+// the canvas size napari would record at, for the size fields' placeholder (shared poll)
+const { canvasSizeX, canvasSizeY } = useNapariStatus()
 const log         = useLogStore()
 
 const uniq = (xs: string[]) => [...new Set(xs)]
@@ -56,10 +60,17 @@ const segNames     = computed(() => uniq(imgs.value.flatMap(i => Object.keys(i.l
 // ── persisted config (per set) ────────────────────────────────────────────────
 const cfg = computed(() => setUid.value ? settings.getBatchMovieConfig(setUid.value) : {})
 function patch(p: Record<string, unknown>) { if (setUid.value) settings.setBatchMovieConfig(setUid.value, p) }
-// fps/scale reuse the ViewerPanel recorder's per-set config
-const movie = computed(() => setUid.value ? settings.getMovieConfig(setUid.value) : { fps: 15, scale: 1 })
+// fps + output size reuse the ViewerPanel recorder's per-set config (null size = the napari canvas size)
+const movie = computed(() => setUid.value ? settings.getMovieConfig(setUid.value)
+                                          : { fps: 15, sizeX: null, sizeY: null, suffix: null })
 const fps   = computed<number>({ get: () => movie.value.fps,   set: v => setUid.value && settings.setMovieConfig(setUid.value, { fps: v }) })
-const scale = computed<number>({ get: () => movie.value.scale, set: v => setUid.value && settings.setMovieConfig(setUid.value, { scale: v }) })
+const sizeX = computed<number | null>({ get: () => movie.value.sizeX, set: v => setUid.value && settings.setMovieConfig(setUid.value, { sizeX: v }) })
+const sizeY = computed<number | null>({ get: () => movie.value.sizeY, set: v => setUid.value && settings.setMovieConfig(setUid.value, { sizeY: v }) })
+// filename addition; defaults to the version this batch opens (blank = the active one), so a corrected
+// run and a raw run don't write over each other. null = untouched, '' = deliberately cleared.
+const suffix = computed<string>({
+  get: () => movie.value.suffix ?? (valueName.value && valueName.value !== 'default' ? valueName.value : ''),
+  set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { suffix: v }) } })
 
 const valueName    = computed<string>({ get: () => cfg.value.valueName ?? '',        set: v => patch({ valueName: v }) })
 const colourBy     = computed<string>({ get: () => cfg.value.colourBy ?? '',         set: v => patch({ colourBy: v }) })
@@ -205,7 +216,8 @@ function generate() {
   })
   ws.send({
     type: 'movie:batch', taskId: t.id, projectUid, imageUids: uids,
-    config: buildConfig(), fileAttrs: fileAttrs.value, fps: fps.value, scale: scale.value,
+    config: buildConfig(), fileAttrs: fileAttrs.value, fps: fps.value, suffix: suffix.value,
+    ...movieSizeParams(sizeX.value, sizeY.value),
   })
   log.info(`Batch movies started for ${uids.length} image(s) — napari will be busy for a bit`, { source: 'napari' })
 }
@@ -313,7 +325,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <!-- Movie — the same controls as the viewer recorder and the animation page -->
       <section class="bm-sec">
         <h4>Movie</h4>
-        <MovieOutputControls v-model:fps="fps" v-model:scale="scale" />
+        <MovieOutputControls v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
+                             v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 
@@ -330,7 +343,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Actions -->
-      <div class="bm-actions">
+      <div class="bm-actions cc-row">
         <button class="cc-btn cc-btn-ghost" :disabled="!project.napariImageUid" @click="previewOpen"
                 title="Apply this config to the currently open napari image (no recording)">
           <i class="pi pi-eye" /> Preview on open image
@@ -380,13 +393,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 .bm-chk { display: flex; align-items: center; gap: 6px; font-size: var(--cc-fs-md); margin: 3px 0; cursor: pointer; }
 .bm-chk.inline { display: inline-flex; margin-right: 10px; }
 .bm-inset { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }
-/* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so two on one row
-   (fps + res) overflow the sidebar. Let them flex down to share the available width. */
+/* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so a slider sharing a row
+   with the size fields overflows the sidebar. Let it flex down to share the available width. */
 .bm-inset input[type="range"] { flex: 1; min-width: 0; }
 
 .bm-val { font-size: var(--cc-fs-sm); min-width: 1.6rem; }
 .bm-attrs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .bm-preview { margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
-.bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 </style>

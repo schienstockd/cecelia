@@ -34,7 +34,7 @@ withDefaults(defineProps<{
   <div class="mp" :class="`mp-${layout}`">
     <header class="mp-head">
       <h1 class="mp-title"><i v-if="icon" :class="icon" />{{ title }}</h1>
-      <div v-if="$slots.controls" class="mp-ctl"><slot name="controls" /></div>
+      <div v-if="$slots.controls" class="mp-ctl cc-row cc-row-loose"><slot name="controls" /></div>
     </header>
     <slot />
   </div>
@@ -52,5 +52,5 @@ withDefaults(defineProps<{
   gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem;
 }
 .mp-title { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.5rem; }
-.mp-ctl { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+
 </style>
