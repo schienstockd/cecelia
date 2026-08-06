@@ -432,6 +432,42 @@ function set_image_compressor!(name::AbstractString)::String
 end
 
 """
+    bf2raw_shuffle_values(lib_dir) -> (on, off)
+
+How THIS bioformats2raw spells the blosc `shuffle` property. Returns the value for byte-shuffle-on and
+for shuffle-off.
+
+bioformats2raw 0.12.0 swapped its zarr library (jzarr → zarr-java, upstream PR #302) and with it the
+spelling of this one property. The two are mutually exclusive — each version **hard-fails** on the
+other's, so the flag has to follow the binary:
+
+| passed              | 0.11.x (jzarr) | 0.12.x (zarr-java)   |
+|---------------------|----------------|----------------------|
+| `shuffle=1`         | byte shuffle   | NullPointerException |
+| `shuffle=0`         | no shuffle     | NullPointerException |
+| `shuffle=shuffle`   | invalid option | byte shuffle         |
+| `shuffle=noshuffle` | invalid option | no shuffle           |
+
+**`byteshuffle` — the alias 0.12's README documents for byte shuffle — is BROKEN upstream.** It
+reaches blosc-java as a null enum (`NullPointerException: Cannot read field "shuffle" because "x0" is
+null`, in `Blosc.Shuffle.access\$000`) and every chunk write throws `ZarrException: Error in encoding
+blosc`. `shuffle` is the spelling that works; measured against 0.12.1 for cname ∈
+{lz4, zstd, zlib, blosclz} and both NGFF 0.4 and 0.5.
+
+Detected from the BUNDLED ZARR LIBRARY, not by parsing `--version`: the library *is* the cause, and a
+directory listing costs nothing where `--version` pays a JVM start on every import. An unrecognised
+install gets the current spelling — a wrong guess fails loudly (non-zero exit, which `_run_task`
+already checks), it cannot silently write the wrong codec.
+"""
+function bf2raw_shuffle_values(lib_dir::AbstractString)
+    legacy = isdir(lib_dir) && any(startswith(f, "jzarr-") for f in readdir(lib_dir))
+    legacy ? ("1", "0") : ("shuffle", "noshuffle")
+end
+
+# lib/ sits next to bin/ in every bioformats2raw distribution: <install>/bin/bioformats2raw + <install>/lib
+_bf2raw_lib_dir(bin::AbstractString = bioformats2raw_bin()) = joinpath(dirname(dirname(bin)), "lib")
+
+"""
     bf2raw_compression_flags([name]) -> Vector{String}
 
 bioformats2raw CLI flags that make it write the SAME compressor our own Python writers use.
@@ -440,12 +476,15 @@ bioformats2raw defaults to `blosc/lz4-5`, which on real 16-bit acquisition data 
 default choice for no read-speed benefit that survives measurement. The import is the one store we do
 NOT write through `zarr_utils`, so it is the one that has to be told explicitly — otherwise an
 imported original and every correction derived from it are encoded differently.
+
+The `shuffle` value's spelling depends on the installed version — see `bf2raw_shuffle_values`.
 """
 function bf2raw_compression_flags(name::AbstractString = image_compressor())::Vector{String}
     i = findfirst(c -> c.name == name, IMAGE_COMPRESSOR_CHOICES)
     c = IMAGE_COMPRESSOR_CHOICES[isnothing(i) ? 1 : i]
+    shuf_on, shuf_off = bf2raw_shuffle_values(_bf2raw_lib_dir())
     ["--compression", "blosc",
      "--compression-properties", "cname=$(c.cname)",
      "--compression-properties", "clevel=$(c.clevel)",
-     "--compression-properties", "shuffle=$(c.shuffle ? 1 : 0)"]
+     "--compression-properties", "shuffle=$(c.shuffle ? shuf_on : shuf_off)"]
 end

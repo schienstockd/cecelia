@@ -7793,13 +7793,36 @@ end
         @test occursin("IMAGE_COMPRESSOR_DEFAULT = '$(Cecelia.IMAGE_COMPRESSOR_DEFAULT)'", py)
         @test Cecelia.image_compressor() in [c.name for c in Cecelia.IMAGE_COMPRESSOR_CHOICES]
 
-        # bioformats2raw is handed the numeric blosc shuffle; numcodecs names it
+        # The blosc `shuffle` property is spelled DIFFERENTLY per bioformats2raw version, and each
+        # version hard-fails on the other's spelling (0.12.0 swapped jzarr → zarr-java). Detected from
+        # the bundled jar; asserted here against synthetic lib dirs so this is hermetic — CI has no
+        # bioformats2raw install at all, and that must resolve to the current spelling, not error.
+        mktempdir() do d
+            legacy = joinpath(d, "legacy"); mkpath(legacy)
+            touch(joinpath(legacy, "jzarr-0.4.2.jar"))
+            @test Cecelia.bf2raw_shuffle_values(legacy) == ("1", "0")
+
+            modern = joinpath(d, "modern"); mkpath(modern)
+            touch(joinpath(modern, "zarr-java-0.1.3.jar"))
+            @test Cecelia.bf2raw_shuffle_values(modern) == ("shuffle", "noshuffle")
+
+            # neither jar, and a missing dir → the current spelling (a wrong guess fails loudly)
+            empty_dir = joinpath(d, "empty"); mkpath(empty_dir)
+            @test Cecelia.bf2raw_shuffle_values(empty_dir) == ("shuffle", "noshuffle")
+            @test Cecelia.bf2raw_shuffle_values(joinpath(d, "absent")) == ("shuffle", "noshuffle")
+        end
+        # NOT the literal "1"/"0": that is the legacy spelling, and hardcoding it here is what would
+        # hide the incompatibility. Assert against whatever THIS install wants.
+        shuf_on, shuf_off = Cecelia.bf2raw_shuffle_values(Cecelia._bf2raw_lib_dir())
         flags = Cecelia.bf2raw_compression_flags("zstd-shuffle")
         @test flags[1:2] == ["--compression", "blosc"]
         props = Dict(split(flags[i], "=")[1] => split(flags[i], "=")[2] for i in 4:2:length(flags))
-        @test props == Dict("cname" => "zstd", "clevel" => "3", "shuffle" => "1")
+        @test props == Dict("cname" => "zstd", "clevel" => "3", "shuffle" => shuf_on)
         @test Dict(split(f, "=")[1] => split(f, "=")[2]
-                   for f in Cecelia.bf2raw_compression_flags("zstd")[4:2:end])["shuffle"] == "0"
+                   for f in Cecelia.bf2raw_compression_flags("zstd")[4:2:end])["shuffle"] == shuf_off
+        # `byteshuffle` is the alias 0.12's README documents for byte shuffle, and it is BROKEN
+        # upstream (null enum → NPE → every chunk write fails). It must never be emitted.
+        @test !any(occursin("byteshuffle", f) for f in flags)
 
         # an unknown name falls back rather than erroring - a typo in custom.toml must not fail a
         # multi-hour import
