@@ -1,0 +1,103 @@
+{
+  "zarr_format" : 3,
+  "node_type" : "group",
+  "attributes" : {
+    "ome" : {
+      "multiscales" : [ {
+        "metadata" : {
+          "method" : "loci.common.image.SimpleImageScaler",
+          "version" : "Bio-Formats 8.5.0"
+        },
+        "axes" : [ {
+          "unit" : "second",
+          "name" : "t",
+          "type" : "time"
+        }, {
+          "name" : "c",
+          "type" : "channel"
+        }, {
+          "unit" : "micrometer",
+          "name" : "z",
+          "type" : "space"
+        }, {
+          "unit" : "micrometer",
+          "name" : "y",
+          "type" : "space"
+        }, {
+          "unit" : "micrometer",
+          "name" : "x",
+          "type" : "space"
+        } ],
+        "name" : "fixture_src.tif",
+        "datasets" : [ {
+          "path" : "0",
+          "coordinateTransformations" : [ {
+            "scale" : [ 30.0, 1.0, 3.0, 0.5964274525755702, 0.5964274525755702 ],
+            "type" : "scale"
+          } ]
+        } ]
+      } ],
+      "omero" : {
+        "channels" : [ {
+          "color" : "FF0000",
+          "coefficient" : 1,
+          "active" : true,
+          "label" : "Channel 0",
+          "window" : {
+            "min" : 43.0,
+            "max" : 3863.0,
+            "start" : 43.0,
+            "end" : 3863.0
+          },
+          "family" : "linear",
+          "inverted" : false
+        }, {
+          "color" : "00FF00",
+          "coefficient" : 1,
+          "active" : true,
+          "label" : "Channel 1",
+          "window" : {
+            "min" : 179.0,
+            "max" : 425.0,
+            "start" : 179.0,
+            "end" : 425.0
+          },
+          "family" : "linear",
+          "inverted" : false
+        }, {
+          "color" : "0000FF",
+          "coefficient" : 1,
+          "active" : true,
+          "label" : "Channel 2",
+          "window" : {
+            "min" : 269.0,
+            "max" : 306.0,
+            "start" : 269.0,
+            "end" : 306.0
+          },
+          "family" : "linear",
+          "inverted" : false
+        }, {
+          "color" : "FF0000",
+          "coefficient" : 1,
+          "active" : false,
+          "label" : "Channel 3",
+          "window" : {
+            "min" : 169.0,
+            "max" : 540.0,
+            "start" : 169.0,
+            "end" : 540.0
+          },
+          "family" : "linear",
+          "inverted" : false
+        } ],
+        "rdefs" : {
+          "defaultT" : 0,
+          "model" : "color",
+          "defaultZ" : 1
+        }
+      },
+      "version" : "0.5"
+    }
+  }
+}

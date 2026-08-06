@@ -106,5 +106,60 @@ class ReadBothFormatsTest(unittest.TestCase):
         np.testing.assert_array_equal(v2, v3)
 
 
+class RealFixtureStoresTest(unittest.TestCase):
+    """The committed bioformats2raw stores — real metadata and real sharding, not our own writes.
+
+    The in-process stores above pin the `ome`-unwrap logic; these pin it against what bioformats2raw
+    0.12.1 actually emits (series wrapper, `omero` block, OME-XML sidecar, `sharding_indexed` with
+    shard != chunk). See test-data/README.md.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        root = os.environ.get('CECELIA_TEST_DATA') or os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', 'test-data', 'projects')
+        cls.v2 = os.path.normpath(os.path.join(root, 'ZARRFMT', '0', 'ZV2img', 'ccidImage.ome.zarr'))
+        cls.v3 = os.path.normpath(os.path.join(root, 'ZARRFMT', '0', 'ZV3img', 'ccidImage.ome.zarr'))
+
+    def setUp(self):
+        for p in (self.v2, self.v3):
+            if not os.path.isdir(p):
+                self.skipTest(f'fixture missing: {p} (restore with `git checkout -- test-data`)')
+
+    def test_formats_are_what_the_fixtures_claim(self):
+        self.assertEqual(2, zarr_utils.store_format(self.v2))
+        self.assertEqual(3, zarr_utils.store_format(self.v3))
+
+    def test_geometry_and_calibration_agree(self):
+        self.assertEqual(['t', 'c', 'z', 'y', 'x'], zarr_utils.read_axes(self.v3))
+        self.assertEqual(zarr_utils.read_axes(self.v2), zarr_utils.read_axes(self.v3))
+        s2, s3 = zarr_utils.read_scale(self.v2), zarr_utils.read_scale(self.v3)
+        np.testing.assert_allclose(np.asarray(s2, float), np.asarray(s3, float))
+        # real values, deliberately not 1.0 — a 1.0 scale is indistinguishable from "unknown"
+        self.assertAlmostEqual(0.5964274525755702, float(s2[-1]), places=9)
+        self.assertEqual(30.0, zarr_utils.read_time_increment(self.v3))
+        self.assertEqual(zarr_utils.read_axis_units(self.v2), zarr_utils.read_axis_units(self.v3))
+
+    def test_pixels_are_identical_including_through_sharding(self):
+        a2 = np.asarray(zarr_utils.open_as_zarr(self.v2)[0][0][:])
+        a3 = np.asarray(zarr_utils.open_as_zarr(self.v3)[0][0][:])
+        self.assertEqual((3, 4, 3, 64, 64), a2.shape)
+        np.testing.assert_array_equal(a2, a3)
+        self.assertGreater(int(a2.max()), 3000)      # real data, not a zeroed/garbled read
+
+    def test_the_v3_fixture_really_is_sharded_with_shard_not_equal_chunk(self):
+        # guards the fixture itself: if a regeneration lost sharding, the tests that depend on the
+        # distinction would pass vacuously
+        with open(os.path.join(self.v3, '0', '0', 'zarr.json'), encoding='utf-8') as fh:
+            meta = json.load(fh)
+        outer = meta['chunk_grid']['configuration']['chunk_shape']
+        shard = [c for c in meta['codecs'] if c['name'] == 'sharding_indexed']
+        self.assertTrue(shard, 'v3 fixture is not sharded')
+        inner = shard[0]['configuration']['chunk_shape']
+        self.assertEqual([1, 1, 1, 64, 64], outer)
+        self.assertEqual([1, 1, 1, 32, 32], inner)
+        self.assertNotEqual(outer, inner)
+
+
 if __name__ == '__main__':
     unittest.main()

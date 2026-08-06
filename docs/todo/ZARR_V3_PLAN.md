@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phase 1 (read) done** — both languages read v2 and v3 identically, all suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -171,9 +171,14 @@ Phase 4 measures the correction-task rewrite to confirm the prediction above.
 * Julia `app/src/tasks/importImages/omezarr.jl`: `series_base`, `read_ome_metadata`,
   `update_ome_scale!` / `sync_zarr_calibration!` — the calibration stamp is the risky one, and
   `app/test/runtests.jl` → *"calibration writers agree across languages"* is its contract.
-* Fixtures: a tiny v2 store **and** a v3 sharded store under `test-data/` (the 1 MB/file, 8 MB/tree
-  cap is enforced by a test — a 64×64×2×2×2 `.fake` conversion is a few KB).
-* Tests: `test-py`, `test-api`, `test-pkg`.
+* Fixtures — **done**: `test-data/projects/ZARRFMT/` holds the same real pixels as a v2 store and a
+  v3 **sharded** store (a 64×64 crop of `M2b-CD8-GFP-CD20-Tom.tif`, 3t×4c×3z, real calibration,
+  259 KB total against the 8 MB tree cap). Cropped from real data rather than a `.fake` gradient so
+  the codec and intensity distribution are representative, calibration deliberately ≠ 1.0 so a correct
+  read is distinguishable from the "unknown" fallback, and shard ≠ chunk so the report cannot pass
+  vacuously. Documented in `test-data/README.md`.
+* Tests — **done**: `test-py` (523), `test-api`, `test-pkg` all green, each asserting the two formats
+  AGREE rather than hardcoding expectations twice.
 
 ### Phase 2 — Report (the metadata modal)
 
