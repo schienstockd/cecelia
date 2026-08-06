@@ -260,6 +260,16 @@
           "tip": "Remove objects larger than this many pixels (0 = off)"
         },
         {
+          "key": "labelSmoothing",
+          "label": "Smooth outlines (\u03c3)",
+          "type": "float",
+          "min": 0.0,
+          "max": 5.0,
+          "step": 0.5,
+          "default": 0.0,
+          "tip": "Round wrinkled boundaries; changes measured shape"
+        },
+        {
           "key": "labelExpansion",
           "label": "Label expansion (px)",
           "type": "int",

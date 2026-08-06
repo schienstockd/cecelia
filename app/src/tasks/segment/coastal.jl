@@ -156,6 +156,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            removeUnmatched     = Bool(get(params, "removeUnmatched", false)),
            minCellSize         = Int(get(params, "minCellSize", 0)),
            cellSizeMax         = Int(get(params, "cellSizeMax", 0)),
+           labelSmoothing      = Float64(get(params, "labelSmoothing", 0.0)),
            labelExpansion      = Int(get(params, "labelExpansion", 0)),
            labelErosion        = Int(get(params, "labelErosion", 0)),
            clearTouchingBorder = Bool(get(params, "clearTouchingBorder", false)),

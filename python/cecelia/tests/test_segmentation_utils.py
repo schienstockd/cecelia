@@ -106,7 +106,8 @@ class PostProcessOnACropTest(unittest.TestCase):
     def _seg(**params):
         from cecelia.utils.segmentation_utils import SegmentationUtils
         seg = SegmentationUtils.__new__(SegmentationUtils)     # no zarr/taskDir needed
-        for k, v in dict(label_erosion=0, label_expansion=0, min_cell_size=0, cell_size_max=0,
+        for k, v in dict(label_erosion=0, label_expansion=0, label_smoothing=0.0,
+                         min_cell_size=0, cell_size_max=0,
                          clear_depth=False, clear_touching_border=False).items():
             setattr(seg, k, params.get(k, v))
         return seg
@@ -231,3 +232,85 @@ class StackedModelGroupsFillTest(unittest.TestCase):
         first = np.full((3, 3), 5, dtype=np.uint32)
         out = self._write(first.copy(), np.zeros((3, 3), dtype=np.uint32))
         self.assertTrue((out == 5).all())
+
+
+class LabelSmoothingTest(unittest.TestCase):
+    """`labelSmoothing` rounds a wrinkled outline. The constraints are what make it safe to run over
+    a whole label image rather than one mask at a time."""
+
+    def _seg(self, sigma):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, tile, model_params, norm_params=None,
+                              context=None, context_index=None):
+                raise NotImplementedError
+
+        return _Stub({'taskDir': '/tmp', 'labelSmoothing': sigma}, None)
+
+    @staticmethod
+    def _wrinkled(n=60, r=16, teeth=3):
+        """A disc with a comb of one-pixel teeth — pure boundary noise, no shape."""
+        yy, xx = np.ogrid[:n, :n]
+        vol = np.where((yy - n // 2) ** 2 + (xx - n // 2) ** 2 <= r ** 2, 1, 0).astype(np.uint32)
+        vol[::2, n // 2 - r - teeth: n // 2 - r + 1] = 1        # teeth sticking out to the left
+        return vol
+
+    @staticmethod
+    def _perimeter(mask):
+        m = mask.astype(bool)
+        return int((m[:, 1:] != m[:, :-1]).sum() + (m[1:] != m[:-1]).sum())
+
+    def test_default_is_a_no_op(self):
+        """Off by default — it changes every shape descriptor, so it must never happen silently."""
+        vol = self._wrinkled()
+        np.testing.assert_array_equal(self._seg(0.0)._smooth_labels(vol, 0.0, False), vol)
+
+    def test_it_shortens_a_wrinkled_boundary(self):
+        vol = self._wrinkled()
+        out = self._seg(1.5)._smooth_labels(vol, 1.5, False)
+        self.assertLess(self._perimeter(out == 1), self._perimeter(vol == 1))
+        # …without gutting it: this is cosmetic, not a size filter
+        self.assertGreater((out == 1).sum(), 0.8 * (vol == 1).sum())
+
+    def test_a_label_never_takes_a_neighbours_pixels(self):
+        """Two touching labels: smoothing must not move area across the shared boundary.
+
+        On a cytoplasmic reporter cells touch constantly, so a label bulging into its neighbour is a
+        measurement error, not a cosmetic one.
+        """
+        vol = np.zeros((40, 40), np.uint32)
+        vol[5:35, 5:20] = 1
+        vol[5:35, 20:35] = 2
+        vol[5:35:2, 19] = 2          # ragged shared edge
+        out = self._seg(2.0)._smooth_labels(vol, 2.0, False)
+        # no pixel that belonged to one label may end up owned by the other
+        self.assertEqual(int(((vol == 1) & (out == 2)).sum()), 0)
+        self.assertEqual(int(((vol == 2) & (out == 1)).sum()), 0)
+
+    def test_result_does_not_depend_on_label_numbering(self):
+        """The guard reads the ORIGINAL volume, so processing order cannot matter."""
+        vol = np.zeros((40, 40), np.uint32)
+        vol[5:20, 5:20] = 7
+        vol[22:35, 22:35] = 3
+        swapped = np.where(vol == 7, 3, np.where(vol == 3, 7, 0)).astype(np.uint32)
+        a = self._seg(1.5)._smooth_labels(vol, 1.5, False)
+        b = self._seg(1.5)._smooth_labels(swapped, 1.5, False)
+        np.testing.assert_array_equal(a == 7, b == 3)
+        np.testing.assert_array_equal(a == 3, b == 7)
+
+    def test_a_tiny_label_survives(self):
+        """Smoothing must never delete an object — that is `minCellSize`, which says so."""
+        vol = np.zeros((30, 30), np.uint32)
+        vol[15, 15] = 1                     # a single pixel; any blur wipes it
+        out = self._seg(3.0)._smooth_labels(vol, 3.0, False)
+        self.assertIn(1, np.unique(out))
+
+    def test_3d_smooths_in_plane_only(self):
+        """Voxels are ~6x anisotropic; blurring across z would move the object between planes."""
+        vol = np.zeros((5, 40, 40), np.uint32)
+        vol[2, 10:30, 10:30] = 1            # present on ONE plane only
+        out = self._seg(2.0)._smooth_labels(vol, 2.0, True)
+        for z in (0, 1, 3, 4):
+            self.assertEqual(int((out[z] == 1).sum()), 0, f'label leaked onto plane {z}')
+        self.assertGreater(int((out[2] == 1).sum()), 0)

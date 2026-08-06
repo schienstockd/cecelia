@@ -57,6 +57,9 @@ class SegmentationUtils:
         self.remove_unmatched = bool(params.get('removeUnmatched', False))
         self.min_cell_size = int(params.get('minCellSize', 0))
         self.cell_size_max = int(params.get('cellSizeMax', 0))
+        # Boundary smoothing, in pixels of gaussian sigma. Cosmetic and OFF by default: it changes
+        # every measured shape descriptor, so it must be a deliberate choice, not a silent default.
+        self.label_smoothing = float(params.get('labelSmoothing', 0.0))
         self.label_expansion = int(params.get('labelExpansion', 0))
         self.label_erosion = int(params.get('labelErosion', 0))
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
@@ -433,6 +436,11 @@ class SegmentationUtils:
             else:
                 vol = arr.copy()
 
+            # Smoothing FIRST: it cleans the segmenter's raw outline, and erosion/expansion are
+            # deliberate size changes the user then applies to a clean shape.
+            if self.label_smoothing > 0:
+                vol = self._smooth_labels(vol, self.label_smoothing, is_3d)
+
             if self.label_erosion > 0:
                 vol = self._erode_labels(vol, self.label_erosion, is_3d)
 
@@ -562,6 +570,51 @@ class SegmentationUtils:
             if iou_mat[best_i, j] >= self.label_overlap:
                 vol[vol == lb_r] = lab_l[best_i]
         return vol
+
+    def _smooth_labels(self, vol, sigma, is_3d):
+        """Round each label's XY outline by `sigma` px, without letting it take a neighbour's pixels.
+
+        Blur the label's binary mask and re-threshold at 0.5 — the standard boundary smoother, and the
+        one that gives a σ knob rather than a structuring-element size, so "a tiny bit" is expressible.
+
+        Two constraints make it safe to run on a whole label image rather than one mask:
+
+        * **A label may only occupy pixels that were background or its own.** Otherwise a smoothed
+          label bulges into the neighbour it touches and quietly steals area — on a cytoplasmic
+          reporter, where cells touch constantly, that is a measurement error rather than a cosmetic
+          one. The consequence to accept knowingly: a boundary SHARED by two labels does not move, so
+          this rounds the free outline and leaves genuine contacts alone.
+        * **The guard reads the ORIGINAL volume**, so no label's result depends on how many were
+          processed before it. Deterministic, and independent of label numbering.
+
+        XY only in 3D (`sigma_z = 0`). The wrinkle is in the in-plane outline, and voxels here are ~6x
+        anisotropic (2.0 µm z against 0.33 xy), so blurring across z would move an object between
+        planes — a much bigger change than the one being asked for.
+
+        A label that would vanish entirely is left as it was: smoothing is cosmetic and must never be
+        a size filter (that is `minCellSize`, which is explicit about it).
+        """
+        if sigma <= 0:
+            return vol
+        sigma_vec = (0.0, sigma, sigma) if is_3d else (sigma, sigma)
+        pad = int(np.ceil(3 * sigma))
+        out = vol.copy()
+        for lb_idx, sl in enumerate(ndimage.find_objects(vol)):
+            if sl is None:
+                continue
+            lb = lb_idx + 1
+            grown = tuple(slice(max(0, s.start - pad), min(dim, s.stop + pad))
+                          for s, dim in zip(sl, vol.shape))
+            sub = vol[grown]
+            mask = (sub == lb)
+            new = ndimage.gaussian_filter(mask.astype(np.float32), sigma_vec) > 0.5
+            new &= (sub == 0) | mask          # background or self, never a neighbour
+            if not new.any():
+                continue
+            out_sub = out[grown]
+            out_sub[mask & ~new] = 0          # pixels the label gave up
+            out_sub[new & (sub == 0)] = lb    # pixels it gained, from background only
+        return out
 
     def _erode_labels(self, vol, amount, is_3d):
         """Erode each label independently by `amount` pixels."""
