@@ -105,6 +105,7 @@ def store_compressor(kind='image'):
     (its v2 default). Three codecs, no intent behind any of them.
 
     Returned as a numcodecs codec, which is what `create_array` takes for a `zarr_format=2` store.
+    For a v3 store the equivalent is a CODEC PIPELINE, not a single compressor — see `store_codecs`.
     """
     if kind not in ('image', 'labels'):
         raise ValueError(f"unknown store kind {kind!r}; expected 'image' or 'labels'")
@@ -114,6 +115,90 @@ def store_compressor(kind='image'):
         # plain zstd, NOT blosc-wrapped — blosc's blocking is exactly what costs us on labels
         return Zstd(level=spec['clevel'])
     return Blosc(cname=spec['cname'], clevel=spec['clevel'], shuffle=Blosc.SHUFFLE)
+
+
+def _group_format(group, default=2):
+    """The zarr format of an open group. A sub-array MUST match the group holding it, so a writer that
+    already has the group derives the format from it rather than being told — one less thing to thread
+    through, and one less way for an array and its group to disagree (which would be unreadable)."""
+    try:
+        return int(group.metadata.zarr_format)
+    except Exception:
+        return default
+
+
+def _codec_kwargs(kind='image', zarr_format=2, shards=None):
+    """`create_array` kwargs carrying the compression decision, in the shape THIS format takes.
+
+    v2 wants `compressor=<numcodecs codec>` (singular, legacy); v3 wants `compressors=[...]` (plural).
+    One place decides, so a writer never has to remember which — passing the wrong one is either an
+    error or, worse, silently ignored, which is how a store ends up with a codec nobody chose.
+
+    ``shards``: v3 only. A shard is one file holding many chunks plus an index, so writing one chunk
+    rewrites the whole shard — only safe where the write pattern aligns with the shard boundary
+    (`docs/todo/ZARR_V3_PLAN.md` D8). Silently dropped for v2, which has no sharding, rather than
+    raising: the caller inherits format from its source and should not have to branch on it.
+    """
+    if zarr_format and zarr_format >= 3:
+        kw = {'compressors': store_codecs(kind)}
+        if shards:
+            kw['shards'] = tuple(shards)
+        return kw
+    return {'compressor': store_compressor(kind)}
+
+
+def store_codecs(kind='image'):
+    """The same ONE decision as `store_compressor`, expressed as a zarr **v3 codec pipeline**.
+
+    v3 has no `compressor` field: compression is one codec in a list, so the choice has to be handed
+    over in a different shape. Deriving both from the same `IMAGE_COMPRESSOR_CHOICES`/`LABEL_COMPRESSOR`
+    entry is the point — two independent tables is exactly how three unintended codecs ended up on disk
+    before `store_compressor` existed.
+
+    Note the `shuffle` VALUE differs from the v2 spelling: zarr-python's v3 blosc codec takes the name
+    (`'shuffle'`/`'noshuffle'`), which is what our tables already store, while the v2 numcodecs path
+    takes an enum. (bioformats2raw has the same split — see `bf2raw_shuffle_values` in
+    `app/src/config.jl` — and there the documented `byteshuffle` alias is broken upstream.)
+
+    COMPRESSION codecs only. The `bytes` codec that carries endianness is the array's *serializer* in
+    zarr-python's model, not a compressor, and its default is already correct (little-endian native) —
+    putting it in this list makes `create_array` reject it.
+    """
+    if kind not in ('image', 'labels'):
+        raise ValueError(f"unknown store kind {kind!r}; expected 'image' or 'labels'")
+    spec = IMAGE_COMPRESSOR_CHOICES[image_compressor_name()] if kind == 'image' else LABEL_COMPRESSOR
+    from zarr.codecs import BloscCodec, ZstdCodec
+    if spec['shuffle'] == 'noshuffle' and spec['cname'] == 'zstd':
+        # plain zstd, matching the v2 branch: blosc's blocking is what costs us on label planes
+        return [ZstdCodec(level=spec['clevel'])]
+    return [BloscCodec(cname=spec['cname'], clevel=spec['clevel'], shuffle=spec['shuffle'])]
+
+
+def store_encoding_of(reference_path):
+    """The on-disk ENCODING of an existing store, for a derived store to inherit: `{'zarr_format': 2|3}`.
+
+    Derived stores inherit their format from their source; only the import chooses it
+    (`docs/todo/ZARR_V3_PLAN.md` D9). Every writer has to handle v3 — the corrections, crop, copy, the
+    label writer, branching, rechunk — but none of them should grow its own format param, because that
+    would let a v2 original acquire a v3 drift-corrected variant. That is the same class of
+    inconsistency `bf2raw_compression_flags` already exists to prevent ("an imported original and every
+    correction derived from it are encoded differently").
+
+    Format only. The CODEC is deliberately not inherited: it is a live Settings choice for images and a
+    fixed measured constant for labels (`LABEL_COMPRESSOR`), and a label set derived from a v3 image
+    must still get the label codec rather than the image's. Two separate axes; conflating them would
+    undo the measured label-codec decision.
+
+    Falls back to v2 when the reference is missing or unreadable rather than raising — a derived write
+    must not fail because a source's metadata could not be parsed, and v2 is what every store was until
+    bioformats2raw 0.12.
+    """
+    fmt = None
+    try:
+        fmt = store_format(reference_path) if reference_path else None
+    except Exception:
+        fmt = None
+    return {'zarr_format': fmt if fmt in (2, 3) else 2}
 
 
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
@@ -584,7 +669,7 @@ def _rename_store(src, dest):
 
 def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks=None,
                              store_path=None, ignore_channel=False, ignore_time=False,
-                             copy_values=True, remove_previous=False, kind='image'):
+                             copy_values=True, remove_previous=False, kind='image', zarr_format=None):
     if im_chunks is None:
         im_chunks = chunks(reference_zarr)
 
@@ -606,14 +691,18 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
     if remove_previous is True and os.path.exists(store_path):
         shutil.rmtree(store_path)
 
+    # Format follows the reference store when there is one: this writes the level-0 array of a DERIVED
+    # store, so it must match its source (ZARR_V3_PLAN D9). `create_multiscales` calls this for the
+    # ndarray branch and has already opened the group in that format, so they cannot disagree.
+    fmt = zarr_format if zarr_format is not None else store_encoding_of(reference_zarr)['zarr_format']
     new_zarr = zarr.open_array(
         store_path,
         mode='w',
         shape=im_array.shape,
         chunks=im_chunks,
         dtype=native_dtype(im_array.dtype),
-        zarr_format=2,
-        compressor=store_compressor(kind),
+        zarr_format=fmt,
+        **_codec_kwargs(kind, fmt),
     )
 
     if copy_values is True:
@@ -854,7 +943,8 @@ def write_calibration(path, dim_utils, axes=None):
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
-                       squeeze=False, idx_adjust=0, axes=None, kind='image'):
+                       squeeze=False, idx_adjust=0, axes=None, kind='image',
+                       zarr_format=None, shards=None):
     """``kind``: ``'image'`` (intensity data, the default) or ``'labels'``. It picks the compressor —
     see `store_compressor`; the two need opposite settings and the caller is the only one that knows
     which it is writing. A label caller that forgets it loses ~40% of the compression, silently.
@@ -868,9 +958,21 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     tagged ``t,c,z,y,x`` with scale ``[1, 1, 3.0, 0.596, 0.596]``, so anything reading the scale
     positionally gave Y the Z step (3.0 µm) — a 5× stretch. See
     docs/todo/SPATIAL_ANISOTROPY_PLAN.md finding A8.
+
+    ``zarr_format``: 2 or 3. **Default `None` means INHERIT from ``reference_zarr``**, falling back to 2
+    — derived stores take their format from their source and only the import chooses it
+    (`docs/todo/ZARR_V3_PLAN.md` D9). Pass it explicitly only where there is no source to inherit from.
+
+    ``shards``: v3 only, and **only for a store written once, sequentially**. A shard is one file holding
+    many chunks, so touching one chunk rewrites the whole shard (D8) — a streamed or tiled writer whose
+    write unit is smaller than a shard pays that cost on every write and can race another worker on the
+    same shard. Ignored for v2.
     """
-    # Write zarr v2 format so napari and zarr_data_to_list can read .zattrs directly.
-    multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
+    # v2 unless told otherwise, and "told otherwise" normally means the SOURCE store was v3
+    # (`store_encoding_of`). A v2 original must not acquire a v3 derived variant.
+    if zarr_format is None:
+        zarr_format = store_encoding_of(reference_zarr)['zarr_format'] if reference_zarr else 2
+    multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=zarr_format)
 
     # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes come from
     # dim_utils unless the caller declared the stored array's own; the calibration those axes carry
@@ -880,9 +982,16 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     else:
         axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
     scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, axes)
-    multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
+    ms_meta = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
         unit_for_axis=unit_for_axis)
+    # OME-NGFF 0.5 (which is what a zarr v3 store must declare) nests everything under `ome` and
+    # carries the spec version there; 0.4 keeps `multiscales` at the top level and versions each entry.
+    # `ngff_attrs` is the read-side counterpart — one place per direction.
+    if zarr_format >= 3:
+        multiscales_zarr.attrs['ome'] = {'version': '0.5', 'multiscales': ms_meta}
+    else:
+        multiscales_zarr.attrs['multiscales'] = ms_meta
 
     if isinstance(im_array, dask.array.core.Array):
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
@@ -891,7 +1000,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
             "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype),
-            compressor=store_compressor(kind)
+            **_codec_kwargs(kind, zarr_format, shards=shards)
         )
         # Rechunk the SOURCE to the destination grid before storing. `da.store(lock=False)` is only safe
         # when each dest chunk has exactly one writer; im_array's own (auto) chunking does NOT align with
@@ -905,7 +1014,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     elif isinstance(im_array, zarr.Array):
         dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks,
                                             dtype=native_dtype(im_array.dtype),
-                                            compressor=store_compressor(kind))
+                                            **_codec_kwargs(kind, zarr_format))
         dest[:] = im_array[:]
         im_chunks = chunks(im_array)
     else:
@@ -914,7 +1023,8 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
             reference_zarr=reference_zarr,
             im_chunks=im_chunks,
             store_path=os.path.join(filepath, "0"),
-            ignore_channel=ignore_channel, kind=kind)
+            ignore_channel=ignore_channel, kind=kind,
+            zarr_format=zarr_format)      # must match the group opened above
 
     if nscales > 1:
         write_multiscale_pyramid(
@@ -966,7 +1076,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
         dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(im_chunks, dest_shape))
         dest = multiscales_zarr.create_array(
             str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype),
-            compressor=store_compressor(kind))
+            **_codec_kwargs(kind, _group_format(multiscales_zarr)))
         if t_idx is None:
             dest[:] = _read(tuple(x))
         else:
@@ -977,7 +1087,8 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
 
 
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
-                                 nscales=1, keyword='datasets', mode='w', kind='image'):
+                                 nscales=1, keyword='datasets', mode='w', kind='image',
+                                 reference_zarr=None, zarr_format=None, shards=None):
     """Create a multiscales group + an EMPTY, per-plane-chunked level-0 array on disk, write the
     NGFF ``multiscales`` metadata, and return ``(group, level0, pchunks)``.
 
@@ -989,19 +1100,38 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     dask branch of ``create_multiscales`` exactly, so the resulting store is byte-for-byte the same
     layout — only the fill is streamed. Both derive their calibration from `calibration_for_axes`,
     which is what makes "exactly" true: this writer used to derive its own, without units, so the
-    corrected stores it produces carried a unit-less t axis and leant on the OME-XML fallback."""
-    multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
+    corrected stores it produces carried a unit-less t axis and leant on the OME-XML fallback.
+
+    ``reference_zarr``/``zarr_format``: the source store to INHERIT the format from, or an explicit
+    format. This is the streaming writer the correction tasks use, so it is the main path by which a
+    derived store must end up in the same format as the image it came from — see
+    `store_encoding_of` and `docs/todo/ZARR_V3_PLAN.md` D9. Default is v2, as every store was before
+    bioformats2raw 0.12.
+
+    ``shards`` defaults to None and should normally STAY that way here. This is the STREAMING writer —
+    the caller fills level 0 a plane or a tile at a time — which is exactly the pattern sharding
+    punishes: one chunk written means one whole shard rewritten, and two workers on the same shard race
+    (D8). Sharding belongs on write-once-sequential output."""
+    if zarr_format is None:
+        zarr_format = store_encoding_of(reference_zarr)['zarr_format'] if reference_zarr else 2
+    multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=zarr_format)
 
     axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
     scale_for_axis, unit_for_axis = calibration_for_axes(dim_utils, axes)
-    multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
+    ms_meta = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
         unit_for_axis=unit_for_axis)
+    # NGFF 0.5 nests under `ome` and versions there; 0.4 keeps multiscales top-level. Same branch as
+    # `create_multiscales`, because the two must produce the same layout (see this docstring).
+    if zarr_format >= 3:
+        multiscales_zarr.attrs['ome'] = {'version': '0.5', 'multiscales': ms_meta}
+    else:
+        multiscales_zarr.attrs['multiscales'] = ms_meta
 
     pchunks = plane_chunks(tuple(shape), dim_utils)
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,
                                            dtype=native_dtype(dtype),
-                                           compressor=store_compressor(kind))
+                                           **_codec_kwargs(kind, zarr_format, shards=shards))
     return multiscales_zarr, level0, pchunks
 
 
