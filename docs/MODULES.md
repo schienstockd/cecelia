@@ -489,6 +489,20 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "valueName", "label": "Segmentation", "type": "valueNameSelection", "field": "labels", "default": "default" }
 ```
 
+**`chipSelect`** — multi-pick from a fixed set, rendered as `ChipSelect` chips rather than a
+dropdown or a comma-separated text field. `options` plus a **list** `default`; `validate_params`
+checks each element against `options`, exactly as it does for `select`.
+
+```json
+{ "key": "temporalScales", "label": "Temporal scales", "type": "chipSelect",
+  "default": ["1", "2", "4", "8"],
+  "options": [{ "label": "1", "value": "1" }, { "label": "2", "value": "2" }] }
+```
+
+Reach for it whenever a param is "some of these", instead of asking the user to type a delimited
+list — a text field there is a parse error waiting to happen, and the values usually reach a runner
+that fails much later and much less clearly.
+
 **`popSelection`** — two modes.
 
 - **Single** (default): a dropdown of populations for the selected image + sibling `valueName`, plus `"NONE (whole segmentation)"`. The widget fetches `GET /api/gating/popmap`, flattens the tree to paths, and emits one path (or `"NONE"`). Used by `tracking.bayesian_tracking`.
