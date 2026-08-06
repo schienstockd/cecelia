@@ -832,6 +832,18 @@ end
     # version read with plain `arr[...]` is byte-swapped garbage that renders as saturated white noise
     # (a true 63 reads as 16128; 98% of a real frame exceeded a contrast ceiling that should clip none).
     # Silent, and invisible in Python, which honours the descriptor. See docs/NAPARI.md → Byte order.
+    # DETECTOR for the single Zarr.jl internal this depends on. `_zarr_byte_order` reads the raw numpy
+    # dtype descriptor out of `arr.metadata.dtype`; if a Zarr.jl upgrade changes that field's shape the
+    # guard falls back to '|' (never swap) and the big-endian bug returns. The swap assertions below DO
+    # catch that — verified by mutating the guard to return '|', which fails 3 of them — but they fail as
+    # an opaque UInt16 value mismatch. This one names the cause instead.
+    mktempdir() do d
+        a = zcreate(UInt16, Zarr.DirectoryStore(joinpath(d, "probe")), 2; chunks = (2,))
+        dt = getfield(a.metadata, :dtype)
+        @test dt isa AbstractString          # ← if THIS fails, read_native's byte-order guard is blind
+        @test occursin(r"^[<>|]", String(dt))
+    end
+
     # Re-stamp the dtype descriptor the way bioformats2raw would; Zarr.jl keeps it as the raw string.
     function stamp_order!(p, order)
         za = JSON3.read(read(joinpath(p, ".zarray"), String), Dict{String,Any})
