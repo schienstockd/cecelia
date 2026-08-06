@@ -10,14 +10,17 @@
   Rename/delete move BOTH files — `<name>.pt` and `<name>.json`. An orphaned .pt silently falls back
   to coastal's default metric set, which is the failure above.
 
-  Chrome deliberately NOT PopulationPanelShell: that is canvas-panel chrome (draggable, plot
-  global/local scope footer, PlotOptions block) and none of it means anything for a module-page list.
-  This renders inside ModuleLayout's own collapsible section, which is the module-page equivalent.
+  Chrome comes from the app's `FloatingPanel` (the component Viewer and Lab log use), so drag,
+  resize, collapse and per-key persistence are not reimplemented here — this file is only the list.
+  NOT `PopulationPanelShell`: that is CANVAS-panel chrome, absolutely positioned inside a zoomable
+  board and carrying a global/local PLOT scope footer that means nothing for a model list. The two
+  floating mechanisms are a deliberate split, not duplication (see INVENTORY.md).
 -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { useProjectStore } from '../../stores/project'
 
 type Manifest = {
   channelName?: string
@@ -43,10 +46,12 @@ const error   = ref('')
 const editing = ref<string | null>(null)
 const draft   = ref('')
 
-// A finished training run adds a model. Refetch through the shared task-refresh framework rather
-// than polling or a bespoke event — same primitive, and the same `autoRefreshOnTask` opt-out.
-const props = withDefaults(defineProps<{ imageUids?: string[] }>(), { imageUids: () => [] })
-useDataRefresh(() => props.imageUids, load)
+// A finished training run adds a model. The panel floats free of the image table, so it watches
+// every image in the project rather than a selection — same shared primitive, same
+// `autoRefreshOnTask` opt-out, no polling and no bespoke event.
+const project = useProjectStore()
+const allUids = computed(() => project.sets.flatMap(s => s.images.map(i => i.uid)))
+useDataRefresh(() => allUids.value, load)
 
 async function load() {
   loading.value = true

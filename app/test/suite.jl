@@ -1591,7 +1591,7 @@ end
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "text", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "section", "group",
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
@@ -9456,3 +9456,24 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     end
 end
 
+
+# ── chipSelect param type ────────────────────────────────────────────────────
+# "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.
+# The values are validated per element like a `select`, because they reach a runner that can only
+# fail much later and much less clearly — a bad temporal scale corrupts the model's channel layout.
+@testset "chipSelect validation" begin
+    spec = Cecelia._task_spec(TrainFlowModel())
+    scales = only(p for p in spec["params"] if get(p, "key", "") == "temporalScales")
+    @test scales["type"] == "chipSelect"
+    @test [string(o["value"]) for o in scales["options"]] == ["1", "2", "3", "4", "6", "8", "12", "16"]
+
+    @test validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => ["1", "2", "8"])) === nothing
+    @test_throws ParamValidationError validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => ["1", "5"]))       # 5 is not offered
+    @test_throws ParamValidationError validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => "1,2,4,8"))        # a string is no longer the shape
+
+    # …and the runner-side parser still takes what the chips produce
+    @test parse_temporal_scales(["1", "2", "8"]) == [1, 2, 8]
+end

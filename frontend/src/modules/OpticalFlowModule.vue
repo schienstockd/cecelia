@@ -9,20 +9,35 @@
 
   Ordinary module page: image table, task rail, nothing bespoke. Training is an ordinary task, so it
   gets progress, cancel, logs, QC and chainability for free.
+
+  The vault is a FLOATING panel (the app's `FloatingPanel`, same component as Viewer and Lab log),
+  toggled from the page actions and remembered across visits. It was an inline list in the page's
+  collapsible section first and read as filler — a manager you open when you want it is the right
+  shape, and reusing the app component means drag/resize/collapse/persistence come for free.
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
+import FloatingPanel from '../components/FloatingPanel.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import FlowModelVault from './opticalFlow/FlowModelVault.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
+import { useSettingsStore } from '../stores/settings'
 
 const { defs: flowDefs, reload: reloadDefs } = useTaskDefs('opticalFlow')
+const settings = useSettingsStore()
 </script>
 
 <template>
   <ModuleLayout module="opticalFlow" :show-attrs="true" :show-filter="true"
-    plots-label="Model vault"
     hint-key="opticalFlow" hint="Train on a smoothed movie; segment on the Segment page.">
+    <template #actions>
+      <button class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-on': settings.flowVaultOpen }"
+              v-tooltip.top="'Show or hide the trained model vault'"
+              @click="settings.flowVaultOpen = !settings.flowVaultOpen">
+        <i class="pi pi-database" /> Model vault
+      </button>
+    </template>
+
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="flowDefs"
@@ -32,10 +47,11 @@ const { defs: flowDefs, reload: reloadDefs } = useTaskDefs('opticalFlow')
         :selected-names="selectedNames"
       />
     </template>
-    <!-- The vault is not a plot; it is this page's second half. ModuleLayout's collapsible section
-         is the module-page equivalent of the canvas panel shell, so it goes here. -->
-    <template #plots="{ orderedUids }">
-      <FlowModelVault :image-uids="orderedUids" />
-    </template>
   </ModuleLayout>
+
+  <FloatingPanel v-if="settings.flowVaultOpen" title="Model vault" icon="pi-database"
+                 storage-key="flowVault" :default-w="340" :default-h="360"
+                 @close="settings.flowVaultOpen = false">
+    <FlowModelVault />
+  </FloatingPanel>
 </template>

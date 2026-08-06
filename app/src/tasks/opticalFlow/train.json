@@ -3,7 +3,9 @@
   "fun_name": "opticalFlow.train",
   "label": "Train flow model",
   "category": "Optical flow",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "gpu",
   "scope": "set",
   "params": [
@@ -42,9 +44,48 @@
     {
       "key": "temporalScales",
       "label": "Temporal scales",
-      "type": "text",
-      "default": "1,2,4,8",
-      "tip": "Frame lags for optical flow; inference reuses these"
+      "type": "chipSelect",
+      "default": [
+        "1",
+        "2",
+        "4",
+        "8"
+      ],
+      "tip": "Frame lags for optical flow; inference must reuse these",
+      "options": [
+        {
+          "label": "1",
+          "value": "1"
+        },
+        {
+          "label": "2",
+          "value": "2"
+        },
+        {
+          "label": "3",
+          "value": "3"
+        },
+        {
+          "label": "4",
+          "value": "4"
+        },
+        {
+          "label": "6",
+          "value": "6"
+        },
+        {
+          "label": "8",
+          "value": "8"
+        },
+        {
+          "label": "12",
+          "value": "12"
+        },
+        {
+          "label": "16",
+          "value": "16"
+        }
+      ]
     },
     {
       "key": "cumulativeWindow",

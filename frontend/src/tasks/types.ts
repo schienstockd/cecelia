@@ -1,7 +1,7 @@
 export interface ParamDef {
   key: string
   label: string
-  type: 'int' | 'float' | 'bool' | 'text' | 'select'
+  type: 'int' | 'float' | 'bool' | 'text' | 'select' | 'chipSelect'
        | 'channelSelection' | 'valueNameSelection'
        | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'

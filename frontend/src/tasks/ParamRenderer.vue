@@ -455,6 +455,18 @@ const pct = computed(() => {
       v-tooltip.right="param.tip"
     />
 
+    <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
+         parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
+         for "pick from a set" (docs/UI.md). -->
+    <ChipSelect v-else-if="param.type === 'chipSelect'"
+      :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
+      :model-value="(Array.isArray(val) ? val : []).map(String)"
+      multiple
+      :aria-label="param.label"
+      v-tooltip.right="param.tip"
+      @update:model-value="v => val = v as string[]"
+    />
+
     <!-- select -->
     <select v-else-if="param.type === 'select'"
       class="select-input"
