@@ -358,6 +358,69 @@ end
     @test out["0"]["model"] == @__FILE__
 end
 
+# ── Optical-flow training (opticalFlow.train) ────────────────────────────────
+# The scales are the single most consequential parameter of the pipeline AND the one that fails
+# silently: the set a model is trained on must be the set inference feeds it, and coastal does not
+# check. Rejecting a typo at the form is the only cheap place to catch it.
+@testset "parse_temporal_scales" begin
+    @test parse_temporal_scales("1,2,4,8") == [1, 2, 4, 8]
+    @test parse_temporal_scales(" 8 , 1 ,2 ") == [1, 2, 8]      # sorted
+    @test parse_temporal_scales("2 4 4 2") == [2, 4]            # deduped, whitespace-separated
+    @test parse_temporal_scales([1, 2]) == [1, 2]               # a REPL caller's vector
+
+    @test_throws ParamValidationError parse_temporal_scales("")
+    @test_throws ParamValidationError parse_temporal_scales("   ")
+    @test_throws ParamValidationError parse_temporal_scales("1,2,x")
+    @test_throws ParamValidationError parse_temporal_scales("1,0")     # a lag of 0 is not a lag
+    @test_throws ParamValidationError parse_temporal_scales("1,-2")
+    @test_throws ParamValidationError parse_temporal_scales("1.5")
+end
+
+# A model name reaches the filesystem. Not a security boundary — the user owns the machine — but a
+# stray separator would write outside the vault and the model would then never appear in the picker.
+@testset "flow_model_target" begin
+    td = mktempdir()
+    dir = joinpath(td, "models", "coastalModels")
+
+    @test flow_model_target("gcMemTom"; dev_dir = td) == joinpath(dir, "gcMemTom.pt")
+    @test isdir(dir)                                   # the vault is created on demand
+    @test flow_model_target("gcMemTom.pt"; dev_dir = td) == joinpath(dir, "gcMemTom.pt")
+
+    @test_throws ErrorException flow_model_target(""; dev_dir = td)
+    @test_throws ErrorException flow_model_target("  "; dev_dir = td)
+    @test_throws ErrorException flow_model_target("../escape"; dev_dir = td)
+    @test_throws ErrorException flow_model_target("sub/dir"; dev_dir = td)
+    @test_throws ErrorException flow_model_target(".."; dev_dir = td)
+
+    # Overwrite is opt-in: a training run is long, and silently replacing the model a segmentation
+    # already used would make an earlier run unreproducible with no trace.
+    open(io -> write(io, "stub"), joinpath(dir, "gcMemTom.pt"), "w")
+    @test_throws ErrorException flow_model_target("gcMemTom"; dev_dir = td)
+    @test flow_model_target("gcMemTom"; overwrite = true, dev_dir = td) ==
+          joinpath(dir, "gcMemTom.pt")
+end
+
+# The one objective signal a training run has. A model whose loss never came down still segments —
+# confidently and wrongly — so it is worth a warning rather than being left in the log.
+@testset "flow_training_qc_findings" begin
+    @test isempty(flow_training_qc_findings(
+        Dict{String,Any}("finalLoss" => 0.2, "lossDrop" => 3.4, "epochs" => 30)))
+
+    flat = flow_training_qc_findings(
+        Dict{String,Any}("finalLoss" => 0.9, "lossDrop" => 0.98, "epochs" => 30))
+    @test length(flat) == 1
+    @test flat[1]["level"] == "warn"
+    @test flat[1]["detail"]["epochs"] == 30
+    # numbers live in `detail`, not in the prose (docs/UI.md → QC copy)
+    @test !occursin("0.9", flat[1]["long"])
+
+    # exactly 1.0 = no improvement at all, still a warning
+    @test length(flow_training_qc_findings(Dict{String,Any}("lossDrop" => 1.0))) == 1
+    # no history parsed → no claim either way
+    @test isempty(flow_training_qc_findings(Dict{String,Any}("epochs" => 30)))
+    @test isempty(flow_training_qc_findings(Dict{String,Any}("lossDrop" => NaN)))
+end
+
 # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a
 # dropped-in checkpoint under `<repo>/models/cellposeModels/` (this worktree has ccia.fluo
 # from `pixi run models-fetch`) appears in the Model select's options — that's what makes

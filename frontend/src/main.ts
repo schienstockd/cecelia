@@ -22,6 +22,7 @@ const router = createRouter({
     { path: '/import',    component: () => import('./modules/ImportModule.vue'),        meta: { label: 'Import' } },
     { path: '/metadata',  component: () => import('./modules/MetadataModule.vue'),      meta: { label: 'Metadata' } },
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
+    { path: '/optical-flow', component: () => import('./modules/OpticalFlowModule.vue'), meta: { label: 'Optical flow' } },
     { path: '/segment',   component: () => import('./modules/SegmentModule.vue'),       meta: { label: 'Segment' } },
     { path: '/gate',      component: () => import('./modules/GatingModule.vue'),        meta: { label: 'Gate' } },
     { path: '/phenotype', component: () => import('./modules/PhenotypeModule.vue'),     meta: { label: 'Phenotype' } },

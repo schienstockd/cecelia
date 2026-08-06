@@ -99,6 +99,7 @@ export RemoveImage
 export CellposeCorrect
 export CellposeSegment
 export CoastalSegment
+export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
 export MeasureLabels
 export Branching
 export BayesianTracking, TrackMeasures
@@ -192,6 +193,7 @@ include("tasks/cleanupImages/smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")
+include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")

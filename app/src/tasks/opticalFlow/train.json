@@ -1,0 +1,142 @@
+{
+  "task": "trainFlowModel",
+  "fun_name": "opticalFlow.train",
+  "label": "Train flow model",
+  "category": "Optical flow",
+  "env": ["local"],
+  "resource_pool": "gpu",
+  "scope": "set",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Images to train on",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Usually the smoothed version — flow needs a denoised input"
+    },
+    {
+      "key": "modelName",
+      "label": "Model name",
+      "type": "text",
+      "default": "",
+      "tip": "Saved to the vault under this name"
+    },
+    {
+      "key": "trainChannels",
+      "label": "Channels",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Channels carrying the cell signal; merged by maximum"
+    },
+    {
+      "key": "zSlice",
+      "label": "Z plane",
+      "type": "int",
+      "min": -1,
+      "max": 500,
+      "step": 1,
+      "default": -1,
+      "tip": "Which plane to train on; -1 = middle"
+    },
+    {
+      "key": "temporalScales",
+      "label": "Temporal scales",
+      "type": "text",
+      "default": "1,2,4,8",
+      "tip": "Frame lags for optical flow; inference reuses these"
+    },
+    {
+      "key": "cumulativeWindow",
+      "label": "Cumulative window",
+      "type": "int",
+      "min": 2,
+      "max": 51,
+      "step": 1,
+      "default": 5,
+      "tip": "Frames summed for total displacement"
+    },
+    {
+      "key": "dropDeadMetrics",
+      "label": "Drop flat metrics",
+      "type": "bool",
+      "default": true,
+      "tip": "Omit divergence, vorticity and flow-structure alignment"
+    },
+    {
+      "key": "epochs",
+      "label": "Epochs",
+      "type": "int",
+      "min": 1,
+      "max": 500,
+      "step": 5,
+      "default": 30,
+      "tip": "Training passes over the movie"
+    },
+    {
+      "key": "overwrite",
+      "label": "Overwrite existing",
+      "type": "bool",
+      "default": false,
+      "tip": "Replace a model of the same name in the vault"
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "foregroundWeight",
+          "label": "Foreground loss",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.5,
+          "default": 1.0,
+          "tip": "Supervises the probability head at cell scale"
+        },
+        {
+          "key": "intensityWeight",
+          "label": "Intensity loss",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.5,
+          "default": 1.0,
+          "tip": "Per-pixel brightness target; lower it if the mask fragments"
+        },
+        {
+          "key": "temporalWeight",
+          "label": "Temporal loss",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.5,
+          "default": 2.0,
+          "tip": "Pulls the embedding together along the flow"
+        },
+        {
+          "key": "embeddingDim",
+          "label": "Embedding size",
+          "type": "int",
+          "min": 4,
+          "max": 64,
+          "step": 4,
+          "default": 16,
+          "tip": "Width of the embedding the region growing runs on"
+        },
+        {
+          "key": "normalise",
+          "label": "Normalise percentile",
+          "type": "float",
+          "min": 50.0,
+          "max": 100.0,
+          "step": 0.01,
+          "default": 99.99,
+          "tip": "Upper percentile for intensity normalisation"
+        }
+      ]
+    }
+  ]
+}

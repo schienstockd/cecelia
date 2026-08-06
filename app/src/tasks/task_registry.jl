@@ -25,6 +25,10 @@ function _spec_path(::CoastalSegment)
     joinpath(@__DIR__, "segment", "coastal.json")
 end
 
+function _spec_path(::TrainFlowModel)
+    joinpath(@__DIR__, "opticalFlow", "train.json")
+end
+
 function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
@@ -137,6 +141,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.cellposeCorrect"     => CellposeCorrect(),
         "segment.cellpose"                  => CellposeSegment(),
         "segment.coastal"                   => CoastalSegment(),
+        "opticalFlow.train"                 => TrainFlowModel(),
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),

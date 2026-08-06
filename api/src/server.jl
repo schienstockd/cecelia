@@ -25,6 +25,7 @@ include("update_api.jl")
 include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
+include("optical_flow_api.jl")
 include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("crop_api.jl")       # routes only; builds on both
@@ -293,6 +294,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/napari/status" => (req, body_bytes) -> (api_napari_status(req)),
     "/api/napari/gpu" => (req, body_bytes) -> (api_napari_gpu_get(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
+    "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
     "/api/notebooks" => (req, body_bytes) -> (api_notebooks_list(req)),
     "/api/notebooks/content" => (req, body_bytes) -> (api_notebooks_content(req)),
     "/api/notebooks/status" => (req, body_bytes) -> (api_notebooks_status(req)),
@@ -359,6 +361,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/labels/delete" => (req, body_bytes) -> (api_images_delete_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/delete" => (req, body_bytes) -> (api_chains_delete(body_bytes)),
+    "/api/optical-flow/rename" => (req, body_bytes) -> (api_optical_flow_rename(body_bytes)),
+    "/api/optical-flow/delete" => (req, body_bytes) -> (api_optical_flow_delete(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),
     "/api/notebooks/write" => (req, body_bytes) -> (api_notebooks_write(body_bytes)),
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),

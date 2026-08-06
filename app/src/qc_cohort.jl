@@ -32,7 +32,13 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # across with far fewer is a migration that half-failed rather than a biological difference.
     "importImages.migrateLegacy" => ["nSegmentations"],
     "segment.cellpose"           => ["nCells"],
+    "segment.coastal"            => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
+    # optical-flow training: one model per image, so the cohort question is whether a movie trained
+    # like its peers. `finalLoss` is only comparable within a set trained at the same weights and
+    # epochs — which is the normal case, since one parameter set per set is the rule — and
+    # `lossDrop` (start/end ratio) is the scale-free companion for when it is not.
+    "opticalFlow.train"          => ["finalLoss", "lossDrop", "epochs"],
     # skeleton branching per image (docs/todo/BRANCHING_PLAN.md): nBranches is the primary count;
     # meanBranchLength flags an image whose skeleton is far more/less fragmented than its peers.
     # `anisotropy` (0 = uniform, 1 = non-uniform) is only banked when the anisotropy pass ran, so

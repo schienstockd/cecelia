@@ -2775,6 +2775,7 @@ end
         "/api/napari/status", "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
+        "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
         "/api/plots/umap", "/api/pools",
@@ -2825,6 +2826,7 @@ end
         "/api/notebooks/restart", "/api/notebooks/restore",
         "/api/notebooks/revise", "/api/notebooks/shutdown",
         "/api/notebooks/snapshot", "/api/notebooks/write",
+        "/api/optical-flow/delete", "/api/optical-flow/rename",
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/register", "/api/plot_data",
         "/api/pools/set", "/api/preview/run",
@@ -2880,7 +2882,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 92
+    @test length(GET_ROUTES) == 68 && length(POST_ROUTES) == 94
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

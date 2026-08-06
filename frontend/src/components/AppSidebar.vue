@@ -69,6 +69,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/import',   label: 'Import',   icon: 'pi-upload',   tip: 'Import microscopy images into your project.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
+      { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },
       { to: '/segment',  label: 'Segment',  icon: 'pi-th-large', tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
     ],
   },

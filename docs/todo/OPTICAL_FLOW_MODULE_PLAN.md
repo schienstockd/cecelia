@@ -84,10 +84,19 @@ keep, without forcing it where it doesn't.
    (`COASTAL_SEGMENTATION_PLAN.md` decision 7). The manager should show clearly that a model is
    machine-local, and the segmentation task must fail loudly on a missing model rather than falling
    back to an untrained one.
-3. **Which images does training run on?** The page has an image table, so the natural answer is the
-   selected images — but a model trained on one movie and applied to a set is the intended workflow
-   (`COASTAL_SEGMENTATION_PLAN.md` Phase 2), so the manifest must record the training set for later
-   audit.
+3. ~~**Which images does training run on?**~~ **Answered: the experimental SET.** Dominik,
+   2026-08-06: *"the model will be trained on images from an experimental set."* So
+   `opticalFlow.train` is `"scope": "set"` — one model from the set's images, not one model per
+   image. Getting this wrong is not a small difference: image scope would have produced N models,
+   each trained on a fraction of the data.
+
+   Consequences already built in: metrics are computed **per movie** and the frames pooled
+   afterwards (flow across a boundary between two recordings is not motion — coastal's
+   `prepare_data_for_unet_batch` + `train_test_split_per_movie` are exactly this shape); a movie too
+   short for the largest scale is **skipped with a warning** rather than contributing a different
+   channel layout to the pool; images whose channel names disagree with the first are likewise
+   skipped, because resolving names per image would train on whatever sits at that index. The
+   manifest records `sourceImages`, and the QC is banked against every image that contributed.
 
 ## References
 - [`COASTAL_SEGMENTATION_PLAN.md`](COASTAL_SEGMENTATION_PLAN.md) — the segmenter, the vault decision, Phase 2.

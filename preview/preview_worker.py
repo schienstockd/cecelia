@@ -135,13 +135,18 @@ def _cellpose_imports():
 #:    adopted protocol-4 worker ignores the field and falls back to the store's stale OME-XML, which
 #:    renders every corrected channel grey.
 #:
+#: 6: `segment.coastal` is a backend. Squarely the "answers differently" case the rule is about: an
+#:    adopted protocol-5 worker has no coastal entry, so it raises "no preview backend for
+#:    'segment.coastal'" — and the user would see a preview toggle that never works, on a fresh
+#:    checkout, with nothing in the log pointing at an old process.
+#:
 #: NOT bumped for the AF cold-start work (per-channel background cache, `_preview_timepoints`, lazy
 #: cellpose import), and that restraint is the rule working rather than an oversight. The rule is
 #: "bump when an adopted older peer would ANSWER differently" — an old worker here answers the same
 #: backgrounds (measured byte-identical) and the same reply shape, just slower. Bumping anyway would
 #: cost every user a fresh 18 s of imports to fix nothing, which is precisely the adoption this
 #: version exists to allow. A version that moves on every commit is a version nobody can reason about.
-PROTOCOL = 5
+PROTOCOL = 6
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -505,6 +510,76 @@ def _preview_cellpose(ctx):
     }
 
 
+def _coastal_imports():
+    """Deferred like `_cellpose_imports`, and for the same reason: torch + coastal cost a session
+    that never previews a flow model nothing."""
+    from cecelia.utils.coastal_utils import CoastalUtils
+    from cecelia.utils.segmentation_utils import count_labels
+    return CoastalUtils, count_labels
+
+
+def _preview_coastal(ctx):
+    """Segment the visible region with the flow model — same `predict_slice` the run calls.
+
+    The one difference from the cellpose backend is the shape of the input. Coastal's prediction for a
+    timepoint reads frames AROUND it, so the region alone is not enough: the worker hands over one
+    plane at one timepoint, and this rebuilds the temporal window the run's `predict_from_zarr` would
+    have built, over the SAME region and by the same rules — clamped at the movie's ends, never
+    reflected, and the model's own radius rather than a preview-specific one. Get that wrong and the
+    preview shows something the run cannot reproduce, which is worse than no preview.
+    """
+    models = ctx.params.get('models') or {}
+    if not models:
+        raise ValueError('no models in preview params')
+
+    CoastalUtils, count_labels = _coastal_imports()
+    seg = CoastalUtils(
+        {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
+
+    axes, full_shape, block_shape = ctx.block_geometry()
+    t_now = int(ctx.bounds.get('T', (0, 1))[0])
+    n_t = int(ctx.axis_len.get('T', 1))
+    lo = max(0, t_now - seg.TEMPORAL_RADIUS)
+    hi = min(n_t - 1, t_now + seg.TEMPORAL_RADIUS)
+
+    # The region across the window: same crop, T widened. Each frame is reduced to [C, Y, X] by the
+    # same helper the single-frame path uses, so the window is exactly "the tile, through time".
+    frames = []
+    for t in range(lo, hi + 1):
+        sl = slice_utils.crop_slice_tuple(
+            ctx.levels[0].ndim, _axis_indices(ctx.dim_utils), {**ctx.bounds, 'T': (t, t + 1)})
+        frames.append(_as_cyx(zarr_utils.fortify(ctx.levels[0][sl]), ctx.dim_utils))
+    context = np.stack(frames)
+    tile = context[t_now - lo]
+
+    counts, block = {}, None
+    for key in sorted(models.keys()):
+        model_params = models[key]
+        match_as = str(model_params.get('matchAs', 'base'))
+        if match_as != 'base':
+            continue            # one type per preview: it is the primary you are judging
+        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
+        masks = seg.predict_slice(tile, model_params, norm_params,
+                                  context=context, context_index=t_now - lo)
+        masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
+                                 real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
+        block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
+        counts[match_as] = count_labels(masks)
+
+    if block is None:
+        raise ValueError('no base model in preview params')
+
+    has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
+    return {
+        'counts': counts,
+        'hasSignal': has_signal,
+        'noSignalWhy': why,
+        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
+        'blockSize': int(seg.block_size),
+        'layers': [_layer('labels', 'Preview', block, axes, full_shape)],
+    }
+
+
 def _preview_af(ctx):
     """AF-correct the visible region, one Image layer per corrected channel.
 
@@ -564,6 +639,7 @@ def _preview_af(ctx):
 _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
+    'segment.coastal': _preview_coastal,
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.afDriftCorrect': _preview_af,
 }
