@@ -159,6 +159,21 @@ write unit is user-variable.
 
 Phase 4 measures the correction-task rewrite to confirm the prediction above.
 
+**D9 — Derived stores INHERIT their format/chunk/shard from the source store; the import is the only
+place it is chosen.** (Dominik, 2026-08-06.) Every writer has to handle v3, not just the import — the
+correction tasks, crop, copy, the segmentation label writer, branching skeletons, rechunk. But they must
+not each grow their own format param: that would let a v2 original acquire a v3 drift-corrected variant,
+which is the same class of inconsistency `bf2raw_compression_flags` already exists to prevent ("an
+imported original and every correction derived from it are encoded differently").
+
+So there is ONE resolver — read the source store's encoding and write to match — and only
+`importImages.omezarr` exposes the choice. This is also what keeps the param surface answerable: the
+user picks once, on the image, not again on every downstream task.
+
+Consequence for labels: a label set derived from a v3 image is written v3 too, and the LABEL compressor
+stays its own decision (`LABEL_COMPRESSOR`) — format is inherited, codec is not. The two are separate
+axes and conflating them would undo the measured label-codec choice.
+
 ## Phases
 
 ### Phase 1 — Read (the blocker) ⬅ current
