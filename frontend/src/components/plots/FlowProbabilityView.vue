@@ -23,7 +23,7 @@
   machinery is shared with the metric sheet (`useFlowPlanes`) precisely so the two cannot drift.
 -->
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
@@ -41,6 +41,52 @@ const props = defineProps<{
 const project = useProjectStore()
 
 const state = computed(() => props.state)
+
+// ── which image version the model is run ON ──────────────────────────────────────────────────────
+// This is not cosmetic. A flow model is trained on a DENOISED movie (the page hint says so) and
+// reading the raw import instead feeds it a different photometric world than it ever saw — the
+// probability map then looks bad for a reason that has nothing to do with the model. Both flow plots
+// used to hardcode `default`, silently.
+//
+// The default here comes from the MODEL, not from the image: its manifest records
+// `sourceValueName`, the version it was trained on, and that is by definition the right input. The
+// same `/api/optical-flow/models` route the vault and the picker use, so there is no second listing
+// that can disagree with them.
+const trainedOn = ref<Record<string, string>>({})
+async function loadTrainedOn() {
+  try {
+    const r = await fetch('/api/optical-flow/models')
+    if (!r.ok) return
+    const models = (await r.json()).models ?? []
+    trainedOn.value = Object.fromEntries(
+      models.map((m: { name: string; manifest?: { sourceValueName?: string } }) =>
+        [m.name, m.manifest?.sourceValueName ?? '']).filter(([, v]: [string, string]) => v))
+  } catch { /* fall back to the image's active version */ }
+}
+onMounted(loadTrainedOn)
+watch(() => props.model, loadTrainedOn)
+
+const image = computed(() =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid))
+const versionOptions = computed<string[]>(() => Object.keys(image.value?.filepaths ?? {}))
+const valueName = computed({
+  get: () => state.value.valueName ?? '',
+  set: v => (state.value.valueName = v),
+})
+
+// Seed once per (model, image): the model's own version if the image has it, else the active one.
+// An explicit pick is never overridden — the whole point of the control is to look at another one.
+watch([() => props.model, versionOptions], () => {
+  const opts = versionOptions.value
+  if (!opts.length) return
+  if (state.value.valueName && opts.includes(state.value.valueName)) return
+  const wanted = trainedOn.value[props.model ?? '']
+  state.value.valueName = wanted && opts.includes(wanted)
+    ? wanted
+    : (image.value?.activeValueName && opts.includes(image.value.activeValueName)
+        ? image.value.activeValueName : opts[0])
+}, { immediate: true })
+
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })
 const z = computed({
   get: () => state.value.z ?? Math.floor(extent.value.z / 2),
@@ -82,7 +128,7 @@ const request = computed<FlowRequest | null>(() =>
   state.value.imageUid && props.model
     ? {
         projectUid: props.projectUid, imageUid: state.value.imageUid,
-        valueName: state.value.valueName ?? 'default',
+        valueName: state.value.valueName || 'default',
         cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
         colormap: colormap.value, model: props.model,
       }
@@ -109,6 +155,15 @@ watch(imageOptions, opts => {
           <option value="" disabled>Image…</option>
           <option v-for="o in imageOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
+        <select v-if="versionOptions.length > 1" class="select-input fpv-ver" v-model="valueName"
+                v-tooltip.top="'Image version fed to the model — normally the one it was trained on'">
+          <option v-for="v in versionOptions" :key="v" :value="v">{{ v }}</option>
+        </select>
+        <!-- says so when you are NOT looking at what the model was trained on: the map then looks bad
+             for a reason that is not the model -->
+        <span v-if="trainedOn[model ?? ''] && valueName && trainedOn[model ?? ''] !== valueName"
+              class="cc-muted-warn cc-fs-2xs"
+              v-tooltip.top="'This model was trained on ' + trainedOn[model ?? '']">not trained input</span>
         <select class="select-input fpv-cmap" v-model="colormap"
                 v-tooltip.top="'Colour map for both planes'">
           <option v-for="c in COLORMAPS" :key="c" :value="c">{{ c }}</option>
@@ -171,6 +226,7 @@ watch(imageOptions, opts => {
 .fpv-ctrl { display: flex; flex-direction: column; gap: 0.4rem; padding: 4px 6px; }
 .fpv-bar { flex-wrap: wrap; }
 .fpv-cmap { max-width: 8rem; }
+.fpv-ver { max-width: 10rem; }
 .fpv-sliders { gap: 0.8rem; }
 .fpv-terms { flex-wrap: wrap; gap: 0.4rem; }
 /* each slider is a row-GROUP so a label never splits from its track when the strip wraps */

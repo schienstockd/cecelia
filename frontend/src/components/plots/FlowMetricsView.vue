@@ -51,6 +51,26 @@ const SCALE_OPTIONS: ChipOption[] = ['1', '2', '3', '4', '6', '8', '12', '16']
 const COLORMAPS = ['viridis', 'magma', 'grey']
 
 const state = computed(() => props.state)
+
+// Which image version the metrics are computed on. Same bug as the probability plot had: this was
+// hardcoded to `default`, so the sheet showed flow over the RAW import while a model is trained on the
+// denoised one — a different photometric world, and nothing said so. No model here to name the right
+// version, so the default is the image's ACTIVE one, matching what a task form resolves to
+// (`preferredValueName`) and what the viewer shows.
+const image = computed(() =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid))
+const versionOptions = computed<string[]>(() => Object.keys(image.value?.filepaths ?? {}))
+const valueName = computed({
+  get: () => state.value.valueName ?? '',
+  set: v => (state.value.valueName = v),
+})
+watch(versionOptions, opts => {
+  if (!opts.length) return
+  if (state.value.valueName && opts.includes(state.value.valueName)) return
+  state.value.valueName = image.value?.activeValueName && opts.includes(image.value.activeValueName)
+    ? image.value.activeValueName : opts[0]
+}, { immediate: true })
+
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })
 // z is nullable — empty means "the middle plane", which is what training reads. The slider needs a
 // number, so it shows the middle until the user moves it.
@@ -104,7 +124,7 @@ watch(imageChannels, avail => {
 // no model is involved to carry them (see the header).
 const request = computed<FlowRequest | null>(() => state.value.imageUid ? {
   projectUid: props.projectUid, imageUid: state.value.imageUid,
-  valueName: state.value.valueName ?? 'default',
+  valueName: state.value.valueName || 'default',
   cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
   colormap: colormap.value, temporalScales: scales.value.map(Number),
 } : null)
@@ -141,6 +161,10 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
                 @change="state.imageUid = ($event.target as HTMLSelectElement).value">
           <option value="" disabled>Image…</option>
           <option v-for="o in imageOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+        </select>
+        <select v-if="versionOptions.length > 1" class="select-input fmv-ver" v-model="valueName"
+                v-tooltip.top="'Image version the metrics are computed on'">
+          <option v-for="v in versionOptions" :key="v" :value="v">{{ v }}</option>
         </select>
         <select class="select-input fmv-cmap" v-model="colormap"
                 v-tooltip.top="'Colour map for every plane'">
@@ -220,6 +244,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 .fmv-bar { flex-wrap: wrap; }
 .fmv-scales { flex-wrap: wrap; gap: 0.4rem; }
 .fmv-cmap { max-width: 8rem; }
+.fmv-ver { max-width: 10rem; }
 .fmv-sliders { gap: 0.8rem; }
 .fmv-terms { flex-wrap: wrap; gap: 0.4rem; }
 /* each slider is a row-GROUP so a label never splits from its track when the strip wraps */

@@ -410,6 +410,13 @@ drift from what a run is fed.
 | **Flow metrics** | which of these look like cells, i.e. what should I train on | none, deliberately — the question predates any checkpoint |
 | **Model probability** | did it learn to tell cell from background | the vault's selection, honouring global/local scope |
 
+Both carry an **image-version selector**, and its default differs on purpose. The metric sheet has no
+model, so it defaults to the image's ACTIVE version — what a task form resolves to and what the viewer
+shows. The probability plot defaults to the version the MODEL was trained on, read from its manifest's
+`sourceValueName`, because that is by definition the right input; pick another and the panel says
+"not trained input". Both hardcoded `default` until 2026-08-07, which fed a model trained on a denoised
+movie the raw import — a different photometric world, with nothing on screen saying so.
+
 Neither shows instances: those are segmentation output, the Segment page previews them through the
 normal path, and a threshold plus a growing step hides exactly what the probability map is for.
 `predict_frame` returns `(prob_map, instances, props)` and a run discards the first
