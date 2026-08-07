@@ -371,6 +371,14 @@ Measured identically for every row: `4kS67f/LUkCpP` (64x4x13x512x512, 12-bit dat
 1.745 GB raw), whole store rewritten. `read` is a warm per-plane read, the only read difference that
 survived three repeat runs — cold and sequential reads were inside run-to-run noise, because a smaller
 store offsets the extra CPU. `url` is the codec's own site so a user can check what they're choosing.
+
+**Held fixed while measuring:** the store LAYOUT — zarr v2, nested chunk keys (bioformats2raw's own
+default, which is what wrote that store), 1x1x1x512x512 chunks, unsharded. It has to be stated because
+the other table on that Settings page varies exactly those, and a size in one table is only comparable
+to a size in the other if you know which layout each was taken in. Chunk shape is the part that could
+actually move these numbers: the codec compresses one chunk at a time, so a different chunk size gives
+it a different amount of context. The two variables are not independent, and neither table's rows were
+re-measured across the other's — each varies one thing with the other pinned.
 """
 const IMAGE_COMPRESSOR_CHOICES = [
     (name = "zstd-shuffle", cname = "zstd", clevel = 3, shuffle = true,
@@ -387,8 +395,11 @@ const IMAGE_COMPRESSOR_CHOICES = [
      url = "https://facebook.github.io/zstd/"),
 ]
 
-#: What every row was measured on, shown as the table's caption. One line, no prose.
-const IMAGE_COMPRESSOR_MEASURED_ON = "1.7 GB 16-bit timecourse, whole store"
+#: What every row was measured on, shown as the table's caption. One line, no prose. Names the LAYOUT
+#: it was measured in (see the docstring) — the layout table below states its codec, symmetrically, so
+#: neither set of numbers is readable as "the" size without knowing what the other variable was.
+const IMAGE_COMPRESSOR_MEASURED_ON =
+    "1.7 GB 16-bit timecourse, whole store · zarr v2, nested keys, 512×512 chunks"
 
 #: The byte-shuffle filter belongs to Blosc, not to zstd/lz4 — link it separately.
 const IMAGE_COMPRESSOR_DOCS_URL = "https://www.blosc.org/"
@@ -445,8 +456,15 @@ end
 #:
 #: Rendered as a TABLE in Settings, like the compressor, because the trade-off is the only reason there
 #: is a choice. Every number is MEASURED on one source (`M3c-CD8-GFP-CD20-Tom_MAX.tif`, 2 pyramid
-#: levels, identical codec), with `read` the median of 9 interleaved full-level reads so drift hits each
-#: store equally. All three decode to identical pixels.
+#: levels), with `read` the median of 9 interleaved full-level reads so drift hits each store equally.
+#: All three decode to identical pixels.
+#:
+#: **Held fixed while measuring:** the CODEC — blosc/zstd level 3 + byte shuffle (`zstd-shuffle`, the
+#: default of the compressor table above) with 1x1x1x512x512 chunks, verified identical in all three
+#: stores' array metadata. Stated for the same reason that table names its layout: these are two
+#: settings on one page and each table pins the other's variable, so `size` here is "this layout at the
+#: default codec", not the size of the layout as such. A different codec shifts all three rows together
+#: — the DIFFERENCE between them is a directory-inode cost and does not depend on the codec at all.
 #:
 #: `flat` is the default: same data bytes as nested and the same read time, but 10 MB of 81 MB less on
 #: disk (~14%) because it does not allocate ~2,470 directory inodes. Free on local disk, and a network
@@ -471,8 +489,10 @@ const STORE_LAYOUT_CHOICES = [
 ]
 const STORE_LAYOUT_DEFAULT = "flat"
 
-#: What every row was measured on — shown as the table's caption, one line, like the compressor's.
-const STORE_LAYOUT_MEASURED_ON = "0.5 GB 16-bit stack, 2 levels; read = median of 9 interleaved"
+#: What every row was measured on — shown as the table's caption, one line, like the compressor's, and
+#: naming the codec for the same reason that one names the layout.
+const STORE_LAYOUT_MEASURED_ON =
+    "0.5 GB 16-bit stack, 2 levels, zstd + shuffle · read = median of 9 interleaved"
 
 """The configured store layout, as a `STORE_LAYOUT_CHOICES` entry.
 

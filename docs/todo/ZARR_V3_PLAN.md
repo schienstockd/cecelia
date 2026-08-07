@@ -346,8 +346,20 @@ the import, which is written once and sequentially, and where D8 says sharding i
 
 ### Storage vs access, per layout (measured 2026-08-07)
 
-Same source (`M3c-…_MAX.tif`), converted four ways with identical codec settings, 2 pyramid levels.
-Read is a full level-0 read, **9 interleaved rounds** across all four stores so drift hits them equally.
+Same source (`M3c-…_MAX.tif`), converted four ways, 2 pyramid levels. Read is a full level-0 read,
+**9 interleaved rounds** across all four stores so drift hits them equally.
+
+**Held fixed:** the codec — blosc/**zstd level 3 + byte shuffle** (`zstd-shuffle`, the default of the
+compressor table) and `1×1×1×512×512` chunks, verified equal in every store's array metadata after the
+fact rather than assumed from the flags. So each row below is "this layout at the default codec". The
+compressor table is the mirror image — all four of its rows were measured in **zarr v2, nested keys,
+512×512 chunks** (bioformats2raw's own default, which is what wrote `4kS67f/LUkCpP`). Both captions now
+say so on screen; neither table's rows have been re-measured across the other's axis.
+
+A different codec would move all three rows below together and leave their *differences* intact, since
+the flat-vs-nested gap is directory inodes and not bytes. The reverse is not as safe: chunk shape is a
+layout property that feeds the codec its context window, so a compressor row measured at a very
+different chunk size is not the same measurement.
 
 | layout | on disk | data bytes | dirs | read (median) |
 |---|---|---|---|---|

@@ -7831,6 +7831,32 @@ end
         @test_throws ArgumentError Cecelia.set_image_compressor!("nope")
     end
 
+    # Two tables on one Settings page, each varying what the other pins: the compressor rows were all
+    # measured in ONE layout, the layout rows all with ONE codec. Neither set of sizes is comparable to
+    # the other's without that, so each caption must name the variable it held fixed. Asserted because a
+    # caption is exactly the kind of string that gets shortened later by someone who reads it as prose.
+    @testset "measured-on captions name the other table's variable" begin
+        cmp_cap = Cecelia.IMAGE_COMPRESSOR_MEASURED_ON
+        lay_cap = Cecelia.STORE_LAYOUT_MEASURED_ON
+
+        # the compressor was measured in one LAYOUT: format, chunk-key style, and chunk shape
+        @test occursin("zarr v", cmp_cap)
+        @test occursin("keys", cmp_cap)
+        @test occursin("chunks", cmp_cap)
+
+        # ...and the layouts with one CODEC — named, and actually the default the other table serves
+        # (derived, not spelled out, so re-measuring under a new default has to update the caption)
+        default_cname = first(c.cname for c in Cecelia.IMAGE_COMPRESSOR_CHOICES
+                              if c.name == Cecelia.IMAGE_COMPRESSOR_DEFAULT)
+        @test occursin(default_cname, lay_cap)
+
+        # both stay one short line — this renders as a field hint, not a paragraph (docs/UI.md)
+        for cap in (cmp_cap, lay_cap)
+            @test !occursin("\n", cap)
+            @test length(cap) <= 90
+        end
+    end
+
     @testset "count metrics" begin
         # pure: distinct tracks, mean cells/track, tracked-cell total; untracked = missing/NaN/≤0
         nt, ml, ntc = track_count_metrics([1, 1, 1, 2, 2, 0, -1, NaN, missing, 3])
