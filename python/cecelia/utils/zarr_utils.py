@@ -127,6 +127,21 @@ def _group_format(group, default=2):
         return default
 
 
+#: Flat chunk keys for the stores WE write, in both formats.
+#:
+#: zarr-python defaults v2 to `.` (`3.0.0.0.0`) and v3 to `/` (`c/3/0/0/0/0`), so simply moving a writer
+#: to v3 silently turns one directory into one per chunk-key prefix — MEASURED on a real drift output:
+#: 4 directories became 24 211, ~11% more ALLOCATED disk for byte-identical data (invisible to a byte
+#: sum; it is blocks, which is what `_path_bytes` and Settings → Storage report).
+#:
+#: Flat is not a new convention — it is what our v2 derived stores already do, so pinning it keeps a
+#: correction/crop/label store laid out the same way before and after the format change.
+#:
+#: NOT applied to bioformats2raw's imports, which we do not write: those are nested for BOTH formats
+#: (v2 `0/0/36/0/8/0/0`, v3 `0/0/c/36/0/8/0/0`), so the format costs nothing there either way.
+_V3_FLAT_CHUNK_KEY = {'name': 'default', 'configuration': {'separator': '.'}}
+
+
 def _codec_kwargs(kind='image', zarr_format=2, shards=None):
     """`create_array` kwargs carrying the compression decision, in the shape THIS format takes.
 
@@ -140,7 +155,7 @@ def _codec_kwargs(kind='image', zarr_format=2, shards=None):
     raising: the caller inherits format from its source and should not have to branch on it.
     """
     if zarr_format and zarr_format >= 3:
-        kw = {'compressors': store_codecs(kind)}
+        kw = {'compressors': store_codecs(kind), 'chunk_key_encoding': _V3_FLAT_CHUNK_KEY}
         if shards:
             kw['shards'] = tuple(shards)
         return kw

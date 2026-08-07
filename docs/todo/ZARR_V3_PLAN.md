@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phases 1-3 built and Phase 4 measured.** Recommendation: keep NGFF 0.4 / zarr v2 as the default — unsharded v3 costs 24k directories and ~11% allocated space for identical data, and the sharding that would justify v3 needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** Recommendation: keep NGFF 0.4 / zarr v2 as the default — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -272,11 +272,25 @@ imported twice (NGFF 0.4 and 0.5) and drift-corrected in both, `zstd-shuffle`, 3
 Correction time is indistinguishable. So v3 is functionally fine end to end — import, streaming
 correction, read-back.
 
-**But unsharded v3 is strictly WORSE on disk than v2.** Same data bytes, ~11 % more *allocated* space
-and **24 211 directories against 4**, because v3's chunk-key encoding is a nested tree
-(`c/0/0/0/0/0`) where v2 uses flat dotted names (`56.2.15.1.1`). Every directory costs a block, and on a
-network share 24 k directories is far worse than 4. The 11 % is invisible to a byte sum — it only shows
-in allocated blocks, which is what `_path_bytes` (and the Storage panel) reports.
+**The directory blow-up was OURS, not v3's — corrected (Dominik spotted it).** The first reading of
+this table said "unsharded v3 is strictly worse on disk". Wrong: it compared bioformats2raw's v2 import
+against *our* v3 write. bioformats2raw nests for **both** formats, so at import the difference is 3
+directories, not 20 000:
+
+| store | dirs | example chunk key |
+|---|---|---|
+| import v2 (bioformats2raw) | 20 933 | `0/0/36/0/8/0/0` |
+| import v3 (bioformats2raw) | 20 936 | `0/0/c/36/0/8/0/0` |
+| drift v2 (**our** writer) | 4 | `0/56.2.15.1.1` |
+| drift v3 (**our** writer, before the fix) | 24 211 | `0/c/36/0/31/0/0` |
+
+The cause is zarr-python's default chunk-key separator: `.` for v2, `/` for v3. So moving a writer to v3
+silently turned 4 directories into 24 211 and cost ~11 % more *allocated* disk for byte-identical data.
+Fixed by pinning `separator: '.'` for the stores we write (`_V3_FLAT_CHUNK_KEY`) — not a new convention,
+it is what our v2 derived stores already did, so a correction/crop/label store is laid out the same way
+before and after the format change. Not applied to imports, which we do not write.
+
+**So v3 is not a disk regression.** The remaining question is whether sharding is worth having at all.
 
 **And sharding, as we currently expose it, cannot fix that.** `--shard-width/height` cap to the frame,
 so on a 512×512 image the shard EQUALS the chunk and buys nothing — measured: shard and chunk both
@@ -289,11 +303,15 @@ so on a 512×512 image the shard EQUALS the chunk and buys nothing — measured:
 
 **8.4× fewer files**, which on the real image projects 9 991 → ~770.
 
-**Conclusion: do not default to v3.** Unsharded it is a regression, and the sharding that would justify
-it needs `--shard-depth`, which turns a shard into a z-spanning unit — exactly the case D8 says punishes
-incremental writers (a per-plane correction would read-modify-write a 13-plane shard per plane). That
-trade is real and unmeasured; the drift run above does NOT test it, because with shard == chunk there
-is no amplification to observe.
+**Conclusion: keep v2 as the default, but not because v3 costs disk.** It does not, once the chunk key
+is pinned. The reason is that v3's only real *benefit* here — fewer files — needs `--shard-depth`, which
+makes a shard span z: exactly the case D8 says punishes incremental writers (a per-plane correction
+would read-modify-write a 13-plane shard per plane). That trade is real and unmeasured, and the drift
+run above does NOT test it, because with shard == chunk there is no amplification to observe.
+
+The file-count motivation is real, though: a 1.7 GB import is **~31 000 filesystem entries** (20 933
+dirs + 9 997 files), and `--shard-depth 13` would cut that ~8×. That is the case for pursuing it — on
+the import, which is written once and sequentially, and where D8 says sharding is safe.
 
 ### Phase 4 — Adopt (remaining)
 

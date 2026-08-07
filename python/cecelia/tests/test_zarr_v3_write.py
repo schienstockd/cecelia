@@ -49,10 +49,11 @@ def _fixture(shape=(2, 1, 1, 16, 16), seed=0):
 class CodecShapePerFormatTest(unittest.TestCase):
     def test_v2_and_v3_carry_the_same_decision_in_different_shapes(self):
         self.assertEqual(['compressor'], list(zarr_utils._codec_kwargs('image', 2)))
-        self.assertEqual(['compressors'], list(zarr_utils._codec_kwargs('image', 3)))
         # `compressors` PLURAL is the v3 kwarg; `codecs` is silently rejected by create_array
-        self.assertEqual(['compressors', 'shards'],
-                         list(zarr_utils._codec_kwargs('image', 3, shards=(1, 1, 1, 64, 64))))
+        self.assertEqual({'compressors', 'chunk_key_encoding'},
+                         set(zarr_utils._codec_kwargs('image', 3)))
+        self.assertEqual({'compressors', 'chunk_key_encoding', 'shards'},
+                         set(zarr_utils._codec_kwargs('image', 3, shards=(1, 1, 1, 64, 64))))
         # v2 has no sharding — dropped rather than raising, so a caller need not branch on format
         self.assertEqual(['compressor'], list(zarr_utils._codec_kwargs('image', 2, shards=(1, 1, 1, 64, 64))))
 
@@ -295,6 +296,56 @@ class ValidBoxIsFormatAgnosticTest(unittest.TestCase):
         attrs = dict(zarr.open_group(zarr_utils.series_base(p), mode='r').attrs)
         self.assertIn(zarr_utils.CECELIA_ATTR, attrs, 'private attrs belong at the top level')
         self.assertNotIn(zarr_utils.CECELIA_ATTR, attrs.get('ome', {}))
+
+
+class FlatChunkKeyTest(unittest.TestCase):
+    """A v3 store WE write must not explode into one directory per chunk-key prefix.
+
+    zarr-python defaults v2 to `.` and v3 to `/`, so moving a writer to v3 silently turns 4 directories
+    into 24 211 (measured on a real drift output) — ~11% more ALLOCATED disk for byte-identical data.
+    That cost is invisible to a byte sum; it is blocks, which is what `_path_bytes` and Settings →
+    Storage report.
+
+    Flat is not a new convention: it is what our v2 derived stores already do.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dark, self.arr, self.du = _fixture(shape=(4, 1, 1, 16, 16))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _dirs_and_key(self, fmt):
+        p = os.path.join(self.tmp, f'k{fmt}.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=fmt)
+        dirs = sum(len(ds) for _, ds, _ in os.walk(p))
+        key = None
+        for root, _, files in os.walk(os.path.join(p, '0')):
+            chunks = [f for f in files if not f.startswith('.') and f != 'zarr.json']
+            if chunks:
+                key = os.path.relpath(os.path.join(root, chunks[0]), p)
+                break
+        return dirs, key, p
+
+    def test_v3_chunk_keys_are_flat_like_v2(self):
+        d2, k2, _ = self._dirs_and_key(2)
+        d3, k3, p3 = self._dirs_and_key(3)
+        self.assertIsNotNone(k3, 'no chunk file found in the v3 store')
+        # a v3 store must not add a directory per chunk-key prefix the way the `/` default does
+        self.assertLessEqual(d3, d2 + 1, f'v3 exploded into directories: {d3} vs v2 {d2} (key {k3})')
+        # the chunk file sits directly under its level, exactly like the v2 one
+        self.assertEqual(1, k3.count(os.sep), f'v3 chunk key is nested: {k3}')
+        self.assertEqual(k2.count(os.sep), k3.count(os.sep), f'v2 {k2} vs v3 {k3}')
+        # and it still reads back
+        np.testing.assert_array_equal(self.arr, np.asarray(zarr_utils.open_as_zarr(p3)[0][0][:]))
+
+    def test_the_encoding_is_declared_in_the_metadata(self):
+        import json
+        _, _, p = self._dirs_and_key(3)
+        with open(os.path.join(p, '0', 'zarr.json'), encoding='utf-8') as fh:
+            meta = json.load(fh)
+        self.assertEqual('.', meta['chunk_key_encoding']['configuration']['separator'])
 
 
 if __name__ == '__main__':
