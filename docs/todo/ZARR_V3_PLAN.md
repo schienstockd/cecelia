@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phases 1-3 built** (read, report, write + sharding). Phase 4 (measure, then defaults) is the remainder. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** Recommendation: keep NGFF 0.4 / zarr v2 as the default — unsharded v3 costs 24k directories and ~11% allocated space for identical data, and the sharding that would justify v3 needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -254,7 +254,48 @@ keys (`multiscales`, `omero`). `zarr-python`'s `Group.attrs` already hides `.zat
 `write_ngff_attrs` like the multiscales writers — the obvious-looking fix — would bury a private key
 inside `ome` where it is neither NGFF nor findable.
 
-### Phase 4 — Adopt
+### Phase 4 — Measured (2026-08-07)
+
+Real 3D+time intravital dataset: `M1a-CD8-GFP-CD20-Tom_005.tif`, 1.7 GB → **64t × 4c × 13z × 512 × 512**,
+imported twice (NGFF 0.4 and 0.5) and drift-corrected in both, `zstd-shuffle`, 3 pyramid levels.
+
+| | v2 / NGFF 0.4 | v3 / NGFF 0.5 |
+|---|---|---|
+| import files | 9 997 | 9 991 |
+| import data bytes | 940 425 216 | 940 617 728 (+0.02 %) |
+| drift correct | ✅ 105.2 s | ✅ 105.6 s (+0.4 %) |
+| drift output, DATA bytes | 847 028 518 | 847 031 970 (+0.0004 %) |
+| drift output, ALLOCATED | 889 MB | **988 MB (+11 %)** |
+| **directories** | **4** | **24 211** |
+
+**Everything works and the pixels are identical** (v2 and v3 drift outputs compared frame by frame).
+Correction time is indistinguishable. So v3 is functionally fine end to end — import, streaming
+correction, read-back.
+
+**But unsharded v3 is strictly WORSE on disk than v2.** Same data bytes, ~11 % more *allocated* space
+and **24 211 directories against 4**, because v3's chunk-key encoding is a nested tree
+(`c/0/0/0/0/0`) where v2 uses flat dotted names (`56.2.15.1.1`). Every directory costs a block, and on a
+network share 24 k directories is far worse than 4. The 11 % is invisible to a byte sum — it only shows
+in allocated blocks, which is what `_path_bytes` (and the Storage panel) reports.
+
+**And sharding, as we currently expose it, cannot fix that.** `--shard-width/height` cap to the frame,
+so on a 512×512 image the shard EQUALS the chunk and buys nothing — measured: shard and chunk both
+`[1,1,1,512,512]`, 9 991 files vs 9 997. The axis that pays is **z**, which we do not expose:
+
+| | files | shard |
+|---|---|---|
+| `--shard-depth 1` (default; all our UI can produce) | 109 | `[1,1,1,512,512]` = the chunk |
+| `--shard-depth 13` (one shard per z-stack) | **13** | `[1,1,13,512,512]` |
+
+**8.4× fewer files**, which on the real image projects 9 991 → ~770.
+
+**Conclusion: do not default to v3.** Unsharded it is a regression, and the sharding that would justify
+it needs `--shard-depth`, which turns a shard into a z-spanning unit — exactly the case D8 says punishes
+incremental writers (a per-plane correction would read-modify-write a 13-plane shard per plane). That
+trade is real and unmeasured; the drift run above does NOT test it, because with shard == chunk there
+is no amplification to observe.
+
+### Phase 4 — Adopt (remaining)
 
 Measure sharded vs unsharded on a real timecourse (store size, file count, import time, warm plane
 read, and the **correction-task rewrite** cost, which is where sharding should hurt). Publish the
