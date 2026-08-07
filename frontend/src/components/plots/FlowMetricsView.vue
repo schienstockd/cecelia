@@ -33,6 +33,7 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { useProjectStore } from '../../stores/project'
 
 interface Plane { name: string; png: string }
+interface FlowModel { name: string; label: string; channelName?: string }
 interface FlowState {
   imageUid?: string; valueName?: string; model?: string
   channels?: string[]; t?: number; z?: number | null
@@ -56,7 +57,7 @@ const extent = ref({ t: 1, z: 1 })       // slider bounds, from the image's own 
 const loading = ref(false)
 const starting = ref(false)
 const error = ref('')
-const models = ref<{ name: string; label: string }[]>([])
+const models = ref<FlowModel[]>([])
 
 const state = computed(() => props.state)
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })
@@ -79,8 +80,9 @@ async function loadModels() {
   try {
     const r = await fetch('/api/optical-flow/models')
     const d = await r.json()
-    models.value = (d.models ?? []).map((m: { name: string; label: string }) =>
-      ({ name: m.name, label: m.label }))
+    models.value = (d.models ?? []).map((m: { name: string; label: string;
+                                               manifest?: { channelName?: string } }) =>
+      ({ name: m.name, label: m.label, channelName: m.manifest?.channelName }))
   } catch { /* the picker just stays empty; `load` reports the real failure */ }
 }
 
@@ -147,7 +149,7 @@ async function loadExtent() {
 onMounted(async () => { await loadModels(); await loadExtent(); await load() })
 watch(() => state.value.imageUid, loadExtent)
 watch(() => [state.value.imageUid, state.value.model, state.value.t, state.value.z,
-             colormap.value, scales.value.join(',')], () => load())
+             colormap.value, scales.value.join(','), channels.value.join(',')], () => load())
 
 // The host's selection IS the image list (standard bag) — the page's table on one surface, the
 // board's image picker on the other. Names come from the project store; the uids do not.
@@ -155,6 +157,32 @@ const nameOf = (uid: string) =>
   project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
 const imageOptions = computed<ChipOption[]>(() =>
   (props.imageUids ?? []).map(uid => ({ value: uid, label: nameOf(uid) })))
+
+// Which channel the flow is computed ON — and the single most consequential control here. With none
+// sent, `_project_window` falls back to channel 0, so this sheet was quietly showing flow over the
+// SHG channel while the model had been trained on mem-TOM: sparse dots, no error, nothing to say so.
+const imageChannels = computed<string[]>(() =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid)?.channelNames ?? [])
+const channelOptions = computed<ChipOption[]>(() =>
+  imageChannels.value.map(c => ({ value: c, label: c })))
+const channels = computed({
+  get: () => state.value.channels ?? [],
+  set: v => (state.value.channels = v),
+})
+
+// Seed from the MODEL when there is one — a model records the channels it was trained on
+// (`channelName`, joined by `+`), and showing it anything else answers a question nobody asked.
+// Otherwise the first channel, so the sheet is at least explicit about what it picked.
+watch([() => state.value.model, imageChannels, () => models.value.length], () => {
+  const avail = imageChannels.value
+  if (!avail.length) return
+  const trained = (models.value.find(m => m.name === state.value.model)?.channelName ?? '')
+    .split('+').map(c => c.trim()).filter(c => avail.includes(c))
+  const want = trained.length ? trained : avail.slice(0, 1)
+  const cur = state.value.channels ?? []
+  // only re-seed when the current pick cannot apply to this image / model
+  if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = want
+}, { immediate: true })
 
 // Follow the host: seed the first image, and drop a pick that has left the selection (else the panel
 // keeps rendering an image the page no longer shows).
@@ -196,20 +224,29 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
         </button>
       </div>
 
-      <!-- t / z as sliders: stepping through a movie is a scrub, not a number you type. Each shows
-           its own value, so the readout replaces the spinner rather than adding to it. -->
-      <label class="cc-row fmv-slider" v-tooltip.top="'Timepoint'">
-        <span class="cc-muted cc-fs-xs fmv-axis">t</span>
-        <input type="range" class="slider" min="0" :max="extent.t - 1" step="1" :value="t"
-               @input="t = Number(($event.target as HTMLInputElement).value)" />
-        <span class="cc-readout cc-fs-xs fmv-val">{{ t }}/{{ extent.t - 1 }}</span>
-      </label>
-      <label v-if="extent.z > 1" class="cc-row fmv-slider"
-             v-tooltip.top="'Z plane — the middle is what training reads'">
-        <span class="cc-muted cc-fs-xs fmv-axis">z</span>
-        <input type="range" class="slider" min="0" :max="extent.z - 1" step="1" :value="z"
-               @input="z = Number(($event.target as HTMLInputElement).value)" />
-        <span class="cc-readout cc-fs-xs fmv-val">{{ z }}/{{ extent.z - 1 }}</span>
+      <!-- t / z as sliders: stepping through a movie is a scrub, not a number you type. Side by side
+           — two short tracks read as one control, and a row each wasted the panel's height. -->
+      <div class="cc-row fmv-sliders">
+        <label class="cc-row-group fmv-slider" v-tooltip.top="'Timepoint'">
+          <span class="cc-muted cc-fs-xs fmv-axis">t</span>
+          <input type="range" class="slider" min="0" :max="extent.t - 1" step="1" :value="t"
+                 @input="t = Number(($event.target as HTMLInputElement).value)" />
+          <span class="cc-readout cc-fs-xs fmv-val">{{ t }}/{{ extent.t - 1 }}</span>
+        </label>
+        <label v-if="extent.z > 1" class="cc-row-group fmv-slider"
+               v-tooltip.top="'Z plane — the middle is what training reads'">
+          <span class="cc-muted cc-fs-xs fmv-axis">z</span>
+          <input type="range" class="slider" min="0" :max="extent.z - 1" step="1" :value="z"
+                 @input="z = Number(($event.target as HTMLInputElement).value)" />
+          <span class="cc-readout cc-fs-xs fmv-val">{{ z }}/{{ extent.z - 1 }}</span>
+        </label>
+      </div>
+
+      <label v-if="channelOptions.length" class="cc-row fmv-terms">
+        <span class="cc-muted cc-fs-xs"
+              v-tooltip.top="'Channel the flow is computed on — a model seeds its own'">channel</span>
+        <ChipSelect :options="channelOptions" :model-value="channels" multiple aria-label="Channels"
+                    @update:model-value="v => channels = v as string[]" />
       </label>
 
       <!-- Only without a model: with one, the manifest's scales win (inference must match training),
@@ -250,12 +287,15 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 .fmv-bar { flex-wrap: wrap; }
 .fmv-scales { flex-wrap: wrap; gap: 0.4rem; }
 .fmv-cmap { max-width: 8rem; }
-.fmv-slider { align-items: center; gap: 0.4rem; }
+.fmv-sliders { gap: 0.8rem; }
+.fmv-terms { flex-wrap: wrap; gap: 0.4rem; }
+/* each slider is a row-GROUP so a label never splits from its track when the strip wraps */
+.fmv-slider { flex: 1; min-width: 9rem; align-items: center; gap: 0.4rem; }
 .fmv-axis { width: 1ch; }
-.fmv-slider .slider { flex: 1; min-width: 6rem; }
+.fmv-slider .slider { flex: 1; min-width: 5rem; }
 .fmv-val { width: 5ch; text-align: right; }   /* + .cc-readout (tabular nums, dim) */
 .fmv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 0.4rem; }
+            gap: 0.5rem; padding: 0.5rem; }
 .fmv-grid figure { margin: 0; }
 .fmv-grid img { width: 100%; display: block; image-rendering: pixelated;
                 border-radius: var(--cc-radius-sm); }
