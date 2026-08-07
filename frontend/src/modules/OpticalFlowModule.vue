@@ -7,8 +7,10 @@
   a model; the fix is that every parameter is a visible task param and the vault shows each model's
   manifest — not a prettier form.
 
-  Ordinary module page: image table, task rail, nothing bespoke. Training is an ordinary task, so it
-  gets progress, cancel, logs, QC and chainability for free.
+  Ordinary module page: image table, task rail, a `#plots` canvas, nothing bespoke. Training is an
+  ordinary task, so it gets progress, cancel, logs, QC and chainability for free — and the canvas
+  (FlowPlots) is the same shell every other page's plots use, so a trained model can be inspected
+  here rather than only on the Analysis board.
 
   The vault is a FLOATING panel (the app's `FloatingPanel`, same component as Viewer and Lab log),
   toggled from the page actions and remembered across visits. It was an inline list in the page's
@@ -20,6 +22,7 @@ import ModuleLayout from '../components/ModuleLayout.vue'
 import FloatingPanel from '../components/FloatingPanel.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import FlowModelVault from './opticalFlow/FlowModelVault.vue'
+import FlowPlots from './opticalFlow/FlowPlots.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 import { useSettingsStore } from '../stores/settings'
 
@@ -28,7 +31,7 @@ const settings = useSettingsStore()
 </script>
 
 <template>
-  <ModuleLayout module="opticalFlow" :show-attrs="true" :show-filter="true"
+  <ModuleLayout module="opticalFlow" :show-attrs="true" :show-filter="true" plots-label="Flow model"
     hint-key="opticalFlow" hint="Train on a smoothed movie; segment on the Segment page.">
     <template #actions>
       <button class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-on': settings.flowVaultOpen }"
@@ -46,6 +49,10 @@ const settings = useSettingsStore()
         :selected-uids="selectedUids"
         :selected-names="selectedNames"
       />
+    </template>
+
+    <template #plots="{ selectedUids }">
+      <FlowPlots :image-uids="selectedUids" />
     </template>
   </ModuleLayout>
 

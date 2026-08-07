@@ -31,7 +31,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, inBoardGroup } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -177,18 +177,18 @@ const activeContent = computed<SlotContent | null>(() => entry.value.contents[en
 type PState = { sel: string[]; vis: VisProps; [k: string]: unknown }
 const st = (c: SlotContent): PState => c.state as PState
 
-// self-contained interactive views (read their own context / pops)
-const ANALYSIS_VIEWS = ['gatingStrategy']
-const interactiveOptions = computed(() => ANALYSIS_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
+// The picker's three interactive optgroups come STRAIGHT from the registry's `analysisBoard` flag +
+// `boardGroup` — no key list here. There used to be one (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`), which made
+// the flag a lie: a view could set `analysisBoard: true` and never appear, because nothing read it.
+// Self-contained interactive views (read their own context / pops):
+const interactiveOptions = computed(() => boardViews('interactive'))
 // CLUSTERING plots — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
-// the interactive UMAP (INTERACTIVE_VIEWS) + the cluster panels (CLUSTER_PANELS registry). Discovered
-// GENERICALLY via each registry's `analysisBoard` flag — no per-plot wiring here. A cluster slot is any
-// interactive slot whose ref is `umap` OR a registered cluster panel.
+// the clustering-group interactive views (UMAP) + the cluster panels (CLUSTER_PANELS registry). A
+// cluster slot is any interactive slot in that group OR a registered cluster panel.
 const isClusterSlot = (c: SlotContent | null): boolean =>
-  !!c && c.kind === 'interactive' && (c.ref === 'umap' || isClusterPanel(c.ref))
+  !!c && c.kind === 'interactive' && (inBoardGroup(c.ref, 'clustering') || isClusterPanel(c.ref))
 const clusterOptions = computed(() => {
-  const out: { key: string; label: string }[] = []
-  if (INTERACTIVE_VIEWS.umap?.analysisBoard) out.push({ key: 'umap', label: INTERACTIVE_VIEWS.umap.label })
+  const out: { key: string; label: string }[] = [...boardViews('clustering')]
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
     if (!def.analysisBoard) continue
     if (def.trackOnly && clustPopType.value !== 'trackclust') continue          // HMM = track runs only
@@ -199,8 +199,7 @@ const clusterOptions = computed(() => {
   return out
 })
 // image-content views (napari screenshot slots) — grouped separately in the picker
-const IMAGE_VIEWS = ['filmstrip']
-const imageOptions = computed(() => IMAGE_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
+const imageOptions = computed(() => boardViews('image'))
 
 // the "+ Plot" value is "summary:<specId>" or "interactive:<viewKey>"
 function addPlot(i: number, val: string) {
@@ -208,8 +207,9 @@ function addPlot(i: number, val: string) {
   const sep = val.indexOf(':'); const kind = val.slice(0, sep); const ref = val.slice(sep + 1)
   if (kind === 'summary') layout.setContent(props.canvasKey, i, { kind: 'summary', ref, state: { specId: ref, sel: [], vis: defaultVis() } })
   else if (kind === 'interactive') {
-    // cluster slots carry a `hl` (highlight) bag; panels self-seed the rest (e.g. heatmap features)
-    const state = ref === 'umap' ? { labels: true, hl: [] } : isClusterPanel(ref) ? { hl: [] } : {}
+    // a view seeds its own new-panel state (registry `initialState`); cluster PANELS carry a `hl`
+    // (highlight) bag and self-seed the rest (e.g. heatmap features)
+    const state = INTERACTIVE_VIEWS[ref]?.initialState?.() ?? (isClusterPanel(ref) ? { hl: [] } : {})
     layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state })
   }
   layout.setActive(props.canvasKey, i)

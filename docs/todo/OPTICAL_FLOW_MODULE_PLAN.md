@@ -69,6 +69,14 @@ already hosts (`docs/ANALYSIS.md`, `ImageStripView.vue`). So:
 That keeps the "would be nice if we could use the same canvas approach" true where it earns its
 keep, without forcing it where it doesn't.
 
+**BUILT — and it lives on the page, not only on the board.** `FlowModelView` is one interactive-registry
+entry flagged for both surfaces (`opticalFlowPage`, `analysisBoard`); the page hosts it through
+`opticalFlow/FlowPlots.vue` in `ModuleLayout`'s `#plots` slot — the same shell the cluster and summary
+canvases use (`useCanvasPanels` + `InteractivePanel` + zoom, key `flow:model:{imageUid}`). It was
+board-only at first, which was wrong twice over: a module page's plots belong on the module page, and
+the board flag was in fact dead (the picker filtered a hardcoded key list, so the plot appeared
+nowhere). See `docs/UI.md` → *Generic plot-integration interface*.
+
 ## Open questions
 
 1. ~~**Does the preview need its own inference run?**~~ **Answered: reuse `preview/`, which is

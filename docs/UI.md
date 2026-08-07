@@ -1354,17 +1354,25 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `exportFormats`/`exportAs`.)
 
 **Two registries carry the surface "checkboxes":**
-- `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), flags
-  `clusterPage` / `analysisBoard`.
+- `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
+  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
+  `interactive` (default) / `clustering` / `image`), plus an optional `initialState()` seed for a new
+  panel's state bag.
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
 **Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
-component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`) and
-the board (`LayoutCanvas.vue`) do this identically — there is no "cluster page way" and "board way", and
-a future chain-whiteboard host consumes the same registries rather than re-wiring plots per node.
+component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
+Optical Flow page (`opticalFlow/FlowPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
+there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
+registries rather than re-wiring plots per node.
+
+**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews(group)`; never
+a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
+the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
+`interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.
 
 **`docked` is the contract's chrome switch** — a panel reads it to hide what only makes sense
 free-floating (its own Export dropdown), since the board exports via PDF/CSV instead. Details:
@@ -1390,7 +1398,7 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
 - **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
   `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
-  panel in `state`, `ImageStripView` `.is-bar`) opt in by tagging that bar `.cc-panel-controls` **and** giving
+  panel in `state`, `ImageStripView` `.is-bar`, `FlowModelView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
   then auto-hides it by the same trigger. One mechanism for every control surface; don't add a second.
 - **Opt OUT with `:auto-hide="false"`** where you interact with the plot constantly and controls popping
@@ -2021,7 +2029,9 @@ by the `canvasPanels` store and keyed per canvas.
 
 **The canvas key is per-image (module pages).** Module-page canvases embed the active object in their
 key — `summary:{module}:{imageUid}`, `gate:{popType}:{imageUid}:{valueName}` (per segmentation too),
-`clust:{popType}:{setUid}` (clustering is set-scope). `useCanvasPanels` takes a **reactive** key
+`clust:{popType}:{setUid}` (clustering is set-scope), `flow:model:{imageUid}`. **A new prefix must be
+added to `MODULE_PREFIXES` in `stores/canvasPanels.ts`** or the canvas works but never persists.
+`useCanvasPanels` takes a **reactive** key
 (Ref/getter) and rebinds to that object's own entry when the selection changes — so each image keeps
 its own plots/selections instead of the old single shared-per-module entry being pruned. Add
 `imageUid` (or set/value_name) to a NEW canvas's key the same way. The `/analysis` board keeps its own

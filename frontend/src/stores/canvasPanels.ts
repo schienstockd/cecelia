@@ -53,13 +53,15 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
 
   // ── Per-object persistence (debounced autosave → 1/{objUid}/moduleCanvases.json) ────────────────
   // MODULE-PAGE canvases only — keys embed the object: `summary:{module}:{img}`, `gate:{pt}:{img}:{vn}`,
-  // `clust:{pt}:{set}`. The `/analysis` board (`analysis:*`) persists separately (analysisBoards.json)
-  // and is excluded. One engine → every module page persists per-object, no per-page code.
-  const MODULE_PREFIXES = ['summary:', 'gate:', 'clust:']
+  // `clust:{pt}:{set}`, `flow:model:{img}`. The `/analysis` board (`analysis:*`) persists separately
+  // (analysisBoards.json) and is excluded. One engine → every module page persists per-object, no
+  // per-page code.
+  const MODULE_PREFIXES = ['summary:', 'gate:', 'clust:', 'flow:']
   const isModuleKey = (k: string) => MODULE_PREFIXES.some(p => k.startsWith(p))
 
   // The object (image/set) a module-canvas key or geom-key is scoped to = the 3rd colon-segment:
-  //   summary:{module}:{img} · gate:{pt}:{img}:{vn} · clust:{pt}:{set}   (geom adds `:{panelId}`)
+  //   summary:{module}:{img} · gate:{pt}:{img}:{vn} · clust:{pt}:{set} · flow:model:{img}
+  //   (geom adds `:{panelId}`)
   // RULE: a canvas key is colon-delimited, so its segments (module / popType / object uid / value_name)
   // MUST NOT contain ':'. This holds — object uids are alphanumeric `gen_uid`, popTypes/modules are
   // fixed identifiers, value_names are simple segmentation labels. Do not introduce a ':' into any of

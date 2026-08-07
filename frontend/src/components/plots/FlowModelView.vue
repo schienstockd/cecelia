@@ -7,6 +7,10 @@
   process, the same `CoastalUtils`, the same temporal window the real run builds. So these are the
   planes the model is actually fed, not a re-derivation that is free to drift from it.
 
+  Hosted on BOTH surfaces from one registry line: the Optical Flow module page's canvas
+  (`opticalFlowPage`) and the Analysis board (`analysisBoard`). It reads its images from the standard
+  bag's `imageUids`, so on each surface it offers exactly what that surface has selected.
+
   Nothing here touches napari. The Analysis board's other image slot (`ImageStripView`) is a napari
   SCREENSHOT montage, which is right for "show the pipeline stages as the viewer renders them" and
   wrong for this: these planes are not viewer layers and have no reason to become any.
@@ -26,7 +30,7 @@ interface FlowState {
   show?: string[]                       // which planes are visible, by name
 }
 
-const props = defineProps<{ projectUid: string; state: FlowState }>()
+const props = defineProps<{ projectUid: string; imageUids?: string[]; state: FlowState }>()
 const project = useProjectStore()
 
 const planes = ref<Plane[]>([])
@@ -75,8 +79,20 @@ async function load() {
 onMounted(async () => { await loadModels(); await load() })
 watch(() => [state.value.imageUid, state.value.model, state.value.t, state.value.z], load)
 
+// The host's selection IS the image list (standard bag) — the page's table on one surface, the
+// board's image picker on the other. Names come from the project store; the uids do not.
+const nameOf = (uid: string) =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
 const imageOptions = computed<ChipOption[]>(() =>
-  project.sets.flatMap(s => s.images.map(i => ({ value: i.uid, label: i.name ?? i.uid }))))
+  (props.imageUids ?? []).map(uid => ({ value: uid, label: nameOf(uid) })))
+// Follow the host: seed the first image, and drop a pick that has left the selection (else the panel
+// keeps rendering an image the page no longer shows).
+watch(imageOptions, opts => {
+  const uids = opts.map(o => o.value)
+  if (uids.length && (!state.value.imageUid || !uids.includes(state.value.imageUid)))
+    state.value.imageUid = uids[0]
+}, { immediate: true })
+
 const planeOptions = computed<ChipOption[]>(() =>
   planes.value.map(p => ({ value: p.name, label: p.name.replace(/^flow: /, '') })))
 const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).includes(p.name)))
@@ -84,6 +100,9 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 
 <template>
   <div class="fmv">
+    <!-- one auto-hide control strip (docs/UI.md → "Auto-hide panel controls"), so the planes get the
+         whole panel — the same treatment UmapView/ImageStripView give their in-body toolbars -->
+    <div class="fmv-ctrl cc-panel-controls">
     <div class="cc-row fmv-bar">
       <select class="select-input" :value="state.imageUid ?? ''"
               v-tooltip.top="'Image to run the model over'"
@@ -112,6 +131,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
                 :model-value="state.show ?? []" multiple aria-label="Planes"
                 v-tooltip.top="'Which planes to show'"
                 @update:model-value="v => state.show = v as string[]" />
+    </div>
 
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
     <p v-else-if="!planes.length && !loading" class="cc-muted">
@@ -128,7 +148,10 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 </template>
 
 <style scoped>
-.fmv { display: flex; flex-direction: column; gap: 0.4rem; height: 100%; overflow: auto; }
+/* position: relative so the overlaid .fmv-ctrl (.cc-panel-controls) anchors to the plane grid */
+.fmv { position: relative; display: flex; flex-direction: column; gap: 0.4rem; height: 100%;
+       overflow: auto; }
+.fmv-ctrl { display: flex; flex-direction: column; gap: 0.4rem; padding: 4px 6px; }
 .fmv-bar { flex-wrap: wrap; }
 .fmv-t { display: flex; align-items: center; gap: 0.25rem; }
 .fmv-num { width: 5ch; }
