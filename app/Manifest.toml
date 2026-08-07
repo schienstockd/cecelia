@@ -627,9 +627,9 @@ version = "1.3.1"
 
 [[deps.Reseau]]
 deps = ["NetworkOptions", "OpenSSL_jll", "PrecompileTools", "Random", "SHA"]
-git-tree-sha1 = "0eab6d95ed40c2ef3992255c1c71e4f9748932b5"
+git-tree-sha1 = "6bb4e276780eaba7c5a61af85c6d537a245d8150"
 uuid = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
-version = "1.3.1"
+version = "1.3.5"
 
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
