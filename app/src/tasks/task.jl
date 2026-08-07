@@ -293,6 +293,19 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
         valid   = [string(get(o, "value", "")) for o in options]
         string(value) ∈ valid ||
             throw(ParamValidationError("'$key' = \"$value\" is not a valid option. Valid: $(join(valid, ", "))"))
+
+    elseif type_str == "chipSelect"
+        # A multi-pick from a fixed set (ChipSelect in the form). Validated like `select`, per
+        # element — the values reach a runner that can only fail much later and much less clearly.
+        value isa AbstractVector ||
+            throw(ParamValidationError("'$key' must be a list, got: $value"))
+        options = get(spec, "options", [])
+        valid   = [string(get(o, "value", "")) for o in options]
+        for v in value
+            string(v) ∈ valid ||
+                throw(ParamValidationError("'$key' contains \"$v\", not a valid option. " *
+                                           "Valid: $(join(valid, ", "))"))
+        end
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end

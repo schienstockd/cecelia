@@ -244,8 +244,8 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       </div>
 
     <template #footer>
-      <span class="sel-count" v-if="mode === 'dir'">This folder: <code>{{ listing?.current ?? '…' }}</code></span>
-      <span class="sel-count" v-else-if="selected.size > 0">
+      <span class="sel-count cc-fs-sm" v-if="mode === 'dir'">This folder: <code>{{ listing?.current ?? '…' }}</code></span>
+      <span class="sel-count cc-fs-sm" v-else-if="selected.size > 0">
         {{ selected.size }} {{ mode === 'bundle' ? 'bundle' : 'file' }}{{ selected.size > 1 ? 's' : '' }} selected
       </span>
       <span class="sel-count cc-muted" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
@@ -342,7 +342,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 /* footer */
 /* no colour here: the placeholder variant composes .cc-muted, and a scoped colour would
    outrank it. The other two spans inherit --cc-text from the shell regardless. */
-.sel-count { font-size: var(--cc-fs-sm); flex: 1; }
+.sel-count { flex: 1; }   /* size via .cc-fs-sm / .cc-muted on each span */
 .footer-actions { display: flex; gap: 0.4rem; }
 /* buttons use the global .cc-btn utilities (style.css) */
 </style>

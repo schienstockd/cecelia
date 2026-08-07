@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
-  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls,
+  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips,
+  hasPerOptionTips,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -184,6 +185,43 @@ describe('uncoveredControls', () => {
     // control inherits its (absent) tooltip state — or worse, a tooltip it never had.
     const src = `<template><input v-tooltip="'a'"><select /></template>`
     expect(uncoveredControls(src)).toEqual([{ tag: 'select', line: 1 }])
+  })
+
+  // A chip row is many small hit targets, and a tooltip anchored to it renders ON TOP of the chips —
+  // so the hover help hides what you were about to click. The blanket "every control carries its own
+  // v-tooltip" rule is therefore actively wrong here, not merely redundant (Dominik, 2026-08-07).
+  it('a tipped heading covers a chip select that follows it', () => {
+    const src = `<template><div class="param-row"><label v-tooltip.left="'Frame lags'">Scales</label>
+                 <ChipSelect multiple /></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('…and covers one nested a wrapper deeper (the channelSelection shape)', () => {
+    const src = `<template><div class="param-row"><label v-tooltip.left="'Channels'">Ch</label>
+                 <div class="channel-select-wrap"><ChipSelect multiple /></div></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('a chip select with no tipped heading anywhere is still reported', () => {
+    expect(uncoveredControls('<template><div><ChipSelect multiple /></div></template>').map(c => c.tag))
+      .toEqual(['ChipSelect'])
+  })
+
+  it('heading coverage does not leak into a later sibling row', () => {
+    const src = `<template><div><label v-tooltip="'a'">A</label><ChipSelect /></div>
+                 <div><select /></div></template>`
+    expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
+  })
+
+  it('a tipped heading also covers a toggle — the tooltip would sit on the switch', () => {
+    const src = `<template><div><label v-tooltip.left="param.tip">Overwrite</label>
+                 <CcToggle /></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('the exemption is the overlay-prone controls — a plain select still needs its own tooltip', () => {
+    const src = `<template><div><label v-tooltip="'a'">A</label><select /></div></template>`
+    expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
   })
 
   it('does not accept a native title — only v-tooltip is coverage', () => {
@@ -380,5 +418,110 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
       }
     }
     expect(bare).toEqual([])
+  })
+
+  // The other half of the same rule, and the reason it has to be enforced from both sides: the
+  // presence ratchet above is what put a second `param.tip` on every bool param's switch, where it
+  // rendered on top of the control. Fixing one without pinning the other just re-breaks it.
+  it('no chip row, swatch or toggle repeats the tooltip its heading already carries', () => {
+    const dupes: string[] = []
+    for (const [path, src] of sfcs)
+      for (const d of duplicateTooltips(src, path)) dupes.push(`${path}:${d.line} <${d.tag}> ${d.tooltip}`)
+    expect(dupes).toEqual([])
+  })
+})
+
+describe('duplicateTooltips', () => {
+  it('flags a toggle repeating its heading, expression for expression', () => {
+    const src = `<template><div><label v-tooltip.left="param.tip">Overwrite</label>
+                 <CcToggle v-tooltip.right="param.tip" /></div></template>`
+    expect(duplicateTooltips(src))
+      .toEqual([{ tag: 'CcToggle', line: 2, tooltip: 'param.tip', why: 'heading' }])
+  })
+
+  it('flags a repeated literal too', () => {
+    const src = `<template><div><label v-tooltip="'Frame lags'">Scales</label>
+                 <ChipSelect v-tooltip="'Frame lags'" /></div></template>`
+    expect(duplicateTooltips(src).map(d => d.tag)).toEqual(['ChipSelect'])
+  })
+
+  it('leaves a control whose tooltip says something the heading does not', () => {
+    const src = `<template><div><label v-tooltip="'Frame lags'">Scales</label>
+                 <ChipSelect v-tooltip="'Pick at least one'" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+
+  it('leaves an uncovered control that carries its own tooltip', () => {
+    expect(duplicateTooltips(`<template><ChipSelect v-tooltip="'Planes'" /></template>`)).toEqual([])
+  })
+
+  it('is scoped to the overlay-prone controls — a select repeating its label is only redundant', () => {
+    const src = `<template><div><label v-tooltip="param.tip">A</label>
+                 <select v-tooltip="param.tip" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+
+  it('does not pair a control with a heading from an earlier, closed row', () => {
+    const src = `<template><div><label v-tooltip="param.tip">A</label></div>
+                 <div><CcToggle v-tooltip="param.tip" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+
+  // The second double, and the one no string comparison can find: the group tooltip and the
+  // per-option tips say the same thing in different words. The tips live in the SCRIPT, so this only
+  // works by resolving the `:options` identifier back into it.
+  it('flags a group tooltip sitting on top of per-option tips', () => {
+    const src = `<script setup>
+const MODES = [{ value: 'a', label: '', icon: 'pi pi-stop', tip: 'Rectangle gate' }]
+</` + `script>
+<template><ChipSelect :options="MODES" v-tooltip="'Shape to draw with'" /></template>`
+    expect(duplicateTooltips(src)).toEqual([
+      { tag: 'ChipSelect', line: 4, tooltip: "'Shape to draw with'", why: 'per-option' },
+    ])
+  })
+
+  it('leaves a row that has one or the other', () => {
+    const withTips = `<script setup>
+const MODES = [{ value: 'a', tip: 'Rectangle gate' }]
+</` + `script>
+<template><ChipSelect :options="MODES" /></template>`
+    const withGroup = `<script setup>
+const MODES = [{ value: 'a', label: 'Rect' }]
+</` + `script>
+<template><ChipSelect :options="MODES" v-tooltip="'Shape to draw with'" /></template>`
+    expect(duplicateTooltips(withTips)).toEqual([])
+    expect(duplicateTooltips(withGroup)).toEqual([])
+  })
+
+  it('does not guess when it cannot follow the options binding', () => {
+    // `:options` is a PROP here, so the tips are unknowable. Reporting on a guess would send someone
+    // to delete the only help the row has.
+    const src = `<template><ChipSelect :options="props.options" v-tooltip="'Pick one'" /></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+})
+
+describe('hasPerOptionTips', () => {
+  const script = `
+const WITH = [{ value: 'a', tip: 'x' }]
+const WITHOUT = [{ value: 'a', label: 'A' }]
+`
+  it('resolves an identifier back into the script', () => {
+    expect(hasPerOptionTips(script, ':options="WITH"')).toBe(true)
+    expect(hasPerOptionTips(script, ':options="WITHOUT"')).toBe(false)
+  })
+
+  it('reads an inline array literal directly', () => {
+    expect(hasPerOptionTips('', `:options="[{ value: 'a', tip: 'x' }]"`)).toBe(true)
+    expect(hasPerOptionTips('', `:options="[{ value: 'a' }]"`)).toBe(false)
+  })
+
+  it('answers null — not false — when it cannot tell', () => {
+    expect(hasPerOptionTips(script, ':options="fromAProp"')).toBeNull()
+    expect(hasPerOptionTips(script, 'multiple')).toBeNull()
+  })
+
+  it('stops at the next binding, so a later tip is not attributed to this one', () => {
+    expect(hasPerOptionTips(script, ':options="WITHOUT"')).toBe(false)
   })
 })

@@ -309,7 +309,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <section class="bm-sec">
         <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
-                    aria-label="Movie overlays" v-tooltip.left="'Layers drawn over the image in every movie'" />
+                    aria-label="Movie overlays" />
         <div v-if="showTracks" class="bm-inset">
           <span class="bm-lbl cc-muted">tail</span>
           <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
@@ -359,9 +359,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <section class="bm-sec">
         <h4>Output</h4>
         <div class="bm-attrs">
-          <span class="bm-lbl cc-muted">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
+          <span class="bm-lbl cc-muted" v-tooltip.left="'Attributes joined to build each movie filename'">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
-                      aria-label="Filename attributes" v-tooltip.left="'Attributes joined to build each movie filename'" />
+                      aria-label="Filename attributes" />
           <span v-else class="bm-hint cc-muted">no attributes — files named by uid</span>
         </div>
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>

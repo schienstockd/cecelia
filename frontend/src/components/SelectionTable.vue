@@ -10,6 +10,11 @@
 // itself. The values are measured somewhere real (a backend constant, a benchmark) and should be
 // stated in exactly one place — a component that reformatted them would become a second one.
 //
+// An optional `#actions` scoped slot adds a trailing cell per row for row-scoped buttons (rename,
+// delete). Added for the optical-flow model vault, which is exactly this component's stated case —
+// "a model" — and had been hand-rolled as a <ul> before that was noticed. Clicks inside it do NOT
+// select the row.
+//
 // Rows are selected by CLICKING ANYWHERE on the row; the radio is a visual + a11y affordance, not
 // the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
@@ -33,9 +38,12 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** per-row hover help. Falls back to a generic line so the control is never tooltip-less. */
   rowTooltip?: (row: Record<string, any>) => string
+  /** header for the trailing `#actions` column; omit when the slot is unused */
+  actionsLabel?: string
 }>(), {
   idKey: 'name',
   disabled: false,
+  actionsLabel: '',
 })
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
@@ -59,6 +67,7 @@ const selected = computed(() => props.modelValue)
       <tr>
         <th></th>
         <th v-for="c in columns" :key="c.key">{{ c.kind === 'link' ? '' : c.label }}</th>
+        <th v-if="$slots.actions">{{ actionsLabel }}</th>
       </tr>
     </thead>
     <tbody>
@@ -74,6 +83,11 @@ const selected = computed(() => props.modelValue)
              rel="noopener" @click.stop><i class="pi pi-external-link" /></a>
           <template v-else-if="c.kind !== 'link'">{{ row[c.key] }}</template>
         </td>
+        <!-- Per-row actions (rename, delete, …). `@click.stop` so a button never doubles as a row
+             pick — the row hit target is the whole row, which would otherwise swallow the intent. -->
+        <td v-if="$slots.actions" class="sel-actions" @click.stop>
+          <slot name="actions" :row="row" />
+        </td>
       </tr>
     </tbody>
   </table>
@@ -84,6 +98,7 @@ const selected = computed(() => props.modelValue)
   border-collapse: collapse;
   font-size: var(--cc-fs-sm);
 }
+.sel-actions { white-space: nowrap; }
 .sel-table th {
   text-align: left;
   font-weight: 500;

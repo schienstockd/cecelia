@@ -60,7 +60,9 @@ const filterOptions = computed<ChipOption[]>(() =>
     label: lvl,
     badge: filterCounts.value[lvl],
     accent: LEVEL_ACCENT[lvl],
-    tip: `Show ${lvl === 'all' ? 'all' : lvl} messages`,
+    // No per-option `tip`: the chip's own label IS the level, so "Show info messages" restated it —
+    // and a second tooltip on the row renders over the chips. The group tooltip is the one that says
+    // something (`docs/UI.md` → chip rows carry one tooltip, not both).
   }))
 )
 </script>

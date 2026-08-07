@@ -508,7 +508,7 @@ function formatDate(iso: string | null): string {
 }
 /* live export/import progress — standalone below the footer, so it needs its own top separator */
 .pp-io-live { border-top: 1px solid var(--cc-border); }
-.pp-io-hint { margin: 0; font-size: var(--cc-fs-sm); }
+.pp-io-hint { margin: 0; }   /* + .cc-muted (size + colour) */
 .pp-io-hint .pi { font-size: var(--cc-fs-xs); }
 .pp-conflict { padding: 1rem 1.25rem; font-size: var(--cc-fs-md); color: var(--cc-text); }
 .pp-conflict p { margin: 0 0 0.6rem; }

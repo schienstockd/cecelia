@@ -21,6 +21,14 @@ function _spec_path(::CellposeSegment)
     joinpath(@__DIR__, "segment", "cellpose.json")
 end
 
+function _spec_path(::CoastalSegment)
+    joinpath(@__DIR__, "segment", "coastal.json")
+end
+
+function _spec_path(::TrainFlowModel)
+    joinpath(@__DIR__, "opticalFlow", "train.json")
+end
+
 function _spec_path(::MeasureLabels)
     joinpath(@__DIR__, "segment", "measure_labels.json")
 end
@@ -89,8 +97,8 @@ function _spec_path(::DriftCorrect)
     joinpath(@__DIR__, "cleanupImages", "drift_correct.json")
 end
 
-function _spec_path(::TemporalSmooth)
-    joinpath(@__DIR__, "cleanupImages", "temporal_smooth.json")
+function _spec_path(::Smooth)
+    joinpath(@__DIR__, "cleanupImages", "smooth.json")
 end
 
 function _spec_path(::CropImage)
@@ -119,6 +127,9 @@ _COMPOSITE_SPEC_PATHS["cleanupImages.afDriftCorrect"] =
 _COMPOSITE_SPEC_PATHS["segment.cellposeMeasure"] =
     joinpath(@__DIR__, "segment", "cellpose_measure.json")
 
+_COMPOSITE_SPEC_PATHS["segment.coastalMeasure"] =
+    joinpath(@__DIR__, "segment", "coastal_measure.json")
+
 _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
     joinpath(@__DIR__, "tracking", "bayesian_track_measures.json")
 
@@ -132,6 +143,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "importImages.migrateLegacy"        => MigrateLegacy(),
         "cleanupImages.cellposeCorrect"     => CellposeCorrect(),
         "segment.cellpose"                  => CellposeSegment(),
+        "segment.coastal"                   => CoastalSegment(),
+        "opticalFlow.train"                 => TrainFlowModel(),
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "tracking.bayesian_tracking"        => BayesianTracking(),
@@ -150,9 +163,10 @@ function _fun_name_map()::Dict{String, CciaTask}
         "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
+        "segment.coastalMeasure"            => CompositeTask("segment.coastalMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
-        "cleanupImages.temporalSmooth"      => TemporalSmooth(),
+        "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),

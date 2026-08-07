@@ -522,7 +522,7 @@ async function switchWt(path: string) {
                         @update:model-value="changeCompressor" />
         <span class="field-hint cc-muted cc-fs-xs">Applies to new stores only</span>
       </div>
-      <span v-if="compressorError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ compressorError }}</span>
+      <span v-if="compressorError" class="field-hint cc-muted-error cc-fs-xs">{{ compressorError }}</span>
 
       <!-- Store LAYOUT. Same shape as the compressor above, deliberately: same kind of decision, so
            the measured numbers go on screen rather than behind a chip. The rows are the three VIABLE
@@ -553,7 +553,7 @@ async function switchWt(path: string) {
         <span v-if="!storage && !storageScan" class="field-hint cc-muted cc-fs-xs">
           Scan for disk usage and superseded image versions that can be freed.
         </span>
-        <span v-if="storageError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ storageError }}</span>
+        <span v-if="storageError" class="field-hint cc-muted-error cc-fs-xs">{{ storageError }}</span>
       </div>
 
       <template v-if="storage">

@@ -14,7 +14,7 @@ import { computed } from 'vue'
 import { tkey } from '../../plots/series'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
-import PopulationPanelShell from './PopulationPanelShell.vue'
+import CanvasSidePanel from './CanvasSidePanel.vue'
 import type { PlotReadout } from '../../plots/plotReadout'
 
 const props = defineProps<{
@@ -41,7 +41,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 </script>
 
 <template>
-  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked" :readout="readout"
+  <CanvasSidePanel :count="total" :scope="scope" :vis="vis" :docked="docked" :readout="readout"
                         :options-sections="['layout', 'points', 'colours', 'labels', 'stats']"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <div v-if="selectionUnused" class="pm-empty cc-muted">This plot's populations come from its run.</div>
@@ -62,11 +62,11 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
         </button>
       </div>
     </template>
-  </PopulationPanelShell>
+  </CanvasSidePanel>
 </template>
 
 <style scoped>
-/* row styles — applied to the population list rendered into PopulationPanelShell's default slot
+/* row styles — applied to the population list rendered into CanvasSidePanel's default slot
    (slotted content keeps THIS component's scoped styles; the chrome lives in the shell). */
 .pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-group-head {

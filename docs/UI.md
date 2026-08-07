@@ -75,6 +75,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
+| Meta line carrying a WARNING or an ERROR | `.cc-muted-warn` / `.cc-muted-error` (+ a `.cc-fs-*` step) | `.cc-muted` plus a scoped `color:`, or an inline `style="color: var(--cc-sev-fail)"` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
 | A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
 | A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
@@ -127,6 +128,16 @@ shadowing `.cc-muted` with a byte-identical copy. `utils/cssScenarios.test.ts` n
 allow-list: per-site layout (`.cc-muted { margin-top: 0.3rem }`), descendants (`.panel .cc-muted`) and
 modifier compounds (`.cc-btn-bare.viewer-green`) are all legal by construction, so anything it reports is
 the bug. Add layout in scoped CSS; never re-state a property the utility itself declares.
+
+**A reason is not an exemption.** The shadowed-utility allow-list carried nine entries, each with a note
+that read as settled — "a tier down", "muted layout, danger colour" — and six of them were scenarios the
+axis already had room for: four wanted `.cc-muted` + a `.cc-fs-*` step, one restated the utility's own
+value, and one wanted `.cc-muted-error`, which did not exist only because `-warn` had shipped alone. That
+last one is the tell: a missing family member gets hand-rolled, so the SECOND site spells it a way no
+ratchet can see (an inline `style="color: …"`). Three entries remain, on the two grounds no utility can
+express: a size driven by a runtime CSS var (`--gate-font`, the vis Font size slider) and a deliberate
+`color: inherit`. Before adding an entry, check the utility does not already exist, or is not one
+modifier away from existing.
 
 **A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
 and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was
@@ -289,10 +300,47 @@ buttons, and **18** task params with no `tip` — `segment/branching.json` worst
 **The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
 a `tip`.** Both are ratcheted to zero with an empty allow-list.
 
+**One exception, and it is a real one: chips, swatches and toggles are covered by their heading.**
+`ChipSelect`/`SwatchSelect` are not one hit target but many small ones, and `CcToggle` is a switch you
+aim at — a tooltip anchored there renders **on top of the control**, so the hover help hides the thing
+you were about to click. Here the blanket rule is actively wrong rather than merely redundant
+(Dominik, 2026-08-07, on the channel selection and then the bool params' switch). Such a control
+counts as covered when a tipped label or heading precedes it inside the same row, including one
+wrapper deeper — the ordinary label-then-control shape, and where the explanation belongs anyway. One
+with no tipped heading anywhere is still reported, and the exemption is these three: a plain `select`
+beside a tipped label still needs its own.
+
+**Enforced from BOTH sides, because fixing one re-breaks the other.** The presence ratchet is what put
+a second `param.tip` on every bool param's switch in the first place. So `duplicateTooltips` fails on
+a chip row / swatch / toggle that repeats its heading's tooltip **expression for expression** —
+`<label v-tooltip.left="param.tip">` above `<CcToggle v-tooltip.right="param.tip">` is the same tip
+twice, and the second one is the one that covers the switch. Comparison is on the source text, so it
+catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
+directions pinned in `uiCopy.test.ts`.
+
+**A chip row carries ONE tooltip — group or per-option, never both**, and `duplicateTooltips` now
+reports either double. The second one is the reason the coverage rule above had to be amended rather
+than extended: the group tooltip and the per-option `tip`s say the same thing in *different words*, so
+no comparison finds them, and the tips live in the SCRIPT (`const AXIS_OPTIONS = [{…, tip}]`), where a
+template pass cannot see them — `hasPerOptionTips` resolves the `:options` identifier back into the
+script block, and answers "cannot tell" (never "no tips") for a prop it cannot follow.
+
+**Which one to keep is per-row, and the label decides it.** On an ICON-ONLY row the per-option tip is
+the only thing naming a glyph, so the group tooltip goes (six rows: scope, axis, render mode, draw
+tool, movie overlays, delete scope). On a WORD-labelled row where the tips only restate the label —
+`Show info messages` on a chip that already says `info` — the tips go and the group tooltip stays. If
+both say something, put the row's explanation on its heading, where it does not cover anything
+(`BatchMoviesPanel`'s filename attrs).
+
+The eight rows this found were previously *required* to have that group tooltip by the presence
+ratchet, which is why the amendment and the sweep are one change: enforcing either half alone turns
+correct code red.
+
 | Surface | Checker | Ratchet |
 |---|---|---|
 | SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |
 | **Icon-only buttons** — a `<button>` whose whole content is an `<i>` glyph | same | same |
+| A chip/swatch/toggle repeating its heading's tooltip | `duplicateTooltips` (same file) | same |
 | `params[].tip` in `app/src/tasks/**` and `docs/examples/custom-modules/**` | `each_spec` + `collect_settable!` | `app/test/runtests.jl` |
 
 Both land in `pixi run ui-copy` as *Settable control or task param with NO tooltip*, with a
@@ -1345,17 +1393,25 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `exportFormats`/`exportAs`.)
 
 **Two registries carry the surface "checkboxes":**
-- `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), flags
-  `clusterPage` / `analysisBoard`.
+- `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
+  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
+  `interactive` (default) / `clustering` / `image`), plus an optional `initialState()` seed for a new
+  panel's state bag.
 - `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
 **Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
-component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`) and
-the board (`LayoutCanvas.vue`) do this identically — there is no "cluster page way" and "board way", and
-a future chain-whiteboard host consumes the same registries rather than re-wiring plots per node.
+component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
+Optical Flow page (`opticalFlow/FlowPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
+there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
+registries rather than re-wiring plots per node.
+
+**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews(group)`; never
+a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
+the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
+`interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.
 
 **`docked` is the contract's chrome switch** — a panel reads it to hide what only makes sense
 free-floating (its own Export dropdown), since the board exports via PDF/CSV instead. Details:
@@ -1381,7 +1437,7 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
 - **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
   `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
-  panel in `state`, `ImageStripView` `.is-bar`) opt in by tagging that bar `.cc-panel-controls` **and** giving
+  panel in `state`, `ImageStripView` `.is-bar`, `FlowMetricsView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
   then auto-hides it by the same trigger. One mechanism for every control surface; don't add a second.
 - **Opt OUT with `:auto-hide="false"`** where you interact with the plot constantly and controls popping
@@ -1852,13 +1908,24 @@ page — and the Analysis board — reuses them unchanged:
   toggle and an **Options** box (log scale, legend, point size/opacity — `VisProps`) both obey that
   scope: global = one value shared by every plot, local = the active plot only (mirrors the gating
   manager's plot-options model).
-- **`components/canvas/PopulationPanelShell.vue`** — the **shared chrome** for the floating population
-  panels: the draggable/collapsible container + top-right placement (`useFloatingPanel`), the header
-  (icon · title · count · collapse), the global/local **scope footer**, and the optional `PlotOptions`
-  block (rendered when the host passes a `vis` bag). Both `SeriesPicker` and `PopulationManager` wrap
-  it — the differing population LIST is the default slot; host-specific controls (the gating manager's
-  gate/viewer options) go in the `#options` slot. Slotted rows keep their own component's scoped CSS;
-  the shell owns only the chrome. One place for the chrome → the universal analysis board reuses it.
+- **`components/canvas/CanvasSidePanel.vue`** — the **shared chrome** for a canvas SIDE PANEL, the box
+  beside the plots that manages what they show: the draggable/collapsible container + top-right
+  placement (`useFloatingPanel`), the header (`icon` · `title` · `count` · collapse), and two **opt-in**
+  plot-only parts — the global/local **scope footer** (pass `scope`) and the `PlotOptions` block (pass
+  `vis`). `SeriesPicker`, `PopulationManager` and `FlowModelVault` wrap it; the differing LIST is the
+  default slot, host-specific controls (the gating manager's gate/viewer options) go in `#options`, and
+  `width` sets the starting width for a table-shaped list — applied **once on mount, never as a bound
+  `:style`**: CSS `resize` works by writing `style.width` on the element, so a reactive width binding
+  re-applies the prop on the next render and the box snaps back mid-drag. **Resizable by the corner** (CSS `resize`,
+  the same idiom as `CanvasPanel` — never a hand-rolled grip): the box clips, the LIST is the one
+  flexible row and scrolls, so dragging taller shows more rows rather than more empty box; capped at
+  `90vh` so a long list can't run off the canvas, and docked mode keeps the list's own `60vh` cap
+  because it has no box height to fill. Size and position are **not** persisted yet (unlike
+  `CanvasPanel`, which does it via `persistKey` + the `canvasPanels` geom store).
+  Slotted rows keep their own component's scoped CSS; the shell owns only the chrome. **Was `PopulationPanelShell`** until the model vault showed the chrome was
+  never population-specific — a manager of non-plot-series things simply passes neither opt-in part.
+  **Use this, not `FloatingPanel`, for anything scoped to a canvas**: `FloatingPanel` is the app's
+  viewport window layer (Viewer, Lab log), so a canvas manager put there fights them for the corner.
 - **`components/canvas/PlotOptions.vue`** — the **shared** `VisProps` styling controls (collapsible
   Layout / Points / Colours / Labels sub-sections; props `vis`, emits `update:vis`). Embedded by BOTH
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
@@ -2019,7 +2086,9 @@ by the `canvasPanels` store and keyed per canvas.
 
 **The canvas key is per-image (module pages).** Module-page canvases embed the active object in their
 key — `summary:{module}:{imageUid}`, `gate:{popType}:{imageUid}:{valueName}` (per segmentation too),
-`clust:{popType}:{setUid}` (clustering is set-scope). `useCanvasPanels` takes a **reactive** key
+`clust:{popType}:{setUid}` (clustering is set-scope), `flow:model:{imageUid}`. **A new prefix must be
+added to `MODULE_PREFIXES` in `stores/canvasPanels.ts`** or the canvas works but never persists.
+`useCanvasPanels` takes a **reactive** key
 (Ref/getter) and rebinds to that object's own entry when the selection changes — so each image keeps
 its own plots/selections instead of the old single shared-per-module entry being pruned. Add
 `imageUid` (or set/value_name) to a NEW canvas's key the same way. The `/analysis` board keeps its own
@@ -2146,7 +2215,7 @@ ACTIVE plot while the toggle governs every plot — same convention as the stats
 control in the population picker goes amber with `overrideTooltip` (so the toggle never sits at *off*
 beside a rotated plot), and the panel shows a short footer note. Both read the same
 `PlotReadout` — `{ stats, overrides }`, threaded as **one object** through
-`SummaryPanel → host → SeriesPicker → PopulationPanelShell → PlotOptions`. Parallel props are how the
+`SummaryPanel → host → SeriesPicker → CanvasSidePanel → PlotOptions`. Parallel props are how the
 first attempt failed: the override was emitted and the toggle never heard about it.
 
 **A panel notice belongs in the panel CHROME.** `.sp-body` is `overflow: hidden` with a `height: 100%`

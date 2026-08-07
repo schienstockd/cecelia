@@ -33,9 +33,26 @@ class SegmentationUtils:
 
     LABEL_DTYPE = np.uint32
 
+    # Frames either side of t that `predict_slice` needs. 0 = the tile only, which is every
+    # algorithm that segments a single timepoint (cellpose). A TEMPORAL algorithm — one whose
+    # prediction for t depends on t±r, e.g. optical-flow metrics — sets this and the base supplies
+    # the window. Declared by the SUBCLASS so the base never special-cases a particular method.
+    #
+    # The window is read at TILE extent, not whole frames: widening the per-timepoint read would
+    # hold r*2+1 full frames in RAM (~300 MB each on a 1036x1055x35x4ch uint16 movie), destroying
+    # the property that peak memory is one frame. See docs/todo/COASTAL_SEGMENTATION_PLAN.md.
+    TEMPORAL_RADIUS = 0
+
     def __init__(self, params, dim_utils):
         self.params = params
         self.dim_utils = dim_utils
+        # Physical pixel size, for the params expressed in MICRONS. Those are the ones that describe
+        # a CELL rather than a grid: the same number then means the same biology on every image of a
+        # set, which is the whole point of one parameter value per set. A px value silently means
+        # something different the moment the zoom changes.
+        self.phys_size_x = (dim_utils.im_physical_size('x', default=1.0) if dim_utils else 1.0)
+        self.phys_size_y = (dim_utils.im_physical_size('y', default=self.phys_size_x)
+                            if dim_utils else 1.0)
         self.block_size = int(params.get('blockSize', 512))
         self.overlap = int(params.get('overlap', 64))
         # Z tiling — 0 means no Z tiling (whole stack passed to cellpose, which uses stitch_threshold internally)
@@ -45,18 +62,56 @@ class SegmentationUtils:
         self.label_overlap = float(params.get('labelOverlap', 0.0))
         self.match_threshold = float(params.get('matchThreshold', 0.3))
         self.remove_unmatched = bool(params.get('removeUnmatched', False))
-        self.min_cell_size = int(params.get('minCellSize', 0))
-        self.cell_size_max = int(params.get('cellSizeMax', 0))
-        self.label_expansion = int(params.get('labelExpansion', 0))
-        self.label_erosion = int(params.get('labelErosion', 0))
+        # Sizes are AREAS in square microns; erosion/expansion are lengths in microns. Same reason
+        # as the coastal params: a px value silently means something else the moment the zoom
+        # changes, so one value per set is only meaningful in physical units.
+        self.min_cell_size = self.px_area_from_um2(params.get('minCellSize', 0))
+        self.cell_size_max = self.px_area_from_um2(params.get('cellSizeMax', 0))
+        # Boundary smoothing, in pixels of gaussian sigma. Cosmetic and OFF by default: it changes
+        # every measured shape descriptor, so it must be a deliberate choice, not a silent default.
+        self.label_smoothing = self.px_from_um(params.get('labelSmoothing', 0.0))
+        # A morphological radius has to be a whole number of pixels, and a value the user SET must
+        # never round to "off" — that reads as the control being broken.
+        self.label_expansion = self._px_radius(params.get('labelExpansion', 0))
+        self.label_erosion = self._px_radius(params.get('labelErosion', 0))
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
         self.task_dir = params['taskDir']
         self.output_value_name = params.get('outputValueName', 'default')
 
-    def predict_slice(self, tile, model_params, norm_params=None):
-        """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask."""
+    def px_from_um(self, um):
+        """Microns → pixels on this image's X axis. 0 stays 0, so "off" survives the conversion."""
+        um = float(um)
+        return 0.0 if um <= 0 else um / max(self.phys_size_x, 1e-6)
+
+    def _px_radius(self, um):
+        """Microns → a whole-pixel morphological radius. 0 stays off; anything set is at least 1 px."""
+        px = self.px_from_um(um)
+        return 0 if px <= 0 else max(1, int(round(px)))
+
+    def px_area_from_um2(self, um2):
+        """Square microns → pixel COUNT. Uses both axes: assuming square pixels is fine on this
+        data and wrong in general, and a size filter that is quietly 2x off is hard to spot."""
+        um2 = float(um2)
+        if um2 <= 0:
+            return 0
+        return int(round(um2 / max(self.phys_size_x * self.phys_size_y, 1e-12)))
+
+    def predict_slice(self, tile, model_params, norm_params=None,
+                      context=None, context_index=None):
+        """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
+
+        `context`/`context_index` are passed ONLY when the subclass sets `TEMPORAL_RADIUS > 0`, so a
+        subclass that does not want them never has to accept them (cellpose does not, and neither
+        does any existing third-party subclass).
+
+        context:       the same tile through time, [W, ...tile axes], W <= 2*TEMPORAL_RADIUS+1
+        context_index: index of `tile`'s own timepoint within `context`. NOT always the middle —
+                       the window is TRUNCATED at the start and end of the movie rather than
+                       reflected or edge-padded, because repeating a frame invents zero motion and
+                       mirroring invents motion outright.
+        """
         raise NotImplementedError
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -104,6 +159,12 @@ class SegmentationUtils:
         in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
+
+        # Axis indices on the FULL input array (time axis still present) — the in-RAM frame has T
+        # dropped, so its indices cannot address other timepoints. Only used for temporal context.
+        ia_t = dim_utils.im_dim_order.index('T') if 'T' in dim_utils.im_dim_order else None
+        ia_y = dim_utils.im_dim_order.index('Y')
+        ia_x = dim_utils.im_dim_order.index('X')
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -158,7 +219,20 @@ class SegmentationUtils:
 
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
-                        masks = self.predict_slice(tile, model_params, norm_p)
+
+                        if self.TEMPORAL_RADIUS > 0 and ia_t is not None:
+                            # tile-extent reads across the clamped window; truncated at the movie
+                            # edges, never reflected or edge-padded (see predict_slice docstring)
+                            lo = max(0, t - self.TEMPORAL_RADIUS)
+                            hi = min(T - 1, t + self.TEMPORAL_RADIUS)
+                            context = np.stack([
+                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx)
+                                for t2 in range(lo, hi + 1)])
+                            masks = self.predict_slice(tile, model_params, norm_p,
+                                                       context=context, context_index=t - lo)
+                        else:
+                            # unchanged call for every non-temporal subclass
+                            masks = self.predict_slice(tile, model_params, norm_p)
                         masks = self._crop_masks(masks, crop_yx, is_3d)
 
                         if np.any(masks > 0):
@@ -259,14 +333,29 @@ class SegmentationUtils:
             return masks[pt:Y - pb if pb else None, pl:X - pr if pr else None]
 
     def _write_tile_to_arr(self, arr, masks, t, la_t, la_y, la_x, write_yx):
-        """Merge tile into label array via np.maximum."""
+        """Merge a tile into the label array, KEEPING whatever is already labelled there.
+
+        Stacking model groups is how multi-pass segmentation is expressed: a second group with a
+        smaller diameter picks up cells the first missed. `predict_from_zarr` loops the repeatable
+        `models` group, and every group's labels are offset by the running `max_labels[match_as]`,
+        so a later group's IDs are always numerically LARGER than an earlier group's.
+
+        This used to merge with `np.maximum`, which therefore let the later group win every
+        overlapping pixel — a small-diameter second pass silently ate the first pass's cells. Nobody
+        wants that, so the merge fills only unlabelled pixels.
+
+        Within a single group this is a no-op: `_create_xy_tiles` write regions are
+        `(slice(y, y1), slice(x, x1))` with `x = x1` advancing, i.e. exactly tiling and disjoint
+        (only the READ regions overlap, and `_crop_masks` removes that padding). So the destination
+        is always 0 there and `np.maximum`, assignment and fill-only all agree.
+        """
         idx = [slice(None)] * arr.ndim
         if la_t is not None:
             idx[la_t] = t
         idx[la_y] = write_yx[0]
         idx[la_x] = write_yx[1]
         idx = tuple(idx)
-        arr[idx] = np.maximum(arr[idx], masks)
+        arr[idx] = np.where(arr[idx] > 0, arr[idx], masks)
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 
@@ -376,6 +465,11 @@ class SegmentationUtils:
                 vol = arr[idx].copy()
             else:
                 vol = arr.copy()
+
+            # Smoothing FIRST: it cleans the segmenter's raw outline, and erosion/expansion are
+            # deliberate size changes the user then applies to a clean shape.
+            if self.label_smoothing > 0:
+                vol = self._smooth_labels(vol, self.label_smoothing, is_3d)
 
             if self.label_erosion > 0:
                 vol = self._erode_labels(vol, self.label_erosion, is_3d)
@@ -506,6 +600,51 @@ class SegmentationUtils:
             if iou_mat[best_i, j] >= self.label_overlap:
                 vol[vol == lb_r] = lab_l[best_i]
         return vol
+
+    def _smooth_labels(self, vol, sigma, is_3d):
+        """Round each label's XY outline by `sigma` px, without letting it take a neighbour's pixels.
+
+        Blur the label's binary mask and re-threshold at 0.5 — the standard boundary smoother, and the
+        one that gives a σ knob rather than a structuring-element size, so "a tiny bit" is expressible.
+
+        Two constraints make it safe to run on a whole label image rather than one mask:
+
+        * **A label may only occupy pixels that were background or its own.** Otherwise a smoothed
+          label bulges into the neighbour it touches and quietly steals area — on a cytoplasmic
+          reporter, where cells touch constantly, that is a measurement error rather than a cosmetic
+          one. The consequence to accept knowingly: a boundary SHARED by two labels does not move, so
+          this rounds the free outline and leaves genuine contacts alone.
+        * **The guard reads the ORIGINAL volume**, so no label's result depends on how many were
+          processed before it. Deterministic, and independent of label numbering.
+
+        XY only in 3D (`sigma_z = 0`). The wrinkle is in the in-plane outline, and voxels here are ~6x
+        anisotropic (2.0 µm z against 0.33 xy), so blurring across z would move an object between
+        planes — a much bigger change than the one being asked for.
+
+        A label that would vanish entirely is left as it was: smoothing is cosmetic and must never be
+        a size filter (that is `minCellSize`, which is explicit about it).
+        """
+        if sigma <= 0:
+            return vol
+        sigma_vec = (0.0, sigma, sigma) if is_3d else (sigma, sigma)
+        pad = int(np.ceil(3 * sigma))
+        out = vol.copy()
+        for lb_idx, sl in enumerate(ndimage.find_objects(vol)):
+            if sl is None:
+                continue
+            lb = lb_idx + 1
+            grown = tuple(slice(max(0, s.start - pad), min(dim, s.stop + pad))
+                          for s, dim in zip(sl, vol.shape))
+            sub = vol[grown]
+            mask = (sub == lb)
+            new = ndimage.gaussian_filter(mask.astype(np.float32), sigma_vec) > 0.5
+            new &= (sub == 0) | mask          # background or self, never a neighbour
+            if not new.any():
+                continue
+            out_sub = out[grown]
+            out_sub[mask & ~new] = 0          # pixels the label gave up
+            out_sub[new & (sub == 0)] = lb    # pixels it gained, from background only
+        return out
 
     def _erode_labels(self, vol, amount, is_3d):
         """Erode each label independently by `amount` pixels."""

@@ -20,9 +20,7 @@ class CellposeUtils(SegmentationUtils):
 
         self.use_gpu, self.gpu_device = torch_device()
 
-        # Physical pixel size for µm → pixel diameter conversion
-        self.phys_size_x = dim_utils.im_physical_size('x', default=1.0)
-        self._model_cache = {}
+        self._model_cache = {}   # phys_size_x now comes from the base (px_from_um)
 
     # ── Model loading ─────────────────────────────────────────────────────────
 
@@ -119,8 +117,7 @@ class CellposeUtils(SegmentationUtils):
             channel_axis = None
 
         # µm → pixels
-        cell_diam_um = float(model_params.get('cellDiameter', 15))
-        cell_diam_px = cell_diam_um / max(self.phys_size_x, 1e-6)
+        cell_diam_px = self.px_from_um(model_params.get('cellDiameter', 15))
 
         stitch_threshold = float(model_params.get('stitchThreshold', 0.0))
 

@@ -254,6 +254,237 @@ end
     @test all(m.name != "subdir"    for m in clean)
 end
 
+# ── Coastal (optical-flow) model vault ───────────────────────────────────────
+# The same drop-in convention as cellpose, one directory over — but with no built-ins and no
+# bundled slot, because coastal ships no models: a user trains their own on the Optical Flow
+# page. The manifest is the load-bearing part. Inference MUST use the metric set a model was
+# trained on, and coastal fails silently when it doesn't (a missing plane shifts every later
+# channel), so `CoastalUtils` configures itself from the sidecar rather than from task params.
+@testset "coastal model vault" begin
+    td = mktempdir()
+    @test coastal_models_dir(td) == joinpath(td, "models", "coastalModels")
+
+    # Empty vault → empty picker. No built-in fallback to segment with by accident.
+    @test isempty(list_coastal_models(td))
+    @test coastal_model_path("anything.pt", td) === nothing
+    @test coastal_model_path("", td) === nothing
+    @test coastal_model_path("   ", td) === nothing
+
+    dir = joinpath(td, "models", "coastalModels")
+    mkpath(dir)
+    pt = joinpath(dir, "gcMemTom.pt")
+    open(io -> write(io, "stub"), pt, "w")
+    @test coastal_model_path("gcMemTom.pt", td) == pt
+
+    # A checkpoint with no manifest still lists — it just falls back to coastal's defaults.
+    bare = list_coastal_models(td)
+    @test length(bare) == 1
+    @test bare[1].name == "gcMemTom.pt"
+    @test bare[1].label == "gcMemTom"
+    @test isempty(bare[1].manifest)
+    @test isempty(coastal_model_manifest("gcMemTom.pt", td))
+
+    # With a manifest, the picker label says what the model was trained on.
+    write(joinpath(dir, "gcMemTom.json"),
+          """{"channelName":"mem-TOM","temporalScales":[1,2,4,8],"cumulativeWindow":5}""")
+    with_manifest = list_coastal_models(td)
+    @test with_manifest[1].label == "gcMemTom (mem-TOM)"
+    @test with_manifest[1].manifest["cumulativeWindow"] == 5
+    @test with_manifest[1].manifest["temporalScales"] == [1, 2, 4, 8]
+
+    # A corrupt manifest must not take the picker down with it.
+    write(joinpath(dir, "gcMemTom.json"), "{not json")
+    @test isempty(coastal_model_manifest("gcMemTom.pt", td))
+    @test length(list_coastal_models(td)) == 1
+
+    # The sidecar is not an entry of its own, and dotfiles/subdirs are skipped.
+    open(io -> write(io, "hidden"), joinpath(dir, ".DS_Store"), "w")
+    mkpath(joinpath(dir, "subdir.pt"))
+    names = [m.name for m in list_coastal_models(td)]
+    @test names == ["gcMemTom.pt"]
+end
+
+# The coastal picker is ENTIRELY runtime-enumerated — coastal ships no built-in models, so on a
+# fresh install the only option is "None". That empty state has to stay a legible choice rather than
+# a select that rejects its own default, which is what the first version did.
+@testset "CoastalSegment spec dynamic Model options" begin
+    spec = Cecelia._task_spec(CoastalSegment())
+    @test !isnothing(spec)
+    models_group = only(p for p in spec["params"] if get(p, "key", "") == "models")
+    model_sel    = only(p for p in models_group["params"] if get(p, "key", "") == "model")
+    values = [string(o["value"]) for o in model_sel["options"]]
+
+    @test first(values) == ""                       # "None" is always first and always present
+    @test string(first(model_sel["options"])["label"]) == "None"
+    @test validate_params(CoastalSegment(),
+        Dict{String,Any}("models" => Dict{String,Any}(
+            "0" => Dict{String,Any}("model" => "")))) === nothing
+
+    # A name that is not in the vault is rejected — the enumeration is real, and a missing model
+    # must never silently fall back to another one.
+    @test_throws ParamValidationError validate_params(CoastalSegment(),
+        Dict{String,Any}("models" => Dict{String,Any}(
+            "0" => Dict{String,Any}("model" => "__not_in_the_vault__.pt"))))
+end
+
+# Selecting nothing must fail with an instruction, not with a stack trace deep in Python. The
+# missing-model case is the shared one: a config-dir model does not travel with a `.ccbundle`, so
+# opening someone else's project WILL name a model this machine does not have.
+@testset "coastal_models_for_python resolution" begin
+    raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+        "default" => ["CH1", "CH2"], "_active" => "default"))
+
+    @test isempty(Cecelia.coastal_models_for_python(Dict{String,Any}(), raw))
+
+    no_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "", "cellChannels" => ["CH2"])))
+    err = try
+        Cecelia.coastal_models_for_python(no_model, raw); nothing
+    catch e; e end
+    @test err isa ErrorException && occursin("Optical Flow page", err.msg)
+
+    missing_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => "__absent__.pt", "cellChannels" => ["CH2"])))
+    err2 = try
+        Cecelia.coastal_models_for_python(missing_model, raw); nothing
+    catch e; e end
+    @test err2 isa ErrorException && occursin("not included in a project export", err2.msg)
+
+    # Channel NAMES become 0-based indices — the translation the preview shares with the run.
+    abs_model = Dict{String,Any}("models" => Dict{String,Any}(
+        "0" => Dict{String,Any}("model" => @__FILE__, "cellChannels" => ["CH2"])))
+    out = Cecelia.coastal_models_for_python(abs_model, raw)
+    @test out["0"]["cellChannels"] == [1]
+    @test out["0"]["model"] == @__FILE__
+end
+
+# ── COHORT_METRICS (Julia) vs COHORT_STAGES (frontend) ───────────────────────
+# The two lists were kept in step by a comment, and the comment did not work: `segment.coastal` was
+# added to COHORT_METRICS and not to COHORT_STAGES, so the Segment page's cohort check silently
+# skipped every coastal run. Nothing failed — the button was just quietly less useful than it looked,
+# which is the worst shape for a bug to have.
+#
+# The rule is scoped, not total. A category with NO entry in COHORT_STAGES has deliberately no cohort
+# button (Import banks metrics and offers none), so it is exempt. But once a page offers the button,
+# it must cover every cohort-bearing fun in its category — that is the case this catches.
+@testset "cohort stages cover their category's cohort metrics" begin
+    ts_path = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "cohortStages.ts")
+    if !isfile(ts_path)
+        @test_skip "cohortStages.ts not found"
+    else
+        src = read(ts_path, String)
+        body = match(r"COHORT_STAGES:\s*Record<string,\s*string\[\]>\s*=\s*\{(.*?)\n\}"s, src)
+        @test !isnothing(body)
+
+        stages = Dict{String,Vector{String}}()
+        for m in eachmatch(r"(\w+)\s*:\s*\[([^\]]*)\]", body.captures[1])
+            stages[m.captures[1]] = [String(x.captures[1])
+                                     for x in eachmatch(r"'([^']+)'", m.captures[2])]
+        end
+        @test !isempty(stages)
+
+        # every fun the frontend lists must actually bank cohort metrics
+        unknown = [f for fs in values(stages) for f in fs if !haskey(COHORT_METRICS, f)]
+        @test isempty(unknown)
+
+        # …and every cohort-bearing fun in a category that HAS a button must be listed
+        listed = Set(f for fs in values(stages) for f in fs)
+        missing_funs = [f for f in keys(COHORT_METRICS)
+                        if haskey(stages, first(split(f, "."))) && !(f in listed)]
+        @test isempty(missing_funs)
+    end
+end
+
+# ── Optical-flow training (opticalFlow.train) ────────────────────────────────
+# The scales are the single most consequential parameter of the pipeline AND the one that fails
+# silently: the set a model is trained on must be the set inference feeds it, and coastal does not
+# check. Rejecting a typo at the form is the only cheap place to catch it.
+@testset "parse_temporal_scales" begin
+    @test parse_temporal_scales("1,2,4,8") == [1, 2, 4, 8]
+    @test parse_temporal_scales(" 8 , 1 ,2 ") == [1, 2, 8]      # sorted
+    @test parse_temporal_scales("2 4 4 2") == [2, 4]            # deduped, whitespace-separated
+    @test parse_temporal_scales([1, 2]) == [1, 2]               # a REPL caller's vector
+
+    @test_throws ParamValidationError parse_temporal_scales("")
+    @test_throws ParamValidationError parse_temporal_scales("   ")
+    @test_throws ParamValidationError parse_temporal_scales("1,2,x")
+    @test_throws ParamValidationError parse_temporal_scales("1,0")     # a lag of 0 is not a lag
+    @test_throws ParamValidationError parse_temporal_scales("1,-2")
+    @test_throws ParamValidationError parse_temporal_scales("1.5")
+end
+
+# Which metric planes the model reads. Same silent-failure family as the scales above: coastal stacks
+# what it is given in sorted-key order and zero-fills the rest, so an inference set that differs from
+# the training set shifts every later channel and raises nothing.
+@testset "flow_dropped_metrics" begin
+    # nothing = a caller from before the picker existed → the shipped default, not "train on all 11"
+    @test sort(Cecelia.flow_dropped_metrics(nothing)) ==
+          sort(collect(Cecelia.FLAT_FLOW_METRICS))
+
+    # the picker's own default: the three flat planes are the ones left out
+    default_pick = ["acceleration", "cell_boundary_likelihood", "cumulative_mag",
+                    "direction_stability", "edge_strength", "normal_flow", "strain",
+                    "tangential_flow"]
+    @test Cecelia.flow_dropped_metrics(default_pick) ==
+          ["divergence", "flow_structure_alignment", "vorticity"]
+
+    # an arbitrary subset is allowed — the defaults are a starting point, not a rule
+    @test Cecelia.flow_dropped_metrics(["divergence", "vorticity"]) ==
+          [m for m in Cecelia.FIXED_FLOW_METRICS if !(m in ("divergence", "vorticity"))]
+    @test isempty(Cecelia.flow_dropped_metrics(collect(Cecelia.FIXED_FLOW_METRICS)))
+
+    # per-scale magnitudes are NOT choices (they follow temporalScales), so naming one drops nothing
+    @test Cecelia.flow_dropped_metrics(["mag_1", "strain"]) ==
+          [m for m in Cecelia.FIXED_FLOW_METRICS if m != "strain"]
+
+    @test_throws ErrorException Cecelia.flow_dropped_metrics(String[])
+end
+
+# A model name reaches the filesystem. Not a security boundary — the user owns the machine — but a
+# stray separator would write outside the vault and the model would then never appear in the picker.
+@testset "flow_model_target" begin
+    td = mktempdir()
+    dir = joinpath(td, "models", "coastalModels")
+
+    @test flow_model_target("gcMemTom"; dev_dir = td) == joinpath(dir, "gcMemTom.pt")
+    @test isdir(dir)                                   # the vault is created on demand
+    @test flow_model_target("gcMemTom.pt"; dev_dir = td) == joinpath(dir, "gcMemTom.pt")
+
+    @test_throws ErrorException flow_model_target(""; dev_dir = td)
+    @test_throws ErrorException flow_model_target("  "; dev_dir = td)
+    @test_throws ErrorException flow_model_target("../escape"; dev_dir = td)
+    @test_throws ErrorException flow_model_target("sub/dir"; dev_dir = td)
+    @test_throws ErrorException flow_model_target(".."; dev_dir = td)
+
+    # Overwrite is opt-in: a training run is long, and silently replacing the model a segmentation
+    # already used would make an earlier run unreproducible with no trace.
+    open(io -> write(io, "stub"), joinpath(dir, "gcMemTom.pt"), "w")
+    @test_throws ErrorException flow_model_target("gcMemTom"; dev_dir = td)
+    @test flow_model_target("gcMemTom"; overwrite = true, dev_dir = td) ==
+          joinpath(dir, "gcMemTom.pt")
+end
+
+# The one objective signal a training run has. A model whose loss never came down still segments —
+# confidently and wrongly — so it is worth a warning rather than being left in the log.
+@testset "flow_training_qc_findings" begin
+    @test isempty(flow_training_qc_findings(
+        Dict{String,Any}("finalLoss" => 0.2, "lossDrop" => 3.4, "epochs" => 30)))
+
+    flat = flow_training_qc_findings(
+        Dict{String,Any}("finalLoss" => 0.9, "lossDrop" => 0.98, "epochs" => 30))
+    @test length(flat) == 1
+    @test flat[1]["level"] == "warn"
+    @test flat[1]["detail"]["epochs"] == 30
+    # numbers live in `detail`, not in the prose (docs/UI.md → QC copy)
+    @test !occursin("0.9", flat[1]["long"])
+
+    # exactly 1.0 = no improvement at all, still a warning
+    @test length(flow_training_qc_findings(Dict{String,Any}("lossDrop" => 1.0))) == 1
+    # no history parsed → no claim either way
+    @test isempty(flow_training_qc_findings(Dict{String,Any}("epochs" => 30)))
+    @test isempty(flow_training_qc_findings(Dict{String,Any}("lossDrop" => NaN)))
+end
+
 # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a
 # dropped-in checkpoint under `<repo>/models/cellposeModels/` (this worktree has ccia.fluo
 # from `pixi run models-fetch`) appears in the Model select's options — that's what makes
@@ -1394,7 +1625,7 @@ end
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "text", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "section", "group",
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
@@ -1697,18 +1928,18 @@ end
     @test isempty(Cecelia._branching_qc_findings(5))
 end
 
-@testset "Temporal smoothing QC" begin
+@testset "Smoothing QC" begin
     # Both findings key off the persisted python stats, so the helper is fed exactly what
-    # temporal_smooth_run.py writes. Photon-limited input: zeros fall from ~90% to ~5%, no clipping.
+    # smooth_run.py writes. Photon-limited input: zeros fall from ~90% to ~5%, no clipping.
     worked = Dict{String,Any}(
         "gain" => 2.4, "clippedVoxels" => 0,
         "zeroFracIn"  => Dict{String,Any}("0" => 0.91, "1" => 0.88),
         "zeroFracOut" => Dict{String,Any}("0" => 0.06, "1" => 0.05))
-    @test isempty(Cecelia._temporal_smooth_qc_findings(worked))
+    @test isempty(Cecelia._smooth_qc_findings(worked))
 
     # Gain clipping — the bright end of every smoothed channel is now flat.
     clipped = merge(worked, Dict{String,Any}("clippedVoxels" => 1234))
-    f = Cecelia._temporal_smooth_qc_findings(clipped)
+    f = Cecelia._smooth_qc_findings(clipped)
     @test length(f) == 1 && f[1]["code"] == "smooth.gain_clipped" && f[1]["level"] == "warn"
     @test f[1]["short"] == "Dynamic-range gain clipped 1234 voxels"  # the count is IN the message
     @test occursin("Restore dynamic range", f[1]["long"]) # the action, imperative
@@ -1722,28 +1953,28 @@ end
         "gain" => 1.0, "clippedVoxels" => 0,
         "zeroFracIn"  => Dict{String,Any}("0" => 0.02),
         "zeroFracOut" => Dict{String,Any}("0" => 0.00))
-    fd = Cecelia._temporal_smooth_qc_findings(dense)
+    fd = Cecelia._smooth_qc_findings(dense)
     @test length(fd) == 1 && fd[1]["code"] == "smooth.no_effect" && fd[1]["level"] == "info"
     @test haskey(Cecelia.QC_TEXT, "smooth.no_effect")
 
     # advisory only, per docs/MODULES.md — never an error, never a gate
     @test all(x -> x["level"] in ("info", "warn"),
-              vcat(Cecelia._temporal_smooth_qc_findings(clipped), fd))
+              vcat(Cecelia._smooth_qc_findings(clipped), fd))
 
     # Metrics reduce the per-channel dicts to the WORST channel — a step that filled one channel and
     # left another sparse is the case worth seeing.
-    m = Cecelia._temporal_smooth_metrics(worked)
+    m = Cecelia._smooth_metrics(worked)
     @test m["zeroFracInMax"]  == 0.91
     @test m["zeroFracOutMax"] == 0.06
     @test m["gain"] == 2.4 && m["clippedVoxels"] == 0
 
     # Missing stats must not throw — the helper runs on whatever python managed to write.
-    @test Cecelia._temporal_smooth_metrics(Dict{String,Any}())["gain"] == 1.0
-    @test isempty(Cecelia._temporal_smooth_qc_findings(Dict{String,Any}()))
+    @test Cecelia._smooth_metrics(Dict{String,Any}())["gain"] == 1.0
+    @test isempty(Cecelia._smooth_qc_findings(Dict{String,Any}()))
 
     # Deliberately NOT cohort: the input is the drift-corrected store, whose zero fraction includes
     # the canvas padding drift correction added, so the outlier detector would rank images by shake.
-    @test !haskey(COHORT_METRICS, "cleanupImages.temporalSmooth")
+    @test !haskey(COHORT_METRICS, "cleanupImages.smooth")
 end
 
 @testset "AF correction QC — the exemption that got retired" begin
@@ -3193,7 +3424,7 @@ end
     @test Cecelia._spec_output_value_name(CellposeCorrect(), "fallback") == "cpCorrected"
     @test Cecelia._spec_output_value_name(DriftCorrect(),    "fallback") == "driftCorrected"
     @test Cecelia._spec_output_value_name(AfCorrect(),       "fallback") == "afCorrected"
-    @test Cecelia._spec_output_value_name(TemporalSmooth(),  "fallback") == "temporalSmoothed"
+    @test Cecelia._spec_output_value_name(Smooth(),          "fallback") == "smoothed"
     # A task that declares no top-level outputValueName falls back to the caller's default
     @test Cecelia._spec_output_value_name(RemoveImage(), "fallback") == "fallback"
 end
@@ -4307,7 +4538,7 @@ end
     @test _task_from_fun_name("cleanupImages.cellposeCorrect") isa CellposeCorrect
     @test _task_from_fun_name("cleanupImages.afCorrect")       isa AfCorrect
     @test _task_from_fun_name("cleanupImages.driftCorrect")    isa DriftCorrect
-    @test _task_from_fun_name("cleanupImages.temporalSmooth")  isa TemporalSmooth
+    @test _task_from_fun_name("cleanupImages.smooth")          isa Smooth
     @test _task_from_fun_name("segment.cellpose")              isa CellposeSegment
     @test _task_from_fun_name("segment.measureLabels")         isa MeasureLabels
     composite = _task_from_fun_name("cleanupImages.afDriftCorrect")
@@ -9372,6 +9603,28 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             @test !endswith(p.title, ".")            # a title is a fragment, not a sentence
         end
     end
+end
+
+
+# ── chipSelect param type ────────────────────────────────────────────────────
+# "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.
+# The values are validated per element like a `select`, because they reach a runner that can only
+# fail much later and much less clearly — a bad temporal scale corrupts the model's channel layout.
+@testset "chipSelect validation" begin
+    spec = Cecelia._task_spec(TrainFlowModel())
+    scales = only(p for p in spec["params"] if get(p, "key", "") == "temporalScales")
+    @test scales["type"] == "chipSelect"
+    @test [string(o["value"]) for o in scales["options"]] == ["1", "2", "3", "4", "6", "8", "12", "16"]
+
+    @test validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => ["1", "2", "8"])) === nothing
+    @test_throws ParamValidationError validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => ["1", "5"]))       # 5 is not offered
+    @test_throws ParamValidationError validate_params(TrainFlowModel(),
+        Dict{String,Any}("temporalScales" => "1,2,4,8"))        # a string is no longer the shape
+
+    # …and the runner-side parser still takes what the chips produce
+    @test parse_temporal_scales(["1", "2", "8"]) == [1, 2, 8]
 end
 
 @testset "OME-ZARR metadata reads v2 and v3 alike" begin

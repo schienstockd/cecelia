@@ -139,10 +139,12 @@ user's analysis), and an unreadable `ccid.json` reports **nothing** rather than 
 ```
 python/cecelia/utils/segmentation_utils.py        SegmentationUtils (base)
 python/cecelia/utils/cellpose_utils.py            CellposeUtils(SegmentationUtils)
+python/cecelia/utils/coastal_utils.py             CoastalUtils(SegmentationUtils)
 app/src/tasks/segment/cellpose_run.py      entry point (named _run to avoid shadowing the cellpose package)
+app/src/tasks/segment/coastal_run.py       entry point
 ```
 
-Future algorithms (Stardist, coastal, etc.) subclass `SegmentationUtils` and implement `predict_slice`.
+Further algorithms (Stardist, …) subclass `SegmentationUtils` and implement `predict_slice`.
 
 ### The Julia half — `app/src/segmentation.jl`
 
@@ -179,13 +181,23 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 - Physical diameter conversion: `cell_diam_um / phys_size_x` → pixels
 - Returns a single `uint32` label array per call
 
+### `CoastalUtils` responsibilities — the temporal segmenter
+- Declaring `TEMPORAL_RADIUS` so the base supplies a window of frames around each tile
+- Reading the model's manifest for the metric set it was trained on
+- Projecting the window to one channel at the *global* photometric scale
+- Per-Z 2D + `match_masks_3d` for 3D stacks
+- Returns a single `uint32` label array per call
+
 ### `predict_slice` signature (current implementation)
 ```python
-def predict_slice(self, tile: np.ndarray, model_params: dict, norm_params: dict | None) -> np.ndarray:
+def predict_slice(self, tile: np.ndarray, model_params: dict, norm_params: dict | None,
+                  context: np.ndarray | None = None, context_index: int | None = None) -> np.ndarray:
     """
     tile: [C, Z, Y, X] for 3D images, [C, Y, X] for 2D
     model_params: one entry from the 'models' JSON dict (with 0-based channel indices)
     norm_params: per-channel (norm_min, norm_max) from normaliseToWhole, or None
+    context: [W, ...tile axes] — the same tile through time; ONLY when TEMPORAL_RADIUS > 0
+    context_index: index of this timepoint within `context` (not always the middle)
     Returns: uint32 label array [Z, Y, X] or [Y, X]
     """
 ```
@@ -298,6 +310,106 @@ runner, so `btrackModels/` from upstream is skipped.
 - Names are the **filename verbatim** — no `.pt` implied. Whatever cellpose can load
   (`.pt` weights, no-extension checkpoints, etc.) works.
 - Dotfiles (`.DS_Store`) and subdirectories are ignored during enumeration.
+
+---
+
+## Optical flow (coastal) — `segment.coastal`
+
+Segments by **motion** rather than appearance: a UNet is fed optical-flow metric planes derived from
+a window of frames around the timepoint, and its embedding head drives region growing. Built for
+intravital data where cellpose does not work — a cytoplasmic reporter in a photon-limited movie has
+no consistent outline to find, but a cell that moves as a unit is visible in the flow field.
+
+Everything structural is shared with cellpose: the same base class, tiling, streaming, seam
+stitching, post-processing, label store and QC. Three things are specific.
+
+**A window, not a frame.** `CoastalUtils` sets `TEMPORAL_RADIUS`, and the base reads that window per
+TILE rather than per frame — widening the per-timepoint read would hold `2r+1` full frames in RAM
+(~300 MB each on a 1036×1055×35×4ch uint16 movie) and destroy the property that peak memory is one
+frame. Windows are **truncated** at the ends of a movie, never reflected: a mirrored frame invents
+motion that was not imaged.
+
+The radius is `max(temporal_scales)`, one MORE than the largest lag actually indexed. That extra
+frame is not slack — coastal drops `mag_{scale}` when the window is shorter than `scale+1`, and a
+missing plane does not leave a hole at its own channel: `predict_frame` stacks in `sorted(key)` order
+and zero-fills the remainder, so every later metric shifts down a slot and the model silently reads
+misaligned inputs. At `r = max(scales) - 1` the truncated window at `t=0` is exactly one frame short.
+An image with fewer than `r+1` timepoints raises rather than segmenting.
+
+**The metric set comes from the model, not the params.** A model is a pair — `<name>.pt` plus a
+`<name>.json` manifest recording `temporalScales`, `cumulativeWindow`, `droppedMetrics`, the source
+image and channel. Inference MUST use the set the model was trained on, and the failure above is why
+that cannot be left to the user re-entering it. A checkpoint with no manifest still loads, with a
+`[WARN]`, and falls back to coastal's training defaults.
+
+**Global photometric scaling is required, not optional.** Training normalises by the whole movie's
+min/max. `normaliseToWhole` supplies that statistic; the projection then pins coastal's own scaling
+to the same range. With it off, every tile gets its own scale — the patchiness the option exists to
+prevent, plus a train/inference mismatch on the structure-tensor planes.
+
+**The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
+above and the same live enumeration, with two differences: there is nothing built in and nothing
+bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the
+`.json` manifests sit beside them. Config-dir models do **not** travel with a `.ccbundle` export, so
+a shared project can name a model this machine lacks; the task fails with that message rather than
+falling back to another model.
+
+**The border is a coastline, and `labelSmoothing` is the right answer to it.** Region growing makes
+per-pixel decisions on the affinity field, so the frontier comes out fractal — measured on real
+output: median roughness 1.47, p90 1.96, worst 3.31, where roughness is perimeter over the perimeter
+of a circle of equal area and a perfect disc on this pixel grid scores 1.01.
+
+Two source-level fixes were tried and rejected on measurements, so do not re-try them without new
+evidence:
+
+* `probBlurSigma` does **nothing** to the border (1.44 → 1.43 → 1.49 → 1.55 at σ 0/1/2/3 — it gets
+  worse). The coastline is not the thresholded probability mask being ragged.
+* `embeddingBlurSigma` genuinely cleans it, by eating the dim periphery. Median object diameter goes
+  10.3 µm → 8.9 → 7.7 at σ 1.5 → 3.0 → 5.0, against an expected cell of ~11 µm, and the whole-frame
+  area roughly halves. A clean border on a cell too small to be a cell is a worse answer than an ugly
+  border on the right one. Confirmed by eye in napari across four label versions.
+
+So coastal defaults to `labelSmoothing` **1.5** — cosmetic, honest about being cosmetic, and it keeps
+the size. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
+changing a shipped task's default would alter existing pipelines.
+
+**Coastal's spatial params are in MICRONS, not pixels.** A seed window or a blur radius describes a
+CELL, so the same number has to mean the same biology on every image of a set — a px value silently
+means something different the moment the zoom changes, which defeats the one-value-per-set rule.
+`SegmentationUtils.px_from_um` / `px_area_from_um2` are the single conversion point (they also back
+cellpose's `cellDiameter`), and coastal's own API stays in pixels, correctly: it is an array library
+and knows nothing about calibration.
+
+`minCellSize`, `cellSizeMax`, `labelExpansion` and `labelErosion` followed (2026-08-07) — they are
+base params shared with cellpose, so this **reinterprets any value an existing pipeline had saved**:
+a `minCellSize` of 50 used to mean 50 px and now means 50 µm². Done deliberately rather than left as
+a mixed-unit form. Sizes are AREAS (µm², converted by pixel area — dividing by the pixel *size*
+instead is silently 2× off at 0.5 µm/px), and a radius the user set never rounds down to "off".
+
+Still px, and correctly so: `blockSize` and `overlap`. Those describe the TILING, which is about
+memory and array layout, not about cells.
+
+**Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
+label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis
+downstream. The composite (`segment.coastal` → `segment.measureLabels`) is what the Segment page is
+for, and it is the entry a user should normally pick.
+
+**Two passes = two model groups.** Not a coastal feature. The repeatable `models` group already is
+the stacking UI, and `_write_tile_to_arr` fills only unlabelled pixels, so a second group picks up
+what the first missed without overwriting it. Splitting cells from apoptotic bodies afterwards is a
+**gating** decision, not a segmentation parameter.
+
+**Measured, first end-to-end run** (`zolIMa/fXgbTl`, 31 T × 32 Z × 420 × 441, mem-TOM, one tile):
+training 67 s; segmentation **689 s**; 6220 objects, 175–222 per timepoint with no drift. On the
+mid-plane that is 37/28/34 objects against an intensity watershed's 33/29/29 — within ~10%, with
+visibly better separation of touching cells. Cost scales with pixels × planes, so the uncropped
+`Dml3RG` (~5.9× the XY area) is over an hour for the same frame count: this is an overnight task,
+which is what the preview is for. The size distribution is bimodal — mode 4–5 µm against an 11 µm
+cell — i.e. the small-particle population dominates by COUNT; splitting those off is gating, not a
+segmentation parameter. Reproduced by `docs/todo/flow-seg-experiments/first_task_run.py`.
+
+Design record: [`docs/todo/COASTAL_SEGMENTATION_PLAN.md`](todo/COASTAL_SEGMENTATION_PLAN.md);
+evidence and dead ends: [`docs/todo/SEGMENTATION_OPEN_PROBLEM.md`](todo/SEGMENTATION_OPEN_PROBLEM.md).
 
 ---
 

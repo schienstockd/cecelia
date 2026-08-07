@@ -106,7 +106,8 @@ class PostProcessOnACropTest(unittest.TestCase):
     def _seg(**params):
         from cecelia.utils.segmentation_utils import SegmentationUtils
         seg = SegmentationUtils.__new__(SegmentationUtils)     # no zarr/taskDir needed
-        for k, v in dict(label_erosion=0, label_expansion=0, min_cell_size=0, cell_size_max=0,
+        for k, v in dict(label_erosion=0, label_expansion=0, label_smoothing=0.0,
+                         min_cell_size=0, cell_size_max=0,
                          clear_depth=False, clear_touching_border=False).items():
             setattr(seg, k, params.get(k, v))
         return seg
@@ -189,3 +190,182 @@ class PostProcessOnACropTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StackedModelGroupsFillTest(unittest.TestCase):
+    """Stacking model groups is how multi-pass segmentation is expressed — a second group with a
+    smaller diameter picks up what the first missed. Every group's labels are offset by the running
+    `max_labels[match_as]`, so a later group's IDs are always numerically larger; merging with
+    `np.maximum` therefore let the later group win every overlapping pixel and eat the first pass's
+    cells. The merge must fill only unlabelled pixels instead."""
+
+    def _seg(self):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        return SegmentationUtils.__new__(SegmentationUtils)   # no zarr/taskDir needed
+
+    def _write(self, arr, masks):
+        self._seg()._write_tile_to_arr(
+            arr, masks, 0, None, 0, 1, (slice(0, arr.shape[0]), slice(0, arr.shape[1])))
+        return arr
+
+    def test_later_group_does_not_overwrite_an_earlier_one(self):
+        first = np.zeros((4, 4), dtype=np.uint32)
+        first[:, :2] = 3                      # pass 1 found a cell, label 3
+        second = np.zeros((4, 4), dtype=np.uint32)
+        second[:, :3] = 9                     # pass 2 overlaps it AND extends right, label 9 > 3
+
+        out = self._write(first.copy(), second)
+
+        self.assertTrue((out[:, :2] == 3).all(), 'pass 1 labels were overwritten by pass 2')
+        self.assertTrue((out[:, 2] == 9).all(), 'pass 2 did not fill the unlabelled gap')
+        self.assertTrue((out[:, 3] == 0).all())
+
+    def test_writing_into_empty_is_unchanged(self):
+        """Within one group the write regions are disjoint, so the destination is always 0 and the
+        behaviour must be identical to the previous np.maximum merge."""
+        masks = np.array([[0, 1], [2, 2]], dtype=np.uint32)
+        out = self._write(np.zeros((2, 2), dtype=np.uint32), masks)
+        np.testing.assert_array_equal(out, masks)
+
+    def test_zero_in_the_later_group_never_erases(self):
+        """A later group predicting background must not delete an earlier group's cell."""
+        first = np.full((3, 3), 5, dtype=np.uint32)
+        out = self._write(first.copy(), np.zeros((3, 3), dtype=np.uint32))
+        self.assertTrue((out == 5).all())
+
+
+class LabelSmoothingTest(unittest.TestCase):
+    """`labelSmoothing` rounds a wrinkled outline. The constraints are what make it safe to run over
+    a whole label image rather than one mask at a time."""
+
+    def _seg(self, sigma):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, tile, model_params, norm_params=None,
+                              context=None, context_index=None):
+                raise NotImplementedError
+
+        return _Stub({'taskDir': '/tmp', 'labelSmoothing': sigma}, None)
+
+    @staticmethod
+    def _wrinkled(n=60, r=16, teeth=3):
+        """A disc with a comb of one-pixel teeth — pure boundary noise, no shape."""
+        yy, xx = np.ogrid[:n, :n]
+        vol = np.where((yy - n // 2) ** 2 + (xx - n // 2) ** 2 <= r ** 2, 1, 0).astype(np.uint32)
+        vol[::2, n // 2 - r - teeth: n // 2 - r + 1] = 1        # teeth sticking out to the left
+        return vol
+
+    @staticmethod
+    def _perimeter(mask):
+        m = mask.astype(bool)
+        return int((m[:, 1:] != m[:, :-1]).sum() + (m[1:] != m[:-1]).sum())
+
+    def test_default_is_a_no_op(self):
+        """Off by default — it changes every shape descriptor, so it must never happen silently."""
+        vol = self._wrinkled()
+        np.testing.assert_array_equal(self._seg(0.0)._smooth_labels(vol, 0.0, False), vol)
+
+    def test_it_shortens_a_wrinkled_boundary(self):
+        vol = self._wrinkled()
+        out = self._seg(1.5)._smooth_labels(vol, 1.5, False)
+        self.assertLess(self._perimeter(out == 1), self._perimeter(vol == 1))
+        # …without gutting it: this is cosmetic, not a size filter
+        self.assertGreater((out == 1).sum(), 0.8 * (vol == 1).sum())
+
+    def test_a_label_never_takes_a_neighbours_pixels(self):
+        """Two touching labels: smoothing must not move area across the shared boundary.
+
+        On a cytoplasmic reporter cells touch constantly, so a label bulging into its neighbour is a
+        measurement error, not a cosmetic one.
+        """
+        vol = np.zeros((40, 40), np.uint32)
+        vol[5:35, 5:20] = 1
+        vol[5:35, 20:35] = 2
+        vol[5:35:2, 19] = 2          # ragged shared edge
+        out = self._seg(2.0)._smooth_labels(vol, 2.0, False)
+        # no pixel that belonged to one label may end up owned by the other
+        self.assertEqual(int(((vol == 1) & (out == 2)).sum()), 0)
+        self.assertEqual(int(((vol == 2) & (out == 1)).sum()), 0)
+
+    def test_result_does_not_depend_on_label_numbering(self):
+        """The guard reads the ORIGINAL volume, so processing order cannot matter."""
+        vol = np.zeros((40, 40), np.uint32)
+        vol[5:20, 5:20] = 7
+        vol[22:35, 22:35] = 3
+        swapped = np.where(vol == 7, 3, np.where(vol == 3, 7, 0)).astype(np.uint32)
+        a = self._seg(1.5)._smooth_labels(vol, 1.5, False)
+        b = self._seg(1.5)._smooth_labels(swapped, 1.5, False)
+        np.testing.assert_array_equal(a == 7, b == 3)
+        np.testing.assert_array_equal(a == 3, b == 7)
+
+    def test_a_tiny_label_survives(self):
+        """Smoothing must never delete an object — that is `minCellSize`, which says so."""
+        vol = np.zeros((30, 30), np.uint32)
+        vol[15, 15] = 1                     # a single pixel; any blur wipes it
+        out = self._seg(3.0)._smooth_labels(vol, 3.0, False)
+        self.assertIn(1, np.unique(out))
+
+    def test_3d_smooths_in_plane_only(self):
+        """Voxels are ~6x anisotropic; blurring across z would move the object between planes."""
+        vol = np.zeros((5, 40, 40), np.uint32)
+        vol[2, 10:30, 10:30] = 1            # present on ONE plane only
+        out = self._seg(2.0)._smooth_labels(vol, 2.0, True)
+        for z in (0, 1, 3, 4):
+            self.assertEqual(int((out[z] == 1).sum()), 0, f'label leaked onto plane {z}')
+        self.assertGreater(int((out[2] == 1).sum()), 0)
+
+
+class PhysicalUnitsTest(unittest.TestCase):
+    """Every spatial param is MICRONS. A pixel value silently means something else the moment the
+    zoom changes, which defeats the one-value-per-set rule the parameter design rests on."""
+
+    class _Dim:
+        def __init__(self, x=0.5, y=0.5):
+            self._x, self._y = x, y
+
+        def im_physical_size(self, ax, default=1.0):
+            return self._x if ax == 'x' else self._y
+
+    def _seg(self, params, px=0.5):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, *a, **k):
+                raise NotImplementedError
+
+        return _Stub({'taskDir': '/tmp', **params}, self._Dim(px, px))
+
+    def test_lengths_convert_by_pixel_size(self):
+        seg = self._seg({'labelSmoothing': 2.0}, px=0.5)     # 0.5 um/px → 2 um = 4 px
+        self.assertAlmostEqual(seg.label_smoothing, 4.0)
+
+    def test_areas_convert_by_pixel_AREA_not_by_length(self):
+        """The mistake this catches: dividing an area by the pixel SIZE instead of the pixel area,
+        which is silently 2x off at 0.5 um/px and worse elsewhere."""
+        seg = self._seg({'minCellSize': 10.0}, px=0.5)       # 10 um^2 / 0.25 um^2 per px = 40 px
+        self.assertEqual(seg.min_cell_size, 40)
+        self.assertNotEqual(seg.min_cell_size, 20)           # what a length conversion would give
+
+    def test_off_stays_off(self):
+        seg = self._seg({'minCellSize': 0, 'cellSizeMax': 0,
+                         'labelExpansion': 0, 'labelErosion': 0, 'labelSmoothing': 0}, px=0.5)
+        self.assertEqual((seg.min_cell_size, seg.cell_size_max), (0, 0))
+        self.assertEqual((seg.label_expansion, seg.label_erosion), (0, 0))
+        self.assertEqual(seg.label_smoothing, 0.0)
+
+    def test_a_set_radius_never_rounds_away_to_off(self):
+        """A control the user moved must do something; rounding 0.3 px to 0 reads as broken."""
+        seg = self._seg({'labelExpansion': 0.1}, px=1.0)      # 0.1 px
+        self.assertEqual(seg.label_expansion, 1)
+
+    def test_missing_calibration_falls_back_to_one_um_per_px(self):
+        """An uncalibrated image must not crash or silently scale by zero — um and px coincide."""
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, *a, **k):
+                raise NotImplementedError
+
+        seg = _Stub({'taskDir': '/tmp', 'labelExpansion': 3.0}, None)
+        self.assertEqual(seg.label_expansion, 3)

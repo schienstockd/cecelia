@@ -1,11 +1,11 @@
 {
-  "task": "temporalSmooth",
-  "fun_name": "cleanupImages.temporalSmooth",
-  "label": "Temporal smoothing",
+  "task": "smooth",
+  "fun_name": "cleanupImages.smooth",
+  "label": "Smoothing",
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "cpu",
-  "outputValueName": "temporalSmoothed",
+  "outputValueName": "smoothed",
   "requires": { "axes": ["T"] },
   "params": [
     {

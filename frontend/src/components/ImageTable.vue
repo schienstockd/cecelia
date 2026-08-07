@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useInlineEdit } from '../composables/useInlineEdit'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
@@ -86,29 +87,18 @@ const copyUid = (uid: string) => copyToClipboard(uid)
 // One generic core (click a cell → edit → Enter/blur commits, Esc cancels) reused by attributes,
 // channel names, AND the exclusion note. Each field only supplies how to persist its value (`save*`
 // below), so there's no per-field copy of the edit lifecycle. `key` is namespaced per field type.
-const editingCell = ref<string | null>(null)        // `${uid}:${key}` currently being edited
-const editValue = ref('')
+// Edit-in-place. This component's version WAS the general one — key, current, save callback, with
+// the still-this-cell and unchanged guards — so it moved to `composables/useInlineEdit` and the other
+// three hand-rolled copies (NotebookTable, PopulationManager, FlowModelVault) adopted it.
+// aliased: this component already has a `commit()` for the row SELECTION
+const { draft: editValue, start, cancel: cancelEdit, commit: commitInlineEdit,
+        focusInput: focusEditInput, isEditing: isEditingKey } = useInlineEdit()
 const cellKey = (uid: string, key: string) => `${uid}:${key}`
-const isEditing = (uid: string, key: string) => editingCell.value === cellKey(uid, key)
-function startEdit(uid: string, key: string, current: string) {
-  editingCell.value = cellKey(uid, key)
-  editValue.value = current
-}
-function cancelEdit() { editingCell.value = null }
-// Focus the edit input when it mounts, without stealing focus if it already has it.
-// (Lives here, not in the template, because the template scope doesn't expose `document`.)
-function focusEditInput(el: unknown) {
-  const i = el as HTMLInputElement | null
-  if (i && i !== document.activeElement) i.focus()
-}
-// Generic commit: guard it's still this cell, no-op when unchanged, else delegate to `save(val)`.
-async function commitEdit(uid: string, key: string, current: string, save: (val: string) => Promise<void>) {
-  if (!isEditing(uid, key)) return
-  editingCell.value = null
-  const val = editValue.value.trim()
-  if ((current ?? '') === val) return
-  await save(val)
-}
+const isEditing = (uid: string, key: string) => isEditingKey(cellKey(uid, key))
+const startEdit = (uid: string, key: string, current: string) => start(cellKey(uid, key), current)
+// a note or a channel name MAY be cleared, so the empty case is a real save here
+const commitEdit = (uid: string, key: string, current: string, save: (val: string) => Promise<void>) =>
+  commitInlineEdit(cellKey(uid, key), current, save)
 
 // Per-field savers — the only thing that differs between editable cells.
 async function saveAttr(img: CciaImage, key: string, val: string) {

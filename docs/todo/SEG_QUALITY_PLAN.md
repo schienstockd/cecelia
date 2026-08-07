@@ -57,13 +57,31 @@ The phased plan below ran to a conclusion. Summary of what we found:
   yardstick** for it. Tracked as task #17; supersedes the "which cellpose version" framing entirely.
   The `cellpose==3` pin now stays until coastal provides *both* denoise and segmentation.
 
-> **2026-08-06 — "the right inductive bias for moving-cell data" does not hold on every image class.**
-> On `zolIMa/fXgbTl` the CD169⁺ macrophages are effectively sessile (0.27 µm/min), so every velocity
-> field — coastal's Farneback *and* OpticalFlow3D's Lucas–Kanade — is at chance (AUC 0.53–0.61) for
-> locating them, and coastal's flow segmenter over-segmented 7× versus a six-line intensity baseline.
-> Read `docs/todo/SEGMENTATION_OPEN_PROBLEM.md` before building on the flow premise. This is a *scope*
-> correction, not a refutation: motion may still be informative for motile cells (e.g. `EaMaVq`'s
-> T cells), which has not been measured.
+> **2026-08-06 — the flow premise holds, and the thing blocking it was an 8-bit cast.**
+> Two corrections to Phase 3 above, in order of importance.
+>
+> **1. Every at-chance velocity reading was an artefact.** `np.array(frames, dtype=np.uint8)` in
+> coastal's flow entry points (and the quantisation in `normalize_and_project`) manufactures
+> staircase gradients in a smoothed background, which Farneback then tracks. On `fXgbTl` mem-TOM the
+> cell/background `|v|` ratio is **1.02 through uint8 and 18.7 in float32** at σ=1.5 px — through
+> uint8 the background moves as fast as the cells. That is the likely cause of the whole
+> AUC 0.51–0.61 table. Fixed in coastal PR #19; Farneback takes float32 directly and the 8-bit step
+> was never needed.
+>
+> **2. The sessile finding was the wrong channel.** `CD169-Kat` macrophages are sessile
+> (0.27 µm/min), but `mem-TOM` in the *same image* is motile germinal-centre B cells at
+> **2.95 µm/min**. Do not generalise a motility finding across channels — an earlier revision of this
+> note did exactly that.
+>
+> After both fixes, retraining coastal's segmenter on `fXgbTl` mem-TOM (spatial-only smoothing σ=3 px,
+> `intensity_weight=1.0`) took over-segmentation from **~7× to ~3×** versus the six-line intensity
+> baseline (88/83 objects vs 29/30). The prob head is now essentially correct (44/39 cell-shaped
+> components); **region growing** roughly doubles the count, and that is where the remaining gap is —
+> not in the flow inputs, the metric set, or the lag, all of which have been varied with no effect.
+>
+> Still unscored on this plan's own yardstick: `zolIMa` has no segmentation, labelProps or gating
+> sidecar, so Decision 1's QC gate has no infrastructure there. Full detail, and an explicit list of
+> which earlier numbers survive the cast fix, in `docs/todo/SEGMENTATION_OPEN_PROBLEM.md`.
 
 The phases below are kept as the historical record of how we got here.
 

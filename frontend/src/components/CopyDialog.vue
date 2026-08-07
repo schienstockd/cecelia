@@ -112,7 +112,7 @@ function copyImages() {
              v-tooltip.right="'Name for the new set'" @keydown.enter="copyImages" autofocus />
     </div>
 
-    <p class="copy-hint cc-muted">
+    <p class="copy-hint cc-muted cc-fs-xs">
       Copies the version as a new image. Segmentations, populations and gating are dropped.
     </p>
 
@@ -129,7 +129,7 @@ function copyImages() {
 .copy-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem; }
 .copy-lbl { width: 4rem; flex-shrink: 0; }
 .copy-select, .copy-name-input { flex: 1 1 auto; }
-.copy-hint { font-size: var(--cc-fs-xs); font-style: italic; margin: 0.3rem 0 0; }   /* + .cc-muted (colour) */
+.copy-hint { font-style: italic; margin: 0.3rem 0 0; }   /* + .cc-muted .cc-fs-xs */
 .copy-version-tag {
   margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-lg);
   font-size: var(--cc-fs-2xs); font-weight: 600; vertical-align: middle;

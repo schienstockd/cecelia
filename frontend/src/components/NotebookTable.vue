@@ -4,6 +4,7 @@
 // examples are read-only (duplicate-into-project only). See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useLogStore } from '../stores/log'
+import { useInlineEdit } from '../composables/useInlineEdit'
 import { useWsStore } from '../stores/ws'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
@@ -183,30 +184,23 @@ async function remove(nb: Notebook) {   // confirmation handled by ConfirmDelete
 }
 
 // Inline description edit (mirrors ImageTable startEdit/commitEdit).
-const editingFile = ref<string | null>(null)
-const editValue = ref('')
+// edit-in-place, shared with the tables and the canvas managers (composables/useInlineEdit)
+const { draft: editValue, isEditing, start, cancel: cancelEdit, commit,
+        focusInput: focusEditInput } = useInlineEdit()
+
 function startEdit(nb: Notebook) {
   if (nb.scope !== 'project') return          // examples are read-only
-  editingFile.value = nb.file
-  editValue.value = nb.description
+  start(nb.file, nb.description)
 }
-function cancelEdit() { editingFile.value = null }
-function focusEditInput(el: unknown) {
-  const i = el as HTMLInputElement | null
-  if (i && i !== document.activeElement) i.focus()
-}
-async function commitEdit(nb: Notebook) {
-  if (editingFile.value !== nb.file) return
-  editingFile.value = null
-  const val = editValue.value.trim()
-  if ((nb.description ?? '') === val) return
+// a description MAY be cleared, so the empty case is a real save here
+const commitEdit = (nb: Notebook) => commit(nb.file, nb.description, async val => {
   try {
     await post('/api/notebooks/describe', { projectUid: props.projectUid, file: nb.file, description: val })
     nb.description = val
   } catch (e) {
     log.error(`Save description failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'notebooks' })
   }
-}
+})
 
 function openUrl(nb: Notebook) {
   const s = props.serverSecret ? `&secret=${encodeURIComponent(props.serverSecret)}` : ''
@@ -248,7 +242,7 @@ defineExpose({ refresh })
 
           <!-- Description: inline-editable for project notebooks -->
           <td class="nbt-desc">
-            <input v-if="editingFile === nb.file" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
+            <input v-if="isEditing(nb.file)" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
                    type="text" @blur="commitEdit(nb)" @keyup.enter="commitEdit(nb)" @keyup.esc="cancelEdit" />
             <span v-else :class="{ 'nbt-editable': nb.scope === 'project', 'nbt-muted': !nb.description }"
                   @click="startEdit(nb)">

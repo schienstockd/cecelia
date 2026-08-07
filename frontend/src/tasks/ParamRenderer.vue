@@ -443,8 +443,10 @@ const pct = computed(() => {
       <span class="slider-val">{{ val }}</span>
     </div>
 
-    <!-- bool → shared toggle switch -->
-    <CcToggle v-else-if="param.type === 'bool'" v-tooltip.right="param.tip"
+    <!-- bool → shared toggle switch. No `v-tooltip`: `param-label` above already carries `param.tip`
+         on its info icon, and repeating it here renders the tooltip ON TOP of the switch you were
+         about to click. See `HEADING_COVERED` / `duplicateTooltips` in utils/uiCopy.ts. -->
+    <CcToggle v-else-if="param.type === 'bool'"
       :model-value="val as boolean" @update:model-value="val = $event" />
 
     <!-- text -->
@@ -453,6 +455,17 @@ const pct = computed(() => {
       :value="val as string"
       @input="val = ($event.target as HTMLInputElement).value"
       v-tooltip.right="param.tip"
+    />
+
+    <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
+         parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
+         for "pick from a set" (docs/UI.md). -->
+    <ChipSelect v-else-if="param.type === 'chipSelect'"
+      :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
+      :model-value="(Array.isArray(val) ? val : []).map(String)"
+      multiple
+      :aria-label="param.label"
+      @update:model-value="v => val = v as string[]"
     />
 
     <!-- select -->
@@ -531,8 +544,10 @@ const pct = computed(() => {
     <template v-else-if="param.type === 'section' || param.type === 'group'"><!-- handled below --></template>
 
     <!-- channelSelection: togglable chip list from image context -->
-    <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap"
-      v-tooltip.right="param.tip">
+    <!-- No tooltip on the wrapper: it anchors over the CHIPS, hiding the things you are about to
+         click, and `param-label` above already carries the same tip on its info icon. See
+         `HEADING_COVERED` in utils/uiCopy.ts. -->
+    <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap">
       <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
         No channels — select images first.
       </div>

@@ -172,9 +172,9 @@ function save() {
           Cancel
         </button>
       </div>
-      <span class="crop-hint cc-muted">{{ rect ? 'Drag to redraw the rectangle, set z/t, then Save.' : 'Drag a rectangle over the structure to crop.' }}</span>
+      <span class="crop-hint cc-muted cc-fs-xs">{{ rect ? 'Drag to redraw the rectangle, set z/t, then Save.' : 'Drag a rectangle over the structure to crop.' }}</span>
     </template>
-    <div v-else class="crop-hint cc-muted">Loading crop preview…</div>
+    <div v-else class="crop-hint cc-muted cc-fs-xs">Loading crop preview…</div>
   </div>
 </template>
 
@@ -193,6 +193,6 @@ function save() {
 .crop-lbl { width: 2.6rem; }
 .crop-tval { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
 .crop-actions { display: flex; gap: 0.4rem; }
-.crop-hint { font-size: var(--cc-fs-xs); font-style: italic; }   /* + .cc-muted (colour) */
+.crop-hint { font-style: italic; }   /* + .cc-muted .cc-fs-xs */
 .crop-err { font-size: var(--cc-fs-xs); color: #f85149; }
 </style>

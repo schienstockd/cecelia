@@ -40,7 +40,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 ## Current parked plans
 
-- `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.temporalSmooth` (σ=1 gaussian + centred 3-frame
+- `SMOOTHING_PLAN.md` — **BUILT** as `cleanupImages.smooth` (σ=1 gaussian + centred 3-frame
   temporal median, one shared kernel per channel); the `smooth → AF → drift` composite is still open.
   Needed because AF's triangle background
   lands **inside the signal** on resonance-scanner data: the reference channel kept **8.6%** of its

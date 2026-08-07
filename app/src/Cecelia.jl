@@ -3,6 +3,7 @@ module Cecelia
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_path, expand_user
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
+export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
@@ -104,6 +105,8 @@ export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
 export CellposeSegment
+export CoastalSegment, coastal_models_for_python
+export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
 export MeasureLabels
 export Branching
 export BayesianTracking, TrackMeasures
@@ -111,7 +114,7 @@ export ClustPops, ClustTracks
 export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
-export AfCorrect, DriftCorrect, TemporalSmooth, CompositeTask
+export AfCorrect, DriftCorrect, Smooth, CompositeTask
 export CropImage
 export CopyImage
 
@@ -194,10 +197,12 @@ include("tasks/importImages/migrateLegacy.jl")
 include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
-include("tasks/cleanupImages/temporal_smooth.jl")
+include("tasks/cleanupImages/smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/segment/cellpose.jl")
+include("tasks/opticalFlow/train.jl")
+include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/tracking/bayesian_tracking.jl")

@@ -1,4 +1,4 @@
-"""Temporal smoothing task.
+"""Smoothing task.
 
 Applies `coastal.smooth`'s model-free smoothing — an xy Gaussian, then a running statistic over
 time — to selected channels, streaming z-plane by z-plane so peak memory is the temporal window and
@@ -92,7 +92,7 @@ def run(params):
     c_idx, nc = _axis_len(dim_utils, 'C', shape)
     z_idx, nz = _axis_len(dim_utils, 'Z', shape)
     if t_idx is None:
-        log.log('[ERROR] image has no time axis — temporal smoothing needs one')
+        log.log('[ERROR] image has no time axis — the temporal statistic needs one')
         raise SystemExit(1)
 
     sel = channels if channels else list(range(nc))

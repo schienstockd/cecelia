@@ -60,7 +60,7 @@ export type PaletteName = 'standard' | 'distinct' | 'cecelia' | 'okabe-ito' | 't
 
 // N visually-distinct colours by even HCL-ish hue spacing (port of R randomcoloR::distinctColorPalette
 // intent — deterministic here so it's stable across renders). Golden-angle hue rotation, fixed S/L.
-function distinctColors(n: number): string[] {
+export function distinctColors(n: number): string[] {
   const out: string[] = []
   for (let i = 0; i < n; i++) {
     const h = (i * 137.508) % 360                 // golden angle → well-separated hues

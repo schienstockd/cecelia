@@ -155,8 +155,7 @@ function onScopeChange(v: string) {
     <div class="del-row">
       <span class="del-lbl cc-muted" v-tooltip.right="'What to delete from the selected images'">Delete</span>
       <ChipSelect class="del-chips" variant="segmented" :options="scopeOptions"
-        :model-value="scope" @update:model-value="v => onScopeChange(v as string)"
-        v-tooltip.right="'Select what to delete — the scopes are deliberately separate'" />
+        :model-value="scope" @update:model-value="v => onScopeChange(v as string)" />
     </div>
 
     <!-- Whole images -->

@@ -19,6 +19,5 @@ const MODES: ChipOption[] = [
 <template>
   <ChipSelect variant="segmented" :options="MODES" :model-value="modelValue"
               aria-label="Render: points / contour / contour + outliers"
-              v-tooltip.bottom="'How cells are drawn — trade detail for speed'"
               @update:model-value="v => emit('update:modelValue', v as RenderMode)" />
 </template>

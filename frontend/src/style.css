@@ -359,6 +359,12 @@ body {
    Use this instead of stacking `.cc-muted` with a scoped `color:` rule, which shadows the utility it
    sits on (the `cssScenarios` ratchet flags exactly that). */
 .cc-muted-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-sm); }
+/* The family's missing member. `-warn` shipped alone, so every "this failed" meta line reached for the
+   colour directly — `SummaryPanel` as a scoped rule shadowing `.cc-muted` (parked on the ratchet's
+   allow-list as if deliberate), `SettingsModule` as an INLINE style, which no ratchet can see at all.
+   Two spellings of a scenario the axis already had room for. `--cc-sev-fail`, not `--cc-danger`:
+   severity semantics come from the severity palette (see its note on :root). */
+.cc-muted-error { color: var(--cc-sev-fail); font-size: var(--cc-fs-sm); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).
@@ -517,7 +523,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    `.controls-pinned` on itself). Two producers wear this class:
      • CanvasPanel's own #actions / #footer overlays (top / bottom `.bottom`);
      • an interactive VIEW whose toolbar lives inside the body (GatingStrategyView `.gs-bar`,
-       UmapView `.uv-ctrl`, ImageStripView `.is-bar`) — those tag their bar `.cc-panel-controls` and
+       UmapView `.uv-ctrl`, ImageStripView `.is-bar`, FlowMetricsView `.fmv-ctrl`) — those tag their bar `.cc-panel-controls` and
        give their root `position: relative`, so it anchors to the plot box, not the panel.
    This is why the analysis-board plots (and their PDF export) fill their slot instead of being squashed
    by a stack of controls. See docs/UI.md → "Auto-hide panel controls". */

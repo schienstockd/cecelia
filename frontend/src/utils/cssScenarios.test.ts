@@ -289,24 +289,23 @@ describe('shadowed utilities', () => {
   //
   // An exact list: the check cannot distinguish a deliberate override from an accident, so each
   // survivor says which it is. All of these deliberately set a DIFFERENT value.
+  // Only entries that CANNOT be expressed as a utility. Six of the nine that used to sit here could
+  // be, and were carrying a reason that read as settled — "a tier down", "muted layout, danger
+  // colour" — when each was a scenario the axis already had room for. A reason is not an exemption:
+  //   - four size shadows became `.cc-muted` + the `.cc-fs-*` tier that was already there;
+  //   - one was the SAME value as the utility's base, a pure no-op;
+  //   - the error line became `.cc-muted-error`, the severity family's missing member (`-warn`
+  //     shipped alone, so "this failed" was hand-rolled — once here as a scoped rule, and once in
+  //     `SettingsModule` as an inline style, which this ratchet cannot see at all).
+  // Before adding an entry, check the utility does not already exist, or is not one modifier away.
   const ALLOWED = [
-    // hints that are muted in colour but italic and a tier down — the file comments say so
-    'components/CopyDialog.vue | cc-muted shadowed by copy-hint on font-size',
-    'components/CropPanel.vue | cc-muted shadowed by crop-hint on font-size',
-    'components/ProjectPanel.vue | cc-muted shadowed by pp-io-hint on font-size',
-    'modules/cluster/ClusterHeatmapPanel.vue | cc-muted shadowed by feat-empty on font-size',
-    // an error line: muted layout, danger colour
-    'components/canvas/SummaryPanel.vue | cc-muted shadowed by sp-err on color',
-    // tick labels size off the dynamic --gate-font, so only the colour comes from the utility
+    // Tick labels size off `--gate-font`, a per-panel CSS var driven by the vis Font size slider, so
+    // there is no static tier to name — only the colour can come from the utility.
     'components/plots/GateScatterCell.vue | cc-muted shadowed by xtick-lbl on font-size',
     'components/plots/GateScatterCell.vue | cc-muted shadowed by ytick-lbl on font-size',
     // `color: inherit` on purpose — the label follows the section header's colour, which changes on
     // hover and when open, rather than sitting at the eyebrow's fixed dim.
     'components/CollapsibleSection.vue | cc-eyebrow shadowed by cs-label on color',
-    // Same VALUE as the utility's base, so the shadow changes nothing — and load-bearing for the two
-    // sibling spans that carry `.sel-count` without `.cc-muted` and would otherwise inherit body size.
-    // (Its `color` was NOT deliberate and is gone: it was silently un-dimming the placeholder.)
-    'components/FileBrowser.vue | cc-muted shadowed by sel-count on font-size',
   ]
 
   it('are all deliberate — a utility that loses to its own element is a no-op', () => {

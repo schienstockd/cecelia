@@ -26,7 +26,7 @@ import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isInteractiveView } from '../../components/canvas/interactiveViews'
+import { isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, type VisProps } from '../../plots/plot'
@@ -133,7 +133,7 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
 // track clustering with the right obs columns — the HMM behaviour plots).
 const plotTypes = computed(() => [
   // only cluster-page interactive views (UMAP) — gatingStrategy/filmstrip are Analysis-board-only
-  ...Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.clusterPage).map(([kind, v]) => ({ kind, label: v.label })),
+  ...pageViews('clusterPage').map(v => ({ kind: v.key, label: v.label })),
   ...Object.entries(CLUSTER_PANELS).filter(([, def]) => {
     if (def.trackOnly && props.popType !== 'trackclust') return false
     if (def.needsCols === 'hmmState' && !hmmStateCols.value.length) return false

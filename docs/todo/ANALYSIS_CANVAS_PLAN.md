@@ -46,7 +46,7 @@ layout**, not free-floating windows (free-floating stays on the exploratory gate
    views** (UMAP, cluster heatmap, HMM state/transitions, gating-strategy). Interactive views carry
    their context (e.g. clustering suffix) as **per-slot config** set on the plot itself.
 6. **Pop picker is DOCKED, not a slot, and excluded from the PDF.** It's a control, not content — a
-   collapsible right rail (reuse `SeriesPicker`/`PopulationPanelShell`, docked not floating) driving the
+   collapsible right rail (reuse `SeriesPicker`/`CanvasSidePanel`, docked not floating) driving the
    ACTIVE slot's pop selection (global/local scope as today). Pop names/colours appear on the plots
    themselves (legends), so the picker never needs to render into a page.
 7. **"Image" slot type (static raster).** A slot can hold an image instead of a plot. First source: a
@@ -59,7 +59,7 @@ layout**, not free-floating windows (free-floating stays on the exploratory gate
 (`SummaryPanel`, `InteractivePanel` + views, gating-strategy `GateScatterCell`) render inside slots
 unchanged. Extract SummaryCanvas's data logic (spec/pop/attr loading + compare state) into a composable
 shared by `SummaryCanvas` (per-module, free-floating) and the new `LayoutCanvas` (analysis, grid) — no
-duplication. `CanvasPanel` + `PopulationPanelShell` gain a `docked` mode (fill-in-flow, no float/drag)
+duplication. `CanvasPanel` + `CanvasSidePanel` gain a `docked` mode (fill-in-flow, no float/drag)
 so the same panel/picker chrome works in a slot / right rail.
 
 8. **Layout = a TEMPLATE LIBRARY, not just uniform N×M (2026-07-02).** Each template defines its slots

@@ -1,4 +1,4 @@
-struct TemporalSmooth <: CciaTask end
+struct Smooth <: CciaTask end
 
 # QC from the persisted smoothing stats. The failure modes here are quiet ones — the task always
 # "succeeds", it just may not have helped:
@@ -9,7 +9,7 @@ struct TemporalSmooth <: CciaTask end
 #    end is now flat and any ratio computed there is wrong.
 #  • no effect — the zero fraction barely moved, which means the input was not photon-limited and
 #    this step bought nothing (fine, but worth saying so rather than leaving a redundant store).
-function _temporal_smooth_qc_findings(meta)
+function _smooth_qc_findings(meta)
     findings = Dict{String,Any}[]
 
     clipped = get(meta, "clippedVoxels", 0)
@@ -45,7 +45,7 @@ end
 # outlier detector would be ranking images by shake. `gain` inherits the same confound (it is
 # estimated from percentiles of that padded volume) and additionally depends on sigma/frames, so it
 # is only comparable at fixed params. Neither number is trustworthy across a set; per-image is honest.
-function _temporal_smooth_metrics(meta)
+function _smooth_metrics(meta)
     zin  = get(meta, "zeroFracIn", Dict())
     zout = get(meta, "zeroFracOut", Dict())
     m = Dict{String,Any}(
@@ -56,7 +56,7 @@ function _temporal_smooth_metrics(meta)
     m
 end
 
-function _run_task(task::TemporalSmooth, img::CciaImage, params::Dict{String,Any};
+function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
@@ -72,7 +72,7 @@ function _run_task(task::TemporalSmooth, img::CciaImage, params::Dict{String,Any
 
     proj_dir       = dirname(dirname(img._dir))
     im_path        = joinpath(proj_dir, "0", img.uid, string(filename))
-    im_output_path = joinpath(proj_dir, "0", img.uid, "ccidTemporalSmoothed.ome.zarr")
+    im_output_path = joinpath(proj_dir, "0", img.uid, "ccidSmoothed.ome.zarr")
 
     if !ispath(im_path)
         on_log("[ERROR] Input image not found: $im_path")
@@ -84,7 +84,7 @@ function _run_task(task::TemporalSmooth, img::CciaImage, params::Dict{String,Any
     # We cannot verify alignment from the pixels, but the value name says which version this is —
     # so say something rather than silently produce a smeared store.
     if !occursin("rift", string(value_name)) && !occursin("rift", string(filename))
-        on_log("[WARN] '$value_name' does not look drift-corrected. Temporal smoothing compares the " *
+        on_log("[WARN] '$value_name' does not look drift-corrected. The temporal statistic compares the " *
                "same pixel across frames, so run drift correction first or the statistic mixes tissue.")
     end
 
@@ -117,9 +117,9 @@ function _run_task(task::TemporalSmooth, img::CciaImage, params::Dict{String,Any
     on_log("[INFO] Channels: $(isempty(channel_idx) ? "all" : channel_idx)")
     on_log("[INFO] sigma=$spatial_sigma frames=$temporal_frames stat=$temporal_stat")
 
-    qc_out_path = joinpath(task_run_dir(img._dir), "temporal_smooth_stats.json")
+    qc_out_path = joinpath(task_run_dir(img._dir), "smooth_stats.json")
 
-    ok = run_py("tasks/cleanupImages/temporal_smooth_run.py",
+    ok = run_py("tasks/cleanupImages/smooth_run.py",
         (; imPath         = im_path,
            imOutputPath   = im_output_path,
            channels       = channel_idx,
@@ -132,17 +132,17 @@ function _run_task(task::TemporalSmooth, img::CciaImage, params::Dict{String,Any
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
-    on_log("[INFO] Temporal smoothing complete.")
+    on_log("[INFO] Smoothing complete.")
 
-    out_value_name = _spec_output_value_name(task, "temporalSmoothed")
-    out_filename   = "ccidTemporalSmoothed.ome.zarr"
+    out_value_name = _spec_output_value_name(task, "smoothed")
+    out_filename   = "ccidSmoothed.ome.zarr"
 
     if isfile(qc_out_path)
         try
             qmeta = JSON3.read(read(qc_out_path, String))
-            findings = _temporal_smooth_qc_findings(qmeta)
-            write_qc(img, "cleanupImages.temporalSmooth", out_value_name, findings;
-                     metrics = _temporal_smooth_metrics(qmeta),
+            findings = _smooth_qc_findings(qmeta)
+            write_qc(img, "cleanupImages.smooth", out_value_name, findings;
+                     metrics = _smooth_metrics(qmeta),
                      source = Dict{String,Any}("shape" => collect(Int, qmeta["shape"])),
                      output = Dict{String,Any}("shape" => collect(Int, qmeta["shape"])),
                      smoothing = Dict{String,Any}(

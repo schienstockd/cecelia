@@ -77,13 +77,17 @@ pandas       = ">=2.3"
 trimesh      = ">=4.0"
 btrack       = ">=0.7"
 # coastal (live-cell segmentation + the model-free smoothing engine used by
-# cleanupImages.temporalSmooth). A GIT dep, not the old editable sibling path: the reason it was
+# cleanupImages.smooth). A GIT dep, not the old editable sibling path: the reason it was
 # dropped was that `~/cc-workspace/coastal` had no remote, so a committed lockfile could not fetch
 # it. It has one now, so the "git dep (shipping)" option docs/SHIPPING.md prescribed is available.
 # The dependency direction stays coastal -> cecelia at the *source* level (coastal imports
 # cecelia's IO/napari helpers lazily); this entry is only cecelia consuming coastal's array-only
 # algorithms, which import nothing from cecelia.
-coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "71a393b16dbecc7359742830efaa29086ff27459" }
+# The rev is a HARD floor, not a snapshot: `segment.coastal` calls `flow_metrics_for_frame` and
+# `LearnedAffinityInference(seed_blur_sigma=...)`, neither of which exists before this commit. An
+# older rev fails at RUN time (ImportError / TypeError), not at install or in CI — the Python tests
+# stub coastal deliberately, so nothing catches a rollback.
+coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "15f3bf477b4f0520e0ceaefb7f522cc83aab7549" }
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"

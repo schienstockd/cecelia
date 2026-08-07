@@ -19,11 +19,12 @@ import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
-import PopulationPanelShell from './PopulationPanelShell.vue'
+import CanvasSidePanel from './CanvasSidePanel.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { popNameError } from '../../utils/popName'
+import { useInlineEdit } from '../../composables/useInlineEdit'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -74,8 +75,12 @@ const napariPointSize = computed<number>({
 })
 
 const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
-const editing = ref<string | null>(null)
-const editName = ref('')
+// edit-in-place, shared with the model vault and the tables (composables/useInlineEdit). Adopting it
+// also fixed a real bug here: `@keyup.enter` and `@blur` both called `commitRename` straight through,
+// so Enter renamed and the blur it caused ran the whole thing again.
+const { draft: editName, isEditing, start: beginRenameAt, cancel: cancelRename, commit,
+        focusInput } = useInlineEdit()
+const beginRename = (p: FlatPop) => beginRenameAt(p.path, p.name)
 
 // pop colour picker: clicking a pop's swatch opens a small popover offering the Cecelia palette
 // (click a chip) plus the native picker for anything custom. A native <input type="color"> can't
@@ -97,16 +102,13 @@ function setColour(c: string, close = true) {
 }
 
 function pick(p: FlatPop) { emit('update:selected', p.path) }
-function beginRename(p: FlatPop) { editing.value = p.path; editName.value = p.name }
-async function commitRename(p: FlatPop) {
-  const name = editName.value.trim()
+const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
   // reserved-prefix + same-list duplicate are caught here for instant feedback; a cross-pop-type
   // collision is rejected by the server (pop_name_conflict) and surfaced via the store's error toast.
   const err = popNameError(name, g.flat.map(x => x.name), { currentName: p.name })
-  if (err) { log.error(err, { source: 'gating' }); editing.value = null; return }
-  editing.value = null
-  if (name && name !== p.name) await g.renamePop(p.path, name)
-}
+  if (err) { log.error(err, { source: 'gating' }); return }
+  if (name) await g.renamePop(p.path, name)
+})
 const isLit = (p: FlatPop) => props.highlighted.includes(p.path)
 const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
 
@@ -221,7 +223,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 </script>
 
 <template>
-  <PopulationPanelShell :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
+  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
@@ -289,10 +291,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
                   v-tooltip.left="readonly ? '' : 'Colour'"
                   @click.stop="openColour(p, $event)" />
 
-          <span v-if="editing !== p.path" class="pm-name"
+          <span v-if="!isEditing(p.path)" class="pm-name"
                 @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
-          <input v-else class="pm-rename" v-model="editName" autofocus v-tooltip.top="'Enter to save the new name'"
-                 @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
+          <input v-else class="pm-rename" v-model="editName" :ref="focusInput"
+                 v-tooltip.top="'Enter to save the new name'"
+                 @keyup.enter="commitRename(p)" @keyup.esc="cancelRename"
+                 @blur="commitRename(p)" @click.stop />
 
           <!-- filter pops are badged (vs hand-drawn gates); the badge is the EDIT affordance (click →
                open the same form pre-filled). Read-only surfaces show a static badge. Tooltip = predicate. -->
@@ -390,7 +394,6 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <span class="pm-opt-label cc-muted cc-fs-xs">Axis</span>
             <ChipSelect class="pm-seg" variant="segmented" :options="AXIS_OPTIONS"
                         :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
-                        v-tooltip.top="'Start the axes at zero or fit them to the data'"
                         @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
           </div>
           </template>
@@ -413,11 +416,11 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </div>
       </div>
     </template>
-  </PopulationPanelShell>
+  </CanvasSidePanel>
 </template>
 
 <style scoped>
-/* row / options styles — applied to content rendered into PopulationPanelShell's slots (slotted
+/* row / options styles — applied to content rendered into CanvasSidePanel's slots (slotted
    content keeps THIS component's scoped styles; the floating chrome + scope footer live in the shell). */
 .pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }

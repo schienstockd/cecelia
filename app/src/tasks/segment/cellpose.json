@@ -3,7 +3,9 @@
   "fun_name": "segment.cellpose",
   "label": "Cellpose segmentation",
   "category": "Segment",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "gpu",
   "params": [
     {
@@ -48,10 +50,22 @@
           "default": "cyto3",
           "tip": "Cellpose model to use",
           "options": [
-            { "label": "Cyto3",   "value": "cyto3" },
-            { "label": "Cyto2",   "value": "cyto2" },
-            { "label": "Cyto",    "value": "cyto" },
-            { "label": "Nuclei",  "value": "nuclei" }
+            {
+              "label": "Cyto3",
+              "value": "cyto3"
+            },
+            {
+              "label": "Cyto2",
+              "value": "cyto2"
+            },
+            {
+              "label": "Cyto",
+              "value": "cyto"
+            },
+            {
+              "label": "Nuclei",
+              "value": "nuclei"
+            }
           ]
         },
         {
@@ -61,8 +75,14 @@
           "default": "base",
           "tip": "Role of this model's output; one 'base' + one 'nuc' to pair",
           "options": [
-            { "label": "Base (primary)", "value": "base" },
-            { "label": "Nucleus",        "value": "nuc"  }
+            {
+              "label": "Base (primary)",
+              "value": "base"
+            },
+            {
+              "label": "Nucleus",
+              "value": "nuc"
+            }
           ]
         },
         {
@@ -176,43 +196,53 @@
         },
         {
           "key": "minCellSize",
-          "label": "Min cell size (px)",
-          "type": "int",
-          "min": 0,
-          "max": 100000,
-          "step": 10,
-          "default": 0,
-          "tip": "Remove objects smaller than this many pixels (0 = off)"
+          "label": "Min cell size (µm²)",
+          "type": "float",
+          "min": 0.0,
+          "max": 1000.0,
+          "step": 1.0,
+          "default": 0.0,
+          "tip": "Remove objects smaller than this area (0 = off)"
         },
         {
           "key": "cellSizeMax",
-          "label": "Max cell size (px)",
-          "type": "int",
-          "min": 0,
-          "max": 10000000,
-          "step": 100,
-          "default": 0,
-          "tip": "Remove objects larger than this many pixels (0 = off)"
+          "label": "Max cell size (µm²)",
+          "type": "float",
+          "min": 0.0,
+          "max": 10000.0,
+          "step": 10.0,
+          "default": 0.0,
+          "tip": "Remove objects larger than this area (0 = off)"
+        },
+        {
+          "key": "labelSmoothing",
+          "label": "Smooth outlines (µm)",
+          "type": "float",
+          "min": 0.0,
+          "max": 3.0,
+          "step": 0.25,
+          "default": 0.0,
+          "tip": "Round wrinkled boundaries; changes measured shape"
         },
         {
           "key": "labelExpansion",
-          "label": "Label expansion (px)",
-          "type": "int",
-          "min": 0,
-          "max": 50,
-          "step": 1,
-          "default": 0,
-          "tip": "Expand label boundaries outward by N pixels (0 = off)"
+          "label": "Label expansion (µm)",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.25,
+          "default": 0.0,
+          "tip": "Expand label boundaries outward (0 = off)"
         },
         {
           "key": "labelErosion",
-          "label": "Label erosion (px)",
-          "type": "int",
-          "min": 0,
-          "max": 50,
-          "step": 1,
-          "default": 0,
-          "tip": "Erode label boundaries inward by N pixels (0 = off)"
+          "label": "Label erosion (µm)",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.25,
+          "default": 0.0,
+          "tip": "Erode label boundaries inward (0 = off)"
         },
         {
           "key": "clearTouchingBorder",
@@ -236,7 +266,9 @@
       "type": "section",
       "collapsed": true,
       "params": [
-        {"$include": "imageTiling"},
+        {
+          "$include": "imageTiling"
+        },
         {
           "key": "labelOverlap",
           "label": "Seam stitch threshold",

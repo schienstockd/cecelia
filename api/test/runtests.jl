@@ -679,6 +679,26 @@ end
     end
 end
 
+@testset "API: a built preview request is always sent" begin
+    # `preview_request` BUILDS a request; `send(w, …)` runs it. Returning the request instead is a
+    # 200 full of plausible-looking JSON — right imPath, right params, right funName — that simply
+    # has no result in it, so the caller renders an empty panel and nothing anywhere reports an
+    # error. `api_optical_flow_inspect` shipped exactly that: reviewed, type-checked, and dead.
+    #
+    # Building one without sending it has no other use, so the rule is total: every call site is an
+    # argument to `send`.
+    for file in filter(f -> endswith(f, ".jl"), readdir(joinpath(@__DIR__, "..", "src"); join = true))
+        src = read(file, String)
+        for m in eachmatch(r"preview_request\(", src)
+            # the enclosing call — `send(w, preview_request(…))` — sits just before it; allow for the
+            # keyword-heavy wrapping the real call sites use
+            before = src[max(1, m.offset - 240):m.offset]
+            @test occursin("send(", before) ||
+                  occursin("function preview_request", before)   # the definition itself
+        end
+    end
+end
+
 @testset "API: image geometry (axis mapping + version resolution)" begin
     # Pure parts of image_geometry.jl — no zarr, no IO. These were `_crop_*` privates until a second
     # consumer showed none of it was crop-specific (docs: the anisotropy grid advisory).
@@ -3049,6 +3069,7 @@ end
         "/api/napari/status", "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
+        "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
         "/api/plots/umap", "/api/pools",
@@ -3100,6 +3121,8 @@ end
         "/api/notebooks/restart", "/api/notebooks/restore",
         "/api/notebooks/revise", "/api/notebooks/shutdown",
         "/api/notebooks/snapshot", "/api/notebooks/write",
+        "/api/optical-flow/delete", "/api/optical-flow/inspect",
+        "/api/optical-flow/rename",
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/register", "/api/plot_data",
         "/api/pools/set", "/api/preview/run",
@@ -3155,7 +3178,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 68 && length(POST_ROUTES) == 95
+    @test length(GET_ROUTES) == 69 && length(POST_ROUTES) == 98
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
