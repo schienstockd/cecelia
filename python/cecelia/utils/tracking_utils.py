@@ -19,9 +19,11 @@ properties is a later phase (docs/POPULATION.md).
 Membership for the gated case is resolved by Julia (the sole gate evaluator) and handed to
 us as an explicit list of label IDs — we never evaluate gates here.
 
-Coordinates are tracked in **pixel space** (no physical-unit scaling); `maxSearchRadius`
-is therefore in pixels, matching the UI label. Anisotropic-Z scaling can be added later if
-needed by passing physical pixel sizes from Julia.
+Coordinates are scaled to **µm** before btrack sees them (`physicalSizes` from Julia's
+`img_physical_sizes`, skimage order `[sz, sy, sx]`), so every distance param —
+`maxSearchRadius`, `distThresh`, `thetaDist` — is in µm. This matches `track_measures`,
+which already reports µm/min from the same accessor, and handles anisotropic Z: at
+0.33 µm XY vs 2 µm Z, pixel-space tracking under-counted a one-plane hop 6-fold.
 """
 import os
 
@@ -53,6 +55,10 @@ class BayesianTrackingUtils:
         self.label_ids  = params.get("labelIds", None)
 
         self.max_search_radius   = params["maxSearchRadius"]
+        # [sz, sy, sx] in µm — skimage axis order, matching the centroid columns, the same shape
+        # `img_physical_sizes` hands every other spatial task (cellNeighbours, the mesh tasks,
+        # track_measures). Absent/empty for an uncalibrated image.
+        self.physical_sizes      = params.get("physicalSizes") or None
         self.max_lost            = params["maxLost"]
         self.track_branching     = bool(params["trackBranching"])
         self.min_timepoints      = params["minTimepoints"]
@@ -126,6 +132,24 @@ class BayesianTrackingUtils:
         y = df["centroid_y"].to_numpy(dtype=np.float64)
         z = (df["centroid_z"].to_numpy(dtype=np.float64)
              if "centroid_z" in df.columns else np.zeros_like(labels, dtype=np.float64))
+
+        # ── pixels → µm ─────────────────────────────────────────────────────────────
+        # Scaling the COORDINATES, not each spatial param, for two reasons.
+        #
+        # 1. It makes every distance param physical at once — `maxSearchRadius`, `distThresh`,
+        #    `thetaDist` — and any added later, with one conversion rather than one per param.
+        #    `track_measures` already reports µm/min from the same `img_physical_sizes`, so the
+        #    linking and the measures computed on its own output now share a coordinate system;
+        #    they did not, which is how "radius 8" and "a 8 µm jump" could both be true.
+        # 2. It fixes Z ANISOTROPY, which no per-param conversion can. On this data a voxel is
+        #    ~0.33 µm in XY and 2 µm in Z, so in pixel space btrack scored a one-plane hop as
+        #    0.33 µm of motion when it is 2 µm — a 6x under-count, and exactly the direction that
+        #    links cells at different depths. In µm the axes are commensurate by construction.
+        #
+        # No sizes (an image with no calibration) → unscaled, i.e. the old pixel behaviour, rather
+        # than a silent factor of 1 pretending to be microns.
+        sz, sy, sx = (self.physical_sizes if self.physical_sizes else (1.0, 1.0, 1.0))
+        x, y, z = x * sx, y * sy, z * sz
 
         return pd.DataFrame({"t": t, "x": x, "y": y, "z": z, "label_id": labels})
 

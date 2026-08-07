@@ -80,10 +80,30 @@ just cells with `track_id` present (the old `live` filter `track_id > 0`).
 - **Timecourse required.** Tracking needs `obsm['temporal']` + `uns['temporal_cols']`
   containing `t`. The runner raises a clear error on a single-timepoint segmentation. The
   `B.h5ad` fixture has 20 timepoints and can be used for end-to-end btrack verification.
-- **Pixel-space tracking.** Centroids are fed to btrack in **pixel** coordinates (no
-  physical-unit scaling), so `maxSearchRadius` is in pixels (matches the UI label). The old
-  module scaled by `omeXMLPixelRes`; we deferred that. For anisotropic-Z 3D data this may
-  need physical pixel sizes passed from Julia later.
+- **µm-space tracking (2026-08-07).** Centroids are scaled to **µm** before btrack sees them
+  — `physicalSizes` from `img_physical_sizes`, skimage order `[sz, sy, sx]`, the same
+  accessor `track_measures`, `cellNeighbours` and the mesh tasks already use. Every distance
+  param is therefore µm: `maxSearchRadius` (default **20**, ~T cell), `distThresh`,
+  `thetaDist`. Time stays in **frames** (`maxLost`, `timeThresh`) because btrack's `t` is a
+  frame index.
+
+  It was pixels until then, and tracking was the ONLY spatial task not calling
+  `img_physical_sizes` — so the linking ran in pixels while `track_measures` reported µm/min
+  on its own output. One pipeline, two coordinate systems.
+
+  **Scaling the coordinates, not each param**, for a reason no per-param conversion could
+  reach: at 0.33 µm XY and 2 µm Z, pixel space scored a one-plane hop as 0.33 µm of motion
+  when it is 2 µm — a **6× under-count**, in exactly the direction that links cells at
+  different depths. In µm the axes are commensurate by construction.
+
+  **This reinterprets saved values.** `maxSearchRadius = 20` used to mean 20 px (6.6 µm at
+  0.33 µm/px) and now means 20 µm — ~3× looser in XY, stricter in Z. The DEFAULTS did not
+  change numerically (20/10/5), which preserves their tuned ratios but makes the change
+  invisible on the form. Same class as the `minCellSize`/`labelExpansion` µm migration.
+  3D results will not reproduce; re-run to regenerate.
+
+  An image with no calibration falls back to unscaled — old pixel behaviour — rather than
+  pretending 1 px = 1 µm.
 - **btrack runs TWO phases, and different params bound each.** `tracker.track()` links
   frame to frame under `maxSearchRadius` (per STEP) and `maxLost`. Then
   `tracker.optimize()` runs the global hypothesis optimiser, which **joins finished track

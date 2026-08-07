@@ -31,13 +31,13 @@
     },
     {
       "key": "maxSearchRadius",
-      "label": "Max search radius (px)",
+      "label": "Max search radius (µm)",
       "type": "int",
       "min": 1,
       "max": 200,
       "step": 1,
       "default": 20,
-      "tip": "Furthest a cell may move between consecutive frames; bounds XY only"
+      "tip": "Furthest a cell may move between consecutive frames; ~20 for T cells"
     },
     {
       "key": "maxLost",
@@ -124,13 +124,13 @@
         },
         {
           "key": "distThresh",
-          "label": "Distance threshold",
+          "label": "Distance threshold (µm)",
           "type": "float",
           "min": 1,
           "max": 50,
           "step": 0.2,
           "default": 10,
-          "tip": "Furthest apart two track ends may be joined (px)"
+          "tip": "Furthest apart two track ends may be joined"
         },
         {
           "key": "timeThresh",
@@ -204,13 +204,13 @@
         },
         {
           "key": "thetaDist",
-          "label": "Theta dist",
+          "label": "Theta dist (µm)",
           "type": "float",
           "min": 1,
           "max": 50,
           "step": 0.2,
           "default": 5,
-          "tip": "Distance (px) at which a join becomes unlikely; shapes the score, not a limit"
+          "tip": "Distance at which a join becomes unlikely; shapes the score, not a limit"
         }
       ]
     }
