@@ -136,6 +136,7 @@ const ERROR_SHORT: Record<string, string> = {
   'no-region':              'No region to preview',
   'params-not-previewable': 'Params not usable',
   'timeout':                'Preview timed out',
+  'no-preview-backend':     'Not previewable',
 }
 
 /**
@@ -205,9 +206,20 @@ export function previewNotice(
   error: { message?: string; code?: string } | null,
 ): PreviewNotice {
   if (error?.message) {
+    // A CODED error is one the backend wrote deliberately, for a user, about a situation they can
+    // do something about — "the viewer has a different version open". Its message is the detail,
+    // because the backend knows things the UI does not.
+    //
+    // An UNCODED one is an exception that escaped, and its text is written for whoever debugs it:
+    // a preview-worker dispatch failure put `ValueError: no preview backend for
+    // 'segment.coastalMeasure'; known: ['cleanupImages.afCorrect', …]` — a repr'd Python list — into
+    // a tooltip. That is not copy, and no amount of it helps the person reading it. The raw text
+    // still reaches the log (`previewLogEntry` above), which is where it belongs.
+    const code = error.code ?? ''
+    const known = Object.prototype.hasOwnProperty.call(ERROR_SHORT, code)
     return {
-      short: ERROR_SHORT[error.code ?? ''] ?? 'Preview failed',
-      detail: error.message,
+      short: known ? ERROR_SHORT[code]! : 'Preview failed',
+      detail: known ? error.message : 'Unexpected error — see the log',
       warn: true,
     }
   }

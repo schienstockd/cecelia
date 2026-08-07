@@ -27,9 +27,45 @@ describe('modelDetailGroups', () => {
     expect(groupNames({ lossCurves: { total: [3, 2] } })).toEqual([])
   })
 
-  it('spells the middle Z plane out', () => {
+  // Models trained before `zPlanes` are still in people's vaults, and the modal has to keep
+  // describing them rather than dropping the row.
+  it('spells the middle Z plane out for a pre-zPlanes model', () => {
     expect(fieldsOf({ zSlice: -1 }, 'Input')['Z plane']).toBe('middle')
     expect(fieldsOf({ zSlice: 12 }, 'Input')['Z plane']).toBe('12')
+  })
+
+  it('reports the plane count and the indices behind it', () => {
+    const one = fieldsOf({ zPlanes: 1, zPlanesUsed: { a: [15], b: [15] } }, 'Input')
+    expect(one['Z planes']).toBe('1 (middle)')
+    // Every movie agreed, so one list — repeating it per uID would be noise.
+    expect(one.Planes).toBe('[15]')
+  })
+
+  it('names the movies when they disagree about which planes — "3 planes" is not a depth', () => {
+    expect(fieldsOf({ zPlanes: 3, zPlanesUsed: { deep: [5, 15, 25], shallow: [1, 4, 7] } },
+                    'Input').Planes)
+      .toBe('deep: [5, 15, 25]  shallow: [1, 4, 7]')
+  })
+
+  it('says nothing about planes for a 2D model rather than showing an empty row', () => {
+    expect(fieldsOf({ zPlanes: 1, zPlanesUsed: {} }, 'Input')).toEqual({ 'Z planes': '1 (middle)' })
+  })
+
+  // The frame cap is invisible in `nFrames` — a pooled total cannot say whether a movie was cut or
+  // simply short, and the window is seed-derived so it is not recoverable by inspection either.
+  it('reports the frame cap, spelling out an uncapped run rather than showing 0', () => {
+    expect(fieldsOf({ maxFrames: 0 }, 'Source')['Max frames/movie']).toBe('all')
+    expect(fieldsOf({ maxFrames: 50 }, 'Source')['Max frames/movie']).toBe('50')
+  })
+
+  it('names the movies that were actually cut, and their windows', () => {
+    expect(fieldsOf({ maxFrames: 50, frameWindows: { long: [40, 90] } }, 'Source')['Windows (1)'])
+      .toBe('long: 40–89')
+  })
+
+  it('shows no window row when nothing was cut', () => {
+    expect(fieldsOf({ maxFrames: 50, frameWindows: {} }, 'Source'))
+      .toEqual({ 'Max frames/movie': '50' })
   })
 
   it('says "none" when a model kept every metric, and lists them when it did not', () => {

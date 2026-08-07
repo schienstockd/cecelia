@@ -347,6 +347,93 @@ min/max. `normaliseToWhole` supplies that statistic; the projection then pins co
 to the same range. With it off, every tile gets its own scale — the patchiness the option exists to
 prevent, plus a train/inference mismatch on the structure-tensor planes.
 
+**Training reads `zPlanes` planes per movie, and each is its own sequence.** Motion exists within one
+recording of one plane; flow between plane *k* and plane *k+1* of the same timepoint is not motion,
+so a (movie × plane) pair is a sequence and metrics are computed per sequence before pooling. The
+planes are the centres of `zPlanes` equal bins, which puts `zPlanes = 1` on `n_z // 2` (the old
+single-plane rule, unchanged) and keeps larger counts off plane 0 and `n_z - 1` — the top and bottom
+of an intravital stack are usually outside the tissue, and `linspace` would spend two of five planes
+there. Indices are resolved per movie, since depth is: the manifest records the count as `zPlanes`
+and the actual indices per image as `zPlanesUsed`, because "3 planes" of a 31-deep stack and of a
+9-deep one are different tissue.
+
+Pooled frames are movies × planes × timepoints and the metric stack is ~11–15 float32 planes per
+frame, so the plane count is a straight memory multiplier.
+
+**`maxFrames` caps what each movie contributes, because pooling is otherwise weighted by recording
+length.** A 200-frame movie contributes ~7× what a 30-frame one does, so without a cap the model is
+mostly fitted to whichever image the microscope was left on longest — and nothing showed it, since
+the frame count is a single pooled number. The window is **contiguous** (the metrics are temporal;
+a random subset of frames is not a shorter movie, it is a movie with the motion taken out) and its
+start is **derived from the seed and the movie index** — reproducible from the manifest, different
+across runs, and stable when images are added or reordered. Always starting at frame 0 would sample
+one part of every experiment, as often as not before the interesting event.
+
+Two ordering constraints, both silent when broken:
+
+- **Normalise over the whole movie, then cut.** The percentiles are the global statistic
+  `normaliseToWhole` reproduces at inference. Cutting first would scale a 50-frame window by its own
+  percentiles while inference scales the 200-frame movie by the movie's — the same structure at a
+  different brightness.
+- **Check `max(scales) + 1` against the CAPPED length.** A 200-frame movie capped to 5 produces no
+  `mag_8` plane, which corrupts the pooled channel layout exactly as a genuinely short movie would.
+
+The manifest records `maxFrames` and `frameWindows` (uID → `[start, stop)`, only for the movies
+actually cut).
+
+**`trainRatio` holds part of every sequence back, and without it the loss curve cannot be read.** A
+training loss is measured on the frames the weights were just fitted to, so it goes down whether the
+model learned what a cell looks like or memorised these frames. With a split, coastal evaluates every
+term on the held-out frames each epoch (no grad, no augmentation) and the manifest's `lossCurves`
+gains a `val_<term>` beside each one; the **gap** between the pair is the reading.
+
+The split is `train_test_split_per_movie`, which cuts *within* each sequence — so every movie and
+every Z plane appears on both sides. Holding whole movies out would ask "does this transfer to
+another recording", a different and much harder question. The held-out frames are the tail of each
+sequence, a stretch the optimiser never saw.
+
+One honest caveat: the metrics are computed over the full sequence *before* the split, so a held-out
+frame's flow metrics derive partly from frames that ended up in training — roughly `max(scales)`
+frames of overlap at the seam. That is not label leakage (coastal is unsupervised; there are no
+labels) and the held-out frames themselves never reach the optimiser, which is what the comparison
+rests on. Computing the metrics per side instead would change the metrics at *both* seams, which is
+worse.
+
+**Two canvas plots, one route.** `POST /api/optical-flow/inspect` answers with the metric planes
+when no model is given and with the model's probability map when one is. Same window, same
+projection, same metric build — one forward pass is the only difference — so they share the route and
+the request machinery (`useFlowPlanes`) rather than getting a second copy of the geometry that could
+drift from what a run is fed.
+
+| Plot | Question | Model |
+|---|---|---|
+| **Flow metrics** | which of these look like cells, i.e. what should I train on | none, deliberately — the question predates any checkpoint |
+| **Model probability** | did it learn to tell cell from background | the vault's selection, honouring global/local scope |
+
+Both carry an **image-version selector**, and its default differs on purpose. The metric sheet has no
+model, so it defaults to the image's ACTIVE version — what a task form resolves to and what the viewer
+shows. The probability plot defaults to the version the MODEL was trained on, read from its manifest's
+`sourceValueName`, because that is by definition the right input; pick another and the panel says
+"not trained input". Both hardcoded `default` until 2026-08-07, which fed a model trained on a denoised
+movie the raw import — a different photometric world, with nothing on screen saying so.
+
+Neither shows instances: those are segmentation output, the Segment page previews them through the
+normal path, and a threshold plus a growing step hides exactly what the probability map is for.
+`predict_frame` returns `(prob_map, instances, props)` and a run discards the first
+(`CoastalUtils._predict_plane`), so the worker's `opticalFlow.probability` backend is the only place
+that value is looked at.
+
+Progress is reported over one monotonic scale — a tick per movie prepared, one for the flow metrics,
+then one per epoch through coastal's `on_epoch`. The phases are wildly unequal in wall-clock (metrics
+is a single tick and minutes long) so the bar does not move smoothly; weighting them would be a guess
+dressed up as a measurement. Before this the task emitted no `[PROGRESS]` at all, so a run of tens of
+minutes was indistinguishable from a wedged one.
+
+The convergence plot draws each `val_` curve dashed in the same colour as its term — the only thing
+read off a validation curve is its distance from its own training line, and a second colour would
+make that a legend lookup. QC banks `valFinalLoss`/`valLossDrop` and warns when the held-out loss
+does not come down even though the training loss did.
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the
@@ -369,9 +456,17 @@ evidence:
   area roughly halves. A clean border on a cell too small to be a cell is a worse answer than an ugly
   border on the right one. Confirmed by eye in napari across four label versions.
 
-So coastal defaults to `labelSmoothing` **1.5** — cosmetic, honest about being cosmetic, and it keeps
-the size. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
-changing a shipped task's default would alter existing pipelines.
+So coastal defaults to `labelSmoothing` **0.5** — cosmetic, honest about being cosmetic, and it keeps
+the size. (This paragraph read 1.5 until 2026-08-07. The shipped spec has always been 0.5 and 0.5 is
+the intended value: the doc was wrong, not the spec.)
+
+`embeddingBlurSigma` defaults to the calibrated **1.5** (2026-08-07) — the lowest σ in the table above
+and the one holding cell size closest to the expected ~11 µm, and independently coastal's own tuned
+`embedding_blur_sigma` for both passes. `probBlurSigma` stays at **0**: the same measurement shows it
+makes the border *worse*, so its calibrated value is off.
+
+Cellpose keeps `labelSmoothing` 0.0: it has no growing frontier and therefore not this failure mode,
+and changing a shipped task's default would alter existing pipelines.
 
 **Coastal's spatial params are in MICRONS, not pixels.** A seed window or a blur radius describes a
 CELL, so the same number has to mean the same biology on every image of a set — a px value silently

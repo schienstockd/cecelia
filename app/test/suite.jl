@@ -483,6 +483,29 @@ end
     # no history parsed → no claim either way
     @test isempty(flow_training_qc_findings(Dict{String,Any}("epochs" => 30)))
     @test isempty(flow_training_qc_findings(Dict{String,Any}("lossDrop" => NaN)))
+
+    # The held-out arm. This is the case the training curve CANNOT see: the loss drops 3.4x on the
+    # frames the weights were fitted to while the held-out loss goes nowhere — a model fitting these
+    # frames rather than learning what a cell looks like.
+    memorised = flow_training_qc_findings(Dict{String,Any}(
+        "finalLoss" => 0.2, "lossDrop" => 3.4, "valLossDrop" => 0.99,
+        "valFinalLoss" => 0.9, "epochs" => 30))
+    @test length(memorised) == 1
+    @test memorised[1]["code"] == "opticalFlow.val_loss_flat"
+    @test memorised[1]["level"] == "warn"
+    @test memorised[1]["detail"]["valLossDrop"] == 0.99
+    @test !occursin("0.99", memorised[1]["long"])
+
+    # both flat = both findings, in order
+    @test [f["code"] for f in flow_training_qc_findings(
+        Dict{String,Any}("lossDrop" => 0.9, "valLossDrop" => 0.9))] ==
+        ["opticalFlow.loss_flat", "opticalFlow.val_loss_flat"]
+
+    # a run with no split says nothing about generalising, rather than passing it silently
+    @test isempty(flow_training_qc_findings(
+        Dict{String,Any}("finalLoss" => 0.2, "lossDrop" => 3.4)))
+    @test isempty(flow_training_qc_findings(
+        Dict{String,Any}("lossDrop" => 3.4, "valLossDrop" => 2.1)))
 end
 
 # `_task_spec` runs `_inject_dynamic_options!` for CellposeSegment on every call, so a

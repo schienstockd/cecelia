@@ -156,7 +156,12 @@ def _cellpose_imports():
 #:    PNGs, which reads as "the colormap setting does nothing" with no error anywhere.
 #: 9: `opticalFlow.inspect` is pre-training only — no model, no probability plane. An adopted
 #:    protocol-8 worker would still emit `probability` for a request that no longer asks for one.
-PROTOCOL = 9
+#: 10: two new backends — `opticalFlow.probability` (the model's prob map, post-training) and
+#:    `segment.coastalMeasure` (the composite the Segment page actually runs). Backend-set changes
+#:    need the bump for the reason the header gives: an adopted older worker ignores what it has
+#:    never heard of and fails with "no preview backend", which reads as a broken button rather than
+#:    a stale process.
+PROTOCOL = 10
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -608,8 +613,22 @@ def _preview_flow_inspect(ctx):
     is built by the same `CoastalUtils` the real run uses, so these are the planes a run is actually
     fed. Returns `planes`, not `layers`: canvas plots, nothing near napari.
     """
+    seg, mp, frame, metrics, scales = _flow_frame_and_metrics(ctx)
+    planes = [('input (projected)', frame)] + [(k, metrics[k]) for k in sorted(metrics)]
+    return {**_planes_reply(ctx, planes),
+            'metricKeys': sorted(metrics),
+            'temporalScales': list(scales)}
+
+
+def _flow_frame_and_metrics(ctx):
+    """`(seg, model_params, frame, metrics, scales)` for the timepoint in view.
+
+    Shared by the metric sheet and the probability map because it must be: both claim to show what a
+    RUN is fed, and two copies of the window/projection/metric build would be two chances to drift
+    from `CoastalUtils` — the exact silent-misalignment failure the metric-set contract exists to
+    prevent. One path, used by both, and it is the run's own.
+    """
     from cecelia.utils.coastal_utils import temporal_config
-    from cecelia.utils.plane_render import DEFAULT_COLORMAP, plane_png
 
     models = ctx.params.get('models') or {}
     if not models:
@@ -619,7 +638,7 @@ def _preview_flow_inspect(ctx):
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     mp = models[sorted(models.keys())[0]]
-    scales, cumulative, _dropped = temporal_config(seg._manifest(mp))
+    scales, cumulative, dropped = temporal_config(seg._manifest(mp))
 
     t_now = int(ctx.bounds.get('T', (0, 1))[0])
     n_t = int(ctx.axis_len.get('T', 1))
@@ -634,16 +653,45 @@ def _preview_flow_inspect(ctx):
 
     window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
     frame, metrics = seg._flow_metrics(window, t_now - lo, scales, cumulative)
+    if dropped:
+        # The model's OWN dropped set, from its manifest. Keeping a plane the model was not trained
+        # on would show a sheet that does not match the channels it is fed.
+        metrics = {k: v for k, v in metrics.items() if k not in dropped}
+    return seg, mp, frame, metrics, scales
 
-    planes = [('input (projected)', frame)] + [(k, metrics[k]) for k in sorted(metrics)]
 
+def _planes_reply(ctx, planes):
+    """`{planes: [{name, png}]}` — the canvas-plot envelope. No layers, nothing near napari."""
+    from cecelia.utils.plane_render import DEFAULT_COLORMAP, plane_png
     cmap = str(ctx.params.get('colormap') or DEFAULT_COLORMAP)
-    return {
-        'planes': [{'name': n, 'png': base64.b64encode(plane_png(a, colormap=cmap)).decode('ascii')}
-                   for n, a in planes],
-        'metricKeys': sorted(metrics),
-        'temporalScales': list(scales),
-    }
+    return {'planes': [{'name': n,
+                        'png': base64.b64encode(plane_png(a, colormap=cmap)).decode('ascii')}
+                       for n, a in planes]}
+
+
+def _preview_flow_probability(ctx):
+    """"How good is this model" — the projected input beside the model's probability map.
+
+    The POST-training counterpart to `_preview_flow_inspect`, and deliberately a separate view: that
+    one is asked before a model exists and must not take one (a model picker there turned "what
+    should I train on" into "what did I train"). This one is meaningless without a checkpoint.
+
+    Two planes only. Not instances — those are segmentation output and the Segment page previews them
+    through the normal preview path; the question here is whether the model learned to tell cell from
+    background at all, which is exactly what the probability map shows and what instances hide behind
+    a threshold and a growing step.
+
+    `predict_frame` returns `(prob_map, instances, props)` and the run throws the first away
+    (`CoastalUtils._predict_plane`), so this is the one place it is looked at.
+    """
+    seg, mp, frame, metrics, _scales = _flow_frame_and_metrics(ctx)
+    # `_get_inference` is the run's own accessor and it CACHES per model — so scrubbing t or z
+    # re-runs the network but does not rebuild it, which is what makes this fast enough to be a
+    # canvas plot rather than a job.
+    prob, _instances, _props = seg._get_inference(mp).predict_frame(frame, metrics)
+    return {**_planes_reply(ctx, [('input (projected)', frame),
+                                 ('probability', np.asarray(prob, dtype=np.float32))]),
+            'metricKeys': sorted(metrics)}
 
 
 def _preview_af(ctx):
@@ -702,11 +750,19 @@ def _preview_af(ctx):
 
 #: fun_name → the compute that previews it. A task absent here is not previewable, which the Julia
 #: side already declares via `task_previewable` — this is the other half of the same statement.
+# A COMPOSITE needs its own entry, mapped to the backend of the step a preview actually runs. The
+# module pages run the composites (`segment.cellposeMeasure`, `segment.coastalMeasure`), not the bare
+# segmenters, so a composite missing here is not a corner case — it is the preview button being dead
+# on the page people use. This has now shipped broken twice for exactly that reason, so the pairing is
+# asserted by `test_preview_backends_cover_composites.py` rather than left to whoever adds the next
+# composite noticing that this file exists.
 _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
     'segment.coastal': _preview_coastal,
+    'segment.coastalMeasure': _preview_coastal,
     'opticalFlow.inspect': _preview_flow_inspect,
+    'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.afDriftCorrect': _preview_af,
 }

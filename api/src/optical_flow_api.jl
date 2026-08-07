@@ -76,13 +76,21 @@ function api_optical_flow_delete(body_bytes::Vector{UInt8})
 end
 
 # ── Flow metric planes for the canvas panel ─────────────────────────────────────
-# "What goes INTO a model": every flow metric plane for one timepoint, as PNGs the browser can show,
-# so the user can see which look like cells before choosing what to train on. NO MODEL is involved —
-# the metrics are a property of the movie, the channels and the temporal scales, and the question is
-# asked before a model exists. The empty model group below is only what `CoastalUtils` needs to carry
-# the channels and the scales.
+# TWO VIEWS, one route, chosen by whether a `model` is given.
 #
-# No instances either: those are segmentation output and the Segment page previews them already.
+# Without one — "what goes INTO a model": every flow metric plane for one timepoint, as PNGs the
+# browser can show, so the user can see which look like cells before choosing what to train on. NO
+# MODEL is involved, deliberately: the metrics are a property of the movie, the channels and the
+# temporal scales, and the question is asked before a model exists. The empty model group below is
+# only what `CoastalUtils` needs to carry the channels and the scales.
+#
+# With one — "did it learn": the projected input beside that model's probability map. Same window,
+# same projection, same metric build, one forward pass on the end. It shares this route because
+# everything except that pass is identical, and a second route would be a second chance for the
+# geometry or the normalisation to drift from what a run is fed — which is the whole reason these
+# views are worth showing.
+#
+# No instances either way: those are segmentation output and the Segment page previews them already.
 # These are CANVAS PLOTS — nothing here touches napari.
 #
 # Deliberately NOT `api_preview_run`. That route exists to keep the viewer honest: it refuses unless
@@ -107,8 +115,15 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     err === nothing || return 404, JSON3.write((; error = err))
 
     raw = read_ccid_raw(state_file(joinpath(projects_dir(), project_uid), image_uid))
+    # A MODEL turns this route into the probability view. Same window, same projection, same metric
+    # build — the only difference is one forward pass and two planes instead of fifteen, so it shares
+    # the route rather than duplicating the geometry and the worker plumbing. With no model the
+    # question is pre-training ("which of these look like cells") and no checkpoint may be involved;
+    # with one it is post-training ("did it learn"), and a checkpoint is the whole point.
+    model = String(get(data, "model", ""))
+    want_prob = !isempty(model)
     models = Dict{String,Any}("0" => Dict{String,Any}(
-        "model"        => "",
+        "model"        => model,
         "matchAs"      => "base",
         "cellChannels" => get(data, "cellChannels", Any[])))
     # These ARE the feature set: with no model, `CoastalUtils._manifest` falls back to the group's own
@@ -126,7 +141,8 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     prepared = try
         Dict{String,Any}("valueName" => value_name, "normaliseToWhole" => true,
                          "colormap" => params["colormap"],
-                         "models" => coastal_models_for_python(params, raw; require_model = false))
+                         "models" => coastal_models_for_python(params, raw;
+                                                               require_model = want_prob))
     catch e
         return 400, JSON3.write((; error = e isa ErrorException ? e.msg : sprint(showerror, e),
                                    code = "params-not-previewable"))
@@ -145,8 +161,10 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     # ONE z plane, resolved here rather than passed through as `nothing`. `preview_region_bounds`
     # skips an axis it is given nothing for, so a null z hands the worker the WHOLE stack — which
     # then fails in `_as_cyx` with a reshape error about a size nothing in the request mentions.
-    # The default is the middle plane because that is what training reads (`_training_sequence`:
-    # `n_z // 2`), so the sheet shows the planes the model was actually fed.
+    # The default is the middle plane, which is where a single-plane training run reads
+    # (`train_run.z_planes(n_z, 1)` == `n_z // 2`). With `zPlanes > 1` a run spreads over the stack,
+    # so there is no one plane to default to — but this sheet is asked BEFORE a model exists and its
+    # question is "do these metrics look like cells here", which the slider answers by being moved.
     z_req = get(data, "z", nothing)
     z_idx = if haskey(d, "z")
         n_z = size(arr, d["z"])
@@ -168,7 +186,9 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
             w = _preview()
             w === nothing && error("preview worker is not running")
             send(w, preview_request(String(zp), String(task_dir), prepared, region;
-                                    value_name = value_name, fun_name = "opticalFlow.inspect",
+                                    value_name = value_name,
+                                    fun_name = want_prob ? "opticalFlow.probability"
+                                                         : "opticalFlow.inspect",
                                     channel_names = ccid_channel_names(raw)))
         end
     catch e

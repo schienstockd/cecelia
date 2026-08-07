@@ -28,8 +28,9 @@ describe('interactive view surface flags', () => {
   })
 
   it('the flow views are offered on their module page AND the board', () => {
-    expect(pageViews('opticalFlowPage').map(v => v.key)).toEqual(['flowMetrics', 'flowTraining'])
-    for (const k of ['flowMetrics', 'flowTraining'])
+    expect(pageViews('opticalFlowPage').map(v => v.key))
+      .toEqual(['flowMetrics', 'flowTraining', 'flowProbability'])
+    for (const k of ['flowMetrics', 'flowTraining', 'flowProbability'])
       expect(boardViews('interactive').map(v => v.key)).toContain(k)
   })
 

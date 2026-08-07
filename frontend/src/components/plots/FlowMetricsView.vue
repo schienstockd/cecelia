@@ -29,19 +29,15 @@
   data is. Nothing here touches napari.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, watch } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
-import { debouncedLatest, type RunState } from '../../utils/debouncedLatest'
-import { PREVIEW_DEBOUNCE_MS } from '../../utils/taskPreview'
+import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 
-interface Plane { name: string; png: string }
-interface FlowState {
-  imageUid?: string; valueName?: string
-  channels?: string[]; t?: number; z?: number | null
-  scales?: string[]                     // temporal scales — only used when no model is picked
+interface FlowState extends FlowPlaneState {
+  scales?: string[]                     // temporal scales — this sheet's own choice
   show?: string[]                       // which planes are visible, by name
-  colormap?: string
 }
 
 const props = defineProps<{ projectUid: string; imageUids?: string[]; state: FlowState }>()
@@ -54,14 +50,27 @@ const SCALE_OPTIONS: ChipOption[] = ['1', '2', '3', '4', '6', '8', '12', '16']
 
 const COLORMAPS = ['viridis', 'magma', 'grey']
 
-const planes = ref<Plane[]>([])
-const extent = ref({ t: 1, z: 1 })       // slider bounds, from the image's own geometry
-const runState = ref<RunState>('idle')
-const loading = computed(() => runState.value !== 'idle')
-const starting = ref(false)
-const error = ref('')
-
 const state = computed(() => props.state)
+
+// Which image version the metrics are computed on. Same bug as the probability plot had: this was
+// hardcoded to `default`, so the sheet showed flow over the RAW import while a model is trained on the
+// denoised one — a different photometric world, and nothing said so. No model here to name the right
+// version, so the default is the image's ACTIVE one, matching what a task form resolves to
+// (`preferredValueName`) and what the viewer shows.
+const image = computed(() =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid))
+const versionOptions = computed<string[]>(() => Object.keys(image.value?.filepaths ?? {}))
+const valueName = computed({
+  get: () => state.value.valueName ?? '',
+  set: v => (state.value.valueName = v),
+})
+watch(versionOptions, opts => {
+  if (!opts.length) return
+  if (state.value.valueName && opts.includes(state.value.valueName)) return
+  state.value.valueName = image.value?.activeValueName && opts.includes(image.value.activeValueName)
+    ? image.value.activeValueName : opts[0]
+}, { immediate: true })
+
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })
 // z is nullable — empty means "the middle plane", which is what training reads. The slider needs a
 // number, so it shows the middle until the user moves it.
@@ -111,102 +120,23 @@ watch(imageChannels, avail => {
   if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = [...avail]
 }, { immediate: true })
 
-// The whole request, as of the moment it is built. Every control feeds this ONE object, and it is
-// what gets scheduled — so the run that eventually fires carries the settings the user had when they
-// stopped moving, not whatever the refs happen to hold when the timer expires.
-interface InspectRequest {
-  projectUid: string; imageUid: string; valueName: string
-  cellChannels: string[]; t: number; z: number | null
-  temporalScales: number[]; colormap: string
-}
-const inspectRequest = computed<InspectRequest | null>(() => state.value.imageUid ? {
+// The request. `temporalScales` is this sheet's own control — the metric planes depend on it, and
+// no model is involved to carry them (see the header).
+const request = computed<FlowRequest | null>(() => state.value.imageUid ? {
   projectUid: props.projectUid, imageUid: state.value.imageUid,
-  valueName: state.value.valueName ?? 'default',
+  valueName: state.value.valueName || 'default',
   cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
-  temporalScales: scales.value.map(Number), colormap: colormap.value,
+  colormap: colormap.value, temporalScales: scales.value.map(Number),
 } : null)
 
-// The worker pays ~18 s of torch imports on first use and answers 202 `starting` until it is up.
-// Telling the user to "try again in a moment" and stopping made the panel look broken for a minute,
-// so we wait for it — bounded, and with the wait visible rather than a frozen spinner.
-const RETRY_MS = 1500
-const MAX_WAIT_MS = 120_000
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+const { planes, extent, runState, loading, showSpinner, starting, error, load } =
+  useFlowPlanes(state, request)
 
-// Debounced, latest-wins — the same scheduler the task preview uses, for the same reason. A slider
-// drag emits an event per pixel and each one is a real flow computation in the worker, so firing per
-// event queued a dozen runs whose results then LANDED ONE BY ONE: the sheet visibly flipped through
-// every timepoint the user had scrubbed past, seconds after they stopped. Two rules fix it and both
-// are needed — the debounce collapses the burst, and `isCurrent()` stops a run that was already in
-// flight from painting its (now stale) planes over the one the user is waiting for. Without the
-// guard, whichever request happened to finish last would win, which is not the same as the latest.
-const scheduler = debouncedLatest<InspectRequest>(async (req, isCurrent) => {
-  error.value = ''
-  for (let waited = 0; ; waited += RETRY_MS) {
-    const r = await fetch('/api/optical-flow/inspect', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
-    })
-    const d = await r.json()
-    // superseded while the worker computed — neither the planes NOR an error belong to the current
-    // settings any more, so nothing here is applied
-    if (!isCurrent()) return
-    if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
-    if (!d.starting) {
-      starting.value = false
-      planes.value = d.planes ?? []
-      // Show everything by default — a contact sheet you have to unhide plane by plane answers
-      // nothing. The chips are for narrowing once you know what you're looking at.
-      if (!state.value.show) state.value.show = planes.value.map(p => p.name)
-      return
-    }
-    if (waited >= MAX_WAIT_MS) throw new Error('Preview worker did not start.')
-    starting.value = true
-    await sleep(RETRY_MS)
-    if (!isCurrent()) return
-  }
-}, {
-  wait: PREVIEW_DEBOUNCE_MS,
-  onState: s => { runState.value = s },
-  onError: e => {
-    starting.value = false
-    error.value = e instanceof Error ? e.message : String(e)
-  },
+// Show everything by default — a contact sheet you have to unhide plane by plane answers nothing.
+// The chips are for narrowing once you know what you are looking at.
+watch(planes, ps => {
+  if (ps.length && !state.value.show) state.value.show = ps.map(p => p.name)
 })
-onBeforeUnmount(() => scheduler.cancel())
-
-/** Run now, skipping the debounce — the refresh button and the first paint. */
-function load() {
-  if (!inspectRequest.value) return
-  scheduler.schedule(inspectRequest.value)
-  scheduler.flush()
-}
-
-// Slider bounds come from the ONE geometry route (`api/src/image_geometry.jl`), per VERSION — the
-// active version can be a different shape from `default`, so the valueName has to travel with the
-// question or the sliders end past the end of the store being read.
-async function loadExtent() {
-  if (!state.value.imageUid) return
-  try {
-    const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: state.value.imageUid,
-                                    valueName: state.value.valueName ?? 'default' })
-    const r = await fetch(`/api/images/geometry?${q}`)
-    if (!r.ok) return
-    const g = await r.json()
-    extent.value = { t: Math.max(1, g.sizeT ?? 1), z: Math.max(1, g.sizeZ ?? 1) }
-  } catch { /* the sliders just keep their previous bounds */ }
-}
-
-// The extent is NOT awaited before the first load: it only sets the slider bounds, and the request
-// sends `z: null` for "the middle plane" (the server resolves it), so the two are independent. When
-// they were sequential, a slow geometry call let the debounce timer expire first and the panel made
-// two requests on mount for the same picture.
-onMounted(() => { void loadExtent(); load() })
-watch(() => state.value.imageUid, loadExtent)
-// One watch over the whole request object: any control that changes it schedules a run, and the
-// scheduler decides when. A new object identity per change is exactly the trigger we want.
-watch(inspectRequest, req => { if (req) scheduler.schedule(req) })
-
 
 // Follow the host: seed the first image, and drop a pick that has left the selection (else the panel
 // keeps rendering an image the page no longer shows).
@@ -232,6 +162,10 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
           <option value="" disabled>Image…</option>
           <option v-for="o in imageOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
+        <select v-if="versionOptions.length > 1" class="select-input fmv-ver" v-model="valueName"
+                v-tooltip.top="'Image version the metrics are computed on'">
+          <option v-for="v in versionOptions" :key="v" :value="v">{{ v }}</option>
+        </select>
         <select class="select-input fmv-cmap" v-model="colormap"
                 v-tooltip.top="'Colour map for every plane'">
           <option v-for="c in COLORMAPS" :key="c" :value="c">{{ c }}</option>
@@ -255,7 +189,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
           <span class="cc-readout cc-fs-xs fmv-val">{{ t }}/{{ extent.t - 1 }}</span>
         </label>
         <label v-if="extent.z > 1" class="cc-row-group fmv-slider"
-               v-tooltip.top="'Z plane — the middle is what training reads'">
+               v-tooltip.top="'Z plane'">
           <span class="cc-muted cc-fs-xs fmv-axis">z</span>
           <input type="range" class="slider" min="0" :max="extent.z - 1" step="1" :value="z"
                  @input="z = Number(($event.target as HTMLInputElement).value)" />
@@ -289,12 +223,16 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
       Pick an image and a channel to see the flow metrics.
     </p>
 
-    <div class="fmv-grid">
+    <div class="fmv-grid" :class="{ 'planes-stale': showSpinner }">
       <figure v-for="p in shown" :key="p.name">
         <img :src="`data:image/png;base64,${p.png}`" :alt="p.name" />
         <figcaption class="cc-muted">{{ p.name }}</figcaption>
       </figure>
     </div>
+
+    <!-- Delayed, so it never flashes on a fast render (docs/UI.md → Plot loading state). The panel is
+         `position: relative`, which is what this overlay fills. -->
+    <PlotSpinner v-if="showSpinner" label="Rendering…" />
   </div>
 </template>
 
@@ -306,6 +244,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 .fmv-bar { flex-wrap: wrap; }
 .fmv-scales { flex-wrap: wrap; gap: 0.4rem; }
 .fmv-cmap { max-width: 8rem; }
+.fmv-ver { max-width: 10rem; }
 .fmv-sliders { gap: 0.8rem; }
 .fmv-terms { flex-wrap: wrap; gap: 0.4rem; }
 /* each slider is a row-GROUP so a label never splits from its track when the strip wraps */
@@ -315,6 +254,10 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 .fmv-val { width: 5ch; text-align: right; }   /* + .cc-readout (tabular nums, dim) */
 .fmv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 0.5rem; padding: 0.5rem; }
+/* While a render is queued or running, the planes on screen are the PREVIOUS settings. Dimming says
+   so — without it a slow render is indistinguishable from a control that did nothing. Tied to the
+   same delayed flag as the wheel, so a quick render never flickers. */
+.fmv-grid.planes-stale { opacity: 0.45; transition: opacity 120ms ease; }
 .fmv-grid figure { margin: 0; }
 .fmv-grid img { width: 100%; display: block; image-rendering: pixelated;
                 border-radius: var(--cc-radius-sm); }

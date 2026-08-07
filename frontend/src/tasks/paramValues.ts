@@ -157,3 +157,21 @@ export function preferredValueName(
   const preferred = wantsActive ? (activeValueName ?? first) : first
   return available.includes(preferred) ? preferred : first
 }
+
+/**
+ * Has the user actually CHOSEN this value name, or is it just what the form started with?
+ *
+ * The distinction is the whole reason `preferredValueName` above reaches anything. Its caller keeps
+ * an already-valid selection — right, for a chain-propagated name like `cpCorrected` — but every
+ * task JSON declares `"default": "default"`, and `"default"` is a valid version on essentially every
+ * image. So the guard fired on first render for all of them and prefer-the-active-version never ran:
+ * the docstring above described behaviour the app did not have, on every page, and the four tasks
+ * recorded there as fixed were still opening on the raw import.
+ *
+ * A value equal to the spec's own default therefore does not count as a choice. The cost is that
+ * deliberately picking `default` while the active version is something else does not survive a
+ * change of image selection — a re-pick, against a version silently reading the wrong pixels.
+ */
+export function isChosenValueName(value: unknown, specDefault: unknown): boolean {
+  return typeof value === 'string' && value !== '' && value !== specDefault
+}

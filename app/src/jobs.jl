@@ -43,7 +43,13 @@ function _kill_tree(pid::Int)
                 isnothing(child) || _kill_tree(child)
             end
         catch; end
-        try; run(ignorestatus(`kill -9 $pid`)); catch; end
+        # stderr to devnull, not just `ignorestatus`. A process tree is enumerated and then killed,
+        # and killing one member routinely takes its siblings with it — a torch DataLoader's workers
+        # all exit when their parent does. Every already-gone pid then makes `kill` print
+        # "No such process", so cancelling one training run wrote seventeen error lines for what is
+        # the SUCCESS case: the point of this function is that the process is dead, and it is.
+        # `ignorestatus` only stops Julia raising on the exit code; the message is on stderr.
+        try; run(pipeline(ignorestatus(`kill -9 $pid`); stderr = devnull)); catch; end
     end
 end
 

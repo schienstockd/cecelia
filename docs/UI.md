@@ -1361,9 +1361,15 @@ panel reads as "frozen". But a spinner that flashes on every quick plot is worse
 
 Do **not** hand-roll per-plot "…" text or an immediate spinner. **Small/embedded plots stay out**: the
 gate montage tiles (compact `GateScatterCell`, rendered by `GateMontage`) keep an unobtrusive dot, not a
-wheel per tile — gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel` and the
-full-size `GateScatterCell` (Gate page); `UmapView` has its own empty-state wheel. New heavy plots: reuse
+wheel per tile — gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel`, the
+full-size `GateScatterCell` (Gate page), and both flow plots (via `useFlowPlanes`, which owns the
+decision so the two cannot disagree); `UmapView` has its own empty-state wheel. New heavy plots: reuse
 these two primitives.
+
+**A slow plot should also say its content is STALE.** The flow plots dim the planes while a render is
+queued or running (`.planes-stale`, tied to the same delayed flag as the wheel). Without it a slow
+render is indistinguishable from a control that did nothing — which is how a debounced slider reads as
+broken. Gate it on the delayed flag, never on raw loading, or it flickers on every drag.
 
 **Gate scatters — one renderer, three hosts.** `components/plots/GateScatterCell.vue` is the ONE
 scatter+gate body (2D-canvas dots + contour/pop-colour layer + gate overlay). The interactive Gate page

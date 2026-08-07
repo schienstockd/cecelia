@@ -32,14 +32,34 @@
       "tip": "Channels carrying the cell signal; merged by maximum"
     },
     {
-      "key": "zSlice",
-      "label": "Z plane",
+      "key": "zPlanes",
+      "label": "Z planes",
       "type": "int",
-      "min": -1,
-      "max": 500,
+      "min": 1,
+      "max": 25,
       "step": 1,
-      "default": -1,
-      "tip": "Which plane to train on; -1 = middle"
+      "default": 1,
+      "tip": "Evenly-spaced planes per movie; each multiplies the frames pooled"
+    },
+    {
+      "key": "maxFrames",
+      "label": "Max frames per movie",
+      "type": "int",
+      "min": 0,
+      "max": 500,
+      "step": 10,
+      "default": 0,
+      "tip": "Contiguous frames each movie contributes; 0 = all, so long movies dominate"
+    },
+    {
+      "key": "trainRatio",
+      "label": "Train fraction",
+      "type": "float",
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05,
+      "default": 0.8,
+      "tip": "Rest of each movie is held out to tell convergence from memorising; 1 = none"
     },
     {
       "key": "temporalScales",

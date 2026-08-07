@@ -277,7 +277,15 @@ function api_preview_run(body_bytes::Vector{UInt8})
                                     channel_names = chan_names))
         end
     catch e
-        return 500, JSON3.write((; error = sprint(showerror, e)))
+        raw = sprint(showerror, e)
+        # The worker dispatches on `funName` and raises naming every backend it knows. That message
+        # is for whoever debugs the registry, not for the person who pressed Preview — uncoded, it
+        # reached the tooltip as a repr'd Python list. Code it so the UI can say something true and
+        # short; the raw text still goes to the log.
+        occursin("no preview backend", raw) &&
+            return 500, JSON3.write((; error = "This task has no preview — run it to see the result",
+                                       code = "no-preview-backend", detail = raw))
+        return 500, JSON3.write((; error = raw))
     end
 
     try
