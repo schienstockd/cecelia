@@ -43,6 +43,31 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Widen the chip-row tooltip rule to "one tooltip, group or per-option, never both"
+`duplicateTooltips` (`frontend/src/utils/uiCopy.ts`) catches ONE of the two doubles a chip row can
+have: the control repeating its **heading's** tooltip, expression for expression. It cannot see the
+other — a group `v-tooltip` alongside **per-option `tip`s** — because the two say the same thing in
+different words (`ErrorConsole`: per-option *Show info messages* vs group *Show only messages of this
+severity*), so no string comparison matches. Measured by Dominik, 2026-08-07: **7 rows** across
+`ErrorConsole`, `PopulationManager`, `CanvasSidePanel`, `RenderModeToggle`, `BatchMoviesPanel` (×2)
+and `GatePlotPanel`; three were fixed in the same sitting, so re-measure before trusting that count.
+
+**This is an amendment to the shipped rule, not an addition, which is why it is one job.** Today
+`uncoveredControls` *requires* a chip row to carry its own `v-tooltip`, and the widened rule would
+*forbid* it wherever per-option tips exist — both cannot hold. The resolution is that per-option tips
+**count as coverage** for an icon-only row, which is a direct reversal of the "PER-OPTION tips DON'T
+COUNT EITHER" paragraph on `uncoveredControls`. Land the amendment, the detector and the sweep
+together; a half-applied version makes the suite red on correct code.
+
+**Why it is not a regex change.** Per-option tips live in the SCRIPT (`filterOptions` is a computed,
+`AXIS_OPTIONS` a const) and reach the template as a bound prop, so the template-only parser cannot
+see them — the stated reason they were excluded in the first place. The detector has to resolve the
+options identifier back into the script block.
+
+Not a blanket delete either: on the icon-only rows the per-option tips are the load-bearing ones and
+the group tooltip is the redundant one, so the direction of the fix differs per row. Rule + rationale:
+`docs/UI.md` → *Tooltip coverage — the presence half*.
+
 ### Per-notebook reset (re-run a notebook on new data without killing the Pluto server)
 Pluto has no filesystem watcher, so a notebook keeps rendering **stale data with no visible sign**
 after a pipeline task rewrites its inputs. The `DATA_STAMP` convention

@@ -306,6 +306,12 @@ twice, and the second one is the one that covers the switch. Comparison is on th
 catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
 directions pinned in `uiCopy.test.ts`.
 
+⚠️ **A chip row has a SECOND double this does not catch** — a group `v-tooltip` alongside per-option
+`tip`s — because the two say the same thing in different words, so no comparison matches. Seven rows
+have it today. A passing ratchet is therefore not yet evidence of none; closing the gap also reverses
+the "per-option tips don't count" rule above, so it is one amendment to both checks:
+`docs/TODO.md` → *Widen the chip-row tooltip rule*.
+
 | Surface | Checker | Ratchet |
 |---|---|---|
 | SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |

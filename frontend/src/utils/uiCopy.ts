@@ -302,6 +302,13 @@ export const uncoveredControls = (src: string, path = ''): UncoveredControl[] =>
  * Scoped to `HEADING_COVERED` — the controls where the tooltip lands on the hit target. A `<select>`
  * or `<input>` repeating its label is redundant but harmless, and widening this would turn a
  * "something is broken" signal into a style sweep.
+ *
+ * **This catches ONE of the two doubles a chip row can have, so a green run here does not mean there
+ * are none.** The other is a group `v-tooltip` alongside per-option `tip`s, which say the same thing
+ * in different words — no expression comparison can match them, and the per-option tips live in the
+ * script where this template parser cannot see them. Seven such rows were measured on 2026-08-07.
+ * Closing that gap reverses the "per-option tips don't count" paragraph on `uncoveredControls`, so it
+ * is an amendment to both checks at once: `docs/TODO.md` → *Widen the chip-row tooltip rule*.
  */
 export const duplicateTooltips = (src: string, path = ''): DuplicateTooltip[] =>
   scanTooltips(src, path).duplicates
