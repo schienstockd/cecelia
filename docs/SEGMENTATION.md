@@ -433,7 +433,10 @@ evidence:
   border on the right one. Confirmed by eye in napari across four label versions.
 
 So coastal defaults to `labelSmoothing` **1.5** — cosmetic, honest about being cosmetic, and it keeps
-the size. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
+the size. `embeddingBlurSigma` defaults to the calibrated **1.5** (2026-08-07) — the lowest σ in that
+table and the one that holds cell size closest to the expected ~11 µm, and independently coastal's own
+tuned `embedding_blur_sigma` for both passes. `probBlurSigma` stays at **0**: the same measurement
+shows it makes the border *worse*, so its calibrated value is off. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
 changing a shipped task's default would alter existing pipelines.
 
 **Coastal's spatial params are in MICRONS, not pixels.** A seed window or a blur radius describes a
