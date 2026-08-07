@@ -46,8 +46,14 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
 
     on_log("[INFO] Tracking labelProps: $props_path")
 
+    # µm per pixel, skimage order [sz, sy, sx] — the same accessor every other spatial task uses
+    # (cellNeighbours, the mesh tasks, track_measures). Tracking was the only one not calling it, so
+    # the linking ran in pixels while the measures computed on its own output ran in µm.
+    (pixel_res, _time_step) = img_physical_sizes(img)
+
     ok = run_py("tasks/tracking/bayesian_tracking_run.py",
         (; taskDir              = task_dir,
+           physicalSizes        = pixel_res,
            valueName            = value_name,
            labelIds             = label_ids,                          # null = whole segmentation
            maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
