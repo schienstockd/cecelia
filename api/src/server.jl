@@ -361,6 +361,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/labels/delete" => (req, body_bytes) -> (api_images_delete_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/delete" => (req, body_bytes) -> (api_chains_delete(body_bytes)),
+    "/api/optical-flow/inspect" => (req, body_bytes) -> (api_optical_flow_inspect(body_bytes)),
     "/api/optical-flow/rename" => (req, body_bytes) -> (api_optical_flow_rename(body_bytes)),
     "/api/optical-flow/delete" => (req, body_bytes) -> (api_optical_flow_delete(body_bytes)),
     "/api/notebooks/launch" => (req, body_bytes) -> (api_notebooks_launch(body_bytes)),

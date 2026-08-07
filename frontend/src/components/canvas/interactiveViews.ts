@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import UmapView from '../plots/UmapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
+import FlowModelView from '../plots/FlowModelView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -26,6 +27,9 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   umap: { label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true, square: true },
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true },
   filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true },
+  // The flow model's own inputs/outputs. Distinct from `filmstrip`, which is a napari SCREENSHOT
+  // montage — these planes are computed, are not viewer layers, and have no reason to become any.
+  flowModel: { label: 'Flow model', component: FlowModelView, analysisBoard: true },
 }
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS

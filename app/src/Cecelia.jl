@@ -98,7 +98,7 @@ export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
 export CellposeSegment
-export CoastalSegment
+export CoastalSegment, coastal_models_for_python
 export TrainFlowModel, parse_temporal_scales, flow_model_target, flow_training_qc_findings
 export MeasureLabels
 export Branching

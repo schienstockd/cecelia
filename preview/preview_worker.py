@@ -32,6 +32,7 @@ before the AF backend existed ignored `funName`, fell through to the segmentatio
 "no models in preview params". Bump this whenever the reply shape or the backend set changes.
 """
 import asyncio
+import base64
 import json
 import os
 import traceback
@@ -140,13 +141,17 @@ def _cellpose_imports():
 #:    'segment.coastal'" — and the user would see a preview toggle that never works, on a fresh
 #:    checkout, with nothing in the log pointing at an old process.
 #:
+#: 7: `opticalFlow.inspect` is a backend. It answers with `planes` (PNGs) instead of `layers`, so an
+#:    adopted protocol-6 worker returns "no preview backend for 'opticalFlow.inspect'" and the flow
+#:    panel is permanently empty with nothing in the log naming the stale process.
+#:
 #: NOT bumped for the AF cold-start work (per-channel background cache, `_preview_timepoints`, lazy
 #: cellpose import), and that restraint is the rule working rather than an oversight. The rule is
 #: "bump when an adopted older peer would ANSWER differently" — an old worker here answers the same
 #: backgrounds (measured byte-identical) and the same reply shape, just slower. Bumping anyway would
 #: cost every user a fresh 18 s of imports to fix nothing, which is precisely the adoption this
 #: version exists to allow. A version that moves on every commit is a version nobody can reason about.
-PROTOCOL = 6
+PROTOCOL = 7
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -580,6 +585,55 @@ def _preview_coastal(ctx):
     }
 
 
+def _preview_flow_inspect(ctx):
+    """"What did this model learn" — the flow metric planes + probability map, as PNGs.
+
+    A BACKEND rather than a new message type, so the region maths, the image handle, the norm-param
+    cache and the reply envelope are all the ones `preview` already has. Reuses the same
+    `CoastalUtils.predict_slice` inputs the run builds, so the planes shown are the planes the model
+    is actually fed — a separate compute path would be free to drift from it.
+
+    Returns `planes`, not `layers`: these are canvas plots, not viewer overlays. Nothing here goes
+    near napari.
+    """
+    from cecelia.utils.coastal_utils import temporal_config
+    from cecelia.utils.plane_render import plane_png
+
+    models = ctx.params.get('models') or {}
+    if not models:
+        raise ValueError('no models in preview params')
+
+    CoastalUtils, _ = _coastal_imports()
+    seg = CoastalUtils(
+        {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
+    mp = models[sorted(models.keys())[0]]
+    scales, cumulative, dropped = temporal_config(seg._manifest(mp))
+
+    t_now = int(ctx.bounds.get('T', (0, 1))[0])
+    n_t = int(ctx.axis_len.get('T', 1))
+    lo = max(0, t_now - seg.TEMPORAL_RADIUS)
+    hi = min(n_t - 1, t_now + seg.TEMPORAL_RADIUS)
+    frames = []
+    for t in range(lo, hi + 1):
+        sl = slice_utils.crop_slice_tuple(
+            ctx.levels[0].ndim, _axis_indices(ctx.dim_utils), {**ctx.bounds, 'T': (t, t + 1)})
+        frames.append(_as_cyx(zarr_utils.fortify(ctx.levels[0][sl]), ctx.dim_utils))
+    context = np.stack(frames)
+
+    window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
+    frame, metrics = seg._flow_metrics(window, t_now - lo, scales, cumulative)
+    metrics = {k: v for k, v in metrics.items() if k not in dropped}
+    prob, instances, _ = seg._get_inference(mp).predict_frame(frame, metrics)
+
+    planes = [('input (projected)', frame), ('probability', prob), ('instances', instances)]
+    planes += [(k, metrics[k]) for k in sorted(metrics)]
+    return {
+        'planes': [{'name': n, 'png': base64.b64encode(plane_png(a)).decode('ascii')}
+                   for n, a in planes],
+        'metricKeys': sorted(metrics),
+    }
+
+
 def _preview_af(ctx):
     """AF-correct the visible region, one Image layer per corrected channel.
 
@@ -640,6 +694,7 @@ _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
     'segment.coastal': _preview_coastal,
+    'opticalFlow.inspect': _preview_flow_inspect,
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.afDriftCorrect': _preview_af,
 }

@@ -74,3 +74,75 @@ function api_optical_flow_delete(body_bytes::Vector{UInt8})
     isfile(manifest) && rm(manifest)
     200, JSON3.write((; ok = true))
 end
+
+# ── Model inspection for the canvas panel ───────────────────────────────────────
+# "What did this model learn": the flow metric planes, the probability map and the instances for one
+# timepoint, as PNGs the browser can show. These are CANVAS PLOTS — nothing here touches napari.
+#
+# Deliberately NOT `api_preview_run`. That route exists to keep the viewer honest: it refuses unless
+# the image is the one open in napari, because a preview draws INTO the viewer. A canvas plot has no
+# such coupling and must work with napari closed, so it resolves the store from `ccid.json` the way
+# `api_crop_frame` does instead of from the open layer.
+#
+# The compute is the resident preview worker (`opticalFlow.inspect` backend) — already loaded with
+# coastal, the model and the temporal-window logic, and reached through the same `preview_request`
+# client as every other preview, so the planes shown are the planes the run is actually fed.
+function api_optical_flow_inspect(body_bytes::Vector{UInt8})
+    data = try JSON3.read(String(body_bytes), Dict{String,Any}) catch
+        return 400, JSON3.write((; error = "invalid JSON body")) end
+
+    project_uid = String(get(data, "projectUid", ""))
+    image_uid   = String(get(data, "imageUid", ""))
+    value_name  = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
+    model_name  = String(get(data, "model", ""))
+    (isempty(project_uid) || isempty(image_uid)) &&
+        return 400, JSON3.write((; error = "projectUid + imageUid required"))
+    isempty(strip(model_name)) &&
+        return 400, JSON3.write((; error = "Select a model. Train one on the Optical Flow page first."))
+
+    zp, task_dir, err = resolve_image_version(project_uid, image_uid, value_name)
+    err === nothing || return 404, JSON3.write((; error = err))
+
+    raw = read_ccid_raw(state_file(joinpath(projects_dir(), project_uid), image_uid))
+    models = Dict{String,Any}("0" => Dict{String,Any}(
+        "model"        => model_name,
+        "matchAs"      => "base",
+        "cellChannels" => get(data, "cellChannels", Any[])))
+    params = Dict{String,Any}("valueName" => value_name, "models" => models,
+                              "normaliseToWhole" => true)
+    # merge any inference params the panel passes through, so it shows what the CURRENT settings do
+    for (k, v) in get(data, "modelParams", Dict{String,Any}())
+        models["0"][String(k)] = v
+    end
+    prepared = try
+        Dict{String,Any}("valueName" => value_name, "normaliseToWhole" => true,
+                         "models" => coastal_models_for_python(params, raw))
+    catch e
+        return 400, JSON3.write((; error = e isa ErrorException ? e.msg : sprint(showerror, e),
+                                   code = "params-not-previewable"))
+    end
+
+    ready = _ensure_preview!()
+    ready || return 202, JSON3.write((; starting = true,
+                                        message = "Preview worker is starting."))
+
+    # Whole frame at the requested t/z — a canvas plot is not a zoomed region, and `preview_region_bounds`
+    # is the one place that clamps and turns an index into a half-open pair.
+    arr, caxes = open_level0(zp)
+    d = axis_dims(caxes, ndims(arr))
+    xy = Dict{String,Any}("X" => [0, size(arr, d["x"])], "Y" => [0, size(arr, d["y"])])
+    region = Dict{String,Any}("xy" => xy,
+                              "z"  => get(data, "z", nothing),
+                              "t"  => get(data, "t", 0),
+                              "ndisplay" => 2)
+
+    try
+        reply = _with_preview() do
+            preview_request(String(zp), String(task_dir), prepared, region;
+                            value_name = value_name, fun_name = "opticalFlow.inspect")
+        end
+        200, JSON3.write(reply)
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
