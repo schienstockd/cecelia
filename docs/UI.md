@@ -51,6 +51,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Pick ONE option where numbers decide it | `components/SelectionTable.vue` | a `<select>` that hides the trade-off, or an inline `<table>` |
 | Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
+| Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |

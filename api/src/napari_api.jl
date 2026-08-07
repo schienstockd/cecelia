@@ -843,6 +843,152 @@ function _title_card_content(img, config)
     )
 end
 
+# ── Side-by-side version comparison ───────────────────────────────────────────
+# docs/todo/MOVIE_COMPARE_PLAN.md. A comparison is N recordings plus one compose, NOT one clever
+# render: each column goes through the SAME path a single movie uses, so overlays, staging, cancel and
+# the size policy keep working untouched, and the finished files are composed frame-by-frame in the
+# bridge (D1; D2 records why the alternative — several versions as layers of one canvas — was rejected).
+
+# One column: what its caption says, and the movie config that produces it. The loop never asks what
+# makes two columns differ, so comparing two colour-by measures or two segmentations later is a config
+# change rather than a rewrite (D9). Config keys are Symbols because that is how every reader here
+# (`_apply_movie_config!`, `_title_card_content`, `_shown_channel_names`) addresses them.
+const MovieColumn = NamedTuple{(:label, :config),Tuple{String,Dict{Symbol,Any}}}
+
+# The columns of a VERSION comparison: the authored config once per selected version, in the order the
+# user put the chips in. `""` means the active version — what the config already meant on its own.
+function _version_columns(config, value_names::AbstractVector)::Vector{MovieColumn}
+    base = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in pairs(config))
+    MovieColumn[(; label  = (n = strip(String(vn)); isempty(n) ? "active" : n),
+                   config = merge(base, Dict{Symbol,Any}(:valueName => strip(String(vn)))))
+                for vn in value_names]
+end
+
+# The versions a config records, in column order. `valueNames` is the comparison list; a config from
+# before it existed (or one the user never touched) carries a single `valueName`, and "" — the active
+# version — is a perfectly good single column. Never empty, so callers always have one column.
+function _config_value_names(config)::Vector{String}
+    raw = get(config, :valueNames, nothing)
+    names = raw === nothing ? String[] : [String(v) for v in raw]
+    isempty(names) ? [String(get(config, :valueName, ""))] : names
+end
+
+# D4: how the columns are contrasted. "reference" (the default) applies column 1's intensity mapping to
+# the others, so a correction is judged on one ruler; "version" leaves each column with the saved napari
+# settings of its own version. Anything else reads as the default rather than failing a whole batch.
+_share_contrast(mode)::Bool = String(mode) != "version"
+
+# Frames one T-sweep writes for `img` over `[t_start, t_end]` — 0 when the image has no usable T axis.
+# Mirrors the bridge's own range arithmetic (`napari_utils.record_timelapse`): one frame per timepoint,
+# both ends inclusive.
+function _t_sweep_frames(img, t_start::Int, t_end)::Int
+    n = _to_int(get(img.meta, "SizeT", nothing))
+    n <= 1 && return 0
+    t0 = max(0, t_start)
+    t1 = t_end === nothing ? n - 1 : min(_to_int(t_end), n - 1)
+    t1 <= t0 ? 0 : (t1 - t0 + 1)
+end
+
+# Frames a whole comparison renders, so the passes and the compose drive ONE progress bar instead of
+# restarting it per version: a pass per column, plus the compose (as many frames as the longest pass).
+# An estimate made before anything runs — the bridge clamps it if a pass comes out longer.
+_comparison_frame_total(n_columns::Int, per_pass::Int)::Int =
+    (n_columns <= 1 || per_pass <= 0) ? 0 : (n_columns + 1) * per_pass
+
+# A captured view WITHOUT its per-layer props — the camera and the timepoint, nothing about intensity.
+# What "each version keeps its own saved napari settings" (D4) applies to the later columns.
+_camera_only(snapshot) =
+    Dict{String,Any}(String(k) => v for (k, v) in pairs(snapshot) if String(k) != "layers")
+
+# Is `value_name` the image version the viewer already has open? The FIRST column must not re-open one
+# that is: re-opening re-samples the channel contrast (`add_image contrast=True`), which would throw
+# away a look the user set live and never saved — and "record what is on screen" is the whole promise
+# of the viewer's Record button. Blank already means "the active version", which `_apply_movie_config!`
+# treats as already-open; this extends the same skip to naming that version explicitly.
+function _version_is_open(img, image_uid::AbstractString, value_name::AbstractString)::Bool
+    _current_image_uid[] == image_uid || return false
+    vn = strip(value_name)
+    isempty(vn) && return true
+    path = img_filepath(img, String(vn))
+    path !== nothing && _current_zarr_path[] == path
+end
+
+# Record one column per entry and compose them into `out_path`. Returns the bridge-shaped reply
+# (`frames`/`path`/`cancelled`/…), so a caller treats a comparison exactly like a single record.
+#
+# ONE column is not a special case: it records straight to `out_path`, which is what a plain movie has
+# always been — so both callers can route everything through here.
+#
+# Contrast (D4): column 1 establishes the look. `share_contrast` decides whether the later columns
+# inherit its intensity mapping (matched — the usual case, so a correction is judged on one ruler) or
+# keep the saved napari settings of their own version. The camera and the timepoint are shared either
+# way: different framing between columns is not a comparison.
+#
+# Holds `_with_viewer` across the WHOLE sequence — between two passes the viewer must not be opened on
+# something else, or column 2 would record a different image.
+function _record_columns!(task_id::String, project_uid::String, image_uid::String, img,
+                          columns::Vector{MovieColumn}, out_path::String;
+                          fps::Int = 15, size_x = nothing, size_y = nothing, title_card = nothing,
+                          share_contrast::Bool = true, layout::String = "row",
+                          t_start::Int = 0, t_end = nothing, api_url = nothing,
+                          show_timestamp::Bool = true, show_scale_bar::Bool = true)::Dict{String,Any}
+    n = length(columns)
+    n == 0 && error("no columns to record")
+    _with_viewer() do
+        v = _viewer()
+        (isnothing(v) || !_viewer_alive()) && error("Napari not running")
+
+        if n == 1
+            _apply_movie_config!(project_uid, image_uid, img, columns[1].config)
+            return record_timelapse!(v, out_path; fps = fps, size_x = size_x, size_y = size_y,
+                                     t_start = t_start, t_end = t_end, title_card = title_card,
+                                     task_id = task_id, api_url = api_url,
+                                     show_timestamp = show_timestamp, show_scale_bar = show_scale_bar)
+        end
+
+        per_pass = _t_sweep_frames(img, t_start, t_end)
+        total    = _comparison_frame_total(n, per_pass)
+        temps    = [string(out_path, ".col", i, ".tmp.mp4") for i in 1:n]
+        shared   = nothing
+        try
+            for (i, col) in enumerate(columns)
+                cfg = col.config
+                if i == 1 && _version_is_open(img, image_uid, String(get(cfg, :valueName, "")))
+                    cfg = merge(cfg, Dict{Symbol,Any}(:valueName => ""))   # don't re-open it
+                end
+                _apply_movie_config!(project_uid, image_uid, img, cfg)
+                if i == 1
+                    shared = capture_view_state(v)
+                elseif !isempty(shared)
+                    apply_view_state!(v, share_contrast ? shared : _camera_only(shared))
+                end
+                ws_log(nothing, task_id, "[$i/$n] recording $(col.label)")
+                # No title card per pass — it goes on the composed file, once (D6).
+                resp = record_timelapse!(v, temps[i]; fps = fps, size_x = size_x, size_y = size_y,
+                                         t_start = t_start, t_end = t_end, title_card = nothing,
+                                         task_id = task_id, api_url = api_url,
+                                         frame_offset = (i - 1) * per_pass, frame_total = total,
+                                         show_timestamp = show_timestamp,
+                                         show_scale_bar = show_scale_bar)
+                # A cancelled pass ends the comparison: nothing is composed, and `out_path` still holds
+                # whatever movie was there before.
+                get(resp, "cancelled", false) === true && return resp
+            end
+            ws_log(nothing, task_id, "composing $n columns → $(basename(out_path))")
+            return stitch_movies!(v, out_path, temps; labels = [c.label for c in columns],
+                                  layout = layout, fps = fps, title_card = title_card,
+                                  task_id = task_id, api_url = api_url,
+                                  frame_offset = n * per_pass, frame_total = total)
+        finally
+            # The per-column recordings are scratch. They are named `*.tmp.mp4`, so anything left by a
+            # hard kill is already hidden from `/api/movies` and swept by `_clear_stale_staging`.
+            for p in temps
+                isfile(p) && (try; rm(p); catch; end)
+            end
+        end
+    end
+end
+
 # F1.3 batch runner — invoked async from the WS layer (`movie:batch`). For each image: apply the config,
 # record the T-sweep to an attr-named mp4, emit task:progress/log so it drives the existing task UI. `rep`
 # = representative uid for status/result. Errors on one image are logged and the batch continues.
@@ -866,6 +1012,16 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     t_start = Int(get(config, :tStart, 0))
     t_end_v = get(config, :tEnd, nothing)
     t_end   = t_end_v === nothing ? nothing : Int(t_end_v)
+    # Which image versions each movie shows. 2+ makes every movie a side-by-side comparison; one (or
+    # the pre-comparison single `valueName`) is the ordinary batch — the same path with one column, so
+    # the batch keeps no second recording loop of its own. Same for every image, so build it once.
+    columns        = _version_columns(config, _config_value_names(config))
+    share_contrast = _share_contrast(get(config, :compareContrast, ""))
+    layout         = String(get(config, :compareLayout, "row"))
+    # napari's baked overlays. Default true = what every movie was; the batch RE-OPENS each image, which
+    # turns the scale bar back on, so this is the only way to keep them out of a batch.
+    show_ts        = Bool(get(config, :showTimestamp, true))
+    show_sb        = Bool(get(config, :showScaleBar, true))
     for (i, uid) in enumerate(image_uids)
         if _batch_cancelled(task_id)
             ws_log(nothing, task_id, "[CANCELLED] stopped after $done/$n image(s)")
@@ -884,18 +1040,18 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
             # otherwise write the same attr-named files over each other
             path = _movie_out_path(img, file_attrs, chan_names; suffix = _movie_suffix(suffix))
             ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
-            resp = _with_viewer() do
-                _apply_movie_config!(project_uid, uid, img, config)
-                v = _viewer()
-                v === nothing && error("Napari not running")
-                # task_id: the bridge polls the SAME cancel flag per frame, so Cancel now stops the
-                # image being recorded rather than only the ones after it. Per-frame progress is
-                # deliberately NOT relayed here — the batch's bar counts images.
-                record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
-                                  t_start = t_start, t_end = t_end,
-                                  title_card = _title_card_content(img, config),
-                                  task_id = task_id)
-            end
+            # One column per selected version (a comparison), or the one authored config. Both go
+            # through `_record_columns!`, so the batch has no second recording path of its own.
+            # task_id: the bridge polls the SAME cancel flag per frame, so Cancel stops the image being
+            # recorded rather than only the ones after it. Per-frame progress is deliberately NOT
+            # relayed here — the batch's bar counts images.
+            resp = _record_columns!(task_id, project_uid, uid, img, columns, path;
+                                    fps = fps, size_x = size_x, size_y = size_y,
+                                    t_start = t_start, t_end = t_end,
+                                    title_card = _title_card_content(img, config),
+                                    share_contrast = share_contrast, layout = layout,
+                                    show_timestamp = show_ts, show_scale_bar = show_sb,
+                                    api_url = nothing)
             if get(resp, "cancelled", false) === true
                 # cancelled mid-image: nothing was written (the staged file is removed), so this image
                 # is neither done nor an error — the loop's cancel check ends the run on the next pass
@@ -930,12 +1086,21 @@ end
 # `record_cancel` there, relayed by the `recordProgress` branch of `api_napari_event`).
 #
 # `keyframes === nothing` records the open image's T-sweep; otherwise it renders the keyframe animation.
+#
+# `value_names` (2 or more) makes it a side-by-side VERSION COMPARISON instead: one pass per version,
+# composed into one file (`_record_columns!`). Fewer than two leaves the plain single record exactly as
+# it was — it records what is on screen without touching the viewer at all, and that contract is worth
+# more than routing one movie through the comparison path for symmetry.
 function run_single_movie(task_id::String, project_uid::String, image_uid::String;
                           fps::Int = 15, size_x::Union{Int,Nothing} = nothing,
                           size_y::Union{Int,Nothing} = nothing, suffix::AbstractString = "",
                           title_card = nothing, keyframes = nothing,
+                          value_names::Vector{String} = String[],
+                          share_contrast::Bool = true, layout::String = "row",
+                          show_timestamp::Bool = true, show_scale_bar::Bool = true,
                           api_url::AbstractString = "http://localhost:8080")
     animation = keyframes !== nothing
+    comparing = !animation && length(value_names) > 1
     fun       = animation ? "movie:animation" : "movie:record"
     img, err  = _gating_image(project_uid, image_uid)
     if err !== nothing
@@ -959,18 +1124,28 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                              suffix = _movie_suffix(suffix) * (animation ? "_animation" : ""))
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "viewer")
     ws_progress(nothing, task_id, 0, 1)          # a real total arrives with the first frame report
-    ws_log(nothing, task_id, "Recording → $(basename(path))")
+    ws_log(nothing, task_id, comparing ?
+           "Comparing $(join(value_names, " · ")) → $(basename(path))" :
+           "Recording → $(basename(path))")
 
     status = "done"
     result = Dict{String,Any}("path" => path)
     try
-        resp = _with_viewer() do
-            animation ?
-                record_keyframes!(v, path, keyframes; fps = fps, size_x = size_x, size_y = size_y,
-                                  title_card = title_card, task_id = task_id, api_url = api_url) :
-                record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
-                                  title_card = title_card, task_id = task_id, api_url = api_url)
-        end
+        resp = comparing ?
+            _record_columns!(task_id, project_uid, image_uid, img,
+                             _version_columns(Dict{Symbol,Any}(), value_names), path;
+                             fps = fps, size_x = size_x, size_y = size_y, title_card = title_card,
+                             share_contrast = share_contrast, layout = layout, api_url = api_url,
+                             show_timestamp = show_timestamp, show_scale_bar = show_scale_bar) :
+            _with_viewer() do
+                animation ?
+                    record_keyframes!(v, path, keyframes; fps = fps, size_x = size_x, size_y = size_y,
+                                      title_card = title_card, task_id = task_id, api_url = api_url,
+                                      show_timestamp = show_timestamp, show_scale_bar = show_scale_bar) :
+                    record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
+                                      title_card = title_card, task_id = task_id, api_url = api_url,
+                                      show_timestamp = show_timestamp, show_scale_bar = show_scale_bar)
+            end
         frames = Int(get(resp, "frames", 0))
         if get(resp, "cancelled", false) === true
             status = "cancelled"

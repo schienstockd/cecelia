@@ -5,6 +5,9 @@
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
 //    (<attr1>_<attr2>_..._<uid>.mp4; blanks dropped, uid always terminates, unsafe chars → '_').
 
+import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
+         type CompareLayout, type CompareContrast } from './movieCompare'
+
 // Title-card options (Phase H) — a description slide prepended to each recorded movie.
 export interface TitleCardCfg {
   enabled: boolean
@@ -13,6 +16,12 @@ export interface TitleCardCfg {
 }
 
 export interface BatchMovieCfg {
+  // The image versions each movie shows, in COLUMN order (docs/todo/MOVIE_COMPARE_PLAN.md). Two or
+  // more record a side-by-side comparison. `valueName` is what configs saved before that carried —
+  // read it through `versionsFromConfig`, never directly, so an old config keeps its version.
+  valueNames?: string[]
+  compareLayout?: CompareLayout
+  compareContrast?: CompareContrast
   valueName?: string
   channels?: Record<string, string>
   colourBy?: string
@@ -29,6 +38,9 @@ export interface BatchMovieCfg {
 
 export interface BatchMovieRequestConfig {
   valueName: string
+  valueNames: string[]
+  compareLayout: CompareLayout
+  compareContrast: CompareContrast
   channels: Record<string, string>
   colourBy: string
   showTracks: boolean
@@ -53,8 +65,14 @@ export function buildBatchMovieConfig(
   colourOverrides: Record<string, string>,
 ): BatchMovieRequestConfig {
   const tc = cfg.titleCard
+  // The version list is authoritative; `valueName` stays in the payload as the FIRST column, which is
+  // what an older backend (and the filename/channel lookups) read.
+  const versions = cfg.valueNames ?? (cfg.valueName ? [cfg.valueName] : [])
   return {
-    valueName: cfg.valueName ?? '',
+    valueName: versions[0] ?? '',
+    valueNames: versions,
+    compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
+    compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     channels: cfg.channels ?? {},
     colourBy: cfg.colourBy ?? '',
     showTracks: !!cfg.showTracks,

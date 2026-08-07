@@ -109,5 +109,106 @@ class TestRecordHooks(unittest.TestCase):
             self.bridge.urllib.request.urlopen = original
 
 
+class TestMultiPassProgress(unittest.TestCase):
+    """One bar across a job made of several bridge calls — the side-by-side version comparison records
+    once per version and then stitches. Without an offset each pass would report `1/40` again and the
+    bar would jump back to the start twice, which reads as a stuck or restarted render."""
+
+    def setUp(self):
+        self.bridge = _load_bridge()
+        if self.bridge is None:
+            self.skipTest('napari not importable here')
+        self.bridge._record_cancelled.clear()
+
+    def _posts(self, hooks_args, calls):
+        import json
+        posted = []
+        on_progress, _ = self.bridge._record_hooks(*hooks_args)
+        original = self.bridge.urllib.request.urlopen
+
+        def fake(req, timeout=None):
+            posted.append(json.loads(req.data.decode()))
+            raise OSError('no server')
+
+        self.bridge.urllib.request.urlopen = fake
+        try:
+            for frame, total in calls:
+                on_progress(frame, total)
+        finally:
+            self.bridge.urllib.request.urlopen = original
+        return posted
+
+    def test_a_later_pass_reports_its_place_in_the_whole_job(self):
+        # pass 2 of 2: 40 frames already recorded, 84 in the job (2 × 40 + a 4-frame stitch)
+        posted = self._posts(('task-x', 'http://localhost:1', 40, 84), [(1, 40)])
+        self.assertEqual((posted[0]['frame'], posted[0]['total']), (41, 84))
+
+    def test_no_offset_is_the_single_record_it_always_was(self):
+        posted = self._posts(('task-x', 'http://localhost:1'), [(3, 40)])
+        self.assertEqual((posted[0]['frame'], posted[0]['total']), (3, 40))
+
+    def test_the_total_is_never_beaten_by_the_frame_count(self):
+        # the job total is estimated before the passes run; an under-estimate must not post 90/84
+        posted = self._posts(('task-x', 'http://localhost:1', 80, 84), [(10, 12)])
+        self.assertEqual((posted[0]['frame'], posted[0]['total']), (90, 90))
+
+
+class TestStitchCommandReply(unittest.TestCase):
+    """The `stitch_movies` command's REPLY shape, which `api/src/napari_api.jl` reads to decide whether
+    the comparison finished or was cancelled. Called unbound against a duck-typed `self` — the command
+    touches the viewer only to prepend a title card, so a stitch with no card needs no Qt (same
+    headless approach as the other bridge tests)."""
+
+    def setUp(self):
+        self.bridge = _load_bridge()
+        if self.bridge is None:
+            self.skipTest('napari not importable here')
+        self.bridge._record_cancelled.clear()
+
+    def _shim(self):
+        bridge = self.bridge
+
+        class _State:                      # borrows the real methods, brings no Qt
+            _viewer = None
+            _recorded_size = bridge.NapariState._recorded_size
+            stitch_movies = bridge.NapariState.stitch_movies
+
+        return _State()
+
+    def _clip(self, path, n=3):
+        import numpy as np
+        from cecelia.utils import movie_io
+        with movie_io.movie_writer(path, 10) as out:
+            for i in range(n):
+                out.append_data(np.full((34, 66, 3), 20 + i * 30, dtype=np.uint8))
+
+    def test_a_finished_stitch_reports_frames_columns_and_the_size_written(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._clip(a); self._clip(b)
+            res = self._shim().stitch_movies(out, [a, b], labels=['default', 'corrected'], fps=10)
+            self.assertEqual(res['frames'], 3)
+            self.assertEqual(res['columns'], 2)
+            self.assertEqual(res['path'], out)
+            self.assertEqual(res['sizeX'], 134)          # 2 tiles + the 2px divider, read back off the file
+            self.assertGreater(res['sizeY'], 34)         # + the caption strip
+            self.assertNotIn('cancelled', res)
+
+    def test_a_cancelled_stitch_replies_like_a_cancelled_record(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._clip(a); self._clip(b)
+            self.bridge.request_record_cancel('task-stitch')
+            res = self._shim().stitch_movies(out, [a, b], fps=10, task_id='task-stitch')
+            self.assertTrue(res['cancelled'])
+            self.assertFalse(os.path.exists(out), 'a cancel promotes nothing onto the target path')
+            # and the flag is cleared, so the NEXT job with a recycled id is not killed by a stale one
+            self.assertFalse(self.bridge._record_cancel_requested('task-stitch'))
+
+
 if __name__ == '__main__':
     unittest.main()

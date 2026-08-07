@@ -295,6 +295,38 @@ bar + Cancel (a per-run flag, `request_batch_cancel!`, stops it after the curren
 record can't be interrupted). It is **not** a scheduler task: napari is a single UI-serial viewer in
 `api/`, not pooled headless compute.
 
+### Side-by-side version comparison
+
+Both movie surfaces — the viewer's recorder and the batch — can record **several image versions of one
+image as columns of a single movie** (raw next to AF-corrected, say). The picker is one control,
+`MovieCompareControls.vue`: a reorderable `ChipSelect` over the image's versions, where the selection
+*is* the mode — none records the active version, one records that version, two or more compare. Design
+and rejected alternatives: `docs/todo/MOVIE_COMPARE_PLAN.md`.
+
+**It is N recordings plus one compose, not a cleverer render.** `_record_columns!`
+(`api/src/napari_api.jl`) records each column through the SAME path a single movie uses — so overlays,
+staging, cancel and the size policy all keep working — into `{final}.col<i>.tmp.mp4`, then the bridge's
+`stitch_movies` command composes the finished files frame by frame (`movie_io.stitch_movies`) and
+promotes the result. Composing several versions as layers of ONE canvas was rejected: `NapariState`
+binds `_im_data`/`_axes`/`_channel_axis` to a single store and every overlay, cache and autosave reads
+that state.
+
+Consequences worth knowing:
+
+- **An N-version comparison is N full renders.** The UI states the pass count before you start.
+- **The size fields mean ONE COLUMN.** The 4096 clamp is a GL-canvas limit, so it stays per pass; the
+  composed file is N × that (plus a 2 px divider and a caption strip per column) and may exceed it.
+- **Contrast is a choice, and it is visible.** *Matched* (the default) applies column 1's intensity
+  mapping to every column, so a correction is judged on one ruler; *own* leaves each column with the
+  napari settings saved for its own version — which exist per version, because layer props are keyed on
+  the zarr filename (`_props_path`). Camera and timepoint are shared either way. Sent as
+  `compareContrast: 'reference' | 'version'`.
+- **The first column is not re-opened when it is already the version on screen** (`_version_is_open`),
+  so the viewer's "record what's shown" promise survives ticking a second chip.
+- **One title card, on the composed file** — the per-column passes record without one.
+- Unequal-length inputs hold their last frame rather than truncating; unequal frame sizes are centred
+  on the largest tile. Both are safety nets: every column screenshots the same canvas size.
+
 ---
 
 ## View snapshots (zoom-to-source / animation)

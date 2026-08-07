@@ -311,6 +311,13 @@ chunks. `name` is validated to the sanitised `[A-Za-z0-9._-]+.mp4` the recorders
 traversal). Pure helpers (`_parse_range`, `_valid_movie_name`; frontend `utils/movies.ts`) are unit
 tested (`api/test/runtests.jl`, `utils/movies.test.ts`).
 
+## Side-by-side version comparison — its own plan
+
+Recording several image VERSIONS as columns of one movie (raw next to AF-corrected) is
+`docs/todo/MOVIE_COMPARE_PLAN.md`, not a phase here: it reuses F1's config-apply + recorder unchanged
+and adds one compose step after them. It also replaced the batch's single-version `<select>` with the
+shared version picker, so F1.3's `valueName` config field is now the first entry of `valueNames`.
+
 ## References
 
 - **R reference**: `old-R-shiny-version/vignettes/runAnimation.Rmd` — `generateMovies` (L28) +

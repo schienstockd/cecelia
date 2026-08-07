@@ -1531,6 +1531,60 @@ end
     end
 end
 
+# Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The pure parts: which versions a
+# config asks for, what each column is, how the contrast toggle reads, and the frame arithmetic behind
+# the single progress bar. The recording loop itself needs a live viewer and is not exercised here.
+@testset "API: movie version comparison" begin
+    # Which versions to record. A config from before comparisons existed carries one `valueName`, and
+    # "" (the active version) is a perfectly good single column — the list is never empty, so the
+    # caller always has something to record.
+    @test _config_value_names(Dict(:valueNames => ["default", "af"])) == ["default", "af"]
+    @test _config_value_names(Dict(:valueName => "af"))               == ["af"]
+    @test _config_value_names(Dict{Symbol,Any}())                     == [""]
+    @test _config_value_names(Dict(:valueNames => String[], :valueName => "af")) == ["af"]
+
+    # Each column carries the WHOLE authored config with its own version pinned — the overlays and
+    # channels must not differ between columns, only the version does.
+    cols = _version_columns(Dict(:channels => Dict("CD3" => "green"), :showTracks => true),
+                            ["default", " af_corrected ", ""])
+    @test [c.label for c in cols] == ["default", "af_corrected", "active"]   # "" captions as "active"
+    @test [String(c.config[:valueName]) for c in cols] == ["default", "af_corrected", ""]
+    @test all(c -> c.config[:showTracks] === true, cols)
+    @test all(c -> haskey(c.config, :channels), cols)
+    # Symbol keys, because that is how every config reader here addresses them
+    @test get(cols[1].config, :valueName, "MISSING") == "default"
+
+    # D4 — the contrast toggle. Anything unrecognised reads as the default rather than failing a batch.
+    @test _share_contrast("reference")
+    @test _share_contrast("")
+    @test _share_contrast("nonsense")
+    @test !_share_contrast("version")
+
+    # …and what "each version keeps its own settings" actually drops: the per-layer props, never the
+    # camera or the timepoint (columns framed differently would not be a comparison).
+    snap = Dict("camera" => Dict("zoom" => 2.0), "dims" => Dict("current_step" => [3]),
+                "layers" => Dict("CD3" => Dict("contrast_limits" => [0, 100])))
+    @test !haskey(_camera_only(snap), "layers")
+    @test _camera_only(snap)["camera"] == Dict("zoom" => 2.0)
+    @test _camera_only(snap)["dims"]   == Dict("current_step" => [3])
+
+    # Frame arithmetic for ONE progress bar across the passes + the compose. Mirrors the bridge's own
+    # range maths: one frame per timepoint, both ends inclusive.
+    img20 = (; meta = Dict("SizeT" => 20))
+    @test _t_sweep_frames(img20, 0, nothing) == 20
+    @test _t_sweep_frames(img20, 5, nothing) == 15
+    @test _t_sweep_frames(img20, 0, 9)       == 10
+    @test _t_sweep_frames(img20, 0, 99)      == 20      # clamped to the stack
+    @test _t_sweep_frames(img20, 8, 8)       == 0       # empty range
+    @test _t_sweep_frames((; meta = Dict("SizeT" => 1)), 0, nothing) == 0
+    @test _t_sweep_frames((; meta = Dict{String,Any}()), 0, nothing) == 0   # image doesn't say
+
+    @test _comparison_frame_total(2, 20) == 60          # 2 passes + the compose
+    @test _comparison_frame_total(3, 20) == 80
+    @test _comparison_frame_total(1, 20) == 0           # one column = a plain record, own total
+    @test _comparison_frame_total(2, 0)  == 0           # unknown T → let each pass report its own
+end
+
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in
 # `_ws_clients` (broadcast_ws puts a serialised frame per client). These frames drive the observer's
 # 10-attempts pattern + note/lab-log surfacing (docs/ai-assist/OBSERVER.md §4-5).

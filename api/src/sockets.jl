@@ -202,6 +202,15 @@ function handle_movie_record(ws, data)
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
     tc          = get(data, :titleCard, nothing)
     card        = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
+    # Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md): 2+ versions record one column
+    # each into a single file. 0 or 1 is the plain record it always was.
+    vns_raw     = get(data, :valueNames, nothing)
+    value_names = vns_raw === nothing ? String[] : collect(String, vns_raw)
+    share_ctr   = _share_contrast(get(data, :compareContrast, ""))
+    layout      = String(get(data, :compareLayout, "row"))
+    # napari's baked overlays, burnt into every frame. Default true = what every movie was.
+    show_ts     = Bool(get(data, :showTimestamp, true))
+    show_sb     = Bool(get(data, :showScaleBar, true))
     if isempty(image_uid)
         ws_log(ws, task_id, "[ERROR] no image to record")
         ws_status(ws, task_id, "failed", ""; fun=fun, pool="viewer")
@@ -215,7 +224,9 @@ function handle_movie_record(ws, data)
     _batch_register!(task_id)
     @async try
         run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
-                         suffix = suffix, title_card = card, keyframes = keyframes, api_url = api_url)
+                         suffix = suffix, title_card = card, keyframes = keyframes,
+                         value_names = value_names, share_contrast = share_ctr, layout = layout,
+                         show_timestamp = show_ts, show_scale_bar = show_sb, api_url = api_url)
     catch e
         @warn "movie record crashed" exception = e
         ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
