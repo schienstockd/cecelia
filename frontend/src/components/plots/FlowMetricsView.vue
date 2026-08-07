@@ -75,6 +75,39 @@ const scales = computed({
   set: v => (state.value.scales = v),
 })
 
+// Declared BEFORE `load` and its watchers, not after: a watcher getter naming `channels` runs
+// immediately at setup, and a `const` below it is still in the temporal dead zone — which throws,
+// takes the whole panel's setup with it, and aborts the canvas patch so the vault disappears too.
+// Type-checking cannot see this; only the order can.
+// The host's selection IS the image list (standard bag) — the page's table on one surface, the
+// board's image picker on the other. Names come from the project store; the uids do not.
+const nameOf = (uid: string) =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
+const imageOptions = computed<ChipOption[]>(() =>
+  (props.imageUids ?? []).map(uid => ({ value: uid, label: nameOf(uid) })))
+
+// Which channel the flow is computed ON — and the single most consequential control here. With none
+// sent, `_project_window` falls back to channel 0, so this sheet was quietly showing flow over the
+// SHG channel while the model had been trained on mem-TOM: sparse dots, no error, nothing to say so.
+const imageChannels = computed<string[]>(() =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid)?.channelNames ?? [])
+const channelOptions = computed<ChipOption[]>(() =>
+  imageChannels.value.map(c => ({ value: c, label: c })))
+const channels = computed({
+  get: () => state.value.channels ?? [],
+  set: v => (state.value.channels = v),
+})
+
+// Default to EVERY channel, max-merged the way the segmenter merges them. Defaulting to the first
+// is what produced "why is input just sparse dots" — on this data channel 0 is SHG, so the sheet
+// opened on a channel nobody meant and looked broken. All-channels is never empty, and the chips
+// put the choice on screen one click from narrower.
+watch(imageChannels, avail => {
+  if (!avail.length) return
+  const cur = state.value.channels ?? []
+  if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = [...avail]
+}, { immediate: true })
+
 // The worker pays ~18 s of torch imports on first use and answers 202 `starting` until it is up.
 // Telling the user to "try again in a moment" and stopping made the panel look broken for a minute,
 // so we wait for it — bounded, and with the wait visible rather than a frozen spinner.
@@ -140,34 +173,6 @@ watch(() => state.value.imageUid, loadExtent)
 watch(() => [state.value.imageUid, state.value.t, state.value.z,
              colormap.value, scales.value.join(','), channels.value.join(',')], () => load())
 
-// The host's selection IS the image list (standard bag) — the page's table on one surface, the
-// board's image picker on the other. Names come from the project store; the uids do not.
-const nameOf = (uid: string) =>
-  project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
-const imageOptions = computed<ChipOption[]>(() =>
-  (props.imageUids ?? []).map(uid => ({ value: uid, label: nameOf(uid) })))
-
-// Which channel the flow is computed ON — and the single most consequential control here. With none
-// sent, `_project_window` falls back to channel 0, so this sheet was quietly showing flow over the
-// SHG channel while the model had been trained on mem-TOM: sparse dots, no error, nothing to say so.
-const imageChannels = computed<string[]>(() =>
-  project.sets.flatMap(s => s.images).find(i => i.uid === state.value.imageUid)?.channelNames ?? [])
-const channelOptions = computed<ChipOption[]>(() =>
-  imageChannels.value.map(c => ({ value: c, label: c })))
-const channels = computed({
-  get: () => state.value.channels ?? [],
-  set: v => (state.value.channels = v),
-})
-
-// Default to EVERY channel, max-merged the way the segmenter merges them. Defaulting to the first
-// is what produced "why is input just sparse dots" — on this data channel 0 is SHG, so the sheet
-// opened on a channel nobody meant and looked broken. All-channels is never empty, and the chips
-// put the choice on screen one click from narrower.
-watch(imageChannels, avail => {
-  if (!avail.length) return
-  const cur = state.value.channels ?? []
-  if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = [...avail]
-}, { immediate: true })
 
 // Follow the host: seed the first image, and drop a pick that has left the selection (else the panel
 // keeps rendering an image the page no longer shows).
