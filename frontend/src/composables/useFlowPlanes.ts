@@ -14,6 +14,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
 import { PREVIEW_DEBOUNCE_MS } from '../utils/taskPreview'
+import { useDelayedLoading } from './useDelayedLoading'
 
 export interface Plane { name: string; png: string }
 
@@ -135,5 +136,16 @@ export function useFlowPlanes(
   // scheduler decides when. A new object identity per change is exactly the trigger we want.
   watch(request, req => { if (req) scheduler.schedule(req) })
 
-  return { planes, extent, runState, loading, starting, error, load }
+  // The spinner, decided HERE rather than per view, so both plots answer "is it doing anything?" the
+  // same way. `loading` covers the debounce window too (state `pending`), which is the point: the
+  // gap the user actually notices is between letting go of a slider and the picture changing, and
+  // most of that gap is a request that has not been sent yet.
+  //
+  // Delayed, per docs/UI.md — but the threshold matters less here than usual, because neither of
+  // these plots is ever fast: both are a worker round-trip and the probability map is a forward pass
+  // on top. Nothing to protect against a flash on a cheap render, everything to gain from the wheel
+  // appearing before the user concludes the control is dead.
+  const showSpinner = useDelayedLoading(loading)
+
+  return { planes, extent, runState, loading, showSpinner, starting, error, load }
 }

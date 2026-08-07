@@ -25,6 +25,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 
@@ -87,7 +88,8 @@ const request = computed<FlowRequest | null>(() =>
       }
     : null)
 
-const { planes, extent, runState, loading, starting, error, load } = useFlowPlanes(state, request)
+const { planes, extent, runState, loading, showSpinner, starting, error, load } =
+  useFlowPlanes(state, request)
 
 // Follow the host: seed the first image, and drop a pick that has left the selection.
 watch(imageOptions, opts => {
@@ -149,12 +151,16 @@ watch(imageOptions, opts => {
       Pick an image to see what the model predicts.
     </p>
 
-    <div class="fpv-grid">
+    <div class="fpv-grid" :class="{ 'planes-stale': showSpinner }">
       <figure v-for="p in planes" :key="p.name">
         <img :src="`data:image/png;base64,${p.png}`" :alt="p.name" />
         <figcaption class="cc-muted">{{ p.name }}</figcaption>
       </figure>
     </div>
+
+    <!-- Delayed, so it never flashes on a fast render (docs/UI.md → Plot loading state). The panel is
+         `position: relative`, which is what this overlay fills. -->
+    <PlotSpinner v-if="showSpinner" label="Rendering…" />
   </div>
 </template>
 
@@ -175,6 +181,10 @@ watch(imageOptions, opts => {
 /* Two planes side by side — the comparison IS the plot, so they must not stack until it is narrow. */
 .fpv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 0.5rem; padding: 0.5rem; }
+/* While a render is queued or running, the planes on screen are the PREVIOUS settings. Dimming says
+   so — without it a slow render is indistinguishable from a control that did nothing. Tied to the
+   same delayed flag as the wheel, so a quick render never flickers. */
+.fpv-grid.planes-stale { opacity: 0.45; transition: opacity 120ms ease; }
 .fpv-grid figure { margin: 0; }
 .fpv-grid img { width: 100%; display: block; image-rendering: pixelated;
                 border-radius: var(--cc-radius-sm); }

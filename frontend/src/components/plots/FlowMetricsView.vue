@@ -31,6 +31,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 
@@ -108,7 +109,8 @@ const request = computed<FlowRequest | null>(() => state.value.imageUid ? {
   colormap: colormap.value, temporalScales: scales.value.map(Number),
 } : null)
 
-const { planes, extent, runState, loading, starting, error, load } = useFlowPlanes(state, request)
+const { planes, extent, runState, loading, showSpinner, starting, error, load } =
+  useFlowPlanes(state, request)
 
 // Show everything by default — a contact sheet you have to unhide plane by plane answers nothing.
 // The chips are for narrowing once you know what you are looking at.
@@ -197,12 +199,16 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
       Pick an image and a channel to see the flow metrics.
     </p>
 
-    <div class="fmv-grid">
+    <div class="fmv-grid" :class="{ 'planes-stale': showSpinner }">
       <figure v-for="p in shown" :key="p.name">
         <img :src="`data:image/png;base64,${p.png}`" :alt="p.name" />
         <figcaption class="cc-muted">{{ p.name }}</figcaption>
       </figure>
     </div>
+
+    <!-- Delayed, so it never flashes on a fast render (docs/UI.md → Plot loading state). The panel is
+         `position: relative`, which is what this overlay fills. -->
+    <PlotSpinner v-if="showSpinner" label="Rendering…" />
   </div>
 </template>
 
@@ -223,6 +229,10 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
 .fmv-val { width: 5ch; text-align: right; }   /* + .cc-readout (tabular nums, dim) */
 .fmv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 0.5rem; padding: 0.5rem; }
+/* While a render is queued or running, the planes on screen are the PREVIOUS settings. Dimming says
+   so — without it a slow render is indistinguishable from a control that did nothing. Tied to the
+   same delayed flag as the wheel, so a quick render never flickers. */
+.fmv-grid.planes-stale { opacity: 0.45; transition: opacity 120ms ease; }
 .fmv-grid figure { margin: 0; }
 .fmv-grid img { width: 100%; display: block; image-rendering: pixelated;
                 border-radius: var(--cc-radius-sm); }
