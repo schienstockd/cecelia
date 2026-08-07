@@ -139,6 +139,19 @@ express: a size driven by a runtime CSS var (`--gate-font`, the vis Font size sl
 `color: inherit`. Before adding an entry, check the utility does not already exist, or is not one
 modifier away from existing.
 
+**Declare before you watch.** A `watch` SOURCE runs immediately — that first call is how Vue
+collects the dependencies, with or without `immediate: true` — so a source naming a `const` declared
+below it throws `ReferenceError: can't access lexical declaration 'x' before initialization` during
+`setup`. TypeScript cannot see it (the binding exists, it is just not initialised), the dev server
+serves the module, and every test passes. What you get is a blank page and a console-only clue.
+
+It is worth its own checker because of the blast radius: the throw aborts the PARENT's patch, so
+innocent siblings vanish with it. One mis-ordered line in `FlowMetricsView` blanked the whole flow
+canvas — the plot panels and the model vault, which is a sibling and had nothing to do with it — and
+it read as a data problem. `utils/setupOrder.ts` (`setupOrderHazards`) ratchets it to zero with no
+allow-list. It checks the source only (a callback runs later and may name anything), all of
+`watchEffect`, and top-level calls only.
+
 **A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
 and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was
 not another opt-in class: **33 form controls across 24 files had each hand-written

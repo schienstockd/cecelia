@@ -419,7 +419,11 @@ const pct = computed(() => {
 </script>
 
 <template>
-  <div class="param-row">
+  <!-- Not for `section`/`group`: each renders its own heading below (the collapsible's toggle, the
+       group's title), so the generic row put the label on screen TWICE — a plain "Advanced" sitting
+       above a collapsible headed "ADVANCED". They are siblings of this row, not children of it, so
+       the row was contributing a duplicate label and an empty body. -->
+  <div v-if="param.type !== 'section' && param.type !== 'group'" class="param-row">
     <label class="param-label" v-tooltip.left="param.tip">
       {{ param.label }}
       <i v-if="param.tip" class="pi pi-info-circle tip-icon" />
@@ -539,9 +543,6 @@ const pct = computed(() => {
         <option value="3D">3D</option>
       </select>
     </div>
-
-    <!-- section / group: rendered outside .param-row below -->
-    <template v-else-if="param.type === 'section' || param.type === 'group'"><!-- handled below --></template>
 
     <!-- channelSelection: togglable chip list from image context -->
     <!-- No tooltip on the wrapper: it anchors over the CHIPS, hiding the things you are about to
