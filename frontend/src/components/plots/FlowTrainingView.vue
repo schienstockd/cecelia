@@ -17,6 +17,12 @@
   view: it lands on the canvas with the panel chrome, the zoom, CSV/PNG/SVG export and the board's
   PDF export already attached. A chart in a modal would need every one of those written again, worse.
 
+  **The held-out curve is the one that answers the question.** A training loss only ever says the
+  number went down, measured on the frames the weights were just fitted to. When the run had a
+  `trainRatio` split, each term also carries a `val_` curve — drawn dashed in the SAME colour as its
+  term, because the only thing you read off it is the GAP to its own training line, and a second
+  colour would make that a legend lookup instead of a picture.
+
   Data is the model's own manifest, read through `GET /api/optical-flow/models` — the route the
   picker and the vault already use, so there is no second listing that can disagree with them. Models
   trained before the curves were recorded say so rather than drawing an empty box; the run kept only
@@ -80,6 +86,12 @@ const terms = computed<string[]>(() =>
 const shown = computed(() => series.value.filter(s => terms.value.includes(s.term)))
 const rows = computed(() => shown.value.flatMap(s =>
   s.values.map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
+// Held-out curves, drawn dashed in the SAME colour as their term. The only thing anyone reads off a
+// validation curve is the gap to its own training curve, so a second colour would turn the
+// comparison into a legend lookup.
+const valRows = computed(() => shown.value.flatMap(s =>
+  (s.val ?? []).map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
+const hasVal = computed(() => shown.value.some(s => s.val?.length))
 
 async function load() {
   loading.value = true
@@ -113,6 +125,9 @@ async function render() {
   if (!Plot) Plot = await import('@observablehq/plot')
   node?.remove(); node = null
   if (!rows.value.length) return
+  // Only the training rows get a tip. Two `tip: true` marks stacked on one x means both pointers
+  // fire and the boxes overlap; the training curve is the one you hover to read a value, and the
+  // val line's meaning is its distance from it, not its number.
   const w = Math.max(200, host.value.clientWidth || 360)
   const h = Math.max(160, host.value.clientHeight || 240)
   const dark = !forceLight.value
@@ -126,10 +141,15 @@ async function render() {
     // Log only when every plotted value is positive. Zero is a legitimate loss and log(0) would drop
     // the point silently rather than fail.
     y: { label: raw.value ? 'loss (raw)' : 'loss (weighted)', grid: true,
-         type: logY.value && rows.value.every(r => r.loss > 0) ? 'log' : 'linear' },
+         // Every plotted value, val included — a log axis chosen on the training rows alone would
+         // silently drop a val point that touched zero.
+         type: logY.value && [...rows.value, ...valRows.value].every(r => r.loss > 0)
+           ? 'log' : 'linear' },
     color: { domain, range: distinctColors(domain.length), legend: false },
     marks: [
       Plot.line(rows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5, tip: true }),
+      Plot.line(valRows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5,
+                                 strokeDasharray: '3,3' }),
     ],
   }) as SVGElement
   host.value.append(node)
@@ -142,7 +162,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null })
-watch([chosen, logY, raw, () => terms.value.join(',')], render)
+watch([chosen, logY, raw, () => terms.value.join(','), hasVal], render)
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -194,6 +214,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
         <label class="cc-muted cc-fs-xs ftv-opt" v-tooltip.top="'Log scale on the loss axis'">
           <input type="checkbox" v-model="logY" /> log
         </label>
+        <!-- A dashed line with nothing naming it is a puzzle. Only shown when there is one. -->
+        <span v-if="hasVal" class="cc-muted cc-fs-2xs">dashed = held out</span>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />

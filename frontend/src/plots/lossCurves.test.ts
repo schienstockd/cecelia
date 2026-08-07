@@ -40,6 +40,39 @@ describe('lossSeries', () => {
     expect(lossSeries(undefined, undefined)).toEqual([])
     expect(lossSeries(null, null)).toEqual([])
   })
+
+  // A run with a held-out split writes `val_<term>` beside every term. Listing those as their own
+  // series would double the chip list AND give the pair two colours — when the only thing anyone
+  // reads off a validation curve is the gap to its OWN training curve.
+  it('attaches val_<term> to its term instead of listing it separately', () => {
+    const s = lossSeries({ total: [3, 2], val_total: [3.2, 2.4] }, {})
+    expect(s.map(x => x.term)).toEqual(['total'])
+    expect(s[0]!.val).toEqual([3.2, 2.4])
+  })
+
+  it('scales the val curve by the same weight — they are only comparable as one quantity', () => {
+    const s = lossSeries({ temporal: [1, 2], val_temporal: [1.5, 2.5] }, { temporal: 2 })
+    expect(s[0]!.values).toEqual([2, 4])
+    expect(s[0]!.val).toEqual([3, 5])
+  })
+
+  it('never rescales val_total, for the same reason it never rescales total', () => {
+    const s = lossSeries({ total: [3], val_total: [4] }, { total: 5 })
+    expect(s[0]!.values).toEqual([3])
+    expect(s[0]!.val).toEqual([4])
+  })
+
+  it('leaves val undefined when the run had no split', () => {
+    expect(lossSeries({ total: [3, 2] }, {})[0]!.val).toBeUndefined()
+    // ...and an empty val curve is the same as none, not an empty dashed line
+    expect(lossSeries({ total: [3, 2], val_total: [] }, {})[0]!.val).toBeUndefined()
+  })
+
+  it('does not invent a term from an orphan val curve', () => {
+    // `val_warp` with no `warp` means the manifest is inconsistent; drawing a lone dashed line
+    // labelled "warp" would claim a training curve that does not exist.
+    expect(lossSeries({ total: [1], val_warp: [2] }, {}).map(x => x.term)).toEqual(['total'])
+  })
 })
 
 describe('lossTable', () => {
@@ -54,6 +87,17 @@ describe('lossTable', () => {
     expect(lossTable([{ term: 'total', weight: 1, values: [3, 2] },
                       { term: 'warp', weight: 1, values: [1] }]))
       .toEqual([{ epoch: 1, total: 3, warp: 1 }, { epoch: 2, total: 2 }])
+  })
+
+  it('gives the val curve its own column beside its term', () => {
+    // The export exists so the train/val gap can be worked out in a spreadsheet, and that is a
+    // subtraction between two columns.
+    expect(lossTable([{ term: 'total', weight: 1, values: [3, 2], val: [3.5, 2.5] }]))
+      .toEqual([{ epoch: 1, total: 3, val_total: 3.5 }, { epoch: 2, total: 2, val_total: 2.5 }])
+  })
+
+  it('counts val epochs when sizing the table', () => {
+    expect(lossTable([{ term: 'total', weight: 1, values: [3], val: [3.5, 2.5] }]).length).toBe(2)
   })
 
   it('is empty for no series', () => {

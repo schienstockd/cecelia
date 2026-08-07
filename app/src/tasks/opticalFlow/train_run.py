@@ -30,6 +30,7 @@ Parameter contract (JSON written by Julia):
   channelName              - display name(s) for the manifest and the picker label
   zPlanes                  - how many evenly-spaced Z planes per movie (1 = the middle)
   maxFrames                - cap on the contiguous frames each movie contributes; 0 = all
+  trainRatio               - fraction of each sequence to train on; 1.0 = no held-out split
   temporalScales           - already parsed + validated by Julia
   cumulativeWindow, droppedMetrics, epochs, embeddingDim, seed, normalise
   foregroundWeight, intensityWeight, temporalWeight
@@ -159,7 +160,8 @@ def run(params):
 
     # All three live in coastal.train — `prepare_data_for_unet_batch` reads as a flow helper and is
     # not one, which cost an end-to-end run to find (unit tests stub coastal, so nothing caught it).
-    from coastal.train import prepare_data_for_unet_batch, train_with_metrics, save_model
+    from coastal.train import (prepare_data_for_unet_batch, train_test_split_per_movie,
+                               train_with_metrics, save_model)
 
     movies = list(params['movies'])
     scales = [int(s) for s in params['temporalScales']]
@@ -251,11 +253,37 @@ def run(params):
     # Pool AFTER the per-sequence metrics: concatenating frames first would make flow cross a
     # boundary between two recordings — or between two Z planes of one timepoint — which is not
     # motion either way.
-    frames_prep = np.concatenate(all_frames, axis=0)
-    metrics = [{k: v for k, v in mm.items() if k not in dropped}
-               for per_movie in all_metrics for mm in per_movie]
+    #
+    # `train_test_split_per_movie` splits WITHIN each sequence and then concatenates, so every movie
+    # and every Z plane appears on both sides — a split that held whole movies out would measure
+    # "does this transfer to another recording", which is a different (and much harder) question
+    # than "has this converged or memorised". It takes the tail of each sequence, which for temporal
+    # data is the right cut: the held-out frames are a stretch the optimiser never saw.
+    #
+    # The metrics were computed over the FULL sequence before the split, so a val frame's flow
+    # metrics were derived partly from frames that ended up in training — about `max(scales)` frames
+    # of overlap at the seam. That is not label leakage (coastal is unsupervised; there are no
+    # labels), and the val frames themselves were never fed to the optimiser, which is what the
+    # comparison rests on. Computing metrics per side instead would change the metrics themselves at
+    # both seams, which is worse.
+    train_ratio = float(params.get('trainRatio', 1.0))
+    split = 0.0 < train_ratio < 1.0
+    if split:
+        frames_prep, val_frames_arr, metrics_raw, val_metrics_raw = train_test_split_per_movie(
+            all_frames, all_metrics, train_ratio=train_ratio, shuffle=False)
+    else:
+        frames_prep = np.concatenate(all_frames, axis=0)
+        metrics_raw = [mm for per_sequence in all_metrics for mm in per_sequence]
+        val_frames_arr, val_metrics_raw = None, None
 
-    key_sets = {tuple(sorted(mm.keys())) for mm in metrics}
+    def _keep(ms):
+        return [{k: v for k, v in mm.items() if k not in dropped} for mm in ms]
+
+    metrics = _keep(metrics_raw)
+    val_metrics = _keep(val_metrics_raw) if val_metrics_raw else None
+
+    # Both sides, or the model trains on one channel layout and is scored on another.
+    key_sets = {tuple(sorted(mm.keys())) for mm in metrics + (val_metrics or [])}
     if len(key_sets) > 1:
         # Would train the model on inconsistent channel layouts — the silent failure this whole
         # contract exists to prevent, so it stops the run.
@@ -263,6 +291,9 @@ def run(params):
     metric_keys = sorted(metrics[0].keys())
     log.log(f'>> {frames_prep.shape[0]} pooled frames, {len(metric_keys)} metrics: '
             f'{", ".join(metric_keys)}')
+    if split:
+        log.log(f'>> holding out {len(val_metrics)} frames ({(1 - train_ratio) * 100:.0f}%) '
+                f'for validation')
 
     # The real figure, from the metrics that exist. Still worth logging after the fact: training is
     # the long part and it holds all of this, so a run that is going to die of memory says so here
@@ -289,6 +320,10 @@ def run(params):
 
     model = train_with_metrics(
         frames_prep, metrics, variance_metrics_norm=None,
+        # No `val_flow_pairs` — the warp term is at weight 0 here (see `loss_weights`), so the
+        # missing flow pairs cost nothing and `val_total` stays comparable with `total`. If warp is
+        # ever given a weight, this needs the pairs or the two curves stop meaning the same thing.
+        val_frames=val_frames_arr, val_temporal_metrics_norm=val_metrics,
         num_epochs=epochs,
         intensity_weight=loss_weights['intensity'],
         foreground_weight=loss_weights['foreground'],
@@ -333,6 +368,7 @@ def run(params):
         'intensityWeight': float(params.get('intensityWeight', 1.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
         'maxFrames': max_frames,
+        'trainRatio': train_ratio,
         # Only the movies that were actually cut. The window is seed-derived, so this is what makes
         # "which frames did it see" answerable without re-deriving it from the seed by hand.
         'frameWindows': windows,
@@ -358,6 +394,14 @@ def run(params):
         if losses:
             qc['finalLoss'] = float(losses[-1])
             qc['lossDrop'] = float(losses[0] / losses[-1]) if losses[-1] > 0 else float('inf')
+        # The held-out curve, same shape. `lossDrop` alone cannot tell converging from memorising —
+        # it is measured on the frames the weights were fitted to — so where there is a split, the
+        # same ratio on the held-out set is the finding worth banking.
+        val_losses = curves.get('val_total', [])
+        if val_losses:
+            qc['valFinalLoss'] = float(val_losses[-1])
+            qc['valLossDrop'] = (float(val_losses[0] / val_losses[-1]) if val_losses[-1] > 0
+                                 else float('inf'))
         write_json_atomic(qc_out_path, qc)
         log.log(f'>> saved training QC: {qc}')
 

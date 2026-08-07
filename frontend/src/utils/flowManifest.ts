@@ -27,6 +27,8 @@ export interface FlowManifest {
   zPlanes?: number
   /** Cap on the contiguous frames each movie contributed; 0 = all. */
   maxFrames?: number
+  /** Fraction of each sequence trained on; the rest was held out. 1 = no split. */
+  trainRatio?: number
   /** uID → `[start, stop)` — only the movies that were actually cut. */
   frameWindows?: Record<string, number[]>
   /** uID → the plane indices that movie contributed; depth differs per image. */
@@ -46,7 +48,7 @@ const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
-  'maxFrames', 'frameWindows',
+  'maxFrames', 'frameWindows', 'trainRatio',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves',
 ])
@@ -122,6 +124,10 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
 
   const training: (DetailField | null)[] = [
     field('Epochs', m.epochs),
+    // Spelled out rather than shown as "1": a model with no held-out split has a loss curve that
+    // cannot distinguish convergence from memorising, and that is worth reading off the dialog.
+    field('Train fraction', m.trainRatio === undefined ? undefined
+      : m.trainRatio >= 1 ? 'all (no validation)' : m.trainRatio),
     field('Embedding dim', m.embeddingDim),
     field('Seed', m.seed),
     ...Object.entries(m.lossWeights ?? {}).map(([term, w]) => field(`${term} weight`, w)),

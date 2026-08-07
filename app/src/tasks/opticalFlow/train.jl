@@ -172,6 +172,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
                                     if 0 <= c < length(ch_names)], "+"),
            zPlanes          = Int(get(params, "zPlanes", 1)),
            maxFrames        = Int(get(params, "maxFrames", 0)),
+           trainRatio       = Float64(get(params, "trainRatio", 1.0)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
            droppedMetrics   = dropped,
@@ -225,18 +226,38 @@ end
 """
     flow_training_qc_findings(metrics) -> Vector
 
-The unambiguous bad case for a training run: the loss did not come down. A model whose loss ended at
-or above where it started has learned nothing, and it will still segment — producing a confidently
-wrong mask — so this is worth a warning rather than being left to the log.
+Two unambiguous bad cases.
+
+**The loss did not come down.** A model whose loss ended at or above where it started has learned
+nothing, and it will still segment — producing a confidently wrong mask — so this is worth a warning
+rather than being left to the log.
+
+**The held-out loss did not follow the training loss.** Only checkable when the run had a
+`trainRatio` split, and it is the one thing the training curve cannot tell you: a loss that drops
+nicely while the held-out loss sits flat or climbs is a model fitting these frames rather than
+learning what a cell looks like. Both curves descending is not evidence on its own — the gap is.
 
 Pure, so it is unit-tested without running a training job.
 """
 function flow_training_qc_findings(metrics::AbstractDict)
+    out = Dict{String,Any}[]
     drop = get(metrics, "lossDrop", NaN)
-    (drop isa Real && !isnan(drop) && drop <= 1.0) || return Dict{String,Any}[]
-    [qc_finding("warn", "opticalFlow.loss_flat", "Loss did not decrease",
-        "Check the channel has visible motion, then retrain";
-        detail = Dict{String,Any}("finalLoss" => get(metrics, "finalLoss", nothing),
-                                  "lossDrop"  => drop,
-                                  "epochs"    => get(metrics, "epochs", 0)))]
+    if drop isa Real && !isnan(drop) && drop <= 1.0
+        push!(out, qc_finding("warn", "opticalFlow.loss_flat", "Loss did not decrease",
+            "Check the channel has visible motion, then retrain";
+            detail = Dict{String,Any}("finalLoss" => get(metrics, "finalLoss", nothing),
+                                      "lossDrop"  => drop,
+                                      "epochs"    => get(metrics, "epochs", 0))))
+    end
+    val_drop = get(metrics, "valLossDrop", NaN)
+    if val_drop isa Real && !isnan(val_drop) && val_drop <= 1.0
+        push!(out, qc_finding("warn", "opticalFlow.val_loss_flat",
+            "Held-out loss did not decrease",
+            "Train on more images or fewer epochs — this fits the frames, not the cells";
+            detail = Dict{String,Any}("valFinalLoss" => get(metrics, "valFinalLoss", nothing),
+                                      "valLossDrop"  => val_drop,
+                                      "finalLoss"    => get(metrics, "finalLoss", nothing),
+                                      "epochs"       => get(metrics, "epochs", 0))))
+    end
+    out
 end

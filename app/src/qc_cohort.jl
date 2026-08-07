@@ -38,7 +38,10 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # like its peers. `finalLoss` is only comparable within a set trained at the same weights and
     # epochs — which is the normal case, since one parameter set per set is the rule — and
     # `lossDrop` (start/end ratio) is the scale-free companion for when it is not.
-    "opticalFlow.train"          => ["finalLoss", "lossDrop", "epochs"],
+    # valLossDrop is the cohort-comparable one: `lossDrop` is measured on the training frames, so it
+    # can be high across a whole cohort of models that all memorised.
+    "opticalFlow.train"          => ["finalLoss", "lossDrop", "valFinalLoss", "valLossDrop",
+                                     "epochs"],
     # skeleton branching per image (docs/todo/BRANCHING_PLAN.md): nBranches is the primary count;
     # meanBranchLength flags an image whose skeleton is far more/less fragmented than its peers.
     # `anisotropy` (0 = uniform, 1 = non-uniform) is only banked when the anisotropy pass ran, so

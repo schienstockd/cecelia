@@ -134,7 +134,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-8_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
       - pypi: ./python
-      - pypi: git+https://github.com/schienstockd/coastal.git?rev=15f3bf477b4f0520e0ceaefb7f522cc83aab7549#15f3bf477b4f0520e0ceaefb7f522cc83aab7549
+      - pypi: git+https://github.com/schienstockd/coastal.git?rev=0858707385d895d85472a626cbb4f7463d71605f#0858707385d895d85472a626cbb4f7463d71605f
       - pypi: https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-linux_x86_64.whl
       - pypi: https://download-r2.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp312-cp312-linux_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
@@ -450,7 +450,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-h010d191_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
       - pypi: ./python
-      - pypi: git+https://github.com/schienstockd/coastal.git?rev=15f3bf477b4f0520e0ceaefb7f522cc83aab7549#15f3bf477b4f0520e0ceaefb7f522cc83aab7549
+      - pypi: git+https://github.com/schienstockd/coastal.git?rev=0858707385d895d85472a626cbb4f7463d71605f#0858707385d895d85472a626cbb4f7463d71605f
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/a7/fec56dbac873a18930b2127d400794a91dd53898bff811aa4802ddbbfac9/multiscale_spatial_image-2.0.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/b9/748c3cbcdba20ef01c055a35905cad5c771cc1df29be11b9a82da6fd8e0d/superqt-0.8.2-py3-none-any.whl
@@ -735,7 +735,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vs2015_runtime-14.51.36231-h84cd919_39.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - pypi: ./python
-      - pypi: git+https://github.com/schienstockd/coastal.git?rev=15f3bf477b4f0520e0ceaefb7f522cc83aab7549#15f3bf477b4f0520e0ceaefb7f522cc83aab7549
+      - pypi: git+https://github.com/schienstockd/coastal.git?rev=0858707385d895d85472a626cbb4f7463d71605f#0858707385d895d85472a626cbb4f7463d71605f
       - pypi: https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl
       - pypi: https://download-r2.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
@@ -2677,7 +2677,7 @@ packages:
   - python >=3.10
   license: ISC
   purls:
-  - pkg:pypi/certifi?source=compressed-mapping
+  - pkg:pypi/certifi?source=hash-mapping
   run_exports: {}
   size: 133877
   timestamp: 1781719949728
@@ -4547,7 +4547,7 @@ packages:
   - scikit-image>=0.24
   - tqdm
   requires_python: '>=3.11'
-- pypi: git+https://github.com/schienstockd/coastal.git?rev=15f3bf477b4f0520e0ceaefb7f522cc83aab7549#15f3bf477b4f0520e0ceaefb7f522cc83aab7549
+- pypi: git+https://github.com/schienstockd/coastal.git?rev=0858707385d895d85472a626cbb4f7463d71605f#0858707385d895d85472a626cbb4f7463d71605f
   name: coastal
   version: 0.1.0
   requires_dist:

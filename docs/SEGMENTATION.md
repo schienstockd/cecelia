@@ -381,6 +381,29 @@ Two ordering constraints, both silent when broken:
 The manifest records `maxFrames` and `frameWindows` (uID → `[start, stop)`, only for the movies
 actually cut).
 
+**`trainRatio` holds part of every sequence back, and without it the loss curve cannot be read.** A
+training loss is measured on the frames the weights were just fitted to, so it goes down whether the
+model learned what a cell looks like or memorised these frames. With a split, coastal evaluates every
+term on the held-out frames each epoch (no grad, no augmentation) and the manifest's `lossCurves`
+gains a `val_<term>` beside each one; the **gap** between the pair is the reading.
+
+The split is `train_test_split_per_movie`, which cuts *within* each sequence — so every movie and
+every Z plane appears on both sides. Holding whole movies out would ask "does this transfer to
+another recording", a different and much harder question. The held-out frames are the tail of each
+sequence, a stretch the optimiser never saw.
+
+One honest caveat: the metrics are computed over the full sequence *before* the split, so a held-out
+frame's flow metrics derive partly from frames that ended up in training — roughly `max(scales)`
+frames of overlap at the seam. That is not label leakage (coastal is unsupervised; there are no
+labels) and the held-out frames themselves never reach the optimiser, which is what the comparison
+rests on. Computing the metrics per side instead would change the metrics at *both* seams, which is
+worse.
+
+The convergence plot draws each `val_` curve dashed in the same colour as its term — the only thing
+read off a validation curve is its distance from its own training line, and a second colour would
+make that a legend lookup. QC banks `valFinalLoss`/`valLossDrop` and warns when the held-out loss
+does not come down even though the training loss did.
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the
