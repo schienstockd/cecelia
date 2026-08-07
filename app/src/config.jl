@@ -438,50 +438,83 @@ end
 # unlike the compressor, which applies to whatever is written next, these are **defaults** that the
 # import form pre-fills, not a switch that changes existing behaviour. `docs/todo/ZARR_V3_PLAN.md` D10.
 
-#: NGFF spec version new imports default to. 0.4 is zarr v2 — what every existing image is, and still
-#: the right default: v3's only measured benefit here (fewer files) needs `--shard-depth`, which carries
-#: the D8 write-amplification risk, while the separator below gets a bigger win with none of it.
-const NGFF_VERSION_CHOICES = [
-    (name = "0.4", label = "0.4 — zarr v2", detail = ".zattrs / .zarray; what every existing image uses"),
-    (name = "0.5", label = "0.5 — zarr v3", detail = "zarr.json; required for sharding"),
+#: Store LAYOUTS a new import can be written in, as the three VIABLE combinations of NGFF version and
+#: chunk-key separator — not two independent controls. Flat keys and NGFF 0.5 cannot be combined
+#: (bioformats2raw silently writes zarr v2 for that pair, verified in both flag orders), so presenting
+#: them as one choice makes the impossible state unrepresentable instead of warning about it.
+#:
+#: Rendered as a TABLE in Settings, like the compressor, because the trade-off is the only reason there
+#: is a choice. Every number is MEASURED on one source (`M3c-CD8-GFP-CD20-Tom_MAX.tif`, 2 pyramid
+#: levels, identical codec), with `read` the median of 9 interleaved full-level reads so drift hits each
+#: store equally. All three decode to identical pixels.
+#:
+#: `flat` is the default: same data bytes as nested and the same read time, but 10 MB of 81 MB less on
+#: disk (~14%) because it does not allocate ~2,470 directory inodes. Free on local disk, and a network
+#: share should favour it further.
+#:
+#: `v3` is offered and NOT default: same size, ~40% slower to read (263 vs 188 ms, its whole range above
+#: every other median). bioformats2raw ALWAYS shards v3, so this measures "v3 as we can actually produce
+#: it"; the shard-index indirection is the likely cause. See docs/todo/ZARR_V3_PLAN.md.
+const STORE_LAYOUT_CHOICES = [
+    (name = "flat", ngffVersion = "0.4", chunkSeparator = "flat",
+     label = "zarr v2 · flat keys", keys = "36.0.8", dirs = "4",
+     size = "71.1 MB", read = "189 ms",
+     detail = "NGFF 0.4, dimension_separator '.' (--no-nested)"),
+    (name = "nested", ngffVersion = "0.4", chunkSeparator = "nested",
+     label = "zarr v2 · nested keys", keys = "0/0/36/0/8", dirs = "2,474",
+     size = "81.2 MB", read = "188 ms",
+     detail = "NGFF 0.4, dimension_separator '/' — bioformats2raw's own default"),
+    (name = "v3", ngffVersion = "0.5", chunkSeparator = "nested",
+     label = "zarr v3 · sharded", keys = "c/0/0/36/0/8", dirs = "2,476",
+     size = "81.2 MB", read = "263 ms",
+     detail = "NGFF 0.5, zarr.json + sharding_indexed (--ngff-version 0.5)"),
 ]
-const NGFF_VERSION_DEFAULT = "0.4"
+const STORE_LAYOUT_DEFAULT = "flat"
 
-#: How chunk keys are spelled on disk. NOT cosmetic: it decides how many DIRECTORIES a store costs,
-#: which is most of its filesystem footprint and all of its cost on a network share. Measured on one
-#: 512x512x13z x2c x4t conversion — nested 224 directories, flat 4; on a real 1.7 GB import, 20 933 vs 4.
-#: bioformats2raw nests by default in BOTH formats; `--no-nested` flips it.
-const CHUNK_SEPARATOR_CHOICES = [
-    (name = "nested", label = "Nested  /", detail = "0/0/36/0/8 — bioformats2raw's default"),
-    (name = "flat",   label = "Flat  .",   detail = "36.0.8 — ~56x fewer directories; forces zarr v2"),
-]
-const CHUNK_SEPARATOR_DEFAULT = "nested"
+#: What every row was measured on — shown as the table's caption, one line, like the compressor's.
+const STORE_LAYOUT_MEASURED_ON = "0.5 GB 16-bit stack, 2 levels; read = median of 9 interleaved"
+
+"""The configured store layout, as a `STORE_LAYOUT_CHOICES` entry.
+
+Resolved from the two persisted `[zarr]` keys rather than a layout name, so a config written before
+this table existed still resolves, and so the two remain independently settable from the API. An
+unrecognised pair falls back to the default rather than erroring — this is read on the write path of a
+long import."""
+function store_layout()
+    v, sep = ngff_version(), chunk_separator()
+    i = findfirst(c -> c.ngffVersion == v && c.chunkSeparator == sep, STORE_LAYOUT_CHOICES)
+    STORE_LAYOUT_CHOICES[isnothing(i) ? findfirst(c -> c.name == STORE_LAYOUT_DEFAULT, STORE_LAYOUT_CHOICES) : i]
+end
 
 ngff_version()::String =
     (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "ngffVersion", NGFF_VERSION_DEFAULT));
-     any(c -> c.name == v, NGFF_VERSION_CHOICES) ? v : NGFF_VERSION_DEFAULT)
+     v in ("0.4", "0.5") ? v : NGFF_VERSION_DEFAULT)
 
 chunk_separator()::String =
     (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "chunkSeparator", CHUNK_SEPARATOR_DEFAULT));
-     any(c -> c.name == v, CHUNK_SEPARATOR_CHOICES) ? v : CHUNK_SEPARATOR_DEFAULT)
+     v in ("nested", "flat") ? v : CHUNK_SEPARATOR_DEFAULT)
 
-"""Persist a `[zarr]` layout default and hot-reload. Mirrors `set_image_compressor!`; unknown values
-raise rather than silently falling back, because this one is set from a UI with a fixed choice list."""
-function set_store_layout!(key::AbstractString, value::AbstractString)::String
-    v, choices = strip(String(value)),
-        key == "ngffVersion"    ? NGFF_VERSION_CHOICES :
-        key == "chunkSeparator" ? CHUNK_SEPARATOR_CHOICES :
-        throw(ArgumentError("unknown layout key '$key'"))
-    any(c -> c.name == v, choices) || throw(ArgumentError("unknown $key '$v'"))
+#: Defaults for the two underlying keys — derived from the default LAYOUT so they cannot drift apart.
+const NGFF_VERSION_DEFAULT = "0.4"
+const CHUNK_SEPARATOR_DEFAULT = "flat"
+
+"""Persist a whole LAYOUT by name (both keys at once) and hot-reload. Setting the pair together is what
+keeps the impossible combination unreachable from the UI."""
+function set_store_layout!(name::AbstractString)::String
+    nm = strip(String(name))
+    i  = findfirst(c -> c.name == nm, STORE_LAYOUT_CHOICES)
+    isnothing(i) && throw(ArgumentError("unknown store layout '$nm'"))
+    c = STORE_LAYOUT_CHOICES[i]
     ensure_config_dir()
     cfg_path = custom_toml_path()
     cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
     z   = get(cfg, "zarr", Dict{String,Any}())
-    z[key] = v
+    z["ngffVersion"]    = c.ngffVersion
+    z["chunkSeparator"] = c.chunkSeparator
     cfg["zarr"] = z
     write_atomic(io -> TOML.print(io, cfg), cfg_path)
     init_cecelia!()
-    v
+    c.name
 end
 
 """

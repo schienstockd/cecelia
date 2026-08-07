@@ -760,8 +760,8 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # store-layout default lives and the import form pre-fills from it (ZARR_V3_PLAN D10). A run
     # launched headlessly (REPL, chain) therefore gets the same layout as one launched from the form.
     fmt_flags, fmt_conflict = bf2raw_format_flags(
-        get(params, "ngffVersion", ngff_version()), get(params, "shardSize", "auto");
-        separator   = get(params, "chunkSeparator", chunk_separator()),
+        get(params, "ngffVersion", store_layout().ngffVersion), get(params, "shardSize", "auto");
+        separator   = get(params, "chunkSeparator", store_layout().chunkSeparator),
         shard_depth = get(params, "shardDepth", "1"),
         z_planes    = Int(get(img.meta, "SizeZ", 0)))
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")

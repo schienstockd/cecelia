@@ -98,15 +98,15 @@
           "key": "chunkSeparator",
           "label": "Chunk key separator",
           "type": "select",
-          "default": "nested",
+          "default": "flat",
           "options": [
             {
-              "value": "nested",
-              "label": "Nested  /  (default)"
+              "value": "flat",
+              "label": "Flat  .  (default)"
             },
             {
-              "value": "flat",
-              "label": "Flat  .  \u2014 far fewer directories"
+              "value": "nested",
+              "label": "Nested  /"
             }
           ],
           "tip": "dimension_separator: nested writes 0/0/36/0/8, flat writes 36.0.8 (--no-nested)"

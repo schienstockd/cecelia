@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phases 1-3 built and Phase 4 measured.** Recommendation: keep NGFF 0.4 / zarr v2 as the default — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** **Default is now `flat` — NGFF 0.4 / zarr v2 with flat chunk keys** (Dominik, 2026-08-07): same read time as nested, ~14% less on disk. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 

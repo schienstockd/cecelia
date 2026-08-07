@@ -8,7 +8,8 @@ export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discr
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON, IMAGE_COMPRESSOR_DOCS_URL
 export ngff_version, chunk_separator, set_store_layout!
-export NGFF_VERSION_CHOICES, NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_CHOICES, CHUNK_SEPARATOR_DEFAULT
+export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT
+export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_MEASURED_ON
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH

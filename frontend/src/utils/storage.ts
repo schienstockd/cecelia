@@ -119,22 +119,35 @@ export async function reclaimStorage(
   return data as { freedBytes: number; reclaimed: string[] }
 }
 
-/** One selectable store-layout value (zarr format or chunk separator). */
-export interface LayoutChoice { name: string; label: string; detail: string }
-
-/**
- * Store LAYOUT defaults — the zarr format and the chunk-key separator.
- *
- * Unlike the compressor, these are **defaults the import form pre-fills**, not a switch over what
- * happens next: format and separator are decided per image at import, because an existing v2 image
- * cannot become v3 and derived stores inherit from their source. See docs/todo/ZARR_V3_PLAN.md D10.
- */
-export interface StoreLayoutSettings {
+/** One selectable store layout — a viable NGFF-version + separator pair, with its measured numbers. */
+export interface LayoutChoice {
+  name: string
+  label: string
+  keys: string        // an example chunk key as it appears on disk
+  dirs: string        // directories the measured store cost
+  size: string        // on-disk size of the measured store
+  read: string        // median full-level read
+  detail: string      // the NGFF/zarr terms and the bioformats2raw flag, for anyone who knows zarr
   ngffVersion: string
   chunkSeparator: string
-  defaults: { ngffVersion: string; chunkSeparator: string }
-  ngffVersionChoices: LayoutChoice[]
-  chunkSeparatorChoices: LayoutChoice[]
+}
+
+/**
+ * Store LAYOUT defaults — shaped like `CompressorSettings` because it is the same kind of decision and
+ * Settings renders it the same way, as a table with the measured numbers.
+ *
+ * The choices are the three VIABLE combinations, not two independent controls: flat keys and NGFF 0.5
+ * cannot be combined (bioformats2raw silently writes zarr v2 for that pair), so offering combinations
+ * makes the impossible state unreachable rather than something to warn about.
+ *
+ * These are **defaults the import form pre-fills**, not a switch over what happens next — format and
+ * separator are fixed per image at import, and derived stores inherit. docs/todo/ZARR_V3_PLAN.md D10.
+ */
+export interface StoreLayoutSettings {
+  current: string
+  default: string
+  measuredOn: string
+  choices: LayoutChoice[]
 }
 
 export async function fetchStoreLayout(): Promise<StoreLayoutSettings> {
@@ -145,26 +158,13 @@ export async function fetchStoreLayout(): Promise<StoreLayoutSettings> {
 }
 
 /** Applies to images imported from here on — existing stores keep their layout (there is no converter). */
-export async function setStoreLayout(key: 'ngffVersion' | 'chunkSeparator', value: string): Promise<string> {
+export async function setStoreLayout(name: string): Promise<string> {
   const res = await fetch('/api/storage/layout/set', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value }),
+    body: JSON.stringify({ name }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
-  return (data as any).value as string
-}
-
-/**
- * Whether a format + separator pair is one bioformats2raw cannot actually write.
- *
- * `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr **v2** store — verified in
- * both flag orders. So the pair is not "advanced", it is impossible, and the UI has to say so rather
- * than let someone pick 0.5 and get 0.4 without being told.
- */
-export function layoutConflict(ngffVersion: string, chunkSeparator: string): string {
-  return ngffVersion === '0.5' && chunkSeparator === 'flat'
-    ? 'Flat keys force zarr v2 — bioformats2raw cannot write NGFF 0.5 with flat keys'
-    : ''
+  return (data as any).current as string
 }

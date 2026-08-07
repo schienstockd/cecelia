@@ -3231,26 +3231,28 @@ end
 end
 
 @testset "API: store layout defaults" begin
-    # These are DEFAULTS the import form pre-fills, not a switch over what happens next: format and
-    # separator are fixed per image at import (no converter) and derived stores inherit from their
-    # source. docs/todo/ZARR_V3_PLAN.md D10.
+    # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
+    # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.
     st, body = api_store_layout_get(HTTP.Request("GET", "/api/storage/layout"))
     @test st == 200
     d = JSON3.read(body)
-    @test d.ngffVersion == "0.4"            # zarr v2 — what every existing image is
-    @test d.chunkSeparator == "nested"      # bioformats2raw's own default
-    @test d.defaults.ngffVersion == "0.4" && d.defaults.chunkSeparator == "nested"
+    @test d.default == "flat"                       # measured: same read time, ~14% less on disk
+    @test d.current in [String(c.name) for c in d.choices]
+    @test !isempty(String(d.measuredOn))
 
-    # the choice list is SERVED, never duplicated in Vue (same rule as task param specs)
-    @test Set(String(c.name) for c in d.ngffVersionChoices) == Set(["0.4", "0.5"])
-    @test Set(String(c.name) for c in d.chunkSeparatorChoices) == Set(["nested", "flat"])
-    # transparent copy: every option says what it means on disk, for someone who knows zarr
-    for c in vcat(collect(d.ngffVersionChoices), collect(d.chunkSeparatorChoices))
-        @test !isempty(String(c.detail))
+    # The rows are the three VIABLE combinations, NOT the cross product. Flat keys + NGFF 0.5 cannot be
+    # written (bioformats2raw silently emits zarr v2 for that pair), so it must not be offered at all —
+    # an unreachable state beats a warned one.
+    @test length(d.choices) == 3
+    @test !any(String(c.chunkSeparator) == "flat" && String(c.ngffVersion) == "0.5" for c in d.choices)
+    # every row carries its measured numbers, since that is the whole reason this is a table
+    for c in d.choices
+        for k in (:label, :keys, :dirs, :size, :read, :detail)
+            @test !isempty(String(getproperty(c, k)))
+        end
     end
 
-    # bad input is rejected rather than silently persisted — this writes to custom.toml
-    @test _post(api_store_layout_set, Dict("key" => "ngffVersion", "value" => "9.9"))[1] == 400
-    @test _post(api_store_layout_set, Dict("key" => "nope", "value" => "0.4"))[1] == 400
-    @test _post(api_store_layout_set, Dict("key" => "", "value" => ""))[1] == 400
+    # bad input is rejected rather than silently persisted — this writes custom.toml
+    @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
+    @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
 end
