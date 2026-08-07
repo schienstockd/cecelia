@@ -21,7 +21,7 @@ Everything in **Steps 1–6 is built + merged** and the cluster canvas is fully 
 transitions from→to grid — cluster-number OR pop mode), tick clusters into populations in the shared
 floating pop-manager (set-wide mirror write, `partOf` run-membership guard), and every canvas plot
 carries **duplicate + export** (PNG/SVG/CSV). Plot styling (`VisProps`) is generalised: shared
-`PlotOptions` + `PopulationPanelShell` (chrome) + `plots/export.ts`/`overlays.ts`, reused by the
+`PlotOptions` + `CanvasSidePanel` (chrome) + `plots/export.ts`/`overlays.ts`, reused by the
 summary `SeriesPicker` and the gating/cluster `PopulationManager` — so the future universal analysis
 canvas is mostly assembly.
 
@@ -109,7 +109,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
 - **Steps 5–6 — DONE (sessions 5–6):** shared floating pop-manager with cluster-ID tick chips
   (set-wide mirror write, `partOf` run-membership + "select clustered images"); napari per-pop-type
   toggles (clust points / trackclust ribbons); HMM behaviour plots (states / transitions) on the
-  canvas; styling generalised (`PlotOptions` + `PopulationPanelShell` + `plots/export.ts`/`overlays.ts`),
+  canvas; styling generalised (`PlotOptions` + `CanvasSidePanel` + `plots/export.ts`/`overlays.ts`),
   duplicate/export on every cluster + gate plot. **See "Current state & remaining (2026-07-01)" at the
   top for the live status + the short remaining list** (sub-clustering, the canvas-export cleanup, umap-learn pin,
   e2e spot-check).

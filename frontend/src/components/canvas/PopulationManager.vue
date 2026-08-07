@@ -19,7 +19,7 @@ import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
-import PopulationPanelShell from './PopulationPanelShell.vue'
+import CanvasSidePanel from './CanvasSidePanel.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
@@ -221,7 +221,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 </script>
 
 <template>
-  <PopulationPanelShell :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
+  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
@@ -413,11 +413,11 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </div>
       </div>
     </template>
-  </PopulationPanelShell>
+  </CanvasSidePanel>
 </template>
 
 <style scoped>
-/* row / options styles — applied to content rendered into PopulationPanelShell's slots (slotted
+/* row / options styles — applied to content rendered into CanvasSidePanel's slots (slotted
    content keeps THIS component's scoped styles; the floating chrome + scope footer live in the shell). */
 .pm-empty { padding: 12px; }   /* + .cc-muted */
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }

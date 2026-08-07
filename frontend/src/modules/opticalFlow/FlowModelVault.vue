@@ -10,14 +10,16 @@
   Rename/delete move BOTH files — `<name>.pt` and `<name>.json`. An orphaned .pt silently falls back
   to coastal's default metric set, which is the failure above.
 
-  Chrome comes from the app's `FloatingPanel` (the component Viewer and Lab log use), so drag,
-  resize, collapse and per-key persistence are not reimplemented here — this file is only the list.
-  NOT `PopulationPanelShell`: that is CANVAS-panel chrome, absolutely positioned inside a zoomable
-  board and carrying a global/local PLOT scope footer that means nothing for a model list. The two
-  floating mechanisms are a deliberate split, not duplication (see INVENTORY.md).
+  Chrome comes from `CanvasSidePanel` — the same shell the population manager uses — so it lives ON
+  the flow canvas and is toggled from the canvas bar, exactly like the pop manager. It was the app's
+  `FloatingPanel` first, which was wrong: that is a top-level VIEWPORT window and the vault would
+  collide with the Viewer and the Lab log for the same screen space, over a canvas it belongs to.
+  The shell's plot-only parts (the global/local scope footer, the styling block) are opt-in, so a
+  model list simply doesn't pass them — that is what made the reuse fit rather than force.
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import CanvasSidePanel from '../../components/canvas/CanvasSidePanel.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -126,48 +128,49 @@ const picked = ref('')
 </script>
 
 <template>
-  <div class="vault">
-    <div class="vault-bar">
-      <span class="cc-muted">{{ models.length }} model{{ models.length === 1 ? '' : 's' }}</span>
-      <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
-      <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Refresh'"
-              :disabled="loading" @click="load">
-        <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
-      </button>
-    </div>
+  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="460">
+    <div class="vault">
+      <div class="vault-bar">
+        <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Refresh'"
+                :disabled="loading" @click="load">
+          <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
+        </button>
+      </div>
 
-    <p v-if="error" class="cc-muted-warn">{{ error }}</p>
+      <p v-if="error" class="cc-muted-warn">{{ error }}</p>
 
-    <p v-if="!loading && !models.length" class="cc-muted">
-      No models yet — run Train flow model on an image.
-    </p>
+      <p v-if="!loading && !models.length" class="cc-muted">
+        No models yet — run Train flow model on an image.
+      </p>
 
-    <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked"
-                    actions-label=""
-                    :row-tooltip="r => `Trained on ${r.trainedOn || 'unknown data'}`">
-      <template #actions="{ row }">
-        <input v-if="editing === row.name" v-model="draft" class="vault-rename" autofocus
-               v-tooltip.top="'Enter to rename, Esc to cancel'"
-               @keyup.enter="commitRename(byName(row.name))" @keyup.esc="editing = null"
-               @blur="commitRename(byName(row.name))" />
-        <template v-else>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
-                  @click="startRename(byName(row.name))">
-            <i class="pi pi-pencil" />
-          </button>
-          <ConfirmDeleteButton title="Delete model"
-                               armed-title="Click again to delete this model"
-                               @confirm="remove(byName(row.name))" />
+      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked"
+                      actions-label=""
+                      :row-tooltip="r => `Trained on ${r.trainedOn || 'unknown data'}`">
+        <template #actions="{ row }">
+          <input v-if="editing === row.name" v-model="draft" class="vault-rename" autofocus
+                 v-tooltip.top="'Enter to rename, Esc to cancel'"
+                 @keyup.enter="commitRename(byName(row.name))" @keyup.esc="editing = null"
+                 @blur="commitRename(byName(row.name))" />
+          <template v-else>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
+                    @click="startRename(byName(row.name))">
+              <i class="pi pi-pencil" />
+            </button>
+            <ConfirmDeleteButton title="Delete model"
+                                 armed-title="Click again to delete this model"
+                                 @confirm="remove(byName(row.name))" />
+          </template>
         </template>
-      </template>
-    </SelectionTable>
-  </div>
+      </SelectionTable>
+    </div>
+  </CanvasSidePanel>
 </template>
 
 <style scoped>
-.vault { display: flex; flex-direction: column; gap: 0.4rem; }
+/* the shell owns the box; this is only the list's own layout */
+.vault { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.4rem 0.5rem; }
 .vault-bar { display: flex; align-items: center; gap: 0.6rem; }
-.vault-dir { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-             max-width: 40ch; }
+.vault-dir { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vault-rename { width: 20ch; }
 </style>

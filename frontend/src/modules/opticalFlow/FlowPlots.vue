@@ -10,6 +10,12 @@
 
   Scope is per-IMAGE (a flow model is inspected on one movie at one timepoint), so the canvas key
   carries the first selected image and the panels rebind when the selection moves.
+
+  The model vault rides along on the canvas and is toggled from the bar, exactly like the population
+  manager on the cluster/gating canvases — same `CanvasSidePanel` chrome, same "outside the zoom
+  layer so it stays full-size" placement. It is deliberately NOT a top-level `FloatingPanel`: that
+  would put a canvas-scoped manager in the app's window layer, competing with the Viewer and the Lab
+  log for the same corner.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, provide } from 'vue'
@@ -18,8 +24,10 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
+import { useViewState } from '../../composables/useViewState'
 import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
+import FlowModelVault from './FlowModelVault.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { defaultVis } from '../../plots/plot'
 
@@ -36,8 +44,11 @@ const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panel
 // Per-image, like the summary/gating canvases (`flow:` is registered in the canvasPanels store's
 // MODULE_PREFIXES, so the panels persist with the image at 1/{uid}/moduleCanvases.json).
 const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
-const { panels, activeId, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowModel' }), ckey)
+
+// persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state)
+const { showVault } = useViewState(shared, { showVault: true })
 
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
@@ -88,12 +99,21 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowModel') }, { imm
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
                   @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <div class="cc-btn-group">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showVault }"
+                  @click="showVault = !showVault"
+                  v-tooltip.bottom="showVault ? 'Hide the model vault' : 'Show the model vault'">
+            <i class="pi pi-database" />
+          </button>
+        </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth"
                            @fit-height="fitHeight" @reset="resetZoom" />
         <span class="fp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
       </div>
 
       <div ref="canvasRef" class="fp-canvas">
+        <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
+        <FlowModelVault v-if="showVault" />
         <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
           <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
             <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"

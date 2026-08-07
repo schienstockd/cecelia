@@ -4,7 +4,7 @@ import type { ComparisonsResult } from './types'
  * The stats readout the population picker shows for the ACTIVE plot: which test ran, and why.
  *
  * ONE object rather than two parallel props, because the two must travel together — the chain is
- * `SummaryPanel → host → SeriesPicker → PopulationPanelShell → PlotOptions`, and with separate props a
+ * `SummaryPanel → host → SeriesPicker → CanvasSidePanel → PlotOptions`, and with separate props a
  * host could thread the test name and forget the reason, leaving a tooltip that silently says nothing.
  */
 export interface StatsInfo {

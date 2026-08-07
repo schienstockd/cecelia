@@ -43,14 +43,23 @@ free, and behaves the way every other task does.
 
 ## The two panels, and what they can reuse
 
-### Vault manager — reuse `PopulationPanelShell`
+### Vault manager — reuse `CanvasSidePanel`
 
 `PopulationManager.vue` is the precedent and it is close to what is wanted: a floating, collapsible,
 shared manager with per-row rename-inline, delete, and a visibility toggle, built on
-`PopulationPanelShell.vue`. A `ModelVaultManager` is the same shape over a different list: per row
+`CanvasSidePanel.vue`. A `ModelVaultManager` is the same shape over a different list: per row
 the model name, the manifest summary (channel, sigma, metric count, date), rename, delete, and
-"reveal in the segmentation picker". **Build it on `PopulationPanelShell`, not from scratch** — this
+"reveal in the segmentation picker". **Build it on `CanvasSidePanel`, not from scratch** — this
 is exactly the case `CLAUDE.md` and `docs/todo/UX_PRIMITIVES_PLAN.md` warn about.
+
+**BUILT — after a detour through the wrong shell.** The vault was a top-level `FloatingPanel` first,
+which Dominik rejected: *"i want this like the pop manager. not a top level panel. that will
+interfere with the viewer panel and lab log."* Exactly right — the app's window layer already holds
+the Viewer and the Lab log, and a manager scoped to one canvas has no business competing for it. The
+vault now wraps `CanvasSidePanel` on the flow canvas, toggled from the canvas bar (`showVault`,
+persisted in the canvas `shared` bag). The shell was renamed from `PopulationPanelShell` in the same
+change and its two plot-only parts — the global/local scope footer and the `PlotOptions` block — made
+opt-in, since neither means anything for a list of models.
 
 ### Training panel — the canvas framework does NOT fit, and that is fine
 

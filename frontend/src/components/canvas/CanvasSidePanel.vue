@@ -1,11 +1,23 @@
 <!--
-  Shared CHROME for the floating population panels — the draggable, collapsible box that both the
-  gating `PopulationManager` (single tree, mutating) and the summary `SeriesPicker` (read-only,
-  cross-segmentation) wrap. Owns everything they had in common: the container + top-right placement,
-  the draggable header (icon · title · count · collapse), the global/local scope footer, and the
-  optional shared `PlotOptions` styling block. The differing bit — the population LIST — is the
-  default slot; a host with its own extra controls (the gating manager's gate/viewer options) uses the
-  `#options` slot. One place for the chrome so the future universal analysis board reuses it too.
+  Shared CHROME for a canvas SIDE PANEL — the draggable, collapsible box that sits beside the plots on
+  a canvas and manages the things they show. Three wrap it: the gating `PopulationManager` (single
+  tree, mutating), the summary `SeriesPicker` (read-only, cross-segmentation) and the optical-flow
+  `FlowModelVault` (the trained-model list). Owns everything they had in common: the container +
+  top-right placement, the draggable header (icon · title · count · collapse), the optional
+  global/local scope footer, and the optional shared `PlotOptions` styling block. The differing bit —
+  the LIST — is the default slot; a host with its own extra controls (the gating manager's gate/viewer
+  options) uses the `#options` slot.
+
+  It was `PopulationPanelShell` until the model vault showed the chrome was never population-specific.
+  Both plot-only parts are opt-in: pass `scope` for the global/local footer, `vis` for the styling
+  block. A manager of things that are not plot series (the vault) passes neither.
+  NB the internal classes keep the `pm-` prefix — the consumers' slotted rows use the same prefix in
+  their own scoped styles, so renaming here would only half-rename the visible markup.
+
+  NOT the app's `FloatingPanel` (Viewer, Lab log). That one is VIEWPORT-fixed and stacks with the other
+  app windows; this one is absolutely positioned inside a zoomable canvas and belongs to it. Putting a
+  canvas-scoped manager in a top-level window makes it collide with the Viewer and the Lab log — the
+  two floating mechanisms are a deliberate split (see INVENTORY.md).
 -->
 <script setup lang="ts">
 import { ref, onMounted, useTemplateRef } from 'vue'
@@ -23,8 +35,12 @@ const SCOPE_OPTIONS: ChipOption[] = [
 
 const props = withDefaults(defineProps<{
   title?: string
+  icon?: string                    // header icon (a PrimeIcons class, e.g. 'pi-database')
   count?: number | string          // shown at the right of the header (population count)
-  scope: 'global' | 'local'
+  width?: number                   // px; a wider list (the model vault's table) needs more room
+  // when provided, the global/local footer renders — omit it for a panel that manages things which
+  // are not plot series (the model vault: a model is not shown "on the active plot only")
+  scope?: 'global' | 'local'
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
   optionsSections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
@@ -32,7 +48,8 @@ const props = withDefaults(defineProps<{
   // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
   // floating box — no absolute positioning, no drag, full width of its container.
   docked?: boolean
-}>(), { title: 'Populations', count: undefined, vis: undefined, optionsSections: undefined, readout: emptyReadout, docked: false })
+}>(), { title: 'Populations', icon: 'pi-sitemap', count: undefined, width: 300, scope: undefined,
+        vis: undefined, optionsSections: undefined, readout: emptyReadout, docked: false })
 const emit = defineEmits<{
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
@@ -46,16 +63,16 @@ const { pos, startDrag } = useFloatingPanel(panel)
 onMounted(() => {
   if (props.docked) return
   const par = panel.value?.offsetParent as HTMLElement | null
-  if (par) pos.value = { x: Math.max(16, par.clientWidth - (panel.value!.offsetWidth || 300) - 16), y: 16 }
+  if (par) pos.value = { x: Math.max(16, par.clientWidth - (panel.value!.offsetWidth || props.width) - 16), y: 16 }
 })
 function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </script>
 
 <template>
   <div ref="panel" class="pop-manager" :class="{ docked }"
-       :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }">
+       :style="docked ? { width: '100%' } : { left: pos.x + 'px', top: pos.y + 'px', width: width + 'px' }">
     <div class="pm-header" @mousedown.prevent="onHeaderDown">
-      <i class="pi pi-sitemap" />
+      <i class="pi" :class="icon" />
       <span class="pm-title">{{ title }}</span>
       <span v-if="count !== undefined" class="pm-count">{{ count }}</span>
       <button v-if="!docked" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
@@ -75,8 +92,9 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
                    @update:vis="emit('update:vis', $event)" />
     </div>
 
-    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->
-    <div v-show="!collapsed" class="pm-footer">
+    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom.
+         Opt-in: a panel whose contents are not plot series (the model vault) passes no `scope`. -->
+    <div v-show="!collapsed" v-if="scope" class="pm-footer">
       <ChipSelect class="pm-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
                   v-tooltip.top="'Apply these options to every plot or just the active one'"
@@ -86,14 +104,15 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </template>
 
 <style scoped>
+/* width is set inline from the `width` prop (docked → 100%) */
 .pop-manager {
-  position: absolute; z-index: 20; width: 300px;
+  position: absolute; z-index: 20;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px rgba(0,0,0,0.4);
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/shadow), fills its container column */
-.pop-manager.docked { position: static; z-index: auto; width: 100%; box-shadow: none; }
+.pop-manager.docked { position: static; z-index: auto; box-shadow: none; }
 .pop-manager.docked .pm-header { cursor: default; }
 .pm-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;

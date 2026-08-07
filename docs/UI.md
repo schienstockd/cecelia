@@ -1862,13 +1862,17 @@ page — and the Analysis board — reuses them unchanged:
   toggle and an **Options** box (log scale, legend, point size/opacity — `VisProps`) both obey that
   scope: global = one value shared by every plot, local = the active plot only (mirrors the gating
   manager's plot-options model).
-- **`components/canvas/PopulationPanelShell.vue`** — the **shared chrome** for the floating population
-  panels: the draggable/collapsible container + top-right placement (`useFloatingPanel`), the header
-  (icon · title · count · collapse), the global/local **scope footer**, and the optional `PlotOptions`
-  block (rendered when the host passes a `vis` bag). Both `SeriesPicker` and `PopulationManager` wrap
-  it — the differing population LIST is the default slot; host-specific controls (the gating manager's
-  gate/viewer options) go in the `#options` slot. Slotted rows keep their own component's scoped CSS;
-  the shell owns only the chrome. One place for the chrome → the universal analysis board reuses it.
+- **`components/canvas/CanvasSidePanel.vue`** — the **shared chrome** for a canvas SIDE PANEL, the box
+  beside the plots that manages what they show: the draggable/collapsible container + top-right
+  placement (`useFloatingPanel`), the header (`icon` · `title` · `count` · collapse), and two **opt-in**
+  plot-only parts — the global/local **scope footer** (pass `scope`) and the `PlotOptions` block (pass
+  `vis`). `SeriesPicker`, `PopulationManager` and `FlowModelVault` wrap it; the differing LIST is the
+  default slot, host-specific controls (the gating manager's gate/viewer options) go in `#options`, and
+  `width` widens it for a table-shaped list. Slotted rows keep their own component's scoped CSS; the
+  shell owns only the chrome. **Was `PopulationPanelShell`** until the model vault showed the chrome was
+  never population-specific — a manager of non-plot-series things simply passes neither opt-in part.
+  **Use this, not `FloatingPanel`, for anything scoped to a canvas**: `FloatingPanel` is the app's
+  viewport window layer (Viewer, Lab log), so a canvas manager put there fights them for the corner.
 - **`components/canvas/PlotOptions.vue`** — the **shared** `VisProps` styling controls (collapsible
   Layout / Points / Colours / Labels sub-sections; props `vis`, emits `update:vis`). Embedded by BOTH
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
@@ -2158,7 +2162,7 @@ ACTIVE plot while the toggle governs every plot — same convention as the stats
 control in the population picker goes amber with `overrideTooltip` (so the toggle never sits at *off*
 beside a rotated plot), and the panel shows a short footer note. Both read the same
 `PlotReadout` — `{ stats, overrides }`, threaded as **one object** through
-`SummaryPanel → host → SeriesPicker → PopulationPanelShell → PlotOptions`. Parallel props are how the
+`SummaryPanel → host → SeriesPicker → CanvasSidePanel → PlotOptions`. Parallel props are how the
 first attempt failed: the override was emitted and the toggle never heard about it.
 
 **A panel notice belongs in the panel CHROME.** `.sp-body` is `overflow: hidden` with a `height: 100%`

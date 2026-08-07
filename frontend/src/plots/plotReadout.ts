@@ -6,7 +6,7 @@ import type { AutoOverride } from './autoOverride'
  * Everything the population picker needs to REPORT about the active plot's last render.
  *
  * One object, not a prop per fact, because the chain is long —
- * `SummaryPanel → host → SeriesPicker → PopulationPanelShell → PlotOptions` — and with parallel props a
+ * `SummaryPanel → host → SeriesPicker → CanvasSidePanel → PlotOptions` — and with parallel props a
  * host threads the one it was thinking about and silently drops the other. That already happened: the
  * auto-rotation notice was emitted, and the "Rotate X labels" toggle it applied to never heard about it,
  * so the picker showed an off toggle next to a rotated plot.
