@@ -16,7 +16,12 @@ import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napa
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
+import MovieCompareControls from './MovieCompareControls.vue'
+import TeleportPopover from './TeleportPopover.vue'
 import { movieSizeParams } from '../utils/movieSize'
+import { normaliseVersions, compareSuffix, compareActionTip,
+         COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
+         type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { useNapariStatus } from '../composables/useNapariStatus'
 
 const projectStore = useProjectStore()
@@ -129,14 +134,47 @@ const movieSizeY = computed<number | null>({
 // Filename addition. A movie is named after the IMAGE, so recording the AF-corrected version and then
 // the raw import would overwrite the first — hence a suffix, prefilled with the version SHOWN in napari
 // (`null` = never touched → use that default; `''` = the user cleared it, which must stick).
+// A comparison names itself after the versions it shows, so it can't overwrite either single-version
+// recording; a plain record still falls back to the version shown in napari.
 const movieSuffixDefault = computed(() =>
-  selectedValueName.value && selectedValueName.value !== 'default' ? selectedValueName.value : '')
+  compareVersions.value.length
+    ? compareSuffix(compareVersions.value)
+    : (selectedValueName.value && selectedValueName.value !== 'default' ? selectedValueName.value : ''))
 const movieSuffix = computed<string>({
   get: () => {
     const stored = currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).suffix : null
     return stored ?? movieSuffixDefault.value
   },
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { suffix: v }) } })
+// Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
+// records what's on screen (unchanged), two or more record a column per version into one movie.
+const compareVersions = computed<string[]>({
+  get: () => currentSetUid.value
+    ? normaliseVersions(settings.getMovieConfig(currentSetUid.value).compareVersions, valueNames.value)
+    : [],
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareVersions: v }) } })
+const compareLayout = computed<CompareLayout>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
+const compareContrast = computed<CompareContrast>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareContrast : COMPARE_CONTRAST_DEFAULT,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareContrast: v }) } })
+
+// The movie OPTIONS (fps / size / name / title card) live in a popover off the gear: the viewer is a
+// narrow floating panel, and four dense rows of controls is what made this section the crowded one.
+// TeleportPopover because a plain absolute panel would clip inside the FloatingPanel.
+const movieOptsOpen = ref(false)
+const movieOptsAnchor = ref<HTMLElement | null>(null)
+// napari's baked overlays. They are drawn into the canvas, so a recording burns them in — hiding them
+// is a record-time decision, and the batch RE-OPENS each image (which turns the scale bar back on),
+// so toggling them in the napari window is not an alternative.
+const movieTimestamp = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showTimestamp : true,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showTimestamp: v }) } })
+const movieScaleBar = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showScaleBar : true,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showScaleBar: v }) } })
+
 // Title card (Phase H, H3) — per-set, merge-patched so each control keeps the others' values.
 const movieTitleCard = computed<TitleCardCfg>(() =>
   currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).titleCard : { enabled: true, note: '', durationSec: 3 })
@@ -243,14 +281,21 @@ async function recordTimelapse() {
       titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
         { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
+    const versions = compareVersions.value
     const t = taskStore.add({
-      module: 'viewer', label: `Record ${napariImage.value?.name ?? 'movie'}`,
+      module: 'viewer',
+      label: versions.length > 1
+        ? `Compare ${versions.length} versions — ${napariImage.value?.name ?? 'movie'}`
+        : `Record ${napariImage.value?.name ?? 'movie'}`,
       imageUid: uid, imageName: napariImage.value?.name ?? '', status: 'queued',
       taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
     })
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
       suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin,
+      // 2+ versions = a side-by-side comparison; fewer is the plain record the backend already did
+      valueNames: versions, compareLayout: compareLayout.value, compareContrast: compareContrast.value,
+      showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
   } catch (e) {
@@ -696,22 +741,39 @@ onUnmounted(() => {
       <!-- ── Movie: record the CURRENT view over time → mp4 (project's movies/ folder) ──
            Records exactly what's shown (channels, populations, tracks, colour-by). fps + size + the
            filename suffix are per-set; the render runs as a task (progress + Cancel in the task list),
-           and the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3. -->
+           and the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3.
+           Picking 2+ versions records them side by side instead (MOVIE_COMPARE_PLAN.md). The options
+           sit in a popover: this panel is narrow, and they are set once and then left alone, while the
+           version chips are the thing you change per movie. ONE row — an image with a single version
+           (the common case) shows just the two buttons. -->
       <div class="viewer-section">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
-          <MovieOutputControls class="movie-controls"
-                               v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
-                               v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
+          <MovieCompareControls class="movie-versions" :available="valueNames"
+                                v-model:versions="compareVersions"
+                                v-model:layout="compareLayout"
+                                v-model:contrast="compareContrast" />
+          <button ref="movieOptsAnchor" class="opt-btn cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': movieOptsOpen }"
+                  @click="movieOptsOpen = !movieOptsOpen"
+                  v-tooltip.bottom="'Movie options: frame rate, size, file name, title card'">
+            <i class="pi pi-cog" />
+          </button>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
-                  v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">
+                  v-tooltip.bottom="compareActionTip(compareVersions,
+                    'Record the current view over the time axis → mp4 in the project\'s movies/ folder')">
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
         </div>
-        <div class="movie-row">
-          <TitleCardControls v-model="movieTitleCardModel" />
-        </div>
+        <TeleportPopover v-model="movieOptsOpen" :anchor="movieOptsAnchor" placement="bottom-end">
+          <div class="movie-opts">
+            <MovieOutputControls v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
+                                 v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
+                                 v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar" />
+            <TitleCardControls v-model="movieTitleCardModel" />
+          </div>
+        </TeleportPopover>
       </div>
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open in Napari.</span></div>
@@ -771,15 +833,17 @@ onUnmounted(() => {
 .viewer-select { width: 100%; }
 /* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
 .opt-colourby { font-size: var(--cc-fs-xs); width: 100%; min-width: 0; }
-/* movie recording params — one compact row: fps slider · size fields · record button */
-/* the controls wrap to two or three lines in this narrow panel; Record stays on the FIRST one rather
-   than floating to the vertical middle of them */
+/* ONE row: the version chips take the width, the gear and Record are pinned to its right. The chips
+   wrap inside their own flex child, so the buttons keep their place instead of drifting mid-wrap —
+   which is why they don't just share the wrapping row directly. Top-aligned so they stay on the FIRST
+   line when the chips (or the comparison's layout/contrast row) run to several. */
 .movie-row { display: flex; align-items: flex-start; gap: 0.3rem; }
-.movie-controls { flex: 1; min-width: 0; }
-.movie-lbl { flex-shrink: 0; }
-.movie-range { flex: 1; min-width: 2.5rem; accent-color: var(--cc-accent-strong); }
-.movie-val { font-size: var(--cc-fs-2xs); color: var(--cc-text); width: 1.4rem; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.movie-versions { flex: 1; min-width: 0; }
 .movie-rec { margin-left: 0.1rem; }
+/* the popover is free of the panel's width, so give the controls room to lay out on one line each */
+.movie-opts { display: flex; flex-direction: column; gap: 0.45rem; width: 22rem; max-width: 80vw; }
+/* .movie-lbl/-range/-val/-controls were left behind when MovieOutputControls was extracted — the
+   component owns them now, so the dead rules are gone rather than re-orphaned here. */
 
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
 .cby-legend { margin-top: 0.25rem; }

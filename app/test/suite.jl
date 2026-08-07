@@ -816,6 +816,13 @@ end
     # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
     # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
     @test occursin("get_module_params", fp) && occursin("suggest", fp)
+    # The artifacts it can author are named, so the agent knows they exist — the prompt listed
+    # neither for a while, and an unmentioned tool is an unused one.
+    @test occursin("create_notebook", fp) && occursin("create_chain", fp)
+    # …and the boundary is stated: authoring a chain is not running it. This is the line that keeps
+    # the assistant from telling a user their pipeline has started.
+    @test occursin("cannot start", fp) || occursin("cannot rename", fp)
+    @test occursin("press Run", fp)
 end
 
 @testset "AI observer session sidecar (tokens + clear)" begin
@@ -3449,6 +3456,72 @@ end
     @test loaded.edges[1].to   == "n2"
 
     rm(proj.root; recursive=true)
+end
+
+# ── Template validation (author-time, for every author that isn't the whiteboard) ──
+# The whiteboard can't produce an invalid template; the REPL, a hand-edited file and Claude (via the
+# MCP `create_chain`) can. Before this, a typo'd fn or a dangling edge surfaced only when the USER
+# pressed Run — see the header comment in chain.jl → Template validation.
+@testset "validate_chain_template" begin
+    node(id, fn; kw...) = ChainNode(; id=id, fn=fn, kw...)
+    ok_node(id) = node(id, "importImages.remove";
+                       params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))
+    tpl(nodes, edges; starts=String[]) = ChainTemplate("t", nodes, edges, starts)
+
+    # A well-formed template validates, and returns nothing (not a value to test against)
+    @test validate_chain_template(
+        tpl([ok_node("n1"), ok_node("n2")], [ChainEdge("n1", "n2")])) === nothing
+
+    # SPARSE params must pass — this is how a non-GUI author writes a node: set only what you mean
+    # to change and let the whiteboard fill the rest from the spec defaults on load (applyTemplate).
+    # If this ever fails, Claude is forced to restate every default, which is the bug.
+    @test validate_chain_template(
+        tpl([node("n1", "tracking.bayesian_tracking";
+                  params=Dict{String,Any}("maxSearchRadius"=>35))], ChainEdge[])) === nothing
+    @test validate_chain_template(tpl([node("n1", "importImages.remove")], ChainEdge[])) === nothing
+
+    bad(t) = @test_throws ChainTemplateError validate_chain_template(t)
+
+    bad(tpl(ChainNode[], ChainEdge[]))                              # nothing to run
+    bad(tpl([node("", "importImages.remove")], ChainEdge[]))        # empty id
+    bad(tpl([ok_node("n1"), ok_node("n1")], ChainEdge[]))           # duplicate id
+    bad(tpl([node("n1", "importImages.nope")], ChainEdge[]))        # unknown fn
+    bad(tpl([node("n1", "importImages.remove"; scope="picnic")], ChainEdge[]))
+    bad(tpl([node("n1", "importImages.remove"; barrier_policy="maybe")], ChainEdge[]))
+    bad(tpl([node("n1", "importImages.remove"; resource_pool="gpu-light")], ChainEdge[]))
+
+    # Both edge endpoints. A dangling `from` is a run-time KeyError in _topo_sort; a dangling `to`
+    # silently never runs (in-degree never reaches 0) — the worse of the two, so both are errors.
+    bad(tpl([ok_node("n1")], [ChainEdge("ghost", "n1")]))
+    bad(tpl([ok_node("n1")], [ChainEdge("n1", "ghost")]))
+    bad(tpl([ok_node("n1")], [ChainEdge("n1", "n1")]))              # self-dependency
+    bad(tpl([ok_node("n1"), ok_node("n2")],                         # cycle
+            [ChainEdge("n1", "n2"), ChainEdge("n2", "n1")]))
+    bad(tpl([ok_node("n1")], ChainEdge[]; starts=["ghost"]))        # startTargets must be a node
+    bad(tpl([node("n1", "tracking.bayesian_tracking";               # param out of spec range
+                  params=Dict{String,Any}("maxSearchRadius"=>9999))], ChainEdge[]))
+
+    # A configured pool name and the inherit-from-spec empty string are both fine
+    @test validate_chain_template(
+        tpl([node("n1", "importImages.remove"; resource_pool="gpu")], ChainEdge[])) === nothing
+    @test validate_chain_template(
+        tpl([node("n1", "importImages.remove"; resource_pool="")], ChainEdge[])) === nothing
+
+    # The message names the offending node, so a rejected author knows what to fix
+    err = try validate_chain_template(tpl([node("bad-one", "importImages.nope")], ChainEdge[]))
+          catch e; e end
+    @test err isa ChainTemplateError
+    @test occursin("bad-one", err.msg) && occursin("importImages.nope", err.msg)
+
+    # Roots = where a run begins. The whiteboard draws no start dot for a template with neither a
+    # start target nor a saved position, so an authored chain gets its roots filled from this.
+    @test chain_root_ids(tpl([ok_node("a"), ok_node("b")], [ChainEdge("a", "b")])) == ["a"]
+    @test chain_root_ids(tpl([ok_node("a")], ChainEdge[])) == ["a"]
+    # template order is preserved, and a fan-in has one root per unfed branch
+    @test chain_root_ids(tpl([ok_node("a"), ok_node("b"), ok_node("c")],
+                             [ChainEdge("a", "c"), ChainEdge("b", "c")])) == ["a", "b"]
+    @test isempty(chain_root_ids(tpl([ok_node("a"), ok_node("b")],       # a cycle has no root
+                                     [ChainEdge("a", "b"), ChainEdge("b", "a")])))
 end
 
 # ── Chain run — template frozen, per-image state, pipelining ─────────────
@@ -7951,19 +8024,68 @@ end
         @test occursin("IMAGE_COMPRESSOR_DEFAULT = '$(Cecelia.IMAGE_COMPRESSOR_DEFAULT)'", py)
         @test Cecelia.image_compressor() in [c.name for c in Cecelia.IMAGE_COMPRESSOR_CHOICES]
 
-        # bioformats2raw is handed the numeric blosc shuffle; numcodecs names it
+        # The blosc `shuffle` property is spelled DIFFERENTLY per bioformats2raw version, and each
+        # version hard-fails on the other's spelling (0.12.0 swapped jzarr → zarr-java). Detected from
+        # the bundled jar; asserted here against synthetic lib dirs so this is hermetic — CI has no
+        # bioformats2raw install at all, and that must resolve to the current spelling, not error.
+        mktempdir() do d
+            legacy = joinpath(d, "legacy"); mkpath(legacy)
+            touch(joinpath(legacy, "jzarr-0.4.2.jar"))
+            @test Cecelia.bf2raw_shuffle_values(legacy) == ("1", "0")
+
+            modern = joinpath(d, "modern"); mkpath(modern)
+            touch(joinpath(modern, "zarr-java-0.1.3.jar"))
+            @test Cecelia.bf2raw_shuffle_values(modern) == ("shuffle", "noshuffle")
+
+            # neither jar, and a missing dir → the current spelling (a wrong guess fails loudly)
+            empty_dir = joinpath(d, "empty"); mkpath(empty_dir)
+            @test Cecelia.bf2raw_shuffle_values(empty_dir) == ("shuffle", "noshuffle")
+            @test Cecelia.bf2raw_shuffle_values(joinpath(d, "absent")) == ("shuffle", "noshuffle")
+        end
+        # NOT the literal "1"/"0": that is the legacy spelling, and hardcoding it here is what would
+        # hide the incompatibility. Assert against whatever THIS install wants.
+        shuf_on, shuf_off = Cecelia.bf2raw_shuffle_values(Cecelia._bf2raw_lib_dir())
         flags = Cecelia.bf2raw_compression_flags("zstd-shuffle")
         @test flags[1:2] == ["--compression", "blosc"]
         props = Dict(split(flags[i], "=")[1] => split(flags[i], "=")[2] for i in 4:2:length(flags))
-        @test props == Dict("cname" => "zstd", "clevel" => "3", "shuffle" => "1")
+        @test props == Dict("cname" => "zstd", "clevel" => "3", "shuffle" => shuf_on)
         @test Dict(split(f, "=")[1] => split(f, "=")[2]
-                   for f in Cecelia.bf2raw_compression_flags("zstd")[4:2:end])["shuffle"] == "0"
+                   for f in Cecelia.bf2raw_compression_flags("zstd")[4:2:end])["shuffle"] == shuf_off
+        # `byteshuffle` is the alias 0.12's README documents for byte shuffle, and it is BROKEN
+        # upstream (null enum → NPE → every chunk write fails). It must never be emitted.
+        @test !any(occursin("byteshuffle", f) for f in flags)
 
         # an unknown name falls back rather than erroring - a typo in custom.toml must not fail a
         # multi-hour import
         @test Cecelia.bf2raw_compression_flags("nope") ==
               Cecelia.bf2raw_compression_flags(Cecelia.IMAGE_COMPRESSOR_DEFAULT)
         @test_throws ArgumentError Cecelia.set_image_compressor!("nope")
+    end
+
+    # Two tables on one Settings page, each varying what the other pins: the compressor rows were all
+    # measured in ONE layout, the layout rows all with ONE codec. Neither set of sizes is comparable to
+    # the other's without that, so each caption must name the variable it held fixed. Asserted because a
+    # caption is exactly the kind of string that gets shortened later by someone who reads it as prose.
+    @testset "measured-on captions name the other table's variable" begin
+        cmp_cap = Cecelia.IMAGE_COMPRESSOR_MEASURED_ON
+        lay_cap = Cecelia.STORE_LAYOUT_MEASURED_ON
+
+        # the compressor was measured in one LAYOUT: format, chunk-key style, and chunk shape
+        @test occursin("zarr v", cmp_cap)
+        @test occursin("keys", cmp_cap)
+        @test occursin("chunks", cmp_cap)
+
+        # ...and the layouts with one CODEC — named, and actually the default the other table serves
+        # (derived, not spelled out, so re-measuring under a new default has to update the caption)
+        default_cname = first(c.cname for c in Cecelia.IMAGE_COMPRESSOR_CHOICES
+                              if c.name == Cecelia.IMAGE_COMPRESSOR_DEFAULT)
+        @test occursin(default_cname, lay_cap)
+
+        # both stay one short line — this renders as a field hint, not a paragraph (docs/UI.md)
+        for cap in (cmp_cap, lay_cap)
+            @test !occursin("\n", cap)
+            @test length(cap) <= 90
+        end
     end
 
     @testset "count metrics" begin
@@ -9503,4 +9625,171 @@ end
 
     # …and the runner-side parser still takes what the chips produce
     @test parse_temporal_scales(["1", "2", "8"]) == [1, 2, 8]
+end
+
+@testset "OME-ZARR metadata reads v2 and v3 alike" begin
+    # `read_ome_metadata` feeds ccid.json `meta`, which CLAUDE.md → *Calibration* makes authoritative
+    # for every physical number in the app. NGFF 0.5 nests attributes under `ome`; a reader that misses
+    # that returns an EMPTY Dict, and the caller then has no PhysicalSize/TimeIncrement at all — which
+    # downstream becomes 1.0 rather than an error. So the two formats are asserted to agree, against two
+    # committed stores of the same real pixels. See test-data/README.md, docs/todo/ZARR_V3_PLAN.md.
+    v2 = fixture_path("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = fixture_path("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(have_fixture(v2) && have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        # the series wrapper is found structurally in BOTH formats (v2 `.zattrs`, v3 `zarr.json`)
+        @test Cecelia.series_base(v2) == joinpath(v2, "0")
+        @test Cecelia.series_base(v3) == joinpath(v3, "0")
+
+        # the one resolver: attributes come back unwrapped regardless of the `ome` nesting
+        for p in (v2, v3)
+            attrs = ngff_group_attrs(joinpath(p, "0"))
+            @test !isnothing(attrs)
+            @test haskey(attrs, :multiscales)          # NOT nested under :ome by the time we see it
+            ms = ngff_multiscales(joinpath(p, "0"))
+            @test !isnothing(ms) && !isempty(ms)
+        end
+        # a directory with no zarr metadata answers nothing rather than throwing
+        @test isnothing(ngff_group_attrs(joinpath(v2, "does-not-exist")))
+        # array metadata resolves for both; a GROUP dir must NOT be mistaken for an array (v3 shares
+        # the filename `zarr.json` between the two)
+        @test !isnothing(zarr_array_meta(joinpath(v3, "0", "0")))
+        @test isnothing(zarr_array_meta(joinpath(v3, "0")))
+
+        m2 = read_ome_metadata(v2)
+        m3 = read_ome_metadata(v3)
+        @test !isempty(m2) && !isempty(m3)
+        for k in ("SizeC", "SizeT", "SizeZ")
+            @test m2[k] == m3[k]
+        end
+        @test (m2["SizeC"], m2["SizeT"], m2["SizeZ"]) == (4, 3, 3)
+
+        # Calibration — the whole reason these fixtures are real. Deliberately not 1.0, so a correct
+        # read is distinguishable from the "unknown" fallback.
+        for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "TimeIncrement")
+            @test haskey(m2, k) && haskey(m3, k)
+            @test isapprox(m2[k], m3[k]; rtol = 1e-9)
+        end
+        @test isapprox(m2["PhysicalSizeX"], 0.5964274525755702; rtol = 1e-6)
+        @test !isapprox(m2["PhysicalSizeX"], 1.0; atol = 1e-6)    # not the silent fallback
+        @test isapprox(m2["PhysicalSizeZ"], 3.0; rtol = 1e-6)
+        @test isapprox(m2["TimeIncrement"], 30.0; rtol = 1e-6)
+    end
+end
+
+@testset "bioformats2raw chunk flags" begin
+    # These flags were the bug: `chunkSizeX`/`chunkSizeY` existed in omezarr.json and were read by
+    # NOTHING — no tile flag ever reached the CLI, so a user who chose 512 still got bioformats2raw's
+    # 1024. One `chunkSize` param now, and it is passed.
+    @test Cecelia.bf2raw_chunk_flags("512") == ["--tile-width", "512", "--tile-height", "512"]
+    @test Cecelia.bf2raw_chunk_flags(1024)  == ["--tile-width", "1024", "--tile-height", "1024"]
+
+    # "auto" passes NOTHING on purpose: bioformats2raw's own default is 1024 ALREADY CAPPED to the
+    # frame, which is exactly the rule we want (one chunk per plane, up to 1024) and needs no source
+    # dimensions — which we do not have, since the image is not converted yet.
+    @test isempty(Cecelia.bf2raw_chunk_flags("auto"))
+    @test isempty(Cecelia.bf2raw_chunk_flags("AUTO"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(""))
+
+    # unparseable / absurd falls back to auto rather than raising — same call as the compression
+    # flags: a bad value must not fail an hour-long import
+    @test isempty(Cecelia.bf2raw_chunk_flags("banana"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(0))
+    @test isempty(Cecelia.bf2raw_chunk_flags(-8))
+    @test isempty(Cecelia.bf2raw_chunk_flags(16))       # below 32: not a sane chunk
+
+    # every option the task spec offers must actually resolve (a spec/handler drift here is silent —
+    # the import would just ignore the choice, which is the bug this whole testset exists for)
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    cs   = only(filter(p -> get(p, :key, "") == "chunkSize", collect(adv.params)))
+    vals = [string(get(o, :value, o)) for o in cs.options]
+    @test "auto" in vals
+    @test string(cs.default) in vals
+    for v in vals
+        @test v == "auto" ? isempty(Cecelia.bf2raw_chunk_flags(v)) :
+                            Cecelia.bf2raw_chunk_flags(v) == ["--tile-width", v, "--tile-height", v]
+    end
+
+    # and the tips must not merely restate the label — that is what made these params guesswork
+    for p in vcat(collect(spec.params), collect(adv.params))
+        get(p, :type, "") == "section" && continue
+        tip = String(get(p, :tip, ""))
+        @test !isempty(tip)
+        @test lowercase(tip) != lowercase(String(get(p, :label, "")))
+    end
+end
+
+@testset "bioformats2raw format flags" begin
+    # The import is the ONLY place the store format is chosen; derived stores inherit it
+    # (docs/todo/ZARR_V3_PLAN.md D9).
+    ff(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[1]
+    conflicted(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[2]
+
+    @test isempty(ff("0.4", "auto"))                       # default = the command we always ran
+    @test ff("0.5", "auto") == ["--ngff-version", "0.5"]
+    @test ff("0.5", "1024") ==
+          ["--ngff-version", "0.5", "--shard-width", "1024", "--shard-height", "1024"]
+
+    # Sharding is NGFF 0.5 only, and is dropped for 0.4 rather than raising: they are separate controls
+    # and switching the version back must still produce a working import.
+    @test isempty(ff("0.4", "1024"))
+
+    # unparseable / absurd falls back to upstream's default rather than raising
+    for bad in ("banana", "0", "-8", "16", "")
+        @test ff("0.5", bad) == ["--ngff-version", "0.5"]
+    end
+
+    # ── chunk-key separator ──────────────────────────────────────────────────────
+    # Flat keys are the measured "fewer files" lever: 4 directories vs 224 on one conversion, 56x, with
+    # no format change. Nested is bioformats2raw's default and stays ours.
+    @test ff("0.4", "auto"; separator = "nested") == String[]
+    @test ff("0.4", "auto"; separator = "flat")   == ["--no-nested"]
+
+    # THE CONFLICT: --no-nested + --ngff-version 0.5 makes bioformats2raw silently write zarr v2
+    # (verified both flag orders). The two must never be emitted together, and the caller must be told.
+    @test ff("0.5", "auto"; separator = "flat") == ["--no-nested"]     # 0.5 dropped, not both
+    @test !("--ngff-version" in ff("0.5", "auto"; separator = "flat"))
+    @test conflicted("0.5", "auto"; separator = "flat")
+    @test !conflicted("0.5", "auto"; separator = "nested")
+    @test !conflicted("0.4", "auto"; separator = "flat")
+    # a conflicted request is no longer 0.5, so no shard flags ride along with it
+    @test ff("0.5", "1024"; separator = "flat", shard_depth = "all", z_planes = 13) == ["--no-nested"]
+
+    # ── shard depth ──────────────────────────────────────────────────────────────
+    # The ONLY axis that reduces the file count on a 512x512 frame — width/height cap to the frame, so
+    # the shard equals the chunk and packs nothing (measured: depth 13 -> 13 files vs 109).
+    @test ff("0.5", "auto"; shard_depth = "13") == ["--ngff-version", "0.5", "--shard-depth", "13"]
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 13) ==
+          ["--ngff-version", "0.5", "--shard-depth", "13"]
+    @test ff("0.5", "auto"; shard_depth = "1") == ["--ngff-version", "0.5"]      # the default: no flag
+    # "all" with no usable z count drops the flag rather than guessing a depth
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 0) == ["--ngff-version", "0.5"]
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 1) == ["--ngff-version", "0.5"]
+    # depth is NGFF 0.5 only, like the rest of sharding
+    @test isempty(ff("0.4", "auto"; shard_depth = "13"))
+
+    # Every option the spec offers must resolve, and there must be NO option claiming to disable
+    # sharding: --shard-width cannot be turned off, so bioformats2raw shards every v3 store (verified
+    # against 0.12.1 — a 0.5 import with no shard flag still produces a sharding_indexed codec), and an
+    # "off" option would be a lie.
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    for key in ("ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+        prm  = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
+        vals = [string(get(o, :value, o)) for o in prm.options]
+        @test string(prm.default) in vals
+        @test !isempty(String(get(prm, :tip, "")))
+    end
+    shard = only(filter(p -> get(p, :key, "") == "shardSize", collect(adv.params)))
+    @test !any(lowercase(string(get(o, :value, o))) in ("none", "off", "0") for o in shard.options)
+
+    # Transparency: someone who knows zarr must be able to map each control onto what lands on disk, so
+    # every one of these tips names its bioformats2raw flag or the metadata key it sets.
+    for key in ("chunkSize", "ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+        prm = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
+        tip = String(get(prm, :tip, ""))
+        @test occursin("--", tip) || occursin("_", tip)   # a CLI flag or a zarr metadata key
+    end
 end

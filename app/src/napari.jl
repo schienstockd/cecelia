@@ -13,7 +13,7 @@ const NAPARI_BRIDGE = joinpath(@__DIR__, "..", "..", "napari", "napari_bridge.py
 # argument, or a changed reply. Asserted equal by the "language boundaries agree on their protocol"
 # testset. Losing the window on a mismatch is recoverable — layer props and the T/Z position are
 # autosaved (`save_layer_props`), so a relaunch reopens where the user was.
-const NAPARI_PROTOCOL = 2
+const NAPARI_PROTOCOL = 3
 # Python interpreter comes from `python_bin_path()` (config default "python3"), resolved within
 # the activated Pixi env — i.e. launch via `pixi run`. No hardcoded venv path; see docs/SHIPPING.md.
 
@@ -291,15 +291,26 @@ preview_region(v::NapariViewer)::Dict{String,Any} =
 # records at the napari canvas size; see docs/NAPARI.md. `task_id`/`api_url` put the render on the task
 # rail: the bridge posts per-frame progress to `api_url` and polls `task_id` for a cancel. Phase F1 batch-movie
 # primitive — see docs/todo/ANIMATION_PLAN.md.
+# `frame_offset`/`frame_total` place this call's frames inside a LONGER job, so a side-by-side version
+# comparison — one recording per version, then a stitch — drives ONE progress bar instead of restarting
+# it per version. Both 0 (the default) = "this call is the whole job".
+# `show_timestamp`/`show_scale_bar` (default true — what every movie was) hide napari's BAKED overlays
+# for the render and restore them after; they are burnt into every frame, so this is the only way to
+# leave them out. Separate flags: a figure often wants the elapsed time burnt in and a vector scale bar
+# added later.
 record_timelapse!(v::NapariViewer, path::String; fps::Int=15, canvas_only::Bool=true,
                   size_x::Union{Int,Nothing}=nothing, size_y::Union{Int,Nothing}=nothing,
                   t_start::Int=0, t_end::Union{Int,Nothing}=nothing, title_card=nothing,
                   task_id::Union{String,Nothing}=nothing,
-                  api_url::Union{String,Nothing}=nothing)::Dict{String,Any} = begin
+                  api_url::Union{String,Nothing}=nothing,
+                  frame_offset::Int=0, frame_total::Int=0,
+                  show_timestamp::Bool=true, show_scale_bar::Bool=true)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"record_timelapse", "path"=>path, "fps"=>fps,
                            "canvas_only"=>canvas_only, "t_start"=>t_start,
                            "size_x"=>size_x, "size_y"=>size_y,
-                           "task_id"=>task_id, "api_url"=>api_url)
+                           "task_id"=>task_id, "api_url"=>api_url,
+                           "frame_offset"=>frame_offset, "frame_total"=>frame_total,
+                           "show_timestamp"=>show_timestamp, "show_scale_bar"=>show_scale_bar)
     t_end !== nothing && (cmd["t_end"] = t_end)
     # Phase H: an optional title-card slide prepended to the recording (assembled in api/napari_api.jl;
     # the bridge adds channels from the live viewer and composites it). nothing/disabled → no card.
@@ -315,11 +326,37 @@ record_keyframes!(v::NapariViewer, path::String, keyframes::AbstractVector; fps:
                   canvas_only::Bool=true, size_x::Union{Int,Nothing}=nothing,
                   size_y::Union{Int,Nothing}=nothing, title_card=nothing,
                   task_id::Union{String,Nothing}=nothing,
-                  api_url::Union{String,Nothing}=nothing)::Dict{String,Any} = begin
+                  api_url::Union{String,Nothing}=nothing,
+                  show_timestamp::Bool=true, show_scale_bar::Bool=true)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"record_keyframes", "path"=>path, "fps"=>fps,
                            "canvas_only"=>canvas_only, "keyframes"=>keyframes,
                            "size_x"=>size_x, "size_y"=>size_y,
-                           "task_id"=>task_id, "api_url"=>api_url)
+                           "task_id"=>task_id, "api_url"=>api_url,
+                           "show_timestamp"=>show_timestamp, "show_scale_bar"=>show_scale_bar)
     title_card !== nothing && (cmd["title_card"] = title_card)   # Phase H4 description slide
+    send(v, cmd)
+end
+
+# Compose already-recorded movies into ONE side-by-side file at `path` — the tail of a version
+# comparison, where each source is that version's own recording, in column order. `labels` captions the
+# columns (one per source); `layout` is "row" (side by side) or "column" (stacked). Returns the bridge
+# reply (frame count, path, size written), or `cancelled => true` if the user stopped it — the same
+# reply shape as the recorders, and like them nothing is promoted onto `path` unless it finished, so a
+# cancel leaves any previous movie there intact. `title_card` is prepended to the COMPOSED file (the
+# per-version passes are recorded without one). `task_id`/`api_url`/`frame_offset`/`frame_total` put it
+# on the same progress+cancel rail as the recordings it follows.
+# See docs/todo/MOVIE_COMPARE_PLAN.md.
+stitch_movies!(v::NapariViewer, path::String, sources::AbstractVector{<:AbstractString};
+               labels::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
+               layout::String="row", fps::Int=15, title_card=nothing,
+               task_id::Union{String,Nothing}=nothing,
+               api_url::Union{String,Nothing}=nothing,
+               frame_offset::Int=0, frame_total::Int=0)::Dict{String,Any} = begin
+    cmd = Dict{String,Any}("type"=>"stitch_movies", "path"=>path, "sources"=>collect(sources),
+                           "layout"=>layout, "fps"=>fps,
+                           "task_id"=>task_id, "api_url"=>api_url,
+                           "frame_offset"=>frame_offset, "frame_total"=>frame_total)
+    labels     !== nothing && (cmd["labels"] = collect(labels))
+    title_card !== nothing && (cmd["title_card"] = title_card)
     send(v, cmd)
 end

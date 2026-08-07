@@ -738,14 +738,21 @@ class SegmentationUtils:
         # Map base scale by axis NAME so it survives the label array dropping the channel axis.
         ax_to_scale = {ax: full_scale[i] for i, ax in enumerate(dim_utils.im_dim_order)}
 
-        g = zarr.open_group(out_path, mode='w', zarr_format=2)
-        g.attrs['multiscales'] = zarr_utils.multiscales_metadata(
+        # A label set INHERITS the format of the image it segments (ZARR_V3_PLAN D9) — a v3 image must
+        # not acquire v2 labels. The CODEC is not inherited: labels are plain zstd for a measured reason
+        # (LABEL_COMPRESSOR), so format and codec stay separate axes.
+        enc = zarr_utils.store_encoding_of(self.params.get('imPath'))
+        fmt = enc['zarr_format']
+        g = zarr.open_group(out_path, mode='w', zarr_format=fmt)
+        ms_meta = zarr_utils.multiscales_metadata(
             label_axes, nscales, scale_for_axis=ax_to_scale)
+        # Same stamp as the image writers — where this format keeps it, versioned.
+        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
 
         chunks = self._label_chunks(tuple(label_shape), label_axes)
         level0 = g.create_array('0', shape=tuple(label_shape),
                                 chunks=chunks, dtype=self.LABEL_DTYPE,
-                                compressor=zarr_utils.store_compressor('labels'))
+                                **zarr_utils._codec_kwargs('labels', fmt, separator=enc['separator']))
         return g, level0, chunks
 
     def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):

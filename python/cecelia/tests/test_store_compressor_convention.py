@@ -21,6 +21,11 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # so a copy-pasted old snippet is caught by this test too rather than only at runtime.
 _CREATORS = {'create_array', 'create_dataset'}
 _CHOOSER = 'store_compressor'
+#: Either format's codec kwarg. v2 takes `compressor=` (singular), v3 `compressors=` (plural) — passing
+#: v2's to a v3 array is rejected, which is why one helper picks.
+_CODEC_KWARGS = {'compressor', 'compressors'}
+#: Helpers that expand to one of the above; `**`-unpacking one counts as declaring the codec.
+_CODEC_HELPERS = {'_codec_kwargs'}
 
 _SEARCH_DIRS = (
     os.path.join('python', 'cecelia'),
@@ -44,7 +49,19 @@ def _iter_sources():
 
 
 def _offenders(tree):
-    """Calls to a creator that pass no `compressor=` (and aren't an `open_array(mode='r')` read)."""
+    """Calls to a creator that declare no codec (and aren't an `open_array(mode='r')` read).
+
+    A codec may be declared three ways, all of which route through the ONE chooser in `zarr_utils`:
+
+    * `compressor=`  — zarr v2's singular, legacy kwarg
+    * `compressors=` — zarr v3's plural kwarg (a codec LIST; `compressor=` is rejected for v3)
+    * `**_codec_kwargs(...)` — the helper that picks whichever of those two THIS store's format wants,
+      so a writer that inherits its format from its source (`docs/todo/ZARR_V3_PLAN.md` D9) does not
+      have to branch on it
+
+    The point of the detector is unchanged: no array is created with whatever the library happens to
+    default to. Accepting the unpacked helper is not a loophole — it *is* the chooser.
+    """
     bad = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -59,9 +76,22 @@ def _offenders(tree):
                 continue
         elif name not in _CREATORS:
             continue
-        if not any(kw.arg == 'compressor' for kw in node.keywords):
+        if not _declares_codec(node):
             bad.append((name, node.lineno))
     return bad
+
+
+def _declares_codec(node):
+    for kw in node.keywords:
+        if kw.arg in _CODEC_KWARGS:
+            return True
+        # `**_codec_kwargs(kind, fmt)` — kw.arg is None for a ** unpacking
+        if kw.arg is None and isinstance(kw.value, ast.Call):
+            fn = kw.value.func
+            fname = fn.attr if isinstance(fn, ast.Attribute) else (fn.id if isinstance(fn, ast.Name) else None)
+            if fname in _CODEC_HELPERS:
+                return True
+    return False
 
 
 class StoreCompressorConventionTest(unittest.TestCase):
@@ -75,8 +105,9 @@ class StoreCompressorConventionTest(unittest.TestCase):
                     continue
             for name, lineno in _offenders(tree):
                 found.append(f'{rel}:{lineno}: {name}(…) without compressor=')
-        self.assertEqual(found, [], 'pass compressor=zarr_utils.store_compressor(kind):\n' +
-                                    '\n'.join(found))
+        self.assertEqual(found, [], 'declare the codec — compressor=store_compressor(kind) for v2, '
+                                    'compressors=store_codecs(kind) for v3, or **_codec_kwargs(kind, fmt) '
+                                    'to let the format decide:\n' + '\n'.join(found))
 
     def test_the_chooser_is_the_only_source_of_a_codec(self):
         """No writer may construct a Blosc/Zstd codec itself — the point of one chooser is that the
@@ -95,7 +126,8 @@ class StoreCompressorConventionTest(unittest.TestCase):
                 if isinstance(node, ast.Call):
                     name = node.func.attr if isinstance(node.func, ast.Attribute) else \
                         (node.func.id if isinstance(node.func, ast.Name) else None)
-                    if name in ('Blosc', 'Zstd', 'LZ4', 'GZip'):
+                    if name in ('Blosc', 'Zstd', 'LZ4', 'GZip',
+                                'BloscCodec', 'ZstdCodec', 'GzipCodec'):
                         found.append(f'{rel}:{node.lineno}: {name}(…)')
         self.assertEqual(found, [], f'build the codec via {_CHOOSER} in zarr_utils:\n' +
                                     '\n'.join(found))
@@ -104,6 +136,9 @@ class StoreCompressorConventionTest(unittest.TestCase):
         from cecelia.utils import zarr_utils
         with self.assertRaises(ValueError):
             zarr_utils.store_compressor('intensity')
+        # and the v3 shape answers to the same guard — two entry points, one rule
+        with self.assertRaises(ValueError):
+            zarr_utils.store_codecs('intensity')
 
     def test_images_get_the_shuffle_filter_and_labels_do_not(self):
         """The measured split — see the constants in zarr_utils. Byte shuffle is what compresses

@@ -54,8 +54,10 @@ _STARTED_AT = time.time()
 #:
 #: Bump whenever the command surface changes shape: a new/renamed command, a changed argument, or a
 #: changed reply. 1: the surface as of the protocol's introduction. 2: the movie recorders take
-#: `size_x`/`size_y` (and `scale` is gone), and `ping` reports the canvas size.
-PROTOCOL = 2
+#: `size_x`/`size_y` (and `scale` is gone), and `ping` reports the canvas size. 3: `stitch_movies`
+#: (side-by-side version comparison), the recorders take `frame_offset`/`frame_total` so a multi-pass
+#: job drives one progress bar, and they take `show_timestamp`/`show_scale_bar`.
+PROTOCOL = 3
 
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
@@ -1550,6 +1552,30 @@ class NapariState:
             return bool(v)
         return v                                   # blending (str); colormap handled by the caller
 
+    # Max stops kept for `colormap_lut`. napari's additive channel primaries (red/green/…/bop blue) are
+    # 2-entry ramps and stay exact at any cap; the 256-entry perceptual maps (viridis/turbo/…) resample
+    # to 64 with a worst-case error of 2/255 — invisible in a preview thumbnail. (The one outlier is
+    # `gist_earth`, a stepped terrain map, at 24/255; it is not a channel colormap.)
+    _LUT_MAX_STOPS = 64
+
+    @classmethod
+    def _colormap_lut(cls, colormap):
+        """napari colormap → black→colour stops the Julia preview renderer can interpolate.
+
+        The renderer cannot resolve a colormap by NAME without duplicating napari's palette here, and
+        that duplication silently broke: `bop blue` was missing from its table and rendered as WHITE.
+        napari owns its colormaps, so it exports the actual colours and the renderer just interpolates.
+        Covers the perceptual maps and the white→colour `I *` set too, which no name table could
+        approximate. See `api/src/image_render.jl`.
+        """
+        cols = np.asarray(colormap.colors, dtype=float)[:, :3]
+        n = len(cols)
+        if n > cls._LUT_MAX_STOPS:                 # resample uniformly; 2-stop ramps are never touched
+            src = np.linspace(0.0, 1.0, n)
+            tgt = np.linspace(0.0, 1.0, cls._LUT_MAX_STOPS)
+            cols = np.stack([np.interp(tgt, src, cols[:, k]) for k in range(3)], axis=1)
+        return [[round(float(v), 4) for v in stop] for stop in cols]
+
     def save_layer_props(self, filepath: str):
         props = {"Image": []}
         _keys = [
@@ -1558,10 +1584,17 @@ class NapariState:
         ]
         for layer in self._viewer.layers:
             if type(layer).__name__ == "Image":
-                props["Image"].append({
+                entry = {
                     k: (layer.colormap.name if k == "colormap" else self._jsonable(k, getattr(layer, k)))
                     for k in _keys
-                })
+                }
+                # The name is kept for the viewer's own restore (`colormap` is settable by name); the LUT
+                # is what the Julia renderer reads. An exotic colormap must not fail the whole save.
+                try:
+                    entry["colormap_lut"] = self._colormap_lut(layer.colormap)
+                except Exception as e:
+                    print(f"[props] could not export LUT for {layer.colormap.name!r}: {e}", flush=True)
+                props["Image"].append(entry)
         # viewer dims position (the T/Z slider) so the image reopens on the same frame/slice
         try:
             props["dims"] = {"current_step": [int(x) for x in self._viewer.dims.current_step]}
@@ -1652,29 +1685,19 @@ class NapariState:
 
         `clean=True` (Phase E1) hides napari's baked scale bar + timestamp overlay for the shot and
         restores them after — a clean still for publication (add a vector scale bar / timestamp in
-        Illustrator, or Cecelia's own; see ANIMATION_PLAN.md Decision 7)."""
-        sb_was = ts_was = None
-        if clean:
-            try: sb_was = self._viewer.scale_bar.visible;    self._viewer.scale_bar.visible = False
-            except Exception: sb_was = None
-            try: ts_was = self._viewer.text_overlay.visible; self._viewer.text_overlay.visible = False
-            except Exception: ts_was = None
-        try:
+        Illustrator, or Cecelia's own; see ANIMATION_PLAN.md Decision 7). The hide/restore itself is
+        `napari_utils.overlays_hidden`, shared with the movie recorders (which expose the two
+        independently)."""
+        with napari_utils.overlays_hidden(self._viewer, scale_bar=clean, timestamp=clean):
             if fit_data and len(self._viewer.layers) > 0:
                 self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
             else:
                 self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
-        finally:
-            if sb_was is not None:
-                try: self._viewer.scale_bar.visible = sb_was
-                except Exception: pass
-            if ts_was is not None:
-                try: self._viewer.text_overlay.visible = ts_was
-                except Exception: pass
 
     def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
                          size_x=None, size_y=None, t_start: int = 0, t_end=None, title_card=None,
-                         task_id=None, api_url=None):
+                         task_id=None, api_url=None, frame_offset=0, frame_total=0,
+                         show_timestamp: bool = True, show_scale_bar: bool = True):
         """Record the open image's T-sweep to `path` (mp4). Resolves the T slider index from the image
         axes and delegates to the shared `napari_utils.record_timelapse`. Returns the frame count, the
         path and the size actually written. Raises if the image has no time axis. Phase F1 of the
@@ -1683,7 +1706,15 @@ class NapariState:
 
         `size_x`/`size_y` are the requested output WIDTH/HEIGHT in pixels (blank = the canvas size).
         THIS is the one place the axis order flips: the UI and the routes speak X/Y, napari speaks
-        (height, width) — see `_movie_size`."""
+        (height, width) — see `_movie_size`.
+
+        `frame_offset`/`frame_total` are for a multi-pass job (one pass per image version of a
+        side-by-side comparison) — see `_record_hooks`.
+
+        `show_timestamp`/`show_scale_bar` (both default True — what every movie was) hide napari's
+        baked overlays for the duration of the render and restore them after, so the window is
+        unchanged once it finishes. The two are separate because a figure often wants the elapsed time
+        burnt in and the scale bar added as vector art later."""
         axes = self._display_axes()                       # non-channel axes, dims.current_step order
         if "t" not in axes:
             raise RuntimeError("this image has no time axis to record")
@@ -1691,12 +1722,14 @@ class NapariState:
         if not n_t or n_t <= 1:
             raise RuntimeError("this image has a single timepoint — nothing to sweep")
         size = _movie_size(size_x, size_y)
-        on_progress, should_cancel = _record_hooks(task_id, api_url)
+        on_progress, should_cancel = _record_hooks(task_id, api_url, frame_offset, frame_total)
         try:
-            frames = napari_utils.record_timelapse(
-                self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
-                fps=fps, canvas_only=canvas_only, size=size, t_start=t_start, t_end=t_end,
-                title_card=title_card, on_progress=on_progress, should_cancel=should_cancel)
+            with napari_utils.overlays_hidden(self._viewer, scale_bar=not show_scale_bar,
+                                              timestamp=not show_timestamp):
+                frames = napari_utils.record_timelapse(
+                    self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
+                    fps=fps, canvas_only=canvas_only, size=size, t_start=t_start, t_end=t_end,
+                    title_card=title_card, on_progress=on_progress, should_cancel=should_cancel)
         except napari_utils.RecordCancelled as e:
             # A reply, not an error: the caller asked for this, and the previous movie (if any) is
             # still on disk untouched — the staged file was removed.
@@ -1707,7 +1740,8 @@ class NapariState:
                 **self._recorded_size(path)}
 
     def record_keyframes(self, path: str, keyframes, fps: int = 15, canvas_only: bool = True,
-                         size_x=None, size_y=None, title_card=None, task_id=None, api_url=None):
+                         size_x=None, size_y=None, title_card=None, task_id=None, api_url=None,
+                         show_timestamp: bool = True, show_scale_bar: bool = True):
         """Render an interpolated keyframe animation to `path` (mp4): each keyframe's saved view state is
         applied + captured with `steps` tween frames from the previous one (camera/contrast/colour/T
         interpolation). The "connect animation steps" render — see docs/todo/ANIMATION_PLAN.md (F2);
@@ -1715,16 +1749,49 @@ class NapariState:
         `size_x`/`size_y` as for `record_timelapse` (blank = the canvas size)."""
         on_progress, should_cancel = _record_hooks(task_id, api_url)
         try:
-            frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps,
-                                                   canvas_only=canvas_only,
-                                                   size=_movie_size(size_x, size_y),
-                                                   title_card=title_card, on_progress=on_progress,
-                                                   should_cancel=should_cancel)
+            with napari_utils.overlays_hidden(self._viewer, scale_bar=not show_scale_bar,
+                                              timestamp=not show_timestamp):
+                frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps,
+                                                       canvas_only=canvas_only,
+                                                       size=_movie_size(size_x, size_y),
+                                                       title_card=title_card, on_progress=on_progress,
+                                                       should_cancel=should_cancel)
         except napari_utils.RecordCancelled as e:
             return {"cancelled": True, "frames": e.frames, "path": path, "keyframes": len(keyframes)}
         finally:
             _clear_record_cancel(task_id)
         return {"frames": frames, "path": path, "keyframes": len(keyframes),
+                **self._recorded_size(path)}
+
+    def stitch_movies(self, path: str, sources, labels=None, layout: str = "row", fps: int = 15,
+                      title_card=None, task_id=None, api_url=None, frame_offset=0, frame_total=0):
+        """Compose already-recorded movies into one side-by-side file at `path` (the tail of a version
+        comparison — docs/todo/MOVIE_COMPARE_PLAN.md D1). `sources` are the per-version recordings, in
+        column order; `labels` captions them.
+
+        It needs no viewer, and `movie_io.stitch_movies` does the work — but it lives here, as a bridge
+        command, for two reasons: this process already owns writing into `movies/` (staging, cancel
+        registry, progress channel), and the title card is prepended HERE, from the live viewer, so the
+        card's channel legend is read the same way a single recording reads it (D6). Running it as a
+        second Python process would duplicate all of that.
+
+        Returns the frame count + the size written, or `{"cancelled": True, ...}` — the same reply
+        shape as the recorders, so the Julia side treats a cancelled stitch exactly like a cancelled
+        record."""
+        on_progress, should_cancel = _record_hooks(task_id, api_url, frame_offset, frame_total)
+        try:
+            frames = movie_io.stitch_movies(sources, path, fps=fps, labels=labels, layout=layout,
+                                            on_progress=on_progress, should_cancel=should_cancel)
+        except napari_utils.RecordCancelled as e:
+            # Nothing was promoted onto `path`, so any previous movie there is still intact — same
+            # contract as a cancelled record.
+            return {"cancelled": True, "frames": e.frames, "path": path}
+        finally:
+            _clear_record_cancel(task_id)
+        # The card goes on the COMPOSED file, once, through the shared prepend the recorders use — the
+        # per-version passes are recorded without one.
+        napari_utils._maybe_prepend_title(self._viewer, path, title_card)
+        return {"frames": frames, "path": path, "columns": len(sources),
                 **self._recorded_size(path)}
 
     def _recorded_size(self, path):
@@ -1833,25 +1900,36 @@ def _clear_record_cancel(task_id):
 _PROGRESS_MIN_INTERVAL_S = 0.4
 
 
-def _record_hooks(task_id, api_url):
+def _record_hooks(task_id, api_url, frame_offset=0, frame_total=0):
     """`(on_progress, should_cancel)` for a recording, or `(None, None)` when it isn't task-driven.
 
     Progress goes back over the SAME bridge→backend channel the view listener uses
-    (`POST /api/napari/event`), which Julia relays onto the task rail as `task:progress`."""
+    (`POST /api/napari/event`), which Julia relays onto the task rail as `task:progress`.
+
+    `frame_offset`/`frame_total` place THIS call's frames inside a longer job, so a side-by-side
+    comparison — several recordings plus a stitch, one per version — advances a single bar instead of
+    restarting it per pass (which reads as a stuck or broken render). Both default to 0, i.e. "this
+    call is the whole job", which is every existing caller. See docs/todo/MOVIE_COMPARE_PLAN.md."""
     if not task_id:
         return None, None
 
     state = {"last": 0.0}
+    offset = max(0, int(frame_offset or 0))
 
     def on_progress(frame, total):
+        done = offset + int(frame)
+        # A job total is an ESTIMATE made before the passes ran (frames per version × versions, plus
+        # the stitch), so clamp rather than ever posting frame > total, which renders as a bar past
+        # its own end.
+        overall = max(done, int(frame_total or 0) or (offset + int(total)))
         now = time.monotonic()
-        if frame < total and (now - state["last"]) < _PROGRESS_MIN_INTERVAL_S:
+        if done < overall and (now - state["last"]) < _PROGRESS_MIN_INTERVAL_S:
             return                                 # …but never skip the final frame
         state["last"] = now
         if not api_url:
             return
         body = json.dumps({"type": "recordProgress", "taskId": str(task_id),
-                           "frame": int(frame), "total": int(total)}).encode()
+                           "frame": done, "total": overall}).encode()
         try:
             req = urllib.request.Request(
                 api_url.rstrip("/") + "/api/napari/event", data=body, method="POST",
@@ -2021,7 +2099,11 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                                          size_x=cmd.get("size_x"), size_y=cmd.get("size_y"),
                                          t_start=cmd.get("t_start", 0), t_end=cmd.get("t_end"),
                                          title_card=cmd.get("title_card"),
-                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"))
+                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"),
+                                         frame_offset=cmd.get("frame_offset", 0),
+                                         frame_total=cmd.get("frame_total", 0),
+                                         show_timestamp=cmd.get("show_timestamp", True),
+                                         show_scale_bar=cmd.get("show_scale_bar", True))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "record_keyframes":
@@ -2029,7 +2111,18 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                                          fps=cmd.get("fps", 15), canvas_only=cmd.get("canvas_only", True),
                                          size_x=cmd.get("size_x"), size_y=cmd.get("size_y"),
                                          title_card=cmd.get("title_card"),
-                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"))
+                                         task_id=cmd.get("task_id"), api_url=cmd.get("api_url"),
+                                         show_timestamp=cmd.get("show_timestamp", True),
+                                         show_scale_bar=cmd.get("show_scale_bar", True))
+            return {"type": "ok", "cmd": t, **res}
+
+        elif t == "stitch_movies":
+            res = state.stitch_movies(cmd["path"], cmd.get("sources", []),
+                                      labels=cmd.get("labels"), layout=cmd.get("layout", "row"),
+                                      fps=cmd.get("fps", 15), title_card=cmd.get("title_card"),
+                                      task_id=cmd.get("task_id"), api_url=cmd.get("api_url"),
+                                      frame_offset=cmd.get("frame_offset", 0),
+                                      frame_total=cmd.get("frame_total", 0))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "save_screenshot":

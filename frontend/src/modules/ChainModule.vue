@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated, markRaw, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, markRaw, nextTick } from 'vue'
 defineOptions({ name: 'ChainModule' })
 import {
   VueFlow, useVueFlow,
@@ -31,7 +31,8 @@ import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { isExcluded, includedUids } from '../utils/inclusion'
-import { START_ID, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
+import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
+import { layerLanes, layoutDag, LAYOUT_VARIANTS, type LayoutVariant } from '../utils/dagLayout'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -201,28 +202,8 @@ interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unk
 interface LiveTemplate { nodes: LiveTemplateNode[]; edges: { from: string; to: string }[] }
 const liveTemplate = ref<LiveTemplate | null>(null)
 
-// Topological order of node ids (Kahn) — the execution order used for the columns.
-function topoOrder(nodes: { id: string }[], edges: { from: string; to: string }[]): string[] {
-  const indeg = new Map(nodes.map(n => [n.id, 0]))
-  const succ  = new Map(nodes.map(n => [n.id, [] as string[]]))
-  for (const e of edges) {
-    if (!indeg.has(e.to) || !succ.has(e.from)) continue
-    indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1)
-    succ.get(e.from)!.push(e.to)
-  }
-  const q = nodes.filter(n => (indeg.get(n.id) ?? 0) === 0).map(n => n.id)
-  const out: string[] = []
-  while (q.length) {
-    const id = q.shift()!
-    out.push(id)
-    for (const c of succ.get(id) ?? []) {
-      indeg.set(c, indeg.get(c)! - 1)
-      if (indeg.get(c) === 0) q.push(c)
-    }
-  }
-  for (const n of nodes) if (!out.includes(n.id)) out.push(n.id)  // cycle safety
-  return out
-}
+// topoOrder + the layer/lane maths live in utils/dagLayout.ts — one geometry for the Live grid and the
+// Edit canvas. See its header for why the editor needs it at all.
 
 // Template (column order + edges) for the selected run. A persisted run carries its own FROZEN
 // template (nodes/edges from run.json); a live run fetches the current template by chain name.
@@ -278,23 +259,7 @@ const liveLayout = computed(() => {
     nodes = [...taskNodeIds].map(id => ({ id, fn: '' }))
     edges = []
   }
-  const order = topoOrder(nodes, edges)
-  const preds = new Map(nodes.map(n => [n.id, [] as string[]]))
-  for (const e of edges) preds.get(e.to)?.push(e.from)
-  const layer = new Map<string, number>()
-  for (const id of order) {
-    const ps = preds.get(id) ?? []
-    layer.set(id, ps.length ? Math.max(...ps.map(p => layer.get(p) ?? 0)) + 1 : 0)
-  }
-  const perLayer = new Map<number, number>()
-  const lane = new Map<string, number>()
-  for (const id of order) {
-    const L = layer.get(id)!
-    const k = perLayer.get(L) ?? 0
-    lane.set(id, k)
-    perLayer.set(L, k + 1)
-  }
-  const bandLanes = Math.max(1, ...perLayer.values())
+  const { layer, lane, maxLane: bandLanes } = layerLanes(nodes, edges)
   const imageIds = [...new Set(tasks.map(t => t.imageUid))]
     .sort((a, b) => imageName(a).localeCompare(imageName(b)))
   return { tasks, edges, layer, lane, bandLanes, imageIds }
@@ -541,6 +506,31 @@ const chainNames   = ref<string[]>([])
 const activeChain  = ref<string>('')
 const newChainName = ref<string>('')
 const showNewInput = ref(false)
+// One inline name input serves BOTH create and rename — same field, same keys, different verb.
+const nameMode = ref<'create' | 'rename'>('create')
+
+// A rename is only unsafe for a run of THIS chain that is in flight: the Live view fetches the
+// current template by name for its column layout. Persisted runs carry their own frozen template,
+// so they are unaffected (and keep their original chainName — what they ran as).
+const chainHasLiveRun = computed(() =>
+  chainTasks.value.some(t => t.chainName === activeChain.value &&
+                             (t.status === 'running' || t.status === 'queued')))
+
+function openNameInput(mode: 'create' | 'rename') {
+  if (mode === 'rename' && (!activeChain.value || chainHasLiveRun.value)) return
+  // Clicking the same button again closes it (it was a toggle before this served two modes).
+  if (showNewInput.value && nameMode.value === mode) { closeNameInput(); return }
+  nameMode.value = mode
+  newChainName.value = mode === 'rename' ? activeChain.value : ''
+  showNewInput.value = true
+}
+
+function closeNameInput() {
+  showNewInput.value = false
+  newChainName.value = ''
+}
+
+const submitName = () => (nameMode.value === 'rename' ? renameChain() : createChain())
 const saving       = ref(false)
 
 async function loadChainList() {
@@ -596,6 +586,10 @@ function applyTemplate(
   removeEdges(edges.value.map(e => e.id))
   selectedNodeId.value = null
 
+  // Computed once for the whole template, and only consulted where a saved position is missing — a
+  // chain the user has dragged is never re-laid-out. That's their spatial memory of their own pipeline.
+  const autoPos = layoutDag(tmpl.nodes, tmpl.edges.map(e => ({ from: e.from, to: e.to })))
+
   const newNodes: Node[] = tmpl.nodes.map((n, i) => {
     const def = allTaskDefs.value.find(d => d.fun_name === n.fn)
     // Merge saved params over task-def defaults so nodes created before a param was added
@@ -607,13 +601,20 @@ function applyTemplate(
     return {
       id:       n.id,
       type:     n.scope === 'set' ? 'picnic' : 'task',
-      position: positions[n.id] ?? { x: 80 + i * 220, y: 120 },
+      // A template authored outside the whiteboard has no `positions` — lay its DAG out rather than
+      // stacking everything in one row, which hid a fan-out (see utils/dagLayout.ts). Per-node fallback
+      // so a partially-positioned file still places the nodes it does know about.
+      position: positions[n.id] ?? autoPos[n.id] ?? { x: 80 + i * 220, y: 120 },
       data: {
         fn:              n.fn,
         scope:           n.scope,
         params:          { ...defaults, ...n.params },
         barrier_policy:  n.barrier_policy,
-        resource_pool:   n.resource_pool || def?.resource_pool || 'default',
+        // '' is a REAL value meaning "inherit from the task spec" (chain.jl ChainNode) — every chain in
+        // a project stores '' unless the user overrode it. Do NOT invent a pool name here: this used to
+        // fall back to 'default', a pool that no longer exists (they were renamed cpu/gpu/io/network),
+        // so the config select got a value matching no option and rendered BLANK.
+        resource_pool:   n.resource_pool || def?.resource_pool || '',
         label:           def?.label ?? n.fn.split('.').pop() ?? n.fn,
       },
     }
@@ -710,6 +711,37 @@ async function removeChain() {
   }
 }
 
+// Rename the active chain: one atomic server-side move (never save-as + delete, which leaves both
+// copies behind if the second call fails). Past runs deliberately keep the old name — see
+// api_chains_rename in api/src/routes.jl.
+async function renameChain() {
+  const from = activeChain.value
+  const to   = newChainName.value.trim()
+  const uid  = projectMeta.current?.uid
+  if (!uid || !from || !to) return
+  if (to === from) { closeNameInput(); return }
+  try {
+    const res = await fetch('/api/chains/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, name: from, newName: to }),
+    })
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({})) as { error?: string }
+      throw new Error(detail.error ?? `HTTP ${res.status}`)
+    }
+    chainNames.value = chainNames.value.filter(n => n !== from).concat(to).sort()
+    activeChain.value = to
+    closeNameInput()
+    // Reload from disk so the canvas reflects the stored template (whose `name` field moved too)
+    // rather than the pre-rename copy still in memory.
+    await loadChain(to)
+    log.info(`Chain renamed to "${to}".`, { source: 'whiteboard' })
+  } catch (e) {
+    log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'whiteboard' })
+  }
+}
+
 async function createChain() {
   const name = newChainName.value.trim()
   if (!name) return
@@ -733,8 +765,7 @@ async function createChain() {
     removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
     addStartNode()                       // new chains get a UML start dot by default — link it to the first task
-    newChainName.value = ''
-    showNewInput.value = false
+    closeNameInput()
     // Center + zoom on the start dot (which sits at ~20,40) so it's obviously visible on an otherwise
     // empty canvas — "here's the start, drop your first task to the right" — instead of parked
     // off-screen at the origin. Offset right so there's room for tasks.
@@ -751,11 +782,18 @@ async function createChain() {
 interface PoolInfo { name: string; limit: number }
 const pools = ref<PoolInfo[]>([])
 
+// Populates the node config's Resource pool picker. A silent failure here is NOT cosmetic: the picker
+// then renders its inherit option and nothing else, so the pool looks unchangeable — which is what a
+// page that loaded while the backend was still restarting actually showed. Warn (so it's diagnosable)
+// and let onActivated retry, the same way task defs already do.
 async function loadPools() {
   try {
     const res = await fetch('/api/pools')
-    if (res.ok) pools.value = await res.json() as PoolInfo[]
-  } catch { /* non-critical */ }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    pools.value = await res.json() as PoolInfo[]
+  } catch (e) {
+    log.warn(`Could not load resource pools: ${e}`, { source: 'whiteboard' })
+  }
 }
 
 // ── Task defs — palette ───────────────────────────────────────────────────────
@@ -837,7 +875,7 @@ function onCanvasDrop(event: DragEvent) {
       scope,
       params:         initialParams,
       barrier_policy: 'all',
-      resource_pool:  def.resource_pool ?? 'default',
+      resource_pool:  def.resource_pool ?? '',   // '' = inherit from the task spec, not 'default'
       label:          def.label,
     },
   }])
@@ -1057,13 +1095,85 @@ watch(() => projectMeta.current?.uid, () => { loadedRuns.value = new Map(); load
 watch(activeTab, tab => { if (tab === 'live') loadRunList() })
 
 onMounted(async () => {
-  await Promise.all([loadAllTaskDefs(), loadChainList(), loadPools(), loadRunList()])
+  // Task defs + pools MUST land before the chain list: loadChainList() switches to a chain, which runs
+  // applyTemplate, which reads allTaskDefs to merge each task's spec defaults into the node params and
+  // to resolve its pool + label. Loading all four concurrently was a race — when the defs lost it, the
+  // node params silently kept ONLY what the file stored (no defaults merged, which is exactly what a
+  // sparsely-authored template relies on), the label fell back to the raw fn, and the pool select had
+  // no options to match. Two awaits, and the ordering bug can't happen.
+  await Promise.all([loadAllTaskDefs(), loadPools()])
+  await Promise.all([loadChainList(), loadRunList()])
 })
+
+// A chain can appear WITHOUT this page doing anything — Claude authors one over the MCP
+// (POST /api/chains/create), or the user writes one from the REPL. The picker is filled by
+// loadChainList(), which runs on mount + project switch only, and this component lives under
+// <KeepAlive>, so without a signal a new chain stays invisible until a full page reload. (The ↻ button
+// does not help: it reloads the ACTIVE chain's content, not the list.) The backend broadcasts
+// `chains_updated` whenever the chains dir changes — same pattern as `lab_log_updated` for an
+// externally-appended lab log. Safe to call any time: loadChainList only switches chains if the active
+// one vanished, so it never discards unsaved canvas edits.
+// Which pool the selected node inherits when its resource_pool is '' — shown in the picker's inherit
+// option so "from task (gpu)" is legible instead of leaving the user to guess what '' resolves to.
+const selectedNodePoolFromTask = computed(() => {
+  const fn = selectedNode.value?.data?.fn as string | undefined
+  if (!fn) return ''
+  return allTaskDefs.value.find(d => d.fun_name === fn)?.resource_pool ?? ''
+})
+
+// ── Auto-layout ───────────────────────────────────────────────────────────────
+// Re-tidies the current canvas on demand. Distinct from the automatic layout in applyTemplate: that one
+// only fills in positions a template never had, while this deliberately OVERWRITES what's there — so it
+// stays a button the user presses, never something that happens to a canvas they arranged. Not saved
+// either: ↻ (reload from disk) restores the previous arrangement as long as they haven't hit Save.
+const layoutMenuOpen = ref(false)
+const layoutBtnEl = ref<HTMLElement | null>(null)
+
+function applyAutoLayout(variant: LayoutVariant) {
+  layoutMenuOpen.value = false
+  // The start dot isn't a task node and has no place in the DAG; keep it where the user put it.
+  const taskNodes = nodes.value.filter(n => !isStartId(n.id))
+  if (!taskNodes.length) return
+  const pos = layoutDag(
+    taskNodes.map(n => ({ id: n.id })),
+    edges.value.filter(e => !touchesStart({ source: e.source, target: e.target }))
+      .map(e => ({ from: e.source, to: e.target })),
+    variant.direction,
+    variant.spec,
+  )
+  for (const n of taskNodes) {
+    const p = pos[n.id]
+    if (p) updateNode(n.id, { position: p })
+  }
+  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'whiteboard' })
+}
+
+// The ↻ button. It used to reload only the ACTIVE chain's content, which is not what its label says and
+// not what someone reaching for it wants: the user who first hit a Claude-authored chain pressed this
+// to make it appear and it couldn't, because the list was never re-read. Both, in list-then-content
+// order, so the picker gains the new chain AND the canvas is honest about what's on disk.
+async function reloadFromDisk() {
+  await loadChainList()
+  if (activeChain.value) await loadChain(activeChain.value)
+}
+
+function onChainsUpdated(data: Record<string, unknown>) {
+  if (String(data.projectUid ?? '') !== projectMeta.current?.uid) return
+  void loadChainList()
+}
+onMounted(() => ws.on('chains_updated', onChainsUpdated))
+onUnmounted(() => ws.off('chains_updated', onChainsUpdated))
 
 // onActivated fires when KeepAlive restores the component. Retry loading defs
 // if the first mount failed (server wasn't ready yet).
 onActivated(async () => {
   if (!allTaskDefs.value.length) await loadAllTaskDefs()
+  // Same retry for pools — without it a fetch that failed once (backend still starting) left the
+  // Resource pool picker with only its inherit option, i.e. apparently frozen, until a page reload.
+  if (!pools.value.length) await loadPools()
+  // …and re-read the list, in case a `chains_updated` frame was missed (a dropped/reconnecting
+  // socket): coming back to the page should never show a stale set of chains.
+  void loadChainList()
 })
 </script>
 
@@ -1210,18 +1320,33 @@ onActivated(async () => {
           </select>
           <span v-else class="no-chains-hint cc-muted">No chains yet</span>
         </div>
-        <div class="chain-bar-actions">
+        <!-- One joined group for acting on the chain FILE (new / rename / delete)… -->
+        <div class="chain-bar-actions cc-btn-group">
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
-            @click="showNewInput = !showNewInput"
+            @click="openNameInput('create')"
             v-tooltip.right="'Create a new chain template'"
           >
             <i class="pi pi-plus" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!activeChain || chainHasLiveRun"
+            @click="openNameInput('rename')"
+            v-tooltip.right="chainHasLiveRun ? 'Cannot rename while this chain is running'
+                                             : 'Rename this chain'"
+          >
+            <i class="pi pi-pencil" />
           </button>
           <ConfirmDeleteButton :disabled="!activeChain"
             title="Delete this chain template from disk."
             armed-title="Click again to permanently delete this chain"
             @confirm="removeChain" />
+        </div>
+        <!-- …and one for acting on THIS canvas. Two joined groups rather than seven free-floating
+             icons: the palette is 190px, so a flat row of gapped buttons ran out of width the moment a
+             seventh was added. Grouping also says which buttons belong together. -->
+        <div class="chain-bar-actions cc-btn-group">
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || hasStartNode"
@@ -1231,10 +1356,29 @@ onActivated(async () => {
             <i class="pi pi-circle-fill" />
           </button>
           <button
+            ref="layoutBtnEl"
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :class="{ 'qc-on': layoutMenuOpen }"
+            :disabled="!activeChain || !nodes.length"
+            @click="layoutMenuOpen = !layoutMenuOpen"
+            v-tooltip.right="'Tidy the layout — re-positions the nodes (not saved until you Save)'"
+          >
+            <i class="pi pi-sitemap" />
+          </button>
+          <TeleportPopover v-model="layoutMenuOpen" :anchor="layoutBtnEl" placement="bottom-start">
+            <div class="layout-menu">
+              <button v-for="v in LAYOUT_VARIANTS" :key="v.id"
+                class="cc-btn cc-btn-bare layout-menu-item"
+                @click="applyAutoLayout(v)">
+                <i :class="['pi', v.icon]" /> {{ v.label }}
+              </button>
+            </div>
+          </TeleportPopover>
+          <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
-            @click="loadChain(activeChain)"
-            v-tooltip.right="'Reload chain from disk — discards unsaved edits'"
+            @click="reloadFromDisk"
+            v-tooltip.right="'Reload chains from disk — discards unsaved edits'"
           >
             <i class="pi pi-refresh" />
           </button>
@@ -1249,18 +1393,20 @@ onActivated(async () => {
         </div>
       </div>
 
-      <!-- New chain input -->
+      <!-- Chain name input — serves both create and rename (nameMode) -->
       <div v-if="showNewInput" class="new-chain-form">
         <input
           v-model="newChainName"
           class="new-chain-input"
-          v-tooltip.right="'Name for the new chain'"
-          placeholder="chain name…"
-          @keydown.enter="createChain"
-          @keydown.esc="showNewInput = false; newChainName = ''"
+          v-tooltip.right="nameMode === 'rename' ? 'New name for this chain' : 'Name for the new chain'"
+          :placeholder="nameMode === 'rename' ? 'new name…' : 'chain name…'"
+          @keydown.enter="submitName"
+          @keydown.esc="closeNameInput"
           autofocus
         />
-        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save" v-tooltip.right="'Create the chain'" @click="createChain" :disabled="!newChainName.trim()">
+        <button class="wb-btn wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense-save"
+          v-tooltip.right="nameMode === 'rename' ? 'Rename the chain' : 'Create the chain'"
+          @click="submitName" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
         </button>
       </div>
@@ -1471,9 +1617,15 @@ onActivated(async () => {
             class="config-select"
             :value="selectedNode.data.resource_pool"
             @change="updateSelectedNodeData({ resource_pool: ($event.target as HTMLSelectElement).value })"
-            v-tooltip.left="'How many nodes share a concurrency slot; GPU tasks use the gpu pool'"
+            v-tooltip.left="pools.length
+              ? 'How many nodes share a concurrency slot; GPU tasks use the gpu pool'
+              : 'Pools unavailable — reopen this page to retry'"
           >
-            <option value="">— none (unbounded) —</option>
+            <!-- '' means INHERIT from the task spec, never unbounded: chain.jl resolves '' → the task
+                 JSON's resource_pool → 'cpu'. The old "none (unbounded)" label claimed the opposite,
+                 and '' is what every chain stores unless the user overrode it, so it was the label
+                 most nodes showed. -->
+            <option value="">— from task{{ selectedNodePoolFromTask ? ` (${selectedNodePoolFromTask})` : '' }} —</option>
             <option v-for="p in pools" :key="p.name" :value="p.name">
               {{ p.name }} (max {{ p.limit }} concurrent)
             </option>
@@ -1642,11 +1794,25 @@ onActivated(async () => {
   width: 100%;
 }
 
+/* Two `.cc-btn-group` strips (chain-file actions | canvas actions), stacked by `.chain-bar`'s column.
+   `.cc-btn-group` already supplies the joined border, zero gaps and `inline-flex`; all this adds is
+   hugging the content instead of stretching to the full 190px palette width. Seven gapped buttons on
+   one line had run out of room. */
 .chain-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
+  align-self: flex-start;
 }
+
+/* Layout menu — a short list of ACTIONS in a popover. Not a ChipSelect: each row fires an action and
+   none of them persists as a selection (docs/UI.md → UX primitive catalog). */
+.layout-menu { display: flex; flex-direction: column; min-width: 11rem; }
+.layout-menu-item {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--cc-radius-md);
+}
+.layout-menu-item:hover { background: var(--cc-surface-2); }
 
 .chain-select {
   flex: 1;

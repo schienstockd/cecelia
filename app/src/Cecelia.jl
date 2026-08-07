@@ -6,8 +6,11 @@ export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
-export image_compressor, set_image_compressor!, bf2raw_compression_flags, IMAGE_COMPRESSOR_CHOICES
+export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON, IMAGE_COMPRESSOR_DOCS_URL
+export ngff_version, chunk_separator, set_store_layout!
+export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT
+export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_MEASURED_ON
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
@@ -94,6 +97,10 @@ export task_requires_axes, task_applies, task_applicability_reason, TaskApplicab
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
+# The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
+# `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
+# the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
+export ngff_group_attrs, ngff_multiscales, zarr_array_meta, ngff_version
 export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
@@ -128,6 +135,7 @@ export subscribe_chain_events!, unsubscribe_chain_events!
 # ── Chain executor ─────────────────────────────────────────────────────────────
 export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState
 export load_chain_template, save_chain_template!, load_template_from_cache
+export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run
 export run_chain
 export chain_node, make_chain
@@ -137,7 +145,7 @@ export NapariViewer
 export launch!, close!, restart!, send
 export open_image!, show_labels!, show_branch_labels!, refresh_labels!
 export show_layer!, hide_layer!, remove_layer!, clear!
-export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!
+export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!, stitch_movies!
 export capture_view_state, apply_view_state!, preview_region
 
 # ── Task preview (resident worker) ────────────────────────────────────────────

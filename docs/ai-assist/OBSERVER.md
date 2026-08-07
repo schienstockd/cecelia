@@ -47,12 +47,13 @@ list_notebooks            → a project's notebooks (name, file, description, ve
 get_notebook              → a notebook's current Pluto source (with the user's edits) — the "have a look" flow (Phase 2)
 ```
 
-**Write (the three non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
+**Write (the non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
 ```
 append_lab_log            → append a dated [Claude] entry. Append-only, never edits existing content.
 create_notebook           → create a Pluto notebook from cells (Phase 2). Create-only (409 on existing); the user edits/owns it.
 revise_notebook           → new version of an EXISTING notebook: snapshots it (restorable) then overwrites its cells. Real versioning, not a "-v2" copy.
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
+create_chain              → author a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-validated. INERT until the user presses Run — there is no tool to launch it.
 ```
 
 **Write (Phase 2 — deferred):**
@@ -242,11 +243,25 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
-- **Three non-destructive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
-  (append-only), `POST /api/notebooks/write` (create-only, 409 on existing), and `POST
-  /api/notebooks/describe` (a notebook's description string only — not its cells). None touch cell
-  data, images, gates, QC, or notebook content; the invariant test asserts the exact set. No task-run,
-  gate, h5ad, or config write.
+- **Additive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
+  (append-only), `POST /api/notebooks/write` (create-only, 409 on existing), `POST
+  /api/notebooks/describe` (a notebook's description string only — not its cells), `POST
+  /api/notebooks/revise` (snapshots first) and `POST /api/chains/create` (create-only + validated).
+  None touch cell data, images, gates, QC, or notebook content; the invariant test asserts the exact
+  set. No task-run, gate, h5ad, or config write.
+- **Claude designs; the user runs — enforced by the transport.** `create_chain` writes a chain
+  template; launching one is the WS message `chain:run`, which has no HTTP route, and the MCP client
+  speaks only HTTP. So there is nothing to remember and nothing to bypass. This is why `submit_task`
+  stays deferred: a chain node replaces the store/h5ad for its `value_name`, making a launch the first
+  MCP action that could destroy results — and the in-app agent is spawned with a *prefix*
+  `--allowedTools mcp__cecelia-observer` (`agent_runner.jl`), so it would be auto-approved with no
+  prompt. Additive artifacts are safe under that prefix; a launch would not be.
+- **Chains need no versioning, unlike notebooks.** A `ChainRun` stores a content-hashed copy of the
+  template it ran (`chain.jl`), so editing/renaming/deleting a template cannot change what a completed
+  run did — the property notebook snapshots had to be built to provide. Hence `create_chain` is
+  create-only with no `revise_chain`: a revision is a NEW chain beside the original, which the user
+  compares on the canvas. Rename and delete are GUI-only. Mechanics: `docs/SCHEDULER.md` → *Who may
+  author a template, and who may run one*.
 - **Param suggestions are current-state, not a correlation.** The run log stores params but QC is NOT
   snapshotted per run, so there is no fittable params→outcome curve — Claude cites what was tried + the
   valid range and suggests a direction; it does not predict. A per-run QC snapshot was considered and

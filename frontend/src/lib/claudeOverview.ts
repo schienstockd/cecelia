@@ -64,6 +64,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   {
     key: 'creates', title: 'Creates', icon: 'pi-file-edit', tone: 'good',
     items: [
+      'Chains — a wired pipeline you review, then run',
       'Pluto notebooks — runnable analysis you then own & edit',
       'CSV exports for Prism / R',
       'Lab-log notes (only when you ask)',
@@ -73,7 +74,8 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
     key: 'cant', title: "Can't", icon: 'pi-ban', tone: 'muted',
     items: [
       'Change your data (h5ad, gates, project config)',
-      'Run tasks — you approve and run everything',
+      'Run anything — not a task, not a chain it built',
+      'Overwrite, rename or delete your chains & notebooks',
       'Open raw image pixels',
       'Draw the biological conclusion — that stays yours',
     ],
@@ -111,4 +113,5 @@ export const CLAUDE_EXAMPLES: string[] = [
   'Why is this image off?',
   'Plot the behaviour differences',
   'Build a cell-speed notebook',
+  'Design a segment + track chain',
 ]

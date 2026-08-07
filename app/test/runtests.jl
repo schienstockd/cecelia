@@ -48,7 +48,8 @@ True if the fixture exists. If not, emit a single strong warning (once per path)
 return false so the caller can `@test_skip`. Generic — works for any fixture file.
 """
 function have_fixture(path::AbstractString)::Bool
-    isfile(path) && return true
+    # `isdir` too: an OME-ZARR fixture is a STORE, i.e. a directory, not a single file.
+    (isfile(path) || isdir(path)) && return true
     if !(path in _WARNED_FIXTURES)
         push!(_WARNED_FIXTURES, path)
         @warn """

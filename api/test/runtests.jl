@@ -25,6 +25,24 @@ using Test
 include(joinpath(@__DIR__, "..", "src", "server.jl"))   # defines handlers + shared state; does not start
 using JSON3
 
+# ── Test data fixtures ────────────────────────────────────────────────────────
+# Same committed fixtures the package suite uses (see test-data/README.md); resolved here too because
+# the Julia OME-ZARR readers under test live in `api/src/image_geometry.jl`. Override with
+# CECELIA_TEST_DATA. (@__DIR__ = api/test → ../../.. = workspace root.)
+api_test_projects_dir() = get(ENV, "CECELIA_TEST_DATA",
+    normpath(joinpath(@__DIR__, "..", "..", "test-data", "projects")))
+api_fixture(relparts...) = joinpath(api_test_projects_dir(), relparts...)
+# A store is a DIRECTORY; warn once and let the caller @test_skip rather than fail a partial checkout.
+const _API_WARNED_FIXTURES = Set{String}()
+function api_have_fixture(path::AbstractString)::Bool
+    (isfile(path) || isdir(path)) && return true
+    if !(path in _API_WARNED_FIXTURES)
+        push!(_API_WARNED_FIXTURES, path)
+        @warn "TEST FIXTURE MISSING — dependent tests SKIPPED. Expected: $path (restore with `git checkout -- test-data`)"
+    end
+    false
+end
+
 # call a POST handler the way the router does: JSON body → Vector{UInt8}
 _post(f, obj) = f(Vector{UInt8}(JSON3.write(obj)))
 _repl(code) = _post(api_repl, Dict("code" => code))
@@ -802,6 +820,97 @@ end
     two = composite_rgb(cat(fill(1.0f0, 1, 1, 1), fill(1.0f0, 1, 1, 1); dims = 1),
                               [(0.0, 1.0, "red", true), (0.0, 1.0, "green", true)])
     @test r(two[1, 1]) > 0.9 && g(two[1, 1]) > 0.9 && b(two[1, 1]) == 0
+
+    # ── Channel colour: napari's palette must NOT be guessed by name ──────────────────
+    # `bop blue` was missing from CMAP_RGB and hit the unknown-name fallback (WHITE), which additively
+    # washes the whole composite out — the SHG channel of every intravital image rendered white instead
+    # of blue. Assert napari's own end colour (AVAILABLE_COLORMAPS["bop blue"].colors[-1]).
+    bop = composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "bop blue", true)])
+    @test isapprox(r(bop[1, 1]), 0.12549; atol = 0.01)
+    @test isapprox(g(bop[1, 1]), 0.678431; atol = 0.01)
+    @test isapprox(b(bop[1, 1]), 0.972549; atol = 0.01)
+    @test b(bop[1, 1]) - r(bop[1, 1]) > 0.5            # unmistakably blue, not white
+
+    # An explicit LUT (props `colormap_lut`) wins over any name table and is interpolated. A 2-stop
+    # black→base ramp must reduce EXACTLY to `n .* base`, which is what additive primaries need.
+    lut2 = [(0f0, 0f0, 0f0), (1f0, 0f0, 0f0)]
+    half = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut2, true)])
+    @test isapprox(r(half[1, 1]), 0.5; atol = 0.01) && g(half[1, 1]) == 0
+
+    # 3-stop LUT: midpoint intensity lands on the middle stop, quarter interpolates into it
+    lut3 = [(0f0, 0f0, 0f0), (0f0, 1f0, 0f0), (0f0, 0f0, 1f0)]
+    mid = composite_rgb(fill(0.5f0, 1, 1, 1), [(0.0, 1.0, lut3, true)])
+    @test isapprox(g(mid[1, 1]), 1.0; atol = 0.01) && isapprox(b(mid[1, 1]), 0.0; atol = 0.01)
+    qtr = composite_rgb(fill(0.25f0, 1, 1, 1), [(0.0, 1.0, lut3, true)])
+    @test isapprox(g(qtr[1, 1]), 0.5; atol = 0.01)
+    # a white→colour LUT (napari's `I *` set) is honoured at zero intensity — no name table could do this
+    inv = composite_rgb(fill(0.0f0, 1, 1, 1), [(0.0, 1.0, [(1f0, 1f0, 1f0), (0f0, 0f0, 1f0)], true)])
+    @test r(inv[1, 1]) > 0.9 && g(inv[1, 1]) > 0.9
+
+    # layer_display_specs prefers the saved LUT over the colormap NAME (same entry carries both)
+    mktempdir() do d
+        p = joinpath(d, "props.json")
+        write(p, JSON3.write((; Image = [
+            (; contrast_limits = [0.0, 10.0], colormap = "bop blue",
+               colormap_lut = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], visible = true),
+            (; contrast_limits = [1.0, 5.0], colormap = "magenta", visible = false),
+        ])))
+        specs = layer_display_specs(p)
+        @test length(specs) == 2
+        @test specs[1][3] isa AbstractVector && specs[1][3][2] == (1f0, 0f0, 0f0)  # LUT, not the name
+        @test specs[2][3] == "magenta" && specs[2][4] == false                     # no LUT → name kept
+        @test specs[2][1] == 1.0 && specs[2][2] == 5.0
+    end
+    @test layer_display_specs(joinpath(mktempdir(), "absent.json")) === nothing
+end
+
+@testset "API: zarr byte order" begin
+    # `read_native` must apply the STORED byte order. bioformats2raw writes big-endian (`>u2`) and
+    # Zarr.jl parses that for the eltype but hands back the bytes UNSWAPPED — so a raw `default` image
+    # version read with plain `arr[...]` is byte-swapped garbage that renders as saturated white noise
+    # (a true 63 reads as 16128; 98% of a real frame exceeded a contrast ceiling that should clip none).
+    # Silent, and invisible in Python, which honours the descriptor. See docs/NAPARI.md → Byte order.
+    # DETECTOR for the single Zarr.jl internal this depends on. `_zarr_byte_order` reads the raw numpy
+    # dtype descriptor out of `arr.metadata.dtype`; if a Zarr.jl upgrade changes that field's shape the
+    # guard falls back to '|' (never swap) and the big-endian bug returns. The swap assertions below DO
+    # catch that — verified by mutating the guard to return '|', which fails 3 of them — but they fail as
+    # an opaque UInt16 value mismatch. This one names the cause instead.
+    mktempdir() do d
+        a = zcreate(UInt16, Zarr.DirectoryStore(joinpath(d, "probe")), 2; chunks = (2,))
+        dt = getfield(a.metadata, :dtype)
+        @test dt isa AbstractString          # ← if THIS fails, read_native's byte-order guard is blind
+        @test occursin(r"^[<>|]", String(dt))
+    end
+
+    # Re-stamp the dtype descriptor the way bioformats2raw would; Zarr.jl keeps it as the raw string.
+    function stamp_order!(p, order)
+        za = JSON3.read(read(joinpath(p, ".zarray"), String), Dict{String,Any})
+        za["dtype"] = order
+        write(joinpath(p, ".zarray"), JSON3.write(za))
+    end
+    vals = UInt16[0x0000, 0x003f, 0x00ff, 0x2800, 0xffff]      # 0, 63, 255, 10240, 65535
+    mktempdir() do d
+        for (i, (order, swaps)) in enumerate((">u2" => true, "<u2" => false))
+            p = joinpath(d, "store$(i)")
+            a = zcreate(UInt16, Zarr.DirectoryStore(p), length(vals); chunks = (length(vals),))
+            a[:] = vals
+            stamp_order!(p, order)
+            got = read_native(zopen(p, "r"), :)
+            @test got == (swaps ? ntoh.(vals) : vals)
+            if order == ">u2"                  # the bug this pins: BE must NOT read as the raw bytes
+                @test got != vals
+                @test got[2] == 0x3f00         # 63 declared big-endian reads as 16128 if left unswapped
+            end
+        end
+        # `|u1` (not-applicable, 1-byte) is passed through untouched — swapping a byte is a no-op, but
+        # the descriptor must not be misread as an order either.
+        p8 = joinpath(d, "store8")
+        b = UInt8[0x00, 0x3f, 0xff]
+        a8 = zcreate(UInt8, Zarr.DirectoryStore(p8), length(b); chunks = (length(b),))
+        a8[:] = b
+        stamp_order!(p8, "|u1")
+        @test read_native(zopen(p8, "r"), :) == b
+    end
 end
 
 @testset "API: module-canvas persistence" begin
@@ -883,6 +992,23 @@ end
         @test !haskey(d.versions.cpCorrected, :label)
         # label sets are sized too, summed across the value_name's files
         @test d.labels.A.bytes >= 12_000
+
+        # Layout, not just codec: v2 and v3 stores coexist on disk permanently (no converter —
+        # ZARR_V3_PLAN D7), so the modal has to be able to say which a store is and how it is chunked.
+        # `shard` is present-and-null for an unsharded store rather than absent: "not sharded" and "we
+        # could not read it" are different answers and the readout distinguishes them.
+        # This fixture's `.zarray` is hand-written with only a `compressor` and no NGFF attrs, so
+        # `ngffVersion`/`chunks` are legitimately empty here — the point asserted is that the fields are
+        # REPORTED (the modal renders what it gets). Real values are asserted against the ZARRFMT
+        # fixtures in *"API: zarr v2 and v3 read identically"*, which are real bioformats2raw stores.
+        @test d.versions.default.zarrFormat == 2
+        @test isnothing(d.versions.default.shard)
+        @test haskey(d.versions.default, :ngffVersion)
+        @test haskey(d.versions.default, :chunks)
+        # the unreadable store carries none of them, same as its codec fields
+        for k in (:zarrFormat, :ngffVersion, :chunks, :shard)
+            @test !haskey(d.versions.cpCorrected, k)
+        end
 
         @test api_image_stores(HTTP.Request("GET", "/api/images/stores"))[1] == 400
         @test api_image_stores(
@@ -1089,6 +1215,100 @@ end
         end
         @test _post(api_lablog_dismiss, Dict("projectUid"=>uid, "dismissed"=>true))[1] == 400            # id missing
         @test _post(api_lablog_dismiss, Dict("id"=>"x", "dismissed"=>true))[1] == 400                    # projectUid missing
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
+# Chain authoring from outside the whiteboard (Claude via the MCP) + rename. The two properties that
+# matter: create NEVER overwrites a chain the user wired, and an invalid template is rejected HERE
+# rather than mid-run, after the user pressed Run on something they didn't write.
+@testset "API: chain create (create-only + validated) and rename" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-chains")
+        uid  = proj.uid
+        rm_params = Dict("valueName"=>"default", "newDefault"=>"default")
+        node(id) = Dict("id"=>id, "fn"=>"importImages.remove", "params"=>rm_params)
+        tmpl(name, nodes, edges) = Dict("name"=>name, "nodes"=>nodes, "edges"=>edges)
+        create(t) = _post(api_chains_create, Dict("projectUid"=>uid, "template"=>t))
+        path(name) = joinpath(tmp, uid, "settings", "chains", "$(name).json")
+
+        # guards
+        @test create(nothing)[1] == 400
+        @test _post(api_chains_create, Dict("projectUid"=>uid))[1] == 400            # no template
+        @test _post(api_chains_create, Dict("template"=>tmpl("x", [node("n1")], [])))[1] == 400
+        @test create(tmpl("", [node("n1")], []))[1] == 400                           # no name
+        @test _post(api_chains_create,
+                    Dict("projectUid"=>"nope",
+                         "template"=>tmpl("x", [node("n1")], [])))[1] == 404
+
+        # a name is a filename — path traversal must not resolve anywhere
+        for bad in ("../../evil", "a/b", "..", ".hidden")
+            @test create(tmpl(bad, [node("n1")], []))[1] == 400
+        end
+
+        # happy path
+        st, body = create(tmpl("pipeline", [node("n1"), node("n2")],
+                               [Dict("from"=>"n1", "to"=>"n2")]))
+        @test st == 200
+        @test JSON3.read(body).nodeCount == 2
+        @test isfile(path("pipeline"))
+
+        # CREATE-ONLY: the whole point — an outside author cannot replace the user's chain
+        @test create(tmpl("pipeline", [node("n1")], []))[1] == 409
+
+        # …while the whiteboard's own save still overwrites verbatim (unchanged behaviour)
+        @test _post(api_chains_save,
+                    Dict("projectUid"=>uid, "template"=>tmpl("pipeline", [node("n9")], [])))[1] == 200
+
+        # VALIDATION, and the message names the offender so the author can fix it
+        st, body = create(tmpl("bad-fn", [Dict("id"=>"oops", "fn"=>"importImages.nope")], []))
+        @test st == 400
+        err = String(JSON3.read(body).error)
+        @test occursin("oops", err) && occursin("importImages.nope", err)
+        @test create(tmpl("dangling", [node("n1")], [Dict("from"=>"n1","to"=>"ghost")]))[1] == 400
+        @test create(tmpl("cyclic", [node("n1"), node("n2")],
+                          [Dict("from"=>"n1","to"=>"n2"), Dict("from"=>"n2","to"=>"n1")]))[1] == 400
+        @test !isfile(path("bad-fn"))          # a rejected template leaves nothing on disk
+
+        # SPARSE params are accepted — an outside author sets only what it means to; the whiteboard
+        # fills the rest from the spec defaults when it loads the template.
+        @test create(tmpl("sparse", [Dict("id"=>"n1", "fn"=>"tracking.bayesian_tracking",
+                                          "params"=>Dict("maxSearchRadius"=>35))], []))[1] == 200
+
+        # startTargets is FILLED with the roots when the author omits it. Without it the whiteboard
+        # draws no start dot (buildStartGraph returns null with no target and no saved position), so the
+        # chain opens with nothing marking where a run begins — which is how the first authored chain
+        # reached the user. Execution is unchanged either way; this is for the editor.
+        @test create(tmpl("pipeline-is-rooted", [node("first"), node("second")],
+                          [Dict("from"=>"first", "to"=>"second")]))[1] == 200
+        @test JSON3.read(read(path("pipeline-is-rooted"), String)).startTargets == ["first"]
+        # an explicit startTargets is respected (starting a run part-way in)
+        rooted = tmpl("pipeline-mid", [node("a"), node("b")], [Dict("from"=>"a", "to"=>"b")])
+        rooted["startTargets"] = ["b"]
+        @test create(rooted)[1] == 200
+        @test JSON3.read(read(path("pipeline-mid"), String)).startTargets == ["b"]
+
+        # ── rename ──
+        ren(from, to) = _post(api_chains_rename,
+                              Dict("projectUid"=>uid, "name"=>from, "newName"=>to))
+        @test ren("pipeline", "")[1] == 400                     # newName required
+        @test ren("ghost", "whatever")[1] == 404                # source must exist
+        @test ren("pipeline", "sparse")[1] == 409               # target must not
+        @test ren("pipeline", "../evil")[1] == 400              # guarded on both names
+        @test ren("pipeline", "pipeline")[1] == 200             # no-op, not an error
+
+        st, body = ren("pipeline", "pipeline-v2")
+        @test st == 200 && String(JSON3.read(body).name) == "pipeline-v2"
+        @test isfile(path("pipeline-v2")) && !isfile(path("pipeline"))
+        # the `name` FIELD moves too — else the whiteboard saves the renamed chain back under the old
+        # name and the rename silently undoes itself on the next save
+        @test String(JSON3.read(read(path("pipeline-v2"), String)).name) == "pipeline-v2"
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)
@@ -1329,6 +1549,60 @@ end
         blank = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "   ")
         @test _movie_named_path(blank, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
     end
+end
+
+# Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The pure parts: which versions a
+# config asks for, what each column is, how the contrast toggle reads, and the frame arithmetic behind
+# the single progress bar. The recording loop itself needs a live viewer and is not exercised here.
+@testset "API: movie version comparison" begin
+    # Which versions to record. A config from before comparisons existed carries one `valueName`, and
+    # "" (the active version) is a perfectly good single column — the list is never empty, so the
+    # caller always has something to record.
+    @test _config_value_names(Dict(:valueNames => ["default", "af"])) == ["default", "af"]
+    @test _config_value_names(Dict(:valueName => "af"))               == ["af"]
+    @test _config_value_names(Dict{Symbol,Any}())                     == [""]
+    @test _config_value_names(Dict(:valueNames => String[], :valueName => "af")) == ["af"]
+
+    # Each column carries the WHOLE authored config with its own version pinned — the overlays and
+    # channels must not differ between columns, only the version does.
+    cols = _version_columns(Dict(:channels => Dict("CD3" => "green"), :showTracks => true),
+                            ["default", " af_corrected ", ""])
+    @test [c.label for c in cols] == ["default", "af_corrected", "active"]   # "" captions as "active"
+    @test [String(c.config[:valueName]) for c in cols] == ["default", "af_corrected", ""]
+    @test all(c -> c.config[:showTracks] === true, cols)
+    @test all(c -> haskey(c.config, :channels), cols)
+    # Symbol keys, because that is how every config reader here addresses them
+    @test get(cols[1].config, :valueName, "MISSING") == "default"
+
+    # D4 — the contrast toggle. Anything unrecognised reads as the default rather than failing a batch.
+    @test _share_contrast("reference")
+    @test _share_contrast("")
+    @test _share_contrast("nonsense")
+    @test !_share_contrast("version")
+
+    # …and what "each version keeps its own settings" actually drops: the per-layer props, never the
+    # camera or the timepoint (columns framed differently would not be a comparison).
+    snap = Dict("camera" => Dict("zoom" => 2.0), "dims" => Dict("current_step" => [3]),
+                "layers" => Dict("CD3" => Dict("contrast_limits" => [0, 100])))
+    @test !haskey(_camera_only(snap), "layers")
+    @test _camera_only(snap)["camera"] == Dict("zoom" => 2.0)
+    @test _camera_only(snap)["dims"]   == Dict("current_step" => [3])
+
+    # Frame arithmetic for ONE progress bar across the passes + the compose. Mirrors the bridge's own
+    # range maths: one frame per timepoint, both ends inclusive.
+    img20 = (; meta = Dict("SizeT" => 20))
+    @test _t_sweep_frames(img20, 0, nothing) == 20
+    @test _t_sweep_frames(img20, 5, nothing) == 15
+    @test _t_sweep_frames(img20, 0, 9)       == 10
+    @test _t_sweep_frames(img20, 0, 99)      == 20      # clamped to the stack
+    @test _t_sweep_frames(img20, 8, 8)       == 0       # empty range
+    @test _t_sweep_frames((; meta = Dict("SizeT" => 1)), 0, nothing) == 0
+    @test _t_sweep_frames((; meta = Dict{String,Any}()), 0, nothing) == 0   # image doesn't say
+
+    @test _comparison_frame_total(2, 20) == 60          # 2 passes + the compose
+    @test _comparison_frame_total(3, 20) == 80
+    @test _comparison_frame_total(1, 20) == 0           # one column = a plain record, own total
+    @test _comparison_frame_total(2, 0)  == 0           # unknown T → let each pass report its own
 end
 
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in
@@ -2803,7 +3077,7 @@ end
         "/api/projects/bundle-info", "/api/projects/bundles",
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
-        "/api/setup/validate", "/api/storage/compressor",
+        "/api/setup/validate", "/api/storage/compressor", "/api/storage/layout",
         "/api/storage/summary",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
@@ -2815,7 +3089,8 @@ end
         "/api/app/restart", "/api/app/shutdown",
         "/api/app/switch-worktree", "/api/board-assets/copy",
         "/api/board-assets/delete", "/api/board-assets/save",
-        "/api/chains/delete", "/api/chains/save",
+        "/api/chains/create", "/api/chains/delete",
+        "/api/chains/rename", "/api/chains/save",
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
@@ -2859,7 +3134,7 @@ end
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
         "/api/sets/delete", "/api/setup/init",
-        "/api/storage/compressor/set", "/api/storage/reclaim",
+        "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
@@ -2958,4 +3233,103 @@ end
     # every listing that filters on one.
     @test endswith(_movie_basename(Dict(), "abc", String[]; suffix = "_corrected"), "abc_corrected.mp4")
     @test endswith(_movie_basename(Dict("a" => "wt"), "abc", ["a"]; suffix = "_raw"), "wt_abc_raw.mp4")
+end
+
+@testset "API: zarr v2 and v3 read identically" begin
+    # Two committed stores holding the SAME real pixels, written by bioformats2raw 0.12.1 as NGFF 0.4
+    # (zarr v2) and NGFF 0.5 (zarr v3, SHARDED). See test-data/README.md + docs/todo/ZARR_V3_PLAN.md.
+    #
+    # Why real stores rather than hand-written metadata: NGFF 0.5 nests every attribute under `ome`, and
+    # a reader that misses that does not error — axes come back EMPTY and `axis_dims` silently guesses
+    # the order by rank, while scale comes back missing and becomes "1 um, 1 second per frame"
+    # downstream. Both failures look like success. The fixture's calibration is deliberately NOT 1.0 so
+    # a correct read is distinguishable from the fallback.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = api_fixture("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(api_have_fixture(v2) && api_have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        a2, ax2 = open_level0(v2)
+        a3, ax3 = open_level0(v3)
+
+        # axes must be READ, not guessed. `String[]` here is the silent-failure signature.
+        @test ax2 == ["t", "c", "z", "y", "x"]
+        @test ax3 == ax2
+        @test !isempty(ax3)
+        @test axis_dims(ax3, ndims(a3)) == axis_dims(ax2, ndims(a2))
+
+        @test image_geometry(v2) == image_geometry(v3)
+        @test image_geometry(v2) == (sizeX = 64, sizeY = 64, sizeZ = 3, sizeT = 3)
+
+        # identical pixels across formats — this is also what proves v3 needs no byte-order branch:
+        # v3 keeps `endian` in the `bytes` codec INSIDE the pipeline Zarr.jl executes, unlike v2 where
+        # the dtype string is metadata Zarr.jl parses for the eltype and then ignores.
+        b2 = read_native(a2, :, :, :, :, :)
+        b3 = read_native(a3, :, :, :, :, :)
+        @test size(b2) == size(b3)
+        @test b2 == b3
+        @test maximum(b2) > 3000            # real intensity data, not a zeroed/garbled read
+
+        # store_compression reports the format, and chunk-vs-shard the right way round. The v3 fixture
+        # is sharded with shard != chunk ON PURPOSE — with equal values this assertion cannot fail.
+        # the NGFF spec version each store declares — a different question from the zarr format, and
+        # both are shown side by side in the metadata modal
+        @test ngff_version(v2) == "0.4"
+        @test ngff_version(v3) == "0.5"
+
+        c2 = store_compression(v2); c3 = store_compression(v3)
+        @test c2.zarrFormat == 2 && isnothing(c2.shard)
+        @test c3.zarrFormat == 3
+        @test c3.chunks == [1, 1, 1, 32, 32]      # inner chunk (from the sharding codec)
+        @test c3.shard  == [1, 1, 1, 64, 64]      # outer grid = one file on disk
+        @test c3.chunks != c3.shard
+
+        # The chunk-key separator: "/" nests keys into a directory tree, "." keeps them flat. It is
+        # most of a store's filesystem footprint (measured on a real 1.7 GB import: 20,933 directories
+        # nested vs 4 flat) and all of its cost on a network share, so the modal states it. The DEFAULT
+        # differs per format — "." for v2, "/" for v3 — so an absent key must not be read as one value.
+        @test c2.separator in (".", "/")
+        @test c3.separator in (".", "/")
+        @test c2.separator == "/"      # bioformats2raw nests by default, in BOTH formats
+        @test c3.separator == "/"
+        # same codec asked for on both, so the describer must agree across formats (int shuffle in v2
+        # metadata, NAME in v3 — normalised in one place)
+        @test c2.codec == c3.codec == "zstd"
+        @test c2.shuffle && c3.shuffle
+        @test c2.label == c3.label
+
+        # the preview renderer works on both (no props file → percentile auto-contrast)
+        for p in (v2, v3)
+            png = render_preview_frame(p, joinpath(p, "absent.json"), 1)
+            @test length(png) > 100
+            @test png[2:4] == UInt8['P', 'N', 'G']
+        end
+    end
+end
+
+@testset "API: store layout defaults" begin
+    # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
+    # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.
+    st, body = api_store_layout_get(HTTP.Request("GET", "/api/storage/layout"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test d.default == "flat"                       # measured: same read time, ~14% less on disk
+    @test d.current in [String(c.name) for c in d.choices]
+    @test !isempty(String(d.measuredOn))
+
+    # The rows are the three VIABLE combinations, NOT the cross product. Flat keys + NGFF 0.5 cannot be
+    # written (bioformats2raw silently emits zarr v2 for that pair), so it must not be offered at all —
+    # an unreachable state beats a warned one.
+    @test length(d.choices) == 3
+    @test !any(String(c.chunkSeparator) == "flat" && String(c.ngffVersion) == "0.5" for c in d.choices)
+    # every row carries its measured numbers, since that is the whole reason this is a table
+    for c in d.choices
+        for k in (:label, :keys, :dirs, :size, :read, :detail)
+            @test !isempty(String(getproperty(c, k)))
+        end
+    end
+
+    # bad input is rejected rather than silently persisted — this writes custom.toml
+    @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
+    @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
 end

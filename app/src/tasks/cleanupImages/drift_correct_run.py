@@ -68,7 +68,8 @@ def run(params):
     # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
     with zarr_utils.staged_store(im_correction_path) as staging:
         group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
-            staging, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
+            staging, out_shape, out_dtype, dim_utils, nscales=len(im_dat),
+            reference_zarr=im_path)   # inherit the source's zarr format (ZARR_V3_PLAN D9)
         correction_utils.drift_correct_im(
             im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0)
 

@@ -7,7 +7,7 @@ import { useTaskStore } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
-import { cropBoxFromRect, fracRangeLabel, normalizeRange, type CropInfo, type NormRect } from '../utils/crop3d'
+import { cropBoxFromRect, fracRangeLabel, frameCacheKey, normalizeRange, type CropInfo, type NormRect } from '../utils/crop3d'
 import RangeSlider from './RangeSlider.vue'
 
 const props = defineProps<{ projectUid: string; imageUid: string; imageName: string; valueName: string; setUid: string }>()
@@ -25,7 +25,11 @@ const t        = ref(0)
 const frameUrl = ref<string | null>(null)
 const loading  = ref(false)
 const err      = ref('')
-const urlCache = new Map<string, string>()   // key `${t}|${zLo}|${zHi}` → object URL (z affects the MIP)
+const urlCache = new Map<string, string>()   // frameCacheKey() → object URL (version + t + z affect the MIP)
+// Bumped on every version/image switch. An in-flight /info or /frame response whose generation is stale
+// is DISCARDED — the two versions render at different extents and brightness, so a late response from
+// the previous store must never land in the new one's panel.
+let reqGen = 0
 
 const qs = () =>
   `projectUid=${encodeURIComponent(props.projectUid)}&imageUid=${encodeURIComponent(props.imageUid)}` +
@@ -68,21 +72,24 @@ const rectStyle = computed(() => {
 function clearCache() { urlCache.forEach(u => URL.revokeObjectURL(u)); urlCache.clear(); frameUrl.value = null }
 
 async function loadInfo() {
+  const gen = ++reqGen
   clearCache(); err.value = ''; info.value = null; rect.value = null
   if (!props.projectUid || !props.imageUid) return
   try {
     const r = await fetch(`/api/crop/info?${qs()}`)
     const d = await r.json()
+    if (gen !== reqGen) return                      // a newer version was selected while this was in flight
     if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
     info.value = d as CropInfo
     t.value = Math.floor(((d.nT as number) - 1) / 2)
     loadFrame()
-  } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
+  } catch (e) { if (gen === reqGen) err.value = e instanceof Error ? e.message : String(e) }
 }
 
 // The displayed MIP projects only over the KEPT z-range, so the z slider previews what you'll keep.
-const frameKey = () => { const z = normalizeRange(zLo.value, zHi.value); return `${t.value}|${z.lo.toFixed(4)}|${z.hi.toFixed(4)}` }
+const frameKey = () => frameCacheKey(props.valueName, t.value, { lo: zLo.value, hi: zHi.value })
 async function loadFrame() {
+  const gen = reqGen
   const key = frameKey()
   const cached = urlCache.get(key)
   if (cached) { frameUrl.value = cached; return }
@@ -91,11 +98,15 @@ async function loadFrame() {
     const z = normalizeRange(zLo.value, zHi.value)
     const r = await fetch(`/api/crop/frame?${qs()}&t=${t.value}&zLo=${z.lo}&zHi=${z.hi}`)
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`)
-    const url = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'image/png' }))
+    const blob = new Blob([await r.arrayBuffer()], { type: 'image/png' })
+    // The version switched while this was in flight: `clearCache()` has already run, so caching this
+    // URL would both leak it and let the OLD store's frame be served to the NEW version.
+    if (gen !== reqGen) return
+    const url = URL.createObjectURL(blob)
     urlCache.set(key, url)
     if (frameKey() === key) frameUrl.value = url    // ignore a stale response if the user moved on
-  } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
-  finally { loading.value = false }
+  } catch (e) { if (gen === reqGen) err.value = e instanceof Error ? e.message : String(e) }
+  finally { if (gen === reqGen) loading.value = false }
 }
 
 let deb: ReturnType<typeof setTimeout> | null = null

@@ -31,7 +31,16 @@ it is imported LAZILY inside the functions — this module imports only numpy at
 cecelia's other heavy helpers.
 """
 
+import contextlib
+
 import numpy as np
+
+# "The user cancelled it" is ONE exception, raised by both frame loops — this module's recorder and
+# `movie_io.stitch_movies`. It lives in `movie_io` (which this module imports, not the reverse) and is
+# re-exported here under its original name, so `napari_utils.RecordCancelled` — what the bridge
+# catches and what the tests assert on — stays the same object rather than becoming a second,
+# incompatible class. movie_io is import-light by design, so this costs nothing at load.
+from cecelia.utils.movie_io import RecordCancelled  # noqa: F401  (re-export — see above)
 
 # Default per-channel colormaps (extend if a movie has > 4 channels).
 CHANNEL_COLORMAPS = ['red', 'green', 'blue', 'yellow']
@@ -693,6 +702,40 @@ def _qt_screen_ratio():
   return QGuiApplication.primaryScreen().devicePixelRatio()
 
 
+@contextlib.contextmanager
+def overlays_hidden(viewer, scale_bar=False, timestamp=False):
+  """Temporarily hide napari's BAKED overlays — the scale bar and the elapsed-time text — restoring
+  whatever they were on the way out. Both are drawn into the canvas, so they are burnt into every
+  screenshot and every movie frame; this is the only way to leave them out of the output without
+  changing what the user sees in the window afterwards.
+
+  One helper for both consumers — the publication still (`save_screenshot(clean=True)`) and the movie
+  recorders — because they are the same three lines of get/set/restore, and the still had them inline
+  first. Each flag is independent: a figure often wants the timestamp burnt in and the scale bar added
+  as vector art later, or the other way round.
+
+  Every access is guarded: a duck-typed or headless viewer simply has no `scale_bar`/`text_overlay`,
+  and a missing overlay must not fail a render that is otherwise fine."""
+  saved = {}
+  for name, hide in (("scale_bar", scale_bar), ("text_overlay", timestamp)):
+    if not hide:
+      continue
+    try:
+      overlay = getattr(viewer, name)
+      saved[name] = overlay.visible
+      overlay.visible = False
+    except Exception:
+      pass
+  try:
+    yield
+  finally:
+    for name, was in saved.items():
+      try:
+        getattr(viewer, name).visible = was
+      except Exception:
+        pass
+
+
 _STALE_STAGING_S = 3600
 
 
@@ -724,17 +767,6 @@ def _clear_stale_staging(path, older_than_s=_STALE_STAGING_S):
         print(f"[record] removed a leftover partial from a killed run: {name}", flush=True)
     except OSError:
       pass
-
-
-class RecordCancelled(Exception):
-  """A recording stopped because the user cancelled it. Carries the frames written before the stop.
-
-  An exception rather than a return value so no caller can mistake a cancelled render for a finished
-  one — the title card must not be prepended, and the staged file must not be promoted."""
-
-  def __init__(self, frames):
-    super().__init__(f"recording cancelled after {frames} frame(s)")
-    self.frames = frames
 
 
 def _render_animation(viewer, anim, path, *, fps, canvas_only, size=None,

@@ -3,7 +3,9 @@
   "fun_name": "importImages.omezarr",
   "label": "Convert to OME-ZARR",
   "category": "import",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "io",
   "params": [
     {
@@ -14,14 +16,14 @@
       "max": 10,
       "default": 2,
       "step": 1,
-      "tip": "Resolution levels in the image pyramid"
+      "tip": "Downscaled copies for fast zoomed-out viewing; 2-3 suits a 512-1024 px frame"
     },
     {
       "key": "stageLocal",
       "label": "Copy to local scratch first",
       "type": "bool",
       "default": false,
-      "tip": "Copy the source locally first — much faster over a network share"
+      "tip": "Copy the source locally first \u2014 much faster over a network share"
     },
     {
       "key": "advanced",
@@ -30,24 +32,101 @@
       "collapsed": true,
       "params": [
         {
-          "key": "chunkSizeX",
-          "label": "Chunk size X",
-          "type": "int",
-          "min": 64,
-          "max": 2048,
-          "default": 1024,
-          "step": 64,
-          "tip": "Zarr chunk size in X"
+          "key": "chunkSize",
+          "label": "Chunk size",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (recommended)"
+            },
+            {
+              "value": "512",
+              "label": "512 px"
+            },
+            {
+              "value": "1024",
+              "label": "1024 px"
+            },
+            {
+              "value": "2048",
+              "label": "2048 px"
+            }
+          ],
+          "tip": "Zarr chunk shape in XY (--tile-width/height); auto = 1024, capped to the frame"
         },
         {
-          "key": "chunkSizeY",
-          "label": "Chunk size Y",
-          "type": "int",
-          "min": 64,
-          "max": 2048,
-          "default": 1024,
-          "step": 64,
-          "tip": "Zarr chunk size in the Y dimension"
+          "key": "ngffVersion",
+          "label": "OME-NGFF version",
+          "type": "select",
+          "default": "0.4",
+          "options": [
+            {
+              "value": "0.4",
+              "label": "0.4 \u2014 zarr v2 (.zattrs/.zarray)"
+            },
+            {
+              "value": "0.5",
+              "label": "0.5 \u2014 zarr v3 (zarr.json), allows sharding"
+            }
+          ],
+          "tip": "OME-NGFF spec version; 0.5 is zarr v3 (--ngff-version)"
+        },
+        {
+          "key": "shardSize",
+          "label": "Shard size (XY)",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (1024)"
+            },
+            {
+              "value": "512",
+              "label": "512 px"
+            },
+            {
+              "value": "2048",
+              "label": "2048 px"
+            }
+          ],
+          "tip": "NGFF 0.5 only; sharding_indexed packs chunks per file (--shard-width/height)"
+        },
+        {
+          "key": "chunkSeparator",
+          "label": "Chunk key separator",
+          "type": "select",
+          "default": "flat",
+          "options": [
+            {
+              "value": "flat",
+              "label": "Flat  .  (default)"
+            },
+            {
+              "value": "nested",
+              "label": "Nested  /"
+            }
+          ],
+          "tip": "dimension_separator: nested writes 0/0/36/0/8, flat writes 36.0.8 (--no-nested)"
+        },
+        {
+          "key": "shardDepth",
+          "label": "Shard depth (z)",
+          "type": "select",
+          "default": "1",
+          "options": [
+            {
+              "value": "1",
+              "label": "1 \u2014 no z packing (default)"
+            },
+            {
+              "value": "all",
+              "label": "All z \u2014 ~8x fewer files, see tip"
+            }
+          ],
+          "tip": "NGFF 0.5 only (--shard-depth); spanning z rewrites a whole shard per plane write"
         }
       ]
     }

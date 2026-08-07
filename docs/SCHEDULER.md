@@ -355,6 +355,34 @@ template inline and not a pointer to the template *file*: the content is cached 
 `settings/chains/.cache/<hash>.json`, and `load_chain_run` resolves the hash back to it. So editing the
 template afterwards can't rewrite history, and `run.json` stays compact.
 
+That freeze is load-bearing beyond reproducibility: it is *why* a template can be edited, renamed or
+deleted at all without a snapshot mechanism. Renaming one is a plain file move
+(`POST /api/chains/rename`) and past runs keep the name they ran under — a historical fact, not stale
+data. The only thing a rename degrades is a run *in flight*, because the Live view fetches the current
+template by name for its column layout (it already falls back to a task-derived layout on a miss),
+which is why the whiteboard disables the control while the chain has a live run.
+
+### Who may author a template, and who may run one
+
+Templates have three authors: the whiteboard (`POST /api/chains/save` — a verbatim overwrite of the
+user's own canvas, including its `positions`), the REPL (`chain_node`/`make_chain`), and Claude over
+the MCP (`POST /api/chains/create` — create-only, 409 on an existing name).
+
+Only the whiteboard can *not* produce an invalid template: it offers only real task defs and can't
+draw an edge to a node that isn't there. The other two can, and until author-time validation existed a
+typo surfaced as a mid-run `_task_from_fun_name` throw or a `KeyError` in `_topo_sort` — after the
+user pressed Run. **`validate_chain_template` (`chain.jl`) is the gate**: unknown `fn`, dangling edge
+(either endpoint), self-edge, cycle, unknown scope/`barrier_policy`/`resource_pool`, bad
+`startTargets`, out-of-spec params. It is what `/api/chains/create` runs before writing. It cannot
+check intent or anything per-image (`requires`/axis gating is evaluated against a real image at run
+time; selection params name project state) — a valid template is well-formed, not sensible.
+
+**Running is a separate right.** There is exactly one launch path, the WS message `chain:run`
+(`api/src/sockets.jl` → `handle_chain_run`), with no HTTP equivalent — which is what keeps chain runs
+a user action even though Claude can author the chain. `handle_chain_run` also owns the guards
+`run_chain` itself does not have (project exists, `_drop_excluded`), so a second launch entry point
+would have to share them rather than re-implement them.
+
 ### Live QC row
 
 A task whose spec declares `"qcPlot": "<plotDefId>"` (`segment.cellposeMeasure` /

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeRange, rangeCrops, fracToIndexRange, fracRangeLabel, cropBoxFromRect, type CropInfo } from './crop3d'
+import { normalizeRange, rangeCrops, fracToIndexRange, fracRangeLabel, cropBoxFromRect, frameCacheKey, type CropInfo } from './crop3d'
 
 describe('normalizeRange', () => {
   it('converts percentages to [0,1] fractions', () => {
@@ -93,5 +93,33 @@ describe('cropBoxFromRect', () => {
     const flat: CropInfo = { ...info, nZ: 1, nT: 1 }
     const b = cropBoxFromRect({ x0: 0, y0: 0, x1: 1, y1: 1 }, flat, { lo: 20, hi: 80 }, { lo: 20, hi: 80 })
     expect([b.z0, b.z1, b.t0, b.t1]).toEqual([-1, -1, -1, -1])
+  })
+})
+
+describe('frameCacheKey', () => {
+  const z = { lo: 0, hi: 100 }
+
+  it('distinguishes image versions at the same slider position', () => {
+    // The regression: the key omitted the version, so an in-flight frame for one store could be
+    // painted under another. Versions do not even share a frame extent.
+    expect(frameCacheKey('default', 38, z)).not.toBe(frameCacheKey('driftCorrected', 38, z))
+  })
+
+  it('is stable for the same version + t + z', () => {
+    expect(frameCacheKey('default', 38, z)).toBe(frameCacheKey('default', 38, { lo: 0, hi: 100 }))
+  })
+
+  it('varies with t and with the z range', () => {
+    expect(frameCacheKey('default', 38, z)).not.toBe(frameCacheKey('default', 39, z))
+    expect(frameCacheKey('default', 38, z)).not.toBe(frameCacheKey('default', 38, { lo: 20, hi: 80 }))
+  })
+
+  it('normalises the z range, so a swapped/out-of-bounds pair keys the same as its clamped form', () => {
+    expect(frameCacheKey('v', 1, { lo: 80, hi: 20 })).toBe(frameCacheKey('v', 1, { lo: 20, hi: 80 }))
+    expect(frameCacheKey('v', 1, { lo: -10, hi: 150 })).toBe(frameCacheKey('v', 1, { lo: 0, hi: 100 }))
+  })
+
+  it('handles the empty version name (backend falls back to default)', () => {
+    expect(frameCacheKey('', 0, z)).toBe('|0|0.0000|1.0000')
   })
 })

@@ -12,6 +12,7 @@ import type { CciaImage } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { formatBytes } from '../utils/storage'
+import { storeFormatFacts, storeFormatTitle, type StoreEncoding } from '../utils/storeFormat'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -49,7 +50,7 @@ const versions = computed(() => Object.entries(img.value.filepaths ?? {}))
 // part (a few hundred ms per store warm, seconds cold on a multi-GB version), so the sizes fill in a
 // moment later rather than delaying the dialog. Failure is silent — this dialog is read-only
 // information and must still open if a store is missing.
-type StoreInfo = { bytes: number, label?: string }
+type StoreInfo = { bytes: number, label?: string } & StoreEncoding
 const stores = ref<{ versions: Record<string, StoreInfo | null>, labels: Record<string, StoreInfo> }>(
   { versions: {}, labels: {} })
 onMounted(async () => {
@@ -130,23 +131,46 @@ const copy = (key: string, value: string) => copyValue(value, key)
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
         </div>
-        <!-- ONE grid for versions + labels: the codec and size columns are as wide as the longest
-             entry across all rows, so a row-to-row difference in either can't resize the filename
-             box. A label row's size is the sum of its files (base + nuc); it shows no codec. -->
-        <div class="md-files">
-          <template v-for="[vn, fn] in versions" :key="'v-' + vn">
-            <span class="md-file-vn cc-muted">{{ vn }}</span>
+        <!-- One CARD per stored thing, not one grid of rows. Each version carries six technical facts
+             (codec, zarr format, NGFF version, chunk, shard, chunk keys) on top of its name, filename
+             and size — as columns that is unreadably dense, and as one appended sentence it is a
+             run-on; both were tried. A card gives each entry its own block: what it IS on the head row
+             (name · format · size), what it is MADE OF underneath. Sizes still compare down the page —
+             every card is full width, so the right-aligned size lands in the same column. -->
+        <ul class="md-stores">
+          <li v-for="[vn, fn] in versions" :key="'v-' + vn" class="md-store cc-card">
+            <div class="md-store-head">
+              <span class="md-store-vn">{{ vn }}</span>
+              <!-- The format sits with the NAME, not among the facts below: it is what this entry IS,
+                   and it is what differs between two versions of one image. It also keeps the facts to
+                   a single uncrowded line. NGFF bracketed, and absent when the store declares none. -->
+              <span v-if="storeFormatTitle(stores.versions[vn])" class="cc-muted cc-fs-xs">
+                {{ storeFormatTitle(stores.versions[vn]) }}
+              </span>
+              <span class="md-size cc-readout cc-fs-xs">{{ size(stores.versions[vn]) }}</span>
+            </div>
             <code class="md-code">{{ fn }}</code>
-            <span class="md-codec cc-muted cc-fs-xs">{{ stores.versions[vn]?.label ?? '—' }}</span>
-            <span class="md-size cc-muted cc-fs-xs">{{ size(stores.versions[vn]) }}</span>
-          </template>
-          <template v-for="[vn, fns] in labels" :key="'l-' + vn">
-            <span class="md-file-vn cc-muted">labels · {{ vn }}</span>
+            <!-- Chunking and codec: answerable here rather than by reading `zarr.json` in a terminal,
+                 since v2 and v3 stores coexist permanently (no converter). An em dash when the store
+                 could not be read at all — a different answer from "unsharded". -->
+            <div v-if="storeFormatFacts(stores.versions[vn]).length" class="cc-row cc-row-loose">
+              <span v-for="f in storeFormatFacts(stores.versions[vn])" :key="f.k" class="cc-row-group">
+                <span class="cc-muted cc-fs-xs">{{ f.k }}</span>
+                <span class="md-fact-v">{{ f.v }}</span>
+              </span>
+            </div>
+            <span v-else class="cc-muted cc-fs-xs">—</span>
+          </li>
+          <!-- A label set's size is the sum of its files (base + nuc). No codec facts: it is written
+               with the fixed `labels` compressor, which nothing here asks the user to choose. -->
+          <li v-for="[vn, fns] in labels" :key="'l-' + vn" class="md-store cc-card">
+            <div class="md-store-head">
+              <span class="md-store-vn">labels · {{ vn }}</span>
+              <span class="md-size cc-readout cc-fs-xs">{{ size(stores.labels[vn]) }}</span>
+            </div>
             <code class="md-code">{{ fns.join(', ') }}</code>
-            <span class="md-codec" />
-            <span class="md-size cc-muted cc-fs-xs">{{ size(stores.labels[vn]) }}</span>
-          </template>
-        </div>
+          </li>
+        </ul>
       </section>
 
       <section v-if="attrs.length" class="md-section">
@@ -209,18 +233,17 @@ const copy = (key: string, value: string) => copyValue(value, key)
 }
 .md-chip::before { counter-increment: ch; content: counter(ch) '· '; color: var(--cc-text-dim); }
 
-/* Version column is 9rem, not 6rem: `driftCorrected`/`temporalSmoothed` wrapped to two lines at 6rem, which
-   misaligned it against its own filename box. Fixed rather than `max-content` on purpose — the labels
-   rows below render "labels · {vn}" and a long label set would otherwise squeeze the filename. Long
-   names still wrap; 9rem just moves the threshold past the value names we actually produce. */
-.md-files {
-  display: grid; grid-template-columns: 9rem minmax(0, 1fr) max-content max-content;
-  gap: 0.25rem 0.5rem; align-items: baseline;
-}
-.md-codec { white-space: nowrap; }
-/* right-aligned so the numbers line up column-wise, which is the only way sizes compare at a glance */
-.md-size { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-.md-file-vn { overflow-wrap: anywhere; }
+/* One card per stored version / label set (surface + border + radius from .cc-card). */
+.md-stores { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.md-store { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.5rem; }
+.md-store-head { display: flex; align-items: baseline; gap: 0.5rem; }
+/* The value name is the entry's title — the one thing you scan the list by, so it is text, not dim. */
+.md-store-vn { color: var(--cc-text); font-weight: 600; font-size: var(--cc-fs-sm); overflow-wrap: anywhere; }
+/* pushed right (rather than space-between, which would centre the format) so the numbers line up down
+   the page — the only way sizes compare at a glance */
+.md-size { white-space: nowrap; margin-left: auto; }
+/* Values in mono: these are shapes and identifiers, and `1×1×1×1024×1024` only lines up in mono. */
+.md-fact-v { font-family: var(--cc-mono); font-size: var(--cc-fs-sm); color: var(--cc-text); }
 
 .md-note-text { margin: 0; font-size: var(--cc-fs-md); color: var(--cc-text); white-space: pre-wrap; }
 </style>

@@ -51,6 +51,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Pick ONE option where numbers decide it | `components/SelectionTable.vue` | a `<select>` that hides the trade-off, or an inline `<table>` |
 | Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
+| Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
@@ -1717,7 +1718,13 @@ pre-selects the matching pool from `/api/pools`.
 
 Route `/chain` → `frontend/src/modules/ChainModule.vue`.
 
-The whiteboard is the visual authoring tool for chain templates. It reads and writes the same `chains/<name>.json` format that `run_chain` and `save_chain_template!` use from the REPL — one format, two authoring paths.
+The whiteboard is the visual authoring tool for chain templates. It reads and writes the same `chains/<name>.json` format that `run_chain` and `save_chain_template!` use from the REPL — one format, **three** authoring paths: the whiteboard, the REPL, and Claude via the MCP `create_chain`. Only the whiteboard is a verbatim overwrite (`POST /api/chains/save`, the user saving their own canvas); the MCP route is create-only and validated, and **nothing but the whiteboard can start a run**. See `docs/SCHEDULER.md` → *Who may author a template, and who may run one*.
+
+The action row is **two `.cc-btn-group` strips** — chain-file actions (New / Rename / Delete) and canvas actions (Start dot / Tidy / Reload / Save). Seven free-floating icon buttons did not fit the 190px palette, and the grouping says which belong together.
+
+**Node positions and Tidy.** `positions` is whiteboard-only sidecar data, so a template authored elsewhere (the REPL, or Claude via the MCP `create_chain`) has none. `applyTemplate` then lays the DAG out via `layoutDag` (`utils/dagLayout.ts`) instead of stacking every node in one row, which hid a fan-out — and reviewing the graph is the whole safety model for an authored chain. Per-node fallback, so a partially-positioned file still places what it knows.
+
+**Tidy** (`pi-sitemap`) re-runs that layout on demand, via a `TeleportPopover` listing `LAYOUT_VARIANTS` — direction (left-to-right / top-to-bottom) × spacing (normal / compact), flat, so every combination is one click with no hidden state. A popover of *actions*, deliberately not a `ChipSelect` — each row fires and none persists as a selection. Compact trims the two axes **asymmetrically**: a task node is up to ~182px wide, so the flow axis has little room and most of the saving comes from the across-axis (a uniform scale factor would have overlapped horizontally). Unlike the automatic path it **overwrites** existing positions, so it stays a button the user presses; it doesn't save, so ↻ restores the previous arrangement until they hit Save. `utils/dagLayout.ts` is the ONE geometry — the Live tab's run grid uses the same `layerLanes`.
 
 `ChainModule` is wrapped in `<KeepAlive>` in `App.vue` so navigating to other pages and back does **not** reset unsaved edits. Edits only clear on an explicit reload (↻ button) or chain switch.
 
@@ -1727,7 +1734,8 @@ The whiteboard is the visual authoring tool for chain templates. It reads and wr
 Left (190px)               Center (flex)             Right (260px, opens on click)
 ────────────────           ──────────────────────    ───────────────────────────
 Chain selector             @vue-flow/core canvas     Node config panel
-+ New / Reload / Save      Node palette drop target  - Scope select
+[New|Rename|Delete]        Node palette drop target  - Scope select
+[Start dot|Tidy|Reload|Save]
 Task palette               Background grid           - Barrier policy (set nodes)
 (by category,              Nodes + edges             - Resource pool dropdown
 draggable)                                             (from /api/pools)
