@@ -22,20 +22,11 @@ import { ref, computed, onMounted } from 'vue'
 import CanvasSidePanel from '../../components/canvas/CanvasSidePanel.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
+import FlowModelDetails from './FlowModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
+import type { FlowManifest as Manifest } from '../../utils/flowManifest'
 
-type Manifest = {
-  channelName?: string
-  temporalScales?: number[]
-  cumulativeWindow?: number
-  droppedMetrics?: string[]
-  metricKeys?: string[]
-  epochs?: number
-  nFrames?: number
-  sourceImage?: string
-  sourceValueName?: string
-}
 type FlowModel = {
   name: string; label: string; stem: string
   bytes: number; modified: string
@@ -101,34 +92,26 @@ async function post(url: string, body: Record<string, unknown>) {
   }
 }
 
-function trainedOn(m: FlowModel): string {
-  if (!m.hasManifest) return 'no manifest — assumes default metrics'
-  const parts: string[] = []
-  if (m.manifest.channelName) parts.push(m.manifest.channelName)
-  if (m.manifest.temporalScales?.length) parts.push(`scales ${m.manifest.temporalScales.join(',')}`)
-  if (m.manifest.metricKeys?.length) parts.push(`${m.manifest.metricKeys.length} metrics`)
-  if (m.manifest.nFrames) parts.push(`${m.manifest.nFrames} frames`)
-  return parts.join(' · ')
-}
-
 function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 
 // `SelectionTable` renders display strings verbatim and never formats a number itself, so every
-// column is built here.
+// column is built here. There is deliberately NO "Trained on" column: a one-line summary of the
+// manifest was wide enough to force the panel wider and still too thin to answer anything, so the
+// whole manifest lives behind the row's info icon instead.
 const COLUMNS: SelectionColumn[] = [
-  { key: 'stem',      label: 'Model' },
-  { key: 'trainedOn', label: 'Trained on' },
-  { key: 'modified',  label: 'Date' },
-  { key: 'size',      label: 'Size' },
+  { key: 'stem',     label: 'Model' },
+  { key: 'modified', label: 'Date' },
+  { key: 'size',     label: 'Size' },
 ]
 const tableRows = computed(() => models.value.map(m => ({
-  name: m.name, stem: m.stem, trainedOn: trainedOn(m), modified: m.modified, size: mb(m.bytes),
+  name: m.name, stem: m.stem, modified: m.modified, size: mb(m.bytes),
 })))
 const picked = ref('')
+const details = ref<FlowModel | null>(null)
 </script>
 
 <template>
-  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="460">
+  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="340">
     <div class="vault">
       <div class="vault-bar">
         <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
@@ -144,15 +127,17 @@ const picked = ref('')
         No models yet — run Train flow model on an image.
       </p>
 
-      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked"
-                      actions-label=""
-                      :row-tooltip="r => `Trained on ${r.trainedOn || 'unknown data'}`">
+      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label="">
         <template #actions="{ row }">
           <input v-if="editing === row.name" v-model="draft" class="vault-rename" autofocus
                  v-tooltip.top="'Enter to rename, Esc to cancel'"
                  @keyup.enter="commitRename(byName(row.name))" @keyup.esc="editing = null"
                  @blur="commitRename(byName(row.name))" />
           <template v-else>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'What it was trained on'"
+                    @click="details = byName(row.name)">
+              <i class="pi pi-info-circle" />
+            </button>
             <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
                     @click="startRename(byName(row.name))">
               <i class="pi pi-pencil" />
@@ -165,6 +150,9 @@ const picked = ref('')
       </SelectionTable>
     </div>
   </CanvasSidePanel>
+
+  <FlowModelDetails v-if="details" :name="details.stem" :manifest="details.manifest"
+                    :path="`${vaultDir}/${details.name}`" @close="details = null" />
 </template>
 
 <style scoped>

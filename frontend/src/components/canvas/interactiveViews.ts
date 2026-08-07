@@ -3,6 +3,7 @@ import UmapView from '../plots/UmapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
+import FlowTrainingView from '../plots/FlowTrainingView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -45,6 +46,9 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // from `filmstrip`, which is a napari SCREENSHOT montage — these planes are computed, are not
   // viewer layers, and have no reason to become any.
   flowMetrics: { label: 'Flow metrics', component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true },
+  // Training convergence per loss TERM. A plot, not a chart in the vault's details modal, so it gets
+  // the canvas chrome and the CSV/PNG/SVG + board-PDF export for free.
+  flowTraining: { label: 'Training convergence', component: FlowTrainingView, opticalFlowPage: true, analysisBoard: true },
 }
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS

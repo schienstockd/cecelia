@@ -27,6 +27,7 @@ Parameter contract (JSON written by Julia):
   foregroundWeight, intensityWeight, temporalWeight
 """
 
+import datetime
 import os
 
 import numpy as np
@@ -152,13 +153,28 @@ def run(params):
     log.log(f'>> {frames_prep.shape[0]} pooled frames, {len(metric_keys)} metrics: '
             f'{", ".join(metric_keys)}')
 
+    # Keyed the way coastal keys its loss history, so the manifest can pair each curve with the
+    # weight that scales it. `history` records the RAW term; the total is the weighted sum, so a term
+    # only "adds anything" in proportion to weight × term — with no weights recorded, a curve cannot
+    # be read. The terms coastal supports but this task does not expose are pinned at 0 here rather
+    # than left to coastal's defaults, so the manifest states them outright.
+    loss_weights = {
+        'intensity': float(params.get('intensityWeight', 1.0)),
+        'foreground': float(params.get('foregroundWeight', 1.0)),
+        'temporal': float(params.get('temporalWeight', 2.0)),
+        'variance': 0.0, 'confetti': 0.0, 'warp': 0.0, 'boundary': 0.0,
+    }
+
     model = train_with_metrics(
         frames_prep, metrics, variance_metrics_norm=None,
         num_epochs=epochs,
-        intensity_weight=float(params.get('intensityWeight', 1.0)),
-        foreground_weight=float(params.get('foregroundWeight', 1.0)),
-        temporal_weight=float(params.get('temporalWeight', 2.0)),
-        confetti_weight=0.0,
+        intensity_weight=loss_weights['intensity'],
+        foreground_weight=loss_weights['foreground'],
+        temporal_weight=loss_weights['temporal'],
+        variance_weight=loss_weights['variance'],
+        warp_weight=loss_weights['warp'],
+        boundary_weight=loss_weights['boundary'],
+        confetti_weight=loss_weights['confetti'],
         variance_as_input=False,
         embedding_dim=int(params.get('embeddingDim', 16)),
         seed=int(params.get('seed', 42)),
@@ -170,6 +186,12 @@ def run(params):
 
     model_path = params['modelPath']
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+    # The per-epoch loss belongs WITH the model, not only in the run's QC: QC is keyed by the task run
+    # (set-scope dir, and a model can be renamed away from it), while "did this model converge" is a
+    # question you ask of the model, months later, from the vault. A few hundred floats per term.
+    curves = _loss_curves(history)
+    losses = curves.get('total', [])
 
     manifest = {
         'temporalScales': scales,
@@ -185,6 +207,13 @@ def run(params):
         'sourceImages': used,
         'sourceValueName': params.get('valueName', ''),
         'nFrames': int(frames_prep.shape[0]),
+        'foregroundWeight': float(params.get('foregroundWeight', 1.0)),
+        'intensityWeight': float(params.get('intensityWeight', 1.0)),
+        'temporalWeight': float(params.get('temporalWeight', 2.0)),
+        'zSlice': int(params.get('zSlice', -1)),
+        'lossCurves': curves,
+        'lossWeights': loss_weights,
+        'trainedAt': _now_iso(),
     }
 
     save_model(model, model_path, metadata=manifest)
@@ -195,7 +224,6 @@ def run(params):
 
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
-        losses = _loss_series(history)
         qc = {'epochs': epochs, 'nImages': len(used)}
         if losses:
             qc['finalLoss'] = float(losses[-1])
@@ -206,23 +234,48 @@ def run(params):
     log.log('>> done')
 
 
-def _loss_series(history):
-    """The per-epoch total loss, whatever shape `train_with_metrics` returned it in.
+def _now_iso():
+    """Local wall-clock, to the minute — "when was this trained", read by a human in the vault.
 
-    Best-effort by design: the loss curve is QC, and a coastal version that returns the history
+    The vault's Date column comes from the .pt's mtime, which a copy or a restore rewrites. This one
+    travels inside the manifest and does not.
+    """
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+
+def _loss_curves(history):
+    """Per-epoch loss PER TERM — `{'total': [...], 'temporal': [...], …}`.
+
+    Every term, not just the total, because the total is the one curve that cannot answer the
+    question you ask a loss curve: coastal optimises a weighted sum (`intensity`, `temporal`,
+    `variance`, `foreground`, …) and `foregroundWeight`/`intensityWeight`/`temporalWeight` are task
+    params, so "which term is this weight actually moving" is the reason to look.
+
+    Every non-empty series is kept, including the flat ones. Filtering here on "the raw values are
+    all zero" would be the wrong test in both directions: coastal computes some terms whatever their
+    weight (a raw `variance` curve at weight 0 contributes nothing but is not zero), and a term that
+    genuinely reached zero is a result worth seeing. The weights travel beside these as
+    `lossWeights`, which is what makes a curve readable.
+
+    Best-effort by design: the curves are provenance, and a coastal version that returns the history
     differently must not fail a training run that otherwise succeeded.
     """
     if history is None:
-        return []
+        return {}
     if isinstance(history, dict):
-        for key in ('total', 'total_loss', 'loss'):
-            if key in history:
-                return [float(v) for v in history[key]]
-        return []
+        out = {}
+        for key, series in history.items():
+            try:
+                vals = [float(v) for v in series]
+            except (TypeError, ValueError):
+                continue
+            if vals:
+                out[str(key)] = vals
+        return out
     try:
-        return [float(v) for v in history]
+        return {'total': [float(v) for v in history]}
     except (TypeError, ValueError):
-        return []
+        return {}
 
 
 def main():

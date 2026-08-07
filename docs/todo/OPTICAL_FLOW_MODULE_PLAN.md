@@ -113,6 +113,32 @@ planes MY rank-AUC table scored flat on ONE dataset — a finding presented as a
 default rather than a rule. `flow_dropped_metrics` maps the selection to the manifest's
 `droppedMetrics`, which is the existing contract inference already honours.
 
+### The manifest is the model's provenance — and the loss curve is a plot
+
+Two consequences of the same thing: a model has to be able to say how it was made.
+
+**Every training param is recorded, and read behind an ⓘ.** The vault carried a one-line "Trained on"
+summary that was wide enough to force the panel wider and still too thin to answer anything. It is
+gone; the row is name · date · size, and `FlowModelDetails` shows the whole manifest. `flowManifest.ts`
+groups it, and — the rule worth the util — renders keys it does not recognise under **Other** rather
+than dropping them: the manifest is what `CoastalUtils._manifest` configures inference from, so an
+unknown key can still change what a model does.
+
+**Per-epoch loss is recorded PER TERM, and shown as a registry plot** (`FlowTrainingView`,
+`opticalFlowPage` + `analysisBoard`) — so it gets the canvas, the panel chrome and the CSV/PNG/SVG +
+board-PDF export instead of a chart hand-drawn inside a dialog.
+
+- The runner kept only `finalLoss`/`lossDrop`. Coastal returns eight series (`total`, `intensity`,
+  `temporal`, `variance`, `warp`, `confetti`, `foreground`, `boundary`) and `_loss_series` took
+  `total` and discarded the rest — the wrong half, since `intensityWeight`/`temporalWeight`/
+  `foregroundWeight` are task params and the actionable question is *which term is this weight
+  moving*. Now `lossCurves` (all of them) in the manifest.
+- **The history records each term BEFORE its weight**; `total` is the weighted sum. So the raw curves
+  rank the terms backwards — 0.9 at weight 0 contributes nothing, 0.05 at weight 2.0 contributes
+  twice as much. `lossWeights` travels beside the curves for exactly this, the plot shows weight ×
+  term by default, and `plots/lossCurves.ts` is where that arithmetic lives so it can be tested.
+- Models trained before this say so; `finalLoss` alone is not recoverable into a curve.
+
 ## Open questions
 
 1. ~~**Does the preview need its own inference run?**~~ **Answered: reuse `preview/`, which is

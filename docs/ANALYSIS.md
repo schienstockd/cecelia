@@ -75,7 +75,8 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
   rendered by one `SummaryPanel` → `PlotChart`. Identical to `SummaryCanvas` (behaviour/summary pages).
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
   hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
-  (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`). Surface
+  (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
+  **training convergence** (`FlowTrainingView`). Surface
   flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
   board: `interactive` (default) / `clustering` / `image`).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`

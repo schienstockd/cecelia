@@ -661,6 +661,26 @@ end
     end
 end
 
+@testset "API: a built preview request is always sent" begin
+    # `preview_request` BUILDS a request; `send(w, …)` runs it. Returning the request instead is a
+    # 200 full of plausible-looking JSON — right imPath, right params, right funName — that simply
+    # has no result in it, so the caller renders an empty panel and nothing anywhere reports an
+    # error. `api_optical_flow_inspect` shipped exactly that: reviewed, type-checked, and dead.
+    #
+    # Building one without sending it has no other use, so the rule is total: every call site is an
+    # argument to `send`.
+    for file in filter(f -> endswith(f, ".jl"), readdir(joinpath(@__DIR__, "..", "src"); join = true))
+        src = read(file, String)
+        for m in eachmatch(r"preview_request\(", src)
+            # the enclosing call — `send(w, preview_request(…))` — sits just before it; allow for the
+            # keyword-heavy wrapping the real call sites use
+            before = src[max(1, m.offset - 240):m.offset]
+            @test occursin("send(", before) ||
+                  occursin("function preview_request", before)   # the definition itself
+        end
+    end
+end
+
 @testset "API: image geometry (axis mapping + version resolution)" begin
     # Pure parts of image_geometry.jl — no zarr, no IO. These were `_crop_*` privates until a second
     # consumer showed none of it was crop-specific (docs: the anisotropy grid advisory).

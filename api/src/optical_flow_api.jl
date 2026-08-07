@@ -143,13 +143,23 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
                               "t"  => get(data, "t", 0),
                               "ndisplay" => 2)
 
-    try
-        reply = _with_preview() do
-            preview_request(String(zp), String(task_dir), prepared, region;
-                            value_name = value_name, fun_name = "opticalFlow.inspect")
+    # `preview_request` BUILDS the request; `send` is what runs it. Returning the request itself is a
+    # 200 full of plausible-looking JSON that the panel then reads no `planes` out of — which is
+    # exactly what this route did until it was called for real.
+    reply = try
+        _with_preview() do
+            w = _preview()
+            w === nothing && error("preview worker is not running")
+            send(w, preview_request(String(zp), String(task_dir), prepared, region;
+                                    value_name = value_name, fun_name = "opticalFlow.inspect",
+                                    channel_names = ccid_channel_names(raw)))
         end
-        200, JSON3.write(reply)
     catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+        return 500, JSON3.write((; error = sprint(showerror, e)))
     end
+
+    haskey(reply, "planes") ||
+        return 500, JSON3.write((; error = "preview worker returned no planes: " *
+                                           String(get(reply, "error", "unknown"))))
+    200, JSON3.write(reply)
 end

@@ -27,9 +27,10 @@ describe('interactive view surface flags', () => {
     expect(inBoardGroup('flowMetrics', 'interactive')).toBe(true)
   })
 
-  it('the flow model is offered on its module page AND the board', () => {
-    expect(pageViews('opticalFlowPage').map(v => v.key)).toEqual(['flowMetrics'])
-    expect(boardViews('interactive').map(v => v.key)).toContain('flowMetrics')
+  it('the flow views are offered on their module page AND the board', () => {
+    expect(pageViews('opticalFlowPage').map(v => v.key)).toEqual(['flowMetrics', 'flowTraining'])
+    for (const k of ['flowMetrics', 'flowTraining'])
+      expect(boardViews('interactive').map(v => v.key)).toContain(k)
   })
 
   it('the cluster page offers only cluster-page views', () => {
