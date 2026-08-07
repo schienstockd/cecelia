@@ -317,11 +317,23 @@ twice, and the second one is the one that covers the switch. Comparison is on th
 catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
 directions pinned in `uiCopy.test.ts`.
 
-⚠️ **A chip row has a SECOND double this does not catch** — a group `v-tooltip` alongside per-option
-`tip`s — because the two say the same thing in different words, so no comparison matches. Seven rows
-have it today. A passing ratchet is therefore not yet evidence of none; closing the gap also reverses
-the "per-option tips don't count" rule above, so it is one amendment to both checks:
-`docs/TODO.md` → *Widen the chip-row tooltip rule*.
+**A chip row carries ONE tooltip — group or per-option, never both**, and `duplicateTooltips` now
+reports either double. The second one is the reason the coverage rule above had to be amended rather
+than extended: the group tooltip and the per-option `tip`s say the same thing in *different words*, so
+no comparison finds them, and the tips live in the SCRIPT (`const AXIS_OPTIONS = [{…, tip}]`), where a
+template pass cannot see them — `hasPerOptionTips` resolves the `:options` identifier back into the
+script block, and answers "cannot tell" (never "no tips") for a prop it cannot follow.
+
+**Which one to keep is per-row, and the label decides it.** On an ICON-ONLY row the per-option tip is
+the only thing naming a glyph, so the group tooltip goes (six rows: scope, axis, render mode, draw
+tool, movie overlays, delete scope). On a WORD-labelled row where the tips only restate the label —
+`Show info messages` on a chip that already says `info` — the tips go and the group tooltip stays. If
+both say something, put the row's explanation on its heading, where it does not cover anything
+(`BatchMoviesPanel`'s filename attrs).
+
+The eight rows this found were previously *required* to have that group tooltip by the presence
+ratchet, which is why the amendment and the sweep are one change: enforcing either half alone turns
+correct code red.
 
 | Surface | Checker | Ratchet |
 |---|---|---|

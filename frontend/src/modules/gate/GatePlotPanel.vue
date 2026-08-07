@@ -346,7 +346,6 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <span class="ctrl-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
-                  v-tooltip.bottom="'Shape to draw the next gate with'"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl">

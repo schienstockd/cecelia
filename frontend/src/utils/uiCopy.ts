@@ -195,7 +195,15 @@ const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|Chi
  * They are also always rendered under a label or heading that says what the set is — the param row's
  * label and its info icon, a section heading — and that is where the explanation belongs. So a chip
  * select counts as covered when a tipped label precedes it inside the same parent, which is the
- * ordinary label-then-control shape. A chip select with NO tipped heading anywhere is still reported.
+ * ordinary label-then-control shape.
+ *
+ * PER-OPTION `tip`s COUNT AS COVERAGE TOO — a reversal of the rule below, and the reason the two
+ * checks had to be amended together. The old reasoning ("they explain the individual choices, not
+ * what the control is for") is right about a WORD-labelled row and exactly backwards about an
+ * icon-only one, where the per-option tip is the only thing naming a glyph, and the group tooltip
+ * that the presence rule demanded is the one that covers those glyphs on hover. Requiring the group
+ * tooltip and forbidding the overlay cannot both hold; per-option tips are the coverage, and
+ * `duplicateTooltips` reports the row that has both. A chip select with NEITHER is still reported.
  */
 const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect|CcToggle)$/
 
@@ -208,6 +216,34 @@ const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect|CcToggle)$/
  */
 const TOOLTIP_ATTR = /v-tooltip(?:\.[A-Za-z]+)*\s*=\s*"([^"]*)"/
 const tooltipExpr = (attrs: string): string | null => TOOLTIP_ATTR.exec(attrs)?.[1]?.trim() ?? null
+
+/**
+ * Does this chip row's `:options` carry per-option `tip`s?
+ *
+ * The awkward half of the chip-row rule, and the reason per-option tips were excluded from coverage
+ * to begin with: they are written in the SCRIPT (`const AXIS_OPTIONS = [{…, tip: '…'}]`, or a
+ * `computed`) and reach the template as a bound identifier, so a template-only pass cannot see them.
+ * This resolves the identifier back into the script block and looks for a `tip:` key.
+ *
+ * Deliberately conservative — `null` means "cannot tell", never "no tips". An identifier that is a
+ * PROP, or options built somewhere this cannot follow, must not be reported as a violation on a
+ * guess; a false positive here sends someone to delete a tooltip that was the only help there was.
+ */
+const OPTIONS_ATTR = /:options\s*=\s*"([^"]*)"/
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+// The next top-level binding — where a `const NAME = …` definition ends, for our purposes.
+const NEXT_BINDING = /\n(?:const|let|var|function|async function|type|interface|export)\b/
+
+export function hasPerOptionTips(script: string, attrs: string): boolean | null {
+  const opts = OPTIONS_ATTR.exec(attrs)?.[1]?.trim()
+  if (!opts) return null                                  // no `:options` binding at all
+  if (!IDENTIFIER.test(opts)) return /\btip\s*:/.test(opts)   // an inline array literal
+  const at = script.search(new RegExp(`\\b(?:const|let|var)\\s+${opts}\\b`))
+  if (at < 0) return null                                 // a prop, an import — cannot tell
+  const rest = script.slice(at + 1)
+  const end = rest.search(NEXT_BINDING)
+  return /\btip\s*:/.test(end < 0 ? rest : rest.slice(0, end))
+}
 
 /**
  * A `<button>` whose entire content is an icon — `<button><i class="pi pi-trash" /></button>`.
@@ -255,8 +291,10 @@ export interface UncoveredControl {
 }
 
 export interface DuplicateTooltip extends UncoveredControl {
-  /** The repeated tooltip expression, as written. */
+  /** The redundant tooltip expression, as written. */
   tooltip: string
+  /** Which double: it repeats the heading, or it sits on top of per-option tips. */
+  why: 'heading' | 'per-option'
 }
 
 /**
@@ -279,10 +317,11 @@ export interface DuplicateTooltip extends UncoveredControl {
  * codebase is a component PROP anyway — `BaseModal`, `ModulePage`, `ConfirmDeleteButton` — not a
  * native tooltip at all.)
  *
- * PER-OPTION `tip`s DON'T COUNT EITHER. `ChipSelect` and `CcCycleButton` can carry a `tip` per
- * option, and those are worth having, but they explain the individual choices — not what the control
- * as a whole is for. The control still needs its own `v-tooltip`. (They also live in the script or
- * arrive as a prop, so a template parser can't see them, which would make coverage undecidable.)
+ * PER-OPTION `tip`s DO COUNT, for `HEADING_COVERED` controls only — see the note there for why that
+ * reversed. `hasPerOptionTips` resolves the `:options` identifier back into the script to find them,
+ * and answers `null` when it cannot follow the binding (a prop, an import), which counts as no
+ * coverage rather than as a guess. Everything else — a plain `select`, an `input` — still needs its
+ * own `v-tooltip`.
  *
  * @param src   full SFC source
  * @param path  the file's path — used only to skip the wrapper primitives' own definitions
@@ -322,6 +361,7 @@ function scanTooltips(src: string, path = ''):
 
   // Blank out comments rather than deleting them, so offsets stay usable for line numbers.
   const clean = tpl.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+  const script = src.match(/<script[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? ''
   const tplAt = src.indexOf(tpl)
   const lineAt = (i: number) => src.slice(0, tplAt + i).split('\n').length
 
@@ -355,15 +395,22 @@ function scanTooltips(src: string, path = ''):
     }
     const tipped = /v-tooltip/.test(attrs!)
     const settable = CONTROL.test(tag!) && !NOT_A_SETTING.test(attrs!)
+    const perOption = HEADING_COVERED.test(tag!) ? hasPerOptionTips(script, attrs!) : null
     const covered = tipped || open.some((e) => e.tipped) ||
-                    (HEADING_COVERED.test(tag!) && tippedSibling)
+                    (HEADING_COVERED.test(tag!) && (tippedSibling || perOption === true))
     if ((settable || iconButtonAt.has(m.index!)) && !covered)
       out.push({ tag: tag!, line: lineAt(m.index!) })
-    // The overlay case: this control is already explained by its heading AND repeats it word for
-    // word, so the second tooltip only covers the thing you were reaching for.
+    // Two ways a chip row ends up explained twice, and both put the second tooltip ON TOP of the
+    // chips. (a) it repeats its heading word for word; (b) it sits over per-option tips that are
+    // already naming each choice — the case an expression comparison can never see, because the two
+    // say the same thing in different words.
     const expr = tipped ? tooltipExpr(attrs!) : null
-    if (HEADING_COVERED.test(tag!) && expr !== null && expr === siblingExpr)
-      dupes.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr })
+    if (HEADING_COVERED.test(tag!) && expr !== null) {
+      if (expr === siblingExpr)
+        dupes.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr, why: 'heading' })
+      else if (perOption === true)
+        dupes.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr, why: 'per-option' })
+    }
     if (tipped) { tippedSibling = true; siblingExpr = expr }
     if (!selfClosing && !VOID.test(tag!)) {
       // INHERITED into the child scope, not reset: the heading is the param row's label and the

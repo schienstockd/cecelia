@@ -390,7 +390,6 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
             <span class="pm-opt-label cc-muted cc-fs-xs">Axis</span>
             <ChipSelect class="pm-seg" variant="segmented" :options="AXIS_OPTIONS"
                         :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
-                        v-tooltip.top="'Start the axes at zero or fit them to the data'"
                         @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
           </div>
           </template>
