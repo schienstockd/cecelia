@@ -439,8 +439,10 @@ the intended value: the doc was wrong, not the spec.)
 `embeddingBlurSigma` defaults to the calibrated **1.5** (2026-08-07) — the lowest σ in the table above
 and the one holding cell size closest to the expected ~11 µm, and independently coastal's own tuned
 `embedding_blur_sigma` for both passes. `probBlurSigma` stays at **0**: the same measurement shows it
-makes the border *worse*, so its calibrated value is off. Cellpose keeps 0.0: it has no growing frontier and therefore not this failure mode, and
-changing a shipped task's default would alter existing pipelines.
+makes the border *worse*, so its calibrated value is off.
+
+Cellpose keeps `labelSmoothing` 0.0: it has no growing frontier and therefore not this failure mode,
+and changing a shipped task's default would alter existing pipelines.
 
 **Coastal's spatial params are in MICRONS, not pixels.** A seed window or a blur radius describes a
 CELL, so the same number has to mean the same biology on every image of a set — a px value silently
