@@ -35,11 +35,15 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 import { lossSeries, lossTable, type LossCurves } from '../../plots/lossCurves'
 
-interface TrainState { model?: string; logY?: boolean; raw?: boolean; terms?: string[] }
+interface TrainState { logY?: boolean; raw?: boolean; terms?: string[]; model?: string }
 interface Manifest { lossCurves?: LossCurves; lossWeights?: Record<string, number>; epochs?: number }
 interface FlowModel { name: string; label: string; stem: string; manifest: Manifest }
 
-const props = defineProps<{ state: TrainState }>()
+// `model` comes from the CANVAS — the vault owns the selection and its global/local scope, exactly
+// as the population manager owns which pops the plots highlight. No picker here: two pickers for one
+// thing is how a canvas ends up with panels that disagree about what they are showing. On a surface
+// with no vault (the Analysis board) the panel falls back to its own select.
+const props = defineProps<{ state: TrainState; model?: string }>()
 const project = useProjectStore()
 
 const models = ref<FlowModel[]>([])
@@ -55,7 +59,10 @@ const forceLight = ref(false)
 const state = computed(() => props.state)
 const logY = computed({ get: () => state.value.logY ?? false, set: v => (state.value.logY = v) })
 const raw = computed({ get: () => state.value.raw ?? false, set: v => (state.value.raw = v) })
-const current = computed(() => models.value.find(m => m.name === state.value.model) ?? null)
+// the canvas's pick wins; `state.model` is only the board's local fallback
+const chosen = computed(() => props.model || state.value.model || '')
+const current = computed(() => models.value.find(m => m.name === chosen.value) ?? null)
+const hostPicks = computed(() => props.model !== undefined)
 
 const series = computed(() => lossSeries(current.value?.manifest?.lossCurves,
                                          current.value?.manifest?.lossWeights, raw.value))
@@ -81,8 +88,10 @@ async function load() {
     const r = await fetch('/api/optical-flow/models')
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     models.value = (await r.json()).models ?? []
-    // prefer a model that actually HAS curves, so the panel opens on something to look at
-    if (!state.value.model || !models.value.some(m => m.name === state.value.model))
+    // Only seed our OWN fallback. Where the canvas supplies the model, an empty vault selection means
+    // "nothing picked yet" and must stay that way — quietly choosing one would make the plot disagree
+    // with the vault it is supposed to be following.
+    if (!hostPicks.value && (!state.value.model || !models.value.some(m => m.name === state.value.model)))
       state.value.model = (models.value.find(m => Object.keys(m.manifest?.lossCurves ?? {}).length)
                            ?? models.value[0])?.name
   } catch (e) {
@@ -133,7 +142,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null })
-watch([() => state.value.model, logY, raw, () => terms.value.join(',')], render)
+watch([chosen, logY, raw, () => terms.value.join(',')], render)
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the cluster panels) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -172,7 +181,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
   <div class="ftv">
     <div class="ftv-ctrl cc-panel-controls">
       <div class="cc-row ftv-bar">
-        <select class="select-input ftv-model" :value="state.model ?? ''"
+        <!-- only where nothing else owns the selection; on the flow canvas the vault does -->
+        <select v-if="!hostPicks" class="select-input ftv-model" :value="state.model ?? ''"
                 v-tooltip.top="'Model whose training run to show'"
                 @change="state.model = ($event.target as HTMLSelectElement).value">
           <option v-for="m in models" :key="m.name" :value="m.name">{{ m.label }}</option>
@@ -201,6 +211,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
     <p v-else-if="!models.length && !loading" class="cc-muted">
       No models yet — run Train flow model on a set.
     </p>
+    <p v-else-if="!current && !loading" class="cc-muted">Select a model in the vault.</p>
     <p v-else-if="current && !series.length" class="cc-muted">
       No loss curves — {{ current.stem }} was trained before they were recorded. Re-train to get them.
     </p>

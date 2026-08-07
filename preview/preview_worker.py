@@ -154,7 +154,9 @@ def _cellpose_imports():
 #: 8: the flow planes are COLOUR-mapped (`params.colormap`, viridis by default). Bumped by the same
 #:    rule the AF work was not: an adopted protocol-7 worker ignores the parameter and answers grey
 #:    PNGs, which reads as "the colormap setting does nothing" with no error anywhere.
-PROTOCOL = 8
+#: 9: `opticalFlow.inspect` is pre-training only — no model, no probability plane. An adopted
+#:    protocol-8 worker would still emit `probability` for a request that no longer asks for one.
+PROTOCOL = 9
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -589,25 +591,21 @@ def _preview_coastal(ctx):
 
 
 def _preview_flow_inspect(ctx):
-    """"What goes INTO the model" — every flow metric plane for one timepoint, as PNGs.
+    """"What goes INTO a model" — every flow metric plane for one timepoint, as PNGs.
 
-    The question this answers is *which of these look like cells*, asked BEFORE training, so it
-    needs no model: the metrics are a property of the movie and the temporal scales, not of any
-    checkpoint. That is why a model is optional here and, when one is given, only adds the
-    probability map (the UNet's own output, which obviously cannot exist without it).
+    A PRE-TRAINING view, and no model appears in it at all. The question is *which of these look
+    like cells*, asked before anything is trained; the metrics are a property of the movie, the
+    channels and the temporal scales, and a checkpoint has nothing to say about them. An earlier
+    version took an optional model and added its probability map, which quietly turned a "what
+    should I train on" panel into a "what did I train" one.
 
-    Deliberately NOT instances. Instances are what SEGMENTATION produces, and the segmentation
-    module page already previews them through the normal preview path — a second instance renderer
-    here would be the same picture computed a different way.
-
-    Every metric is returned, including the ones a chosen model was trained without: hiding those
-    would defeat the point, since deciding what to drop is the reason to look. WHICH ones a model
-    excluded is not reported here — that is a property of the model, answered by the vault's details
-    modal, and marking it on the sheet only invited "why doesn't this change when I toggle a chip".
+    Nor instances: those are SEGMENTATION output and the Segment page previews them through the
+    normal preview path — a second instance renderer here would be the same picture computed a
+    different way.
 
     A BACKEND rather than a new message type, so the region maths, the image handle, the norm-param
     cache and the reply envelope are all the ones `preview` already has — and the window/projection
-    is built by the same `CoastalUtils` the real run uses, so these are the planes it is actually
+    is built by the same `CoastalUtils` the real run uses, so these are the planes a run is actually
     fed. Returns `planes`, not `layers`: canvas plots, nothing near napari.
     """
     from cecelia.utils.coastal_utils import temporal_config
@@ -621,8 +619,7 @@ def _preview_flow_inspect(ctx):
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     mp = models[sorted(models.keys())[0]]
-    has_model = bool(str(mp.get('model', '')).strip())
-    scales, cumulative, dropped = temporal_config(seg._manifest(mp))
+    scales, cumulative, _dropped = temporal_config(seg._manifest(mp))
 
     t_now = int(ctx.bounds.get('T', (0, 1))[0])
     n_t = int(ctx.axis_len.get('T', 1))
@@ -638,14 +635,7 @@ def _preview_flow_inspect(ctx):
     window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
     frame, metrics = seg._flow_metrics(window, t_now - lo, scales, cumulative)
 
-    planes = [('input (projected)', frame)]
-    if has_model:
-        # The model gets its OWN metric set — the one it was trained on. Passing the full dict would
-        # shift every channel after the first dropped plane, which coastal accepts without error.
-        used = {k: v for k, v in metrics.items() if k not in dropped}
-        prob, _instances, _ = seg._get_inference(mp).predict_frame(frame, used)
-        planes.append(('probability', prob))
-    planes += [(k, metrics[k]) for k in sorted(metrics)]
+    planes = [('input (projected)', frame)] + [(k, metrics[k]) for k in sorted(metrics)]
 
     cmap = str(ctx.params.get('colormap') or DEFAULT_COLORMAP)
     return {
@@ -653,7 +643,6 @@ def _preview_flow_inspect(ctx):
                    for n, a in planes],
         'metricKeys': sorted(metrics),
         'temporalScales': list(scales),
-        'hasModel': has_model,
     }
 
 

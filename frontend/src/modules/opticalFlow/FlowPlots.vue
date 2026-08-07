@@ -16,6 +16,11 @@
   layer so it stays full-size" placement. It is deliberately NOT a top-level `FloatingPanel`: that
   would put a canvas-scoped manager in the app's window layer, competing with the Viewer and the Lab
   log for the same corner.
+
+  And it drives the plots the way the pop manager does, down to the SCOPE: the picked model is the
+  canvas's under `global`, the active plot's under `local`. Same bag, same footer control, same
+  meaning — a module page should not need re-learning because the thing being picked is a model
+  rather than a population.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, provide } from 'vue'
@@ -31,7 +36,9 @@ import FlowModelVault from './FlowModelVault.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { defaultVis } from '../../plots/plot'
 
-interface FlowPanelState { [key: string]: unknown; kind: string }
+// `model` is the panel's LOCAL pick, used only when the vault's scope is 'local' (mirrors the
+// cluster canvas's per-panel `hl`).
+interface FlowPanelState { [key: string]: unknown; kind: string; model?: string }
 
 const props = defineProps<{ imageUids: string[] }>()
 const project = useProjectStore()
@@ -47,8 +54,11 @@ const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey)
 
-// persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state)
-const { showVault } = useViewState(shared, { showVault: true })
+// persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
+// `model` + `scope` are the vault's selection, in exactly the shape the population manager's
+// highlight set uses: GLOBAL = one pick for every plot, LOCAL = the active plot's own.
+const { showVault, scope, model } = useViewState(shared, {
+  showVault: true, scope: 'global' as 'global' | 'local', model: '' })
 
 // migrate persisted panel kinds to the current registry keys, like ClusterPlots does — a restored
 // canvas holding a renamed kind renders nothing at all, silently.
@@ -59,6 +69,17 @@ const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(c
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
 const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
+
+const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
+// the model a given panel is showing, and the one the vault edits — the two halves of the scope
+const panelModel = (st: FlowPanelState) =>
+  scope.value === 'global' ? model.value : (st.model ?? model.value)
+const activeModel = computed(() =>
+  scope.value === 'global' ? model.value : (activePanel.value?.state.model ?? model.value))
+function setModel(v: string) {
+  if (scope.value === 'global') model.value = v
+  else if (activePanel.value) activePanel.value.state.model = v
+}
 
 const plotTypes = computed(() => pageViews('opticalFlowPage'))
 function addKind(kind: string) {
@@ -75,10 +96,12 @@ function duplicatePanel(s: FlowPanelState) {
 }
 
 // the standard plot bag every interactive view receives (docs/UI.md → generic plot-integration
-// interface). The view picks its own image out of `imageUids`.
-const ctx = computed(() => ({
-  projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: defaultVis(),
-}))
+// interface). Per PANEL, not one shared object, so `local` scope can show a different model in each.
+// The view picks its own image out of `imageUids`.
+const ctxFor = (st: FlowPanelState) => ({
+  projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value,
+  model: panelModel(st), vis: defaultVis(),
+})
 
 // Seed one flow-model plot for an image that has no canvas yet — on first bind AND after the
 // selection moves (the reactive key rebinds without remounting). Only when EMPTY, so a restored
@@ -118,12 +141,13 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 
       <div ref="canvasRef" class="fp-canvas">
         <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
-        <FlowModelVault v-if="showVault" />
+        <FlowModelVault v-if="showVault" :selected="activeModel" :scope="scope"
+                        @update:selected="setModel" @update:scope="scope = $event" />
         <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
           <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
             <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
                               :active="p.id === activeId" :view="p.state.kind"
-                              :context="ctx" :state="p.state" :duplicable="true"
+                              :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
                               :persist-key="`${ckey}:${p.id}`"
                               @activate="activeId = p.id" @remove="remove(p.id)"
                               @duplicate="duplicatePanel(p.state)" />

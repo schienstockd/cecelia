@@ -76,12 +76,13 @@ function api_optical_flow_delete(body_bytes::Vector{UInt8})
 end
 
 # ── Flow metric planes for the canvas panel ─────────────────────────────────────
-# "What goes INTO the model": every flow metric plane for one timepoint, as PNGs the browser can
-# show, so the user can see which of them look like cells before choosing what to train on. A model
-# is OPTIONAL and only adds the probability map — the metrics are a property of the movie and the
-# temporal scales, and the question is asked before any model exists.
+# "What goes INTO a model": every flow metric plane for one timepoint, as PNGs the browser can show,
+# so the user can see which look like cells before choosing what to train on. NO MODEL is involved —
+# the metrics are a property of the movie, the channels and the temporal scales, and the question is
+# asked before a model exists. The empty model group below is only what `CoastalUtils` needs to carry
+# the channels and the scales.
 #
-# No instances: those are segmentation output and the Segment page previews them already.
+# No instances either: those are segmentation output and the Segment page previews them already.
 # These are CANVAS PLOTS — nothing here touches napari.
 #
 # Deliberately NOT `api_preview_run`. That route exists to keep the viewer honest: it refuses unless
@@ -99,7 +100,6 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     project_uid = String(get(data, "projectUid", ""))
     image_uid   = String(get(data, "imageUid", ""))
     value_name  = String(get(data, "valueName", VERSIONED_DEFAULT_VAL))
-    model_name  = String(get(data, "model", ""))
     (isempty(project_uid) || isempty(image_uid)) &&
         return 400, JSON3.write((; error = "projectUid + imageUid required"))
 
@@ -108,11 +108,12 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
 
     raw = read_ccid_raw(state_file(joinpath(projects_dir(), project_uid), image_uid))
     models = Dict{String,Any}("0" => Dict{String,Any}(
-        "model"        => model_name,
+        "model"        => "",
         "matchAs"      => "base",
         "cellChannels" => get(data, "cellChannels", Any[])))
-    # With no model these ARE the feature set (`CoastalUtils._manifest` falls back to them); with one
-    # they are ignored, because a trained model's manifest must win over anything a panel sends.
+    # These ARE the feature set: with no model, `CoastalUtils._manifest` falls back to the group's own
+    # keys. (The fallback still yields to a real manifest wherever one exists — inference must match
+    # training — which is why it is written that way round rather than as an override.)
     haskey(data, "temporalScales") && (models["0"]["temporalScales"] = data["temporalScales"])
     haskey(data, "cumulativeWindow") && (models["0"]["cumulativeWindow"] = data["cumulativeWindow"])
     params = Dict{String,Any}("valueName" => value_name, "models" => models,

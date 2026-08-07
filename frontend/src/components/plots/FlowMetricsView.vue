@@ -9,10 +9,11 @@
   dataset — cell/background 0.99, 1.00, 1.65. On other data they may not be, and this panel is how
   you find out instead of inheriting someone else's table.
 
-  A model is OPTIONAL and adds exactly one thing: the probability map, which is the UNet's own output
-  and cannot exist without it. Which planes that model was trained WITHOUT is deliberately not marked
-  here — it is a property of the model, the vault's details modal answers it, and on the sheet it sat
-  next to the chips and read as if toggling one would change it.
+  NO MODEL APPEARS HERE. The metrics are a property of the movie, the CHANNEL and the temporal
+  scales; a checkpoint has nothing to say about them, and the question is asked before one exists.
+  An earlier version offered a model picker that added its probability map, which quietly turned a
+  "what should I train on" panel into a "what did I train" one. The channel is the choice that
+  belongs here — it decides what the flow is even computed over.
 
   Colour-mapped (viridis by default, server-side in `plane_render.py`). Grey hides the mid-range
   structure that "does this look like cells" is entirely about.
@@ -33,9 +34,8 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { useProjectStore } from '../../stores/project'
 
 interface Plane { name: string; png: string }
-interface FlowModel { name: string; label: string; channelName?: string }
 interface FlowState {
-  imageUid?: string; valueName?: string; model?: string
+  imageUid?: string; valueName?: string
   channels?: string[]; t?: number; z?: number | null
   scales?: string[]                     // temporal scales — only used when no model is picked
   show?: string[]                       // which planes are visible, by name
@@ -57,7 +57,6 @@ const extent = ref({ t: 1, z: 1 })       // slider bounds, from the image's own 
 const loading = ref(false)
 const starting = ref(false)
 const error = ref('')
-const models = ref<FlowModel[]>([])
 
 const state = computed(() => props.state)
 const t = computed({ get: () => state.value.t ?? 0, set: v => (state.value.t = v) })
@@ -75,16 +74,6 @@ const scales = computed({
   get: () => state.value.scales ?? DEFAULT_SCALES,
   set: v => (state.value.scales = v),
 })
-
-async function loadModels() {
-  try {
-    const r = await fetch('/api/optical-flow/models')
-    const d = await r.json()
-    models.value = (d.models ?? []).map((m: { name: string; label: string;
-                                               manifest?: { channelName?: string } }) =>
-      ({ name: m.name, label: m.label, channelName: m.manifest?.channelName }))
-  } catch { /* the picker just stays empty; `load` reports the real failure */ }
-}
 
 // The worker pays ~18 s of torch imports on first use and answers 202 `starting` until it is up.
 // Telling the user to "try again in a moment" and stopping made the panel look broken for a minute,
@@ -105,7 +94,7 @@ async function load(since = 0) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectUid: props.projectUid, imageUid: state.value.imageUid,
-        valueName: state.value.valueName ?? 'default', model: state.value.model ?? '',
+        valueName: state.value.valueName ?? 'default',
         cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
         temporalScales: scales.value.map(Number), colormap: colormap.value,
       }),
@@ -146,9 +135,9 @@ async function loadExtent() {
   } catch { /* the sliders just keep their previous bounds */ }
 }
 
-onMounted(async () => { await loadModels(); await loadExtent(); await load() })
+onMounted(async () => { await loadExtent(); await load() })
 watch(() => state.value.imageUid, loadExtent)
-watch(() => [state.value.imageUid, state.value.model, state.value.t, state.value.z,
+watch(() => [state.value.imageUid, state.value.t, state.value.z,
              colormap.value, scales.value.join(','), channels.value.join(',')], () => load())
 
 // The host's selection IS the image list (standard bag) — the page's table on one surface, the
@@ -170,18 +159,14 @@ const channels = computed({
   set: v => (state.value.channels = v),
 })
 
-// Seed from the MODEL when there is one — a model records the channels it was trained on
-// (`channelName`, joined by `+`), and showing it anything else answers a question nobody asked.
-// Otherwise the first channel, so the sheet is at least explicit about what it picked.
-watch([() => state.value.model, imageChannels, () => models.value.length], () => {
-  const avail = imageChannels.value
+// Default to EVERY channel, max-merged the way the segmenter merges them. Defaulting to the first
+// is what produced "why is input just sparse dots" — on this data channel 0 is SHG, so the sheet
+// opened on a channel nobody meant and looked broken. All-channels is never empty, and the chips
+// put the choice on screen one click from narrower.
+watch(imageChannels, avail => {
   if (!avail.length) return
-  const trained = (models.value.find(m => m.name === state.value.model)?.channelName ?? '')
-    .split('+').map(c => c.trim()).filter(c => avail.includes(c))
-  const want = trained.length ? trained : avail.slice(0, 1)
   const cur = state.value.channels ?? []
-  // only re-seed when the current pick cannot apply to this image / model
-  if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = want
+  if (!cur.length || !cur.every(c => avail.includes(c))) state.value.channels = [...avail]
 }, { immediate: true })
 
 // Follow the host: seed the first image, and drop a pick that has left the selection (else the panel
@@ -207,12 +192,6 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
                 @change="state.imageUid = ($event.target as HTMLSelectElement).value">
           <option value="" disabled>Image…</option>
           <option v-for="o in imageOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
-        <select class="select-input" :value="state.model ?? ''"
-                v-tooltip.top="'Optional — adds this model’s probability map'"
-                @change="state.model = ($event.target as HTMLSelectElement).value">
-          <option value="">No model</option>
-          <option v-for="m in models" :key="m.name" :value="m.name">{{ m.label }}</option>
         </select>
         <select class="select-input fmv-cmap" v-model="colormap"
                 v-tooltip.top="'Colour map for every plane'">
@@ -249,9 +228,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
                     @update:model-value="v => channels = v as string[]" />
       </label>
 
-      <!-- Only without a model: with one, the manifest's scales win (inference must match training),
-           so a control here would be a lie. -->
-      <label v-if="!state.model" class="cc-row fmv-scales">
+      <label class="cc-row fmv-scales">
         <span class="cc-muted cc-fs-xs"
               v-tooltip.top="'Frame lags — these decide the per-scale magnitude planes'">scales</span>
         <ChipSelect :options="SCALE_OPTIONS" :model-value="scales" multiple aria-label="Temporal scales"
@@ -267,7 +244,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
     <p v-else-if="starting" class="cc-muted">Starting the preview worker…</p>
     <p v-else-if="!planes.length && !loading" class="cc-muted">
-      Pick an image to see the flow metrics.
+      Pick an image and a channel to see the flow metrics.
     </p>
 
     <div class="fmv-grid">

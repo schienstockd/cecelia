@@ -36,7 +36,7 @@ const PREVIEW_PORT   = 7656
 # anything we would not want served from the old code has to move it. 5 is that case with nothing else
 # attached: the reply shape is identical to 4, and the fix (a preview crashing on every AF request) is
 # invisible to any check but this one.
-const PREVIEW_PROTOCOL = 8
+const PREVIEW_PROTOCOL = 9
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker

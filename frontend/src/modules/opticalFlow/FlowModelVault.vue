@@ -14,8 +14,14 @@
   the flow canvas and is toggled from the canvas bar, exactly like the pop manager. It was the app's
   `FloatingPanel` first, which was wrong: that is a top-level VIEWPORT window and the vault would
   collide with the Viewer and the Lab log for the same screen space, over a canvas it belongs to.
-  The shell's plot-only parts (the global/local scope footer, the styling block) are opt-in, so a
-  model list simply doesn't pass them — that is what made the reuse fit rather than force.
+  The shell's styling block is plot-only and stays off; the global/local SCOPE footer is on, because
+  it means the same thing here as it does for populations — one pick for every plot, or the active
+  plot's own. A module page should not need re-learning because the thing being picked is a model.
+
+  SELECTION DRIVES THE PLOTS, exactly as the population manager's does: the picked model is the
+  canvas's, held in its `shared` bag by `FlowPlots` and handed to every plot through the standard
+  bag. A plot that needs a model does NOT carry its own picker — two pickers for one thing is how
+  you get a canvas whose panels disagree about what they are showing.
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
@@ -24,6 +30,7 @@ import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
 import FlowModelDetails from './FlowModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
+import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useProjectStore } from '../../stores/project'
 import type { FlowManifest as Manifest } from '../../utils/flowManifest'
 
@@ -33,12 +40,19 @@ type FlowModel = {
   hasManifest: boolean; manifest: Manifest
 }
 
+const props = defineProps<{ selected?: string; scope?: 'global' | 'local' }>()
+const emit = defineEmits<{
+  'update:selected': [string]
+  'update:scope': ['global' | 'local']
+}>()
+
 const models  = ref<FlowModel[]>([])
 const vaultDir = ref('')
 const loading = ref(false)
 const error   = ref('')
-const editing = ref<string | null>(null)
-const draft   = ref('')
+// edit-in-place, shared with the population manager and the tables (composables/useInlineEdit)
+const { draft, isEditing, start: startRename, cancel: cancelRename, commit, focusInput } =
+  useInlineEdit()
 
 // A finished training run adds a model. The panel floats free of the image table, so it watches
 // every image in the project rather than a selection — same shared primitive, same
@@ -67,14 +81,10 @@ defineExpose({ load })
 
 const byName = (n: string): FlowModel => models.value.find(m => m.name === n)!
 
-function startRename(m: FlowModel) { editing.value = m.name; draft.value = m.stem }
-
-async function commitRename(m: FlowModel) {
-  const newName = draft.value.trim()
-  editing.value = null
-  if (!newName || newName === m.stem) return
-  await post('/api/optical-flow/rename', { name: m.name, newName })
-}
+// a model must keep a name, so the empty case is rejected here — `commit` deliberately leaves that
+// to the caller (clearing an image note IS a legitimate edit)
+const commitRename = (m: FlowModel) => commit(m.name, m.stem, newName =>
+  newName ? post('/api/optical-flow/rename', { name: m.name, newName }) : undefined)
 
 async function remove(m: FlowModel) { await post('/api/optical-flow/delete', { name: m.name }) }
 
@@ -106,12 +116,19 @@ const COLUMNS: SelectionColumn[] = [
 const tableRows = computed(() => models.value.map(m => ({
   name: m.name, stem: m.stem, modified: m.modified, size: mb(m.bytes),
 })))
-const picked = ref('')
 const details = ref<FlowModel | null>(null)
+
+// v-model:selected — the canvas owns it (FlowPlots keeps it in the shared bag); this panel is the
+// one place it is EDITED, like the pop manager and its highlight set.
+const picked = computed({
+  get: () => props.selected ?? '',
+  set: v => emit('update:selected', v),
+})
 </script>
 
 <template>
-  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="340">
+  <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="340"
+                   :scope="scope" @update:scope="emit('update:scope', $event)">
     <div class="vault">
       <div class="vault-bar">
         <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
@@ -129,9 +146,9 @@ const details = ref<FlowModel | null>(null)
 
       <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label="">
         <template #actions="{ row }">
-          <input v-if="editing === row.name" v-model="draft" class="vault-rename" autofocus
+          <input v-if="isEditing(row.name)" v-model="draft" class="vault-rename" :ref="focusInput"
                  v-tooltip.top="'Enter to rename, Esc to cancel'"
-                 @keyup.enter="commitRename(byName(row.name))" @keyup.esc="editing = null"
+                 @keyup.enter="commitRename(byName(row.name))" @keyup.esc="cancelRename"
                  @blur="commitRename(byName(row.name))" />
           <template v-else>
             <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'What it was trained on'"
@@ -139,7 +156,7 @@ const details = ref<FlowModel | null>(null)
               <i class="pi pi-info-circle" />
             </button>
             <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
-                    @click="startRename(byName(row.name))">
+                    @click="startRename(row.name, byName(row.name).stem)">
               <i class="pi pi-pencil" />
             </button>
             <ConfirmDeleteButton title="Delete model"
