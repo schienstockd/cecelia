@@ -754,8 +754,19 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
 
     # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
-    fmt_flags = bf2raw_format_flags(get(params, "ngffVersion", "0.4"), get(params, "shardSize", "none"))
-    on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2)" : join(fmt_flags, " "))")
+    # `z_planes` lets "all z" resolve to a real depth; the source is not converted yet, so it comes from
+    # ccid meta when a previous import recorded it, else 0 (which drops the flag rather than guessing).
+    fmt_flags, fmt_conflict = bf2raw_format_flags(
+        get(params, "ngffVersion", "0.4"), get(params, "shardSize", "auto");
+        separator   = get(params, "chunkSeparator", "nested"),
+        shard_depth = get(params, "shardDepth", "1"),
+        z_planes    = Int(get(img.meta, "SizeZ", 0)))
+    on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
+    if fmt_conflict
+        # Not a silent downgrade: bioformats2raw would have written v2 anyway, without saying so.
+        on_log("[WARN] Flat chunk keys and NGFF 0.5 cannot be combined — bioformats2raw writes zarr v2")
+        on_log("[WARN] Writing zarr v2 with flat keys. Choose nested keys if you need NGFF 0.5.")
+    end
 
     out_pipe = Pipe()
     proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;

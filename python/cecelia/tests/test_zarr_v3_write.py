@@ -48,14 +48,20 @@ def _fixture(shape=(2, 1, 1, 16, 16), seed=0):
 
 class CodecShapePerFormatTest(unittest.TestCase):
     def test_v2_and_v3_carry_the_same_decision_in_different_shapes(self):
-        self.assertEqual(['compressor'], list(zarr_utils._codec_kwargs('image', 2)))
+        self.assertEqual({'compressor', 'chunk_key_encoding'},
+                         set(zarr_utils._codec_kwargs('image', 2)))
         # `compressors` PLURAL is the v3 kwarg; `codecs` is silently rejected by create_array
         self.assertEqual({'compressors', 'chunk_key_encoding'},
                          set(zarr_utils._codec_kwargs('image', 3)))
         self.assertEqual({'compressors', 'chunk_key_encoding', 'shards'},
                          set(zarr_utils._codec_kwargs('image', 3, shards=(1, 1, 1, 64, 64))))
         # v2 has no sharding — dropped rather than raising, so a caller need not branch on format
-        self.assertEqual(['compressor'], list(zarr_utils._codec_kwargs('image', 2, shards=(1, 1, 1, 64, 64))))
+        self.assertEqual({'compressor', 'chunk_key_encoding'},
+                         set(zarr_utils._codec_kwargs('image', 2, shards=(1, 1, 1, 64, 64))))
+        # zarr-python spells the v2 separator differently per entry point: create_array takes
+        # chunk_key_encoding, open_array REJECTS it and wants dimension_separator
+        self.assertEqual({'compressor', 'dimension_separator'},
+                         set(zarr_utils._codec_kwargs('image', 2, open_array=True)))
 
     def test_the_v3_pipeline_matches_the_configured_choice(self):
         spec = zarr_utils.IMAGE_COMPRESSOR_CHOICES[zarr_utils.image_compressor_name()]
@@ -152,17 +158,19 @@ class InheritFormatTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_store_encoding_of_reports_the_source_format(self):
+    def test_store_encoding_of_reports_the_source_format_and_separator(self):
         for fmt in (2, 3):
-            p = os.path.join(self.tmp, f'src{fmt}.ome.zarr')
-            zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=fmt)
-            self.assertEqual({'zarr_format': fmt}, zarr_utils.store_encoding_of(p))
+            for sep in ('.', '/'):
+                p = os.path.join(self.tmp, f'src{fmt}{"n" if sep == "/" else "f"}.ome.zarr')
+                zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1,
+                                              zarr_format=fmt, separator=sep)
+                self.assertEqual({'zarr_format': fmt, 'separator': sep},
+                                 zarr_utils.store_encoding_of(p), f'v{fmt} sep {sep!r}')
 
     def test_a_missing_or_unreadable_source_falls_back_to_v2_rather_than_raising(self):
         # a derived write must not fail because a source's metadata could not be parsed
-        self.assertEqual({'zarr_format': 2}, zarr_utils.store_encoding_of(os.path.join(self.tmp, 'nope')))
-        self.assertEqual({'zarr_format': 2}, zarr_utils.store_encoding_of(None))
-        self.assertEqual({'zarr_format': 2}, zarr_utils.store_encoding_of(''))
+        for ref in (os.path.join(self.tmp, 'nope'), None, ''):
+            self.assertEqual({'zarr_format': 2, 'separator': '.'}, zarr_utils.store_encoding_of(ref))
 
     def test_the_streaming_writer_inherits_too(self):
         # open_multiscales_for_writing is the path the correction tasks use — the main way a derived
@@ -186,7 +194,7 @@ class InheritFormatTest(unittest.TestCase):
             src = os.path.join(self.tmp, f'open{fmt}.ome.zarr')
             zarr_utils.create_multiscales(self.dark, src, dim_utils=self.du, nscales=1, zarr_format=fmt)
             level0 = zarr_utils.open_as_zarr(src)[0][0]
-            self.assertEqual({'zarr_format': fmt}, zarr_utils.store_encoding_of(level0),
+            self.assertEqual(fmt, zarr_utils.store_encoding_of(level0)['zarr_format'],
                              f'open v{fmt} array as reference')
 
     def test_a_crop_style_derived_write_keeps_the_source_format(self):

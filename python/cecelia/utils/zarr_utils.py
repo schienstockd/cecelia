@@ -117,6 +117,16 @@ def store_compressor(kind='image'):
     return Blosc(cname=spec['cname'], clevel=spec['clevel'], shuffle=Blosc.SHUFFLE)
 
 
+def _group_separator(group, default='.'):
+    """The chunk-key separator of an open group's own arrays, so a pyramid level is laid out like the
+    level-0 array beside it. Same reasoning as `_group_format`: derive rather than thread, and a store
+    cannot end up half nested and half flat."""
+    try:
+        return group['0'].metadata.chunk_key_encoding.separator or default
+    except Exception:
+        return default
+
+
 def _group_format(group, default=2):
     """The zarr format of an open group. A sub-array MUST match the group holding it, so a writer that
     already has the group derives the format from it rather than being told — one less thing to thread
@@ -126,6 +136,13 @@ def _group_format(group, default=2):
     except Exception:
         return default
 
+
+#: Chunk-key separators, by name. "/" nests keys into a directory tree, "." keeps them flat.
+#: Not cosmetic: it decides how many DIRECTORIES a store costs, which is most of its filesystem
+#: footprint and all of its cost on a network share. Measured on a 512x512x13z x2c x4t conversion —
+#: nested 224 directories, flat 4; on a real 1.7 GB import, 20,933 vs ~4.
+CHUNK_SEPARATORS = {'nested': '/', 'flat': '.'}
+CHUNK_SEPARATOR_DEFAULT = 'flat'
 
 #: Flat chunk keys for the stores WE write, in both formats.
 #:
@@ -142,7 +159,44 @@ def _group_format(group, default=2):
 _V3_FLAT_CHUNK_KEY = {'name': 'default', 'configuration': {'separator': '.'}}
 
 
-def _codec_kwargs(kind='image', zarr_format=2, shards=None):
+def chunk_key_encoding(zarr_format, separator):
+    """`create_array`'s `chunk_key_encoding` for a format + separator.
+
+    The encoding NAME differs per format — `'v2'` for zarr v2, `'default'` for v3 — and passing the
+    wrong one raises. One helper, so a writer supplies a separator and not a format-specific dict.
+    """
+    sep = CHUNK_SEPARATORS.get(str(separator), separator if separator in ('/', '.') else '.')
+    return {'name': 'v2' if zarr_format < 3 else 'default', 'configuration': {'separator': sep}}
+
+
+def store_chunk_separator(path):
+    """The chunk-key separator an existing store uses: `'/'` or `'.'`, or `None` when unreadable.
+
+    The DEFAULT differs per format when the key is absent — v2 `'.'`, v3 `'/'` — so an absent value is
+    resolved per format rather than assumed to be one of them.
+    """
+    base = series_base(path)
+    for lvl in ('0', ''):
+        d = os.path.join(base, lvl) if lvl else base
+        za, zj = os.path.join(d, '.zarray'), os.path.join(d, 'zarr.json')
+        try:
+            if os.path.exists(za):
+                import json as _json
+                with open(za, encoding='utf-8') as fh:
+                    return _json.load(fh).get('dimension_separator', '.')
+            if os.path.exists(zj):
+                import json as _json
+                with open(zj, encoding='utf-8') as fh:
+                    m = _json.load(fh)
+                if m.get('node_type') != 'array':
+                    continue
+                return (m.get('chunk_key_encoding') or {}).get('configuration', {}).get('separator', '/')
+        except Exception:
+            return None
+    return None
+
+
+def _codec_kwargs(kind='image', zarr_format=2, shards=None, separator=None, open_array=False):
     """`create_array` kwargs carrying the compression decision, in the shape THIS format takes.
 
     v2 wants `compressor=<numcodecs codec>` (singular, legacy); v3 wants `compressors=[...]` (plural).
@@ -154,12 +208,24 @@ def _codec_kwargs(kind='image', zarr_format=2, shards=None):
     (`docs/todo/ZARR_V3_PLAN.md` D8). Silently dropped for v2, which has no sharding, rather than
     raising: the caller inherits format from its source and should not have to branch on it.
     """
-    if zarr_format and zarr_format >= 3:
-        kw = {'compressors': store_codecs(kind), 'chunk_key_encoding': _V3_FLAT_CHUNK_KEY}
+    fmt = zarr_format or 2
+    # The separator is INHERITED like the format (D9/D11): a derived store must be laid out the same way
+    # as the image it came from, or one project ends up with both conventions. Absent -> flat, which is
+    # what our derived stores have always been.
+    cke = chunk_key_encoding(fmt, separator or CHUNK_SEPARATORS[CHUNK_SEPARATOR_DEFAULT])
+    if fmt >= 3:
+        kw = {'compressors': store_codecs(kind), 'chunk_key_encoding': cke}
         if shards:
             kw['shards'] = tuple(shards)
         return kw
-    return {'compressor': store_compressor(kind)}
+    # zarr-python spells the v2 separator DIFFERENTLY depending on the entry point: `Group.create_array`
+    # takes `chunk_key_encoding={'name': 'v2', ...}`, while `zarr.open_array` rejects that outright
+    # ("chunk_key_encoding cannot be used for arrays with zarr_format 2") and wants
+    # `dimension_separator`. One inconsistency, absorbed here, so no writer has to know which API it is
+    # on top of.
+    sep_kw = ({'dimension_separator': cke['configuration']['separator']} if open_array
+              else {'chunk_key_encoding': cke})
+    return {'compressor': store_compressor(kind), **sep_kw}
 
 
 def store_codecs(kind='image'):
@@ -213,18 +279,25 @@ def store_encoding_of(reference_path):
     must not fail because a source's metadata could not be parsed, and v2 is what every store was until
     bioformats2raw 0.12.
     """
-    fmt = None
+    fmt, sep = None, None
     try:
         if reference_path is None or reference_path == '':
             fmt = None
         elif isinstance(reference_path, (str, bytes, os.PathLike)):
-            fmt = store_format(os.fspath(reference_path))
+            p = os.fspath(reference_path)
+            fmt = store_format(p)
+            sep = store_chunk_separator(p)
         else:
             # an open zarr node carries its own format; prefer that over guessing from a path
             fmt = int(reference_path.metadata.zarr_format)
+            try:
+                sep = reference_path.metadata.chunk_key_encoding.separator
+            except Exception:
+                sep = None
     except Exception:
-        fmt = None
-    return {'zarr_format': fmt if fmt in (2, 3) else 2}
+        fmt, sep = None, None
+    return {'zarr_format': fmt if fmt in (2, 3) else 2,
+            'separator': sep if sep in ('/', '.') else CHUNK_SEPARATORS[CHUNK_SEPARATOR_DEFAULT]}
 
 
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
@@ -718,7 +791,7 @@ def _rename_store(src, dest):
 
 def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks=None,
                              store_path=None, ignore_channel=False, ignore_time=False,
-                             copy_values=True, remove_previous=False, kind='image', zarr_format=None):
+                             copy_values=True, remove_previous=False, kind='image', zarr_format=None, separator=None):
     if im_chunks is None:
         im_chunks = chunks(reference_zarr)
 
@@ -743,7 +816,9 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
     # Format follows the reference store when there is one: this writes the level-0 array of a DERIVED
     # store, so it must match its source (ZARR_V3_PLAN D9). `create_multiscales` calls this for the
     # ndarray branch and has already opened the group in that format, so they cannot disagree.
-    fmt = zarr_format if zarr_format is not None else store_encoding_of(reference_zarr)['zarr_format']
+    _enc = store_encoding_of(reference_zarr)
+    fmt = zarr_format if zarr_format is not None else _enc['zarr_format']
+    enc_sep = separator if separator is not None else _enc['separator']
     new_zarr = zarr.open_array(
         store_path,
         mode='w',
@@ -751,7 +826,7 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
         chunks=im_chunks,
         dtype=native_dtype(im_array.dtype),
         zarr_format=fmt,
-        **_codec_kwargs(kind, fmt),
+        **_codec_kwargs(kind, fmt, separator=enc_sep, open_array=True),
     )
 
     if copy_values is True:
@@ -993,7 +1068,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
                        squeeze=False, idx_adjust=0, axes=None, kind='image',
-                       zarr_format=None, shards=None):
+                       zarr_format=None, shards=None, separator=None):
     """``kind``: ``'image'`` (intensity data, the default) or ``'labels'``. It picks the compressor —
     see `store_compressor`; the two need opposite settings and the caller is the only one that knows
     which it is writing. A label caller that forgets it loses ~40% of the compression, silently.
@@ -1019,8 +1094,11 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     """
     # v2 unless told otherwise, and "told otherwise" normally means the SOURCE store was v3
     # (`store_encoding_of`). A v2 original must not acquire a v3 derived variant.
+    enc = store_encoding_of(reference_zarr) if reference_zarr else None
     if zarr_format is None:
-        zarr_format = store_encoding_of(reference_zarr)['zarr_format'] if reference_zarr else 2
+        zarr_format = enc['zarr_format'] if enc else 2
+    if separator is None:
+        separator = enc['separator'] if enc else None
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=zarr_format)
 
     # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes come from
@@ -1049,7 +1127,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
             "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype),
-            **_codec_kwargs(kind, zarr_format, shards=shards)
+            **_codec_kwargs(kind, zarr_format, shards=shards, separator=separator)
         )
         # Rechunk the SOURCE to the destination grid before storing. `da.store(lock=False)` is only safe
         # when each dest chunk has exactly one writer; im_array's own (auto) chunking does NOT align with
@@ -1063,7 +1141,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     elif isinstance(im_array, zarr.Array):
         dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks,
                                             dtype=native_dtype(im_array.dtype),
-                                            **_codec_kwargs(kind, zarr_format))
+                                            **_codec_kwargs(kind, zarr_format, separator=separator))
         dest[:] = im_array[:]
         im_chunks = chunks(im_array)
     else:
@@ -1073,7 +1151,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
             im_chunks=im_chunks,
             store_path=os.path.join(filepath, "0"),
             ignore_channel=ignore_channel, kind=kind,
-            zarr_format=zarr_format)      # must match the group opened above
+            zarr_format=zarr_format, separator=separator)   # must match the group opened above
 
     if nscales > 1:
         write_multiscale_pyramid(
@@ -1125,7 +1203,8 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
         dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(im_chunks, dest_shape))
         dest = multiscales_zarr.create_array(
             str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype),
-            **_codec_kwargs(kind, _group_format(multiscales_zarr)))
+            **_codec_kwargs(kind, _group_format(multiscales_zarr),
+                            separator=_group_separator(multiscales_zarr)))
         if t_idx is None:
             dest[:] = _read(tuple(x))
         else:
@@ -1137,7 +1216,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
 
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
                                  nscales=1, keyword='datasets', mode='w', kind='image',
-                                 reference_zarr=None, zarr_format=None, shards=None):
+                                 reference_zarr=None, zarr_format=None, shards=None, separator=None):
     """Create a multiscales group + an EMPTY, per-plane-chunked level-0 array on disk, write the
     NGFF ``multiscales`` metadata, and return ``(group, level0, pchunks)``.
 
@@ -1161,8 +1240,11 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     the caller fills level 0 a plane or a tile at a time — which is exactly the pattern sharding
     punishes: one chunk written means one whole shard rewritten, and two workers on the same shard race
     (D8). Sharding belongs on write-once-sequential output."""
+    enc = store_encoding_of(reference_zarr) if reference_zarr else None
     if zarr_format is None:
-        zarr_format = store_encoding_of(reference_zarr)['zarr_format'] if reference_zarr else 2
+        zarr_format = enc['zarr_format'] if enc else 2
+    if separator is None:
+        separator = enc['separator'] if enc else None
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=zarr_format)
 
     axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
@@ -1180,7 +1262,8 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     pchunks = plane_chunks(tuple(shape), dim_utils)
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,
                                            dtype=native_dtype(dtype),
-                                           **_codec_kwargs(kind, zarr_format, shards=shards))
+                                           **_codec_kwargs(kind, zarr_format, shards=shards,
+                                                           separator=separator))
     return multiscales_zarr, level0, pchunks
 
 

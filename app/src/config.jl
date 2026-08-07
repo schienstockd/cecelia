@@ -509,9 +509,17 @@ The import is the ONLY place the store format is chosen; every derived store inh
 source (`docs/todo/ZARR_V3_PLAN.md` D9). That is what keeps this answerable — the user decides once
 per image, not again on every correction, crop and label set.
 
+Returns `(flags, conflict)` — see the conflict note below.
+
 **Sharding applies only to NGFF 0.5** and is silently dropped for 0.4 rather than raising: the two are
 separate controls in the UI, and a user who sets a shard size and then switches back to 0.4 should get
 a working import, not an error.
+
+**`--no-nested` and `--ngff-version 0.5` are mutually exclusive** — together, bioformats2raw silently
+writes zarr **v2** (verified in both flag orders: the root carries `.zgroup`, not `zarr.json`). Flat
+wins, because flat has a measured benefit (56x fewer directories) and 0.5 on its own currently buys
+nothing. `conflict` is returned so the caller can say so instead of leaving the user to notice in the
+metadata modal.
 
 **There is no "off".** `--shard-width` defaults to 1024 and cannot be disabled, so bioformats2raw shards
 EVERY v3 store — verified against 0.12.1: a 0.5 import with no shard flag still produces a
@@ -524,20 +532,44 @@ one chunk rewrites the whole shard: safe for an import (written once, sequential
 expensive for anything filling a store incrementally (D8). `"auto"` defers to upstream rather than
 naming a number chosen to look decisive.
 """
-function bf2raw_format_flags(ngff_version, shard_size)::Vector{String}
-    v = strip(string(ngff_version))
+function bf2raw_format_flags(ngff_version, shard_size; separator = "nested",
+                            shard_depth = "1", z_planes::Int = 0)
+    v     = strip(string(ngff_version))
+    sep   = lowercase(strip(string(separator)))
+    flat  = sep == "flat"
     flags = String[]
-    (isempty(v) || v == "0.4") || append!(flags, ["--ngff-version", v])
-    # v2 (NGFF 0.4) has no sharding — drop it rather than emit a flag the CLI will reject
-    v == "0.5" || return flags
+
+    # THE CONFLICT. `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr **v2**
+    # store — verified in both flag orders against 0.12.1: the root ends up with `.zgroup`, not
+    # `zarr.json`. You ask for 0.5 and get 0.4, with no warning from the CLI. So the two are never
+    # emitted together, and the caller is TOLD which one it lost rather than discovering it later in the
+    # metadata modal. Flat wins because it is the one with a measured benefit (56x fewer directories);
+    # NGFF 0.5 currently buys nothing on its own.
+    conflict = flat && v == "0.5"
+    flat && push!(flags, "--no-nested")
+    if !(isempty(v) || v == "0.4" || conflict)
+        append!(flags, ["--ngff-version", v])
+    end
+    # sharding is NGFF 0.5 only — and a conflicted request is no longer 0.5
+    (v == "0.5" && !conflict) || return (flags, conflict)
+
     sh = lowercase(strip(string(shard_size)))
-    # "auto" (and anything unparseable) passes nothing: bioformats2raw's own 1024 default, capped to the
-    # frame. Same call as the chunk flags — a bad value must not fail a long import.
-    (isempty(sh) || sh == "auto") && return flags
-    n = tryparse(Int, sh)
-    (isnothing(n) || n < 32) && return flags
-    append!(flags, ["--shard-width", string(n), "--shard-height", string(n)])
-    flags
+    if !(isempty(sh) || sh == "auto")
+        n = tryparse(Int, sh)
+        (isnothing(n) || n < 32) || append!(flags, ["--shard-width", string(n), "--shard-height", string(n)])
+    end
+    # Shard DEPTH is the only axis that actually reduces the file count on a 512x512 frame — width and
+    # height cap to the frame, so the shard equals the chunk and packs nothing. Measured: depth 13 gave
+    # 13 files where the default gave 109. It is also the axis D8 warns about: a shard spanning z is
+    # rewritten in full for every plane write, so this is opt-in and warned, never a default.
+    d = lowercase(strip(string(shard_depth)))
+    if d == "all"
+        z_planes > 1 && append!(flags, ["--shard-depth", string(z_planes)])
+    else
+        n = tryparse(Int, d)
+        (isnothing(n) || n <= 1) || append!(flags, ["--shard-depth", string(n)])
+    end
+    (flags, conflict)
 end
 
 """
