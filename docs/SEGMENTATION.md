@@ -347,6 +347,19 @@ min/max. `normaliseToWhole` supplies that statistic; the projection then pins co
 to the same range. With it off, every tile gets its own scale — the patchiness the option exists to
 prevent, plus a train/inference mismatch on the structure-tensor planes.
 
+**Training reads `zPlanes` planes per movie, and each is its own sequence.** Motion exists within one
+recording of one plane; flow between plane *k* and plane *k+1* of the same timepoint is not motion,
+so a (movie × plane) pair is a sequence and metrics are computed per sequence before pooling. The
+planes are the centres of `zPlanes` equal bins, which puts `zPlanes = 1` on `n_z // 2` (the old
+single-plane rule, unchanged) and keeps larger counts off plane 0 and `n_z - 1` — the top and bottom
+of an intravital stack are usually outside the tissue, and `linspace` would spend two of five planes
+there. Indices are resolved per movie, since depth is: the manifest records the count as `zPlanes`
+and the actual indices per image as `zPlanesUsed`, because "3 planes" of a 31-deep stack and of a
+9-deep one are different tissue.
+
+Pooled frames are movies × planes × timepoints and the metric stack is ~11–15 float32 planes per
+frame, so the plane count is a straight memory multiplier.
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the

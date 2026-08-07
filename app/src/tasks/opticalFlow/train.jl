@@ -170,7 +170,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            trainChannels    = channels,
            channelName      = join([string(ch_names[c + 1]) for c in channels
                                     if 0 <= c < length(ch_names)], "+"),
-           zSlice           = Int(get(params, "zSlice", -1)),
+           zPlanes          = Int(get(params, "zPlanes", 1)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
            droppedMetrics   = dropped,

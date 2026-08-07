@@ -32,14 +32,14 @@
       "tip": "Channels carrying the cell signal; merged by maximum"
     },
     {
-      "key": "zSlice",
-      "label": "Z plane",
+      "key": "zPlanes",
+      "label": "Z planes",
       "type": "int",
-      "min": -1,
-      "max": 500,
+      "min": 1,
+      "max": 25,
       "step": 1,
-      "default": -1,
-      "tip": "Which plane to train on; -1 = middle"
+      "default": 1,
+      "tip": "Evenly-spaced planes per movie; each multiplies the frames pooled"
     },
     {
       "key": "temporalScales",

@@ -23,6 +23,11 @@ export interface FlowManifest {
   sourceImages?: string[]
   sourceValueName?: string
   nFrames?: number
+  /** How many evenly-spaced Z planes per movie. */
+  zPlanes?: number
+  /** uID → the plane indices that movie contributed; depth differs per image. */
+  zPlanesUsed?: Record<string, number[]>
+  /** Pre-`zPlanes` models: a single plane index, `-1` meaning the middle. */
   zSlice?: number
   trainedAt?: string
   lossWeights?: Record<string, number>
@@ -36,7 +41,7 @@ export interface DetailGroup { label: string; fields: DetailField[] }
 const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
-  'sourceValueName', 'nFrames', 'zSlice', 'trainedAt', 'lossWeights',
+  'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves',
 ])
@@ -56,6 +61,29 @@ function field(label: string, value: unknown, mono = false): DetailField | null 
 }
 
 /**
+ * How much of the stack the model saw. One row for the count, one for the actual indices.
+ *
+ * The indices are worth their own row because "3 planes" is not a depth: 3 of a 31-plane stack and
+ * 3 of a 9-plane one are different tissue. Only shown when the movies disagree about *which* — with
+ * one set of indices across every image, repeating it per uID is noise.
+ */
+function zPlaneFields(m: FlowManifest): (DetailField | null)[] {
+  if (m.zPlanes === undefined) return [field('Z plane', m.zSlice === -1 ? 'middle' : m.zSlice)]
+
+  const per = Object.entries(m.zPlanesUsed ?? {})
+  const distinct = new Set(per.map(([, v]) => v.join(',')))
+  return [
+    field('Z planes', m.zPlanes === 1 ? '1 (middle)' : m.zPlanes),
+    distinct.size === 1
+      ? field('Planes', `[${[...distinct][0]}]`, true)
+      : per.length
+        ? { label: 'Planes', mono: true,
+            value: per.map(([uid, v]) => `${uid}: [${v.join(', ')}]`).join('  ') }
+        : null,
+  ]
+}
+
+/**
  * The manifest grouped for display. Empty when there is no manifest at all — the caller says so in
  * its own words rather than rendering a set of dashes.
  *
@@ -70,7 +98,10 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
   const input: (DetailField | null)[] = [
     field('Channels', m.channelName || (m.trainChannels ?? []).join(', ')),
     field('Image version', m.sourceValueName),
-    field('Z plane', m.zSlice === -1 ? 'middle' : m.zSlice),
+    // Two spellings on purpose. `zPlanes` is the count a current run was given; `zSlice` is what
+    // models trained before it recorded, and those models are still in people's vaults. Reading the
+    // old key is how the modal keeps describing them instead of quietly dropping the row.
+    ...zPlaneFields(m),
     field('Temporal scales', m.temporalScales),
     field('Cumulative window', m.cumulativeWindow),
     field('Normalise', m.normalise === undefined ? undefined : `${m.normalise}th percentile`),

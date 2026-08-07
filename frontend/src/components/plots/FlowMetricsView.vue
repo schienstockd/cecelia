@@ -255,7 +255,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
           <span class="cc-readout cc-fs-xs fmv-val">{{ t }}/{{ extent.t - 1 }}</span>
         </label>
         <label v-if="extent.z > 1" class="cc-row-group fmv-slider"
-               v-tooltip.top="'Z plane — the middle is what training reads'">
+               v-tooltip.top="'Z plane'">
           <span class="cc-muted cc-fs-xs fmv-axis">z</span>
           <input type="range" class="slider" min="0" :max="extent.z - 1" step="1" :value="z"
                  @input="z = Number(($event.target as HTMLInputElement).value)" />

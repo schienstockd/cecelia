@@ -1,19 +1,26 @@
 """
 Optical-flow model training.
 
-Trains a coastal flow-metric UNet on one Z plane of EVERY image in an experimental set and saves it
-to the model vault as a PAIR: `<name>.pt` plus a `<name>.json` manifest. The manifest is not
+Trains a coastal flow-metric UNet on Z planes of EVERY image in an experimental set and saves it to
+the model vault as a PAIR: `<name>.pt` plus a `<name>.json` manifest. The manifest is not
 documentation — it is what `CoastalUtils` configures inference from, because the flow metric set is a
 silent train/inference contract: `predict_frame` stacks metrics in sorted-key order and zero-fills
 the remainder, so a set that does not match shifts every later channel with no error.
 
-Metrics are computed PER MOVIE and the frames pooled afterwards. Motion only exists within a movie —
-flow across a boundary between two recordings is meaningless — which is what
-`prepare_data_for_unet_batch` and `train_test_split_per_movie` encode, so the pooling goes through
-them rather than through a concatenated array.
+Metrics are computed PER SEQUENCE and the frames pooled afterwards. Motion only exists within one
+recording of one plane — flow across a boundary between two movies is meaningless, and so is flow
+between plane k and plane k+1 of the same timepoint — which is what `prepare_data_for_unet_batch`
+encodes, so the pooling goes through it rather than through a concatenated array.
 
-One Z plane per movie: `train_with_metrics` consumes a `[T, H, W]` sequence, and a model trained on
-the middle plane segments the whole stack acceptably (the 3D path runs it per plane).
+A sequence is therefore (movie × plane), not (movie): `zPlanes` planes per movie, each its own
+`[T, H, W]`. Inference runs the model per plane over the whole stack, so training on one plane makes
+the model's whole experience of the data one depth — which for an intravital stack is one slice
+through the tissue, at one signal level. `zPlanes = 1` reproduces the old single-middle-plane
+behaviour exactly.
+
+Note what this multiplies: pooled frames = movies × planes × timepoints, and the metric stack is
+~11-15 float32 planes per frame. Five Z planes is five times the memory of one, which is what the
+per-movie frame cap exists to bound.
 
 Parameter contract (JSON written by Julia):
   movies                   - [{uID, imPath}, …]; every image of the set that resolved
@@ -21,7 +28,7 @@ Parameter contract (JSON written by Julia):
   valueName                - provenance for the manifest
   trainChannels            - 0-based indices, merged by maximum
   channelName              - display name(s) for the manifest and the picker label
-  zSlice                   - plane to train on; -1 = middle
+  zPlanes                  - how many evenly-spaced Z planes per movie (1 = the middle)
   temporalScales           - already parsed + validated by Julia
   cumulativeWindow, droppedMetrics, epochs, embeddingDim, seed, normalise
   foregroundWeight, intensityWeight, temporalWeight
@@ -41,6 +48,12 @@ from cecelia.utils.atomic_io import write_json_atomic
 from cecelia.utils import coastal_utils
 
 
+# Advisory only, and deliberately not a limit: what is too much depends on the box, and refusing to
+# run would be worse than a run the user chose knowing the size. The threshold is "more than a
+# workstation comfortably holds alongside torch".
+MEMORY_WARN_GB = 16.0
+
+
 def _open(im_path):
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
@@ -48,27 +61,43 @@ def _open(im_path):
     return im_dat, dim_utils
 
 
-def _training_sequence(im_dat, dim_utils, params, log):
-    """`[T, H, W]` float32 in 0–255 — the same projection inference builds per tile.
+def z_planes(n_z, n):
+    """`n` evenly-spaced plane indices through a stack of `n_z` — the centres of `n` equal bins.
+
+    Bin centres, not `linspace(0, n_z - 1, n)`, and the difference matters at both ends of `n`:
+
+    - `n = 1` lands on `n_z // 2`, which is exactly the single-middle-plane rule this replaced. An
+      existing config keeps training on the same data, so the parameter can be introduced without
+      silently retraining every model on something else.
+    - No `n` picks plane 0 or `n_z - 1` until `n` approaches `n_z`. The top and bottom of an
+      intravital stack are usually outside the tissue, and `linspace` would spend two of five planes
+      on them — the model would learn from noise, and nothing in the run would say so.
+
+    Clamped to `n_z`: asking for more planes than exist yields each plane once, not duplicates
+    (which would silently weight those frames twice in the pool).
+    """
+    n_z = int(n_z)
+    n = max(1, min(int(n), n_z))
+    return sorted({int((i + 0.5) * n_z / n) for i in range(n)})
+
+
+def _training_sequence(im_dat, dim_utils, params, z):
+    """`[T, H, W]` float32 in 0–255 for ONE Z plane — the same projection inference builds per tile.
 
     Percentiles are taken over the WHOLE plane sequence, which is what makes this the global
     statistic `normaliseToWhole` reproduces at inference from the image pyramid. If the two ever
     diverge, the model sees a different photometric range than it was trained on.
+
+    Per plane, deliberately: each plane is normalised on its own statistics, the way inference
+    normalises the plane it is given. Sharing one range across planes would push the dim deep planes
+    toward zero and make them contribute nothing.
     """
     channels = list(params['trainChannels'])
-    z_slice = int(params.get('zSlice', -1))
     percentile_hi = float(params.get('normalise', 99.99))
 
     level = im_dat[0]
     ia = {ax: i for i, ax in enumerate(dim_utils.im_dim_order)}
     n_t = dim_utils.dim_val('T')
-
-    if 'Z' in ia:
-        n_z = dim_utils.dim_val('Z')
-        z = n_z // 2 if z_slice < 0 else min(z_slice, n_z - 1)
-        log.log(f'>> training on Z {z} of {n_z}')
-    else:
-        z = None
 
     projected = None
     for ch in channels:
@@ -109,37 +138,71 @@ def run(params):
     log.log(f'>> GPU: {gpu_device if use_gpu else "none (CPU)"}')
     log.log(f'>> {len(movies)} movie(s) to prepare')
 
-    sequences, used = [], []
+    n_planes = int(params.get('zPlanes', 1))
+    sequences, used, planes_used = [], [], {}
     for i, m in enumerate(movies):
         im_path = m['imPath']
-        log.log(f'>> [{i + 1}/{len(movies)}] {m.get("uID", "")}: {im_path}')
+        uid = m.get('uID', '')
+        log.log(f'>> [{i + 1}/{len(movies)}] {uid}: {im_path}')
         im_dat, dim_utils = _open(im_path)
 
         if not dim_utils.is_timeseries():
-            log.log(f'>> [WARN] {m.get("uID", "")} has no T axis — skipped')
+            log.log(f'>> [WARN] {uid} has no T axis — skipped')
             continue
         n_t = int(dim_utils.dim_val('T'))
         if n_t < max(scales) + 1:
             # The same guard CoastalUtils applies. Below this the largest scale produces no plane,
             # so this movie would contribute a DIFFERENT channel layout than the rest — which is a
             # silent corruption of the pooled training set, not just a short movie.
-            log.log(f'>> [WARN] {m.get("uID", "")} has {n_t} timepoints, needs '
+            log.log(f'>> [WARN] {uid} has {n_t} timepoints, needs '
                     f'{max(scales) + 1} for scale {max(scales)} — skipped')
             continue
 
-        sequences.append(_training_sequence(im_dat, dim_utils, params, log))
-        used.append(m.get('uID', ''))
-        log.log(f'>>   {sequences[-1].shape[0]} frames of {sequences[-1].shape[1:]}')
+        # Planes are resolved PER MOVIE because depth is: asking for 3 of a 31-plane stack and 3 of
+        # a 9-plane one are different indices, and a single global list would read past the end of
+        # the shallow one.
+        axes = set(dim_utils.im_dim_order)
+        if 'Z' in axes:
+            n_z = int(dim_utils.dim_val('Z'))
+            planes = z_planes(n_z, n_planes)
+            planes_used[uid] = planes
+            if len(planes) < n_planes:
+                log.log(f'>> [WARN] {uid} has {n_z} Z planes — training on {len(planes)}, '
+                        f'not the {n_planes} requested')
+        else:
+            planes = [None]
+
+        for z in planes:
+            sequences.append(_training_sequence(im_dat, dim_utils, params, z))
+        used.append(uid)
+        where = f'Z {planes}' if planes != [None] else '2D'
+        log.log(f'>>   {where}: {len(planes)} × {n_t} frames of {sequences[-1].shape[1:]}')
 
     if not sequences:
         raise ValueError('no usable movies — every image was skipped (see the warnings above)')
 
-    log.log(f'>> computing flow metrics per movie (scales {scales}, cumulative {cumulative})')
+    # Say how big this is BEFORE the expensive step. Every metric plane is held at once, so the
+    # pooled frame count — movies × Z planes × timepoints — is the number that decides whether the
+    # machine survives, and `zPlanes` multiplies it directly. Nothing on the form hints at that, and
+    # the failure mode is the run being killed tens of minutes in.
+    #
+    # Frames and megapixels, not an estimated GB: the metric count is only known once coastal has
+    # produced them, and the alternative — a copy of the metric list here — would be a second
+    # spelling of `train.jl`'s `FIXED_FLOW_METRICS` free to disagree with it. The real total is
+    # logged below, from the metrics that actually exist.
+    n_frames_pooled = sum(int(s.shape[0]) for s in sequences)
+    mpx = float(np.prod(sequences[0].shape[1:])) / 1e6
+    log.log(f'>> pooling {n_frames_pooled} frames from {len(sequences)} sequence(s) '
+            f'at {mpx:.2f} MP')
+
+    log.log(f'>> computing flow metrics for {len(sequences)} sequence(s) '
+            f'(scales {scales}, cumulative {cumulative})')
     all_frames, all_metrics = prepare_data_for_unet_batch(
         sequences, temporal_scales=scales, cumulative_window=cumulative)
 
-    # Pool AFTER the per-movie metrics: concatenating frames first would make flow cross a boundary
-    # between two recordings, which is not motion.
+    # Pool AFTER the per-sequence metrics: concatenating frames first would make flow cross a
+    # boundary between two recordings — or between two Z planes of one timepoint — which is not
+    # motion either way.
     frames_prep = np.concatenate(all_frames, axis=0)
     metrics = [{k: v for k, v in mm.items() if k not in dropped}
                for per_movie in all_metrics for mm in per_movie]
@@ -152,6 +215,17 @@ def run(params):
     metric_keys = sorted(metrics[0].keys())
     log.log(f'>> {frames_prep.shape[0]} pooled frames, {len(metric_keys)} metrics: '
             f'{", ".join(metric_keys)}')
+
+    # The real figure, from the metrics that exist. Still worth logging after the fact: training is
+    # the long part and it holds all of this, so a run that is going to die of memory says so here
+    # rather than at an arbitrary epoch — and the number tells you WHICH knob to turn, since it is
+    # linear in Z planes, images and timepoints alike.
+    metrics_gb = (frames_prep.shape[0] * float(np.prod(frames_prep.shape[1:]))
+                  * len(metric_keys) * 4 / 1024 ** 3)
+    log.log(f'>> ~{metrics_gb:.1f} GB of flow metrics held in memory')
+    if metrics_gb > MEMORY_WARN_GB:
+        log.log(f'>> [WARN] ~{metrics_gb:.0f} GB of metrics — if the run is killed, reduce '
+                f'Z planes, images or timepoints')
 
     # Keyed the way coastal keys its loss history, so the manifest can pair each curve with the
     # weight that scales it. `history` records the RAW term; the total is the weighted sum, so a term
@@ -210,7 +284,11 @@ def run(params):
         'foregroundWeight': float(params.get('foregroundWeight', 1.0)),
         'intensityWeight': float(params.get('intensityWeight', 1.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
-        'zSlice': int(params.get('zSlice', -1)),
+        'zPlanes': n_planes,
+        # The indices, not just the count: "3 planes" of a 31-deep stack and of a 9-deep one are
+        # different depths, and which ones a model saw is the question you ask when it does badly on
+        # a stack of a different thickness. Empty for 2D movies.
+        'zPlanesUsed': planes_used,
         'lossCurves': curves,
         'lossWeights': loss_weights,
         'trainedAt': _now_iso(),

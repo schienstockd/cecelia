@@ -145,8 +145,10 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     # ONE z plane, resolved here rather than passed through as `nothing`. `preview_region_bounds`
     # skips an axis it is given nothing for, so a null z hands the worker the WHOLE stack — which
     # then fails in `_as_cyx` with a reshape error about a size nothing in the request mentions.
-    # The default is the middle plane because that is what training reads (`_training_sequence`:
-    # `n_z // 2`), so the sheet shows the planes the model was actually fed.
+    # The default is the middle plane, which is where a single-plane training run reads
+    # (`train_run.z_planes(n_z, 1)` == `n_z // 2`). With `zPlanes > 1` a run spreads over the stack,
+    # so there is no one plane to default to — but this sheet is asked BEFORE a model exists and its
+    # question is "do these metrics look like cells here", which the slider answers by being moved.
     z_req = get(data, "z", nothing)
     z_idx = if haskey(d, "z")
         n_z = size(arr, d["z"])
