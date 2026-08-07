@@ -145,7 +145,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
           <label v-for="f in featureOptions" :key="f" class="feat-row" v-tooltip.right="'Show this feature as a heatmap row'">
             <input type="checkbox" :checked="features.includes(f)" @change="toggleFeature(f)" /> {{ label(f) }}
           </label>
-          <p v-if="!featureOptions.length" class="feat-empty cc-muted">No recorded features — re-run clustering, or this run predates feature tracking.</p>
+          <p v-if="!featureOptions.length" class="feat-empty cc-muted cc-fs-xs">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
       <select v-model="heatmapScale" class="hm-sel"
@@ -186,7 +186,7 @@ defineExpose({ exportImage, getCsv, exportSvg })
 .feat-list { position: absolute; z-index: 10; top: 1.7rem; left: 0; min-width: 12rem; max-height: 16rem; overflow-y: auto;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
 .feat-row { display: flex; align-items: center; gap: 5px; padding: 2px 3px; color: var(--cc-text); white-space: nowrap; }
-.feat-empty { font-size: var(--cc-fs-xs); margin: 4px; }   /* + .cc-muted (colour) */
+.feat-empty { margin: 4px; }   /* + .cc-muted .cc-fs-xs */
 .hm-sel { margin-left: 6px; }
 .hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
 /* .hm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */

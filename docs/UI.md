@@ -74,6 +74,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
+| Meta line carrying a WARNING or an ERROR | `.cc-muted-warn` / `.cc-muted-error` (+ a `.cc-fs-*` step) | `.cc-muted` plus a scoped `color:`, or an inline `style="color: var(--cc-sev-fail)"` |
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
 | A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
 | A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
@@ -126,6 +127,16 @@ shadowing `.cc-muted` with a byte-identical copy. `utils/cssScenarios.test.ts` n
 allow-list: per-site layout (`.cc-muted { margin-top: 0.3rem }`), descendants (`.panel .cc-muted`) and
 modifier compounds (`.cc-btn-bare.viewer-green`) are all legal by construction, so anything it reports is
 the bug. Add layout in scoped CSS; never re-state a property the utility itself declares.
+
+**A reason is not an exemption.** The shadowed-utility allow-list carried nine entries, each with a note
+that read as settled — "a tier down", "muted layout, danger colour" — and six of them were scenarios the
+axis already had room for: four wanted `.cc-muted` + a `.cc-fs-*` step, one restated the utility's own
+value, and one wanted `.cc-muted-error`, which did not exist only because `-warn` had shipped alone. That
+last one is the tell: a missing family member gets hand-rolled, so the SECOND site spells it a way no
+ratchet can see (an inline `style="color: …"`). Three entries remain, on the two grounds no utility can
+express: a size driven by a runtime CSS var (`--gate-font`, the vis Font size slider) and a deliberate
+`color: inherit`. Before adding an entry, check the utility does not already exist, or is not one
+modifier away from existing.
 
 **A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)
 and read as "the fields are too big" in every dialog — twice reported from the running app. The fix was

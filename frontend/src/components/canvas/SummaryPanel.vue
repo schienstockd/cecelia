@@ -810,7 +810,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
 
     <div class="sp-body">
       <div v-if="!series.length && !isInteraction" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
-      <div v-else-if="error" class="sp-msg sp-err cc-muted">{{ error }}</div>
+      <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
                  @auto-override="autoOverrides = $event" />
@@ -856,5 +856,4 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
 .sp-pop-row input[type="number"] { width: 3.6rem; padding: 2px 4px; }
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; padding: 12px; }
-.sp-err { color: var(--cc-danger); }
 </style>

@@ -359,6 +359,12 @@ body {
    Use this instead of stacking `.cc-muted` with a scoped `color:` rule, which shadows the utility it
    sits on (the `cssScenarios` ratchet flags exactly that). */
 .cc-muted-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-sm); }
+/* The family's missing member. `-warn` shipped alone, so every "this failed" meta line reached for the
+   colour directly — `SummaryPanel` as a scoped rule shadowing `.cc-muted` (parked on the ratchet's
+   allow-list as if deliberate), `SettingsModule` as an INLINE style, which no ratchet can see at all.
+   Two spellings of a scenario the axis already had room for. `--cc-sev-fail`, not `--cc-danger`:
+   severity semantics come from the severity palette (see its note on :root). */
+.cc-muted-error { color: var(--cc-sev-fail); font-size: var(--cc-fs-sm); }
 
 /* Empty / placeholder state — "nothing here yet" message. Centred, muted, padded; drop an icon /
    title / CTA inside for the rich variant (it's a flex column).
