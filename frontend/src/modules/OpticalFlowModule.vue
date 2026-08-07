@@ -26,7 +26,7 @@ const { defs: flowDefs, reload: reloadDefs } = useTaskDefs('opticalFlow')
 </script>
 
 <template>
-  <ModuleLayout module="opticalFlow" :show-attrs="true" :show-filter="true" plots-label="Flow model"
+  <ModuleLayout module="opticalFlow" :show-attrs="true" :show-filter="true" plots-label="Flow metrics"
     hint-key="opticalFlow" hint="Train on a smoothed movie; segment on the Segment page.">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner

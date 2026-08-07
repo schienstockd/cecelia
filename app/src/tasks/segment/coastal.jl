@@ -40,7 +40,7 @@ live_outputs(::CoastalSegment, params::AbstractDict) = segment_live_outputs(para
 task_previewable(::CoastalSegment) = true
 
 """
-    coastal_models_for_python(params, raw; on_log) -> Dict
+    coastal_models_for_python(params, raw; on_log, require_model) -> Dict
 
 The `models` bag as Python needs it: channel names resolved to 0-based indices and the model NAME
 resolved to its checkpoint path in the vault.
@@ -52,9 +52,14 @@ one translation instead of the preview hitting `int('CH3')` deep inside the runn
 The missing-model error is deliberately loud. A config-dir model does NOT travel with a `.ccbundle`
 export, so a project shared from another machine will name a model the recipient does not have;
 falling back to *some* model would produce a plausible wrong segmentation.
+
+`require_model = false` allows an empty model, for the ONE caller that legitimately has none: the
+flow-metrics contact sheet, which computes the metric planes so the user can decide what to train
+on. Segmentation always requires one — an empty model there is the failure above, not a mode.
 """
 function coastal_models_for_python(params::AbstractDict, raw::AbstractDict;
-                                   on_log::Function = _ -> nothing)::Dict{String,Any}
+                                   on_log::Function = _ -> nothing,
+                                   require_model::Bool = true)::Dict{String,Any}
     ch_names = ccid_channel_names(raw)
 
     models_json = get(params, "models", nothing)
@@ -69,8 +74,13 @@ function coastal_models_for_python(params::AbstractDict, raw::AbstractDict;
                                             what = "cellChannels")
 
         model_name = String(get(m, "model", ""))
-        isempty(strip(model_name)) && error(
-            "No optical-flow model selected. Train one on the Optical Flow page first.")
+        if isempty(strip(model_name))
+            require_model && error(
+                "No optical-flow model selected. Train one on the Optical Flow page first.")
+            m["model"] = ""
+            out[String(k)] = m
+            continue
+        end
         if !isfile(model_name)
             path = coastal_model_path(model_name)
             isnothing(path) && error(

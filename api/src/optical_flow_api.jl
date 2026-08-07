@@ -75,9 +75,14 @@ function api_optical_flow_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true))
 end
 
-# ── Model inspection for the canvas panel ───────────────────────────────────────
-# "What did this model learn": the flow metric planes, the probability map and the instances for one
-# timepoint, as PNGs the browser can show. These are CANVAS PLOTS — nothing here touches napari.
+# ── Flow metric planes for the canvas panel ─────────────────────────────────────
+# "What goes INTO the model": every flow metric plane for one timepoint, as PNGs the browser can
+# show, so the user can see which of them look like cells before choosing what to train on. A model
+# is OPTIONAL and only adds the probability map — the metrics are a property of the movie and the
+# temporal scales, and the question is asked before any model exists.
+#
+# No instances: those are segmentation output and the Segment page previews them already.
+# These are CANVAS PLOTS — nothing here touches napari.
 #
 # Deliberately NOT `api_preview_run`. That route exists to keep the viewer honest: it refuses unless
 # the image is the one open in napari, because a preview draws INTO the viewer. A canvas plot has no
@@ -97,8 +102,6 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     model_name  = String(get(data, "model", ""))
     (isempty(project_uid) || isempty(image_uid)) &&
         return 400, JSON3.write((; error = "projectUid + imageUid required"))
-    isempty(strip(model_name)) &&
-        return 400, JSON3.write((; error = "Select a model. Train one on the Optical Flow page first."))
 
     zp, task_dir, err = resolve_image_version(project_uid, image_uid, value_name)
     err === nothing || return 404, JSON3.write((; error = err))
@@ -108,6 +111,10 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
         "model"        => model_name,
         "matchAs"      => "base",
         "cellChannels" => get(data, "cellChannels", Any[])))
+    # With no model these ARE the feature set (`CoastalUtils._manifest` falls back to them); with one
+    # they are ignored, because a trained model's manifest must win over anything a panel sends.
+    haskey(data, "temporalScales") && (models["0"]["temporalScales"] = data["temporalScales"])
+    haskey(data, "cumulativeWindow") && (models["0"]["cumulativeWindow"] = data["cumulativeWindow"])
     params = Dict{String,Any}("valueName" => value_name, "models" => models,
                               "normaliseToWhole" => true)
     # merge any inference params the panel passes through, so it shows what the CURRENT settings do
@@ -116,7 +123,7 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     end
     prepared = try
         Dict{String,Any}("valueName" => value_name, "normaliseToWhole" => true,
-                         "models" => coastal_models_for_python(params, raw))
+                         "models" => coastal_models_for_python(params, raw; require_model = false))
     catch e
         return 400, JSON3.write((; error = e isa ErrorException ? e.msg : sprint(showerror, e),
                                    code = "params-not-previewable"))

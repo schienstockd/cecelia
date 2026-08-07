@@ -98,11 +98,67 @@
       "tip": "Frames summed for total displacement"
     },
     {
-      "key": "dropDeadMetrics",
-      "label": "Drop flat metrics",
-      "type": "bool",
-      "default": true,
-      "tip": "Omit divergence, vorticity and flow-structure alignment"
+      "key": "flowMetrics",
+      "label": "Metrics",
+      "type": "chipSelect",
+      "multiple": true,
+      "default": [
+        "acceleration",
+        "cell_boundary_likelihood",
+        "cumulative_mag",
+        "direction_stability",
+        "edge_strength",
+        "normal_flow",
+        "strain",
+        "tangential_flow"
+      ],
+      "tip": "Planes the model reads; add the per-scale magnitudes automatically",
+      "options": [
+        {
+          "label": "acceleration",
+          "value": "acceleration"
+        },
+        {
+          "label": "cell_boundary_likelihood",
+          "value": "cell_boundary_likelihood"
+        },
+        {
+          "label": "cumulative_mag",
+          "value": "cumulative_mag"
+        },
+        {
+          "label": "direction_stability",
+          "value": "direction_stability"
+        },
+        {
+          "label": "divergence",
+          "value": "divergence"
+        },
+        {
+          "label": "edge_strength",
+          "value": "edge_strength"
+        },
+        {
+          "label": "flow_structure_alignment",
+          "value": "flow_structure_alignment"
+        },
+        {
+          "label": "normal_flow",
+          "value": "normal_flow"
+        },
+        {
+          "label": "strain",
+          "value": "strain"
+        },
+        {
+          "label": "tangential_flow",
+          "value": "tangential_flow"
+        },
+        {
+          "label": "vorticity",
+          "value": "vorticity"
+        }
+      ]
     },
     {
       "key": "epochs",

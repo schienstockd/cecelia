@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import UmapView from '../plots/UmapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
-import FlowModelView from '../plots/FlowModelView.vue'
+import FlowMetricsView from '../plots/FlowMetricsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -30,10 +30,10 @@ export interface InteractiveView {
 // The flags are the surface "checkboxes": each host builds its picker with `pageViews`/`boardViews`
 // below, so a view appears on a surface with no host-side wiring (see docs/UI.md).
 //
-// They only work if the hosts actually READ them. `flowModel` shipped with `analysisBoard: true` and
-// never appeared, because `LayoutCanvas` filtered a hardcoded key list that the flag had no way to
-// reach — a silently dead checkbox. The helpers below exist so no host can hardcode that list again;
-// `interactiveViews.test.ts` pins that `LayoutCanvas` names no view key at all.
+// They only work if the hosts actually READ them. `flowMetrics` shipped with `analysisBoard: true`
+// and never appeared, because `LayoutCanvas` filtered a hardcoded key list that the flag had no way
+// to reach — a silently dead checkbox. The helpers below exist so no host can hardcode that list
+// again; `interactiveViews.test.ts` pins that `LayoutCanvas` names no view key at all.
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   umap: {
     label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true,
@@ -41,9 +41,10 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   },
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true },
   filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true, boardGroup: 'image' },
-  // The flow model's own inputs/outputs. Distinct from `filmstrip`, which is a napari SCREENSHOT
-  // montage — these planes are computed, are not viewer layers, and have no reason to become any.
-  flowModel: { label: 'Flow model', component: FlowModelView, opticalFlowPage: true, analysisBoard: true },
+  // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
+  // from `filmstrip`, which is a napari SCREENSHOT montage — these planes are computed, are not
+  // viewer layers, and have no reason to become any.
+  flowMetrics: { label: 'Flow metrics', component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true },
 }
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS

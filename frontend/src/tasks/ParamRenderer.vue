@@ -443,8 +443,10 @@ const pct = computed(() => {
       <span class="slider-val">{{ val }}</span>
     </div>
 
-    <!-- bool → shared toggle switch -->
-    <CcToggle v-else-if="param.type === 'bool'" v-tooltip.right="param.tip"
+    <!-- bool → shared toggle switch. No `v-tooltip`: `param-label` above already carries `param.tip`
+         on its info icon, and repeating it here renders the tooltip ON TOP of the switch you were
+         about to click. See `HEADING_COVERED` / `duplicateTooltips` in utils/uiCopy.ts. -->
+    <CcToggle v-else-if="param.type === 'bool'"
       :model-value="val as boolean" @update:model-value="val = $event" />
 
     <!-- text -->

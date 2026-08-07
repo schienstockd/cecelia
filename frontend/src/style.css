@@ -517,7 +517,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    `.controls-pinned` on itself). Two producers wear this class:
      • CanvasPanel's own #actions / #footer overlays (top / bottom `.bottom`);
      • an interactive VIEW whose toolbar lives inside the body (GatingStrategyView `.gs-bar`,
-       UmapView `.uv-ctrl`, ImageStripView `.is-bar`, FlowModelView `.fmv-ctrl`) — those tag their bar `.cc-panel-controls` and
+       UmapView `.uv-ctrl`, ImageStripView `.is-bar`, FlowMetricsView `.fmv-ctrl`) — those tag their bar `.cc-panel-controls` and
        give their root `position: relative`, so it anchors to the plot box, not the panel.
    This is why the analysis-board plots (and their PDF export) fill their slot instead of being squashed
    by a stack of controls. See docs/UI.md → "Auto-hide panel controls". */

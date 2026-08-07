@@ -197,7 +197,17 @@ const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|Chi
  * select counts as covered when a tipped label precedes it inside the same parent, which is the
  * ordinary label-then-control shape. A chip select with NO tipped heading anywhere is still reported.
  */
-const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect)$/
+const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect|CcToggle)$/
+
+/**
+ * The tooltip EXPRESSION as written — `'Reload'`, `param.tip`, `` `${n} cells` `` — or `null`.
+ *
+ * Compared as source text, not as a rendered string, because the duplicate that matters is written
+ * as one: `<label v-tooltip.left="param.tip">` above `<CcToggle v-tooltip.right="param.tip">` is the
+ * same tip twice, and no parser has to evaluate anything to see it.
+ */
+const TOOLTIP_ATTR = /v-tooltip(?:\.[A-Za-z]+)*\s*=\s*"([^"]*)"/
+const tooltipExpr = (attrs: string): string | null => TOOLTIP_ATTR.exec(attrs)?.[1]?.trim() ?? null
 
 /**
  * A `<button>` whose entire content is an icon — `<button><i class="pi pi-trash" /></button>`.
@@ -244,6 +254,11 @@ export interface UncoveredControl {
   line: number
 }
 
+export interface DuplicateTooltip extends UncoveredControl {
+  /** The repeated tooltip expression, as written. */
+  tooltip: string
+}
+
 /**
  * The settable controls — and icon-only buttons — in an SFC with no hover help reachable from them.
  *
@@ -272,10 +287,31 @@ export interface UncoveredControl {
  * @param src   full SFC source
  * @param path  the file's path — used only to skip the wrapper primitives' own definitions
  */
-export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
-  if (PRIMITIVE_SFC.test(path)) return []
+export const uncoveredControls = (src: string, path = ''): UncoveredControl[] =>
+  scanTooltips(src, path).uncovered
+
+/**
+ * Controls that repeat their heading's tooltip verbatim.
+ *
+ * The complement of `uncoveredControls`, and the same underlying fact seen from the other side: a
+ * tipped heading COVERS a chip row / swatch / toggle, so a second identical tooltip on the control
+ * adds nothing — and worse, it renders ON TOP of the control (Dominik, 2026-08-07: "it overlays the
+ * toggle button"). The blanket "every settable control carries its own `v-tooltip`" rule produced
+ * exactly this, so the two checks have to move together or fixing one re-breaks the other.
+ *
+ * Scoped to `HEADING_COVERED` — the controls where the tooltip lands on the hit target. A `<select>`
+ * or `<input>` repeating its label is redundant but harmless, and widening this would turn a
+ * "something is broken" signal into a style sweep.
+ */
+export const duplicateTooltips = (src: string, path = ''): DuplicateTooltip[] =>
+  scanTooltips(src, path).duplicates
+
+function scanTooltips(src: string, path = ''):
+    { uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[] } {
+  const none = { uncovered: [], duplicates: [] }
+  if (PRIMITIVE_SFC.test(path)) return none
   const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
-  if (!tpl) return []
+  if (!tpl) return none
 
   // Blank out comments rather than deleting them, so offsets stay usable for line numbers.
   const clean = tpl.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
@@ -289,11 +325,14 @@ export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
   for (const b of clean.matchAll(BUTTON)) if (isIconOnly(b[2]!)) iconButtonAt.add(b.index!)
 
   const out: UncoveredControl[] = []
+  const dupes: DuplicateTooltip[] = []
   // `tippedSibling` is per-DEPTH: a tipped <label> marks the row it opens, and the chip select that
   // follows it inside the same parent is covered by it. Reset on entering/leaving a parent so a
-  // heading cannot leak coverage into an unrelated block.
-  const open: { tag: string; tipped: boolean; tippedSibling: boolean }[] = []
+  // heading cannot leak coverage into an unrelated block. `siblingExpr` carries that heading's
+  // tooltip source alongside it, for the duplicate check below.
+  const open: { tag: string; tipped: boolean; tippedSibling: boolean; siblingExpr: string | null }[] = []
   let tippedSibling = false
+  let siblingExpr: string | null = null
   for (const m of clean.matchAll(OPEN_TAG)) {
     const [, closing, tag, attrs, selfClosing] = m
     if (closing) {
@@ -302,6 +341,7 @@ export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
       const at = open.map((e) => e.tag).lastIndexOf(tag!)
       if (at >= 0) {
         tippedSibling = open[at]!.tippedSibling
+        siblingExpr = open[at]!.siblingExpr
         open.length = at
       }
       continue
@@ -312,15 +352,20 @@ export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
                     (HEADING_COVERED.test(tag!) && tippedSibling)
     if ((settable || iconButtonAt.has(m.index!)) && !covered)
       out.push({ tag: tag!, line: lineAt(m.index!) })
-    if (tipped) tippedSibling = true
+    // The overlay case: this control is already explained by its heading AND repeats it word for
+    // word, so the second tooltip only covers the thing you were reaching for.
+    const expr = tipped ? tooltipExpr(attrs!) : null
+    if (HEADING_COVERED.test(tag!) && expr !== null && expr === siblingExpr)
+      dupes.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr })
+    if (tipped) { tippedSibling = true; siblingExpr = expr }
     if (!selfClosing && !VOID.test(tag!)) {
       // INHERITED into the child scope, not reset: the heading is the param row's label and the
       // chips often sit one wrapper deeper (`channel-select-wrap`). Restored on the close tag, so a
       // heading covers its own row and nothing after it.
-      open.push({ tag: tag!, tipped, tippedSibling })
+      open.push({ tag: tag!, tipped, tippedSibling, siblingExpr })
     }
   }
-  return out
+  return { uncovered: out, duplicates: dupes }
 }
 
 // Task-JSON `tip` fields carry the same budget, but they are backend files (`app/src/tasks/**`) and

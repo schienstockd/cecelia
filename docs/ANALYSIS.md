@@ -75,7 +75,7 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
   rendered by one `SummaryPanel` → `PlotChart`. Identical to `SummaryCanvas` (behaviour/summary pages).
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
   hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
-  (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow model** (`FlowModelView`). Surface
+  (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`). Surface
   flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
   board: `interactive` (default) / `clustering` / `image`).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`
@@ -88,7 +88,7 @@ No `LayoutCanvas` change.
 **A host must not name a view key.** Every optgroup comes from `boardViews(group)` (and a module page's
 picker from `pageViews(flag)`); `LayoutCanvas` mentions no view id at all, and
 `interactiveViews.test.ts` fails if one reappears. This is not tidiness: the board used to filter a
-hardcoded key list, so `flowModel` could set `analysisBoard: true`, pass review, and simply never
+hardcoded key list, so `flowMetrics` could set `analysisBoard: true`, pass review, and simply never
 appear — a flag wired to nothing fails silently, which is the worst kind.
 
 ### `docked` — the chrome switch

@@ -121,11 +121,25 @@ class CoastalUtils(SegmentationUtils):
 
     # ── Model + manifest ──────────────────────────────────────────────────────
 
+    # Keys a caller may supply directly when there is no trained model to read them from.
+    _FEATURE_KEYS = ('temporalScales', 'cumulativeWindow', 'droppedMetrics')
+
     def _manifest(self, model_params):
+        """The feature-set config for a model group.
+
+        A real manifest ALWAYS wins — inference must match training, and letting a task param
+        override it is the silent-channel-shift bug this whole contract exists to prevent. The
+        fallback to the group's own keys is for the case with no model at all: the flow-metrics
+        contact sheet computes the planes so the user can decide which are worth training on, and
+        it must honour the scales they picked rather than coastal's defaults.
+        """
         path = str(model_params.get('model', ''))
         if path not in self._manifest_cache:
             self._manifest_cache[path] = read_manifest(path)
-        return self._manifest_cache[path]
+        manifest = self._manifest_cache[path]
+        if manifest:
+            return manifest
+        return {k: model_params[k] for k in self._FEATURE_KEYS if k in model_params}
 
     def _get_inference(self, model_params):
         """A configured `LearnedAffinityInference` per model path + parameter set.

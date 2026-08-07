@@ -288,20 +288,29 @@ buttons, and **18** task params with no `tip` — `segment/branching.json` worst
 **The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
 a `tip`.** Both are ratcheted to zero with an empty allow-list.
 
-**One exception, and it is a real one: chips are covered by their heading.** `ChipSelect` and
-`SwatchSelect` are not one hit target, they are many small ones, and a tooltip anchored to the row
-renders **on top of the chips** — so the hover help hides the things you were about to click. Here
-the blanket rule is actively wrong rather than merely redundant (Dominik, 2026-08-07, seeing it on
-the channel selection). A chip select therefore counts as covered when a tipped label or heading
-precedes it inside the same row, including one wrapper deeper — the ordinary label-then-control
-shape, and where the explanation belongs anyway. A chip select with no tipped heading anywhere is
-still reported, and the exemption is chips only: a plain `select` beside a tipped label still needs
-its own. `HEADING_COVERED` in `utils/uiCopy.ts`; the cases are pinned in `uiCopy.test.ts`.
+**One exception, and it is a real one: chips, swatches and toggles are covered by their heading.**
+`ChipSelect`/`SwatchSelect` are not one hit target but many small ones, and `CcToggle` is a switch you
+aim at — a tooltip anchored there renders **on top of the control**, so the hover help hides the thing
+you were about to click. Here the blanket rule is actively wrong rather than merely redundant
+(Dominik, 2026-08-07, on the channel selection and then the bool params' switch). Such a control
+counts as covered when a tipped label or heading precedes it inside the same row, including one
+wrapper deeper — the ordinary label-then-control shape, and where the explanation belongs anyway. One
+with no tipped heading anywhere is still reported, and the exemption is these three: a plain `select`
+beside a tipped label still needs its own.
+
+**Enforced from BOTH sides, because fixing one re-breaks the other.** The presence ratchet is what put
+a second `param.tip` on every bool param's switch in the first place. So `duplicateTooltips` fails on
+a chip row / swatch / toggle that repeats its heading's tooltip **expression for expression** —
+`<label v-tooltip.left="param.tip">` above `<CcToggle v-tooltip.right="param.tip">` is the same tip
+twice, and the second one is the one that covers the switch. Comparison is on the source text, so it
+catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
+directions pinned in `uiCopy.test.ts`.
 
 | Surface | Checker | Ratchet |
 |---|---|---|
 | SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |
 | **Icon-only buttons** — a `<button>` whose whole content is an `<i>` glyph | same | same |
+| A chip/swatch/toggle repeating its heading's tooltip | `duplicateTooltips` (same file) | same |
 | `params[].tip` in `app/src/tasks/**` and `docs/examples/custom-modules/**` | `each_spec` + `collect_settable!` | `app/test/runtests.jl` |
 
 Both land in `pixi run ui-copy` as *Settable control or task param with NO tooltip*, with a
@@ -1398,7 +1407,7 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
 - **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
   `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
-  panel in `state`, `ImageStripView` `.is-bar`, `FlowModelView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
+  panel in `state`, `ImageStripView` `.is-bar`, `FlowMetricsView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
   then auto-hides it by the same trigger. One mechanism for every control surface; don't add a second.
 - **Opt OUT with `:auto-hide="false"`** where you interact with the plot constantly and controls popping

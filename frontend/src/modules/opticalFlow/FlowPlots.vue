@@ -45,10 +45,15 @@ const zoomRef = ref<HTMLElement | null>(null)     // the scaled workspace (panel
 // MODULE_PREFIXES, so the panels persist with the image at 1/{uid}/moduleCanvases.json).
 const ckey = computed(() => `flow:model:${props.imageUids[0] ?? 'none'}`)
 const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
-  useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowModel' }), ckey)
+  useCanvasPanels<FlowPanelState>(zoomRef, () => ({ kind: 'flowMetrics' }), ckey)
 
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state)
 const { showVault } = useViewState(shared, { showVault: true })
+
+// migrate persisted panel kinds to the current registry keys, like ClusterPlots does — a restored
+// canvas holding a renamed kind renders nothing at all, silently.
+const KIND_ALIASES: Record<string, string> = { flowModel: 'flowMetrics' }
+for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.state.kind = a }
 
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
   () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
@@ -78,7 +83,7 @@ const ctx = computed(() => ({
 // Seed one flow-model plot for an image that has no canvas yet — on first bind AND after the
 // selection moves (the reactive key rebinds without remounting). Only when EMPTY, so a restored
 // canvas is left alone and remounts don't stack duplicates.
-watch(ckey, () => { if (panels.value.length === 0) addKind('flowModel') }, { immediate: true })
+watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { immediate: true })
 </script>
 
 <template>

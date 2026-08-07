@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
-  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls,
+  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -212,7 +212,13 @@ describe('uncoveredControls', () => {
     expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
   })
 
-  it('the exemption is chips only — a plain select still needs its own tooltip', () => {
+  it('a tipped heading also covers a toggle — the tooltip would sit on the switch', () => {
+    const src = `<template><div><label v-tooltip.left="param.tip">Overwrite</label>
+                 <CcToggle /></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('the exemption is the overlay-prone controls — a plain select still needs its own tooltip', () => {
     const src = `<template><div><label v-tooltip="'a'">A</label><select /></div></template>`
     expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
   })
@@ -411,5 +417,51 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
       }
     }
     expect(bare).toEqual([])
+  })
+
+  // The other half of the same rule, and the reason it has to be enforced from both sides: the
+  // presence ratchet above is what put a second `param.tip` on every bool param's switch, where it
+  // rendered on top of the control. Fixing one without pinning the other just re-breaks it.
+  it('no chip row, swatch or toggle repeats the tooltip its heading already carries', () => {
+    const dupes: string[] = []
+    for (const [path, src] of sfcs)
+      for (const d of duplicateTooltips(src, path)) dupes.push(`${path}:${d.line} <${d.tag}> ${d.tooltip}`)
+    expect(dupes).toEqual([])
+  })
+})
+
+describe('duplicateTooltips', () => {
+  it('flags a toggle repeating its heading, expression for expression', () => {
+    const src = `<template><div><label v-tooltip.left="param.tip">Overwrite</label>
+                 <CcToggle v-tooltip.right="param.tip" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([{ tag: 'CcToggle', line: 2, tooltip: 'param.tip' }])
+  })
+
+  it('flags a repeated literal too', () => {
+    const src = `<template><div><label v-tooltip="'Frame lags'">Scales</label>
+                 <ChipSelect v-tooltip="'Frame lags'" /></div></template>`
+    expect(duplicateTooltips(src).map(d => d.tag)).toEqual(['ChipSelect'])
+  })
+
+  it('leaves a control whose tooltip says something the heading does not', () => {
+    const src = `<template><div><label v-tooltip="'Frame lags'">Scales</label>
+                 <ChipSelect v-tooltip="'Pick at least one'" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+
+  it('leaves an uncovered control that carries its own tooltip', () => {
+    expect(duplicateTooltips(`<template><ChipSelect v-tooltip="'Planes'" /></template>`)).toEqual([])
+  })
+
+  it('is scoped to the overlay-prone controls — a select repeating its label is only redundant', () => {
+    const src = `<template><div><label v-tooltip="param.tip">A</label>
+                 <select v-tooltip="param.tip" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
+  })
+
+  it('does not pair a control with a heading from an earlier, closed row', () => {
+    const src = `<template><div><label v-tooltip="param.tip">A</label></div>
+                 <div><CcToggle v-tooltip="param.tip" /></div></template>`
+    expect(duplicateTooltips(src)).toEqual([])
   })
 })

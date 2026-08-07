@@ -112,6 +112,37 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(cumulative, 3)
             self.assertEqual(dropped, ('divergence', 'vorticity'))
 
+    def test_a_group_with_no_model_configures_the_feature_set_itself(self):
+        """The flow-metrics contact sheet has no checkpoint to read scales from.
+
+        It computes the metric planes so the user can decide which are worth training on, so it must
+        honour the scales they picked rather than falling back to coastal's defaults.
+        """
+        cu = _utils(model_params={'model': '', 'temporalScales': [1, 3],
+                                  'cumulativeWindow': 7, 'droppedMetrics': ['strain']})
+        self.assertEqual(cu._manifest({'model': '', 'temporalScales': [1, 3],
+                                       'cumulativeWindow': 7, 'droppedMetrics': ['strain']}),
+                         {'temporalScales': [1, 3], 'cumulativeWindow': 7,
+                          'droppedMetrics': ['strain']})
+        self.assertEqual(cu.TEMPORAL_RADIUS, 3)
+
+    def test_a_real_manifest_beats_whatever_the_caller_sent(self):
+        """Inference must match TRAINING. A task param that could override the manifest is exactly
+        the silent channel shift the manifest exists to prevent."""
+        from cecelia.utils.coastal_utils import CoastalUtils, manifest_path
+
+        with tempfile.TemporaryDirectory() as d:
+            pt = os.path.join(d, 'trained.pt')
+            with open(manifest_path(pt), 'w', encoding='utf-8') as f:
+                json.dump({'temporalScales': [1, 2], 'droppedMetrics': ['vorticity']}, f)
+
+            mp = {'model': pt, 'cellChannels': [0],
+                  'temporalScales': [16], 'droppedMetrics': ['strain']}
+            cu = CoastalUtils({'taskDir': d, 'models': {'0': mp}}, _DimUtils())
+            self.assertEqual(cu._manifest(mp),
+                             {'temporalScales': [1, 2], 'droppedMetrics': ['vorticity']})
+            self.assertEqual(cu.TEMPORAL_RADIUS, 2)
+
 
 class TemporalRadiusTest(unittest.TestCase):
     """The radius must be max(scales), NOT max(scales)-1.

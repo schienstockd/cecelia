@@ -413,6 +413,33 @@ end
     @test_throws ParamValidationError parse_temporal_scales("1.5")
 end
 
+# Which metric planes the model reads. Same silent-failure family as the scales above: coastal stacks
+# what it is given in sorted-key order and zero-fills the rest, so an inference set that differs from
+# the training set shifts every later channel and raises nothing.
+@testset "flow_dropped_metrics" begin
+    # nothing = a caller from before the picker existed → the shipped default, not "train on all 11"
+    @test sort(Cecelia.flow_dropped_metrics(nothing)) ==
+          sort(collect(Cecelia.FLAT_FLOW_METRICS))
+
+    # the picker's own default: the three flat planes are the ones left out
+    default_pick = ["acceleration", "cell_boundary_likelihood", "cumulative_mag",
+                    "direction_stability", "edge_strength", "normal_flow", "strain",
+                    "tangential_flow"]
+    @test Cecelia.flow_dropped_metrics(default_pick) ==
+          ["divergence", "flow_structure_alignment", "vorticity"]
+
+    # an arbitrary subset is allowed — the defaults are a starting point, not a rule
+    @test Cecelia.flow_dropped_metrics(["divergence", "vorticity"]) ==
+          [m for m in Cecelia.FIXED_FLOW_METRICS if !(m in ("divergence", "vorticity"))]
+    @test isempty(Cecelia.flow_dropped_metrics(collect(Cecelia.FIXED_FLOW_METRICS)))
+
+    # per-scale magnitudes are NOT choices (they follow temporalScales), so naming one drops nothing
+    @test Cecelia.flow_dropped_metrics(["mag_1", "strain"]) ==
+          [m for m in Cecelia.FIXED_FLOW_METRICS if m != "strain"]
+
+    @test_throws ErrorException Cecelia.flow_dropped_metrics(String[])
+end
+
 # A model name reaches the filesystem. Not a security boundary — the user owns the machine — but a
 # stray separator would write outside the vault and the model would then never appear in the picker.
 @testset "flow_model_target" begin

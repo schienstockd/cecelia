@@ -78,13 +78,40 @@ already hosts (`docs/ANALYSIS.md`, `ImageStripView.vue`). So:
 That keeps the "would be nice if we could use the same canvas approach" true where it earns its
 keep, without forcing it where it doesn't.
 
-**BUILT — and it lives on the page, not only on the board.** `FlowModelView` is one interactive-registry
+**BUILT — and it lives on the page, not only on the board.** `FlowMetricsView` is one interactive-registry
 entry flagged for both surfaces (`opticalFlowPage`, `analysisBoard`); the page hosts it through
 `opticalFlow/FlowPlots.vue` in `ModuleLayout`'s `#plots` slot — the same shell the cluster and summary
 canvases use (`useCanvasPanels` + `InteractivePanel` + zoom, key `flow:model:{imageUid}`). It was
 board-only at first, which was wrong twice over: a module page's plots belong on the module page, and
 the board flag was in fact dead (the picker filtered a hardcoded key list, so the plot appeared
 nowhere). See `docs/UI.md` → *Generic plot-integration interface*.
+
+### The plot answers "what goes IN", not "what came out"
+
+The paragraph above got the plot's *question* wrong, and it took Dominik's figure to show it. Built as
+"what did this model learn", the panel required a trained model, ran inference, and showed the metric
+planes **after** dropping — so the one view that would let you judge the metric set was the one thing
+it hid. And you cannot ask it before training, which is the only time the answer changes anything.
+
+The question is **which of these 15 planes look like cells**. That needs no model: the metrics are a
+property of the movie and the temporal scales. So:
+
+- **no model → the contact sheet**: the projected input plus every metric plane. `CoastalUtils._manifest`
+  falls back to the model group's own `temporalScales`/`cumulativeWindow` when there is no checkpoint
+  to read them from; a real manifest still always wins, because inference must match training.
+- **a model → one extra plane, the probability map.** That is the UNet's own output and genuinely
+  cannot exist without it. Planes the model was trained *without* are marked, not hidden.
+- **never instances.** Instances are what segmentation produces and the Segment page previews them
+  through the normal preview path. A second instance renderer here would be the same picture computed
+  a different way — the divergent-re-implementation trap, in the module that already has a plan
+  section warning about it.
+
+**And the user picks the set.** `dropDeadMetrics` was a single bool that dropped exactly the three
+planes MY rank-AUC table scored flat on ONE dataset — a finding presented as a setting. It is now
+`flowMetrics`, a chipSelect over the 11 fixed planes (the per-scale `mag_{n}` are not ticks: they follow
+`temporalScales`, so offering both would let the two disagree). The three still ship unticked, as a
+default rather than a rule. `flow_dropped_metrics` maps the selection to the manifest's
+`droppedMetrics`, which is the existing contract inference already honours.
 
 ## Open questions
 

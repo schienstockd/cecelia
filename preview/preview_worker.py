@@ -586,15 +586,25 @@ def _preview_coastal(ctx):
 
 
 def _preview_flow_inspect(ctx):
-    """"What did this model learn" — the flow metric planes + probability map, as PNGs.
+    """"What goes INTO the model" — every flow metric plane for one timepoint, as PNGs.
+
+    The question this answers is *which of these look like cells*, asked BEFORE training, so it
+    needs no model: the metrics are a property of the movie and the temporal scales, not of any
+    checkpoint. That is why a model is optional here and, when one is given, only adds the
+    probability map (the UNet's own output, which obviously cannot exist without it).
+
+    Deliberately NOT instances. Instances are what SEGMENTATION produces, and the segmentation
+    module page already previews them through the normal preview path — a second instance renderer
+    here would be the same picture computed a different way.
+
+    Every metric is returned, including the ones a chosen model was trained without: hiding those
+    would defeat the point, since deciding what to drop is the reason to look. Which ones a model
+    ignores comes back in `droppedMetrics` so the panel can mark them.
 
     A BACKEND rather than a new message type, so the region maths, the image handle, the norm-param
-    cache and the reply envelope are all the ones `preview` already has. Reuses the same
-    `CoastalUtils.predict_slice` inputs the run builds, so the planes shown are the planes the model
-    is actually fed — a separate compute path would be free to drift from it.
-
-    Returns `planes`, not `layers`: these are canvas plots, not viewer overlays. Nothing here goes
-    near napari.
+    cache and the reply envelope are all the ones `preview` already has — and the window/projection
+    is built by the same `CoastalUtils` the real run uses, so these are the planes it is actually
+    fed. Returns `planes`, not `layers`: canvas plots, nothing near napari.
     """
     from cecelia.utils.coastal_utils import temporal_config
     from cecelia.utils.plane_render import plane_png
@@ -607,6 +617,7 @@ def _preview_flow_inspect(ctx):
     seg = CoastalUtils(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     mp = models[sorted(models.keys())[0]]
+    has_model = bool(str(mp.get('model', '')).strip())
     scales, cumulative, dropped = temporal_config(seg._manifest(mp))
 
     t_now = int(ctx.bounds.get('T', (0, 1))[0])
@@ -622,15 +633,23 @@ def _preview_flow_inspect(ctx):
 
     window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
     frame, metrics = seg._flow_metrics(window, t_now - lo, scales, cumulative)
-    metrics = {k: v for k, v in metrics.items() if k not in dropped}
-    prob, instances, _ = seg._get_inference(mp).predict_frame(frame, metrics)
 
-    planes = [('input (projected)', frame), ('probability', prob), ('instances', instances)]
+    planes = [('input (projected)', frame)]
+    if has_model:
+        # The model gets its OWN metric set — the one it was trained on. Passing the full dict would
+        # shift every channel after the first dropped plane, which coastal accepts without error.
+        used = {k: v for k, v in metrics.items() if k not in dropped}
+        prob, _instances, _ = seg._get_inference(mp).predict_frame(frame, used)
+        planes.append(('probability', prob))
     planes += [(k, metrics[k]) for k in sorted(metrics)]
+
     return {
         'planes': [{'name': n, 'png': base64.b64encode(plane_png(a)).decode('ascii')}
                    for n, a in planes],
         'metricKeys': sorted(metrics),
+        'droppedMetrics': sorted(dropped) if has_model else [],
+        'temporalScales': list(scales),
+        'hasModel': has_model,
     }
 
 

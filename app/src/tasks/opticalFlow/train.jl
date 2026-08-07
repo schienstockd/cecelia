@@ -33,11 +33,36 @@ function parse_temporal_scales(s)::Vector{Int}
     sort!(unique!(out))
 end
 
+# Every fixed metric plane coastal computes. The per-scale `mag_{n}` planes are deliberately NOT
+# here: they follow `temporalScales`, so offering them as separate ticks would let the two disagree.
+const FIXED_FLOW_METRICS = ("acceleration", "cell_boundary_likelihood", "cumulative_mag",
+                            "direction_stability", "divergence", "edge_strength",
+                            "flow_structure_alignment", "normal_flow", "strain",
+                            "tangential_flow", "vorticity")
+
 # Flat, non-flow metric planes measured on intravital data — cell/background ratios 0.99, 1.00 and
 # 1.65 (the last is salt-and-pepper across the whole field). They are also the three the original
 # rank-AUC table scored at 0.51–0.53. Dropping them takes the model from 16 to 13 input channels.
-# Recorded in the manifest, because inference must drop exactly the same ones.
+# This is only the shipped DEFAULT (unticked in the picker), not a rule: the numbers are from ONE
+# intravital dataset, and the Flow metrics plot exists so the user can judge their own.
 const FLAT_FLOW_METRICS = ("divergence", "vorticity", "flow_structure_alignment")
+
+"""
+    flow_dropped_metrics(selected) -> Vector{String}
+
+The fixed metric planes to EXCLUDE, given the ones the user ticked. Recorded in the manifest,
+because inference must drop exactly the same ones — `predict_frame` stacks what it is given in
+sorted-key order and zero-fills the rest, so a mismatch shifts every later channel silently.
+
+`nothing` means "no picker in this call" (a chain or REPL caller written before it existed) and
+keeps the shipped default rather than training on all 11.
+"""
+function flow_dropped_metrics(selected)::Vector{String}
+    isnothing(selected) && return collect(FLAT_FLOW_METRICS)
+    keep = Set(String.(selected))
+    isempty(keep) && error("Select at least one flow metric to train on.")
+    [m for m in FIXED_FLOW_METRICS if !(m in keep)]
+end
 
 """
     flow_model_target(name; overwrite) -> String
@@ -121,7 +146,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
 
     isempty(movies) && (on_log("[ERROR] No usable images — nothing to train on."); return nothing)
 
-    dropped = Bool(get(params, "dropDeadMetrics", true)) ? collect(FLAT_FLOW_METRICS) : String[]
+    dropped = flow_dropped_metrics(get(params, "flowMetrics", nothing))
 
     on_log("[INFO] Training on $(length(movies)) image(s) of $(length(imgs)) selected")
     on_log("[INFO] Model:  $model_path")

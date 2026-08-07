@@ -24,19 +24,19 @@ describe('interactive view surface flags', () => {
   it('groups the views the hosts special-case', () => {
     expect(inBoardGroup('umap', 'clustering')).toBe(true)     // board treats it as a cluster slot
     expect(inBoardGroup('filmstrip', 'image')).toBe(true)
-    expect(inBoardGroup('flowModel', 'interactive')).toBe(true)
+    expect(inBoardGroup('flowMetrics', 'interactive')).toBe(true)
   })
 
   it('the flow model is offered on its module page AND the board', () => {
-    expect(pageViews('opticalFlowPage').map(v => v.key)).toEqual(['flowModel'])
-    expect(boardViews('interactive').map(v => v.key)).toContain('flowModel')
+    expect(pageViews('opticalFlowPage').map(v => v.key)).toEqual(['flowMetrics'])
+    expect(boardViews('interactive').map(v => v.key)).toContain('flowMetrics')
   })
 
   it('the cluster page offers only cluster-page views', () => {
     expect(pageViews('clusterPage').map(v => v.key)).toEqual(['umap'])
   })
 
-  // The recurrence guard. `flowModel` shipped with `analysisBoard: true` and never showed up, because
+  // The recurrence guard. `flowMetrics` shipped with `analysisBoard: true` and never showed up, because
   // LayoutCanvas filtered a HARDCODED key list (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`) that the flag could not
   // reach — the flag was a checkbox wired to nothing, and nothing failed. A board host must therefore
   // name no view key at all; it derives every group from the registry.
