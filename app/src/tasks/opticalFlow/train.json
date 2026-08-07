@@ -42,6 +42,16 @@
       "tip": "Evenly-spaced planes per movie; each multiplies the frames pooled"
     },
     {
+      "key": "maxFrames",
+      "label": "Max frames per movie",
+      "type": "int",
+      "min": 0,
+      "max": 2000,
+      "step": 10,
+      "default": 0,
+      "tip": "Contiguous frames each movie contributes; 0 = all, so long movies dominate"
+    },
+    {
       "key": "temporalScales",
       "label": "Temporal scales",
       "type": "chipSelect",

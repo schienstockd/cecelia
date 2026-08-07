@@ -1,4 +1,6 @@
-"""Which Z planes an optical-flow training run reads — `app/src/tasks/opticalFlow/train_run.py`.
+"""What an optical-flow training run SAMPLES — `app/src/tasks/opticalFlow/train_run.py`.
+
+Which Z planes, and which frames of each movie.
 
 The runner is executed by path (`run_py`), never imported, so nothing else in the suite touches it.
 This covers the one piece of arithmetic in it that is easy to get subtly wrong and impossible to
@@ -79,6 +81,59 @@ class ZPlanesTest(unittest.TestCase):
         """A chain or REPL caller can pass 0 or a negative; the run must not end up with no data."""
         self.assertEqual(self.z_planes(31, 0), [15])
         self.assertEqual(self.z_planes(31, -3), [15])
+
+
+@unittest.skipUnless(_RUNNER.is_file(), 'app/ not present (IO-library-only install)')
+class FrameWindowTest(unittest.TestCase):
+    """The per-movie frame cap.
+
+    It exists for a bias nothing in the run reported: with no cap, pooling is weighted by how long
+    each recording happened to last, so a 200-frame movie contributes ~7x what a 30-frame one does
+    and the model is mostly fitted to whichever image the microscope was left on longest. The pooled
+    frame count is one number and says nothing about the split.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.frame_window = staticmethod(_load_runner().frame_window)
+
+    def test_no_cap_is_the_whole_movie(self):
+        for max_frames in (0, -1, None):
+            self.assertEqual(self.frame_window(200, max_frames, 42, 0), (0, 200),
+                             f'max_frames={max_frames}')
+
+    def test_a_cap_at_or_above_the_length_does_not_cut(self):
+        self.assertEqual(self.frame_window(30, 30, 42, 0), (0, 30))
+        self.assertEqual(self.frame_window(30, 500, 42, 0), (0, 30))
+
+    def test_the_window_is_contiguous_and_the_requested_length(self):
+        """Contiguous because the metrics are temporal: `mag_8` is the flow between t and t+8, so a
+        random subset is not a shorter movie, it is a movie with the motion taken out."""
+        for movie in range(6):
+            start, stop = self.frame_window(200, 50, 42, movie)
+            self.assertEqual(stop - start, 50)
+            self.assertGreaterEqual(start, 0)
+            self.assertLessEqual(stop, 200)
+
+    def test_it_is_reproducible_from_the_seed(self):
+        """The seed is in the manifest, so the window has to be recoverable from it."""
+        a = [self.frame_window(200, 50, 42, i) for i in range(5)]
+        b = [self.frame_window(200, 50, 42, i) for i in range(5)]
+        self.assertEqual(a, b)
+
+    def test_a_different_seed_gives_a_different_view(self):
+        """Always starting at 0 samples one part of every experiment — as often as not before the
+        interesting event, and at whatever bleaching level the start happens to have."""
+        seeds = {self.frame_window(200, 50, s, 0)[0] for s in range(12)}
+        self.assertGreater(len(seeds), 1, 'every seed produced the same start')
+
+    def test_each_movie_is_seeded_independently(self):
+        """Adding or reordering images must not reshuffle the other movies' windows — otherwise a
+        re-run with one extra image is not comparable with the previous one."""
+        before = [self.frame_window(200, 50, 42, i) for i in (0, 1, 2)]
+        # movie 3 appended; 0-2 keep their windows
+        after = [self.frame_window(200, 50, 42, i) for i in (0, 1, 2, 3)]
+        self.assertEqual(before, after[:3])
 
 
 if __name__ == '__main__':

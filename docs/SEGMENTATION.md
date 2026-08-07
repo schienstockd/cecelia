@@ -360,6 +360,27 @@ and the actual indices per image as `zPlanesUsed`, because "3 planes" of a 31-de
 Pooled frames are movies × planes × timepoints and the metric stack is ~11–15 float32 planes per
 frame, so the plane count is a straight memory multiplier.
 
+**`maxFrames` caps what each movie contributes, because pooling is otherwise weighted by recording
+length.** A 200-frame movie contributes ~7× what a 30-frame one does, so without a cap the model is
+mostly fitted to whichever image the microscope was left on longest — and nothing showed it, since
+the frame count is a single pooled number. The window is **contiguous** (the metrics are temporal;
+a random subset of frames is not a shorter movie, it is a movie with the motion taken out) and its
+start is **derived from the seed and the movie index** — reproducible from the manifest, different
+across runs, and stable when images are added or reordered. Always starting at frame 0 would sample
+one part of every experiment, as often as not before the interesting event.
+
+Two ordering constraints, both silent when broken:
+
+- **Normalise over the whole movie, then cut.** The percentiles are the global statistic
+  `normaliseToWhole` reproduces at inference. Cutting first would scale a 50-frame window by its own
+  percentiles while inference scales the 200-frame movie by the movie's — the same structure at a
+  different brightness.
+- **Check `max(scales) + 1` against the CAPPED length.** A 200-frame movie capped to 5 produces no
+  `mag_8` plane, which corrupts the pooled channel layout exactly as a genuinely short movie would.
+
+The manifest records `maxFrames` and `frameWindows` (uID → `[start, stop)`, only for the movies
+actually cut).
+
 **The vault.** `<config_dir>/models/coastalModels/`, same drop-in convention as `cellposeModels/`
 above and the same live enumeration, with two differences: there is nothing built in and nothing
 bundled (an empty vault means a picker with only "None"), and only `.pt` files are entries — the

@@ -25,6 +25,10 @@ export interface FlowManifest {
   nFrames?: number
   /** How many evenly-spaced Z planes per movie. */
   zPlanes?: number
+  /** Cap on the contiguous frames each movie contributed; 0 = all. */
+  maxFrames?: number
+  /** uID → `[start, stop)` — only the movies that were actually cut. */
+  frameWindows?: Record<string, number[]>
   /** uID → the plane indices that movie contributed; depth differs per image. */
   zPlanesUsed?: Record<string, number[]>
   /** Pre-`zPlanes` models: a single plane index, `-1` meaning the middle. */
@@ -42,6 +46,7 @@ const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
+  'maxFrames', 'frameWindows',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves',
 ])
@@ -122,9 +127,18 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
     ...Object.entries(m.lossWeights ?? {}).map(([term, w]) => field(`${term} weight`, w)),
   ]
 
+  // Which frames, not just how many. The window is seed-derived, so without it "frames 40–89 of
+  // 200" is only recoverable by re-deriving it from the seed by hand — and the pooled total cannot
+  // say whether a movie was cut or simply short.
+  const cut = Object.entries(m.frameWindows ?? {})
   const source: (DetailField | null)[] = [
     field('Trained', m.trainedAt),
     field('Frames pooled', m.nFrames),
+    field('Max frames/movie', m.maxFrames ? m.maxFrames : m.maxFrames === 0 ? 'all' : undefined),
+    cut.length
+      ? { label: `Windows (${cut.length})`, mono: true,
+          value: cut.map(([uid, [a, b]]) => `${uid}: ${a}–${(b ?? 0) - 1}`).join('  ') }
+      : null,
     m.sourceImages?.length
       ? { label: `Images (${m.sourceImages.length})`, value: m.sourceImages.join(', '), mono: true }
       : null,

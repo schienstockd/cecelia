@@ -51,6 +51,23 @@ describe('modelDetailGroups', () => {
     expect(fieldsOf({ zPlanes: 1, zPlanesUsed: {} }, 'Input')).toEqual({ 'Z planes': '1 (middle)' })
   })
 
+  // The frame cap is invisible in `nFrames` — a pooled total cannot say whether a movie was cut or
+  // simply short, and the window is seed-derived so it is not recoverable by inspection either.
+  it('reports the frame cap, spelling out an uncapped run rather than showing 0', () => {
+    expect(fieldsOf({ maxFrames: 0 }, 'Source')['Max frames/movie']).toBe('all')
+    expect(fieldsOf({ maxFrames: 50 }, 'Source')['Max frames/movie']).toBe('50')
+  })
+
+  it('names the movies that were actually cut, and their windows', () => {
+    expect(fieldsOf({ maxFrames: 50, frameWindows: { long: [40, 90] } }, 'Source')['Windows (1)'])
+      .toBe('long: 40–89')
+  })
+
+  it('shows no window row when nothing was cut', () => {
+    expect(fieldsOf({ maxFrames: 50, frameWindows: {} }, 'Source'))
+      .toEqual({ 'Max frames/movie': '50' })
+  })
+
   it('says "none" when a model kept every metric, and lists them when it did not', () => {
     expect(fieldsOf({ metricKeys: ['mag_1', 'strain'] }, 'Flow metrics')).toEqual({
       'Planes read': '2', Set: 'mag_1, strain', Excluded: 'none',

@@ -29,6 +29,7 @@ Parameter contract (JSON written by Julia):
   trainChannels            - 0-based indices, merged by maximum
   channelName              - display name(s) for the manifest and the picker label
   zPlanes                  - how many evenly-spaced Z planes per movie (1 = the middle)
+  maxFrames                - cap on the contiguous frames each movie contributes; 0 = all
   temporalScales           - already parsed + validated by Julia
   cumulativeWindow, droppedMetrics, epochs, embeddingDim, seed, normalise
   foregroundWeight, intensityWeight, temporalWeight
@@ -81,12 +82,41 @@ def z_planes(n_z, n):
     return sorted({int((i + 0.5) * n_z / n) for i in range(n)})
 
 
-def _training_sequence(im_dat, dim_utils, params, z):
+def frame_window(n_t, max_frames, seed, movie_idx):
+    """`(start, stop)` — the contiguous run of frames one movie contributes.
+
+    CONTIGUOUS because the metrics are temporal: `mag_8` is the flow between frame *t* and *t+8*, so
+    a random subset of frames is not a shorter movie, it is a movie with the motion taken out.
+
+    The start is SEED-DERIVED rather than 0. Always taking the head of every movie samples one part
+    of the experiment — before the interesting event as often as not, and at whatever bleaching level
+    the start happens to have — and no amount of pooling fixes a window that is always in the same
+    place. Deriving it from the seed and the movie index makes it reproducible (the seed is in the
+    manifest) while giving different runs different views.
+
+    `max_frames <= 0` means no cap.
+    """
+    n_t = int(n_t)
+    if max_frames is None or int(max_frames) <= 0 or int(max_frames) >= n_t:
+        return 0, n_t
+    n_use = int(max_frames)
+    # Seeded per movie, so adding or reordering images does not reshuffle the others' windows.
+    rng = np.random.default_rng([int(seed), int(movie_idx)])
+    start = int(rng.integers(0, n_t - n_use + 1))
+    return start, start + n_use
+
+
+def _training_sequence(im_dat, dim_utils, params, z, window=None):
     """`[T, H, W]` float32 in 0–255 for ONE Z plane — the same projection inference builds per tile.
 
-    Percentiles are taken over the WHOLE plane sequence, which is what makes this the global
-    statistic `normaliseToWhole` reproduces at inference from the image pyramid. If the two ever
-    diverge, the model sees a different photometric range than it was trained on.
+    Percentiles are taken over the WHOLE plane sequence — every timepoint, including those outside
+    `window` — which is what makes this the global statistic `normaliseToWhole` reproduces at
+    inference from the image pyramid. If the two ever diverge, the model sees a different photometric
+    range than it was trained on.
+
+    That ordering is the whole subtlety of the frame cap: normalise over the movie, THEN cut. Cutting
+    first would scale a 50-frame window by its own percentiles while inference scales the 200-frame
+    movie by the movie's, and the mismatch is silent — the same structure at a different brightness.
 
     Per plane, deliberately: each plane is normalised on its own statistics, the way inference
     normalises the plane it is given. Sharing one range across planes would push the dim deep planes
@@ -118,6 +148,9 @@ def _training_sequence(im_dat, dim_utils, params, z):
         projected = arr if projected is None else np.maximum(projected, arr)
 
     assert projected.shape[0] == n_t, f'expected {n_t} frames, got {projected.shape[0]}'
+    # Cut only now — after every percentile has seen the whole movie (see the docstring).
+    if window is not None:
+        projected = projected[window[0]:window[1]]
     return (projected * coastal_utils.PROJECTION_MAX).astype(np.float32)
 
 
@@ -139,7 +172,13 @@ def run(params):
     log.log(f'>> {len(movies)} movie(s) to prepare')
 
     n_planes = int(params.get('zPlanes', 1))
-    sequences, used, planes_used = [], [], {}
+    seed = int(params.get('seed', 42))
+    # A cap per movie, not a total. Without one, pooling is weighted by how long each recording
+    # happened to run: a 200-frame movie contributes ~7x what a 30-frame one does, so the model is
+    # mostly fitted to whichever image the microscope was left on longest. Nothing in the run or the
+    # manifest showed that — the frame count is a single pooled number.
+    max_frames = int(params.get('maxFrames', 0))
+    sequences, used, planes_used, windows = [], [], {}, {}
     for i, m in enumerate(movies):
         im_path = m['imPath']
         uid = m.get('uID', '')
@@ -150,13 +189,21 @@ def run(params):
             log.log(f'>> [WARN] {uid} has no T axis — skipped')
             continue
         n_t = int(dim_utils.dim_val('T'))
-        if n_t < max(scales) + 1:
+        start, stop = frame_window(n_t, max_frames, seed, i)
+        n_use = stop - start
+        # Checked against the CAPPED length, not the movie's. A 200-frame movie capped to 5 produces
+        # no `mag_8` plane, which is the same silent corruption as a genuinely short movie — the
+        # guard has to see what the run will actually feed coastal.
+        if n_use < max(scales) + 1:
             # The same guard CoastalUtils applies. Below this the largest scale produces no plane,
             # so this movie would contribute a DIFFERENT channel layout than the rest — which is a
             # silent corruption of the pooled training set, not just a short movie.
-            log.log(f'>> [WARN] {uid} has {n_t} timepoints, needs '
+            of = f'{n_use} of {n_t}' if n_use < n_t else f'{n_t}'
+            log.log(f'>> [WARN] {uid} has {of} timepoints, needs '
                     f'{max(scales) + 1} for scale {max(scales)} — skipped')
             continue
+        if n_use < n_t:
+            windows[uid] = [start, stop]
 
         # Planes are resolved PER MOVIE because depth is: asking for 3 of a 31-plane stack and 3 of
         # a 9-plane one are different indices, and a single global list would read past the end of
@@ -173,10 +220,11 @@ def run(params):
             planes = [None]
 
         for z in planes:
-            sequences.append(_training_sequence(im_dat, dim_utils, params, z))
+            sequences.append(_training_sequence(im_dat, dim_utils, params, z, (start, stop)))
         used.append(uid)
         where = f'Z {planes}' if planes != [None] else '2D'
-        log.log(f'>>   {where}: {len(planes)} × {n_t} frames of {sequences[-1].shape[1:]}')
+        span = f'{n_use} frames' if n_use == n_t else f'frames {start}–{stop - 1} of {n_t}'
+        log.log(f'>>   {where}: {len(planes)} × {span} of {sequences[-1].shape[1:]}')
 
     if not sequences:
         raise ValueError('no usable movies — every image was skipped (see the warnings above)')
@@ -284,6 +332,10 @@ def run(params):
         'foregroundWeight': float(params.get('foregroundWeight', 1.0)),
         'intensityWeight': float(params.get('intensityWeight', 1.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
+        'maxFrames': max_frames,
+        # Only the movies that were actually cut. The window is seed-derived, so this is what makes
+        # "which frames did it see" answerable without re-deriving it from the seed by hand.
+        'frameWindows': windows,
         'zPlanes': n_planes,
         # The indices, not just the count: "3 planes" of a 31-deep stack and of a 9-deep one are
         # different depths, and which ones a model saw is the question you ask when it does badly on

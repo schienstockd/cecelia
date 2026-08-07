@@ -171,6 +171,7 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            channelName      = join([string(ch_names[c + 1]) for c in channels
                                     if 0 <= c < length(ch_names)], "+"),
            zPlanes          = Int(get(params, "zPlanes", 1)),
+           maxFrames        = Int(get(params, "maxFrames", 0)),
            temporalScales   = scales,
            cumulativeWindow = Int(get(params, "cumulativeWindow", 5)),
            droppedMetrics   = dropped,
