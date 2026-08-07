@@ -158,6 +158,11 @@ CHUNK_SEPARATOR_DEFAULT = 'flat'
 #: (v2 `0/0/36/0/8/0/0`, v3 `0/0/c/36/0/8/0/0`), so the format costs nothing there either way.
 _V3_FLAT_CHUNK_KEY = {'name': 'default', 'configuration': {'separator': '.'}}
 
+#: The OME-NGFF spec version each zarr format declares. Fixed, not configurable: 0.5 is the version
+#: that introduced the `ome` attribute a v3 store must carry, and 0.4 is the shape our v2 multiscales
+#: already have (`axes` + `coordinateTransformations`, both 0.4 additions).
+NGFF_VERSION_BY_FORMAT = {2: '0.4', 3: '0.5'}
+
 
 def chunk_key_encoding(zarr_format, separator):
     """`create_array`'s `chunk_key_encoding` for a format + separator.
@@ -479,6 +484,28 @@ def write_ngff_attrs(group, updates):
     else:
         for k, v in updates.items():
             group.attrs[k] = v
+
+
+def write_multiscales_attrs(group, ms_meta, zarr_format):
+    """Stamp a freshly built ``multiscales`` onto a group, **where this format keeps it, versioned**.
+
+    The one place the two shapes are written, because they differ twice over: 0.5 nests under `ome`
+    and carries the spec version THERE, while 0.4 keeps `multiscales` at the top level and versions
+    each entry. Three writers had the same `if zarr_format >= 3` inline (`create_multiscales`,
+    `open_multiscales_for_writing`, `segmentation_utils._write_labels_zarr`) and all three declared
+    the version only on the v3 branch — so every v2 store WE wrote had no NGFF version at all, which
+    the image-metadata modal renders as a blank because there is genuinely nothing there. A reader is
+    then left to assume a version; napari-ome-zarr picks its newest parser.
+
+    Note the version does NOT go on the entry for v3: 0.5 moved it to `ome`, and a per-entry `version`
+    is not a valid key there. Same reason this is one helper and not a shared `version=` argument to
+    `multiscales_metadata` — the builder does not know the format, and should not have to.
+    """
+    if int(zarr_format) >= 3:
+        group.attrs['ome'] = {'version': NGFF_VERSION_BY_FORMAT[3], 'multiscales': ms_meta}
+    else:
+        group.attrs['multiscales'] = [
+            {'version': NGFF_VERSION_BY_FORMAT[2], **entry} for entry in ms_meta]
 
 
 def ngff_multiscales(group):
@@ -1040,7 +1067,13 @@ def write_calibration(path, dim_utils, axes=None):
     built = multiscales_metadata(store_axes, nscales, scale_for_axis=scale_for_axis,
                                  keyword=keyword, unit_for_axis=unit_for_axis)[0]
     g = zarr.open_group(series_base(path), mode='a')
-    write_ngff_attrs(g, {'multiscales': [{**ms, **built}]})   # v3 keeps these under `ome`
+    entry = {**ms, **built}
+    # A re-stamp is also the repair path for a store written before the version was declared, so fill
+    # it in when absent. v2 ONLY: 0.5 moved the version to `ome` (where `write_ngff_attrs` keeps it),
+    # and a per-entry `version` is not a valid key there.
+    if _group_format(g) < 3:
+        entry.setdefault('version', NGFF_VERSION_BY_FORMAT[2])
+    write_ngff_attrs(g, {'multiscales': [entry]})   # v3 keeps these under `ome`
 
     # OME-XML half — only the calibration attrs; the rest of the sidecar (channels, planes) is the
     # source's and stays untouched.
@@ -1112,13 +1145,9 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     ms_meta = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
         unit_for_axis=unit_for_axis)
-    # OME-NGFF 0.5 (which is what a zarr v3 store must declare) nests everything under `ome` and
-    # carries the spec version there; 0.4 keeps `multiscales` at the top level and versions each entry.
-    # `ngff_attrs` is the read-side counterpart — one place per direction.
-    if zarr_format >= 3:
-        multiscales_zarr.attrs['ome'] = {'version': '0.5', 'multiscales': ms_meta}
-    else:
-        multiscales_zarr.attrs['multiscales'] = ms_meta
+    # Stamped where this format keeps it, versioned — see `write_multiscales_attrs`. `ngff_attrs` is
+    # the read-side counterpart; one place per direction.
+    write_multiscales_attrs(multiscales_zarr, ms_meta, zarr_format)
 
     if isinstance(im_array, dask.array.core.Array):
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
@@ -1252,12 +1281,8 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     ms_meta = multiscales_metadata(
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword,
         unit_for_axis=unit_for_axis)
-    # NGFF 0.5 nests under `ome` and versions there; 0.4 keeps multiscales top-level. Same branch as
-    # `create_multiscales`, because the two must produce the same layout (see this docstring).
-    if zarr_format >= 3:
-        multiscales_zarr.attrs['ome'] = {'version': '0.5', 'multiscales': ms_meta}
-    else:
-        multiscales_zarr.attrs['multiscales'] = ms_meta
+    # Same stamp as `create_multiscales`, because the two must produce the same layout (see docstring).
+    write_multiscales_attrs(multiscales_zarr, ms_meta, zarr_format)
 
     pchunks = plane_chunks(tuple(shape), dim_utils)
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,

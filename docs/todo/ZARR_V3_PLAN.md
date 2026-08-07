@@ -226,12 +226,31 @@ defaulting — but as an *option* it is clearly worth exposing.
 * Tests — **done**: `test-py` (523), `test-api`, `test-pkg` all green, each asserting the two formats
   AGREE rather than hardcoding expectations twice.
 
-### Phase 2 — Report (the metadata modal)
+### Phase 2 — Report (the metadata modal) ✅ built
 
-Surface, per image version and label set: **zarr format**, **NGFF version**, **chunk shape**,
-**shard shape** (or "none"), and the codec chain. Extend the existing
-`store_compression` → `GET /api/images/stores` path that the modal already renders; do not add a
-route. Keep the copy to values, not prose (`docs/UI.md` → *UI copy*).
+Surfaced per image version and label set: **zarr format**, **NGFF version**, **chunk shape**,
+**shard shape** (or "none"), the **chunk-key style**, and the codec. Served by the existing
+`store_compression` → `GET /api/images/stores` path the modal already rendered; no new route. Copy is
+values, not prose (`docs/UI.md` → *UI copy*).
+
+**Presentation — three shapes were tried, and the failure of the first two is the reason for the
+third.** Six technical facts per stored version is more than a table row holds: as extra columns it
+was unreadably dense, and as one `·`-joined second line
+(`zarr v2 · NGFF 0.4 · chunks 1×1×1×1024×1024 · not sharded · nested keys`, at 10px) it read as prose
+you had to parse to tell a chunk from a shard. What ships is **one card per stored thing**: what it IS
+on the head row (value name · `zarr v2 (NGFF 0.4)` · size), what it is MADE OF underneath as labelled
+pairs (`codec zstd + shuffle`, `chunks …`, `shard none`, `keys flat`). Formatting lives in
+`frontend/src/utils/storeFormat.ts` (`storeFormatTitle`/`storeFormatFacts`), unit-tested; the SFC only
+lays it out.
+
+**Fixed while doing it: our own v2 stores declared no NGFF version at all.** The modal renders an
+absent version as nothing, which is what exposed it. Three writers carried the same
+`if zarr_format >= 3` inline and every one of them stamped the version only on the v3 branch, so each
+correction, crop and label set we wrote was version-less while bioformats2raw's imports were not — a
+reader with no version has to assume one. Collapsed into `zarr_utils.write_multiscales_attrs`, which
+puts it where the format keeps it: on the entry for 0.4, on `ome` for 0.5 (where a per-entry `version`
+is not valid). A calibration re-stamp fills it in for stores already on disk, which is the only repair
+path — nothing rewrites pixels to fix metadata. Mutation-verified.
 
 ### Phase 3 — Write ✅ built
 

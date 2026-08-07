@@ -356,5 +356,75 @@ class FlatChunkKeyTest(unittest.TestCase):
         self.assertEqual('.', meta['chunk_key_encoding']['configuration']['separator'])
 
 
+class NgffVersionStampTest(unittest.TestCase):
+    """Every store WE write declares its NGFF version, in the place its format keeps it.
+
+    It did not, for v2. Three writers carried the same `if zarr_format >= 3` inline and all three set
+    the version only on the v3 branch, so every v2 store we produced — every correction, crop and label
+    set — had no version at all, while bioformats2raw's imports did. Invisible until the image-metadata
+    modal started reporting the format, where it renders as a blank because nothing is there. A reader
+    with no version has to assume one; napari-ome-zarr picks its newest parser.
+    """
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dark, self.arr, self.du = _fixture()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _attrs(self, path):
+        import zarr
+        return dict(zarr.open_group(path, mode='r').attrs)
+
+    def _write(self, name, **kw):
+        p = os.path.join(self.tmp, name)
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, **kw)
+        return p
+
+    def test_a_v2_store_versions_its_multiscales_entry(self):
+        attrs = self._attrs(self._write('v2.ome.zarr', zarr_format=2))
+        self.assertEqual('0.4', attrs['multiscales'][0].get('version'))
+
+    def test_a_v3_store_versions_ome_and_NOT_the_entry(self):
+        # 0.5 moved the version to `ome`; a per-entry `version` is not a valid key there, so stamping
+        # both would produce a store that validates in neither direction
+        attrs = self._attrs(self._write('v3.ome.zarr', zarr_format=3))
+        self.assertEqual('0.5', attrs['ome']['version'])
+        self.assertNotIn('version', attrs['ome']['multiscales'][0])
+
+    def test_the_streaming_writer_and_the_label_writer_agree_with_it(self):
+        # the same stamp, because a correction and a label set must not describe themselves differently
+        # from an image written in one go
+        for fmt in (2, 3):
+            p = os.path.join(self.tmp, f'stream{fmt}.ome.zarr')
+            g, _, _ = zarr_utils.open_multiscales_for_writing(
+                p, self.arr.shape, self.arr.dtype, dim_utils=self.du, nscales=1, zarr_format=fmt)
+            attrs = dict(g.attrs)
+            if fmt >= 3:
+                self.assertEqual('0.5', attrs['ome']['version'])
+            else:
+                self.assertEqual('0.4', attrs['multiscales'][0].get('version'))
+
+    def test_the_version_survives_a_calibration_restamp(self):
+        # the re-stamp merges over what is on disk, so it must not drop the version it finds...
+        p = self._write('restamp.ome.zarr', zarr_format=2)
+        self.assertTrue(zarr_utils.write_calibration(p, self.du))
+        self.assertEqual('0.4', self._attrs(p)['multiscales'][0].get('version'))
+
+    def test_a_restamp_REPAIRS_a_store_written_before_the_version_was_declared(self):
+        # ...and it is the repair path for the stores already on disk: they only gain a version when
+        # something re-stamps them, since nothing rewrites pixels to fix metadata
+        import zarr
+        p = self._write('legacy.ome.zarr', zarr_format=2)
+        g = zarr.open_group(p, mode='a')
+        ms = [dict(e) for e in g.attrs['multiscales']]
+        ms[0].pop('version', None)
+        g.attrs['multiscales'] = ms
+        self.assertNotIn('version', self._attrs(p)['multiscales'][0], 'setup did not remove it')
+
+        self.assertTrue(zarr_utils.write_calibration(p, self.du))
+        self.assertEqual('0.4', self._attrs(p)['multiscales'][0].get('version'))
+
+
 if __name__ == '__main__':
     unittest.main()

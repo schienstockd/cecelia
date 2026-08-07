@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { formatShape, storeFormatLine } from './storeFormat'
+import { formatShape, storeFormatFacts, storeFormatTitle } from './storeFormat'
+
+/** `[{k, v}]` → `{k: v}`, so an expectation reads as the facts and not as array indices. */
+const asMap = (s: Parameters<typeof storeFormatFacts>[0]) =>
+  Object.fromEntries(storeFormatFacts(s).map(f => [f.k, f.v]))
 
 describe('formatShape', () => {
   it('joins the FULL shape, never abbreviating to the XY pair', () => {
@@ -16,48 +20,80 @@ describe('formatShape', () => {
   })
 })
 
-describe('storeFormatLine', () => {
-  it('describes a v2 store as not sharded', () => {
-    expect(storeFormatLine({ zarrFormat: 2, ngffVersion: '0.4', chunks: [1, 1, 1, 512, 512] }))
-      .toBe('zarr v2 · NGFF 0.4 · chunks 1×1×1×512×512 · not sharded')
+describe('storeFormatTitle', () => {
+  it('brackets the NGFF version after the zarr format', () => {
+    expect(storeFormatTitle({ zarrFormat: 2, ngffVersion: '0.4' })).toBe('zarr v2 (NGFF 0.4)')
+    expect(storeFormatTitle({ zarrFormat: 3, ngffVersion: '0.5' })).toBe('zarr v3 (NGFF 0.5)')
+  })
+
+  it('drops the bracket when the NGFF version is absent, and never infers it', () => {
+    // not hypothetical: stores our own v2 writers produced before `write_multiscales_attrs` carry no
+    // version at all. Inferring 0.4 from "zarr v2" would state as read something never written.
+    expect(storeFormatTitle({ zarrFormat: 2 })).toBe('zarr v2')
+    expect(storeFormatTitle({ zarrFormat: 2, ngffVersion: null })).toBe('zarr v2')
+  })
+
+  it('is empty when the store could not be read, so the caller says so once', () => {
+    expect(storeFormatTitle(null)).toBe('')
+    expect(storeFormatTitle(undefined)).toBe('')
+    expect(storeFormatTitle({})).toBe('')
+  })
+})
+
+describe('storeFormatFacts', () => {
+  it('leaves format and NGFF to the title — they are not repeated here', () => {
+    // the whole point of the split: two crowded rows became one line plus a title
+    expect(asMap({ zarrFormat: 2, ngffVersion: '0.4', chunks: [1, 1, 1, 512, 512] }))
+      .toEqual({ chunks: '1×1×1×512×512', shard: 'none' })
+  })
+
+  it('LABELS every value rather than joining them into a sentence', () => {
+    const facts = storeFormatFacts({
+      zarrFormat: 3, label: 'zstd + shuffle', chunks: [1, 1, 1, 32, 32],
+      shard: [1, 1, 1, 64, 64], separator: '/',
+    })
+    expect(facts.map(f => f.k)).toEqual(['codec', 'chunks', 'shard', 'keys'])
+    for (const f of facts) {
+      expect(f.k).not.toBe('')
+      expect(f.v).not.toBe('')
+    }
+  })
+
+  it('shows the codec first, as the API described it', () => {
+    // blosc's shuffle is spelled differently per bioformats2raw version; that normalisation lives in
+    // the API's `_describe_compressor`, and re-deriving a label here would be the second copy
+    expect(storeFormatFacts({ zarrFormat: 2, label: 'zstd + shuffle' })[0])
+      .toEqual({ k: 'codec', v: 'zstd + shuffle' })
+    expect(asMap({ zarrFormat: 2 })).not.toHaveProperty('codec')
   })
 
   it('names the chunk-key separator rather than printing a bare slash', () => {
     // it decides how many DIRECTORIES the store costs (20,933 nested vs 4 flat on one 1.7 GB import),
     // and a bare `/` in a readout reads as a path fragment
-    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512], separator: '/' }))
-      .toContain('nested keys')
-    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512], separator: '.' }))
-      .toContain('flat keys')
+    expect(asMap({ zarrFormat: 2, chunks: [1, 512, 512], separator: '/' }).keys).toBe('nested')
+    expect(asMap({ zarrFormat: 2, chunks: [1, 512, 512], separator: '.' }).keys).toBe('flat')
     // absent -> omitted, not guessed: the DEFAULT differs per format ('.' for v2, '/' for v3)
-    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512] })).not.toContain('keys')
+    expect(asMap({ zarrFormat: 2, chunks: [1, 512, 512] })).not.toHaveProperty('keys')
   })
 
   it('reports chunk AND shard for a sharded v3 store', () => {
     // the two are easy to swap; the readout has to state both so a wrong one is visible
-    expect(storeFormatLine({
-      zarrFormat: 3, ngffVersion: '0.5',
-      chunks: [1, 1, 1, 32, 32], shard: [1, 1, 1, 64, 64],
-    })).toBe('zarr v3 · NGFF 0.5 · chunks 1×1×1×32×32 · shard 1×1×1×64×64')
+    expect(asMap({ zarrFormat: 3, chunks: [1, 1, 1, 32, 32], shard: [1, 1, 1, 64, 64] }))
+      .toEqual({ chunks: '1×1×1×32×32', shard: '1×1×1×64×64' })
   })
 
-  it('says "not sharded" explicitly rather than omitting it', () => {
+  it('says shard "none" explicitly rather than omitting the fact', () => {
     // omitting would make "unsharded" and "we could not read the shape" look the same
-    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512] })).toContain('not sharded')
-    expect(storeFormatLine({ zarrFormat: 3, chunks: [1, 512, 512], shard: [] })).toContain('not sharded')
-    expect(storeFormatLine({ zarrFormat: 3, chunks: [1, 512, 512], shard: null })).toContain('not sharded')
+    expect(asMap({ zarrFormat: 2, chunks: [1, 512, 512] }).shard).toBe('none')
+    expect(asMap({ zarrFormat: 3, chunks: [1, 512, 512], shard: [] }).shard).toBe('none')
+    expect(asMap({ zarrFormat: 3, chunks: [1, 512, 512], shard: null }).shard).toBe('none')
   })
 
-  it('is empty when nothing is known, so the caller can skip the line', () => {
-    expect(storeFormatLine(null)).toBe('')
-    expect(storeFormatLine(undefined)).toBe('')
-    expect(storeFormatLine({})).toBe('')
-    // a store row that only carries a size (missing/unreadable store) contributes no format line
-    expect(storeFormatLine({ chunks: null, shard: null })).toBe('')
-  })
-
-  it('omits parts it does not have rather than printing placeholders', () => {
-    expect(storeFormatLine({ zarrFormat: 2 })).toBe('zarr v2 · not sharded')
-    expect(storeFormatLine({ ngffVersion: '0.5' })).toBe('NGFF 0.5 · not sharded')
+  it('is empty when nothing is known, so the caller can skip the row', () => {
+    expect(storeFormatFacts(null)).toEqual([])
+    expect(storeFormatFacts(undefined)).toEqual([])
+    expect(storeFormatFacts({})).toEqual([])
+    // a store row that only carries a size (missing/unreadable store) contributes no facts
+    expect(storeFormatFacts({ chunks: null, shard: null })).toEqual([])
   })
 })

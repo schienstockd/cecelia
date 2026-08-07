@@ -607,11 +607,8 @@ class SegmentationUtils:
         g = zarr.open_group(out_path, mode='w', zarr_format=fmt)
         ms_meta = zarr_utils.multiscales_metadata(
             label_axes, nscales, scale_for_axis=ax_to_scale)
-        # NGFF 0.5 nests under `ome`; 0.4 keeps multiscales top-level. Same branch as the image writers.
-        if fmt >= 3:
-            g.attrs['ome'] = {'version': '0.5', 'multiscales': ms_meta}
-        else:
-            g.attrs['multiscales'] = ms_meta
+        # Same stamp as the image writers — where this format keeps it, versioned.
+        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
 
         chunks = self._label_chunks(tuple(label_shape), label_axes)
         level0 = g.create_array('0', shape=tuple(label_shape),
