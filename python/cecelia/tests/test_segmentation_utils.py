@@ -314,3 +314,58 @@ class LabelSmoothingTest(unittest.TestCase):
         for z in (0, 1, 3, 4):
             self.assertEqual(int((out[z] == 1).sum()), 0, f'label leaked onto plane {z}')
         self.assertGreater(int((out[2] == 1).sum()), 0)
+
+
+class PhysicalUnitsTest(unittest.TestCase):
+    """Every spatial param is MICRONS. A pixel value silently means something else the moment the
+    zoom changes, which defeats the one-value-per-set rule the parameter design rests on."""
+
+    class _Dim:
+        def __init__(self, x=0.5, y=0.5):
+            self._x, self._y = x, y
+
+        def im_physical_size(self, ax, default=1.0):
+            return self._x if ax == 'x' else self._y
+
+    def _seg(self, params, px=0.5):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, *a, **k):
+                raise NotImplementedError
+
+        return _Stub({'taskDir': '/tmp', **params}, self._Dim(px, px))
+
+    def test_lengths_convert_by_pixel_size(self):
+        seg = self._seg({'labelSmoothing': 2.0}, px=0.5)     # 0.5 um/px → 2 um = 4 px
+        self.assertAlmostEqual(seg.label_smoothing, 4.0)
+
+    def test_areas_convert_by_pixel_AREA_not_by_length(self):
+        """The mistake this catches: dividing an area by the pixel SIZE instead of the pixel area,
+        which is silently 2x off at 0.5 um/px and worse elsewhere."""
+        seg = self._seg({'minCellSize': 10.0}, px=0.5)       # 10 um^2 / 0.25 um^2 per px = 40 px
+        self.assertEqual(seg.min_cell_size, 40)
+        self.assertNotEqual(seg.min_cell_size, 20)           # what a length conversion would give
+
+    def test_off_stays_off(self):
+        seg = self._seg({'minCellSize': 0, 'cellSizeMax': 0,
+                         'labelExpansion': 0, 'labelErosion': 0, 'labelSmoothing': 0}, px=0.5)
+        self.assertEqual((seg.min_cell_size, seg.cell_size_max), (0, 0))
+        self.assertEqual((seg.label_expansion, seg.label_erosion), (0, 0))
+        self.assertEqual(seg.label_smoothing, 0.0)
+
+    def test_a_set_radius_never_rounds_away_to_off(self):
+        """A control the user moved must do something; rounding 0.3 px to 0 reads as broken."""
+        seg = self._seg({'labelExpansion': 0.1}, px=1.0)      # 0.1 px
+        self.assertEqual(seg.label_expansion, 1)
+
+    def test_missing_calibration_falls_back_to_one_um_per_px(self):
+        """An uncalibrated image must not crash or silently scale by zero — um and px coincide."""
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+
+        class _Stub(SegmentationUtils):
+            def predict_slice(self, *a, **k):
+                raise NotImplementedError
+
+        seg = _Stub({'taskDir': '/tmp', 'labelExpansion': 3.0}, None)
+        self.assertEqual(seg.label_expansion, 3)

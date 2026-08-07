@@ -380,10 +380,14 @@ means something different the moment the zoom changes, which defeats the one-val
 cellpose's `cellDiameter`), and coastal's own API stays in pixels, correctly: it is an array library
 and knows nothing about calibration.
 
-Not converted, deliberately: `minCellSize`, `cellSizeMax`, `labelExpansion`, `labelErosion`,
-`blockSize`, `overlap`. They pre-date this and are shared with cellpose, so reinterpreting their
-units would silently change what an existing pipeline's saved value means. The result is a form that
-mixes µm and px — ugly, and the honest option until those are migrated deliberately.
+`minCellSize`, `cellSizeMax`, `labelExpansion` and `labelErosion` followed (2026-08-07) — they are
+base params shared with cellpose, so this **reinterprets any value an existing pipeline had saved**:
+a `minCellSize` of 50 used to mean 50 px and now means 50 µm². Done deliberately rather than left as
+a mixed-unit form. Sizes are AREAS (µm², converted by pixel area — dividing by the pixel *size*
+instead is silently 2× off at 0.5 µm/px), and a radius the user set never rounds down to "off".
+
+Still px, and correctly so: `blockSize` and `overlap`. Those describe the TILING, which is about
+memory and array layout, not about cells.
 
 **Run `segment.coastalMeasure`, not `segment.coastal`.** Same as cellpose: the bare segmenter writes
 label stores and nothing else, so there is no `.h5ad` and therefore no gating, tracking or analysis

@@ -62,13 +62,18 @@ class SegmentationUtils:
         self.label_overlap = float(params.get('labelOverlap', 0.0))
         self.match_threshold = float(params.get('matchThreshold', 0.3))
         self.remove_unmatched = bool(params.get('removeUnmatched', False))
-        self.min_cell_size = int(params.get('minCellSize', 0))
-        self.cell_size_max = int(params.get('cellSizeMax', 0))
+        # Sizes are AREAS in square microns; erosion/expansion are lengths in microns. Same reason
+        # as the coastal params: a px value silently means something else the moment the zoom
+        # changes, so one value per set is only meaningful in physical units.
+        self.min_cell_size = self.px_area_from_um2(params.get('minCellSize', 0))
+        self.cell_size_max = self.px_area_from_um2(params.get('cellSizeMax', 0))
         # Boundary smoothing, in pixels of gaussian sigma. Cosmetic and OFF by default: it changes
         # every measured shape descriptor, so it must be a deliberate choice, not a silent default.
         self.label_smoothing = self.px_from_um(params.get('labelSmoothing', 0.0))
-        self.label_expansion = int(params.get('labelExpansion', 0))
-        self.label_erosion = int(params.get('labelErosion', 0))
+        # A morphological radius has to be a whole number of pixels, and a value the user SET must
+        # never round to "off" — that reads as the control being broken.
+        self.label_expansion = self._px_radius(params.get('labelExpansion', 0))
+        self.label_erosion = self._px_radius(params.get('labelErosion', 0))
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
@@ -79,6 +84,11 @@ class SegmentationUtils:
         """Microns → pixels on this image's X axis. 0 stays 0, so "off" survives the conversion."""
         um = float(um)
         return 0.0 if um <= 0 else um / max(self.phys_size_x, 1e-6)
+
+    def _px_radius(self, um):
+        """Microns → a whole-pixel morphological radius. 0 stays off; anything set is at least 1 px."""
+        px = self.px_from_um(um)
+        return 0 if px <= 0 else max(1, int(round(px)))
 
     def px_area_from_um2(self, um2):
         """Square microns → pixel COUNT. Uses both axes: assuming square pixels is fine on this
