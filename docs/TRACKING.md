@@ -84,6 +84,30 @@ just cells with `track_id` present (the old `live` filter `track_id > 0`).
   physical-unit scaling), so `maxSearchRadius` is in pixels (matches the UI label). The old
   module scaled by `omeXMLPixelRes`; we deferred that. For anisotropic-Z 3D data this may
   need physical pixel sizes passed from Julia later.
+- **btrack runs TWO phases, and different params bound each.** `tracker.track()` links
+  frame to frame under `maxSearchRadius` (per STEP) and `maxLost`. Then
+  `tracker.optimize()` runs the global hypothesis optimiser, which **joins finished track
+  ends** under `distThresh` / `timeThresh` / `thetaDist` / `lambdaDist`. `maxSearchRadius`
+  and `maxLost` are not consulted there.
+
+  Two consequences that read as bugs and are not:
+
+  * **A drawn track is longer than the search radius, by design.** The radius bounds one
+    step; the viewer draws the accumulated trail. Measured on `zolIMa/fXgbTl`
+    (`maxSearchRadius = 8`, 0.33 µm/px): worst single step 8.2 px/frame — the limit is
+    honoured — while a 31-frame track covers ~25 µm at the median step and ~70 µm at p95.
+    So check whether the long thing is one STEP or a whole trail before suspecting the
+    tracker. (Open: on that run a single-frame jump was still reported by eye across two
+    consecutive frames, which the cell table does not contain — the drawn vertices come
+    from `napari_bridge._tracks_matrix`, so that is where to look, not at the params.)
+  * **`maxLost` does not bound the gaps you end up with.** Same run, `maxLost = 1`, and
+    final tracks contain gaps of 2–5 frames: each tracklet respected `max_lost`, then the
+    optimiser joined them across up to `timeThresh` (5). To limit gaps, set `timeThresh`.
+
+  To diagnose "why is this linked", measure per-step displacement from the tracked
+  `labelProps` (`LabelPropsView(...).view_centroid_cols()`, group by `track_id`, diff the
+  centroids) rather than judging trail length by eye.
+
 - **Centroid axis order.** `obsm['spatial']`/`uns['spatial_cols']` are skimage order:
   2D = `(y, x)`, 3D = `(z, y, x)`. The runner maps these to btrack `x/y/z` by dimensionality.
 - **Vendored btrack config.** `btrack.datasets.cell_config()` **downloads from the
