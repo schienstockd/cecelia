@@ -702,10 +702,17 @@ def _preview_af(ctx):
 
 #: fun_name → the compute that previews it. A task absent here is not previewable, which the Julia
 #: side already declares via `task_previewable` — this is the other half of the same statement.
+# A COMPOSITE needs its own entry, mapped to the backend of the step a preview actually runs. The
+# module pages run the composites (`segment.cellposeMeasure`, `segment.coastalMeasure`), not the bare
+# segmenters, so a composite missing here is not a corner case — it is the preview button being dead
+# on the page people use. This has now shipped broken twice for exactly that reason, so the pairing is
+# asserted by `test_preview_backends_cover_composites.py` rather than left to whoever adds the next
+# composite noticing that this file exists.
 _BACKENDS = {
     'segment.cellpose': _preview_cellpose,
     'segment.cellposeMeasure': _preview_cellpose,
     'segment.coastal': _preview_coastal,
+    'segment.coastalMeasure': _preview_coastal,
     'opticalFlow.inspect': _preview_flow_inspect,
     'cleanupImages.afCorrect': _preview_af,
     'cleanupImages.afDriftCorrect': _preview_af,

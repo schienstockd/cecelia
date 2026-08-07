@@ -9,7 +9,7 @@ import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
-import { preferredValueName } from './paramValues'
+import { isChosenValueName, preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
@@ -81,7 +81,11 @@ watch(() => props.context?.images, (images) => {
   if (!images || images.length === 0) return
   // Keep an already-valid selection — notably an edge-propagated chain value like
   // "cpCorrected" — rather than resetting it to the active/first name on every image change.
-  if (props.modelValue && availableValueNames.value.includes(props.modelValue as string)) return
+  // `isChosenValueName` excludes the spec's OWN default: it is what the form started with, not a
+  // pick, and since every task JSON declares `"default": "default"` this guard used to fire on
+  // first render everywhere and the prefer-the-active-version line below never ran at all.
+  if (isChosenValueName(props.modelValue, props.param.default)
+      && availableValueNames.value.includes(props.modelValue as string)) return
   emit('update:modelValue', preferredValueName(
     availableValueNames.value, props.param.field, images[0].activeValueName))
 }, { immediate: true })

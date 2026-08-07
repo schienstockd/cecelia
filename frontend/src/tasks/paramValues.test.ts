@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
-  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS,
-} from './paramValues'
+  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName } from './paramValues'
 import type { TaskDef, ParamValues } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -250,5 +249,27 @@ describe('buildParamValues — repeatable group entries', () => {
     const flat = flattenParams(AF_DEF, buildParamValues(AF_DEF, saved))
     expect(flat.afCombinations).toEqual(saved.afCombinations)
     expect(missingParamKeys(AF_DEF, flat)).toEqual([])
+  })
+})
+
+describe('isChosenValueName', () => {
+  // The bug this exists for: every task JSON declares `"default": "default"`, and "default" is a
+  // valid version on essentially every image — so ParamRenderer's "keep an already-valid selection"
+  // guard fired on FIRST RENDER for every task, and prefer-the-active-version never ran anywhere.
+  it('does not count the spec default as a choice', () => {
+    expect(isChosenValueName('default', 'default')).toBe(false)
+  })
+
+  it('counts anything else the user or a chain edge put there', () => {
+    expect(isChosenValueName('cpCorrected', 'default')).toBe(true)
+    // a spec with no default at all: any value is a choice
+    expect(isChosenValueName('default', undefined)).toBe(true)
+  })
+
+  it('treats empty and non-strings as unset', () => {
+    expect(isChosenValueName('', 'default')).toBe(false)
+    expect(isChosenValueName(undefined, 'default')).toBe(false)
+    expect(isChosenValueName(null, 'default')).toBe(false)
+    expect(isChosenValueName(3, 'default')).toBe(false)
   })
 })

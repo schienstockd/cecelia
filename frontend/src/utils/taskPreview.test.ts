@@ -252,7 +252,9 @@ describe('previewNotice', () => {
     const n = previewNotice(null, { message: 'worker died' })
     expect(n.warn).toBe(true)
     expect(n.short).toBe('Preview failed')
-    expect(n.detail).toBe('worker died')
+    // The raw text is NOT the detail — an uncoded message is an escaped exception written for
+    // whoever debugs it, and it goes to the log instead. See the block at the end of this file.
+    expect(n.detail).toBe('Unexpected error — see the log')
   })
 
   // The label is the thing the user reads at a glance; the detail is free to be a sentence.
@@ -505,5 +507,32 @@ describe('previewFailureLog — a failure has to be readable, not hover-only', (
     // blockers never reach this function; the store only calls it from a catch. Pinned so a future
     // refactor that starts routing blockers here has to make the decision deliberately.
     expect(previewFailureLog({ message: '', code: 'image-mismatch' })).toBeNull()
+  })
+})
+
+describe('previewNotice — raw exceptions are not copy', () => {
+  // A preview-worker dispatch failure put `ValueError: no preview backend for
+  // 'segment.coastalMeasure'; known: [...]` — a repr'd Python list — straight into a tooltip.
+  it('does not put an uncoded exception in the tooltip', () => {
+    const n = previewNotice(null, {
+      message: "ValueError: no preview backend for 'segment.coastalMeasure'; known: ['a', 'b']",
+    })
+    expect(n.short).toBe('Preview failed')
+    expect(n.detail).toBe('Unexpected error — see the log')
+    expect(n.warn).toBe(true)
+  })
+
+  it('still shows a CODED message — the backend wrote that one for a user', () => {
+    const n = previewNotice(null, { message: 'The viewer has v2 open; this task reads default',
+                                    code: 'version-mismatch' })
+    expect(n.short).toBe('Wrong version open')
+    expect(n.detail).toBe('The viewer has v2 open; this task reads default')
+  })
+
+  it('has a short label for a missing preview backend', () => {
+    const n = previewNotice(null, { message: 'This task has no preview — run it to see the result',
+                                    code: 'no-preview-backend' })
+    expect(n.short).toBe('Not previewable')
+    expect(n.detail).toBe('This task has no preview — run it to see the result')
   })
 })

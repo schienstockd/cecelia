@@ -399,6 +399,12 @@ labels) and the held-out frames themselves never reach the optimiser, which is w
 rests on. Computing the metrics per side instead would change the metrics at *both* seams, which is
 worse.
 
+Progress is reported over one monotonic scale — a tick per movie prepared, one for the flow metrics,
+then one per epoch through coastal's `on_epoch`. The phases are wildly unequal in wall-clock (metrics
+is a single tick and minutes long) so the bar does not move smoothly; weighting them would be a guess
+dressed up as a measurement. Before this the task emitted no `[PROGRESS]` at all, so a run of tens of
+minutes was indistinguishable from a wedged one.
+
 The convergence plot draws each `val_` curve dashed in the same colour as its term — the only thing
 read off a validation curve is its distance from its own training line, and a second colour would
 make that a legend lookup. QC banks `valFinalLoss`/`valLossDrop` and warns when the held-out loss

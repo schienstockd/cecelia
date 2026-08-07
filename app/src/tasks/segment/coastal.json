@@ -98,16 +98,6 @@
           "tip": "How close two cells may be and still get separate seeds"
         },
         {
-          "key": "seedBlurSigma",
-          "label": "Seed blur (µm)",
-          "type": "float",
-          "min": 0.0,
-          "max": 10.0,
-          "step": 0.25,
-          "default": 2.5,
-          "tip": "Raise to merge fragments of one cell; does not move the outline"
-        },
-        {
           "key": "probThreshold",
           "label": "Foreground threshold",
           "type": "float",
@@ -118,41 +108,51 @@
           "tip": "Cutoff on the probability map; raise to ignore dim regions"
         },
         {
-          "key": "affinityThreshold",
-          "label": "Growing threshold",
-          "type": "float",
-          "min": 0.1,
-          "max": 0.9,
-          "step": 0.05,
-          "default": 0.5,
-          "tip": "Embedding similarity needed to grow into a pixel"
-        },
-        {
-          "key": "minComponentSize",
-          "label": "Min fragment (µm²)",
-          "type": "int",
-          "min": 0.0,
-          "max": 100.0,
-          "step": 0.5,
-          "default": 2.0,
-          "tip": "Remove grown fragments below this area"
-        },
-        {
-          "key": "normalise",
-          "label": "Normalise percentile",
-          "type": "float",
-          "min": 50.0,
-          "max": 100.0,
-          "step": 0.01,
-          "default": 99.99,
-          "tip": "Upper percentile for intensity normalisation"
-        },
-        {
           "key": "advanced",
           "label": "Advanced",
           "type": "section",
           "collapsed": true,
           "params": [
+            {
+              "key": "seedBlurSigma",
+              "label": "Seed blur (µm)",
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.25,
+              "default": 2.5,
+              "tip": "Raise to merge fragments of one cell; does not move the outline"
+            },
+            {
+              "key": "affinityThreshold",
+              "label": "Growing threshold",
+              "type": "float",
+              "min": 0.1,
+              "max": 0.9,
+              "step": 0.05,
+              "default": 0.5,
+              "tip": "Embedding similarity needed to grow into a pixel"
+            },
+            {
+              "key": "minComponentSize",
+              "label": "Min fragment (µm²)",
+              "type": "int",
+              "min": 0.0,
+              "max": 100.0,
+              "step": 0.5,
+              "default": 2.0,
+              "tip": "Remove grown fragments below this area"
+            },
+            {
+              "key": "normalise",
+              "label": "Normalise percentile",
+              "type": "float",
+              "min": 50.0,
+              "max": 100.0,
+              "step": 0.01,
+              "default": 99.99,
+              "tip": "Upper percentile for intensity normalisation"
+            },
             {
               "key": "stitchThreshold",
               "label": "Z-stitch threshold",
@@ -160,8 +160,8 @@
               "min": 0.0,
               "max": 1.0,
               "step": 0.05,
-              "default": 0.0,
-              "tip": "IoU for matching labels across Z (3D only)"
+              "default": 0.2,
+              "tip": "IoU for matching labels across Z (3D only); 0 leaves every plane independent"
             },
             {
               "key": "probBlurSigma",

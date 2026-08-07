@@ -92,6 +92,10 @@ const rows = computed(() => shown.value.flatMap(s =>
 const valRows = computed(() => shown.value.flatMap(s =>
   (s.val ?? []).map((loss, i) => ({ epoch: i + 1, term: s.term, loss }))))
 const hasVal = computed(() => shown.value.some(s => s.val?.length))
+// Log only when every plotted value is positive — val included. Zero is a legitimate loss, and
+// log(0) would drop the point silently rather than fail.
+const isLog = computed(() =>
+  logY.value && [...rows.value, ...valRows.value].every(r => r.loss > 0))
 
 async function load() {
   loading.value = true
@@ -140,11 +144,15 @@ async function render() {
     x: { label: 'epoch', grid: true },
     // Log only when every plotted value is positive. Zero is a legitimate loss and log(0) would drop
     // the point silently rather than fail.
+    // Anchored at zero on the linear scale. Plot's default domain starts at the data minimum, which
+    // for a converged run means the flat tail fills the panel and every curve looks like it stopped
+    // just short of the axis — a loss settling at 0.2 and one settling at 0.02 draw identically.
+    // "How close to zero did it actually get" is the question, so zero has to be on screen.
+    // Never on a log scale: log(0) is undefined and Plot would drop the axis.
     y: { label: raw.value ? 'loss (raw)' : 'loss (weighted)', grid: true,
          // Every plotted value, val included — a log axis chosen on the training rows alone would
          // silently drop a val point that touched zero.
-         type: logY.value && [...rows.value, ...valRows.value].every(r => r.loss > 0)
-           ? 'log' : 'linear' },
+         ...(isLog.value ? { type: 'log' as const } : { type: 'linear' as const, zero: true }) },
     color: { domain, range: distinctColors(domain.length), legend: false },
     marks: [
       Plot.line(rows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5, tip: true }),

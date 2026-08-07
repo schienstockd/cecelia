@@ -173,8 +173,19 @@ def run(params):
     log.log(f'>> GPU: {gpu_device if use_gpu else "none (CPU)"}')
     log.log(f'>> {len(movies)} movie(s) to prepare')
 
+    # ── progress ────────────────────────────────────────────────────────────────────────────────
+    # One monotonic scale over the whole run: a tick per movie prepared, one for the flow metrics,
+    # then one per epoch. Without this the task reported NOTHING for its entire duration — `run_py`
+    # routes `[PROGRESS] n/total` to `on_progress` and this runner never printed one, so a training
+    # job that takes tens of minutes was indistinguishable from a wedged one.
+    #
+    # The phases are wildly unequal in wall-clock (metrics is one tick and minutes long) so the bar
+    # does not move smoothly. That is the honest shape: the alternative is inventing weights per
+    # phase, which would be a guess dressed up as measurement.
     n_planes = int(params.get('zPlanes', 1))
     seed = int(params.get('seed', 42))
+    total_steps = len(movies) + 1 + epochs
+    log.progress(0, total_steps)
     # A cap per movie, not a total. Without one, pooling is weighted by how long each recording
     # happened to run: a 200-frame movie contributes ~7x what a 30-frame one does, so the model is
     # mostly fitted to whichever image the microscope was left on longest. Nothing in the run or the
@@ -227,6 +238,9 @@ def run(params):
         where = f'Z {planes}' if planes != [None] else '2D'
         span = f'{n_use} frames' if n_use == n_t else f'frames {start}–{stop - 1} of {n_t}'
         log.log(f'>>   {where}: {len(planes)} × {span} of {sequences[-1].shape[1:]}')
+        # `i + 1`, not `len(used)`: the scale is over the movies ATTEMPTED, so a skipped movie still
+        # advances the bar rather than leaving it short by however many were unusable.
+        log.progress(i + 1, total_steps)
 
     if not sequences:
         raise ValueError('no usable movies — every image was skipped (see the warnings above)')
@@ -249,6 +263,7 @@ def run(params):
             f'(scales {scales}, cumulative {cumulative})')
     all_frames, all_metrics = prepare_data_for_unet_batch(
         sequences, temporal_scales=scales, cumulative_window=cumulative)
+    log.progress(len(movies) + 1, total_steps)
 
     # Pool AFTER the per-sequence metrics: concatenating frames first would make flow cross a
     # boundary between two recordings — or between two Z planes of one timepoint — which is not
@@ -324,6 +339,11 @@ def run(params):
         # missing flow pairs cost nothing and `val_total` stays comparable with `total`. If warp is
         # ever given a weight, this needs the pairs or the two curves stop meaning the same thing.
         val_frames=val_frames_arr, val_temporal_metrics_norm=val_metrics,
+        # The long phase, and the only one that can report from inside itself. coastal's own prints
+        # fire every tenth epoch and are written for a notebook reader, so the callback is what an
+        # application can drive a bar from.
+        on_epoch=lambda epoch, n_epochs, losses: log.progress(
+            len(movies) + 1 + epoch, total_steps),
         num_epochs=epochs,
         intensity_weight=loss_weights['intensity'],
         foreground_weight=loss_weights['foreground'],
