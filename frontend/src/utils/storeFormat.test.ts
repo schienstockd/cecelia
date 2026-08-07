@@ -22,6 +22,17 @@ describe('storeFormatLine', () => {
       .toBe('zarr v2 · NGFF 0.4 · chunks 1×1×1×512×512 · not sharded')
   })
 
+  it('names the chunk-key separator rather than printing a bare slash', () => {
+    // it decides how many DIRECTORIES the store costs (20,933 nested vs 4 flat on one 1.7 GB import),
+    // and a bare `/` in a readout reads as a path fragment
+    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512], separator: '/' }))
+      .toContain('nested keys')
+    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512], separator: '.' }))
+      .toContain('flat keys')
+    // absent -> omitted, not guessed: the DEFAULT differs per format ('.' for v2, '/' for v3)
+    expect(storeFormatLine({ zarrFormat: 2, chunks: [1, 512, 512] })).not.toContain('keys')
+  })
+
   it('reports chunk AND shard for a sharded v3 store', () => {
     // the two are easy to swap; the readout has to state both so a wrong one is visible
     expect(storeFormatLine({

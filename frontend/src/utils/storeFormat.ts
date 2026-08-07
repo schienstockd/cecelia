@@ -16,6 +16,8 @@ export interface StoreEncoding {
   chunks?: number[] | null
   /** Shard shape (one file on disk), or null/absent when not sharded — which is every v2 store. */
   shard?: number[] | null
+  /** Chunk-key separator: `/` nests keys into a directory tree, `.` keeps them flat. */
+  separator?: string | null
 }
 
 /**
@@ -45,5 +47,9 @@ export function storeFormatLine(s: StoreEncoding | null | undefined): string {
   if (s.ngffVersion) parts.push(`NGFF ${s.ngffVersion}`)
   if (s.chunks && s.chunks.length) parts.push(`chunks ${formatShape(s.chunks)}`)
   parts.push(s.shard && s.shard.length ? `shard ${formatShape(s.shard)}` : 'not sharded')
+  // Worth stating because it decides how many DIRECTORIES the store costs — most of its filesystem
+  // footprint, and all of its cost on a network share (measured: 20 933 nested vs 4 flat on one 1.7 GB
+  // import). Named rather than shown as a bare `/`, which reads as a path fragment.
+  if (s.separator) parts.push(s.separator === '/' ? 'nested keys' : 'flat keys')
   return parts.join(' · ')
 }

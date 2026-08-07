@@ -3206,6 +3206,15 @@ end
         @test c3.chunks == [1, 1, 1, 32, 32]      # inner chunk (from the sharding codec)
         @test c3.shard  == [1, 1, 1, 64, 64]      # outer grid = one file on disk
         @test c3.chunks != c3.shard
+
+        # The chunk-key separator: "/" nests keys into a directory tree, "." keeps them flat. It is
+        # most of a store's filesystem footprint (measured on a real 1.7 GB import: 20,933 directories
+        # nested vs 4 flat) and all of its cost on a network share, so the modal states it. The DEFAULT
+        # differs per format — "." for v2, "/" for v3 — so an absent key must not be read as one value.
+        @test c2.separator in (".", "/")
+        @test c3.separator in (".", "/")
+        @test c2.separator == "/"      # bioformats2raw nests by default, in BOTH formats
+        @test c3.separator == "/"
         # same codec asked for on both, so the describer must agree across formats (int shuffle in v2
         # metadata, NAME in v3 — normalised in one place)
         @test c2.codec == c3.codec == "zstd"

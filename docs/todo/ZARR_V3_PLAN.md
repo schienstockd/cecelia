@@ -174,6 +174,37 @@ Consequence for labels: a label set derived from a v3 image is written v3 too, a
 stays its own decision (`LABEL_COMPRESSOR`) — format is inherited, codec is not. The two are separate
 axes and conflating them would undo the measured label-codec choice.
 
+**D10 — The format default lives in Settings → Storage, next to the compressor table; the import
+param pre-fills from it.** (Dominik, 2026-08-07.) The compressor is already there as a table with
+measured numbers *because* the trade-off is the whole reason there is a choice, and format has exactly
+that shape. But format cannot be purely global the way the compressor is: an existing v2 image cannot
+become v3 (D7, no converter) and derived stores inherit (D9), so it is decided **per image, at import**.
+Settings therefore holds the *default* and the explanation; the import param is where it takes effect.
+
+**D11 — `--no-nested` is the real "fewer files" lever, and it is independent of v3.** Chunk keys are
+nested by default in bioformats2raw for **both** formats, and that — not the format — is where a
+store's directory count comes from. Measured on a 512×512×13z×2c×4t conversion:
+
+| | dirs | files | example key |
+|---|---|---|---|
+| NGFF 0.4, default | 224 | 113 | `0/0/0/0/3/0/0` |
+| NGFF 0.4, `--no-nested` | **4** | 113 | `0/0/2.1.2.0.0` |
+| NGFF 0.5, default | 225 | 109 | `0/0/c/2/1/9/0/0` |
+
+**56× fewer directories, on v2, with one flag and no format change** — which projects the real 1.7 GB
+import from 20 933 directories to ~4. All four variants read back with identical pixels. That is a
+bigger and far safer win than sharding, and it needs neither v3 nor the D8 write-amplification risk.
+
+> **TRAP: `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr v2 store.**
+> Verified in both flag orders — the root carries `.zgroup`, not `zarr.json`. You ask for 0.5 and get
+> 0.4 with no warning. So the two must never be emitted together; a UI offering both independently
+> would let a user pick 0.5 and get v2, with only the metadata modal's format readout to reveal it.
+
+Not adopted yet: flipping it changes the on-disk layout of every new import, and whether ~10 000 files
+in one directory beats them spread over 21 000 directories is filesystem-dependent (fine on ext4 with
+`dir_index`; a single huge directory can be slower to enumerate on some network shares). Measure before
+defaulting — but as an *option* it is clearly worth exposing.
+
 ## Phases
 
 ### Phase 1 — Read (the blocker) ⬅ current

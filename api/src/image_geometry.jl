@@ -200,13 +200,34 @@ function store_compression(zarr_path::AbstractString)
             sharded = !isnothing(inner_chunk) && !isempty(inner_chunk)
             return (; desc..., zarrFormat = fmt,
                     chunks = sharded ? inner_chunk : chunks,
-                    shard  = sharded ? chunks : nothing)
+                    shard  = sharded ? chunks : nothing,
+                    separator = _chunk_separator(meta, fmt))
         end
         desc = _describe_compressor(get(meta, :compressor, nothing))
-        return (; desc..., zarrFormat = fmt, chunks = chunks, shard = nothing)
+        return (; desc..., zarrFormat = fmt, chunks = chunks, shard = nothing,
+                separator = _chunk_separator(meta, fmt))
     catch
         return nothing
     end
+end
+
+# How chunk keys are spelled on disk: "/" nests them into a directory tree (`0/0/36/0/8/0/0`), "."
+# keeps them flat (`56.2.15.1.1`). NOT cosmetic — it decides how many DIRECTORIES a store costs, which
+# is most of its filesystem footprint and all of its cost on a network share. Measured on a real
+# 1.7 GB import: nested 20 933 directories, flat 4. bioformats2raw nests by default in BOTH formats
+# (`--no-nested` flips it); zarr-python defaults `.` for v2 and `/` for v3, which is why the stores WE
+# write pin it (`_V3_FLAT_CHUNK_KEY`).
+#
+# The defaults differ per format, so an ABSENT key means different things: v2 defaults to ".", v3 to "/".
+function _chunk_separator(meta, fmt)::String
+    if fmt >= 3
+        cke = get(meta, :chunk_key_encoding, nothing)
+        isnothing(cke) && return "/"
+        cfg = get(cke, :configuration, nothing)
+        isnothing(cfg) && return "/"
+        return string(get(cfg, :separator, "/"))
+    end
+    string(get(meta, :dimension_separator, "."))
 end
 
 # Chunk shape as a plain Vector{Int}. v2 spells it `chunks`; v3 `chunk_grid.configuration.chunk_shape`.
@@ -334,6 +355,7 @@ function api_image_stores(req::HTTP.Request)
                 entry["zarrFormat"] = c.zarrFormat
                 entry["chunks"]     = c.chunks
                 entry["shard"]      = c.shard
+                entry["separator"]  = c.separator
             end
             isdir(zp) && (entry["ngffVersion"] = ngff_version(zp))
             out[vn] = entry
