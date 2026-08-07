@@ -107,6 +107,16 @@ def _fit_prefix(draw, s, font, max_w):
     return lo
 
 
+def _clip(draw, s, font, max_w):
+    """`s` ellipsised to fit `max_w`. The ONE truncation rule for text drawn onto a movie frame —
+    shared by the card's legend rows and the comparison movie's column captions."""
+    if draw.textlength(s, font=font) <= max_w:
+        return s
+    while s and draw.textlength(s + "…", font=font) > max_w:
+        s = s[:-1]
+    return (s + "…") if s else s
+
+
 def _wrap_lines(draw, text, font, max_w):
     """Word-wrap `text` to fit `max_w`. A single word wider than the line (e.g. a long image name with
     no spaces) is hard-broken — preferring a break just after a '-' or '_' within the fitting prefix, so
@@ -151,11 +161,7 @@ def render_card_frame(content, width, height):
         return b[3] - b[1]
 
     def clip(s, font):
-        if d.textlength(s, font=font) <= max_w:
-            return s
-        while s and d.textlength(s + "…", font=font) > max_w:
-            s = s[:-1]
-        return (s + "…") if s else s
+        return _clip(d, s, font, max_w)
 
     def line(px, py, s, font, fill):
         d.text((px, py), s, font=font, fill=fill)
@@ -196,6 +202,30 @@ def render_card_frame(content, width, height):
         y += int(height * 0.01)
         d.text((x, y), clip(note, nf), font=nf, fill=_FG_NOTE)
 
+    return np.asarray(img, dtype=np.uint8)
+
+
+def caption_band(width, height, text):
+    """Render a single centred caption strip as an (H, W, 3) uint8 RGB array — the per-column label of
+    a side-by-side comparison movie (`movie_io.stitch_movies`; docs/todo/MOVIE_COMPARE_PLAN.md D7).
+
+    Lives here rather than in `movie_io` so there is ONE font stack, one palette and one truncation
+    rule for text drawn onto movie frames — the card and the column labels of the same file must not
+    disagree about either. Text too wide for the strip is ellipsised (never wrapped: the strip is one
+    line by construction)."""
+    width = max(2, int(width))
+    height = max(2, int(height))
+    img = Image.new("RGB", (width, height), _BG)
+    d = ImageDraw.Draw(img)
+    s = str(text or "").strip()
+    if s:
+        margin = max(4, int(width * 0.02))
+        max_w = max(1, width - 2 * margin)
+        f = _font(height * 0.62)
+        s = _clip(d, s, f, max_w)
+        box = d.textbbox((0, 0), s, font=f)
+        d.text(((width - (box[2] - box[0])) / 2 - box[0], (height - (box[3] - box[1])) / 2 - box[1]),
+               s, font=f, fill=_FG_LABEL)
     return np.asarray(img, dtype=np.uint8)
 
 

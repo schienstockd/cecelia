@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
+import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
+         type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -179,8 +181,14 @@ export const useSettingsStore = defineStore('settings', () => {
     // `suffix` is a filename addition (a movie is named after the IMAGE, so the corrected version and
     // the raw import would collide). null = never set, so the UI's version-derived default applies;
     // '' = deliberately cleared, which must survive a reload.
+    // `compareVersions` are the image versions the recorder shows side by side, in COLUMN order (2+;
+    // [] or one = an ordinary single-version movie), with the layout + contrast mode that go with them.
+    // `showTimestamp`/`showScaleBar` are napari's BAKED overlays — burnt into every recorded frame, so
+    // leaving them out is a record-time decision, not something the movie can be edited to undo.
     movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
-              titleCard?: TitleCardCfg }
+              titleCard?: TitleCardCfg; compareVersions?: string[]
+              compareLayout?: CompareLayout; compareContrast?: CompareContrast
+              showTimestamp?: boolean; showScaleBar?: boolean }
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
     // napari each time since a region is image-specific). Only the ranges persist, like other prefs.
     cropZ?: { lo?: number; hi?: number }
@@ -188,7 +196,12 @@ export const useSettingsStore = defineStore('settings', () => {
     // batch-movie authoring config (F1.3 "make a movie for all images"): one config applied across the
     // selected images. `channels` = {channelName → colormap} for channels to SHOW (rest hidden). Per-set.
     batchMovie?: {
-      valueName?: string                    // image version to open ('' = active)
+      // Versions to record, in COLUMN order — 2+ makes every movie a side-by-side comparison
+      // (docs/todo/MOVIE_COMPARE_PLAN.md). `valueName` is what configs saved before that carried; read
+      // it through `versionsFromConfig`, never directly.
+      valueNames?: string[]
+      compareLayout?: CompareLayout; compareContrast?: CompareContrast
+      valueName?: string                    // image version to open ('' = active) — legacy, migrated
       channels?: Record<string, string>     // channelName → colormap (only these shown)
       colourBy?: string                     // colour-by measure/obs column
       showTracks?: boolean; trackValueNames?: string[]; tailWidth?: number
@@ -235,16 +248,28 @@ export const useSettingsStore = defineStore('settings', () => {
   // timelapse-recording params (per set); defaults match the backend (fps 15, size = canvas)
   const getMovieConfig = (setUid: string): {
     fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
+    compareVersions: string[]; compareLayout: CompareLayout; compareContrast: CompareContrast
+    showTimestamp: boolean; showScaleBar: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
     sizeY: _setPrefs.value[setUid]?.movie?.sizeY ?? null,
     suffix: _setPrefs.value[setUid]?.movie?.suffix ?? null,
     titleCard: _setPrefs.value[setUid]?.movie?.titleCard ?? { ...TITLE_CARD_DEFAULT },
+    // side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md); [] = record the active version
+    compareVersions: _setPrefs.value[setUid]?.movie?.compareVersions ?? [],
+    compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
+    compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
+    // default ON — what every movie was before the toggles existed
+    showTimestamp: _setPrefs.value[setUid]?.movie?.showTimestamp ?? true,
+    showScaleBar: _setPrefs.value[setUid]?.movie?.showScaleBar ?? true,
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
-                                   suffix?: string | null; titleCard?: TitleCardCfg }) {
+                                   suffix?: string | null; titleCard?: TitleCardCfg
+                                   compareVersions?: string[]; compareLayout?: CompareLayout
+                                   compareContrast?: CompareContrast
+                                   showTimestamp?: boolean; showScaleBar?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)

@@ -237,6 +237,6 @@ defineExpose({ exportImage, exportSvg })
 .gs-opts { position: relative; display: inline-flex; margin-left: auto; }
 /* .gs-gear → cc-btn cc-btn-ghost cc-btn-icon */
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; }   /* padding: TeleportPopover */
 .gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: var(--cc-fs-sm); }
 </style>

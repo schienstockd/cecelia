@@ -23,8 +23,12 @@ import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
 import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
+import { versionsFromConfig, compareSuffix, compareActionTip,
+         COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
+         type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
+import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import { usePaneExpand } from '../../composables/usePaneExpand'
@@ -61,18 +65,37 @@ const segNames     = computed(() => uniq(imgs.value.flatMap(i => Object.keys(i.l
 const cfg = computed(() => setUid.value ? settings.getBatchMovieConfig(setUid.value) : {})
 function patch(p: Record<string, unknown>) { if (setUid.value) settings.setBatchMovieConfig(setUid.value, p) }
 // fps + output size reuse the ViewerPanel recorder's per-set config (null size = the napari canvas size)
-const movie = computed(() => setUid.value ? settings.getMovieConfig(setUid.value)
-                                          : { fps: 15, sizeX: null, sizeY: null, suffix: null })
+const movie = computed(() => setUid.value
+  ? settings.getMovieConfig(setUid.value)
+  // no set open yet — the store's own defaults, so every reader below sees the same shape
+  : { fps: 15, sizeX: null, sizeY: null, suffix: null, showTimestamp: true, showScaleBar: true })
 const fps   = computed<number>({ get: () => movie.value.fps,   set: v => setUid.value && settings.setMovieConfig(setUid.value, { fps: v }) })
 const sizeX = computed<number | null>({ get: () => movie.value.sizeX, set: v => setUid.value && settings.setMovieConfig(setUid.value, { sizeX: v }) })
 const sizeY = computed<number | null>({ get: () => movie.value.sizeY, set: v => setUid.value && settings.setMovieConfig(setUid.value, { sizeY: v }) })
 // filename addition; defaults to the version this batch opens (blank = the active one), so a corrected
 // run and a raw run don't write over each other. null = untouched, '' = deliberately cleared.
 const suffix = computed<string>({
-  get: () => movie.value.suffix ?? (valueName.value && valueName.value !== 'default' ? valueName.value : ''),
+  get: () => movie.value.suffix ?? compareSuffix(compareVersions.value),
   set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { suffix: v }) } })
 
-const valueName    = computed<string>({ get: () => cfg.value.valueName ?? '',        set: v => patch({ valueName: v }) })
+// Which versions each movie shows, in column order (docs/todo/MOVIE_COMPARE_PLAN.md). Reads a config
+// saved before comparisons existed through `versionsFromConfig`, so a batch that was set to the
+// corrected version doesn't quietly revert to the active one.
+const compareVersions = computed<string[]>({
+  get: () => versionsFromConfig(cfg.value, versionNames.value),
+  set: v => patch({ valueNames: v }),
+})
+// napari's baked overlays, burnt into every frame (per set, like fps/size)
+const movieTimestamp = computed<boolean>({
+  get: () => movie.value.showTimestamp,
+  set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showTimestamp: v }) } })
+const movieScaleBar = computed<boolean>({
+  get: () => movie.value.showScaleBar,
+  set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showScaleBar: v }) } })
+const compareLayout = computed<CompareLayout>({
+  get: () => cfg.value.compareLayout ?? COMPARE_LAYOUT_DEFAULT, set: v => patch({ compareLayout: v }) })
+const compareContrast = computed<CompareContrast>({
+  get: () => cfg.value.compareContrast ?? COMPARE_CONTRAST_DEFAULT, set: v => patch({ compareContrast: v }) })
 const colourBy     = computed<string>({ get: () => cfg.value.colourBy ?? '',         set: v => patch({ colourBy: v }) })
 const showTracks   = computed<boolean>({ get: () => !!cfg.value.showTracks,          set: v => patch({ showTracks: v }) })
 const showTrackclust = computed<boolean>({ get: () => !!cfg.value.showTrackclust,    set: v => patch({ showTrackclust: v }) })
@@ -216,7 +239,8 @@ function generate() {
   })
   ws.send({
     type: 'movie:batch', taskId: t.id, projectUid, imageUids: uids,
-    config: buildConfig(), fileAttrs: fileAttrs.value, fps: fps.value, suffix: suffix.value,
+    config: { ...buildConfig(), showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value },
+    fileAttrs: fileAttrs.value, fps: fps.value, suffix: suffix.value,
     ...movieSizeParams(sizeX.value, sizeY.value),
   })
   log.info(`Batch movies started for ${uids.length} image(s) — napari will be busy for a bit`, { source: 'napari' })
@@ -313,20 +337,21 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         </select>
       </section>
 
-      <!-- Image version -->
+      <!-- Image versions — one chip = that version, two or more = a side-by-side comparison -->
       <section v-if="versionNames.length > 1" class="bm-sec">
-        <h4>Image version</h4>
-        <select v-model="valueName" v-tooltip.left="'Which image version to record'">
-          <option value="">active</option>
-          <option v-for="vn in versionNames" :key="vn" :value="vn">{{ vn }}</option>
-        </select>
+        <h4>Image versions <span class="bm-sub cc-muted">click to include · drag to order</span></h4>
+        <MovieCompareControls :available="versionNames"
+                              v-model:versions="compareVersions"
+                              v-model:layout="compareLayout"
+                              v-model:contrast="compareContrast" />
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the animation page -->
       <section class="bm-sec">
         <h4>Movie</h4>
         <MovieOutputControls v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
-                             v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
+                             v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
+                             v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 
@@ -348,7 +373,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                 title="Apply this config to the currently open napari image (no recording)">
           <i class="pi pi-eye" /> Preview on open image
         </button>
-        <button class="cc-btn cc-btn-primary" :disabled="!canRun" @click="generate">
+        <button class="cc-btn cc-btn-primary" :disabled="!canRun" @click="generate"
+                v-tooltip.top="compareActionTip(compareVersions, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
         </button>
       </div>

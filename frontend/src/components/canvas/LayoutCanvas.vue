@@ -629,7 +629,7 @@ defineExpose({ capturePage, collectCsvs })
 .lc-gear:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 .lc-custom { font-size: var(--cc-fs-xs); padding: 0.22rem 0.55rem; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; }   /* padding: TeleportPopover */
 .lc-pop-row { display: flex; align-items: center; gap: 8px; }
 .lc-pop-row span:first-child { width: 3rem; }
 .lc-pop-row input[type="range"] { flex: 1; }

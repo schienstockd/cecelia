@@ -387,7 +387,7 @@ defineExpose({ exportImage })
 /* .is-gear → cc-btn cc-btn-ghost cc-btn-icon */
 .is-gear:hover { color: var(--cc-text); border-color: var(--cc-accent-strong); }
 /* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
-.is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+.is-pop { display: flex; flex-direction: column; gap: 6px; }   /* padding: TeleportPopover */
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
 .is-err { color: #fca5a5; font-size: var(--cc-fs-xs); }
 .is-slider { display: inline-flex; align-items: center; gap: 4px; }

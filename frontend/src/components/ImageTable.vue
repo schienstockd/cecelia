@@ -785,7 +785,7 @@ onUnmounted(stopResize)
     @close="cropDialogUid = null" />
 
   <!-- row actions menu (⋯) — collapses the per-row action icons; shares TeleportPopover -->
-  <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end">
+  <TeleportPopover v-model="actionsOpen" :anchor="actionsAnchor" placement="bottom-end" flush>
     <div v-if="actionsImg" class="actions-menu">
       <button v-if="pageIconFor()" class="actions-item"
         @click.stop="runAction(() => physSizeDialogUid = actionsImg!.uid)">
@@ -1028,7 +1028,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
 /* inner layout only — TeleportPopover provides surface/border/shadow/position */
-.runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; padding: 6px 8px; }
+.runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; }   /* padding: TeleportPopover */
 .runlog-hd { margin-bottom: 4px; }
 
 .runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: var(--cc-fs-xs); }
@@ -1091,7 +1091,7 @@ th:hover .resize-handle::after { opacity: 1; }
 .actions-btn.on { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 
 /* ⋯ dropdown menu (inside TeleportPopover, which provides the surface/border/shadow) */
-.actions-menu { display: flex; flex-direction: column; min-width: 200px; padding: 0.25rem; }
+.actions-menu { display: flex; flex-direction: column; min-width: 200px; }   /* padding: TeleportPopover (flush) */
 .actions-item {
   display: flex; align-items: center; gap: 0.55rem;
   width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);

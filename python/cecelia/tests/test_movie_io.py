@@ -87,6 +87,21 @@ class TestWriterRoundTrip(unittest.TestCase):
             with imageio.get_reader(path) as r:
                 self.assertEqual(r.get_data(0).shape[:2], (34, 66))
 
+    def test_the_writer_closes_even_when_the_block_fails(self):
+        # imageio's own __exit__ closes ONLY on a clean exit (`if value is None: self.close()`), so a
+        # cancelled render left the writer open: the caller's cleanup looked for the staged file
+        # before ffmpeg had finalised it, found nothing, and the temp appeared moments later — every
+        # cancel leaking a `.tmp.mp4`. The recorder's own cancel tests missed it because they stub the
+        # writer; this one encodes for real, which is the only way the behaviour shows up.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'clip.mp4')
+            with self.assertRaises(RuntimeError):
+                with movie_io.movie_writer(path, 10) as out:
+                    out.append_data(np.zeros((34, 66, 3), dtype=np.uint8))
+                    raise RuntimeError('cancelled mid-render')
+            self.assertTrue(os.path.exists(path), 'the file must exist by the time cleanup runs')
+            os.remove(path)                       # must not raise: cleanup can actually delete it
+
     def test_prepended_title_card_matches_the_movie(self):
         import imageio.v2 as imageio
         from cecelia.utils import title_card as tc
@@ -103,6 +118,140 @@ class TestWriterRoundTrip(unittest.TestCase):
             # rescaled by ffmpeg on concat, which is exactly what this pins
             self.assertEqual(shapes, {(34, 66)})
             self.assertEqual(count, n_card + 4)
+
+
+class TestStitchMovies(unittest.TestCase):
+    """Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). These encode for real —
+    the geometry rules only mean anything against frames that survived a round trip through h.264."""
+
+    def _write(self, path, shape, n=4, fps=10, value=None):
+        """An n-frame clip of solid frames; `value` fixes the grey level (else it ramps per frame)."""
+        with movie_io.movie_writer(path, fps) as out:
+            for i in range(n):
+                out.append_data(np.full((*shape, 3), i * 40 if value is None else value, dtype=np.uint8))
+
+    def _read(self, path):
+        import imageio.v2 as imageio
+        with imageio.get_reader(path) as r:
+            return [np.asarray(f) for f in r]
+
+    def test_row_layout_puts_the_tiles_side_by_side(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=4)
+            self._write(b, (34, 66), n=4)
+            n = movie_io.stitch_movies([a, b], out, fps=10)
+            frames = self._read(out)
+            self.assertEqual(n, 4)
+            self.assertEqual(len(frames), 4)
+            self.assertEqual(frames[0].shape[:2], (34, 134))   # same height, 2 tiles + a 2px divider
+
+    def test_column_layout_stacks_them(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=3)
+            self._write(b, (34, 66), n=3)
+            movie_io.stitch_movies([a, b], out, fps=10, layout='column')
+            self.assertEqual(self._read(out)[0].shape[:2], (70, 66))   # 2 tiles + a 2px divider
+
+    def test_tiles_keep_their_own_content(self):
+        # the whole point: column 1 is column 1 and column 2 is column 2, not an average of the two
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=2, value=20)
+            self._write(b, (34, 66), n=2, value=200)
+            movie_io.stitch_movies([a, b], out, fps=10)
+            frame = self._read(out)[0]
+            left, right = frame[:, :66], frame[:, 68:]     # skip the 2px divider between them
+            self.assertLess(int(left.mean()), 60)
+            self.assertGreater(int(right.mean()), 150)
+
+    def test_the_shorter_input_holds_its_last_frame(self):
+        # truncating to the shortest would silently drop the end of the longer timecourse
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=6)
+            self._write(b, (34, 66), n=2)
+            self.assertEqual(movie_io.stitch_movies([a, b], out, fps=10), 6)
+            self.assertEqual(len(self._read(out)), 6)
+
+    def test_a_smaller_input_is_padded_not_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=2)
+            self._write(b, (20, 40), n=2)
+            movie_io.stitch_movies([a, b], out, fps=10)
+            self.assertEqual(self._read(out)[0].shape[:2], (34, 134))   # both tiles at the largest
+
+    def test_captions_add_one_strip_per_tile(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, plain, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'p.mp4', 'o.mp4'))
+            self._write(a, (34, 66), n=2)
+            self._write(b, (34, 66), n=2)
+            movie_io.stitch_movies([a, b], plain, fps=10)
+            movie_io.stitch_movies([a, b], out, fps=10, labels=['default', 'af_corrected'])
+            tall, short = self._read(out)[0].shape[0], self._read(plain)[0].shape[0]
+            self.assertGreater(tall, short)                    # the strip is under the tiles
+            self.assertEqual(self._read(out)[0].shape[1], 134)  # and does not change the width
+
+    def test_odd_composed_dimensions_are_cropped_even(self):
+        # 33 px tiles stacked → 66 (fine), but the h.264 rule has to hold on the COMPOSED frame too
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=2)
+            self._write(b, (34, 66), n=2)
+            movie_io.stitch_movies([a, b], out, fps=10, layout='column', labels=['x', 'y'])
+            h, w = self._read(out)[0].shape[:2]
+            self.assertEqual((h % 2, w % 2), (0, 0))
+
+    def test_progress_and_cancel_follow_the_recorder_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=5)
+            self._write(b, (34, 66), n=5)
+            seen = []
+            movie_io.stitch_movies([a, b], out, fps=10, on_progress=lambda i, t: seen.append((i, t)))
+            self.assertEqual([i for i, _ in seen], [1, 2, 3, 4, 5])
+
+            cancel_at = {'n': 0}
+
+            def should_cancel():
+                cancel_at['n'] += 1
+                return cancel_at['n'] > 2
+
+            out2 = os.path.join(d, 'out2.mp4')
+            with self.assertRaises(movie_io.RecordCancelled):
+                movie_io.stitch_movies([a, b], out2, fps=10, should_cancel=should_cancel)
+            # a cancelled stitch leaves NOTHING behind — not the output, not the staged temp
+            self.assertFalse(os.path.exists(out2))
+            self.assertFalse(os.path.exists(out2 + '.tmp.mp4'))
+
+    def test_a_cancel_never_destroys_the_previous_movie(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b, out = (os.path.join(d, f) for f in ('a.mp4', 'b.mp4', 'out.mp4'))
+            self._write(a, (34, 66), n=4)
+            self._write(b, (34, 66), n=4)
+            self._write(out, (34, 66), n=9, value=90)          # a good movie already at the target
+            with self.assertRaises(movie_io.RecordCancelled):
+                movie_io.stitch_movies([a, b], out, fps=10, should_cancel=lambda: True)
+            self.assertEqual(len(self._read(out)), 9)          # untouched
+
+    def test_bad_arguments_are_rejected_up_front(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, out = os.path.join(d, 'a.mp4'), os.path.join(d, 'out.mp4')
+            self._write(a, (34, 66), n=2)
+            with self.assertRaises(ValueError):
+                movie_io.stitch_movies([], out, fps=10)
+            with self.assertRaises(ValueError):
+                movie_io.stitch_movies([a], out, fps=10, layout='diagonal')
+            with self.assertRaises(ValueError):
+                movie_io.stitch_movies([a], out, fps=10, labels=['one', 'too many'])
+
+    def test_the_cancel_exception_is_the_recorders_own(self):
+        # the bridge catches napari_utils.RecordCancelled; a stitch cancel must be that same class,
+        # not a lookalike, or it would escape as an unhandled error
+        from cecelia.utils import napari_utils
+        self.assertIs(napari_utils.RecordCancelled, movie_io.RecordCancelled)
 
 
 if __name__ == '__main__':

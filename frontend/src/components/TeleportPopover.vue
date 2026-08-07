@@ -11,8 +11,10 @@
       …popover content…
     </TeleportPopover>
 
-  The popover owns ONLY the shell (teleport + position + theme + dismiss); the caller supplies the
-  content + its own inner styling. Reuse this instead of hand-rolling another absolute-positioned
+  The popover owns the shell (teleport + position + theme + dismiss) AND the padding — the same split
+  BaseModal uses, so a caller must NOT pad its own content or the two add up. `flush` tightens it for
+  full-width menu rows whose hover highlight has to reach the edges. The caller supplies the content
+  and its layout (width, gap, direction). Reuse this instead of hand-rolling another absolute-positioned
   popover that will clip.
 -->
 <script setup lang="ts">
@@ -23,7 +25,8 @@ const props = withDefaults(defineProps<{
   anchor: HTMLElement | null            // the trigger element (its rect drives placement)
   placement?: 'bottom-start' | 'bottom-end'   // left- or right-aligned under the anchor
   gap?: number                          // px gap between anchor and popover
-}>(), { placement: 'bottom-start', gap: 4 })
+  flush?: boolean                       // menu content: tighter padding so hover rows reach the edges
+}>(), { placement: 'bottom-start', gap: 4, flush: false })
 
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 const popEl = ref<HTMLElement | null>(null)
@@ -82,14 +85,17 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" ref="popEl" class="cc-popover cc-dark" :style="style">
+    <div v-if="modelValue" ref="popEl" class="cc-popover cc-dark" :class="{ flush }" :style="style">
       <slot />
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-/* teleported out of the shell → carry theme surface/border/shadow here; callers style their content */
+/* teleported out of the shell → carry theme surface/border/shadow here; callers style their content.
+   PADDING IS OWNED HERE, as BaseModal owns its body padding — callers must NOT re-add it or it doubles
+   up. Each of the six call sites used to set its own and they had drifted to five different values
+   (10px ×3, 8px 10px, 6px 8px, 0.25rem), which is how a new popover ended up with none at all. */
 .cc-popover {
   z-index: 1000;
   background: var(--cc-surface-1);
@@ -97,5 +103,9 @@ onBeforeUnmount(() => {
   border-radius: var(--cc-radius-md);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   color: var(--cc-text);
+  padding: 0.5rem 0.65rem;
 }
+/* `flush` is for full-width MENU content, whose rows carry their own padding and whose hover highlight
+   must reach the popover's edges — an inset there leaves the highlight floating in a margin. */
+.cc-popover.flush { padding: 0.25rem; }
 </style>
