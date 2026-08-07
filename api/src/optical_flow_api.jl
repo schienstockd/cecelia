@@ -116,13 +116,15 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     haskey(data, "temporalScales") && (models["0"]["temporalScales"] = data["temporalScales"])
     haskey(data, "cumulativeWindow") && (models["0"]["cumulativeWindow"] = data["cumulativeWindow"])
     params = Dict{String,Any}("valueName" => value_name, "models" => models,
-                              "normaliseToWhole" => true)
+                              "normaliseToWhole" => true,
+                              "colormap" => get(data, "colormap", "viridis"))
     # merge any inference params the panel passes through, so it shows what the CURRENT settings do
     for (k, v) in get(data, "modelParams", Dict{String,Any}())
         models["0"][String(k)] = v
     end
     prepared = try
         Dict{String,Any}("valueName" => value_name, "normaliseToWhole" => true,
+                         "colormap" => params["colormap"],
                          "models" => coastal_models_for_python(params, raw; require_model = false))
     catch e
         return 400, JSON3.write((; error = e isa ErrorException ? e.msg : sprint(showerror, e),

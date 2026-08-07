@@ -151,7 +151,10 @@ def _cellpose_imports():
 #: backgrounds (measured byte-identical) and the same reply shape, just slower. Bumping anyway would
 #: cost every user a fresh 18 s of imports to fix nothing, which is precisely the adoption this
 #: version exists to allow. A version that moves on every commit is a version nobody can reason about.
-PROTOCOL = 7
+#: 8: the flow planes are COLOUR-mapped (`params.colormap`, viridis by default). Bumped by the same
+#:    rule the AF work was not: an adopted protocol-7 worker ignores the parameter and answers grey
+#:    PNGs, which reads as "the colormap setting does nothing" with no error anywhere.
+PROTOCOL = 8
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -598,8 +601,9 @@ def _preview_flow_inspect(ctx):
     here would be the same picture computed a different way.
 
     Every metric is returned, including the ones a chosen model was trained without: hiding those
-    would defeat the point, since deciding what to drop is the reason to look. Which ones a model
-    ignores comes back in `droppedMetrics` so the panel can mark them.
+    would defeat the point, since deciding what to drop is the reason to look. WHICH ones a model
+    excluded is not reported here — that is a property of the model, answered by the vault's details
+    modal, and marking it on the sheet only invited "why doesn't this change when I toggle a chip".
 
     A BACKEND rather than a new message type, so the region maths, the image handle, the norm-param
     cache and the reply envelope are all the ones `preview` already has — and the window/projection
@@ -607,7 +611,7 @@ def _preview_flow_inspect(ctx):
     fed. Returns `planes`, not `layers`: canvas plots, nothing near napari.
     """
     from cecelia.utils.coastal_utils import temporal_config
-    from cecelia.utils.plane_render import plane_png
+    from cecelia.utils.plane_render import DEFAULT_COLORMAP, plane_png
 
     models = ctx.params.get('models') or {}
     if not models:
@@ -643,11 +647,11 @@ def _preview_flow_inspect(ctx):
         planes.append(('probability', prob))
     planes += [(k, metrics[k]) for k in sorted(metrics)]
 
+    cmap = str(ctx.params.get('colormap') or DEFAULT_COLORMAP)
     return {
-        'planes': [{'name': n, 'png': base64.b64encode(plane_png(a)).decode('ascii')}
+        'planes': [{'name': n, 'png': base64.b64encode(plane_png(a, colormap=cmap)).decode('ascii')}
                    for n, a in planes],
         'metricKeys': sorted(metrics),
-        'droppedMetrics': sorted(dropped) if has_model else [],
         'temporalScales': list(scales),
         'hasModel': has_model,
     }
