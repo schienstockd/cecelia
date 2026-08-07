@@ -69,7 +69,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </script>
 
 <template>
-  <div ref="panel" class="pop-manager" :class="{ docked }"
+  <div ref="panel" class="pop-manager" :class="{ docked, collapsed }"
        :style="docked ? { width: '100%' } : { left: pos.x + 'px', top: pos.y + 'px', width: width + 'px' }">
     <div class="pm-header" @mousedown.prevent="onHeaderDown">
       <i class="pi" :class="icon" />
@@ -104,27 +104,41 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </template>
 
 <style scoped>
-/* width is set inline from the `width` prop (docked → 100%) */
+/* Width is set inline from the `width` prop (docked → 100%); the user can then drag the corner.
+   `resize` needs a non-`visible` overflow, so the box clips and the LIST scrolls inside it — which is
+   also what lets a taller drag show more rows instead of just more empty box. Same idiom as
+   CanvasPanel (CSS `resize`, not a hand-rolled grip); the height cap is the viewport so a long list
+   can't run off the canvas. */
 .pop-manager {
   position: absolute; z-index: 20;
+  display: flex; flex-direction: column;
+  max-height: 90vh; min-width: 240px; min-height: 140px;
+  resize: both; overflow: hidden;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px rgba(0,0,0,0.4);
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
-/* docked: in-flow rail (no float/drag/shadow), fills its container column */
-.pop-manager.docked { position: static; z-index: auto; box-shadow: none; }
+/* docked: in-flow rail (no float/drag/resize/shadow), fills its container column */
+.pop-manager.docked { position: static; z-index: auto; box-shadow: none;
+                      resize: none; overflow: visible; max-height: none; min-height: 0; }
 .pop-manager.docked .pm-header { cursor: default; }
+/* docked has no box height of its own to fill, so the list keeps its own cap (the board rail must not
+   grow without bound on a long population list) */
+.pop-manager.docked .pm-body { max-height: 60vh; }
+/* collapsed: shrink to the header, overriding any dragged height; no grip on a header-only box */
+.pop-manager.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
 .pm-header {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0;
   cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);
   border-radius: var(--cc-radius-md) 6px 0 0;
 }
 .pm-title { font-weight: 600; }
 .pm-count { color: var(--cc-text-dim); margin-left: auto; }
-.pm-body { max-height: 60vh; overflow-y: auto; }
+/* the one flexible row: takes the leftover height and scrolls (min-height:0 or flex won't shrink it) */
+.pm-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 /* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
 .pm-icon:hover { color: var(--cc-text); }
-.pm-opts { border-top: 1px solid var(--cc-border); }
-.pm-footer { display: flex; align-items: center; padding: 6px 8px; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
+.pm-opts { border-top: 1px solid var(--cc-border); flex-shrink: 0; }
+.pm-footer { display: flex; align-items: center; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
 .pm-seg { margin-left: auto; }
 </style>

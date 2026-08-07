@@ -1868,8 +1868,13 @@ page — and the Analysis board — reuses them unchanged:
   plot-only parts — the global/local **scope footer** (pass `scope`) and the `PlotOptions` block (pass
   `vis`). `SeriesPicker`, `PopulationManager` and `FlowModelVault` wrap it; the differing LIST is the
   default slot, host-specific controls (the gating manager's gate/viewer options) go in `#options`, and
-  `width` widens it for a table-shaped list. Slotted rows keep their own component's scoped CSS; the
-  shell owns only the chrome. **Was `PopulationPanelShell`** until the model vault showed the chrome was
+  `width` sets the starting width for a table-shaped list. **Resizable by the corner** (CSS `resize`,
+  the same idiom as `CanvasPanel` — never a hand-rolled grip): the box clips, the LIST is the one
+  flexible row and scrolls, so dragging taller shows more rows rather than more empty box; capped at
+  `90vh` so a long list can't run off the canvas, and docked mode keeps the list's own `60vh` cap
+  because it has no box height to fill. Size and position are **not** persisted yet (unlike
+  `CanvasPanel`, which does it via `persistKey` + the `canvasPanels` geom store).
+  Slotted rows keep their own component's scoped CSS; the shell owns only the chrome. **Was `PopulationPanelShell`** until the model vault showed the chrome was
   never population-specific — a manager of non-plot-series things simply passes neither opt-in part.
   **Use this, not `FloatingPanel`, for anything scoped to a canvas**: `FloatingPanel` is the app's
   viewport window layer (Viewer, Lab log), so a canvas manager put there fights them for the corner.
