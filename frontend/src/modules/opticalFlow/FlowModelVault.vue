@@ -19,6 +19,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
+import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 
@@ -71,6 +72,8 @@ async function load() {
 onMounted(load)
 defineExpose({ load })
 
+const byName = (n: string): FlowModel => models.value.find(m => m.name === n)!
+
 function startRename(m: FlowModel) { editing.value = m.name; draft.value = m.stem }
 
 async function commitRename(m: FlowModel) {
@@ -107,6 +110,19 @@ function trainedOn(m: FlowModel): string {
 }
 
 function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)} MB` }
+
+// `SelectionTable` renders display strings verbatim and never formats a number itself, so every
+// column is built here.
+const COLUMNS: SelectionColumn[] = [
+  { key: 'stem',      label: 'Model' },
+  { key: 'trainedOn', label: 'Trained on' },
+  { key: 'modified',  label: 'Date' },
+  { key: 'size',      label: 'Size' },
+]
+const tableRows = computed(() => models.value.map(m => ({
+  name: m.name, stem: m.stem, trainedOn: trainedOn(m), modified: m.modified, size: mb(m.bytes),
+})))
+const picked = ref('')
 </script>
 
 <template>
@@ -126,25 +142,25 @@ function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)}
       No models yet — run Train flow model on an image.
     </p>
 
-    <ul v-else class="vault-list">
-      <li v-for="m in models" :key="m.name" class="vault-row">
-        <div class="vault-main">
-          <input v-if="editing === m.name" v-model="draft" class="vault-rename" autofocus
-                 v-tooltip.top="'Enter to rename, Esc to cancel'"
-                 @keyup.enter="commitRename(m)" @keyup.esc="editing = null" @blur="commitRename(m)" />
-          <span v-else class="vault-name" @dblclick="startRename(m)">{{ m.stem }}</span>
-          <span class="cc-readout">{{ trainedOn(m) }}</span>
-        </div>
-        <span class="cc-muted vault-meta">{{ m.modified }} · {{ mb(m.bytes) }}</span>
-        <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
-                @click="startRename(m)">
-          <i class="pi pi-pencil" />
-        </button>
-        <ConfirmDeleteButton title="Delete model"
-                             armed-title="Click again to delete this model"
-                             @confirm="remove(m)" />
-      </li>
-    </ul>
+    <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked"
+                    actions-label=""
+                    :row-tooltip="r => `Trained on ${r.trainedOn || 'unknown data'}`">
+      <template #actions="{ row }">
+        <input v-if="editing === row.name" v-model="draft" class="vault-rename" autofocus
+               v-tooltip.top="'Enter to rename, Esc to cancel'"
+               @keyup.enter="commitRename(byName(row.name))" @keyup.esc="editing = null"
+               @blur="commitRename(byName(row.name))" />
+        <template v-else>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.top="'Rename'"
+                  @click="startRename(byName(row.name))">
+            <i class="pi pi-pencil" />
+          </button>
+          <ConfirmDeleteButton title="Delete model"
+                               armed-title="Click again to delete this model"
+                               @confirm="remove(byName(row.name))" />
+        </template>
+      </template>
+    </SelectionTable>
   </div>
 </template>
 
@@ -153,13 +169,5 @@ function mb(bytes: number): string { return `${(bytes / 1024 / 1024).toFixed(1)}
 .vault-bar { display: flex; align-items: center; gap: 0.6rem; }
 .vault-dir { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
              max-width: 40ch; }
-.vault-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
-              gap: 0.2rem; }
-.vault-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.4rem;
-             border-radius: var(--cc-radius-sm); }
-.vault-row:hover { background: var(--cc-surface-2); }
-.vault-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.vault-name { font-weight: 500; cursor: text; }
 .vault-rename { width: 20ch; }
-.vault-meta { white-space: nowrap; }
 </style>

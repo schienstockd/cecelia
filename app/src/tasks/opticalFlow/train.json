@@ -51,7 +51,7 @@
         "4",
         "8"
       ],
-      "tip": "Frame lags for optical flow; inference must reuse these",
+      "tip": "Frame lags; inference must reuse these",
       "options": [
         {
           "label": "1",

@@ -463,7 +463,7 @@ const pct = computed(() => {
       :model-value="(Array.isArray(val) ? val : []).map(String)"
       multiple
       :aria-label="param.label"
-      v-tooltip.right="param.tip"
+      v-tooltip.left="param.tip"
       @update:model-value="v => val = v as string[]"
     />
 
