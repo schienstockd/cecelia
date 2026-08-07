@@ -118,3 +118,53 @@ export async function reclaimStorage(
   if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
   return data as { freedBytes: number; reclaimed: string[] }
 }
+
+/** One selectable store-layout value (zarr format or chunk separator). */
+export interface LayoutChoice { name: string; label: string; detail: string }
+
+/**
+ * Store LAYOUT defaults — the zarr format and the chunk-key separator.
+ *
+ * Unlike the compressor, these are **defaults the import form pre-fills**, not a switch over what
+ * happens next: format and separator are decided per image at import, because an existing v2 image
+ * cannot become v3 and derived stores inherit from their source. See docs/todo/ZARR_V3_PLAN.md D10.
+ */
+export interface StoreLayoutSettings {
+  ngffVersion: string
+  chunkSeparator: string
+  defaults: { ngffVersion: string; chunkSeparator: string }
+  ngffVersionChoices: LayoutChoice[]
+  chunkSeparatorChoices: LayoutChoice[]
+}
+
+export async function fetchStoreLayout(): Promise<StoreLayoutSettings> {
+  const res = await fetch('/api/storage/layout')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as StoreLayoutSettings
+}
+
+/** Applies to images imported from here on — existing stores keep their layout (there is no converter). */
+export async function setStoreLayout(key: 'ngffVersion' | 'chunkSeparator', value: string): Promise<string> {
+  const res = await fetch('/api/storage/layout/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return (data as any).value as string
+}
+
+/**
+ * Whether a format + separator pair is one bioformats2raw cannot actually write.
+ *
+ * `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr **v2** store — verified in
+ * both flag orders. So the pair is not "advanced", it is impossible, and the UI has to say so rather
+ * than let someone pick 0.5 and get 0.4 without being told.
+ */
+export function layoutConflict(ngffVersion: string, chunkSeparator: string): string {
+  return ngffVersion === '0.5' && chunkSeparator === 'flat'
+    ? 'Flat keys force zarr v2 — bioformats2raw cannot write NGFF 0.5 with flat keys'
+    : ''
+}

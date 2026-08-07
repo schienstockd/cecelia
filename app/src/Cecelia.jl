@@ -7,6 +7,8 @@ export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON, IMAGE_COMPRESSOR_DOCS_URL
+export ngff_version, chunk_separator, set_store_layout!
+export NGFF_VERSION_CHOICES, NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_CHOICES, CHUNK_SEPARATOR_DEFAULT
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH

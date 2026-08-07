@@ -10,13 +10,15 @@ import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
-         type StorageSummary, type CompressorSettings } from '../utils/storage'
+         fetchStoreLayout, setStoreLayout, layoutConflict,
+         type StorageSummary, type CompressorSettings, type StoreLayoutSettings } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import CcToggle from '../components/CcToggle.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import ChipSelect from '../components/ChipSelect.vue'
 
 const showPackages = ref(false)
 
@@ -32,6 +34,23 @@ const storageError = ref('')
 // Image-store compression (advanced). Server-side setting, not a browser preference — it decides how
 // every store the backend writes is encoded, so it lives in custom.toml like the pool limits, and the
 // choice list is served rather than duplicated here.
+const layout      = ref<StoreLayoutSettings | null>(null)
+const layoutBusy  = ref(false)
+const layoutError = ref('')
+// The one combination bioformats2raw cannot write: --no-nested + NGFF 0.5 silently yields zarr v2.
+const layoutWarn = computed(() =>
+  layout.value ? layoutConflict(layout.value.ngffVersion, layout.value.chunkSeparator) : '')
+async function loadLayout() {
+  try { layout.value = await fetchStoreLayout() } catch (e) { layoutError.value = String(e) }
+}
+async function changeLayout(key: 'ngffVersion' | 'chunkSeparator', value: string) {
+  if (!layout.value || layout.value[key] === value) return
+  layoutBusy.value = true; layoutError.value = ''
+  try { layout.value[key] = await setStoreLayout(key, value) }
+  catch (e) { layoutError.value = e instanceof Error ? e.message : String(e) }
+  finally { layoutBusy.value = false }
+}
+
 const compressor      = ref<CompressorSettings | null>(null)
 const compressorBusy  = ref(false)
 const compressorError = ref('')
@@ -193,6 +212,7 @@ function replKeydown(e: KeyboardEvent) {
 }
 onMounted(loadDiag)
 onMounted(loadCompressor)
+onMounted(loadLayout)
 
 // ── System: service control panel ─────────────────────────────────────────────
 // Live status of the backend's child processes + per-component and global controls. Status is
@@ -497,6 +517,35 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">Applies to new stores only</span>
       </div>
       <span v-if="compressorError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ compressorError }}</span>
+
+      <!-- Store LAYOUT. Sits with the compressor because it is the same kind of decision, but it is a
+           DEFAULT the import form pre-fills rather than a switch over what happens next: format and
+           separator are fixed per image at import (no converter), and derived stores inherit from their
+           source. Labels name the real zarr concepts on purpose — someone who knows zarr should be able
+           to map each option onto what lands in .zarray / zarr.json. -->
+      <div v-if="layout" class="field">
+        <div class="cmp-head">
+          <span class="svc-name">Store layout</span>
+          <span class="field-hint cc-muted cc-fs-xs">Defaults for new imports</span>
+        </div>
+        <div class="field-row">
+          <span class="field-label cc-fs-xs" v-tooltip.right="'OME-NGFF spec version (--ngff-version)'">OME-NGFF</span>
+          <ChipSelect :options="layout.ngffVersionChoices.map(c => ({ value: c.name, label: c.label, tip: c.detail }))"
+                      :model-value="layout.ngffVersion" :disabled="layoutBusy"
+                      v-tooltip.top="'OME-NGFF spec version for new imports (--ngff-version)'"
+                      @update:model-value="v => changeLayout('ngffVersion', String(v))" />
+        </div>
+        <div class="field-row">
+          <span class="field-label cc-fs-xs" v-tooltip.right="'dimension_separator — decides how many directories a store costs'">Chunk keys</span>
+          <ChipSelect :options="layout.chunkSeparatorChoices.map(c => ({ value: c.name, label: c.label, tip: c.detail }))"
+                      :model-value="layout.chunkSeparator" :disabled="layoutBusy"
+                      v-tooltip.top="'dimension_separator for new imports (--no-nested)'"
+                      @update:model-value="v => changeLayout('chunkSeparator', String(v))" />
+        </div>
+        <span v-if="layoutWarn" class="field-hint cc-fs-xs" style="color: var(--cc-sev-warn);">{{ layoutWarn }}</span>
+        <span v-else class="field-hint cc-muted cc-fs-xs">Existing images keep their layout</span>
+      </div>
+      <span v-if="layoutError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ layoutError }}</span>
 
       <div class="field">
         <div class="field-row">

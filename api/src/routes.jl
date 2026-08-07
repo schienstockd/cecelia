@@ -586,6 +586,32 @@ function api_compressor_set(body_bytes)
     end
 end
 
+# ── Store LAYOUT defaults (zarr format + chunk separator) ─────────────────────────
+# GET → { ngffVersion, chunkSeparator, defaults, choices }. These are DEFAULTS the import form
+# pre-fills, not a switch over existing behaviour: format and separator are decided per image at import
+# (an existing v2 image cannot become v3, and derived stores inherit) — docs/todo/ZARR_V3_PLAN.md D10.
+function api_store_layout_get(_req)
+    ch(cs) = [(; name = c.name, label = c.label, detail = c.detail) for c in cs]
+    200, JSON3.write((; ngffVersion    = Cecelia.ngff_version(),
+                        chunkSeparator = Cecelia.chunk_separator(),
+                        defaults = (; ngffVersion = Cecelia.NGFF_VERSION_DEFAULT,
+                                      chunkSeparator = Cecelia.CHUNK_SEPARATOR_DEFAULT),
+                        ngffVersionChoices    = ch(Cecelia.NGFF_VERSION_CHOICES),
+                        chunkSeparatorChoices = ch(Cecelia.CHUNK_SEPARATOR_CHOICES)))
+end
+
+function api_store_layout_set(body_bytes)
+    data = JSON3.read(body_bytes)
+    key  = String(get(data, :key, ""))
+    val  = String(get(data, :value, ""))
+    (isempty(key) || isempty(val)) && return 400, JSON3.write((; error = "key + value required"))
+    try
+        200, JSON3.write((; key = key, value = Cecelia.set_store_layout!(key, val)))
+    catch e
+        e isa ArgumentError ? (400, JSON3.write((; error = e.msg))) : rethrow()
+    end
+end
+
 function api_pool_set(body_bytes)
     data  = JSON3.read(body_bytes)
     name  = String(get(data, :name, ""))

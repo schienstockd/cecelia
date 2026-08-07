@@ -756,9 +756,12 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
     # `z_planes` lets "all z" resolve to a real depth; the source is not converted yet, so it comes from
     # ccid meta when a previous import recorded it, else 0 (which drops the flag rather than guessing).
+    # Unset params fall back to the Settings DEFAULTS, not to hardcoded literals — Settings is where the
+    # store-layout default lives and the import form pre-fills from it (ZARR_V3_PLAN D10). A run
+    # launched headlessly (REPL, chain) therefore gets the same layout as one launched from the form.
     fmt_flags, fmt_conflict = bf2raw_format_flags(
-        get(params, "ngffVersion", "0.4"), get(params, "shardSize", "auto");
-        separator   = get(params, "chunkSeparator", "nested"),
+        get(params, "ngffVersion", ngff_version()), get(params, "shardSize", "auto");
+        separator   = get(params, "chunkSeparator", chunk_separator()),
         shard_depth = get(params, "shardDepth", "1"),
         z_planes    = Int(get(img.meta, "SizeZ", 0)))
     on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")

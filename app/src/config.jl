@@ -431,6 +431,59 @@ function set_image_compressor!(name::AbstractString)::String
     nm
 end
 
+# ── Store LAYOUT defaults (Settings → Storage; the import pre-fills from these) ────────────────────
+#
+# The format and the chunk-key separator are decided PER IMAGE, at import — an existing v2 image cannot
+# become v3 (no converter, ZARR_V3_PLAN D7) and derived stores inherit from their source (D9/D11). So
+# unlike the compressor, which applies to whatever is written next, these are **defaults** that the
+# import form pre-fills, not a switch that changes existing behaviour. `docs/todo/ZARR_V3_PLAN.md` D10.
+
+#: NGFF spec version new imports default to. 0.4 is zarr v2 — what every existing image is, and still
+#: the right default: v3's only measured benefit here (fewer files) needs `--shard-depth`, which carries
+#: the D8 write-amplification risk, while the separator below gets a bigger win with none of it.
+const NGFF_VERSION_CHOICES = [
+    (name = "0.4", label = "0.4 — zarr v2", detail = ".zattrs / .zarray; what every existing image uses"),
+    (name = "0.5", label = "0.5 — zarr v3", detail = "zarr.json; required for sharding"),
+]
+const NGFF_VERSION_DEFAULT = "0.4"
+
+#: How chunk keys are spelled on disk. NOT cosmetic: it decides how many DIRECTORIES a store costs,
+#: which is most of its filesystem footprint and all of its cost on a network share. Measured on one
+#: 512x512x13z x2c x4t conversion — nested 224 directories, flat 4; on a real 1.7 GB import, 20 933 vs 4.
+#: bioformats2raw nests by default in BOTH formats; `--no-nested` flips it.
+const CHUNK_SEPARATOR_CHOICES = [
+    (name = "nested", label = "Nested  /", detail = "0/0/36/0/8 — bioformats2raw's default"),
+    (name = "flat",   label = "Flat  .",   detail = "36.0.8 — ~56x fewer directories; forces zarr v2"),
+]
+const CHUNK_SEPARATOR_DEFAULT = "nested"
+
+ngff_version()::String =
+    (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "ngffVersion", NGFF_VERSION_DEFAULT));
+     any(c -> c.name == v, NGFF_VERSION_CHOICES) ? v : NGFF_VERSION_DEFAULT)
+
+chunk_separator()::String =
+    (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "chunkSeparator", CHUNK_SEPARATOR_DEFAULT));
+     any(c -> c.name == v, CHUNK_SEPARATOR_CHOICES) ? v : CHUNK_SEPARATOR_DEFAULT)
+
+"""Persist a `[zarr]` layout default and hot-reload. Mirrors `set_image_compressor!`; unknown values
+raise rather than silently falling back, because this one is set from a UI with a fixed choice list."""
+function set_store_layout!(key::AbstractString, value::AbstractString)::String
+    v, choices = strip(String(value)),
+        key == "ngffVersion"    ? NGFF_VERSION_CHOICES :
+        key == "chunkSeparator" ? CHUNK_SEPARATOR_CHOICES :
+        throw(ArgumentError("unknown layout key '$key'"))
+    any(c -> c.name == v, choices) || throw(ArgumentError("unknown $key '$v'"))
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    z   = get(cfg, "zarr", Dict{String,Any}())
+    z[key] = v
+    cfg["zarr"] = z
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    v
+end
+
 """
     bf2raw_shuffle_values(lib_dir) -> (on, off)
 

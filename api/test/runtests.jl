@@ -3002,7 +3002,7 @@ end
         "/api/projects/bundle-info", "/api/projects/bundles",
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
-        "/api/setup/validate", "/api/storage/compressor",
+        "/api/setup/validate", "/api/storage/compressor", "/api/storage/layout",
         "/api/storage/summary",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
@@ -3057,7 +3057,7 @@ end
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
         "/api/sets/delete", "/api/setup/init",
-        "/api/storage/compressor/set", "/api/storage/reclaim",
+        "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
@@ -3101,7 +3101,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 94
+    @test length(GET_ROUTES) == 68 && length(POST_ROUTES) == 95
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -3228,4 +3228,29 @@ end
             @test png[2:4] == UInt8['P', 'N', 'G']
         end
     end
+end
+
+@testset "API: store layout defaults" begin
+    # These are DEFAULTS the import form pre-fills, not a switch over what happens next: format and
+    # separator are fixed per image at import (no converter) and derived stores inherit from their
+    # source. docs/todo/ZARR_V3_PLAN.md D10.
+    st, body = api_store_layout_get(HTTP.Request("GET", "/api/storage/layout"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test d.ngffVersion == "0.4"            # zarr v2 — what every existing image is
+    @test d.chunkSeparator == "nested"      # bioformats2raw's own default
+    @test d.defaults.ngffVersion == "0.4" && d.defaults.chunkSeparator == "nested"
+
+    # the choice list is SERVED, never duplicated in Vue (same rule as task param specs)
+    @test Set(String(c.name) for c in d.ngffVersionChoices) == Set(["0.4", "0.5"])
+    @test Set(String(c.name) for c in d.chunkSeparatorChoices) == Set(["nested", "flat"])
+    # transparent copy: every option says what it means on disk, for someone who knows zarr
+    for c in vcat(collect(d.ngffVersionChoices), collect(d.chunkSeparatorChoices))
+        @test !isempty(String(c.detail))
+    end
+
+    # bad input is rejected rather than silently persisted — this writes to custom.toml
+    @test _post(api_store_layout_set, Dict("key" => "ngffVersion", "value" => "9.9"))[1] == 400
+    @test _post(api_store_layout_set, Dict("key" => "nope", "value" => "0.4"))[1] == 400
+    @test _post(api_store_layout_set, Dict("key" => "", "value" => ""))[1] == 400
 end
