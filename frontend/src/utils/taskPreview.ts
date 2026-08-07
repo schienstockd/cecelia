@@ -346,7 +346,11 @@ export function previewSummary(
   return { cells, text: cells === 1 ? '1 cell' : `${cells} cells`, warn, warnDetail }
 }
 
-/** Debounce window, ms. A pan emits events continuously and each run is real cellpose on the GPU. */
+/**
+ * Debounce window, ms, for any preview-worker request. A pan emits events continuously and each run
+ * is real compute in the worker — cellpose on the GPU here, a flow-metric stack for the flow-metrics
+ * sheet, whose t/z sliders emit just as densely. One number, so the two surfaces cannot drift apart.
+ */
 export const PREVIEW_DEBOUNCE_MS = 400
 
 // ── waiting out a cold worker ──────────────────────────────────────────────────────────────────────
