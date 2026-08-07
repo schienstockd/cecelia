@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** **Default is now `flat` — NGFF 0.4 / zarr v2 with flat chunk keys** (Dominik, 2026-08-07): same read time as nested, ~14% less on disk. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -174,6 +174,37 @@ Consequence for labels: a label set derived from a v3 image is written v3 too, a
 stays its own decision (`LABEL_COMPRESSOR`) — format is inherited, codec is not. The two are separate
 axes and conflating them would undo the measured label-codec choice.
 
+**D10 — The format default lives in Settings → Storage, next to the compressor table; the import
+param pre-fills from it.** (Dominik, 2026-08-07.) The compressor is already there as a table with
+measured numbers *because* the trade-off is the whole reason there is a choice, and format has exactly
+that shape. But format cannot be purely global the way the compressor is: an existing v2 image cannot
+become v3 (D7, no converter) and derived stores inherit (D9), so it is decided **per image, at import**.
+Settings therefore holds the *default* and the explanation; the import param is where it takes effect.
+
+**D11 — `--no-nested` is the real "fewer files" lever, and it is independent of v3.** Chunk keys are
+nested by default in bioformats2raw for **both** formats, and that — not the format — is where a
+store's directory count comes from. Measured on a 512×512×13z×2c×4t conversion:
+
+| | dirs | files | example key |
+|---|---|---|---|
+| NGFF 0.4, default | 224 | 113 | `0/0/0/0/3/0/0` |
+| NGFF 0.4, `--no-nested` | **4** | 113 | `0/0/2.1.2.0.0` |
+| NGFF 0.5, default | 225 | 109 | `0/0/c/2/1/9/0/0` |
+
+**56× fewer directories, on v2, with one flag and no format change** — which projects the real 1.7 GB
+import from 20 933 directories to ~4. All four variants read back with identical pixels. That is a
+bigger and far safer win than sharding, and it needs neither v3 nor the D8 write-amplification risk.
+
+> **TRAP: `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr v2 store.**
+> Verified in both flag orders — the root carries `.zgroup`, not `zarr.json`. You ask for 0.5 and get
+> 0.4 with no warning. So the two must never be emitted together; a UI offering both independently
+> would let a user pick 0.5 and get v2, with only the metadata modal's format readout to reveal it.
+
+Not adopted yet: flipping it changes the on-disk layout of every new import, and whether ~10 000 files
+in one directory beats them spread over 21 000 directories is filesystem-dependent (fine on ext4 with
+`dir_index`; a single huge directory can be slower to enumerate on some network shares). Measure before
+defaulting — but as an *option* it is clearly worth exposing.
+
 ## Phases
 
 ### Phase 1 — Read (the blocker) ⬅ current
@@ -195,14 +226,65 @@ axes and conflating them would undo the measured label-codec choice.
 * Tests — **done**: `test-py` (523), `test-api`, `test-pkg` all green, each asserting the two formats
   AGREE rather than hardcoding expectations twice.
 
-### Phase 2 — Report (the metadata modal)
+### Phase 2 — Report (the metadata modal) ✅ built
 
-Surface, per image version and label set: **zarr format**, **NGFF version**, **chunk shape**,
-**shard shape** (or "none"), and the codec chain. Extend the existing
-`store_compression` → `GET /api/images/stores` path that the modal already renders; do not add a
-route. Keep the copy to values, not prose (`docs/UI.md` → *UI copy*).
+Surfaced per image version and label set: **zarr format**, **NGFF version**, **chunk shape**,
+**shard shape** (or "none"), the **chunk-key style**, and the codec. Served by the existing
+`store_compression` → `GET /api/images/stores` path the modal already rendered; no new route. Copy is
+values, not prose (`docs/UI.md` → *UI copy*).
 
-### Phase 3 — Write
+**Presentation — three shapes were tried, and the failure of the first two is the reason for the
+third.** Six technical facts per stored version is more than a table row holds: as extra columns it
+was unreadably dense, and as one `·`-joined second line
+(`zarr v2 · NGFF 0.4 · chunks 1×1×1×1024×1024 · not sharded · nested keys`, at 10px) it read as prose
+you had to parse to tell a chunk from a shard. What ships is **one card per stored thing**: what it IS
+on the head row (value name · `zarr v2 (NGFF 0.4)` · size), what it is MADE OF underneath as labelled
+pairs (`codec zstd + shuffle`, `chunks …`, `shard none`, `keys flat`). Formatting lives in
+`frontend/src/utils/storeFormat.ts` (`storeFormatTitle`/`storeFormatFacts`), unit-tested; the SFC only
+lays it out.
+
+**Fixed while doing it: our own v2 stores declared no NGFF version at all.** The modal renders an
+absent version as nothing, which is what exposed it. Three writers carried the same
+`if zarr_format >= 3` inline and every one of them stamped the version only on the v3 branch, so each
+correction, crop and label set we wrote was version-less while bioformats2raw's imports were not — a
+reader with no version has to assume one. Collapsed into `zarr_utils.write_multiscales_attrs`, which
+puts it where the format keeps it: on the entry for 0.4, on `ome` for 0.5 (where a per-entry `version`
+is not valid). A calibration re-stamp fills it in for stores already on disk, which is the only repair
+path — nothing rewrites pixels to fix metadata. Mutation-verified.
+
+### Phase 3 — Write ✅ built
+
+Done: `store_codecs` (the v3 codec-list shape of the same decision), `_codec_kwargs` (picks
+`compressor=` vs `compressors=` per format, plus `shards=`), `store_encoding_of` (D9 inheritance,
+accepting a path **or an open zarr node** — `cropImage_run` passes an open array, and handling only
+paths made it silently write a v2 crop of a v3 image). `create_multiscales`,
+`open_multiscales_for_writing`, `create_zarr_from_ndarray` and `write_multiscale_pyramid` take the
+format; where a group is in hand it is derived FROM the group, since a sub-array that disagreed with
+its group would be unreadable.
+
+Every writer inherits: the four corrections (af/drift/cellpose/temporal_smooth) pass
+`reference_zarr=im_path`, crop already passed its source array, the segmentation LABEL writer reads
+`params['imPath']`, and `rechunk_zarr` **preserves** the source format — it rewrites an existing store,
+so hardcoding v2 there would have silently downgraded a v3 store while claiming only to rechunk it, and
+its verbatim `attrs` copy would have put `ome`-nested metadata into a v2 container where it reads as no
+multiscales at all.
+
+Import params: `ngffVersion` (0.4/0.5) and `shardSize`. **There is no "off" for sharding** —
+`--shard-width` defaults to 1024 and cannot be disabled, so bioformats2raw shards every v3 store
+(verified: a 0.5 import with no shard flag still produces a `sharding_indexed` codec). The control sets
+the SIZE; an option claiming to disable it would be a lie, and a test asserts none exists.
+
+The `store_compressor` convention detector was correctly failing on all of this and now recognises
+`compressors=` and `**_codec_kwargs(...)`, and polices the v3 codec classes — re-verified by mutation
+that it still catches an uncovered `create_array`.
+
+Calibration re-stamps land correctly in both formats via `write_ngff_attrs` — the write-side twin of
+`ngff_attrs`. This was the risky gap: writing `attrs['multiscales']` on a v3 store puts it at the top
+level where **no reader looks**, so the store keeps its OLD multiscales and the update is silently
+ignored — the numbers appear written and are not there (`CLAUDE.md` → *Calibration — three copies, one
+stamp*). Mutation-verified: reverting to the naive top-level write fails both new tests.
+
+### Phase 3 — Write (original scope)
 
 * `store_compressor(kind, zarr_format, shard_shape)` (D5); `create_multiscales` /
   `open_multiscales_for_writing` / `create_zarr_from_ndarray` take a format.
@@ -215,7 +297,113 @@ route. Keep the copy to values, not prose (`docs/UI.md` → *UI copy*).
 * Import task: `ngffVersion` + shard params → `--ngff-version` / `--shard-*`.
 * Settings → Storage: format + sharding controls next to the compressor, with measured numbers.
 
-### Phase 4 — Adopt
+**`validBox` needs no v3 branch** — verified, and pinned by a test so nobody "fixes" it. It lives under
+`CECELIA_ATTR`, a cecelia-PRIVATE namespace, and NGFF 0.5's `ome` nesting applies only to the spec's own
+keys (`multiscales`, `omero`). `zarr-python`'s `Group.attrs` already hides `.zattrs` vs
+`zarr.json`→`attributes`, so writer and reader agree in both formats. Routing it through
+`write_ngff_attrs` like the multiscales writers — the obvious-looking fix — would bury a private key
+inside `ome` where it is neither NGFF nor findable.
+
+### Phase 4 — Measured (2026-08-07)
+
+Real 3D+time intravital dataset: `M1a-CD8-GFP-CD20-Tom_005.tif`, 1.7 GB → **64t × 4c × 13z × 512 × 512**,
+imported twice (NGFF 0.4 and 0.5) and drift-corrected in both, `zstd-shuffle`, 3 pyramid levels.
+
+| | v2 / NGFF 0.4 | v3 / NGFF 0.5 |
+|---|---|---|
+| import files | 9 997 | 9 991 |
+| import data bytes | 940 425 216 | 940 617 728 (+0.02 %) |
+| drift correct | ✅ 105.2 s | ✅ 105.6 s (+0.4 %) |
+| drift output, DATA bytes | 847 028 518 | 847 031 970 (+0.0004 %) |
+| drift output, ALLOCATED | 889 MB | **988 MB (+11 %)** |
+| **directories** | **4** | **24 211** |
+
+**Everything works and the pixels are identical** (v2 and v3 drift outputs compared frame by frame).
+Correction time is indistinguishable. So v3 is functionally fine end to end — import, streaming
+correction, read-back.
+
+**The directory blow-up was OURS, not v3's — corrected (Dominik spotted it).** The first reading of
+this table said "unsharded v3 is strictly worse on disk". Wrong: it compared bioformats2raw's v2 import
+against *our* v3 write. bioformats2raw nests for **both** formats, so at import the difference is 3
+directories, not 20 000:
+
+| store | dirs | example chunk key |
+|---|---|---|
+| import v2 (bioformats2raw) | 20 933 | `0/0/36/0/8/0/0` |
+| import v3 (bioformats2raw) | 20 936 | `0/0/c/36/0/8/0/0` |
+| drift v2 (**our** writer) | 4 | `0/56.2.15.1.1` |
+| drift v3 (**our** writer, before the fix) | 24 211 | `0/c/36/0/31/0/0` |
+
+The cause is zarr-python's default chunk-key separator: `.` for v2, `/` for v3. So moving a writer to v3
+silently turned 4 directories into 24 211 and cost ~11 % more *allocated* disk for byte-identical data.
+Fixed by pinning `separator: '.'` for the stores we write (`_V3_FLAT_CHUNK_KEY`) — not a new convention,
+it is what our v2 derived stores already did, so a correction/crop/label store is laid out the same way
+before and after the format change. Not applied to imports, which we do not write.
+
+**So v3 is not a disk regression.** The remaining question is whether sharding is worth having at all.
+
+**And sharding, as we currently expose it, cannot fix that.** `--shard-width/height` cap to the frame,
+so on a 512×512 image the shard EQUALS the chunk and buys nothing — measured: shard and chunk both
+`[1,1,1,512,512]`, 9 991 files vs 9 997. The axis that pays is **z**, which we do not expose:
+
+| | files | shard |
+|---|---|---|
+| `--shard-depth 1` (default; all our UI can produce) | 109 | `[1,1,1,512,512]` = the chunk |
+| `--shard-depth 13` (one shard per z-stack) | **13** | `[1,1,13,512,512]` |
+
+**8.4× fewer files**, which on the real image projects 9 991 → ~770.
+
+**Conclusion: keep v2 as the default, but not because v3 costs disk.** It does not, once the chunk key
+is pinned. The reason is that v3's only real *benefit* here — fewer files — needs `--shard-depth`, which
+makes a shard span z: exactly the case D8 says punishes incremental writers (a per-plane correction
+would read-modify-write a 13-plane shard per plane). That trade is real and unmeasured, and the drift
+run above does NOT test it, because with shard == chunk there is no amplification to observe.
+
+The file-count motivation is real, though: a 1.7 GB import is **~31 000 filesystem entries** (20 933
+dirs + 9 997 files), and `--shard-depth 13` would cut that ~8×. That is the case for pursuing it — on
+the import, which is written once and sequentially, and where D8 says sharding is safe.
+
+### Storage vs access, per layout (measured 2026-08-07)
+
+Same source (`M3c-…_MAX.tif`), converted four ways, 2 pyramid levels. Read is a full level-0 read,
+**9 interleaved rounds** across all four stores so drift hits them equally.
+
+**Held fixed:** the codec — blosc/**zstd level 3 + byte shuffle** (`zstd-shuffle`, the default of the
+compressor table) and `1×1×1×512×512` chunks, verified equal in every store's array metadata after the
+fact rather than assumed from the flags. So each row below is "this layout at the default codec". The
+compressor table is the mirror image — all four of its rows were measured in **zarr v2, nested keys,
+512×512 chunks** (bioformats2raw's own default, which is what wrote `4kS67f/LUkCpP`). Both captions now
+say so on screen; neither table's rows have been re-measured across the other's axis.
+
+A different codec would move all three rows below together and leave their *differences* intact, since
+the flat-vs-nested gap is directory inodes and not bytes. The reverse is not as safe: chunk shape is a
+layout property that feeds the codec its context window, so a compressor row measured at a very
+different chunk size is not the same measurement.
+
+| layout | on disk | data bytes | dirs | read (median) |
+|---|---|---|---|---|
+| v2, nested | 81.2 MB | 69 427 279 | 2 474 | 188 ms |
+| v2, **flat** | **71.1 MB** | 69 427 279 | **4** | 189 ms |
+| v3, nested (sharded) | 81.2 MB | 69 444 711 | 2 476 | **263 ms** |
+| flat + 0.5 → falls back to v2 | 71.1 MB | 69 427 279 | 4 | 180 ms |
+
+All four decode to identical pixels.
+
+**Flat vs nested — a storage difference, not an access one.** Identical data bytes and identical read
+time (188 vs 189 ms); flat saves **10 MB of 81 MB (~14 %)** purely by not allocating 2 470 directory
+inodes. So flat is free on local disk. (A network share should favour it further — far fewer directory
+round-trips — but that is unmeasured.)
+
+**v2 vs v3 — v2 is better, on this data.** Same size, and **v3 reads ~40 % slower** (263 vs 188 ms),
+with its whole range (245–297 ms) above every other median. The likely mechanism is the sharding
+indirection — read the shard index, then the byte range — and v3 is the only sharded store here.
+Note the two cannot be separated with bioformats2raw, because it **always** shards v3: "v3 as we can
+actually produce it" is "v3 sharded". So the honest comparison is the one above, and it favours v2.
+
+That is a second, independent reason to keep v2 as the default — and the first measurement showing a
+concrete v3 *cost* rather than just an absent benefit.
+
+### Phase 4 — Adopt (remaining)
 
 Measure sharded vs unsharded on a real timecourse (store size, file count, import time, warm plane
 read, and the **correction-task rewrite** cost, which is where sharding should hurt). Publish the

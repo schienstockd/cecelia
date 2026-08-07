@@ -371,6 +371,14 @@ Measured identically for every row: `4kS67f/LUkCpP` (64x4x13x512x512, 12-bit dat
 1.745 GB raw), whole store rewritten. `read` is a warm per-plane read, the only read difference that
 survived three repeat runs — cold and sequential reads were inside run-to-run noise, because a smaller
 store offsets the extra CPU. `url` is the codec's own site so a user can check what they're choosing.
+
+**Held fixed while measuring:** the store LAYOUT — zarr v2, nested chunk keys (bioformats2raw's own
+default, which is what wrote that store), 1x1x1x512x512 chunks, unsharded. It has to be stated because
+the other table on that Settings page varies exactly those, and a size in one table is only comparable
+to a size in the other if you know which layout each was taken in. Chunk shape is the part that could
+actually move these numbers: the codec compresses one chunk at a time, so a different chunk size gives
+it a different amount of context. The two variables are not independent, and neither table's rows were
+re-measured across the other's — each varies one thing with the other pinned.
 """
 const IMAGE_COMPRESSOR_CHOICES = [
     (name = "zstd-shuffle", cname = "zstd", clevel = 3, shuffle = true,
@@ -387,8 +395,11 @@ const IMAGE_COMPRESSOR_CHOICES = [
      url = "https://facebook.github.io/zstd/"),
 ]
 
-#: What every row was measured on, shown as the table's caption. One line, no prose.
-const IMAGE_COMPRESSOR_MEASURED_ON = "1.7 GB 16-bit timecourse, whole store"
+#: What every row was measured on, shown as the table's caption. One line, no prose. Names the LAYOUT
+#: it was measured in (see the docstring) — the layout table below states its codec, symmetrically, so
+#: neither set of numbers is readable as "the" size without knowing what the other variable was.
+const IMAGE_COMPRESSOR_MEASURED_ON =
+    "1.7 GB 16-bit timecourse, whole store · zarr v2, nested keys, 512×512 chunks"
 
 #: The byte-shuffle filter belongs to Blosc, not to zstd/lz4 — link it separately.
 const IMAGE_COMPRESSOR_DOCS_URL = "https://www.blosc.org/"
@@ -429,6 +440,101 @@ function set_image_compressor!(name::AbstractString)::String
     write_atomic(io -> TOML.print(io, cfg), cfg_path)
     init_cecelia!()
     nm
+end
+
+# ── Store LAYOUT defaults (Settings → Storage; the import pre-fills from these) ────────────────────
+#
+# The format and the chunk-key separator are decided PER IMAGE, at import — an existing v2 image cannot
+# become v3 (no converter, ZARR_V3_PLAN D7) and derived stores inherit from their source (D9/D11). So
+# unlike the compressor, which applies to whatever is written next, these are **defaults** that the
+# import form pre-fills, not a switch that changes existing behaviour. `docs/todo/ZARR_V3_PLAN.md` D10.
+
+#: Store LAYOUTS a new import can be written in, as the three VIABLE combinations of NGFF version and
+#: chunk-key separator — not two independent controls. Flat keys and NGFF 0.5 cannot be combined
+#: (bioformats2raw silently writes zarr v2 for that pair, verified in both flag orders), so presenting
+#: them as one choice makes the impossible state unrepresentable instead of warning about it.
+#:
+#: Rendered as a TABLE in Settings, like the compressor, because the trade-off is the only reason there
+#: is a choice. Every number is MEASURED on one source (`M3c-CD8-GFP-CD20-Tom_MAX.tif`, 2 pyramid
+#: levels), with `read` the median of 9 interleaved full-level reads so drift hits each store equally.
+#: All three decode to identical pixels.
+#:
+#: **Held fixed while measuring:** the CODEC — blosc/zstd level 3 + byte shuffle (`zstd-shuffle`, the
+#: default of the compressor table above) with 1x1x1x512x512 chunks, verified identical in all three
+#: stores' array metadata. Stated for the same reason that table names its layout: these are two
+#: settings on one page and each table pins the other's variable, so `size` here is "this layout at the
+#: default codec", not the size of the layout as such. A different codec shifts all three rows together
+#: — the DIFFERENCE between them is a directory-inode cost and does not depend on the codec at all.
+#:
+#: `flat` is the default: same data bytes as nested and the same read time, but 10 MB of 81 MB less on
+#: disk (~14%) because it does not allocate ~2,470 directory inodes. Free on local disk, and a network
+#: share should favour it further.
+#:
+#: `v3` is offered and NOT default: same size, ~40% slower to read (263 vs 188 ms, its whole range above
+#: every other median). bioformats2raw ALWAYS shards v3, so this measures "v3 as we can actually produce
+#: it"; the shard-index indirection is the likely cause. See docs/todo/ZARR_V3_PLAN.md.
+const STORE_LAYOUT_CHOICES = [
+    (name = "flat", ngffVersion = "0.4", chunkSeparator = "flat",
+     label = "zarr v2 · flat keys", keys = "36.0.8", dirs = "4",
+     size = "71.1 MB", read = "189 ms",
+     detail = "NGFF 0.4, dimension_separator '.' (--no-nested)"),
+    (name = "nested", ngffVersion = "0.4", chunkSeparator = "nested",
+     label = "zarr v2 · nested keys", keys = "0/0/36/0/8", dirs = "2,474",
+     size = "81.2 MB", read = "188 ms",
+     detail = "NGFF 0.4, dimension_separator '/' — bioformats2raw's own default"),
+    (name = "v3", ngffVersion = "0.5", chunkSeparator = "nested",
+     label = "zarr v3 · sharded", keys = "c/0/0/36/0/8", dirs = "2,476",
+     size = "81.2 MB", read = "263 ms",
+     detail = "NGFF 0.5, zarr.json + sharding_indexed (--ngff-version 0.5)"),
+]
+const STORE_LAYOUT_DEFAULT = "flat"
+
+#: What every row was measured on — shown as the table's caption, one line, like the compressor's, and
+#: naming the codec for the same reason that one names the layout.
+const STORE_LAYOUT_MEASURED_ON =
+    "0.5 GB 16-bit stack, 2 levels, zstd + shuffle · read = median of 9 interleaved"
+
+"""The configured store layout, as a `STORE_LAYOUT_CHOICES` entry.
+
+Resolved from the two persisted `[zarr]` keys rather than a layout name, so a config written before
+this table existed still resolves, and so the two remain independently settable from the API. An
+unrecognised pair falls back to the default rather than erroring — this is read on the write path of a
+long import."""
+function store_layout()
+    v, sep = ngff_version(), chunk_separator()
+    i = findfirst(c -> c.ngffVersion == v && c.chunkSeparator == sep, STORE_LAYOUT_CHOICES)
+    STORE_LAYOUT_CHOICES[isnothing(i) ? findfirst(c -> c.name == STORE_LAYOUT_DEFAULT, STORE_LAYOUT_CHOICES) : i]
+end
+
+ngff_version()::String =
+    (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "ngffVersion", NGFF_VERSION_DEFAULT));
+     v in ("0.4", "0.5") ? v : NGFF_VERSION_DEFAULT)
+
+chunk_separator()::String =
+    (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "chunkSeparator", CHUNK_SEPARATOR_DEFAULT));
+     v in ("nested", "flat") ? v : CHUNK_SEPARATOR_DEFAULT)
+
+#: Defaults for the two underlying keys — derived from the default LAYOUT so they cannot drift apart.
+const NGFF_VERSION_DEFAULT = "0.4"
+const CHUNK_SEPARATOR_DEFAULT = "flat"
+
+"""Persist a whole LAYOUT by name (both keys at once) and hot-reload. Setting the pair together is what
+keeps the impossible combination unreachable from the UI."""
+function set_store_layout!(name::AbstractString)::String
+    nm = strip(String(name))
+    i  = findfirst(c -> c.name == nm, STORE_LAYOUT_CHOICES)
+    isnothing(i) && throw(ArgumentError("unknown store layout '$nm'"))
+    c = STORE_LAYOUT_CHOICES[i]
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    z   = get(cfg, "zarr", Dict{String,Any}())
+    z["ngffVersion"]    = c.ngffVersion
+    z["chunkSeparator"] = c.chunkSeparator
+    cfg["zarr"] = z
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    c.name
 end
 
 """
@@ -497,6 +603,79 @@ function bf2raw_chunk_flags(value)::Vector{String}
     n = tryparse(Int, s)
     (isnothing(n) || n < 32) && return String[]
     ["--tile-width", string(n), "--tile-height", string(n)]
+end
+
+"""
+    bf2raw_format_flags(ngff_version, shard_size) -> Vector{String}
+
+bioformats2raw `--ngff-version` / `--shard-*` flags. Empty for the default (`"0.4"`, no shard), so an
+unchanged import produces the exact command it always did.
+
+The import is the ONLY place the store format is chosen; every derived store inherits it from its
+source (`docs/todo/ZARR_V3_PLAN.md` D9). That is what keeps this answerable — the user decides once
+per image, not again on every correction, crop and label set.
+
+Returns `(flags, conflict)` — see the conflict note below.
+
+**Sharding applies only to NGFF 0.5** and is silently dropped for 0.4 rather than raising: the two are
+separate controls in the UI, and a user who sets a shard size and then switches back to 0.4 should get
+a working import, not an error.
+
+**`--no-nested` and `--ngff-version 0.5` are mutually exclusive** — together, bioformats2raw silently
+writes zarr **v2** (verified in both flag orders: the root carries `.zgroup`, not `zarr.json`). Flat
+wins, because flat has a measured benefit (56x fewer directories) and 0.5 on its own currently buys
+nothing. `conflict` is returned so the caller can say so instead of leaving the user to notice in the
+metadata modal.
+
+**There is no "off".** `--shard-width` defaults to 1024 and cannot be disabled, so bioformats2raw shards
+EVERY v3 store — verified against 0.12.1: a 0.5 import with no shard flag still produces a
+`sharding_indexed` codec. The control therefore sets the shard SIZE, and `"auto"` means "pass nothing,
+take the 1024 default" (itself capped to the frame). An option claiming to turn sharding off would be a
+lie, which is why there is not one.
+
+Which size is *best* is unmeasured — Phase 4's job. A shard is one file holding many chunks, so writing
+one chunk rewrites the whole shard: safe for an import (written once, sequentially) and potentially
+expensive for anything filling a store incrementally (D8). `"auto"` defers to upstream rather than
+naming a number chosen to look decisive.
+"""
+function bf2raw_format_flags(ngff_version, shard_size; separator = "nested",
+                            shard_depth = "1", z_planes::Int = 0)
+    v     = strip(string(ngff_version))
+    sep   = lowercase(strip(string(separator)))
+    flat  = sep == "flat"
+    flags = String[]
+
+    # THE CONFLICT. `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr **v2**
+    # store — verified in both flag orders against 0.12.1: the root ends up with `.zgroup`, not
+    # `zarr.json`. You ask for 0.5 and get 0.4, with no warning from the CLI. So the two are never
+    # emitted together, and the caller is TOLD which one it lost rather than discovering it later in the
+    # metadata modal. Flat wins because it is the one with a measured benefit (56x fewer directories);
+    # NGFF 0.5 currently buys nothing on its own.
+    conflict = flat && v == "0.5"
+    flat && push!(flags, "--no-nested")
+    if !(isempty(v) || v == "0.4" || conflict)
+        append!(flags, ["--ngff-version", v])
+    end
+    # sharding is NGFF 0.5 only — and a conflicted request is no longer 0.5
+    (v == "0.5" && !conflict) || return (flags, conflict)
+
+    sh = lowercase(strip(string(shard_size)))
+    if !(isempty(sh) || sh == "auto")
+        n = tryparse(Int, sh)
+        (isnothing(n) || n < 32) || append!(flags, ["--shard-width", string(n), "--shard-height", string(n)])
+    end
+    # Shard DEPTH is the only axis that actually reduces the file count on a 512x512 frame — width and
+    # height cap to the frame, so the shard equals the chunk and packs nothing. Measured: depth 13 gave
+    # 13 files where the default gave 109. It is also the axis D8 warns about: a shard spanning z is
+    # rewritten in full for every plane write, so this is opt-in and warned, never a default.
+    d = lowercase(strip(string(shard_depth)))
+    if d == "all"
+        z_planes > 1 && append!(flags, ["--shard-depth", string(z_planes)])
+    else
+        n = tryparse(Int, d)
+        (isnothing(n) || n <= 1) || append!(flags, ["--shard-depth", string(n)])
+    end
+    (flags, conflict)
 end
 
 """

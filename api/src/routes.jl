@@ -586,6 +586,40 @@ function api_compressor_set(body_bytes)
     end
 end
 
+# ── Store LAYOUT defaults (zarr format + chunk separator) ─────────────────────────
+# GET → { current, default, measuredOn, choices: [...] }. Shaped like the compressor endpoint on
+# purpose: it is the same kind of decision and Settings renders it the same way, as a TABLE with the
+# measured numbers, because the trade-off is the only reason there is a choice.
+#
+# The choices are the three VIABLE combinations of NGFF version + separator, not two independent
+# controls — flat keys and NGFF 0.5 cannot be combined (bioformats2raw silently writes zarr v2 for that
+# pair), so offering combinations makes the impossible state unreachable rather than warned.
+#
+# These are DEFAULTS the import form pre-fills, not a switch over what happens next: format and
+# separator are fixed per image at import (no converter) and derived stores inherit from their source.
+# docs/todo/ZARR_V3_PLAN.md D10.
+function api_store_layout_get(_req)
+    choices = [(; name = c.name, label = c.label, keys = c.keys, dirs = c.dirs,
+                  size = c.size, read = c.read, detail = c.detail,
+                  ngffVersion = c.ngffVersion, chunkSeparator = c.chunkSeparator)
+               for c in Cecelia.STORE_LAYOUT_CHOICES]
+    200, JSON3.write((; current = Cecelia.store_layout().name,
+                        default = Cecelia.STORE_LAYOUT_DEFAULT,
+                        measuredOn = Cecelia.STORE_LAYOUT_MEASURED_ON,
+                        choices = choices))
+end
+
+function api_store_layout_set(body_bytes)
+    data = JSON3.read(body_bytes)
+    name = String(get(data, :name, ""))
+    isempty(name) && return 400, JSON3.write((; error = "name required"))
+    try
+        200, JSON3.write((; current = Cecelia.set_store_layout!(name)))
+    catch e
+        e isa ArgumentError ? (400, JSON3.write((; error = e.msg))) : rethrow()
+    end
+end
+
 function api_pool_set(body_bytes)
     data  = JSON3.read(body_bytes)
     name  = String(get(data, :name, ""))

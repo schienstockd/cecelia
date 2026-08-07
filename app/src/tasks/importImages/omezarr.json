@@ -54,7 +54,79 @@
               "label": "2048 px"
             }
           ],
-          "tip": "Auto keeps one chunk per plane (1024, capped to the frame) \u2014 leave it unless advised"
+          "tip": "Zarr chunk shape in XY (--tile-width/height); auto = 1024, capped to the frame"
+        },
+        {
+          "key": "ngffVersion",
+          "label": "OME-NGFF version",
+          "type": "select",
+          "default": "0.4",
+          "options": [
+            {
+              "value": "0.4",
+              "label": "0.4 \u2014 zarr v2 (.zattrs/.zarray)"
+            },
+            {
+              "value": "0.5",
+              "label": "0.5 \u2014 zarr v3 (zarr.json), allows sharding"
+            }
+          ],
+          "tip": "OME-NGFF spec version; 0.5 is zarr v3 (--ngff-version)"
+        },
+        {
+          "key": "shardSize",
+          "label": "Shard size (XY)",
+          "type": "select",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (1024)"
+            },
+            {
+              "value": "512",
+              "label": "512 px"
+            },
+            {
+              "value": "2048",
+              "label": "2048 px"
+            }
+          ],
+          "tip": "NGFF 0.5 only; sharding_indexed packs chunks per file (--shard-width/height)"
+        },
+        {
+          "key": "chunkSeparator",
+          "label": "Chunk key separator",
+          "type": "select",
+          "default": "flat",
+          "options": [
+            {
+              "value": "flat",
+              "label": "Flat  .  (default)"
+            },
+            {
+              "value": "nested",
+              "label": "Nested  /"
+            }
+          ],
+          "tip": "dimension_separator: nested writes 0/0/36/0/8, flat writes 36.0.8 (--no-nested)"
+        },
+        {
+          "key": "shardDepth",
+          "label": "Shard depth (z)",
+          "type": "select",
+          "default": "1",
+          "options": [
+            {
+              "value": "1",
+              "label": "1 \u2014 no z packing (default)"
+            },
+            {
+              "value": "all",
+              "label": "All z \u2014 ~8x fewer files, see tip"
+            }
+          ],
+          "tip": "NGFF 0.5 only (--shard-depth); spanning z rewrites a whole shard per plane write"
         }
       ]
     }

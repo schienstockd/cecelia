@@ -753,8 +753,26 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     chunk_flags = bf2raw_chunk_flags(get(params, "chunkSize", "auto"))
     on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
 
+    # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
+    # `z_planes` lets "all z" resolve to a real depth; the source is not converted yet, so it comes from
+    # ccid meta when a previous import recorded it, else 0 (which drops the flag rather than guessing).
+    # Unset params fall back to the Settings DEFAULTS, not to hardcoded literals — Settings is where the
+    # store-layout default lives and the import form pre-fills from it (ZARR_V3_PLAN D10). A run
+    # launched headlessly (REPL, chain) therefore gets the same layout as one launched from the form.
+    fmt_flags, fmt_conflict = bf2raw_format_flags(
+        get(params, "ngffVersion", store_layout().ngffVersion), get(params, "shardSize", "auto");
+        separator   = get(params, "chunkSeparator", store_layout().chunkSeparator),
+        shard_depth = get(params, "shardDepth", "1"),
+        z_planes    = Int(get(img.meta, "SizeZ", 0)))
+    on_log("[INFO] Format: $(isempty(fmt_flags) ? "NGFF 0.4 (zarr v2), nested keys" : join(fmt_flags, " "))")
+    if fmt_conflict
+        # Not a silent downgrade: bioformats2raw would have written v2 anyway, without saying so.
+        on_log("[WARN] Flat chunk keys and NGFF 0.5 cannot be combined — bioformats2raw writes zarr v2")
+        on_log("[WARN] Writing zarr v2 with flat keys. Choose nested keys if you need NGFF 0.5.")
+    end
+
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $eff_src $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $fmt_flags $eff_src $zarr_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

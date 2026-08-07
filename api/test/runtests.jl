@@ -3002,7 +3002,7 @@ end
         "/api/projects/bundle-info", "/api/projects/bundles",
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
-        "/api/setup/validate", "/api/storage/compressor",
+        "/api/setup/validate", "/api/storage/compressor", "/api/storage/layout",
         "/api/storage/summary",
         "/api/tasks", "/api/tasks/custom-modules",
         "/api/tasks/definitions", "/api/tasks/funparams",
@@ -3057,7 +3057,7 @@ end
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
         "/api/sets/delete", "/api/setup/init",
-        "/api/storage/compressor/set", "/api/storage/reclaim",
+        "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/tasks/custom-modules/reload",
         "/api/update/apply",
     ]
@@ -3101,7 +3101,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 67 && length(POST_ROUTES) == 94
+    @test length(GET_ROUTES) == 68 && length(POST_ROUTES) == 95
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
@@ -3206,6 +3206,15 @@ end
         @test c3.chunks == [1, 1, 1, 32, 32]      # inner chunk (from the sharding codec)
         @test c3.shard  == [1, 1, 1, 64, 64]      # outer grid = one file on disk
         @test c3.chunks != c3.shard
+
+        # The chunk-key separator: "/" nests keys into a directory tree, "." keeps them flat. It is
+        # most of a store's filesystem footprint (measured on a real 1.7 GB import: 20,933 directories
+        # nested vs 4 flat) and all of its cost on a network share, so the modal states it. The DEFAULT
+        # differs per format — "." for v2, "/" for v3 — so an absent key must not be read as one value.
+        @test c2.separator in (".", "/")
+        @test c3.separator in (".", "/")
+        @test c2.separator == "/"      # bioformats2raw nests by default, in BOTH formats
+        @test c3.separator == "/"
         # same codec asked for on both, so the describer must agree across formats (int shuffle in v2
         # metadata, NAME in v3 — normalised in one place)
         @test c2.codec == c3.codec == "zstd"
@@ -3219,4 +3228,31 @@ end
             @test png[2:4] == UInt8['P', 'N', 'G']
         end
     end
+end
+
+@testset "API: store layout defaults" begin
+    # DEFAULTS the import form pre-fills, not a switch over what happens next: format and separator are
+    # fixed per image at import (no converter) and derived stores inherit. ZARR_V3_PLAN D10.
+    st, body = api_store_layout_get(HTTP.Request("GET", "/api/storage/layout"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test d.default == "flat"                       # measured: same read time, ~14% less on disk
+    @test d.current in [String(c.name) for c in d.choices]
+    @test !isempty(String(d.measuredOn))
+
+    # The rows are the three VIABLE combinations, NOT the cross product. Flat keys + NGFF 0.5 cannot be
+    # written (bioformats2raw silently emits zarr v2 for that pair), so it must not be offered at all —
+    # an unreachable state beats a warned one.
+    @test length(d.choices) == 3
+    @test !any(String(c.chunkSeparator) == "flat" && String(c.ngffVersion) == "0.5" for c in d.choices)
+    # every row carries its measured numbers, since that is the whole reason this is a table
+    for c in d.choices
+        for k in (:label, :keys, :dirs, :size, :read, :detail)
+            @test !isempty(String(getproperty(c, k)))
+        end
+    end
+
+    # bad input is rejected rather than silently persisted — this writes custom.toml
+    @test _post(api_store_layout_set, Dict("name" => "nope"))[1] == 400
+    @test _post(api_store_layout_set, Dict("name" => ""))[1] == 400
 end

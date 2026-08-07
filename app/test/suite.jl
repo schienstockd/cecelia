@@ -7831,6 +7831,32 @@ end
         @test_throws ArgumentError Cecelia.set_image_compressor!("nope")
     end
 
+    # Two tables on one Settings page, each varying what the other pins: the compressor rows were all
+    # measured in ONE layout, the layout rows all with ONE codec. Neither set of sizes is comparable to
+    # the other's without that, so each caption must name the variable it held fixed. Asserted because a
+    # caption is exactly the kind of string that gets shortened later by someone who reads it as prose.
+    @testset "measured-on captions name the other table's variable" begin
+        cmp_cap = Cecelia.IMAGE_COMPRESSOR_MEASURED_ON
+        lay_cap = Cecelia.STORE_LAYOUT_MEASURED_ON
+
+        # the compressor was measured in one LAYOUT: format, chunk-key style, and chunk shape
+        @test occursin("zarr v", cmp_cap)
+        @test occursin("keys", cmp_cap)
+        @test occursin("chunks", cmp_cap)
+
+        # ...and the layouts with one CODEC — named, and actually the default the other table serves
+        # (derived, not spelled out, so re-measuring under a new default has to update the caption)
+        default_cname = first(c.cname for c in Cecelia.IMAGE_COMPRESSOR_CHOICES
+                              if c.name == Cecelia.IMAGE_COMPRESSOR_DEFAULT)
+        @test occursin(default_cname, lay_cap)
+
+        # both stay one short line — this renders as a field hint, not a paragraph (docs/UI.md)
+        for cap in (cmp_cap, lay_cap)
+            @test !occursin("\n", cap)
+            @test length(cap) <= 90
+        end
+    end
+
     @testset "count metrics" begin
         # pure: distinct tracks, mean cells/track, tracked-cell total; untracked = missing/NaN/≤0
         nt, ml, ntc = track_count_metrics([1, 1, 1, 2, 2, 0, -1, NaN, missing, 3])
@@ -9439,5 +9465,78 @@ end
         tip = String(get(p, :tip, ""))
         @test !isempty(tip)
         @test lowercase(tip) != lowercase(String(get(p, :label, "")))
+    end
+end
+
+@testset "bioformats2raw format flags" begin
+    # The import is the ONLY place the store format is chosen; derived stores inherit it
+    # (docs/todo/ZARR_V3_PLAN.md D9).
+    ff(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[1]
+    conflicted(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[2]
+
+    @test isempty(ff("0.4", "auto"))                       # default = the command we always ran
+    @test ff("0.5", "auto") == ["--ngff-version", "0.5"]
+    @test ff("0.5", "1024") ==
+          ["--ngff-version", "0.5", "--shard-width", "1024", "--shard-height", "1024"]
+
+    # Sharding is NGFF 0.5 only, and is dropped for 0.4 rather than raising: they are separate controls
+    # and switching the version back must still produce a working import.
+    @test isempty(ff("0.4", "1024"))
+
+    # unparseable / absurd falls back to upstream's default rather than raising
+    for bad in ("banana", "0", "-8", "16", "")
+        @test ff("0.5", bad) == ["--ngff-version", "0.5"]
+    end
+
+    # ── chunk-key separator ──────────────────────────────────────────────────────
+    # Flat keys are the measured "fewer files" lever: 4 directories vs 224 on one conversion, 56x, with
+    # no format change. Nested is bioformats2raw's default and stays ours.
+    @test ff("0.4", "auto"; separator = "nested") == String[]
+    @test ff("0.4", "auto"; separator = "flat")   == ["--no-nested"]
+
+    # THE CONFLICT: --no-nested + --ngff-version 0.5 makes bioformats2raw silently write zarr v2
+    # (verified both flag orders). The two must never be emitted together, and the caller must be told.
+    @test ff("0.5", "auto"; separator = "flat") == ["--no-nested"]     # 0.5 dropped, not both
+    @test !("--ngff-version" in ff("0.5", "auto"; separator = "flat"))
+    @test conflicted("0.5", "auto"; separator = "flat")
+    @test !conflicted("0.5", "auto"; separator = "nested")
+    @test !conflicted("0.4", "auto"; separator = "flat")
+    # a conflicted request is no longer 0.5, so no shard flags ride along with it
+    @test ff("0.5", "1024"; separator = "flat", shard_depth = "all", z_planes = 13) == ["--no-nested"]
+
+    # ── shard depth ──────────────────────────────────────────────────────────────
+    # The ONLY axis that reduces the file count on a 512x512 frame — width/height cap to the frame, so
+    # the shard equals the chunk and packs nothing (measured: depth 13 -> 13 files vs 109).
+    @test ff("0.5", "auto"; shard_depth = "13") == ["--ngff-version", "0.5", "--shard-depth", "13"]
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 13) ==
+          ["--ngff-version", "0.5", "--shard-depth", "13"]
+    @test ff("0.5", "auto"; shard_depth = "1") == ["--ngff-version", "0.5"]      # the default: no flag
+    # "all" with no usable z count drops the flag rather than guessing a depth
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 0) == ["--ngff-version", "0.5"]
+    @test ff("0.5", "auto"; shard_depth = "all", z_planes = 1) == ["--ngff-version", "0.5"]
+    # depth is NGFF 0.5 only, like the rest of sharding
+    @test isempty(ff("0.4", "auto"; shard_depth = "13"))
+
+    # Every option the spec offers must resolve, and there must be NO option claiming to disable
+    # sharding: --shard-width cannot be turned off, so bioformats2raw shards every v3 store (verified
+    # against 0.12.1 — a 0.5 import with no shard flag still produces a sharding_indexed codec), and an
+    # "off" option would be a lie.
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    for key in ("ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+        prm  = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
+        vals = [string(get(o, :value, o)) for o in prm.options]
+        @test string(prm.default) in vals
+        @test !isempty(String(get(prm, :tip, "")))
+    end
+    shard = only(filter(p -> get(p, :key, "") == "shardSize", collect(adv.params)))
+    @test !any(lowercase(string(get(o, :value, o))) in ("none", "off", "0") for o in shard.options)
+
+    # Transparency: someone who knows zarr must be able to map each control onto what lands on disk, so
+    # every one of these tips names its bioformats2raw flag or the metadata key it sets.
+    for key in ("chunkSize", "ngffVersion", "shardSize", "chunkSeparator", "shardDepth")
+        prm = only(filter(p -> get(p, :key, "") == key, collect(adv.params)))
+        tip = String(get(prm, :tip, ""))
+        @test occursin("--", tip) || occursin("_", tip)   # a CLI flag or a zarr metadata key
     end
 end

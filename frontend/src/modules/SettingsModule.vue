@@ -10,7 +10,8 @@ import { notebooksApi, napariApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
-         type StorageSummary, type CompressorSettings } from '../utils/storage'
+         fetchStoreLayout, setStoreLayout,
+         type StorageSummary, type CompressorSettings, type StoreLayoutSettings } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -32,6 +33,30 @@ const storageError = ref('')
 // Image-store compression (advanced). Server-side setting, not a browser preference — it decides how
 // every store the backend writes is encoded, so it lives in custom.toml like the pool limits, and the
 // choice list is served rather than duplicated here.
+const layout      = ref<StoreLayoutSettings | null>(null)
+const layoutBusy  = ref(false)
+const layoutError = ref('')
+// A table, not chips, for the same reason the compressor is one: the trade-off is the only reason
+// there is a choice, so the measured numbers belong on screen at the point of deciding.
+const LAYOUT_COLUMNS: SelectionColumn[] = [
+  { key: 'label', label: 'Layout' },
+  { key: 'keys',  label: 'Chunk key' },
+  { key: 'dirs',  label: 'Dirs' },
+  { key: 'size',  label: 'On disk' },
+  { key: 'read',  label: 'Read' },
+]
+function layoutTip(row: Record<string, any>) { return String(row.detail ?? '') }
+async function loadLayout() {
+  try { layout.value = await fetchStoreLayout() } catch (e) { layoutError.value = String(e) }
+}
+async function changeLayout(name: string) {
+  if (!layout.value || name === layout.value.current) return
+  layoutBusy.value = true; layoutError.value = ''
+  try { layout.value.current = await setStoreLayout(name) }
+  catch (e) { layoutError.value = e instanceof Error ? e.message : String(e) }
+  finally { layoutBusy.value = false }
+}
+
 const compressor      = ref<CompressorSettings | null>(null)
 const compressorBusy  = ref(false)
 const compressorError = ref('')
@@ -193,6 +218,7 @@ function replKeydown(e: KeyboardEvent) {
 }
 onMounted(loadDiag)
 onMounted(loadCompressor)
+onMounted(loadLayout)
 
 // ── System: service control panel ─────────────────────────────────────────────
 // Live status of the backend's child processes + per-component and global controls. Status is
@@ -497,6 +523,24 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">Applies to new stores only</span>
       </div>
       <span v-if="compressorError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ compressorError }}</span>
+
+      <!-- Store LAYOUT. Same shape as the compressor above, deliberately: same kind of decision, so
+           the measured numbers go on screen rather than behind a chip. The rows are the three VIABLE
+           combinations of NGFF version + separator, not two independent controls — flat keys and NGFF
+           0.5 cannot be combined (bioformats2raw silently writes zarr v2 for that pair), so the
+           impossible state is simply unreachable instead of something to warn about. -->
+      <div v-if="layout" class="field">
+        <div class="cmp-head">
+          <span class="svc-name">Store layout</span>
+          <span class="field-hint cc-muted cc-fs-xs">{{ layout.measuredOn }}</span>
+        </div>
+        <SelectionTable :columns="LAYOUT_COLUMNS" :rows="layout.choices"
+                        :model-value="layout.current" :disabled="layoutBusy"
+                        :row-tooltip="layoutTip"
+                        @update:model-value="changeLayout" />
+        <span class="field-hint cc-muted cc-fs-xs">Default for new imports; existing images keep theirs</span>
+      </div>
+      <span v-if="layoutError" class="field-hint cc-muted cc-fs-xs" style="color: var(--cc-sev-fail);">{{ layoutError }}</span>
 
       <div class="field">
         <div class="field-row">
