@@ -25,6 +25,24 @@ using Test
 include(joinpath(@__DIR__, "..", "src", "server.jl"))   # defines handlers + shared state; does not start
 using JSON3
 
+# ── Test data fixtures ────────────────────────────────────────────────────────
+# Same committed fixtures the package suite uses (see test-data/README.md); resolved here too because
+# the Julia OME-ZARR readers under test live in `api/src/image_geometry.jl`. Override with
+# CECELIA_TEST_DATA. (@__DIR__ = api/test → ../../.. = workspace root.)
+api_test_projects_dir() = get(ENV, "CECELIA_TEST_DATA",
+    normpath(joinpath(@__DIR__, "..", "..", "test-data", "projects")))
+api_fixture(relparts...) = joinpath(api_test_projects_dir(), relparts...)
+# A store is a DIRECTORY; warn once and let the caller @test_skip rather than fail a partial checkout.
+const _API_WARNED_FIXTURES = Set{String}()
+function api_have_fixture(path::AbstractString)::Bool
+    (isfile(path) || isdir(path)) && return true
+    if !(path in _API_WARNED_FIXTURES)
+        push!(_API_WARNED_FIXTURES, path)
+        @warn "TEST FIXTURE MISSING — dependent tests SKIPPED. Expected: $path (restore with `git checkout -- test-data`)"
+    end
+    false
+end
+
 # call a POST handler the way the router does: JSON body → Vector{UInt8}
 _post(f, obj) = f(Vector{UInt8}(JSON3.write(obj)))
 _repl(code) = _post(api_repl, Dict("code" => code))
@@ -954,6 +972,23 @@ end
         @test !haskey(d.versions.cpCorrected, :label)
         # label sets are sized too, summed across the value_name's files
         @test d.labels.A.bytes >= 12_000
+
+        # Layout, not just codec: v2 and v3 stores coexist on disk permanently (no converter —
+        # ZARR_V3_PLAN D7), so the modal has to be able to say which a store is and how it is chunked.
+        # `shard` is present-and-null for an unsharded store rather than absent: "not sharded" and "we
+        # could not read it" are different answers and the readout distinguishes them.
+        # This fixture's `.zarray` is hand-written with only a `compressor` and no NGFF attrs, so
+        # `ngffVersion`/`chunks` are legitimately empty here — the point asserted is that the fields are
+        # REPORTED (the modal renders what it gets). Real values are asserted against the ZARRFMT
+        # fixtures in *"API: zarr v2 and v3 read identically"*, which are real bioformats2raw stores.
+        @test d.versions.default.zarrFormat == 2
+        @test isnothing(d.versions.default.shard)
+        @test haskey(d.versions.default, :ngffVersion)
+        @test haskey(d.versions.default, :chunks)
+        # the unreadable store carries none of them, same as its codec fields
+        for k in (:zarrFormat, :ngffVersion, :chunks, :shard)
+            @test !haskey(d.versions.cpCorrected, k)
+        end
 
         @test api_image_stores(HTTP.Request("GET", "/api/images/stores"))[1] == 400
         @test api_image_stores(
@@ -3121,4 +3156,67 @@ end
     # every listing that filters on one.
     @test endswith(_movie_basename(Dict(), "abc", String[]; suffix = "_corrected"), "abc_corrected.mp4")
     @test endswith(_movie_basename(Dict("a" => "wt"), "abc", ["a"]; suffix = "_raw"), "wt_abc_raw.mp4")
+end
+
+@testset "API: zarr v2 and v3 read identically" begin
+    # Two committed stores holding the SAME real pixels, written by bioformats2raw 0.12.1 as NGFF 0.4
+    # (zarr v2) and NGFF 0.5 (zarr v3, SHARDED). See test-data/README.md + docs/todo/ZARR_V3_PLAN.md.
+    #
+    # Why real stores rather than hand-written metadata: NGFF 0.5 nests every attribute under `ome`, and
+    # a reader that misses that does not error — axes come back EMPTY and `axis_dims` silently guesses
+    # the order by rank, while scale comes back missing and becomes "1 um, 1 second per frame"
+    # downstream. Both failures look like success. The fixture's calibration is deliberately NOT 1.0 so
+    # a correct read is distinguishable from the fallback.
+    v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = api_fixture("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(api_have_fixture(v2) && api_have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        a2, ax2 = open_level0(v2)
+        a3, ax3 = open_level0(v3)
+
+        # axes must be READ, not guessed. `String[]` here is the silent-failure signature.
+        @test ax2 == ["t", "c", "z", "y", "x"]
+        @test ax3 == ax2
+        @test !isempty(ax3)
+        @test axis_dims(ax3, ndims(a3)) == axis_dims(ax2, ndims(a2))
+
+        @test image_geometry(v2) == image_geometry(v3)
+        @test image_geometry(v2) == (sizeX = 64, sizeY = 64, sizeZ = 3, sizeT = 3)
+
+        # identical pixels across formats — this is also what proves v3 needs no byte-order branch:
+        # v3 keeps `endian` in the `bytes` codec INSIDE the pipeline Zarr.jl executes, unlike v2 where
+        # the dtype string is metadata Zarr.jl parses for the eltype and then ignores.
+        b2 = read_native(a2, :, :, :, :, :)
+        b3 = read_native(a3, :, :, :, :, :)
+        @test size(b2) == size(b3)
+        @test b2 == b3
+        @test maximum(b2) > 3000            # real intensity data, not a zeroed/garbled read
+
+        # store_compression reports the format, and chunk-vs-shard the right way round. The v3 fixture
+        # is sharded with shard != chunk ON PURPOSE — with equal values this assertion cannot fail.
+        # the NGFF spec version each store declares — a different question from the zarr format, and
+        # both are shown side by side in the metadata modal
+        @test ngff_version(v2) == "0.4"
+        @test ngff_version(v3) == "0.5"
+
+        c2 = store_compression(v2); c3 = store_compression(v3)
+        @test c2.zarrFormat == 2 && isnothing(c2.shard)
+        @test c3.zarrFormat == 3
+        @test c3.chunks == [1, 1, 1, 32, 32]      # inner chunk (from the sharding codec)
+        @test c3.shard  == [1, 1, 1, 64, 64]      # outer grid = one file on disk
+        @test c3.chunks != c3.shard
+        # same codec asked for on both, so the describer must agree across formats (int shuffle in v2
+        # metadata, NAME in v3 — normalised in one place)
+        @test c2.codec == c3.codec == "zstd"
+        @test c2.shuffle && c3.shuffle
+        @test c2.label == c3.label
+
+        # the preview renderer works on both (no props file → percentile auto-contrast)
+        for p in (v2, v3)
+            png = render_preview_frame(p, joinpath(p, "absent.json"), 1)
+            @test length(png) > 100
+            @test png[2:4] == UInt8['P', 'N', 'G']
+        end
+    end
 end

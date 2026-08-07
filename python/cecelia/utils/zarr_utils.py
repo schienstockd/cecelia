@@ -218,10 +218,16 @@ def zarr_data_to_list(zarr_store, multiscales=None, mode='r'):
 
     zgroup = zarr.open(zarr_store, mode=mode)
 
-    if 'multiscales' in zgroup.attrs and not isinstance(zgroup, zarr.Array):
+    # Version-agnostic: NGFF 0.5 nests `multiscales` under `ome` (see `ngff_attrs`). Testing
+    # `'multiscales' in zgroup.attrs` missed a v3 store entirely and fell through to the bare-array
+    # branch below, which reads a zarr-python internal that does not exist for v3 groups — so every
+    # v3 store raised `AttributeError: 'GroupInfo' object has no attribute 'obj'`.
+    multiscales_meta = None if isinstance(zgroup, zarr.Array) else ngff_multiscales(zgroup)
+
+    if multiscales_meta is not None:
         zarr_group_info = None
 
-        datasets = zgroup.attrs['multiscales'][0]['datasets']
+        datasets = multiscales_meta[0]['datasets']
         if multiscales is None:
             multiscale_slices = slice(None)
         else:
@@ -230,7 +236,12 @@ def zarr_data_to_list(zarr_store, multiscales=None, mode='r'):
 
         zarr_data = [zgroup[dataset['path']] for dataset in datasets[multiscale_slices]]
     else:
-        zarr_group_info = [dict(zgroup.info.obj.info_items())]
+        # `.info.obj.info_items()` is a zarr-python internal whose shape differs across versions and
+        # between v2/v3 nodes; it is display-only here, so never let it fail an actual read.
+        try:
+            zarr_group_info = [dict(zgroup.info.obj.info_items())]
+        except Exception:
+            zarr_group_info = None
         zarr_data = [zgroup]
 
     return zarr_data, zarr_group_info
@@ -240,6 +251,55 @@ def zarr_data_to_list(zarr_store, multiscales=None, mode='r'):
 # The single home for "where does this store keep its multiscales / axes / scale". The napari
 # bridge used to carry its own copies of all of these (napari/napari_bridge.py) — they now live
 # here so the bridge, the pipeline and any consumer (e.g. coastal) read OME-ZARR geometry ONE way.
+#
+# THIS IS ALSO WHERE v2-vs-v3 IS ANSWERED, for the same reason flat-vs-series is answered here: one
+# resolver per question, per language (CLAUDE.md → *OME-ZARR dual-format*). Do not add a parallel set
+# of v3 readers next to these — route through `ngff_attrs`.
+
+def ngff_attrs(attrs):
+    """The NGFF attribute dict out of a zarr group's raw attributes, for **either** NGFF version.
+
+    OME-NGFF 0.5 (zarr v3) nests everything the 0.4 spec kept at the top level under a single ``ome``
+    key, so `multiscales`/`omero`/`bioformats2raw.layout` all move one level down. The *content* is
+    unchanged — same axes, datasets, coordinateTransformations — which is why unwrapping one key is
+    the whole difference on the read side.
+
+    ``zarr-python``'s ``Group.attrs`` already hides the file-level difference (``.zattrs`` vs
+    ``zarr.json`` → ``attributes``), so this is the only branch Python needs. The Julia side has to do
+    the file-level part itself (`api/src/image_geometry.jl` → `read_ngff_axes`).
+
+    Passing an already-unwrapped dict is harmless (0.4 stores have no ``ome`` key), so callers can use
+    this unconditionally.
+    """
+    inner = attrs.get('ome') if hasattr(attrs, 'get') else None
+    return inner if isinstance(inner, dict) else attrs
+
+
+def ngff_multiscales(group):
+    """The ``multiscales`` list of a zarr group, or ``None`` — version-agnostic (see `ngff_attrs`)."""
+    try:
+        ms = ngff_attrs(group.attrs).get('multiscales')
+    except Exception:
+        return None
+    return ms if ms else None
+
+
+def store_format(path):
+    """Which zarr format a store on disk is: ``2``, ``3``, or ``None`` when it is not a store.
+
+    DISCOVERED, never assumed or configured. Both formats coexist on disk indefinitely —
+    bioformats2raw never rewrites its output, so every store imported before the 0.12 upgrade stays
+    v2 (and big-endian, see `docs/NAPARI.md` → *Byte order*). Consumers that must know ask here;
+    nothing keys off a setting or a path suffix.
+    """
+    for base in (series_base(path), path):
+        if os.path.exists(os.path.join(base, 'zarr.json')):
+            return 3
+        if os.path.exists(os.path.join(base, '.zgroup')) or \
+                os.path.exists(os.path.join(base, '.zattrs')):
+            return 2
+    return None
+
 
 def series_base(path, mode='r'):
     """The store path that holds the `multiscales` metadata: the bioformats2raw series wrapper
@@ -251,8 +311,7 @@ def series_base(path, mode='r'):
     if not os.path.isdir(series):
         return path
     try:
-        g = zarr.open_group(series, mode=mode)
-        if g.attrs.get("multiscales"):
+        if ngff_multiscales(zarr.open_group(series, mode=mode)):
             return series
     except Exception:
         pass
@@ -266,8 +325,7 @@ def read_multiscales_meta(path):
         if not os.path.isdir(candidate):
             continue
         try:
-            g = zarr.open_group(candidate, mode='r')
-            ms = g.attrs.get("multiscales")
+            ms = ngff_multiscales(zarr.open_group(candidate, mode='r'))
             if ms:
                 return ms[0] if isinstance(ms, list) else {}
         except Exception:
@@ -391,7 +449,7 @@ def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
 
 def _has_multiscales(candidate):
     try:
-        return bool(zarr.open_group(candidate, mode='r').attrs.get("multiscales"))
+        return bool(ngff_multiscales(zarr.open_group(candidate, mode='r')))
     except Exception:
         return False
 

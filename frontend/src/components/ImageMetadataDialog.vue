@@ -12,6 +12,7 @@ import type { CciaImage } from '../stores/project'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { formatBytes } from '../utils/storage'
+import { storeFormatLine, type StoreEncoding } from '../utils/storeFormat'
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
@@ -49,7 +50,7 @@ const versions = computed(() => Object.entries(img.value.filepaths ?? {}))
 // part (a few hundred ms per store warm, seconds cold on a multi-GB version), so the sizes fill in a
 // moment later rather than delaying the dialog. Failure is silent — this dialog is read-only
 // information and must still open if a store is missing.
-type StoreInfo = { bytes: number, label?: string }
+type StoreInfo = { bytes: number, label?: string } & StoreEncoding
 const stores = ref<{ versions: Record<string, StoreInfo | null>, labels: Record<string, StoreInfo> }>(
   { versions: {}, labels: {} })
 onMounted(async () => {
@@ -139,6 +140,12 @@ const copy = (key: string, value: string) => copyValue(value, key)
             <code class="md-code">{{ fn }}</code>
             <span class="md-codec cc-muted cc-fs-xs">{{ stores.versions[vn]?.label ?? '—' }}</span>
             <span class="md-size cc-muted cc-fs-xs">{{ size(stores.versions[vn]) }}</span>
+            <!-- Layout on a spanning second line rather than more columns: zarr v2 and v3 coexist on
+                 disk permanently (no converter), so the format and chunking have to be readable here.
+                 Skipped entirely when the store could not be read, rather than shown as dashes. -->
+            <span v-if="storeFormatLine(stores.versions[vn])" class="md-store-fmt cc-muted cc-fs-2xs">
+              {{ storeFormatLine(stores.versions[vn]) }}
+            </span>
           </template>
           <template v-for="[vn, fns] in labels" :key="'l-' + vn">
             <span class="md-file-vn cc-muted">labels · {{ vn }}</span>
@@ -218,6 +225,8 @@ const copy = (key: string, value: string) => copyValue(value, key)
   gap: 0.25rem 0.5rem; align-items: baseline;
 }
 .md-codec { white-space: nowrap; }
+/* spans the whole files grid so the layout readout never widens the columns above it */
+.md-store-fmt { grid-column: 1 / -1; padding-left: 0.25rem; }
 /* right-aligned so the numbers line up column-wise, which is the only way sizes compare at a glance */
 .md-size { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .md-file-vn { overflow-wrap: anywhere; }

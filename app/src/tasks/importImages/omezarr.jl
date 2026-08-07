@@ -46,15 +46,105 @@ suffix, because both layouts have a `0/` child: a group in the series layout, th
 """
 function series_base(zarr_path::AbstractString)::String
     series = joinpath(zarr_path, "0")
-    zattrs = joinpath(series, ".zattrs")
-    isfile(zattrs) || return String(zarr_path)
-    try
-        ms = get(JSON3.read(read(zattrs, String)), :multiscales, nothing)
-        (isnothing(ms) || isempty(ms)) || return series
-    catch
-        # unreadable/!JSON → treat as "not the series wrapper" and fall back to the root
-    end
+    ms = ngff_multiscales(series)
+    (isnothing(ms) || isempty(ms)) || return series
     String(zarr_path)
+end
+
+"""
+NGFF attributes of a zarr GROUP directory, for **either** zarr format. `nothing` when the directory
+carries no readable group metadata.
+
+This is the Julia half of the v2-vs-v3 question, and it lives next to `series_base` on purpose: one
+resolver per question per language (CLAUDE.md → **OME-ZARR dual-format**). Do NOT add a parallel set
+of v3 readers — route through here.
+
+* zarr v2 / NGFF 0.4 — `.zattrs`, attributes at the **top level**
+* zarr v3 / NGFF 0.5 — `zarr.json` → `attributes`, everything nested one level down under **`ome`**
+
+The *content* is identical in both (same axes, datasets, coordinateTransformations), which is why
+unwrapping is the whole difference. Python gets this cheaper because `zarr-python`'s `Group.attrs`
+already hides the file-level half (`zarr_utils.ngff_attrs`); Julia reads the JSON itself, so it
+handles both halves here.
+"""
+function ngff_group_attrs(group_dir::AbstractString)
+    zattrs = joinpath(group_dir, ".zattrs")
+    if isfile(zattrs)
+        try
+            return JSON3.read(read(zattrs, String))
+        catch
+            return nothing
+        end
+    end
+    zjson = joinpath(group_dir, "zarr.json")
+    isfile(zjson) || return nothing
+    try
+        attrs = get(JSON3.read(read(zjson, String)), :attributes, nothing)
+        isnothing(attrs) && return nothing
+        inner = get(attrs, :ome, nothing)      # NGFF 0.5 nests under `ome`; 0.4-in-v3 would not
+        isnothing(inner) ? attrs : inner
+    catch
+        nothing
+    end
+end
+
+"""
+`multiscales` list of a zarr group directory, or `nothing` — version-agnostic (see `ngff_group_attrs`).
+"""
+function ngff_multiscales(group_dir::AbstractString)
+    attrs = ngff_group_attrs(group_dir)
+    isnothing(attrs) && return nothing
+    ms = get(attrs, :multiscales, nothing)
+    (isnothing(ms) || isempty(ms)) ? nothing : ms
+end
+
+"""
+OME-NGFF spec version a store declares (e.g. `"0.4"`, `"0.5"`), or `nothing` when it declares none.
+
+Not the same question as the ZARR format, and the two are not interchangeable even though they move
+together in practice: the zarr format is how the bytes and metadata files are laid out, the NGFF
+version is which image-metadata spec those attributes follow. Reported side by side in the image
+metadata modal so "what is this store?" is answerable without opening a terminal.
+
+0.5 carries it on the `ome` group attribute (which `ngff_group_attrs` has already unwrapped by the
+time we see it); 0.4 and earlier carry it per-multiscales-entry.
+"""
+function ngff_version(zarr_path::AbstractString)
+    base  = series_base(zarr_path)
+    attrs = ngff_group_attrs(base)
+    isnothing(attrs) && return nothing
+    v = get(attrs, :version, nothing)                     # NGFF 0.5 (on the `ome` attribute)
+    isnothing(v) || return string(v)
+    ms = get(attrs, :multiscales, nothing)                # NGFF 0.4 and earlier (per entry)
+    (isnothing(ms) || isempty(ms)) && return nothing
+    mv = get(first(ms), :version, nothing)
+    isnothing(mv) ? nothing : string(mv)
+end
+
+"""
+Metadata of a zarr ARRAY directory (`shape`, `chunks`, dtype/codecs), for either format — `.zarray`
+(v2) or `zarr.json` (v3). `nothing` when unreadable. Both carry `shape`, so a caller that only needs
+the extent can treat them alike; anything format-specific must branch explicitly.
+"""
+function zarr_array_meta(array_dir::AbstractString)
+    zarray = joinpath(array_dir, ".zarray")
+    if isfile(zarray)
+        try
+            return JSON3.read(read(zarray, String))   # a `.zarray` IS an array — nothing to discriminate
+        catch
+            return nothing
+        end
+    end
+    # v3 puts groups AND arrays in the same filename, so here the node type has to be checked —
+    # otherwise a group's `zarr.json` would be handed back as if it described an array.
+    zjson = joinpath(array_dir, "zarr.json")
+    isfile(zjson) || return nothing
+    try
+        m = JSON3.read(read(zjson, String))
+        string(get(m, :node_type, "")) == "array" ? m : nothing
+    catch
+        nothing
+    end
 end
 
 """
@@ -67,12 +157,11 @@ coordinate transform — read here so `img_physical_sizes` is a pure-Julia `meta
 """
 function read_ome_metadata(zarr_path::String)::Dict{String,Any}
     result = Dict{String,Any}()
-    base        = series_base(zarr_path)
-    zattrs_file = joinpath(base, ".zattrs")
-    isfile(zattrs_file) || return result
+    base  = series_base(zarr_path)
+    zattrs = ngff_group_attrs(base)          # v2 `.zattrs` or v3 `zarr.json`→attributes[→ome]
+    isnothing(zattrs) && return result
 
     try
-        zattrs     = JSON3.read(read(zattrs_file, String))
         multiscales = get(zattrs, :multiscales, nothing)
         (isnothing(multiscales) || isempty(multiscales)) && return result
         ms = first(multiscales)
@@ -83,10 +172,9 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
         datasets   = get(ms, :datasets, [])
         level_path = isempty(datasets) ? "0" : string(get(first(datasets), :path, "0"))
 
-        zarray_file = joinpath(base, level_path, ".zarray")
-        if isfile(zarray_file)
-            zarray = JSON3.read(read(zarray_file, String))
-            shape  = collect(Int, get(zarray, :shape, []))
+        zarray = zarr_array_meta(joinpath(base, level_path))
+        if !isnothing(zarray)
+            shape = collect(Int, get(zarray, :shape, []))
             if length(shape) == length(axes)
                 idx(name) = findfirst(==(name), axes)
                 ci = idx("c"); ti = idx("t"); zi = idx("z")
@@ -659,8 +747,14 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     compression = bf2raw_compression_flags()
     on_log("[INFO] Compression: $(image_compressor())")
 
+    # Chunk (bioformats2raw calls it the TILE) size. This param existed in the JSON for a long time as
+    # `chunkSizeX`/`chunkSizeY` and was read by NOTHING — no tile flag ever reached the CLI, so a user
+    # who set 512 still got bioformats2raw's 1024. One control now, and it is actually passed.
+    chunk_flags = bf2raw_chunk_flags(get(params, "chunkSize", "auto"))
+    on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
+
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $eff_src $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $compression $chunk_flags $eff_src $zarr_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

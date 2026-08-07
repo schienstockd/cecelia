@@ -5,7 +5,7 @@ export init_cecelia!, cecelia_conf, config_dir, ensure_config_dir, custom_toml_p
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
-export image_compressor, set_image_compressor!, bf2raw_compression_flags, IMAGE_COMPRESSOR_CHOICES
+export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON, IMAGE_COMPRESSOR_DOCS_URL
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
@@ -93,6 +93,10 @@ export task_requires_axes, task_applies, task_applicability_reason, TaskApplicab
 export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
+# The ONE Julia resolver for zarr v2-vs-v3 NGFF metadata (see omezarr.jl). Exported because
+# `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
+# the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
+export ngff_group_attrs, ngff_multiscales, zarr_array_meta, ngff_version
 export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect

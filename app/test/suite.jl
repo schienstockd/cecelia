@@ -9348,3 +9348,96 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     end
 end
 
+@testset "OME-ZARR metadata reads v2 and v3 alike" begin
+    # `read_ome_metadata` feeds ccid.json `meta`, which CLAUDE.md → *Calibration* makes authoritative
+    # for every physical number in the app. NGFF 0.5 nests attributes under `ome`; a reader that misses
+    # that returns an EMPTY Dict, and the caller then has no PhysicalSize/TimeIncrement at all — which
+    # downstream becomes 1.0 rather than an error. So the two formats are asserted to agree, against two
+    # committed stores of the same real pixels. See test-data/README.md, docs/todo/ZARR_V3_PLAN.md.
+    v2 = fixture_path("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+    v3 = fixture_path("ZARRFMT", "0", "ZV3img", "ccidImage.ome.zarr")
+    if !(have_fixture(v2) && have_fixture(v3))
+        @test_skip "zarr format fixtures missing"
+    else
+        # the series wrapper is found structurally in BOTH formats (v2 `.zattrs`, v3 `zarr.json`)
+        @test Cecelia.series_base(v2) == joinpath(v2, "0")
+        @test Cecelia.series_base(v3) == joinpath(v3, "0")
+
+        # the one resolver: attributes come back unwrapped regardless of the `ome` nesting
+        for p in (v2, v3)
+            attrs = ngff_group_attrs(joinpath(p, "0"))
+            @test !isnothing(attrs)
+            @test haskey(attrs, :multiscales)          # NOT nested under :ome by the time we see it
+            ms = ngff_multiscales(joinpath(p, "0"))
+            @test !isnothing(ms) && !isempty(ms)
+        end
+        # a directory with no zarr metadata answers nothing rather than throwing
+        @test isnothing(ngff_group_attrs(joinpath(v2, "does-not-exist")))
+        # array metadata resolves for both; a GROUP dir must NOT be mistaken for an array (v3 shares
+        # the filename `zarr.json` between the two)
+        @test !isnothing(zarr_array_meta(joinpath(v3, "0", "0")))
+        @test isnothing(zarr_array_meta(joinpath(v3, "0")))
+
+        m2 = read_ome_metadata(v2)
+        m3 = read_ome_metadata(v3)
+        @test !isempty(m2) && !isempty(m3)
+        for k in ("SizeC", "SizeT", "SizeZ")
+            @test m2[k] == m3[k]
+        end
+        @test (m2["SizeC"], m2["SizeT"], m2["SizeZ"]) == (4, 3, 3)
+
+        # Calibration — the whole reason these fixtures are real. Deliberately not 1.0, so a correct
+        # read is distinguishable from the "unknown" fallback.
+        for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "TimeIncrement")
+            @test haskey(m2, k) && haskey(m3, k)
+            @test isapprox(m2[k], m3[k]; rtol = 1e-9)
+        end
+        @test isapprox(m2["PhysicalSizeX"], 0.5964274525755702; rtol = 1e-6)
+        @test !isapprox(m2["PhysicalSizeX"], 1.0; atol = 1e-6)    # not the silent fallback
+        @test isapprox(m2["PhysicalSizeZ"], 3.0; rtol = 1e-6)
+        @test isapprox(m2["TimeIncrement"], 30.0; rtol = 1e-6)
+    end
+end
+
+@testset "bioformats2raw chunk flags" begin
+    # These flags were the bug: `chunkSizeX`/`chunkSizeY` existed in omezarr.json and were read by
+    # NOTHING — no tile flag ever reached the CLI, so a user who chose 512 still got bioformats2raw's
+    # 1024. One `chunkSize` param now, and it is passed.
+    @test Cecelia.bf2raw_chunk_flags("512") == ["--tile-width", "512", "--tile-height", "512"]
+    @test Cecelia.bf2raw_chunk_flags(1024)  == ["--tile-width", "1024", "--tile-height", "1024"]
+
+    # "auto" passes NOTHING on purpose: bioformats2raw's own default is 1024 ALREADY CAPPED to the
+    # frame, which is exactly the rule we want (one chunk per plane, up to 1024) and needs no source
+    # dimensions — which we do not have, since the image is not converted yet.
+    @test isempty(Cecelia.bf2raw_chunk_flags("auto"))
+    @test isempty(Cecelia.bf2raw_chunk_flags("AUTO"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(""))
+
+    # unparseable / absurd falls back to auto rather than raising — same call as the compression
+    # flags: a bad value must not fail an hour-long import
+    @test isempty(Cecelia.bf2raw_chunk_flags("banana"))
+    @test isempty(Cecelia.bf2raw_chunk_flags(0))
+    @test isempty(Cecelia.bf2raw_chunk_flags(-8))
+    @test isempty(Cecelia.bf2raw_chunk_flags(16))       # below 32: not a sane chunk
+
+    # every option the task spec offers must actually resolve (a spec/handler drift here is silent —
+    # the import would just ignore the choice, which is the bug this whole testset exists for)
+    spec = JSON3.read(read(joinpath(@__DIR__, "..", "src", "tasks", "importImages", "omezarr.json"), String))
+    adv  = only(filter(p -> get(p, :type, "") == "section", collect(spec.params)))
+    cs   = only(filter(p -> get(p, :key, "") == "chunkSize", collect(adv.params)))
+    vals = [string(get(o, :value, o)) for o in cs.options]
+    @test "auto" in vals
+    @test string(cs.default) in vals
+    for v in vals
+        @test v == "auto" ? isempty(Cecelia.bf2raw_chunk_flags(v)) :
+                            Cecelia.bf2raw_chunk_flags(v) == ["--tile-width", v, "--tile-height", v]
+    end
+
+    # and the tips must not merely restate the label — that is what made these params guesswork
+    for p in vcat(collect(spec.params), collect(adv.params))
+        get(p, :type, "") == "section" && continue
+        tip = String(get(p, :tip, ""))
+        @test !isempty(tip)
+        @test lowercase(tip) != lowercase(String(get(p, :label, "")))
+    end
+end
