@@ -399,6 +399,23 @@ labels) and the held-out frames themselves never reach the optimiser, which is w
 rests on. Computing the metrics per side instead would change the metrics at *both* seams, which is
 worse.
 
+**Two canvas plots, one route.** `POST /api/optical-flow/inspect` answers with the metric planes
+when no model is given and with the model's probability map when one is. Same window, same
+projection, same metric build — one forward pass is the only difference — so they share the route and
+the request machinery (`useFlowPlanes`) rather than getting a second copy of the geometry that could
+drift from what a run is fed.
+
+| Plot | Question | Model |
+|---|---|---|
+| **Flow metrics** | which of these look like cells, i.e. what should I train on | none, deliberately — the question predates any checkpoint |
+| **Model probability** | did it learn to tell cell from background | the vault's selection, honouring global/local scope |
+
+Neither shows instances: those are segmentation output, the Segment page previews them through the
+normal path, and a threshold plus a growing step hides exactly what the probability map is for.
+`predict_frame` returns `(prob_map, instances, props)` and a run discards the first
+(`CoastalUtils._predict_plane`), so the worker's `opticalFlow.probability` backend is the only place
+that value is looked at.
+
 Progress is reported over one monotonic scale — a tick per movie prepared, one for the flow metrics,
 then one per epoch through coastal's `on_epoch`. The phases are wildly unequal in wall-clock (metrics
 is a single tick and minutes long) so the bar does not move smoothly; weighting them would be a guess

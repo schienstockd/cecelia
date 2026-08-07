@@ -39,6 +39,21 @@ def _backend_keys():
     raise AssertionError('_BACKENDS not found in preview_worker.py')
 
 
+def _canvas_plot_backends(candidates):
+    """Which of `candidates` the optical-flow API names — canvas plots, not tasks.
+
+    Membership rather than extraction: the route picks its `fun_name` with a ternary, so a
+    `fun_name\s*=\s*"..."` pattern sees neither branch. Asking "does this file mention this backend
+    by name" is both simpler and exactly the invariant — a backend is legitimate if something calls
+    it.
+    """
+    src = (_ROOT / 'api' / 'src' / 'optical_flow_api.jl')
+    if not src.is_file():
+        return set()
+    text = src.read_text(encoding='utf-8')
+    return {k for k in candidates if f'"{k}"' in text}
+
+
 def _composites():
     """`fun_name -> [step fun_names]` for every composite task spec."""
     out = {}
@@ -83,9 +98,12 @@ class PreviewBackendCoverageTest(unittest.TestCase):
                 continue
             if isinstance(spec, dict) and spec.get('fun_name'):
                 funs.add(spec['fun_name'])
-        # `opticalFlow.inspect` is a canvas-plot backend with no task spec — it is reached through
-        # /api/optical-flow/inspect, not through a task, so it is legitimately not in the specs.
-        unknown = sorted(k for k in _backend_keys() if k not in funs and k != 'opticalFlow.inspect')
+        # Some backends are CANVAS PLOTS, reached through /api/optical-flow/* rather than through a
+        # task, so they legitimately have no spec. Read from the route that dispatches them instead
+        # of allow-listed by name: an allow-list is a second place to remember, and the thing this
+        # file exists to prevent is exactly a registry nobody remembered to update.
+        funs |= _canvas_plot_backends(_backend_keys())
+        unknown = sorted(k for k in _backend_keys() if k not in funs)
         self.assertEqual(unknown, [], 'preview backends naming no known task')
 
 
