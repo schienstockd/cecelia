@@ -344,6 +344,34 @@ The file-count motivation is real, though: a 1.7 GB import is **~31 000 filesyst
 dirs + 9 997 files), and `--shard-depth 13` would cut that ~8×. That is the case for pursuing it — on
 the import, which is written once and sequentially, and where D8 says sharding is safe.
 
+### Storage vs access, per layout (measured 2026-08-07)
+
+Same source (`M3c-…_MAX.tif`), converted four ways with identical codec settings, 2 pyramid levels.
+Read is a full level-0 read, **9 interleaved rounds** across all four stores so drift hits them equally.
+
+| layout | on disk | data bytes | dirs | read (median) |
+|---|---|---|---|---|
+| v2, nested | 81.2 MB | 69 427 279 | 2 474 | 188 ms |
+| v2, **flat** | **71.1 MB** | 69 427 279 | **4** | 189 ms |
+| v3, nested (sharded) | 81.2 MB | 69 444 711 | 2 476 | **263 ms** |
+| flat + 0.5 → falls back to v2 | 71.1 MB | 69 427 279 | 4 | 180 ms |
+
+All four decode to identical pixels.
+
+**Flat vs nested — a storage difference, not an access one.** Identical data bytes and identical read
+time (188 vs 189 ms); flat saves **10 MB of 81 MB (~14 %)** purely by not allocating 2 470 directory
+inodes. So flat is free on local disk. (A network share should favour it further — far fewer directory
+round-trips — but that is unmeasured.)
+
+**v2 vs v3 — v2 is better, on this data.** Same size, and **v3 reads ~40 % slower** (263 vs 188 ms),
+with its whole range (245–297 ms) above every other median. The likely mechanism is the sharding
+indirection — read the shard index, then the byte range — and v3 is the only sharded store here.
+Note the two cannot be separated with bioformats2raw, because it **always** shards v3: "v3 as we can
+actually produce it" is "v3 sharded". So the honest comparison is the one above, and it favours v2.
+
+That is a second, independent reason to keep v2 as the default — and the first measurement showing a
+concrete v3 *cost* rather than just an absent benefit.
+
 ### Phase 4 — Adopt (remaining)
 
 Measure sharded vs unsharded on a real timecourse (store size, file count, import time, warm plane
