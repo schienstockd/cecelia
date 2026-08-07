@@ -46,6 +46,7 @@ const SCALE_OPTIONS: ChipOption[] = ['1', '2', '3', '4', '6', '8', '12', '16']
 
 const planes = ref<Plane[]>([])
 const dropped = ref<string[]>([])
+const atZ = ref<number | null>(null)     // the z plane the worker actually computed
 const loading = ref(false)
 const starting = ref(false)
 const error = ref('')
@@ -102,6 +103,9 @@ async function load(since = 0) {
     starting.value = false
     planes.value = d.planes ?? []
     dropped.value = d.droppedMetrics ?? []
+    // The worker echoes the region it actually computed, so an empty z box can show which plane it
+    // resolved to (the middle — what training reads) instead of leaving it a mystery.
+    atZ.value = d.region?.Z?.[0] ?? null
     // Show everything by default — a contact sheet you have to unhide plane by plane answers
     // nothing. The chips are for narrowing once you know what you're looking at.
     if (!state.value.show) state.value.show = planes.value.map(p => p.name)
@@ -161,6 +165,13 @@ const isDropped = (name: string) => dropped.value.includes(name)
                  v-tooltip.top="'Timepoint'"
                  @change="t = Number(($event.target as HTMLInputElement).value)" />
         </label>
+        <label class="cc-muted fmv-t">
+          z
+          <input type="number" min="0" class="text-input fmv-num" :value="state.z ?? ''"
+                 :placeholder="atZ === null ? 'mid' : String(atZ)"
+                 v-tooltip.top="'Z plane — empty is the middle, which is what training reads'"
+                 @change="state.z = ($event.target as HTMLInputElement).value === ''
+                                    ? null : Number(($event.target as HTMLInputElement).value)" /></label>
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Reload'"
                 :disabled="loading" @click="load()">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />

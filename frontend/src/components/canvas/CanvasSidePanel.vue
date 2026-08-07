@@ -62,6 +62,11 @@ const panel = useTemplateRef<HTMLElement>('panel')
 const { pos, startDrag } = useFloatingPanel(panel)
 onMounted(() => {
   if (props.docked) return
+  // `width` is a STARTING width, applied once — not a bound `:style`. CSS `resize` works by writing
+  // `style.width` on the element, so a reactive style binding re-applies the prop on the next render
+  // and the box visibly snaps back the moment anything else re-renders. Model names are long enough
+  // that the widening is worth keeping.
+  if (panel.value) panel.value.style.width = `${props.width}px`
   const par = panel.value?.offsetParent as HTMLElement | null
   if (par) pos.value = { x: Math.max(16, par.clientWidth - (panel.value!.offsetWidth || props.width) - 16), y: 16 }
 })
@@ -70,7 +75,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 
 <template>
   <div ref="panel" class="pop-manager" :class="{ docked, collapsed }"
-       :style="docked ? { width: '100%' } : { left: pos.x + 'px', top: pos.y + 'px', width: width + 'px' }">
+       :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }">
     <div class="pm-header" @mousedown.prevent="onHeaderDown">
       <i class="pi" :class="icon" />
       <span class="pm-title">{{ title }}</span>
@@ -104,7 +109,8 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </template>
 
 <style scoped>
-/* Width is set inline from the `width` prop (docked → 100%); the user can then drag the corner.
+/* Width: set ONCE on mount from the `width` prop (see onMounted — a bound `:style` would fight the
+   resize grip), so a drag sticks. Docked fills its container instead.
    `resize` needs a non-`visible` overflow, so the box clips and the LIST scrolls inside it — which is
    also what lets a taller drag show more rows instead of just more empty box. Same idiom as
    CanvasPanel (CSS `resize`, not a hand-rolled grip); the height cap is the viewport so a long list
@@ -119,7 +125,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/resize/shadow), fills its container column */
-.pop-manager.docked { position: static; z-index: auto; box-shadow: none;
+.pop-manager.docked { position: static; z-index: auto; width: 100%; box-shadow: none;
                       resize: none; overflow: visible; max-height: none; min-height: 0; }
 .pop-manager.docked .pm-header { cursor: default; }
 /* docked has no box height of its own to fill, so the list keeps its own cap (the board rail must not

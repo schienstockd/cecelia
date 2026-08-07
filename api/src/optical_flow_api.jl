@@ -138,8 +138,22 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     arr, caxes = open_level0(zp)
     d = axis_dims(caxes, ndims(arr))
     xy = Dict{String,Any}("X" => [0, size(arr, d["x"])], "Y" => [0, size(arr, d["y"])])
+
+    # ONE z plane, resolved here rather than passed through as `nothing`. `preview_region_bounds`
+    # skips an axis it is given nothing for, so a null z hands the worker the WHOLE stack — which
+    # then fails in `_as_cyx` with a reshape error about a size nothing in the request mentions.
+    # The default is the middle plane because that is what training reads (`_training_sequence`:
+    # `n_z // 2`), so the sheet shows the planes the model was actually fed.
+    z_req = get(data, "z", nothing)
+    z_idx = if haskey(d, "z")
+        n_z = size(arr, d["z"])
+        isnothing(z_req) ? n_z ÷ 2 : clamp(Int(z_req), 0, n_z - 1)
+    else
+        nothing
+    end
+
     region = Dict{String,Any}("xy" => xy,
-                              "z"  => get(data, "z", nothing),
+                              "z"  => z_idx,
                               "t"  => get(data, "t", 0),
                               "ndisplay" => 2)
 
