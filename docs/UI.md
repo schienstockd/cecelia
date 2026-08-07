@@ -288,6 +288,16 @@ buttons, and **18** task params with no `tip` — `segment/branching.json` worst
 **The rule: every control a user sets a value on carries a tooltip, and every task-spec param carries
 a `tip`.** Both are ratcheted to zero with an empty allow-list.
 
+**One exception, and it is a real one: chips are covered by their heading.** `ChipSelect` and
+`SwatchSelect` are not one hit target, they are many small ones, and a tooltip anchored to the row
+renders **on top of the chips** — so the hover help hides the things you were about to click. Here
+the blanket rule is actively wrong rather than merely redundant (Dominik, 2026-08-07, seeing it on
+the channel selection). A chip select therefore counts as covered when a tipped label or heading
+precedes it inside the same row, including one wrapper deeper — the ordinary label-then-control
+shape, and where the explanation belongs anyway. A chip select with no tipped heading anywhere is
+still reported, and the exemption is chips only: a plain `select` beside a tipped label still needs
+its own. `HEADING_COVERED` in `utils/uiCopy.ts`; the cases are pinned in `uiCopy.test.ts`.
+
 | Surface | Checker | Ratchet |
 |---|---|---|
 | SFC controls — `input`, `select`, `textarea`, `CcToggle`, `ChipSelect`, `SwatchSelect`, `RangeSlider`, `CcCycleButton` | `uncoveredControls` (`utils/uiCopy.ts`) | `uiCopy.test.ts` |

@@ -186,6 +186,37 @@ describe('uncoveredControls', () => {
     expect(uncoveredControls(src)).toEqual([{ tag: 'select', line: 1 }])
   })
 
+  // A chip row is many small hit targets, and a tooltip anchored to it renders ON TOP of the chips —
+  // so the hover help hides what you were about to click. The blanket "every control carries its own
+  // v-tooltip" rule is therefore actively wrong here, not merely redundant (Dominik, 2026-08-07).
+  it('a tipped heading covers a chip select that follows it', () => {
+    const src = `<template><div class="param-row"><label v-tooltip.left="'Frame lags'">Scales</label>
+                 <ChipSelect multiple /></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('…and covers one nested a wrapper deeper (the channelSelection shape)', () => {
+    const src = `<template><div class="param-row"><label v-tooltip.left="'Channels'">Ch</label>
+                 <div class="channel-select-wrap"><ChipSelect multiple /></div></div></template>`
+    expect(uncoveredControls(src)).toEqual([])
+  })
+
+  it('a chip select with no tipped heading anywhere is still reported', () => {
+    expect(uncoveredControls('<template><div><ChipSelect multiple /></div></template>').map(c => c.tag))
+      .toEqual(['ChipSelect'])
+  })
+
+  it('heading coverage does not leak into a later sibling row', () => {
+    const src = `<template><div><label v-tooltip="'a'">A</label><ChipSelect /></div>
+                 <div><select /></div></template>`
+    expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
+  })
+
+  it('the exemption is chips only — a plain select still needs its own tooltip', () => {
+    const src = `<template><div><label v-tooltip="'a'">A</label><select /></div></template>`
+    expect(uncoveredControls(src).map(c => c.tag)).toEqual(['select'])
+  })
+
   it('does not accept a native title — only v-tooltip is coverage', () => {
     // A `title=` renders as the browser's own unstyled tooltip and is invisible to the copy
     // ratchets, so accepting it would let a control pass this check looking nothing like the app.

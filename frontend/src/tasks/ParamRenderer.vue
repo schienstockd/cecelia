@@ -463,7 +463,6 @@ const pct = computed(() => {
       :model-value="(Array.isArray(val) ? val : []).map(String)"
       multiple
       :aria-label="param.label"
-      v-tooltip.left="param.tip"
       @update:model-value="v => val = v as string[]"
     />
 
@@ -543,8 +542,10 @@ const pct = computed(() => {
     <template v-else-if="param.type === 'section' || param.type === 'group'"><!-- handled below --></template>
 
     <!-- channelSelection: togglable chip list from image context -->
-    <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap"
-      v-tooltip.right="param.tip">
+    <!-- No tooltip on the wrapper: it anchors over the CHIPS, hiding the things you are about to
+         click, and `param-label` above already carries the same tip on its info icon. See
+         `HEADING_COVERED` in utils/uiCopy.ts. -->
+    <div v-else-if="param.type === 'channelSelection'" class="channel-select-wrap">
       <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
         No channels — select images first.
       </div>

@@ -185,6 +185,21 @@ export function isTitleCase(text: string): boolean {
 const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|ChipSelect|CcCycleButton)$/
 
 /**
+ * Controls that a tipped HEADING covers, instead of needing a tooltip of their own.
+ *
+ * A chip row is not one hit target, it is many small ones, and a tooltip anchored to the row renders
+ * ON TOP of the chips — so the hover help hides the things you were about to click. That makes the
+ * blanket "every settable control carries its own `v-tooltip`" rule actively wrong here, rather than
+ * merely redundant (Dominik, 2026-08-07, seeing it on the channel selection).
+ *
+ * They are also always rendered under a label or heading that says what the set is — the param row's
+ * label and its info icon, a section heading — and that is where the explanation belongs. So a chip
+ * select counts as covered when a tipped label precedes it inside the same parent, which is the
+ * ordinary label-then-control shape. A chip select with NO tipped heading anywhere is still reported.
+ */
+const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect)$/
+
+/**
  * A `<button>` whose entire content is an icon — `<button><i class="pi pi-trash" /></button>`.
  *
  * This is the CellProfiler case at its purest: no caption, no value, nothing on screen to read, so a
@@ -274,21 +289,36 @@ export function uncoveredControls(src: string, path = ''): UncoveredControl[] {
   for (const b of clean.matchAll(BUTTON)) if (isIconOnly(b[2]!)) iconButtonAt.add(b.index!)
 
   const out: UncoveredControl[] = []
-  const open: { tag: string; tipped: boolean }[] = []
+  // `tippedSibling` is per-DEPTH: a tipped <label> marks the row it opens, and the chip select that
+  // follows it inside the same parent is covered by it. Reset on entering/leaving a parent so a
+  // heading cannot leak coverage into an unrelated block.
+  const open: { tag: string; tipped: boolean; tippedSibling: boolean }[] = []
+  let tippedSibling = false
   for (const m of clean.matchAll(OPEN_TAG)) {
     const [, closing, tag, attrs, selfClosing] = m
     if (closing) {
       // Pop to the matching open tag. An unclosed `<div>` (v-if branches, or a template this regex
       // mis-reads) would otherwise leave the stack wrong for the rest of the file.
       const at = open.map((e) => e.tag).lastIndexOf(tag!)
-      if (at >= 0) open.length = at
+      if (at >= 0) {
+        tippedSibling = open[at]!.tippedSibling
+        open.length = at
+      }
       continue
     }
     const tipped = /v-tooltip/.test(attrs!)
     const settable = CONTROL.test(tag!) && !NOT_A_SETTING.test(attrs!)
-    if ((settable || iconButtonAt.has(m.index!)) && !tipped && !open.some((e) => e.tipped))
+    const covered = tipped || open.some((e) => e.tipped) ||
+                    (HEADING_COVERED.test(tag!) && tippedSibling)
+    if ((settable || iconButtonAt.has(m.index!)) && !covered)
       out.push({ tag: tag!, line: lineAt(m.index!) })
-    if (!selfClosing && !VOID.test(tag!)) open.push({ tag: tag!, tipped })
+    if (tipped) tippedSibling = true
+    if (!selfClosing && !VOID.test(tag!)) {
+      // INHERITED into the child scope, not reset: the heading is the param row's label and the
+      // chips often sit one wrapper deeper (`channel-select-wrap`). Restored on the close tag, so a
+      // heading covers its own row and nothing after it.
+      open.push({ tag: tag!, tipped, tippedSibling })
+    }
   }
   return out
 }
