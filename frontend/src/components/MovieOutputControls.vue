@@ -11,9 +11,11 @@
 //
 // Named v-models rather than one config object, because the three sites store these differently: the
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
+import { computed } from 'vue'
 import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
-defineProps<{
+const props = defineProps<{
   fps: number
   sizeX: number | null
   sizeY: number | null
@@ -23,13 +25,36 @@ defineProps<{
   // what napari would record at right now (GET /api/napari/status), for the placeholder
   canvasX?: number | null
   canvasY?: number | null
+  // napari's BAKED overlays — drawn into the canvas, so they are burnt into every frame and can only
+  // be left out by hiding them for the render. Optional: pass them and the chips appear, omit them
+  // (the Animation page) and the row is exactly what it was.
+  timestamp?: boolean
+  scaleBar?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
   (e: 'update:sizeX', v: number | null): void
   (e: 'update:sizeY', v: number | null): void
   (e: 'update:suffix', v: string): void
+  (e: 'update:timestamp', v: boolean): void
+  (e: 'update:scaleBar', v: boolean): void
 }>()
+
+const hasOverlays = computed(() => props.timestamp !== undefined || props.scaleBar !== undefined)
+// one multi-select row, ON = burnt into the movie. No per-option tips: the row carries one tooltip
+// for the whole control, and a second one on the chip renders on top of it.
+const OVERLAY_OPTIONS: ChipOption[] = [
+  { value: 'timestamp', label: 'timestamp' },
+  { value: 'scaleBar', label: 'scale bar' },
+]
+const overlays = computed<string[]>({
+  get: () => [props.timestamp !== false && 'timestamp', props.scaleBar !== false && 'scaleBar']
+    .filter(Boolean) as string[],
+  set: v => {
+    emit('update:timestamp', v.includes('timestamp'))
+    emit('update:scaleBar', v.includes('scaleBar'))
+  },
+})
 
 const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
   emit(`update:${axis}` as 'update:sizeX', parseMovieAxis((ev.target as HTMLInputElement).value))
@@ -63,6 +88,13 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
       <input type="text" class="cc-input-2xs mo-txt" :value="suffix" placeholder="suffix"
              v-tooltip.bottom="'Added to the file name; keeps versions apart'"
              @change="$emit('update:suffix', ($event.target as HTMLInputElement).value)" />
+    </span>
+
+    <span v-if="hasOverlays" class="cc-row-group">
+      <span class="mo-lbl cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Drawn into the recorded frames'">show</span>
+      <ChipSelect multiple :options="OVERLAY_OPTIONS" v-model="overlays"
+                  aria-label="Overlays burnt into the movie"
+                  v-tooltip.bottom="'Napari overlays burnt into every frame'" />
     </span>
   </div>
 </template>
