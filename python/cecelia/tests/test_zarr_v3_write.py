@@ -244,5 +244,58 @@ class CalibrationRestampTest(unittest.TestCase):
         self.assertAlmostEqual(0.75, float(zarr_utils.read_scale(p)[-1]), places=6)
 
 
+class ValidBoxIsFormatAgnosticTest(unittest.TestCase):
+    """`validBox` needs NO v3 branch, and this pins why so nobody adds one.
+
+    It lives under `CECELIA_ATTR` — a cecelia-PRIVATE namespace, not an NGFF attribute. The `ome`
+    nesting that NGFF 0.5 introduced applies to the spec's own keys (`multiscales`, `omero`), not to
+    arbitrary custom ones, and `zarr-python`'s `Group.attrs` already hides `.zattrs` vs
+    `zarr.json`→`attributes`. So writer and reader agree on the same key in both formats.
+
+    Worth a test rather than a comment because the obvious-looking "fix" — routing this through
+    `write_ngff_attrs` like the multiscales writers — would bury a private key inside `ome`, where it
+    is neither NGFF nor findable by the reader.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dark, self.arr, self.du = _fixture()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _store(self, fmt):
+        p = os.path.join(self.tmp, f'vb{fmt}.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1, zarr_format=fmt)
+        return p
+
+    def test_a_static_box_round_trips_in_both_formats(self):
+        for fmt in (2, 3):
+            p = self._store(fmt)
+            zarr_utils.write_valid_box(p, ['Y', 'X'], {'Y': (2, 10), 'X': (3, 11)})
+            self.assertEqual({'Y': (2, 10), 'X': (3, 11)}, zarr_utils.read_valid_box(p, level=0),
+                             f'v{fmt} static valid box')
+
+    def test_a_per_timepoint_box_round_trips_in_both_formats(self):
+        # the drift case: the valid region moves per frame, and a consumer skips what the writer left
+        # empty. A box that silently failed to persist would make consumers trust padding as data.
+        for fmt in (2, 3):
+            p = self._store(fmt)
+            zarr_utils.write_valid_box(p, ['Y', 'X'],
+                                       {0: {'Y': (1, 9), 'X': (0, 8)}, 1: {'Y': (2, 10), 'X': (1, 9)}})
+            self.assertEqual({'Y': (1, 9), 'X': (0, 8)},
+                             zarr_utils.read_valid_box(p, level=0, timepoint=0), f'v{fmt} t=0')
+            self.assertEqual({'Y': (2, 10), 'X': (1, 9)},
+                             zarr_utils.read_valid_box(p, level=0, timepoint=1), f'v{fmt} t=1')
+
+    def test_the_private_key_stays_out_of_the_ome_namespace(self):
+        import zarr
+        p = self._store(3)
+        zarr_utils.write_valid_box(p, ['Y', 'X'], {'Y': (0, 4), 'X': (0, 4)})
+        attrs = dict(zarr.open_group(zarr_utils.series_base(p), mode='r').attrs)
+        self.assertIn(zarr_utils.CECELIA_ATTR, attrs, 'private attrs belong at the top level')
+        self.assertNotIn(zarr_utils.CECELIA_ATTR, attrs.get('ome', {}))
+
+
 if __name__ == '__main__':
     unittest.main()

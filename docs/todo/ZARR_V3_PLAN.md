@@ -247,6 +247,13 @@ stamp*). Mutation-verified: reverting to the naive top-level write fails both ne
 * Import task: `ngffVersion` + shard params → `--ngff-version` / `--shard-*`.
 * Settings → Storage: format + sharding controls next to the compressor, with measured numbers.
 
+**`validBox` needs no v3 branch** — verified, and pinned by a test so nobody "fixes" it. It lives under
+`CECELIA_ATTR`, a cecelia-PRIVATE namespace, and NGFF 0.5's `ome` nesting applies only to the spec's own
+keys (`multiscales`, `omero`). `zarr-python`'s `Group.attrs` already hides `.zattrs` vs
+`zarr.json`→`attributes`, so writer and reader agree in both formats. Routing it through
+`write_ngff_attrs` like the multiscales writers — the obvious-looking fix — would bury a private key
+inside `ome` where it is neither NGFF nor findable.
+
 ### Phase 4 — Adopt
 
 Measure sharded vs unsharded on a real timecourse (store size, file count, import time, warm plane
