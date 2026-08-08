@@ -9,10 +9,17 @@
   options) uses the `#options` slot.
 
   It was `PopulationPanelShell` until the model vault showed the chrome was never population-specific.
-  Both plot-only parts are opt-in: pass `scope` for the global/local footer, `vis` for the styling
-  block. A manager of things that are not plot series (the vault) passes neither.
-  NB the internal classes keep the `pm-` prefix — the consumers' slotted rows use the same prefix in
-  their own scoped styles, so renaming here would only half-rename the visible markup.
+  The `vis` styling block is opt-in — pass it for a manager of plot SERIES, omit it for one whose
+  contents are not (the vault). `scope` is not: all three managers mean the same thing by it (one pick
+  for every plot, or the active plot's own), including the vault — a model is picked per plot exactly
+  as a highlight set is.
+
+  What a HOST may ask of the thing slotted in here is `canvasManager.ts` (`CanvasManagerProps`) — the
+  contract the Analysis board's rail swaps on. This file is only the box around it.
+
+  Classes are `csp-` (root `.canvas-side-panel`). They were `pm-`, from the days when this WAS the
+  population manager; consumers keep their own prefixes (`pm-`, `pick-`, `vault-`) because scoped
+  styles mean a slotted row carries the CONSUMER's scope id — nothing here can reach it.
 
   NOT the app's `FloatingPanel` (Viewer, Lab log). That one is VIEWPORT-fixed and stacks with the other
   app windows; this one is absolutely positioned inside a zoomable canvas and belongs to it. Putting a
@@ -38,8 +45,7 @@ const props = withDefaults(defineProps<{
   icon?: string                    // header icon (a PrimeIcons class, e.g. 'pi-database')
   count?: number | string          // shown at the right of the header (population count)
   width?: number                   // px; a wider list (the model vault's table) needs more room
-  // when provided, the global/local footer renders — omit it for a panel that manages things which
-  // are not plot series (the model vault: a model is not shown "on the active plot only")
+  // when provided, the global/local footer renders (every manager passes it — see the header)
   scope?: 'global' | 'local'
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
@@ -74,33 +80,32 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </script>
 
 <template>
-  <div ref="panel" class="pop-manager" :class="{ docked, collapsed }"
+  <div ref="panel" class="canvas-side-panel" :class="{ docked, collapsed }"
        :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }">
-    <div class="pm-header" @mousedown.prevent="onHeaderDown">
+    <div class="csp-header" @mousedown.prevent="onHeaderDown">
       <i class="pi" :class="icon" />
-      <span class="pm-title">{{ title }}</span>
-      <span v-if="count !== undefined" class="pm-count">{{ count }}</span>
-      <button v-if="!docked" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
+      <span class="csp-title">{{ title }}</span>
+      <span v-if="count !== undefined" class="csp-count">{{ count }}</span>
+      <button v-if="!docked" class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
               @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
     </div>
 
-    <div v-show="!collapsed" class="pm-body"><slot /></div>
+    <div v-show="!collapsed" class="csp-body"><slot /></div>
 
     <!-- host-specific extra controls (e.g. the gating manager's gate / viewer options) -->
     <div v-show="!collapsed"><slot name="options" /></div>
 
     <!-- shared plot-styling block (only when the host passes a `vis` bag), obeys the scope below -->
-    <div v-show="!collapsed" v-if="vis" class="pm-opts">
+    <div v-show="!collapsed" v-if="vis" class="csp-opts">
       <PlotOptions :vis="vis" :sections="optionsSections" :readout="readout"
                    @update:vis="emit('update:vis', $event)" />
     </div>
 
-    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom.
-         Opt-in: a panel whose contents are not plot series (the model vault) passes no `scope`. -->
-    <div v-show="!collapsed" v-if="scope" class="pm-footer">
-      <ChipSelect class="pm-seg" variant="segmented" :options="SCOPE_OPTIONS"
+    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->
+    <div v-show="!collapsed" v-if="scope" class="csp-footer">
+      <ChipSelect class="csp-seg" variant="segmented" :options="SCOPE_OPTIONS"
                   :model-value="scope" aria-label="Scope"
                   @update:model-value="v => emit('update:scope', v as 'global' | 'local')" />
     </div>
@@ -114,7 +119,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
    also what lets a taller drag show more rows instead of just more empty box. Same idiom as
    CanvasPanel (CSS `resize`, not a hand-rolled grip); the height cap is the viewport so a long list
    can't run off the canvas. */
-.pop-manager {
+.canvas-side-panel {
   position: absolute; z-index: 20;
   display: flex; flex-direction: column;
   max-height: 90vh; min-width: 240px; min-height: 140px;
@@ -124,26 +129,26 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/resize/shadow), fills its container column */
-.pop-manager.docked { position: static; z-index: auto; width: 100%; box-shadow: none;
-                      resize: none; overflow: visible; max-height: none; min-height: 0; }
-.pop-manager.docked .pm-header { cursor: default; }
+.canvas-side-panel.docked { position: static; z-index: auto; width: 100%; box-shadow: none;
+                            resize: none; overflow: visible; max-height: none; min-height: 0; }
+.canvas-side-panel.docked .csp-header { cursor: default; }
 /* docked has no box height of its own to fill, so the list keeps its own cap (the board rail must not
    grow without bound on a long population list) */
-.pop-manager.docked .pm-body { max-height: 60vh; }
+.canvas-side-panel.docked .csp-body { max-height: 60vh; }
 /* collapsed: shrink to the header, overriding any dragged height; no grip on a header-only box */
-.pop-manager.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
-.pm-header {
+.canvas-side-panel.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
+.csp-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0;
   cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);
   border-radius: var(--cc-radius-md) 6px 0 0;
 }
-.pm-title { font-weight: 600; }
-.pm-count { color: var(--cc-text-dim); margin-left: auto; }
+.csp-title { font-weight: 600; }
+.csp-count { color: var(--cc-text-dim); margin-left: auto; }
 /* the one flexible row: takes the leftover height and scrolls (min-height:0 or flex won't shrink it) */
-.pm-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
-.pm-icon:hover { color: var(--cc-text); }
-.pm-opts { border-top: 1px solid var(--cc-border); flex-shrink: 0; }
-.pm-footer { display: flex; align-items: center; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
-.pm-seg { margin-left: auto; }
+.csp-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* the collapse button is `cc-btn cc-btn-bare cc-btn-icon` and nothing more — its old `.pm-icon:hover`
+   rule was byte-identical to `.cc-btn-bare:hover`, so it went rather than got renamed. */
+.csp-opts { border-top: 1px solid var(--cc-border); flex-shrink: 0; }
+.csp-footer { display: flex; align-items: center; padding: 6px 8px; flex-shrink: 0; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
+.csp-seg { margin-left: auto; }
 </style>

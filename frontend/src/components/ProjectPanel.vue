@@ -361,7 +361,7 @@ function formatDate(iso: string | null): string {
         </div>
 
         <CollapsibleSection label="Export / import project" :default-open="false"
-                            storage-key="cc-pm-io-open" max-height="none">
+                            storage-key="cc-pp-io-open" max-height="none">
           <div class="pp-io">
             <div class="pp-io-dest cc-row">
               <span class="dim cc-muted">Exports to</span>

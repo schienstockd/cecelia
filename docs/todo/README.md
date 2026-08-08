@@ -116,3 +116,11 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   Vite alias to add at the first commit that swaps a WhatNewCard's grey placeholder for
   `<SketchCanvas>`. Rough.js + animejs; sketches are JSON; R Cecelia logo is the smoke-test port.
   Supersedes `docs/prompts/sketch-engine-prompt.md`.
+- `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
+  manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
+  instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why
+  `flowProbability` is currently **dead on the board** and `flowTraining` carries a second, bespoke
+  model picker. The chrome was already shared (`CanvasSidePanel`); what was missing is the **role
+  contract** (`{selected, scope, docked}`), because until the board no host ever held two managers
+  behind one variable. Also cleans the half-renamed `pm-` CSS vocabulary the generalisation left
+  behind (`CanvasSidePanel` → `csp-`, `SeriesPicker` → `pick-`).

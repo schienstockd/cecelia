@@ -1492,10 +1492,16 @@ zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing 
 
 ### Show/hide the population manager
 
-The floating population manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker`
-on summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons on **every** module
-canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`), persisted per canvas in the
-`shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
+The floating manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker` on summary
+pages, `FlowModelVault` on the optical-flow page) has a **toggle** next to the arrange-windows icons on
+**every** module canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`, `FlowPlots`),
+persisted per canvas in the `shared` bag (`shared.showManager`, default shown). Wrap the manager
+`v-if="showManager"`. One key name across all four — the flow canvas called it `showVault` until the
+rail work showed that was the same switch under a second name. The icon names the CONTENTS
+(`pi-sitemap` for populations, `pi-database` for the model vault).
+
+The **Analysis board** has no such toggle: its rail is always shown and swaps by the active slot's
+`rail` (`docs/ANALYSIS.md` → *The rail*).
 
 ---
 
@@ -1942,9 +1948,22 @@ page — and the Analysis board — reuses them unchanged:
   because it has no box height to fill. Size and position are **not** persisted yet (unlike
   `CanvasPanel`, which does it via `persistKey` + the `canvasPanels` geom store).
   Slotted rows keep their own component's scoped CSS; the shell owns only the chrome. **Was `PopulationPanelShell`** until the model vault showed the chrome was
-  never population-specific — a manager of non-plot-series things simply passes neither opt-in part.
+  never population-specific — a manager of non-plot-series things simply omits the `vis` block (`scope`
+  is passed by all three: a model is picked per plot exactly as a highlight set is).
   **Use this, not `FloatingPanel`, for anything scoped to a canvas**: `FloatingPanel` is the app's
   viewport window layer (Viewer, Lab log), so a canvas manager put there fights them for the corner.
+  **CSS prefix = owning component**, because scoped styles mean a slotted row carries the CONSUMER's
+  scope id and nothing in the shell can reach it: `csp-` (shell, root `.canvas-side-panel`), `pm-`
+  (`PopulationManager`), `pick-` (`SeriesPicker`), `vault-` (`FlowModelVault`). All four were `pm-`
+  when the shell *was* the population manager, which made four components read as one.
+- **`components/canvas/canvasManager.ts`** — the **role contract** a host may rely on from any manager:
+  `CanvasManagerChrome` (`scope`, `docked`) + `update:scope`, and `RailKind` — which manager a PLOT
+  needs (`'pops' | 'clusterPops' | 'flowModels' | 'none'`), declared on the plot's registry entry and
+  resolved by the host. The **selection is deliberately not in the contract**: the three managers
+  disagree on arity and emit shape (`SeriesPicker` holds `string[]` + a 3-arg `toggle`;
+  `PopulationManager` a `string` parent plus a separate `highlighted[]`; `FlowModelVault` a `string` +
+  `update:selected`), so hoisting one `selected` would misdescribe two of them. See
+  `docs/todo/CANVAS_MANAGER_RAIL_PLAN.md`.
 - **`components/canvas/PlotOptions.vue`** — the **shared** `VisProps` styling controls (collapsible
   Layout / Points / Colours / Labels sub-sections; props `vis`, emits `update:vis`). Embedded by BOTH
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling

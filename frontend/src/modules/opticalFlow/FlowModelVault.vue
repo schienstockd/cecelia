@@ -32,6 +32,7 @@ import FlowModelDetails from './FlowModelDetails.vue'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useProjectStore } from '../../stores/project'
+import type { CanvasManagerChrome, CanvasManagerChromeEmits } from '../../components/canvas/canvasManager'
 import type { FlowManifest as Manifest } from '../../utils/flowManifest'
 
 type FlowModel = {
@@ -40,11 +41,10 @@ type FlowModel = {
   hasManifest: boolean; manifest: Manifest
 }
 
-const props = defineProps<{ selected?: string; scope?: 'global' | 'local' }>()
-const emit = defineEmits<{
-  'update:selected': [string]
-  'update:scope': ['global' | 'local']
-}>()
+// shared manager chrome (canvasManager.ts) + this manager's own selection. `docked` is what lets the
+// board's rail host this panel at all; the flow canvas leaves it off and gets the draggable box.
+const props = defineProps<CanvasManagerChrome & { selected?: string }>()
+const emit = defineEmits<CanvasManagerChromeEmits & { 'update:selected': [string] }>()
 
 const models  = ref<FlowModel[]>([])
 const vaultDir = ref('')
@@ -128,7 +128,7 @@ const picked = computed({
 
 <template>
   <CanvasSidePanel title="Model vault" icon="pi-database" :count="models.length" :width="340"
-                   :scope="scope" @update:scope="emit('update:scope', $event)">
+                   :scope="scope" :docked="docked" @update:scope="emit('update:scope', $event)">
     <div class="vault">
       <div class="vault-bar">
         <span class="cc-muted vault-dir" v-tooltip.top="vaultDir">{{ vaultDir }}</span>
