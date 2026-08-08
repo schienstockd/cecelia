@@ -14,6 +14,7 @@ import type { VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
+import { useFieldDraft } from '../../composables/useFieldDraft'
 
 const props = withDefaults(defineProps<{
   vis: VisProps
@@ -36,6 +37,17 @@ const rotateXShown = computed<boolean>({
 })
 const open = ref<Record<string, boolean>>({ layout: false, points: false, colours: false, labels: false, stats: false })
 const set = (patch: Partial<VisProps>) => emit('update:vis', patch)
+
+// Free-text fields commit on `@change` (blur / Enter) — an axis caption applied per keystroke would
+// re-render the plot on every letter. That leaves them uncontrolled while focused, and Vue force-patches
+// an input's `value` on every element patch, so a board re-render mid-typing replaced what was typed
+// with the stored value. Same defect (and fix) as the movie filename field. See useFieldDraft.
+const titleDraft  = useFieldDraft(() => props.vis.title)
+const labXDraft   = useFieldDraft(() => props.vis.labX)
+const labYDraft   = useFieldDraft(() => props.vis.labY)
+const yMinDraft   = useFieldDraft(() => props.vis.yMin)
+const yMaxDraft   = useFieldDraft(() => props.vis.yMax)
+const coloursDraft = useFieldDraft(() => props.vis.userColors)
 const has = (s: string) => props.sections.includes(s as 'layout')
 </script>
 
@@ -71,9 +83,9 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Dark plot background; export always uses light'"><span>Dark theme</span>
           <CcToggle aria-label="Dark theme" :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y min</span>
-          <input class="po-txt" type="text" :value="vis.yMin" @change="set({ yMin: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt" type="text" v-model="yMinDraft" @change="set({ yMin: yMinDraft })" /></label>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y max</span>
-          <input class="po-txt" type="text" :value="vis.yMax" @change="set({ yMax: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt" type="text" v-model="yMaxDraft" @change="set({ yMax: yMaxDraft })" /></label>
       </div>
     </template>
 
@@ -116,8 +128,8 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           </select></label>
         <label v-if="vis.palette === 'user'" class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'Comma-separated colours/hex, in series order'">
           <span>Colours</span>
-          <input class="po-txt wide" type="text" :value="vis.userColors" placeholder="#4477AA,#EE6677,…"
-                 @change="set({ userColors: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt wide" type="text" v-model="coloursDraft" placeholder="#4477AA,#EE6677,…"
+                 @change="set({ userColors: coloursDraft })" /></label>
       </div>
     </template>
 
@@ -157,11 +169,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
       </button>
       <div v-show="open.labels" class="po-body">
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'Heading above the plot (blank = none)'"><span>Title</span>
-          <input class="po-txt wide" type="text" :value="vis.title" @change="set({ title: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt wide" type="text" v-model="titleDraft" @change="set({ title: titleDraft })" /></label>
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'X axis caption (blank = the measure name)'"><span>X label</span>
-          <input class="po-txt wide" type="text" :value="vis.labX" @change="set({ labX: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt wide" type="text" v-model="labXDraft" @change="set({ labX: labXDraft })" /></label>
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.left="'Y axis caption (blank = the measure name)'"><span>Y label</span>
-          <input class="po-txt wide" type="text" :value="vis.labY" @change="set({ labY: ($event.target as HTMLInputElement).value })" /></label>
+          <input class="po-txt wide" type="text" v-model="labYDraft" @change="set({ labY: labYDraft })" /></label>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Type size for titles, axes and tick labels'"><span>Font size</span>
           <input type="range" min="8" max="20" step="1" :value="vis.fontSize"
                  @input="set({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
