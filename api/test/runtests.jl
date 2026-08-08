@@ -1560,7 +1560,34 @@ end
         # blank / unsafe name falls back to the uid
         blank = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "   ")
         @test _movie_named_path(blank, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
+        # A name ENDING in a character a filename can't hold — the crop task's "(cropped)" is the one
+        # that showed up in the movies list — must not leave the separator it collapses to. It used to,
+        # and the animation variant then doubled it ("…_cropped__animation.mp4").
+        cropped = (; _dir = joinpath(tmp, "proj", "1", "uid7"),
+                     name = "M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)")
+        @test _movie_named_path(cropped, "uid7") ==
+              joinpath(tmp, "proj", "movies", "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped.mp4")
+        @test _movie_named_path(cropped, "uid7"; suffix = "_animation") ==
+              joinpath(tmp, "proj", "movies", "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped_animation.mp4")
+        # a name with nothing usable left also falls back to the uid
+        parens = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "()")
+        @test _movie_named_path(parens, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
     end
+end
+
+# ONE sanitiser behind the image name, the user's suffix and the attr-composed basename — they used to
+# be three near-copies and only one of them stripped edge separators. Mirrored in the frontend by
+# `safeNamePart` (frontend/src/utils/batchMovie.ts), whose testset asserts the same cases.
+@testset "API: filename fragments are sanitised one way" begin
+    @test _safe_name_part("M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)") ==
+          "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped"
+    @test _safe_name_part("a/b c:d") == "a_b_c_d"
+    @test _safe_name_part("Day 3.v2-final") == "Day_3.v2-final"
+    @test _safe_name_part("../../etc/passwd") == "etc_passwd"
+    @test _safe_name_part("__x__") == "x"
+    @test _safe_name_part("   ") == ""
+    @test _safe_name_part("()") == ""
+    @test _safe_name_part(nothing) == ""
 end
 
 # Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The pure parts: which versions a

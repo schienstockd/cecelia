@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -136,5 +136,27 @@ describe('clampContour / labelContour', () => {
     expect(buildBatchMovieConfig({}, [], {}).labelContour).toBe(0)
     expect(buildBatchMovieConfig({ labelContour: 3 }, [], {}).labelContour).toBe(3)
     expect(buildBatchMovieConfig({ labelContour: -1 }, [], {}).labelContour).toBe(0)
+  })
+})
+
+// Mirrors the Julia `_safe_name_part` testset (api/test/runtests.jl) — the two sanitisers must agree,
+// or the filename the batch panel PREVIEWS is not the one the recorder writes.
+describe('safeNamePart', () => {
+  it('drops the separator a trailing bracket leaves behind', () => {
+    // the reported one: an image named "… -res (cropped)" showed up as "…-res_cropped_"
+    expect(safeNamePart('M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)'))
+      .toBe('M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped')
+  })
+  it('keeps the characters a filename may hold, collapses the rest', () => {
+    expect(safeNamePart('a/b c:d')).toBe('a_b_c_d')
+    expect(safeNamePart('Day 3.v2-final')).toBe('Day_3.v2-final')
+  })
+  it('strips leading separators and dots too', () => {
+    expect(safeNamePart('../../etc/passwd')).toBe('etc_passwd')
+    expect(safeNamePart('__x__')).toBe('x')
+  })
+  it('a name with nothing usable in it comes back empty', () => {
+    expect(safeNamePart('   ')).toBe('')
+    expect(safeNamePart('()')).toBe('')
   })
 })
