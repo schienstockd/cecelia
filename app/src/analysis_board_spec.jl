@@ -225,12 +225,24 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
         contents[i] = _expand_plot(specs, available, p, i)
     end
 
+    # `shared.scope` decides WHERE the board reads each panel's population selection: "global" (the
+    # frontend's default) makes every slot use the board-level `shared.sel` and IGNORE its own `sel`;
+    # "local" makes each slot use the one it carries. We write per-slot `sel` — one plot may want
+    # different populations from the next — so the board must be told to read them, or an authored board
+    # renders with no series until the user picks populations by hand. That is exactly what happened the
+    # first time this shipped with an empty `shared`.
+    #
+    # Only `scope` is set. Everything else in the bag (compareMode, poolGroups, vis, the clustering
+    # picks) is a frontend default we would only be copying — same rule as the omitted `vis`.
+    shared = any(c -> c !== nothing && haskey(c["state"], "sel"), contents) ?
+        Dict{String,Any}("scope" => "local") : Dict{String,Any}()
+
     Dict{String,Any}(
         "cols" => cols, "rows" => rows,
         "slotAreas" => board_slot_areas(cols, rows),
         "contents" => contents,
         "activeIndex" => 0,
-        "shared" => Dict{String,Any}())
+        "shared" => shared)
 end
 
 """

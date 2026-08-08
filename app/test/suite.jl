@@ -8484,7 +8484,24 @@ end
         lay4 = ok([Dict("plot" => "track_measures"), Dict("plot" => "track_measures")]; template = "2x2")
         @test length(lay4["contents"]) == 4
         @test lay4["contents"][3] === nothing && lay4["contents"][4] === nothing
-        @test lay4["activeIndex"] == 0 && lay4["shared"] == Dict{String,Any}()
+        @test lay4["activeIndex"] == 0
+        # no pops requested → nothing to point the board at, so no scope is forced
+        @test lay4["shared"] == Dict{String,Any}()
+
+        # …but when we DO write per-slot `sel`, the board must be told to read it. `shared.scope`
+        # defaults to "global" in useSummaryData, and panelSel then takes the board-level `shared.sel`
+        # and ignores each slot's own — so an authored board rendered with NO series until the user
+        # picked populations by hand. Regression test for exactly that.
+        withpops = expand_board(proj, "sel", [Dict("plot" => "track_measures", "pops" => ["B/qc"])];
+                                pops = Dict("B/qc" => "flow"))
+        @test withpops["shared"]["scope"] == "local"
+        # The SPEC's own first popType wins over the family the pop happens to be stored under: a flow
+        # gate is legitimately usable as a `live` pop, and track_measures fetches live — which is why
+        # the project's real boards store `live::B/qc/_tracked`. The picker's family is only the
+        # fallback for a spec that offers no popTypes at all.
+        @test withpops["contents"][1]["state"]["sel"] == ["live::B/qc"]
+        # and nothing else is invented in the shared bag — the rest are frontend defaults
+        @test collect(keys(withpops["shared"])) == ["scope"]
 
         # statUnit and imageAgg travel together (utils/statUnitState.ts)
         su = ok([Dict("plot" => "track_measures", "statUnit" => "image")])["contents"][1]["state"]
