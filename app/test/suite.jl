@@ -8395,6 +8395,52 @@ end
         delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
     end
 
+    @testset "board read-back summarises what a board plots" begin
+        # The boards file is written by the FRONTEND, so every field here is optional by construction:
+        # a board from an older schema must degrade to fewer fields, never throw.
+        # See docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 0.
+        proj = CciaProject(; uid = "bdP", name = "boards"); proj.root = mktempdir()
+        @test board_summaries(proj) == Any[]                       # no file yet
+
+        mkpath(joinpath(proj.root, "settings"))
+        bf = joinpath(proj.root, "settings", "analysisBoards.json")
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "B vs T motility"),
+                                      Dict("id" => 2, "name" => "Empty board")],
+                           "activeId" => 1, "nextId" => 3),
+            "layouts" => Dict(
+                "tab:1" => Dict("cols" => 2, "rows" => 1, "contents" => [
+                    Dict("kind" => "summary", "ref" => "track_measures",
+                         "state" => Dict("specId" => "track_measures", "measure" => "live.track.speed",
+                                         "chartType" => "boxplot", "popType" => "live",
+                                         "sel" => ["live::B/qc", "live::T/qc"], "title" => "Speed")),
+                    nothing,                                        # an empty slot is omitted
+                ]),
+                # tab 2 has no layout entry at all — a real state (tab created, never filled)
+            ))))
+
+        b = board_summaries(proj)
+        @test length(b) == 2
+        @test b[1]["name"] == "B vs T motility" && b[1]["cols"] == 2 && b[1]["rows"] == 1
+        @test length(b[1]["plots"]) == 1                            # the nothing slot is dropped
+        pl = b[1]["plots"][1]
+        @test pl["kind"] == "summary" && pl["ref"] == "track_measures"
+        @test pl["measure"] == "live.track.speed" && pl["chart"] == "boxplot" && pl["title"] == "Speed"
+        @test pl["pops"] == ["B/qc", "T/qc"]                        # tkeys decoded to valueName/pop
+        # a tab with no layout is reported, blank, rather than skipped
+        @test b[2]["name"] == "Empty board" && isempty(b[2]["plots"])
+
+        # degradation: a slot with no state, and an unparseable file
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "bare")]),
+            "layouts" => Dict("tab:1" => Dict("contents" => [Dict("kind" => "interactive", "ref" => "umap")])))))
+        b = board_summaries(proj)
+        @test b[1]["plots"][1]["ref"] == "umap" && !haskey(b[1]["plots"][1], "measure")
+        @test b[1]["cols"] == 0                                     # missing grid → 0, not an error
+        write(bf, "{not json")
+        @test board_summaries(proj) == Any[]
+    end
+
     @testset "analysis lineage (Slice A synthesizer)" begin
         proj = CciaProject(; uid = "linP", name = "lineage"); proj.root = mktempdir()
         s = CciaSet(; uid = "linS", dir = mktempdir())

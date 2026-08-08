@@ -249,7 +249,7 @@ include("ai/spatial.jl")
 include("ai/chains.jl")
 include("ai/repl_api.jl")
 include("ai/briefing.jl")
-export analysis_lineage, populations_summary, measure_summary, behaviour_summary, cluster_summary
+export analysis_lineage, board_summaries, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix

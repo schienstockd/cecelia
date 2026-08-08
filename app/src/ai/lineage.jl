@@ -95,8 +95,8 @@ function _chain_summaries(proj::CciaProject)
     out
 end
 
-# Analysis-board tab names (best-effort — the board JSON is an opaque frontend blob; we read only the
-# tab labels, not the plot semantics, which are Slice E). Any missing/renamed field just yields fewer names.
+# Analysis-board tab names (best-effort). `board_summaries` below reads the plot semantics too — this
+# stays the cheap name-only view lineage embeds. Any missing/renamed field just yields fewer names.
 function _board_tabs(proj::CciaProject)
     p = joinpath(proj.root, "settings", "analysisBoards.json")
     isfile(p) || return String[]
@@ -109,6 +109,90 @@ function _board_tabs(proj::CciaProject)
         isempty(nm) || push!(names, nm)
     end
     names
+end
+
+
+# ── Analysis-board READ-BACK ────────────────────────────────────────────────────────────────────────
+# What each board actually SHOWS, so the observer can see the boards a project already has instead of
+# proposing a duplicate. Deliberately a SUMMARY, not the stored layout: `analysisBoards.json` holds
+# `slotAreas`, `gridArea` strings, `vis` bags and `tkey`-encoded selections, which say nothing readable
+# about the figure. Read side and write side share one vocabulary on purpose — this returns roughly what
+# the add-a-board tool will accept (docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Decision 2).
+#
+# The file is written by the frontend and read here, so EVERY field is optional by construction: a board
+# from an older schema, or one mid-migration, must degrade to fewer fields rather than throw.
+
+# `tkey` (frontend plots/series.ts): "popType::valueName/pop" — split on the first "::" then the first
+# "/". pop_types and value_names contain no "::", and a pop path always starts with "/".
+function _parse_tkey(k::AbstractString)
+    c = findfirst("::", k)
+    pop_type, rest = c === nothing ? ("live", String(k)) : (String(k[1:first(c)-1]), String(k[last(c)+1:end]))
+    i = findfirst('/', rest)
+    i === nothing ? (; popType = pop_type, valueName = rest, pop = "") :
+                    (; popType = pop_type, valueName = String(rest[1:i-1]), pop = String(rest[i:end]))
+end
+
+_nonempty(x) = x !== nothing && !(x isa AbstractString && isempty(x))
+
+# One filled slot → what it plots. `kind` "summary" carries a plot-spec id in `ref` and its choices in
+# `state` (measure / chartType / popType / the eye-selected series); "interactive" carries a view key.
+function _board_slot(i::Int, c)
+    c isa AbstractDict || return nothing
+    st = get(c, :state, Dict{Symbol,Any}())
+    st isa AbstractDict || (st = Dict{Symbol,Any}())
+    sel = get(st, :sel, nothing)
+    pops = sel isa AbstractVector ?
+        [let t = _parse_tkey(string(k)); "$(t.valueName)$(t.pop)" end for k in sel] : String[]
+    out = Dict{String,Any}("slot" => i, "kind" => string(get(c, :kind, "")), "ref" => string(get(c, :ref, "")))
+    for (key, field) in ("title" => :title, "measure" => :measure, "chart" => :chartType,
+                         "popType" => :popType, "groupBy" => :groupBy)
+        v = get(st, field, nothing)
+        _nonempty(v) && (out[key] = string(v))
+    end
+    isempty(pops) || (out["pops"] = pops)
+    out
+end
+
+"""
+    board_summaries(proj) -> Vector
+
+Every Analysis board in the project and what it shows: `[{name, cols, rows, plots: [{slot, kind, ref,
+measure?, chart?, popType?, pops?, title?}]}]`. Empty slots are omitted. Read-only, summary-level —
+never the stored layout geometry. Returns `[]` when the project has no boards.
+"""
+function board_summaries(proj::CciaProject)
+    p = joinpath(proj.root, "settings", "analysisBoards.json")
+    isfile(p) || return Any[]
+    b = try JSON3.read(read(p, String)) catch; return Any[] end
+    tabs = get(b, :tabs, nothing)
+    layouts = get(b, :layouts, nothing)
+    layouts isa AbstractDict || (layouts = Dict{Symbol,Any}())
+    # tab order comes from `tabs.tabs`; the layout for tab <id> is keyed "tab:<id>" (project-relative,
+    # see frontend utils/boardKeys). A tab with no layout yet is a real state — report it with no plots.
+    tab_list = tabs isa AbstractDict ? get(tabs, :tabs, nothing) : nothing
+    entries = tab_list isa AbstractVector ? tab_list : Any[]
+    out = Any[]
+    for t in entries
+        t isa AbstractDict || continue
+        id = get(t, :id, nothing)
+        lay = id === nothing ? nothing : get(layouts, Symbol("tab:$(id)"), nothing)
+        plots = Any[]
+        cols = rows = 0
+        if lay isa AbstractDict
+            cols = something(tryparse(Int, string(get(lay, :cols, 0))), 0)
+            rows = something(tryparse(Int, string(get(lay, :rows, 0))), 0)
+            contents = get(lay, :contents, nothing)
+            if contents isa AbstractVector
+                for (i, c) in enumerate(contents)
+                    s = _board_slot(i - 1, c)
+                    s === nothing || push!(plots, s)
+                end
+            end
+        end
+        push!(out, Dict{String,Any}("name" => string(get(t, :name, get(t, :id, "?"))),
+                                    "cols" => cols, "rows" => rows, "plots" => plots))
+    end
+    out
 end
 
 # The stages an image reached — from run-log steps UNION artifact evidence. A stage counts as present

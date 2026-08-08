@@ -270,6 +270,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/qc/cohort/runs" => (req, body_bytes) -> (api_qc_cohort_runs(req)),
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
+    "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
     "/api/analysis/measures" => (req, body_bytes) -> (api_analysis_measures(req)),
     "/api/analysis/behaviour" => (req, body_bytes) -> (api_analysis_behaviour(req)),
     "/api/analysis/clusters" => (req, body_bytes) -> (api_analysis_clusters(req)),

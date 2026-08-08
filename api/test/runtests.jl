@@ -1419,6 +1419,18 @@ end
             @test byname["img-1"].included == false && byname["img-2"].included == true
         end
         img1.included = true; save!(img1)                          # restore for the rest of the testset
+        # per-image attribute ASSIGNMENT — the observer needs it to size the groups of a cross-image
+        # plot (the AXES come from /api/plots/attrs, which stays the one discovery route). An image
+        # with no attributes must surface an empty map, not a missing key.
+        let r = JSON3.read(api_images_list(HTTP.Request("GET", "/api/images?projectUid=$uid"))[2])
+            @test all(i -> isempty(i.attr), r.images)
+        end
+        img1.attr = Dict{String,Any}("Mouse" => "3", "Location" => "b"); save!(img1)
+        let r = JSON3.read(api_images_list(HTTP.Request("GET", "/api/images?projectUid=$uid"))[2])
+            byname = Dict(i.name => i for i in r.images)
+            @test byname["img-1"].attr.Mouse == "3" && byname["img-1"].attr.Location == "b"
+            @test isempty(byname["img-2"].attr)
+        end
         @test api_images_list(HTTP.Request("GET", "/api/images"))[1] == 400          # projectUid missing
         @test api_images_list(HTTP.Request("GET", "/api/images?projectUid=nope"))[1] == 404
 
@@ -3048,7 +3060,8 @@ end
 #    removing a route without updating it fails here rather than in production.
 @testset "HTTP router — the full route table still dispatches" begin
     GET_ROUTES = [
-        "/api/analysis/behaviour", "/api/analysis/chains",
+        "/api/analysis/behaviour", "/api/analysis/boards",
+        "/api/analysis/chains",
         "/api/analysis/clusters", "/api/analysis/lineage",
         "/api/analysis/measures", "/api/analysis/populations",
         "/api/analysis/spatial", "/api/app/worktrees",
@@ -3178,7 +3191,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 69 && length(POST_ROUTES) == 98
+    @test length(GET_ROUTES) == 70 && length(POST_ROUTES) == 98
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

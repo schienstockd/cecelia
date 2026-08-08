@@ -32,10 +32,28 @@ Boards already persist: the frontend autosaves `{tabs, layouts}` to `settings/an
 
 ## Decisions (2026-08-08)
 
-1. **Add-only, in the notebook sense.** A brand-new board, or a **new version** of an existing board
-   (snapshot the current one, then write) — the artefact set only ever grows and nothing is lost, which
-   is why a notebook revision counts as an addition too. **No modify-in-place, no delete, no rename, no
-   reorder.** Those are the user's, in the GUI. Phase 4 adds versioning; Phase 3 ships create-only.
+1. **Add-only. No board versioning — dropped 2026-08-08.** A brand-new board, never a touched one.
+   **No modify-in-place, no delete, no rename, no reorder** — those are the user's, in the GUI.
+
+   An earlier draft had a Phase 4 giving boards notebook-style snapshot/restore. Dominik: *"i'm not
+   sure we need restorable artefacts for boards? … I don't want another parallel versioning system."*
+   Correct on both counts:
+   - **Nothing needs restoring.** Versioning exists for notebooks because `revise` overwrites the
+     user's own hand-written Pluto cells. Under add-only nothing is ever overwritten, and a board Claude
+     got wrong is one click to delete — a board is cheap to regenerate from its spec, which is the whole
+     point of Decision 2. The clutter worry that motivated Phase 4 is solved by deleting a tab.
+   - **The notebook system would not transfer cleanly anyway.** It is *file*-based:
+     `cp(src, .snapshots/<stem>@v<N>.jl)` plus a per-project registry tracking `current`
+     (`api_notebooks_snapshot`). A board is not a file — it is one subtree of the single shared
+     `analysisBoards.json`. Generalising would mean an abstraction that is a union of "copy a file" and
+     "extract a JSON subtree", which is worse than either.
+
+   **If boards ever do need versions**, the order is: make each board its own file *first* (which
+   independently simplifies the Decision 6 concurrency problem), and only then reuse the notebook
+   snapshot primitive. Do not build a second versioning system.
+
+   NB the `version` counter in Decision 6 is a different thing entirely — an optimistic-concurrency
+   sequence number on the document, not artefact history.
 
 2. **A semantic spec at the MCP boundary, expanded server-side.** Claude sends what the board should
    *show*; the server turns it into a `LayoutEntry`. **One call, not two** — the expansion is the
@@ -82,7 +100,7 @@ Four things would make an unattended attempt produce bad plots:
 |---|---|---|
 | **Junk cluster runs** | 5 suffixes: `movement`, `immune`, and `here` / `there` / `test`. Nothing marks which is canonical. | Docstring discipline (below) — validation cannot fix intent. |
 | **Leftover pops** | `/Population 1` sits beside the real ones and would land on a figure looking like a mistake. | Same. |
-| **No image attributes** | `list_images` returns no `attr`, so *compare by attribute* — the board's most valuable axis — is invisible. Mouse identity lives only in filenames (`M1a`, `M2b`, …). | **Phase 0.** |
+| **Attributes invisible to the observer** | The `B and T` set **does** carry `Mouse` (1-4) and `Location` (a-d) — checked live via `/api/plots/attrs`. Neither reached Claude: `list_images` returned no `attr` and no tool exposed the axes. So *compare by attribute*, the most valuable axis, was unusable on data that supports it. (An earlier note here said mouse identity lived only in filenames — wrong.) | **Phase 0 — done.** |
 | **Thin n** | `B/qc` motility is 9 tracks on `ii9Qvg`. Per-image boxplots of 9 are weak; pooled across the 8-image set they are fine. | Claude can see `n`; the docstring must make it choose pooling. |
 
 Also: one image is excluded (`excludedCount: 1`) and correctly surfaced, and `get_analysis_lineage`
@@ -91,11 +109,21 @@ returns `boards: []` — it cannot read back what exists.
 ## Phases
 
 ### Phase 0 — read-side prerequisites (read-only, ship alone)
-- **Image attributes in `list_images`** — the per-image `attr` map. Without it Claude cannot use
-  compare-by-attribute and will default to per-image or pooled.
-- **Board read-back** — expose existing boards (tab names + each slot's plot) so Claude can avoid
-  duplicating one and can iterate. `get_analysis_lineage`'s `boards` is names-only and its docstring
-  admits "the board's plot detail is not exposed here".
+- **Attributes — DONE.** Two distinct things, deliberately not merged:
+  - the **axes** (what you may group by) — `get_image_attributes`, which reads the *existing*
+    `/api/plots/attrs`, the same route the summary compare picker and the UMAP colour/facet picker use.
+    Exposing it rather than inventing a second attribute surface (`useImageAttrs.ts` calls it "the ONE
+    fetch"). GET-only, so the write allowlist is untouched — pinned by a test.
+  - the **assignment** (which image has which value) — `attr` added per image to `/api/images`. Needed
+    to size the groups: the axes say what you may group by, this says how many images land in each
+    group once excluded ones are dropped. A group of one is not a comparison.
+- **Board read-back — DONE.** `board_summaries` (`app/src/ai/lineage.jl`) → `GET /api/analysis/boards`
+  → `get_analysis_boards`. Per board: `{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?,
+  popType?, pops?, title?}]}`, `tkey`s decoded to `valueName/pop`, empty slots omitted. A SUMMARY, never
+  the stored geometry — and deliberately the **same vocabulary the write side will accept** (Decision 2),
+  so read and write describe a board the same way. `_board_tabs` stays the cheap name-only view lineage
+  embeds; its "plot detail is not exposed here" note now points here. Every field is optional by
+  construction (the file is frontend-written), covered by degradation cases in the package suite.
 
 **Checkpoint:** ask Claude "what would you plot for 4kS67f" with no write tool; judge the answer. **If
 the suggestions are not good here, stop — the rest of the plan only makes bad plots faster.**
@@ -136,9 +164,9 @@ bug fix, independent of everything below.
 
 **Checkpoint:** the permission prompt is readable enough to approve or reject on sight.
 
-### Phase 4 — board versions (the notebook model)
-- Snapshot-then-write a new version of an existing board, restorable in the GUI, so iteration does not
-  spawn `-v2` tabs. Deliberately last: create-only can be relaxed later, not retracted.
+### Phase 4 — (removed)
+Board versioning was cut on 2026-08-08; see Decision 1 for why, and for the order to follow if it is
+ever revived.
 
 ## Risks
 
