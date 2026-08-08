@@ -146,7 +146,15 @@ export function movieFilename(
     }
   }
   parts.push(uid || 'uid')
-  return parts.join('_').replace(/[^A-Za-z0-9._-]+/g, '_') + '.mp4'
+  return safeNamePart(parts.join('_')) + '.mp4'
+}
+
+/** One filename-safe fragment — mirrors `_safe_name_part` (api/src/napari_api.jl); keep the two in
+ *  sync. Keeps [A-Za-z0-9._-], collapses every other run to `_`, and drops the separators that
+ *  collapse leaves at the EDGES: an image called "… -res (cropped)" ends in `)`, so sanitising alone
+ *  produced a name ending in `_`. */
+export function safeNamePart(raw: string): string {
+  return raw.trim().replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[_.]+|[_.]+$/g, '')
 }
 
 // ── seeding (so the config isn't blank) ────────────────────────────────────────

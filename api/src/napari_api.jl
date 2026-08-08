@@ -573,11 +573,24 @@ function _movies_dir(img)::String
     d
 end
 
+# One filename-safe fragment: keep [A-Za-z0-9._-], collapse every run of anything else to `_`, and
+# drop the separators the collapse leaves at the EDGES.
+#
+# The edge strip is the whole point. An image called "… -res (cropped)" ends in `)`, so sanitising
+# alone gave "…-res_cropped_" — a name ending in a separator, which is what the movies list showed —
+# and the animation variant compounded it to "…-res_cropped__animation.mp4". `_movie_suffix` had the
+# strip and the image-name path did not, while claiming in a comment to use "the same character rule";
+# they are now the same function, so a movie name cannot be sanitised two ways.
+function _safe_name_part(raw)::String
+    s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
+    String(strip(s, ['_', '.']))
+end
+
 # Movie output path named by the IMAGE (not attrs) — used by the single-image recorders. Sanitises
 # img.name, falls back to the uid when blank/unsafe. `suffix` distinguishes timelapse ("") from
 # animation ("_animation").
 function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = "")::String
-    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
+    safe = _safe_name_part(img.name)
     joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
 end
 
@@ -590,10 +603,7 @@ end
 # but it is free text — the comparison someone wants to label is not always a version.
 const MOVIE_SUFFIX_MAX = 40
 function _movie_suffix(raw)::String
-    s = strip(String(raw === nothing ? "" : raw))
-    isempty(s) && return ""
-    safe = replace(s, r"[^A-Za-z0-9._-]+" => "_")
-    safe = strip(safe, ['_', '.'])                      # no leading/trailing separators in a filename
+    safe = _safe_name_part(raw)                         # shared rule: no leading/trailing separators
     isempty(safe) && return ""
     "_" * first(safe, MOVIE_SUFFIX_MAX)
 end
@@ -623,7 +633,7 @@ function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Ve
     push!(parts, String(uid))
     # the user's filename addition goes BEFORE the extension (it arrives already sanitised + `_`-led
     # from `_movie_suffix`), so the file is still an .mp4 to every listing that filters on the suffix
-    replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * suffix * ".mp4"
+    _safe_name_part(join(parts, "_")) * suffix * ".mp4"
 end
 
 # Channels shown in the movie for `img` = the `config.channels` keys (the ones given a colormap),
