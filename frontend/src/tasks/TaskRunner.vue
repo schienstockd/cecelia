@@ -313,7 +313,7 @@ function cancelAll() {
 }
 
 // ── Sidebar resize (shared composable; width persisted) ────────────────────────
-const { width: sidebarWidth, onResizeStart } =
+const { widthStyle, onResizeStart } =
   usePanelResize({ min: 200, max: 600, default: 280, storageKey: 'cc-taskrunner-width' })
 
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
@@ -323,7 +323,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </script>
 
 <template>
-  <aside class="task-runner" :class="'pane-' + pane" :style="{ width: sidebarWidth + 'px' }">
+  <aside class="task-runner" :class="'pane-' + pane" :style="widthStyle">
 
     <!-- drag handle on left edge -->
     <div

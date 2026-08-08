@@ -48,7 +48,9 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
 | Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
-| Pick ONE option where numbers decide it | `components/SelectionTable.vue` | a `<select>` that hides the trade-off, or an inline `<table>` |
+| Pick ONE option where numbers decide it | `components/SelectionTable.vue` (per-column `sortable`, `sortKey` for a formatted cell, `ellipsis` for a long one) | a `<select>` that hides the trade-off, or an inline `<table>` |
+| Sorting a list by a clicked header | `utils/sortRows.ts` — `sortRows(rows, valueOf, dir)` + `cycleSort`/`sortIconFor` | a per-table comparator, or an inline asc/desc/off cycle |
+| Drag-resizable table columns | `composables/useColumnResize.ts` (`SelectionTable` opts in via `columnWidthKey`) | a per-table mousemove drag + an unpersisted widths `ref` |
 | Movie output options (fps + size + filename) | `components/MovieOutputControls.vue` (`v-model:fps` / `v-model:sizeX` / `v-model:sizeY` / `v-model:suffix`, `canvasX`/`canvasY` for the placeholder) | a per-panel set of sliders/fields |
 | Movie title-card options (on/off + duration + note) | `components/TitleCardControls.vue` (`v-model` a `TitleCardCfg`) | a per-panel toggle + duration slider + note input |
 | Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
@@ -64,6 +66,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
 | Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
+| Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels* | an inline handle + `v-show` + its own mousemove drag |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
@@ -911,6 +914,29 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
   other one, so put back the one thing you'd miss rather than nothing: `TaskRunner` shows
   `3 running · 1 queued` there while the task list is collapsed (and nothing when it's visible, which
   would just restate the list). One line, `.cc-readout`, no new row — the bar is already paid for.
+
+### Collapsible side panels — `CollapsiblePanel`
+
+The panel *around* those halves. A right-hand panel with a full-height handle on its left edge that
+folds the content away, and a drag strip that resizes it. `components/CollapsiblePanel.vue`:
+
+```vue
+<CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="320">
+  …content…
+</CollapsiblePanel>
+```
+
+- **Collapse is ONE shared flag** — `settings.rightPanelCollapsed`. Folding the panel away on one page
+  folds it on all of them, which is what module pages have always done; a new panel joins that rule
+  rather than teaching the user a second one. Don't add a per-panel collapse key.
+- **Width is per panel** (`storageKey` → localStorage). Panels hold different things, so one shared
+  width would be wrong for all of them. `defaultWidth: null` (the default) sizes to content until the
+  user drags — that is how module pages behave when they don't set `rightDefaultWidth`.
+- `label` is what the panel holds, lower-case, and goes straight into "Show/Hide …".
+- **`v-show`, never `v-if`** for the content — same reason as the two-half rule above.
+- The drag half is `composables/usePanelResize.ts`, which `TaskRunner`/`MetadataPanel` still use
+  directly (they resize but don't collapse). Bind its `widthStyle`, not `width`: an auto-width panel
+  has no number, and every consumer would otherwise spell the same null check.
 
 **Popovers — use `TeleportPopover`, don't hand-roll an absolute one.** Any ⚙/dropdown popover that
 lives inside a panel (canvas, table, plot) WILL be clipped by the panel's `overflow`/scroll/transform.

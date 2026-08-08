@@ -87,6 +87,17 @@ function _ctx(): OverlayCtx | null {
 // site persists its change to `settings` first, so reading `settings` here is equivalent to reading
 // the panel's refs — and it keeps ONE request shape per endpoint (see rule 3).
 
+// The mask outline width (0 = filled) for an image's set — the SAME per-set value the viewer's outline
+// slider writes, read here rather than stored twice. Every show-labels push must carry it: the endpoint
+// rebuilds the Labels layer and the backend defaults the value to 0, so a push without it refills a
+// mask the user had outlined (which is what made recorded movies come out filled). `undefined` when the
+// image has no set — then the backend default stands, as it did before.
+function _labelContour(uid: string | undefined | null): number | undefined {
+  if (!uid) return undefined
+  const setUid = useProjectStore().setUidOfImage(uid)
+  return setUid ? useSettingsStore().getMovieConfig(setUid).labelContour : undefined
+}
+
 // Track ribbons for whichever segmentations are toggled on, plus the gated-track / trackclust masters.
 export async function pushTracksNow(): Promise<boolean> {
   const c = _ctx()
@@ -153,7 +164,8 @@ export async function pushAllOverlays(): Promise<void> {
 
   const hasLabels = Object.keys(plan.labels).length > 0
   if (hasLabels) {
-    const res = await pushLabels({ labels: plan.labels, show: true, cache: settings.napariLabelsCache })
+    const res = await pushLabels({ labels: plan.labels, show: true, cache: settings.napariLabelsCache,
+                                   labelContour: _labelContour(c.uid) })
     if (!res?.ok) log.error('Show labels on open failed.', { source: 'napari' })
   }
   if (Object.keys(plan.branchLabels).length) {
@@ -266,7 +278,8 @@ export async function refreshLivePreviews(): Promise<void> {
     if (finished?.length) {
       // one request, and the bridge evicts the `(live)` layer as it adds the finished one
       const res = await pushLabels({ labels: { [vn]: finished }, show: true,
-                                     cache: useSettingsStore().napariLabelsCache })
+                                     cache: useSettingsStore().napariLabelsCache,
+                                     labelContour: _labelContour(imageUid) })
       if (res?.ok) {
         const settings = useSettingsStore()
         settings.setLabelVisibility(imageUid,
@@ -288,7 +301,8 @@ export async function togglePreview(valueName: string): Promise<boolean> {
   const files = _previewFiles(valueName)
   if (!files.length) return false
   const want = !previewShown.value[valueName]
-  const res = await pushLabels({ labels: { [valueName]: files }, show: want, cache: false, preview: true })
+  const res = await pushLabels({ labels: { [valueName]: files }, show: want, cache: false, preview: true,
+                                 labelContour: _labelContour(useProjectStore().napariImageUid) })
   if (!res?.ok) {
     useLogStore().error(`Could not ${want ? 'show' : 'hide'} the live preview for ${valueName}.`,
                         { source: 'napari' })

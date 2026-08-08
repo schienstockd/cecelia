@@ -75,5 +75,5 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 
    The rule for this block, stated once so it stops being decided by accident: a group holding a TEXT
    FIELD or a chip row takes its own line; the short numeric groups (fps, px, z) may share one. */
-.tc-note { flex: 1 1 100%; min-width: 6rem; }
+.tc-note { flex: 1 1 100%; min-width: 6rem; max-width: 22rem; }   /* capped like `.mo-txt` — see there */
 </style>

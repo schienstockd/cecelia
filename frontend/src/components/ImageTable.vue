@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useInlineEdit } from '../composables/useInlineEdit'
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -11,6 +11,8 @@ import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
 import { isExcluded, isIncluded, includedUids, isImported, isStarred } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
+import { cycleSort, sortIconFor } from '../utils/sortRows'
+import { useColumnResize } from '../composables/useColumnResize'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
@@ -275,18 +277,14 @@ const scope = computed(() => props.selectionScope ?? 'default')
 // Sort logic itself is the pure, tested sortImages() helper; here we only hold the chosen column.
 function toggleSort(key: string) {
   const cur = project.getImageSort(scope.value, props.setUid)
-  if (!cur || cur.key !== key) project.setImageSort(scope.value, props.setUid, { key, dir: 'asc' })
-  else if (cur.dir === 'asc')  project.setImageSort(scope.value, props.setUid, { key, dir: 'desc' })
-  else                         project.setImageSort(scope.value, props.setUid, null)   // third click clears
+  project.setImageSort(scope.value, props.setUid, cycleSort(cur, key))
 }
 function sortActive(key: string): boolean {
   return project.getImageSort(scope.value, props.setUid)?.key === key
 }
 // Neutral (both-arrows) hint when unsorted; a direction arrow when this column is the active sort.
 function sortIcon(key: string): string {
-  const s = project.getImageSort(scope.value, props.setUid)
-  if (!s || s.key !== key) return 'pi pi-sort-alt'
-  return s.dir === 'asc' ? 'pi pi-sort-amount-up-alt' : 'pi pi-sort-amount-down'
+  return sortIconFor(project.getImageSort(scope.value, props.setUid), key)
 }
 
 function commit() {
@@ -473,7 +471,6 @@ const attrKeys = computed(() => {
 // ── Column resize ─────────────────────────────────────────────────────────────
 
 // Keyed by column id (e.g. 'name', 'ch-1', 'attr-condition')
-const colWidths = ref<Record<string, number>>({})
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   name: 160,   // narrower now the per-row actions collapse into one ⋯ menu (drag-resizable)
@@ -484,36 +481,11 @@ function defaultWidth(key: string): number {
   if (key.startsWith('attr-')) return 110
   return 100
 }
-function colW(key: string): string {
-  return (colWidths.value[key] ?? defaultWidth(key)) + 'px'
-}
+// Drag-to-resize is the shared `useColumnResize` (the same one SelectionTable uses) — it had been
+// inline here, and unpersisted, so every navigation away threw the widths the user had set.
+const { widthOf: colW, onColumnResizeStart: startResize } =
+  useColumnResize({ defaultWidth, storageKey: 'cc-imagetable-colw' })
 
-let _resize: { key: string; startX: number; startW: number } | null = null
-
-function startResize(key: string, e: MouseEvent) {
-  _resize = { key, startX: e.clientX, startW: colWidths.value[key] ?? defaultWidth(key) }
-  document.addEventListener('mousemove', doResize)
-  document.addEventListener('mouseup', stopResize)
-  document.body.style.userSelect = 'none'
-  document.body.style.cursor = 'col-resize'
-  e.preventDefault()
-}
-
-function doResize(e: MouseEvent) {
-  if (!_resize) return
-  const w = Math.max(40, _resize.startW + (e.clientX - _resize.startX))
-  colWidths.value = { ...colWidths.value, [_resize.key]: w }
-}
-
-function stopResize() {
-  _resize = null
-  document.removeEventListener('mousemove', doResize)
-  document.removeEventListener('mouseup', stopResize)
-  document.body.style.userSelect = ''
-  document.body.style.cursor = ''
-}
-
-onUnmounted(stopResize)
 </script>
 
 <template>

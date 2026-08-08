@@ -14,7 +14,7 @@ import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import CcToggle from '../../components/CcToggle.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
-const { width: panelWidth, onResizeStart } =
+const { widthStyle, onResizeStart } =
   usePanelResize({ min: 260, max: 520, default: 280, storageKey: 'cc-metadata-width' })
 
 const props = defineProps<{
@@ -302,7 +302,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 </script>
 
 <template>
-  <aside class="metadata-panel-wrap" :style="{ width: panelWidth + 'px' }">
+  <aside class="metadata-panel-wrap" :style="widthStyle">
     <!-- drag handle on left edge (shared usePanelResize) -->
     <div class="resize-handle" @mousedown="onResizeStart" v-tooltip.left="'Drag to resize the panel'" />
     <div class="metadata-panel">

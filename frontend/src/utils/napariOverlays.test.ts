@@ -1,5 +1,37 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { unionViewSnapshot, pushZView, pushLabelContour } from './napariOverlays'
+import { unionViewSnapshot, pushZView, pushLabelContour, labelsRequestBody } from './napariOverlays'
+
+// The show-labels endpoint REBUILDS the Labels layer and defaults `labelContour` to 0, so a push that
+// drops the outline silently refills a mask the user had outlined — which is why recorded movies came
+// out filled: the outline was gone before the recorder ran, lost on the last mask toggle or overlay
+// restore. These pin the outline onto the wire.
+describe('labelsRequestBody', () => {
+  it('carries labelContour when given, including 0 (an explicit "filled")', () => {
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false, labelContour: 3 }))
+      .toMatchObject({ allLabels: { A: ['a.zarr'] }, showLabels: true, labelContour: 3 })
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false, labelContour: 0 }))
+      .toHaveProperty('labelContour', 0)
+  })
+
+  it('omits labelContour entirely when the caller has no set to read it from', () => {
+    // absent ≠ 0 on the wire: the backend still defaults it, but the request must not ASSERT "filled"
+    expect(labelsRequestBody({ labels: { A: ['a.zarr'] }, show: true, cache: false }))
+      .not.toHaveProperty('labelContour')
+  })
+
+  it('keeps the rest of the shape (both payloads, the shared show flag, preview)', () => {
+    const b = labelsRequestBody({ labels: { A: ['a'] }, branchLabels: { A: ['b'] },
+                                  show: false, cache: true, preview: true, labelContour: 2 })
+    expect(b).toEqual({ allLabels: { A: ['a'] }, allBranchLabels: { A: ['b'] },
+                        showLabels: false, labelsCache: true, preview: true, labelContour: 2 })
+  })
+
+  it('drops an empty payload rather than sending an empty map', () => {
+    const b = labelsRequestBody({ labels: {}, branchLabels: { A: ['b'] }, show: true, cache: false })
+    expect(b).not.toHaveProperty('allLabels')
+    expect(b).toHaveProperty('allBranchLabels')
+  })
+})
 
 // Only the pure helper is tested here; the fetch-backed capture/build functions are exercised live.
 describe('unionViewSnapshot', () => {

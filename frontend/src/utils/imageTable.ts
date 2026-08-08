@@ -3,6 +3,7 @@
 // per the "testable logic lives in src/utils/*" convention (docs/DEV.md → Tests).
 import type { CciaImage } from '../stores/project'
 import { isExcluded } from './inclusion'
+import { sortRows, type SortDir } from './sortRows'
 
 // Total elapsed duration of a timelapse = (frames − 1) × interval — the time span from the FIRST to
 // the LAST frame (an N-frame movie spans N−1 intervals). Returns '' when it isn't a timelapse
@@ -21,7 +22,7 @@ export function timelapseDuration(sizeT?: number | null, timeIncrement?: number 
 // (z-slices), 'duration' (timelapse length), `attr:<key>` (a user attribute column). Kept pure +
 // tested here; the SFC only holds the sort state (which column + direction) and calls sortImages.
 export type ImageSortKey = string
-export type ImageSortDir = 'asc' | 'desc'
+export type ImageSortDir = SortDir
 
 // The comparable value for one image under one column key. `null` = "no value" and always sorts LAST
 // (in both directions), so blanks never lead the list.
@@ -41,32 +42,11 @@ function durationSeconds(img: CciaImage): number | null {
   return toSeconds((img.sizeT - 1) * img.timeIncrement, img.timeIncrementUnit)
 }
 
-// Stable sort (equal values keep their original order) with nulls/blanks always last. Numeric strings
-// compare numerically; text compares case-insensitively with natural number ordering ("_0002" < "_0010").
+// The image table's half of the sort: what a COLUMN is worth for an image (`imageSortValue` above).
+// The ordering itself — blanks last, numeric strings numerically, stable ties — is the shared
+// `sortRows` rule, so every sortable list in the app orders the same way (utils/sortRows.ts).
 export function sortImages(images: CciaImage[], key: ImageSortKey, dir: ImageSortDir): CciaImage[] {
-  const factor = dir === 'desc' ? -1 : 1
-  return images
-    .map((img, i) => ({ img, i, v: imageSortValue(img, key) }))
-    .sort((a, b) => {
-      const ae = isBlank(a.v), be = isBlank(b.v)
-      if (ae && be) return a.i - b.i        // both blank → keep original order
-      if (ae) return 1                        // blanks always last, regardless of direction
-      if (be) return -1
-      const c = compareNonBlank(a.v!, b.v!)
-      return c !== 0 ? c * factor : a.i - b.i // stable tiebreak by original index
-    })
-    .map(x => x.img)
-}
-
-function isBlank(v: string | number | null): boolean {
-  return v === null || v === undefined || v === ''
-}
-function compareNonBlank(a: string | number, b: string | number): number {
-  if (typeof a === 'number' && typeof b === 'number') return a - b
-  const sa = String(a), sb = String(b)
-  const na = Number(sa), nb = Number(sb)
-  if (sa.trim() !== '' && sb.trim() !== '' && !isNaN(na) && !isNaN(nb)) return na - nb
-  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' })
+  return sortRows(images, img => imageSortValue(img, key), dir)
 }
 
 // convert a value in `unit` to seconds; null when the unit isn't a recognised time unit

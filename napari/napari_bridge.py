@@ -2025,6 +2025,15 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 show_points=cmd.get("show_points", False),
                 cache=bool(cmd.get("cache", False)),
                 preview=bool(cmd.get("preview", False)),
+                # `contour` (mask outline width) was on the wire from the day the control shipped —
+                # `show_labels!` sends it, the Julia handler reads it, `show_labels` accepts it — and
+                # THIS LINE dropped it, so every add ran with the default 0 and masks came back FILLED.
+                # The outline only ever reached napari through `apply_view_state` (the live slider), so
+                # it looked right until anything rebuilt the layer: a mask toggle, the post-open overlay
+                # restore, or a movie's per-cell re-open. That is why recordings came out filled.
+                # Same failure as the `show_task_preview` mismatch below; the test named for it now
+                # covers this command too, in BOTH directions.
+                contour=int(cmd.get("contour", 0) or 0),
             )
 
         elif t == "refresh_labels":
