@@ -40,6 +40,21 @@ describe('buildChatPrompt', () => {
     expect(buildChatPrompt('NRUBxU')).toContain('get_available_plots')
   })
 
+  // A capability the OPENING MENU doesn't list is one the user never gets offered, even when the
+  // prompt describes it further down: add_analysis_board was named in the write list and in its own
+  // paragraph, and the session still opened with six directions and no board among them — the user
+  // said so ("it doesn't offer to build a board from the init"). The menu is its own surface; the
+  // write count and the tool docs do not cover it.
+  it('offers board building among the OPENING directions, not just further down', () => {
+    const p = buildChatPrompt('NRUBxU')
+    const menu = p.slice(p.indexOf('which direction'))
+    expect(menu).toContain('add_analysis_board')
+    expect(menu).toMatch(/board of plots/i)
+    // the other artefacts stay on the menu beside it
+    expect(menu).toContain('get_repl_api')          // notebook
+    expect(menu).toMatch(/design a chain/i)         // chain
+  })
+
   // This prompt and _OBSERVER_RULES (app/src/ai/observer_prompt.jl) are hand-synced copies. create_chain
   // was added to the Julia one only, and the user found the gap in the prompt they pasted — an omitted
   // capability is a tool the assistant never offers. The Julia side has the mirror of this assertion.

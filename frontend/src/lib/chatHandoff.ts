@@ -71,7 +71,8 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `(e.g. "3 of 12 images flagged; 2 have too few tracks"), then ask me which direction I'd like to ` +
       `take — for example: QC the workflow (the cohort numbers for what just ran), look for something ` +
       `that's off across the set, understand the processing pipeline, go deeper into the analysis ` +
-      `(populations, phenotype/motility, behaviour, clustering), build me a notebook for a specific ` +
+      `(populations, phenotype/motility, behaviour, clustering), add me a board of plots on my Analysis ` +
+      `page (add_analysis_board), build me a notebook for a specific ` +
       `question (e.g. cell speed over time) that I can then edit and run myself — read get_repl_api ` +
       `first so the code is correct — or design a chain for a pipeline I want to run. Then follow my lead.`,
     ``,
