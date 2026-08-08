@@ -636,29 +636,48 @@ function _shown_channel_names(img, config, vn)::Vector{String}
     ch_all === nothing ? collect(wanted) : String[c for c in ch_all if c in wanted]
 end
 
-# ── Segmentation masks in a movie ─────────────────────────────────────────────
-# The label layers a movie config asks for. THREE-valued on purpose:
+# ── Label layers in a movie ───────────────────────────────────────────────────
+# TWO registries, one contract. Cell segmentation masks live in `img.labels` and render as
+# `({vn}) Labels`; skeletons from `segment.branching` live in `img.branch_labels` and render as
+# `({vn}) Branches` — deliberately separate stores and a separate picker (BRANCHING_PLAN Decision 6).
+# They are NOT unified here either; what is shared is the machinery, because they had the identical
+# bug for the identical reason: `open_image` clears the canvas and the movie path never asked for
+# them back.
 #
-#   * `nothing` — the config says nothing about masks (it predates the setting, or the caller records
-#     the live view). Leave the canvas alone.
-#   * `String[]` — an explicit "no masks". Not the same as `nothing`: a user who cleared the picker
-#     must get a movie without masks, even though the viewer still shows them.
-#   * a list — show exactly these, hide every other registered segmentation.
+# What a movie config asks for is THREE-valued, for both:
 #
-# Unregistered names are dropped rather than passed on to the bridge, which would log a skip per frame-
-# less store; the frontend's `normaliseItems` drops them too, so both ends agree on a deleted set.
-function _config_label_value_names(config, img)::Union{Nothing,Vector{String}}
-    raw = get(config, :labelValueNames, nothing)
+#   * `nothing` — the config says nothing (it predates the setting, or the caller records the live
+#     view). Leave the canvas alone.
+#   * `String[]` — an explicit "none". Not the same as `nothing`: a user who cleared the picker must
+#     get a movie without them, even though the viewer still shows them.
+#   * a list — show exactly these, hide every other registered set.
+#
+# Unregistered names are dropped rather than passed on to the bridge, which would log a skip per
+# frameless store; the frontend's `normaliseItems` drops them too, so both ends agree on a deleted set.
+
+# The registries, read defensively: `img.labels`/`img.branch_labels` exist on a CciaImage, but these
+# helpers are also exercised against light NamedTuple stand-ins in the tests.
+_label_registry(img)::Dict{String,Vector{String}} =
+    hasproperty(img, :labels) && img.labels isa AbstractDict ?
+        Dict{String,Vector{String}}(String(k) => collect(String, v) for (k, v) in img.labels) :
+        Dict{String,Vector{String}}()
+_branch_registry(img)::Dict{String,Vector{String}} =
+    hasproperty(img, :branch_labels) && img.branch_labels isa AbstractDict ?
+        Dict{String,Vector{String}}(String(k) => collect(String, v) for (k, v) in img.branch_labels) :
+        Dict{String,Vector{String}}()
+
+# One reader for both keys — `:labelValueNames` against the mask registry, `:branchValueNames`
+# against the skeleton one.
+function _config_set_names(config, key::Symbol, known::AbstractDict)::Union{Nothing,Vector{String}}
+    raw = get(config, key, nothing)
     raw === nothing && return nothing
-    known = _has_labels(img) ? img.labels : Dict{String,Vector{String}}()
-    seen  = Set{String}()
+    seen = Set{String}()
     String[v for v in (String(x) for x in raw)
            if haskey(known, v) && !(v in seen) && (push!(seen, v); true)]
 end
 
-# `img.labels` exists on a CciaImage but the movie helpers are also exercised against light NamedTuple
-# stand-ins in the tests — one guarded read instead of a `hasproperty` at every call site.
-_has_labels(img)::Bool = hasproperty(img, :labels) && img.labels isa AbstractDict
+_config_label_value_names(config, img)  = _config_set_names(config, :labelValueNames,  _label_registry(img))
+_config_branch_value_names(config, img) = _config_set_names(config, :branchValueNames, _branch_registry(img))
 
 # Label OUTLINE width in pixels: 0 = filled (napari's default), N = an N-px contour, which is what lets
 # the channel signal under a mask stay readable. Read from a request body or a movie config through the
@@ -680,25 +699,40 @@ function _z_slice(src)::Union{Int,Nothing}
 end
 
 # {valueName => [store files]} for `vns`, the shape `_parse_all_labels`/`_show_all_labels!` consume.
-# `nothing` (mask-agnostic config) and an empty list both give an empty map — the caller pairs it with
-# a `showLabels` flag, which is what distinguishes them on the wire.
-function _label_files_for(img, vns::Union{Nothing,AbstractVector})::Dict{String,Vector{String}}
-    (vns === nothing || !_has_labels(img)) && return Dict{String,Vector{String}}()
-    Dict{String,Vector{String}}(String(v) => img.labels[String(v)] for v in vns
-                                if haskey(img.labels, String(v)))
-end
+# `nothing` (an agnostic config) and an empty list both give an empty map — the caller pairs it with a
+# `showLabels` flag, which is what distinguishes them on the wire.
+_files_for(known::AbstractDict, vns::Union{Nothing,AbstractVector})::Dict{String,Vector{String}} =
+    vns === nothing ? Dict{String,Vector{String}}() :
+        Dict{String,Vector{String}}(String(v) => known[String(v)] for v in vns
+                                    if haskey(known, String(v)))
 
-# Show exactly `wanted`'s masks and hide every other registered one, on a canvas that was NOT re-opened.
-# Two calls because `show-labels` carries one `show` flag for its whole payload; both go through the
-# ordinary handler, so the movie path shows masks the same way the viewer does (no second variant).
-function _apply_label_layers!(img, wanted::AbstractVector; contour::Int = 0)::Nothing
-    _has_labels(img) || return nothing
-    keep = Set(String(v) for v in wanted)
-    show = _label_files_for(img, collect(keep))
-    hide = Dict{String,Vector{String}}(k => v for (k, v) in img.labels if !(k in keep))
-    isempty(hide) || _call_napari_api(api_napari_show_labels, (; allLabels = hide, showLabels = false))
-    isempty(show) || _call_napari_api(api_napari_show_labels,
-                                      (; allLabels = show, showLabels = true, labelContour = contour))
+_label_files_for(img, vns)  = _files_for(_label_registry(img), vns)
+_branch_files_for(img, vns) = _files_for(_branch_registry(img), vns)
+
+# Show exactly what is wanted and hide every other registered set, on a canvas that was NOT re-opened.
+# TWO calls, not four: `show-labels` carries one `show` flag but BOTH payloads (`allLabels` +
+# `allBranchLabels`), and the handler is explicit that sending them together keeps them atomic against
+# the bridge's layer reconciliation. Both go through the ordinary handler, so the movie path shows
+# these the same way the viewer does — no second variant.
+#
+# `nothing` for either list means "leave that family alone", so a caller that drives masks but not
+# skeletons (the batch, which has no branch picker) does not silently clear the skeletons.
+function _apply_label_layers!(img; labels::Union{Nothing,AbstractVector} = nothing,
+                                   branches::Union{Nothing,AbstractVector} = nothing,
+                                   contour::Int = 0)::Nothing
+    function split(known, wanted)
+        wanted === nothing && return (Dict{String,Vector{String}}(), Dict{String,Vector{String}}())
+        keep = Set(String(v) for v in wanted)
+        (_files_for(known, collect(keep)),
+         Dict{String,Vector{String}}(k => v for (k, v) in known if !(k in keep)))
+    end
+    show_l, hide_l = split(_label_registry(img), labels)
+    show_b, hide_b = split(_branch_registry(img), branches)
+
+    (isempty(hide_l) && isempty(hide_b)) || _call_napari_api(api_napari_show_labels,
+        (; allLabels = hide_l, allBranchLabels = hide_b, showLabels = false))
+    (isempty(show_l) && isempty(show_b)) || _call_napari_api(api_napari_show_labels,
+        (; allLabels = show_l, allBranchLabels = show_b, showLabels = true, labelContour = contour))
     nothing
 end
 
@@ -716,11 +750,12 @@ end
 function _apply_movie_config!(project_uid::String, image_uid::String, img, config; do_open::Bool = true)::Nothing
     vn_raw = strip(String(get(config, :valueName, "")))
     vn     = isempty(vn_raw) ? nothing : vn_raw
-    # Which segmentation masks this column shows. `nothing` = the config predates the setting (or the
-    # caller doesn't drive masks) → leave whatever is on screen alone; a LIST is authoritative, including
-    # the empty one, which means "no masks". See `_config_label_value_names`.
-    label_vns = _config_label_value_names(config, img)
-    contour   = _label_contour(config)      # 0 = filled masks, N = an N-px outline
+    # Which label layers this column shows — cell masks and skeletons, each `nothing` when the config
+    # says nothing about that family (leave whatever is on screen alone) and a LIST otherwise, the
+    # empty one included. See the `Label layers in a movie` block.
+    label_vns  = _config_label_value_names(config, img)
+    branch_vns = _config_branch_value_names(config, img)
+    contour    = _label_contour(config)      # 0 = filled masks, N = an N-px outline
 
     # 1. open (auto-load saved props → per-image contrast, Decision 4; no auto-save — we're driving it).
     #    SKIP the open when this exact image (active version) is already shown: re-opening re-samples the
@@ -734,20 +769,22 @@ function _apply_movie_config!(project_uid::String, image_uid::String, img, confi
             valueName = vn, autoLoadProps = true, autoSaveProps = false,
             # a recorder's opens are transient — see `announce` in api_napari_open
             announce = false,
-            # The masks ride the OPEN rather than a show-labels after it, so the saved layer props
-            # (opacity above all — an opaque mask hides the channel under it) land on them, exactly as
-            # the interactive viewer does it. `open_image` clears the canvas, so without this the movie
-            # path silently drops every label layer the user had.
+            # The label layers ride the OPEN rather than a show-labels after it, so the saved layer
+            # props (opacity above all — an opaque mask hides the channel under it) land on them,
+            # exactly as the interactive viewer does it. `open_image` clears the canvas, so without
+            # this the movie path silently drops every mask AND every skeleton the user had.
             showLabels = label_vns !== nothing, allLabels = _label_files_for(img, label_vns),
+            showBranchLabels = branch_vns !== nothing,
+            allBranchLabels = _branch_files_for(img, branch_vns),
             labelContour = contour))
         ok || error("could not open image in napari")
     end
 
-    # 1b. …and when there was no open, nothing was cleared: the masks of the PREVIOUS column (or of the
-    #     live viewer) are still on screen, so show/hide explicitly. This is what makes a segmentation
-    #     comparison cheap — the columns differ only by which mask is up, with no re-open at all.
-    if !opened && label_vns !== nothing
-        _apply_label_layers!(img, label_vns; contour = contour)
+    # 1b. …and when there was no open, nothing was cleared: the layers of the PREVIOUS column (or of
+    #     the live viewer) are still on screen, so show/hide explicitly. This is what makes a
+    #     segmentation comparison cheap — the columns differ only by which mask is up, no re-open.
+    if !opened && (label_vns !== nothing || branch_vns !== nothing)
+        _apply_label_layers!(img; labels = label_vns, branches = branch_vns, contour = contour)
     end
 
     # 1c. how much of the z stack to show — the whole thing in 3D, or one slice in 2D. AFTER the open,
@@ -1356,6 +1393,7 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                           title_card = nothing, keyframes = nothing,
                           value_names::Vector{String} = String[],
                           label_value_names::Union{Vector{String},Nothing} = nothing,
+                          branch_value_names::Union{Vector{String},Nothing} = nothing,
                           label_contour::Int = 0,
                           show_3d::Bool = false, z_slice::Union{Int,Nothing} = nothing,
                           share_contrast::Bool = true, layout::String = "row",
@@ -1367,7 +1405,8 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
     column_config = Dict{Symbol,Any}(:valueNames => value_names, :labelContour => label_contour,
                                      :show3D => show_3d)
     z_slice === nothing || (column_config[:zSlice] = z_slice)
-    label_value_names === nothing || (column_config[:labelValueNames] = label_value_names)
+    label_value_names === nothing  || (column_config[:labelValueNames]  = label_value_names)
+    branch_value_names === nothing || (column_config[:branchValueNames] = branch_value_names)
     grid      = _compare_grid(column_config)
     comparing = !animation && sum(length(r.columns) for r in grid) > 1
     fun       = animation ? "movie:animation" : "movie:record"

@@ -359,6 +359,11 @@ Consequences worth knowing:
   version, so after column 1 **nothing re-opens at all** — the passes differ only by which mask is up,
   with no re-sampled contrast and no reloaded pyramid. A segmentation comparison is still N renders,
   but it is the cheap N.
+- **Skeletons ride the same contract.** `branchValueNames` against `img.branch_labels`, three-valued
+  like `labelValueNames` and filtered by its OWN registry (a mask name is not a skeleton name). There
+  is no movie picker for them — they stay out of the generic labels picker (BRANCHING_PLAN Decision
+  6) — so the viewer's recorder sends whatever is ON SCREEN, and the batch sends nothing, which leaves
+  its skeletons untouched rather than silently cleared.
 - **Overlays do NOT survive a column on their own.** `open_image` starts with `layers.clear()`, so each
   pass re-applies the config to an empty canvas: tracks, population points and the label masks are back
   only because `_apply_movie_config!` asks for them. Masks in particular are driven by

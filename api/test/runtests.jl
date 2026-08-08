@@ -1726,6 +1726,22 @@ end
     @test _label_files_for(img, ["b"])   == Dict("b" => ["b.zarr", "b_nuc.zarr"])
     @test _label_files_for(img, nothing) == Dict{String,Vector{String}}()
     @test _label_files_for(img, ["gone"]) == Dict{String,Vector{String}}()
+
+    # SKELETONS are the second registry with the same three-valued contract — separate stores, a
+    # separate picker (BRANCHING_PLAN Decision 6), and they had the identical bug for the identical
+    # reason. The two must not read each other's names.
+    both = (; labels        = Dict{String,Vector{String}}("a" => ["a.zarr"]),
+              branch_labels = Dict{String,Vector{String}}("sk" => ["sk.zarr"]))
+    @test _config_branch_value_names(Dict{Symbol,Any}(), both)                    === nothing
+    @test _config_branch_value_names(Dict(:branchValueNames => String[]), both)   == String[]
+    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), both)     == ["sk"]
+    # a mask name is not a skeleton name, and vice versa — each is filtered by its OWN registry
+    @test _config_branch_value_names(Dict(:branchValueNames => ["a"]), both)      == String[]
+    @test _config_label_value_names(Dict(:labelValueNames => ["sk"]), both)       == String[]
+    @test _branch_files_for(both, ["sk"]) == Dict("sk" => ["sk.zarr"])
+    @test _branch_files_for(both, ["a"])  == Dict{String,Vector{String}}()
+    # an image with no skeletons at all is not an error
+    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), img) == String[]
 end
 
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in

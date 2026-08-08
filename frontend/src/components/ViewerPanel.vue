@@ -218,6 +218,12 @@ const movieLabelValueNames = computed<string[]>(() =>
   compareSegmentations.value.length
     ? compareSegmentations.value
     : labelNames.value.filter(vn => visibleLabels.value[vn]))
+// Skeletons (`segment.branching`) are a separate registry with a separate toggle, and they had the
+// same bug masks did — the re-open cleared them and nothing asked for them back. There is no movie
+// picker for them (they are deliberately kept out of the generic labels picker), so the recorder
+// takes what is ON SCREEN, which is what "record what's shown" means for an overlay with no config.
+const movieBranchValueNames = computed<string[]>(() =>
+  Object.keys(napariImage.value?.branchLabels ?? {}).filter(vn => branchVns.value[vn]))
 const compareLayout = computed<CompareLayout>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
@@ -366,6 +372,7 @@ async function recordTimelapse() {
       valueNames: versions, labelContour: labelContour.value,
       show3D: show3D.value, zSlice: show3D.value ? null : zSlice.value,
       ...(movieLabelValueNames.value.length ? { labelValueNames: movieLabelValueNames.value } : {}),
+      ...(movieBranchValueNames.value.length ? { branchValueNames: movieBranchValueNames.value } : {}),
       compareLayout: compareLayout.value, compareContrast: compareContrast.value,
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),

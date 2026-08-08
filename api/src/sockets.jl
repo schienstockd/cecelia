@@ -211,6 +211,10 @@ function handle_movie_record(ws, data)
     # grid's ROWS. See `_config_label_value_names`.
     lvns_raw    = get(data, :labelValueNames, nothing)
     label_vns   = lvns_raw === nothing ? nothing : collect(String, lvns_raw)
+    # skeletons (`segment.branching`) — a separate registry and a separate picker, same three-valued
+    # contract; the batch sends neither, so its skeletons stay untouched
+    bvns_raw    = get(data, :branchValueNames, nothing)
+    branch_vns  = bvns_raw === nothing ? nothing : collect(String, bvns_raw)
     contour     = _label_contour(data)          # mask outline width, 0 = filled
     show_3d     = _show_3d(data)                # whole z stack as a 3D render…
     z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
@@ -234,6 +238,7 @@ function handle_movie_record(ws, data)
         run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
                          suffix = suffix, title_card = card, keyframes = keyframes,
                          value_names = value_names, label_value_names = label_vns,
+                         branch_value_names = branch_vns,
                          label_contour = contour, show_3d = show_3d, z_slice = z_slice,
                          share_contrast = share_ctr, layout = layout,
                          show_timestamp = show_ts, show_scale_bar = show_sb, api_url = api_url)
