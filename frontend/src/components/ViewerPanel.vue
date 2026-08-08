@@ -527,8 +527,10 @@ async function toggleLabel(valueName: string) {
     return
   }
   try {
+    // the outline rides the push: this rebuilds the layer, so omitting it refills the mask
     const res = await apiPushLabels({ labels: { [valueName]: files }, show: !wasVisible,
-                                      cache: settings.napariLabelsCache })
+                                      cache: settings.napariLabelsCache,
+                                      labelContour: labelContour.value })
     if (res?.ok) {
       visibleLabels.value = { ...visibleLabels.value, [valueName]: !wasVisible }
       if (uid) settings.setLabelVisibility(uid, visibleLabels.value)

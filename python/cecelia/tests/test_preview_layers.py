@@ -229,18 +229,49 @@ class PreviewLayersTest(unittest.TestCase):
                                           'value_name': 'default', 'show': False})
         self.assertEqual(self.names(), ['CH1', 'CH2'])
 
+    def _dispatch_kwargs(self, command: str) -> set:
+        """The kwarg names `execute_command` forwards for one command type.
+
+        The value may be COERCED on the way through (`cache=bool(cmd.get(...))`,
+        `contour=int(cmd.get(...))`), so allow one wrapping call — matching only the bare
+        `x=cmd.get` form would report a forwarded key as dropped.
+        """
+        import inspect
+        src = inspect.getsource(self.nb.execute_command)
+        block = src[src.index(f'elif t == "{command}"'):]
+        block = block[:block.index('elif t ==', 10)]
+        return set(re.findall(r'(\w+)=(?:\w+\()?cmd\.get', block))
+
     def test_the_dispatcher_forwards_no_stale_keyword(self):
         """The signatures must agree by construction, not by someone remembering to update both."""
         import inspect
         accepted = set(inspect.signature(self.nb.NapariState.show_task_preview).parameters)
-        src = inspect.getsource(self.nb.execute_command)
-        block = src[src.index('elif t == "show_task_preview"'):]
-        block = block[:block.index('elif t ==', 10)]
-        passed = set(re.findall(r'(\w+)=cmd\.get', block))
+        passed = self._dispatch_kwargs('show_task_preview')
         self.assertTrue(passed, 'found no forwarded kwargs — did the dispatch shape change?')
         self.assertEqual(passed - accepted, set(),
                          f'dispatcher forwards kwargs show_task_preview does not accept: '
                          f'{sorted(passed - accepted)}')
+
+    def test_the_dispatcher_drops_no_keyword_the_method_accepts(self):
+        """The OTHER direction, which is the one that actually shipped broken.
+
+        `show_labels` grew a `contour` parameter (the mask outline), `show_labels!` put it on the wire
+        and the Julia handler read it off the request — but the dispatcher was never updated, so it
+        forwarded six of seven keys and every mask was added FILLED. Nothing failed: the dropped key
+        just took its default, and the outline still appeared via the live `apply_view_state` slider,
+        so it looked like the recorder was resetting it.
+
+        A parameter on a wire-driven method exists to be driven from the wire. Assert the dispatcher
+        passes ALL of them, so the next one added cannot go silently unwired.
+        """
+        import inspect
+        for command in ('show_labels', 'show_task_preview'):
+            method = getattr(self.nb.NapariState, command)
+            accepted = set(inspect.signature(method).parameters) - {'self'}
+            passed = self._dispatch_kwargs(command)
+            self.assertEqual(accepted - passed, set(),
+                             f'{command}: the dispatcher never forwards {sorted(accepted - passed)} — '
+                             f'the wire carries them and they silently take their defaults')
 
 
 if __name__ == '__main__':

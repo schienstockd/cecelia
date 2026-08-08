@@ -159,14 +159,27 @@ export interface PushLabelsOpts {
   // (level 0 only, caching forced off bridge-side). Never applies to branchLabels: those are written
   // once, at the end of segment.branching, so there is no partial store to watch.
   preview?: boolean
+  // Mask outline width in px, 0 = filled — the per-set `labelContour`. It MUST ride every show-labels
+  // push: this endpoint REBUILDS the Labels layer, and the backend defaults the value to 0, so a push
+  // that omits it silently refills a mask the user had outlined. That is how a set outline was lost on
+  // every mask toggle and on the post-open overlay restore, which is why movies recorded filled — the
+  // outline was already gone before the recorder ran. Cell labels only (the backend never applies it to
+  // branch/skeleton layers). Omit ONLY where there is no set to read it from.
+  labelContour?: number
 }
-export function pushLabels(o: PushLabelsOpts): Promise<Response | undefined> {
-  return _post('/api/napari/show-labels', {
+// The request body, split out from the fetch so the wire shape is unit-testable — `labelContour`
+// going missing is invisible until you watch a movie come out filled.
+export function labelsRequestBody(o: PushLabelsOpts): Record<string, unknown> {
+  return {
     ...(o.labels       && Object.keys(o.labels).length       ? { allLabels: o.labels }             : {}),
     ...(o.branchLabels && Object.keys(o.branchLabels).length ? { allBranchLabels: o.branchLabels } : {}),
     showLabels: o.show, labelsCache: o.cache,
     ...(o.preview ? { preview: true } : {}),
-  })
+    ...(o.labelContour === undefined ? {} : { labelContour: o.labelContour }),
+  }
+}
+export function pushLabels(o: PushLabelsOpts): Promise<Response | undefined> {
+  return _post('/api/napari/show-labels', labelsRequestBody(o))
 }
 
 // Re-read live-preview layers in place, without rebuilding them — the progress-tick counterpart to
