@@ -57,8 +57,8 @@ const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade, cont
 // persisted per canvas (a bare ref() would reset on navigation — docs/UI.md → Persisting view state).
 // `model` + `scope` are the vault's selection, in exactly the shape the population manager's
 // highlight set uses: GLOBAL = one pick for every plot, LOCAL = the active plot's own.
-const { showVault, scope, model } = useViewState(shared, {
-  showVault: true, scope: 'global' as 'global' | 'local', model: '' })
+const { showManager, scope, model } = useViewState(shared, {
+  showManager: true, scope: 'global' as 'global' | 'local', model: '' })
 
 // migrate persisted panel kinds to the current registry keys, like ClusterPlots does — a restored
 // canvas holding a renamed kind renders nothing at all, silently.
@@ -128,9 +128,9 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
                   @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
         <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showVault }"
-                  @click="showVault = !showVault"
-                  v-tooltip.bottom="showVault ? 'Hide the model vault' : 'Show the model vault'">
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+                  @click="showManager = !showManager"
+                  v-tooltip.bottom="showManager ? 'Hide the model vault' : 'Show the model vault'">
             <i class="pi pi-database" />
           </button>
         </div>
@@ -141,7 +141,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 
       <div ref="canvasRef" class="fp-canvas">
         <!-- outside the zoom layer, like the population manager: the manager stays full-size -->
-        <FlowModelVault v-if="showVault" :selected="activeModel" :scope="scope"
+        <FlowModelVault v-if="showManager" :selected="activeModel" :scope="scope"
                         @update:selected="setModel" @update:scope="scope = $event" />
         <div ref="zoomRef" class="fp-zoom" :style="workspaceStyle">
           <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">

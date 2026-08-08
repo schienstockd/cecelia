@@ -7,7 +7,7 @@
 
   It WRAPS ConfirmButton for the arm/confirm/cancel + auto-dismiss + outside-click logic (so that
   logic lives in exactly one place) and adds the standard, self-contained chrome — self-styled because
-  hosts' button classes (opt-btn / pm-icon / wb-btn / btn-danger) are component-scoped and can't reach
+  hosts' button classes (opt-btn / pick-eye / wb-btn / btn-danger) are component-scoped and can't reach
   a button rendered here; a single owned style is also what makes the affordance identical app-wide.
 
   <ConfirmDeleteButton title="Delete label set from disk"

@@ -45,10 +45,15 @@ interface TrainState { logY?: boolean; raw?: boolean; terms?: string[]; model?: 
 interface Manifest { lossCurves?: LossCurves; lossWeights?: Record<string, number>; epochs?: number }
 interface FlowModel { name: string; label: string; stem: string; manifest: Manifest }
 
-// `model` comes from the CANVAS — the vault owns the selection and its global/local scope, exactly
-// as the population manager owns which pops the plots highlight. No picker here: two pickers for one
-// thing is how a canvas ends up with panels that disagree about what they are showing. On a surface
-// with no vault (the Analysis board) the panel falls back to its own select.
+// `model` comes from the HOST — the vault owns the selection and its global/local scope, exactly as
+// the population manager owns which pops the plots highlight. No picker here: two pickers for one
+// thing is how a canvas ends up with panels that disagree about what they are showing.
+//
+// There used to be a fallback `<select>` for "a surface with no vault", which meant the Analysis
+// board. That was a workaround for a missing contract, not a design: the board now declares
+// `rail: 'flowModels'` and docks the vault like the flow canvas does, so both hosts supply a model
+// and the second picker is gone. `state.model` survives only as the board's LOCAL-scope slot value,
+// which the host writes. See docs/todo/CANVAS_MANAGER_RAIL_PLAN.md.
 const props = defineProps<{ state: TrainState; model?: string }>()
 const project = useProjectStore()
 
@@ -65,10 +70,9 @@ const forceLight = ref(false)
 const state = computed(() => props.state)
 const logY = computed({ get: () => state.value.logY ?? false, set: v => (state.value.logY = v) })
 const raw = computed({ get: () => state.value.raw ?? false, set: v => (state.value.raw = v) })
-// the canvas's pick wins; `state.model` is only the board's local fallback
+// the host's pick wins; `state.model` is the board's local-scope slot value, also host-written
 const chosen = computed(() => props.model || state.value.model || '')
 const current = computed(() => models.value.find(m => m.name === chosen.value) ?? null)
-const hostPicks = computed(() => props.model !== undefined)
 
 const series = computed(() => lossSeries(current.value?.manifest?.lossCurves,
                                          current.value?.manifest?.lossWeights, raw.value))
@@ -104,12 +108,8 @@ async function load() {
     const r = await fetch('/api/optical-flow/models')
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     models.value = (await r.json()).models ?? []
-    // Only seed our OWN fallback. Where the canvas supplies the model, an empty vault selection means
-    // "nothing picked yet" and must stay that way — quietly choosing one would make the plot disagree
-    // with the vault it is supposed to be following.
-    if (!hostPicks.value && (!state.value.model || !models.value.some(m => m.name === state.value.model)))
-      state.value.model = (models.value.find(m => Object.keys(m.manifest?.lossCurves ?? {}).length)
-                           ?? models.value[0])?.name
+    // Nothing is seeded here. An empty vault selection means "nothing picked yet" and must stay that
+    // way — quietly choosing a model would make the plot disagree with the vault it is following.
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -209,12 +209,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
   <div class="ftv">
     <div class="ftv-ctrl cc-panel-controls">
       <div class="cc-row ftv-bar">
-        <!-- only where nothing else owns the selection; on the flow canvas the vault does -->
-        <select v-if="!hostPicks" class="select-input ftv-model" :value="state.model ?? ''"
-                v-tooltip.top="'Model whose training run to show'"
-                @change="state.model = ($event.target as HTMLSelectElement).value">
-          <option v-for="m in models" :key="m.name" :value="m.name">{{ m.label }}</option>
-        </select>
         <label class="cc-muted cc-fs-xs ftv-opt"
                v-tooltip.top="'Show each term before its weight is applied'">
           <input type="checkbox" v-model="raw" /> raw
@@ -256,7 +250,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-ctrl { display: flex; flex-direction: column; gap: 0.4rem; padding: 4px 6px; }
 .ftv-bar { flex-wrap: wrap; }
 .ftv-terms { flex-wrap: wrap; gap: 0.4rem; }
-.ftv-model { max-width: 14rem; }
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
 .ftv-host { flex: 1; min-height: 0; }
 </style>

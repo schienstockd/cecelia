@@ -443,8 +443,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-rename { flex: 1; background: var(--cc-bg); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 .pm-stat small { opacity: 0.7; margin-left: 3px; }
-/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon */
-.pm-icon:hover { color: var(--cc-text); }
+/* .pm-icon → cc-btn cc-btn-bare cc-btn-icon; only the STATE variants are its own (the plain `:hover`
+   rule was byte-identical to `.cc-btn-bare:hover` and is gone) */
 .pm-icon.lit { color: var(--cc-accent); }
 .pm-icon.danger:hover { color: #f87171; }
 

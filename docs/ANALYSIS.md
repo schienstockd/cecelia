@@ -76,12 +76,12 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
   hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
   (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
-  **training convergence** (`FlowTrainingView`). Surface
+  **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`). Surface
   flags `clusterPage` / `opticalFlowPage` / `analysisBoard`, plus `boardGroup` (which optgroup on the
-  board: `interactive` (default) / `clustering` / `image`).
+  board: `interactive` (default) / `clustering` / `image`) and `rail` (see below).
 - **Cluster panels** (summary-family, wrap `CanvasPanel`): `modules/cluster/clusterPanels.ts`
   (`CLUSTER_PANELS`) — **heatmap**, **HMM states**, **HMM transitions**. Flags `analysisBoard` /
-  `trackOnly` / `needsCols`, plus a `props(ctx)` mapper. Rendered generically via `<component :is v-bind>`.
+  `trackOnly` / `needsCols` / `rail`, plus a `props(ctx)` mapper. Rendered generically via `<component :is v-bind>`.
 
 Adding a plot to the board = write the component to the contract + one registry line + tick the flag.
 No `LayoutCanvas` change.
@@ -91,6 +91,34 @@ picker from `pageViews(flag)`); `LayoutCanvas` mentions no view id at all, and
 `interactiveViews.test.ts` fails if one reappears. This is not tidiness: the board used to filter a
 hardcoded key list, so `flowMetrics` could set `analysisBoard: true`, pass review, and simply never
 appear — a flag wired to nothing fails silently, which is the worst kind.
+
+### The rail — the plot says which manager it needs
+
+The right-hand rail follows the **active slot**, and *which* manager it shows comes from that plot's
+registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCanvas`:
+
+| `rail` | rail shows | who declares it |
+|---|---|---|
+| `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; any view that doesn't say otherwise |
+| `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `umap` + every `CLUSTER_PANELS` entry |
+| `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
+| `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics` |
+
+`'none'` keeps the panel rather than hiding it because the rail carries two independent things: the
+selection list *and* the shared `PlotOptions` styling + scope footer, which a self-contained plot may
+still use (`GatingStrategyView` reads `vis.fontSize`).
+
+The host holds the pick in the board's `shared` bag (`flowModel`, beside `clustHl`/`clustSuffix`) under
+the same global/local scope as everything else, and merges it into the slot context — so a flow plot
+gets its model through the standard bag on the board exactly as it does on the flow module page, with
+no board-specific branch of its own.
+
+This is the same rule as the picker, and for the same reason. The board previously hardcoded
+`activeIsCluster ? PopulationManager : SeriesPicker`, so a plot that needed the vault had no way to ask
+for one: `flowProbability` was **dead on the board** (it rendered "Select a model in the vault" against
+a board that had no vault) and `flowTraining` carried a second, bespoke model picker to work around it.
+`interactiveViews.test.ts` now pins that every board-flagged plot declares a rail the board can render.
+Full history: `docs/todo/CANVAS_MANAGER_RAIL_PLAN.md`.
 
 ### `docked` — the chrome switch
 Every hosted plot reads `docked` (true in a board slot). Docked plots drop the chrome that only makes

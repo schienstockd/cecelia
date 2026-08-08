@@ -2,7 +2,11 @@
   Grid LAYOUT canvas for one Analysis tab (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). A template
   (uniform N×M or a rectangular "comic plate") defines SLOTS; each slot holds one plot. This is the
   READ-ONLY analysis surface (project_analysis_canvas_readonly): plots are chosen from the full spec
-  catalog and populations are picked in the DOCKED right-rail SeriesPicker — no gate/pop mutation.
+  catalog and what they show is picked in the DOCKED right rail — no gate/pop mutation.
+
+  WHICH manager that rail holds comes from the active slot's registry `rail` (canvasManager.ts), not
+  from a branch here: SeriesPicker for population series, the read-only PopulationManager for a cluster
+  run, the FlowModelVault for a plot that needs a trained model. See docs/ANALYSIS.md → The rail.
 
   Reuse: the plot data + view-state come from useSummaryData (shared with the free-floating
   SummaryCanvas); each filled slot renders a DOCKED SummaryPanel (fills the slot, no float/drag). Only
@@ -31,12 +35,14 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, inBoardGroup } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, railFor } from './interactiveViews'
+import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
+import FlowModelVault from '../../modules/opticalFlow/FlowModelVault.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail } from '../../modules/cluster/clusterPanels'
 import CcToggle from '../CcToggle.vue'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
@@ -182,11 +188,17 @@ const st = (c: SlotContent): PState => c.state as PState
 // the flag a lie: a view could set `analysisBoard: true` and never appear, because nothing read it.
 // Self-contained interactive views (read their own context / pops):
 const interactiveOptions = computed(() => boardViews('interactive'))
+// Which MANAGER a slot needs, straight from the registry that owns the slot's kind. Summary slots have
+// no registry entry and take the default (the population picker) — see canvasManager.ts.
+function railOf(c: SlotContent | null): RailKind {
+  if (!c || c.kind !== 'interactive') return DEFAULT_RAIL
+  return isClusterPanel(c.ref) ? clusterPanelRail(c.ref) : railFor(c.ref)
+}
 // CLUSTERING plots — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
-// the clustering-group interactive views (UMAP) + the cluster panels (CLUSTER_PANELS registry). A
-// cluster slot is any interactive slot in that group OR a registered cluster panel.
-const isClusterSlot = (c: SlotContent | null): boolean =>
-  !!c && c.kind === 'interactive' && (inBoardGroup(c.ref, 'clustering') || isClusterPanel(c.ref))
+// the clustering-group interactive views (UMAP) + the cluster panels (CLUSTER_PANELS registry). "Driven
+// by the board's clustering run" and "wants the cluster pop manager" are the same statement, so this is
+// now the rail declaration rather than a second, parallel test that could disagree with it.
+const isClusterSlot = (c: SlotContent | null): boolean => railOf(c) === 'clusterPops'
 const clusterOptions = computed(() => {
   const out: { key: string; label: string }[] = [...boardViews('clustering')]
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
@@ -290,6 +302,8 @@ const panelClustHl = (c: SlotContent) => scope.value === 'global' ? clustHl.valu
 const activeClustHl = computed(() => scope.value === 'global' ? clustHl.value
   : (activeContent.value ? clustHlOf(activeContent.value) : []))
 const activeIsCluster = computed(() => isClusterSlot(activeContent.value))
+// the manager the rail should show, from the active slot's registry entry
+const activeRail = computed<RailKind>(() => railOf(activeContent.value))
 // the active slot's plot is PRECOMPUTED (its populations come from an analysis run, not the picker)
 const activeIsPrecomputed = computed(() => {
   const c = activeContent.value
@@ -302,15 +316,32 @@ function toggleClustHl(path: string) {
   else if (activeContent.value) st(activeContent.value).hl = toggle(clustHlOf(activeContent.value), path)
 }
 
-// context handed to an interactive slot: cluster views get the board cluster run + shown pops; the
-// self-contained views (gating strategy, filmstrip) just get the image/project context.
+// ── flow-model rail: the vault's pick, held here exactly as the cluster highlight is — GLOBAL in the
+// board's shared bag, LOCAL in the active slot's own state. Same shape `FlowPlots` uses on the module
+// page, so a flow plot receives its model through the standard context bag on both surfaces and needs
+// no board-specific branch of its own. ───────────────────────────────────────────────────────────────
+const flowModel = computed<string>({
+  get: () => (entry.value.shared.flowModel as string) ?? '', set: v => (entry.value.shared.flowModel = v) })
+const panelFlowModel = (c: SlotContent) =>
+  scope.value === 'global' ? flowModel.value : ((st(c).model as string | undefined) ?? flowModel.value)
+const activeFlowModel = computed(() => scope.value === 'global' ? flowModel.value
+  : (activeContent.value ? ((st(activeContent.value).model as string | undefined) ?? flowModel.value) : flowModel.value))
+function setFlowModel(v: string) {
+  if (scope.value === 'global') flowModel.value = v
+  else if (activeContent.value) st(activeContent.value).model = v
+}
+
+// context handed to an interactive slot: cluster views get the board cluster run + shown pops; flow
+// views get the vault's model; the self-contained views (gating strategy, filmstrip) just get the
+// image/project context.
 function ctxFor(c: SlotContent) {
   if (isClusterSlot(c)) return {
     projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
   }
-  return { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
+  const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
+  return railOf(c) === 'flowModels' ? { ...base, model: panelFlowModel(c) } : base
 }
 
 // props for a cluster PANEL slot (CLUSTER_PANELS): the common bag + the panel-specific props its registry
@@ -590,17 +621,23 @@ defineExpose({ capturePage, collectCsvs })
         </div>
         </div>
 
-        <!-- docked pop manager (control, not content — excluded from PDF). Follows the ACTIVE slot:
-             cluster PopulationManager for a cluster slot, else the summary SeriesPicker. -->
+        <!-- docked MANAGER (control, not content — excluded from PDF). Follows the ACTIVE slot, and
+             WHICH manager comes from that plot's registry `rail` — never a key list here. `'none'`
+             still renders the picker for its styling block + scope footer, with the (dead) population
+             list suppressed. -->
         <div class="lc-rail">
-          <PopulationManager v-if="activeIsCluster" :docked="true" :readonly="true"
+          <FlowModelVault v-if="activeRail === 'flowModels'" :docked="true"
+                          :selected="activeFlowModel" :scope="scope"
+                          @update:selected="setFlowModel" @update:scope="scope = $event" />
+          <PopulationManager v-else-if="activeIsCluster" :docked="true" :readonly="true"
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
                              :suffix="clustSuffix" :vis="activeVis"
                              @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
           <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
-                        :readout="activeReadout" :selection-unused="activeIsPrecomputed"
+                        :readout="activeReadout" :selection-unused="activeIsPrecomputed || activeRail === 'none'"
+                        :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
         </div>
       </div>
