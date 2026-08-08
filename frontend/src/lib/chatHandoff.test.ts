@@ -29,6 +29,13 @@ describe('buildChatPrompt', () => {
     expect(p).toMatch(/edit and run/i)                 // Claude bootstraps; the user owns/iterates it
   })
 
+  it('names the board + attribute tools, and says to check them before proposing a figure', () => {
+    const p = buildChatPrompt('NRUBxU')
+    expect(p).toContain('get_analysis_boards')     // don't rebuild a board the user already has
+    expect(p).toContain('get_image_attributes')    // the axes a cross-image comparison can group by
+    expect(p).toContain('not four replicates')     // the discipline, not just the tool name
+  })
+
   it('names the available-plots tool for suggesting visualizations', () => {
     expect(buildChatPrompt('NRUBxU')).toContain('get_available_plots')
   })

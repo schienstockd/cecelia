@@ -842,10 +842,59 @@ end
     # The artifacts it can author are named, so the agent knows they exist — the prompt listed
     # neither for a while, and an unmentioned tool is an unused one.
     @test occursin("create_notebook", fp) && occursin("create_chain", fp)
+    # the Phase-0 read tools + the discipline that makes them worth having (a figure proposed without
+    # checking how the images are annotated throws the experiment's design away)
+    @test occursin("get_image_attributes", fp) && occursin("get_analysis_boards", fp)
+    # match on unwrapped text — the prompt is hard-wrapped, so a phrase can straddle a newline
+    @test occursin("not four replicates", replace(fp, r"\s+" => " "))
     # …and the boundary is stated: authoring a chain is not running it. This is the line that keeps
     # the assistant from telling a user their pipeline has started.
     @test occursin("cannot start", fp) || occursin("cannot rename", fp)
     @test occursin("press Run", fp)
+end
+
+@testset "the two observer prompts name the same MCP tools" begin
+    # THE recurring bug in this area, twice now: an MCP tool is added, ONE of the two prompts is
+    # updated, and the other silently goes stale — an unmentioned tool is an unused one, so the
+    # capability just never gets offered. It surfaced both times only because Dominik pasted his
+    # Chat-to-Claude prompt and noticed something missing (create_chain the first time,
+    # get_analysis_boards/get_image_attributes the second).
+    #
+    # A warning comment inside one of the files cannot fix this — you only read it if you already knew
+    # the other file existed. So the invariant is enforced here instead, across all three sources.
+    # Same idea as "calibration writers agree across languages": two implementations that cannot call
+    # each other get a test that compares them.
+    #
+    # The prompts are NOT required to name the same set — they address different surfaces — but every
+    # difference must be DELIBERATE and listed below. Adding a tool to one prompt and not the other now
+    # fails here, naming the offender.
+    root = normpath(joinpath(@__DIR__, "..", ".."))
+    server = read(joinpath(root, "mcp", "cecelia_mcp", "server.py"), String)
+    jl     = read(joinpath(root, "app", "src", "ai", "observer_prompt.jl"), String)
+    ts     = read(joinpath(root, "frontend", "src", "lib", "chatHandoff.ts"), String)
+
+    tools = Set(String[m.captures[1] for m in eachmatch(r"@mcp\.tool\(\)\s*\ndef (\w+)", server)])
+    @test length(tools) >= 30                          # anti-vacuity: a bad regex must not pass
+    named_jl = Set(t for t in tools if occursin(t, jl))
+    named_ts = Set(t for t in tools if occursin(t, ts))
+
+    # In the IN-APP prompt only — it drives the autonomous observer loop, which the user's own session
+    # has no use for.
+    @test setdiff(named_jl, named_ts) == Set(["poll_observations"])
+    # In the CHAT HAND-OFF only — orientation + authoring aids for a session the user starts fresh;
+    # the in-app agent is already oriented and does not browse notebooks.
+    @test setdiff(named_ts, named_jl) ==
+        Set(["get_available_plots", "get_session_briefing", "list_notebooks", "set_notebook_description"])
+    # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
+    # prompt, plus the observer's own bookkeeping.
+    @test setdiff(tools, union(named_jl, named_ts)) ==
+        Set(["get_image_notes", "get_observer_stats", "get_qc_metrics", "get_spatial_stats",
+             "set_observer_active"])
+    # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
+    # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
+    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain")
+        @test w in named_jl && w in named_ts
+    end
 end
 
 @testset "AI observer session sidecar (tokens + clear)" begin
