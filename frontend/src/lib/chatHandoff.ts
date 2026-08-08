@@ -24,7 +24,9 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `(get_session_briefing), its state (get_project_info, list_images, get_task_history, ` +
       `get_task_log/get_recent_logs), how the data was produced (get_analysis_lineage, get_chains), the ` +
       `analysis itself (get_populations, get_measure_summary, get_behaviour_summary, get_cluster_summary), ` +
-      `the board's plot types (get_available_plots), ` +
+      `the board's plot types (get_available_plots), the boards I already built and what each one plots ` +
+      `(get_analysis_boards), how my images are annotated (get_image_attributes — the axes a comparison ` +
+      `can group by, e.g. Mouse or Location), ` +
       `cross-set QC (get_cohort_qc), the lab log (read_lab_log), the notebook/REPL data-access ` +
       `surface (get_repl_api), and the notebooks themselves (list_notebooks, get_notebook — so you can ` +
       `read one I'm stuck in and walk me through the fix). They are read-only except five additive ` +
@@ -32,6 +34,13 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `(create_notebook), making a new version of one (revise_notebook — it snapshots first, so nothing is ` +
       `lost), rewording a notebook's description (set_notebook_description), and designing a chain — the ` +
       `wired task pipeline — with create_chain.`,
+    ``,
+    `Before you propose any figure or cross-image comparison: call get_image_attributes for the axes my ` +
+      `images can be grouped by, and use list_images' per-image attr to size the groups once excluded ` +
+      `images are dropped — four images from one mouse are not four replicates, and a group of one is not ` +
+      `a comparison. If a set has no attributes, say the grouping is unavailable rather than inventing one ` +
+      `from my filenames. And call get_analysis_boards first, so you extend the boards I already built ` +
+      `instead of rebuilding them — match the measures and populations I already chose.`,
     ``,
     `On chains: you can DESIGN one but you cannot run it. create_chain writes a template that sits ` +
       `inert in my Chains whiteboard until I press Run, and there is no tool that starts it — so hand it ` +

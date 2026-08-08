@@ -29,6 +29,18 @@ The value of the observer session depends entirely on what Claude can see. Claud
 
 ## MCP tools to implement
 
+> **Adding a tool touches THREE files.** `mcp/cecelia_mcp/server.py` (the tool, plus a `client.py`
+> method and its `ALLOWED_ROUTES` entry) — and **both** prompts: `app/src/ai/observer_prompt.jl`
+> (`_OBSERVER_RULES`, the in-app observer) and `frontend/src/lib/chatHandoff.ts` (`buildChatPrompt`,
+> the Chat-to-Claude prompt the user pastes). An unmentioned tool is an unused one: the assistant
+> never offers the capability. This has gone stale **twice** — `create_chain`, then
+> `get_analysis_boards`/`get_image_attributes` — both caught only when Dominik pasted his prompt and
+> noticed the gap. The ⚠️ comment in `chatHandoff.ts` did not prevent either, because you only read it
+> if you already knew the second file existed. It is now enforced by `app/test/suite.jl` →
+> *"the two observer prompts name the same MCP tools"*, which parses `@mcp.tool()` out of `server.py`
+> and asserts the prompts' asymmetry equals an explicit, commented allowlist.
+
+
 **Read-only (Phase 1 — implement now):**
 ```
 get_project_info          → name, version, image count, current stage
