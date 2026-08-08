@@ -93,6 +93,15 @@
      the longest label in the movie block (`version`) at the eyebrow size; override it on a container
      that needs a wider one. */
   --cc-lbl-col: 3.4rem;
+
+  /* Width the movie-control blocks (MovieOutputControls, TitleCardControls) stop at. They are shared
+     by three surfaces of very different widths — a 22rem popover, a ~17rem sidebar
+     panel, and a full page — and a flex item with no cap takes whatever the line gives it. On the page
+     that meant one block ballooning to ~570px while its content still only filled ~330px, so the two
+     blocks sat a third of the page apart with a hole between them (Dominik, 2026-08-08). Capping at the
+     NARROWEST real surface is what makes the block render identically on all three, which is the whole
+     point of having one component. Below the cap everything still flexes. */
+  --cc-movie-block: 22rem;
 }
 
 /* ── Reset / base ──────────────────────────────────────────────────────────── */

@@ -61,7 +61,8 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 </template>
 
 <style scoped>
-.tc { min-width: 0; }
+/* capped like `.mo` — the two are one block, so they take the same width (see `--cc-movie-block`) */
+.tc { min-width: 0; max-width: var(--cc-movie-block); }
 /* the label column is the shared `.cc-lbl-col` (style.css) — that IS what makes the rows align */
 .tc-range { width: 4.5rem; flex: 1 1 3rem; min-width: 2.5rem; }
 .tc-dur { min-width: 1.6rem; }
@@ -75,5 +76,5 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 
    The rule for this block, stated once so it stops being decided by accident: a group holding a TEXT
    FIELD or a chip row takes its own line; the short numeric groups (fps, px, z) may share one. */
-.tc-note { flex: 1 1 100%; min-width: 6rem; max-width: 22rem; }   /* capped like `.mo-txt` — see there */
+.tc-note { flex: 1 1 100%; min-width: 6rem; }
 </style>
