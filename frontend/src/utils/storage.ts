@@ -76,7 +76,6 @@ export interface CompressorSettings {
   current: string
   default: string
   measuredOn: string  // one short line naming what every row was measured on
-  docsUrl: string     // the shuffle filter is Blosc's, not the codec's
   choices: CompressorChoice[]
 }
 
