@@ -1578,6 +1578,18 @@ end
 # ONE sanitiser behind the image name, the user's suffix and the attr-composed basename — they used to
 # be three near-copies and only one of them stripped edge separators. Mirrored in the frontend by
 # `safeNamePart` (frontend/src/utils/batchMovie.ts), whose testset asserts the same cases.
+# The 3D detail level an authored/batch movie config asks for. Absent means FULL RESOLUTION, not
+# napari's automatic choice: napari picks the coarsest level in 3D, which erases a strided label
+# pyramid, and a config written before this control existed still wants visible masks.
+@testset "API: 3D detail level from a movie config" begin
+    @test _detail_3d(Dict(:detail3d => 0)) == 0
+    @test _detail_3d(Dict(:detail3d => 2)) == 2
+    @test _detail_3d(Dict(:detail3d => "3")) == 3          # JSON numbers may arrive as strings
+    @test _detail_3d(Dict{Symbol,Any}()) == 0              # absent → full resolution
+    @test _detail_3d(Dict(:detail3d => nothing)) === nothing   # explicit null → leave it to napari
+    @test _detail_3d(Dict(:detail3d => -1)) == 0           # never a negative index
+end
+
 @testset "API: filename fragments are sanitised one way" begin
     @test _safe_name_part("M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)") ==
           "M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped"
@@ -3280,7 +3292,8 @@ end
         "/api/napari/gpu", "/api/napari/open",
         "/api/napari/overlay-legend", "/api/napari/refresh-labels",
         "/api/napari/restart", "/api/napari/screenshot",
-        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/show-labels",
+        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/set-3d-level",
+        "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
         "/api/napari/start-selection", "/api/napari/stop-selection",
         "/api/napari/view-state", "/api/notebooks/build-sysimage",
@@ -3347,7 +3360,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 100
+    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 101
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

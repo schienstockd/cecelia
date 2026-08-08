@@ -966,3 +966,27 @@ def _frame_sequence(anim):
   A seam of its own (like ``_require_napari_animation``) so tests can stub it without importing napari."""
   from napari_animation.frame_sequence import FrameSequence
   return FrameSequence(anim.key_frames)
+
+
+def clamped_level(requested, n_levels):
+    """Which multiscale level a layer should render at, given what was REQUESTED.
+
+    napari renders a multiscale layer at its coarsest level whenever ``ndisplay == 3`` — automatic
+    level selection is a 2D-viewport calculation. That is fine for an intensity image and fatal for a
+    label store, whose pyramid is built by strided subsampling (``create_slices_multiscales``), so its
+    coarsest level is almost entirely background. The bridge therefore pins the level in 3D.
+
+    The request is per VIEWER but the depth is per LAYER — a live-preview label store is opened at a
+    single level while the image beside it has four — so an index valid for one layer can be out of
+    range for another, and napari's setter silently ignores an out-of-range value (leaving that layer
+    on whatever it had). Clamping here makes "as fine as this layer can manage" the actual behaviour.
+
+    ``requested`` of ``None`` means "leave it to napari" and passes straight through. A layer with no
+    levels reported gets 0, the only index that is always valid.
+    """
+    if requested is None:
+        return None
+    n = int(n_levels or 0)
+    if n <= 0:
+        return 0
+    return max(0, min(int(requested), n - 1))

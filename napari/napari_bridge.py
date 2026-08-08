@@ -57,7 +57,7 @@ _STARTED_AT = time.time()
 #: `size_x`/`size_y` (and `scale` is gone), and `ping` reports the canvas size. 3: `stitch_movies`
 #: (side-by-side version comparison), the recorders take `frame_offset`/`frame_total` so a multi-pass
 #: job drives one progress bar, and they take `show_timestamp`/`show_scale_bar`.
-PROTOCOL = 3
+PROTOCOL = 4
 
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
@@ -107,6 +107,9 @@ class NapariState:
         self._labels_orig_cmap = {}   # labels layer name → original colormap, to restore on reset
         self._colcol_cache = {}       # (value_name, column) → (labels, vals, is_cat) obs column read
         self._ts_handler = None       # timestamp slider callback, disconnected before reconnecting
+        # 3D multiscale detail level (see _sync_multiscale_levels). 0 = full resolution, the default:
+        # napari's own choice in 3D is the COARSEST level, which erases a strided label pyramid.
+        self._3d_level = 0
 
         # ── layer-props autosave (debounced, atomic) ────────────────────────────
         # Save brightness/contrast/colormap + the T/Z slider position the moment the user changes
@@ -121,10 +124,10 @@ class NapariState:
         self._autosave_timer.setInterval(500)   # debounce window: one write ~500ms after the last change
         self._autosave_timer.timeout.connect(self._autosave_flush)
 
-        # Keep label layers RENDERABLE in 3D — see _sync_label_levels. Connected here, on the viewer's
+        # Keep layers RENDERABLE in 3D — see _sync_multiscale_levels. Connected here, on the viewer's
         # own event, rather than at the places we set `ndisplay` ourselves: the user can also flip 2D/3D
         # from napari's own button, and that has to behave the same as the movie panel's z control.
-        self._viewer.dims.events.ndisplay.connect(lambda _e=None: self._sync_label_levels())
+        self._viewer.dims.events.ndisplay.connect(lambda _e=None: self._sync_multiscale_levels())
 
     # ── Viewer lifecycle ───────────────────────────────────────────────────────
 
@@ -140,28 +143,53 @@ class NapariState:
     # of ordinary-sized cells is almost entirely background. Switching the movie's z control to 3D
     # therefore made the masks vanish.
     #
-    # So pin label layers to full resolution while the viewer is in 3D, and hand the level back to
-    # napari in 2D, where the automatic choice is what keeps panning a large image fast.
+    # So the level becomes a SETTING rather than napari's default, applied while the viewer is in 3D and
+    # handed back to napari in 2D, where the automatic choice is what keeps panning a large image fast.
     #
-    # LEVEL 0, not "the finest level under some memory budget" — full resolution costs memory on a big
-    # volume and that is accepted: pixelated masks are not an acceptable 3D view (Dominik, 2026-08-08).
-    # Don't reintroduce a coarser choice as an optimisation. `locked_data_level`
-    # is public API as of napari 0.7.1 (the pinned version); the guard keeps an older napari on today's
-    # behaviour instead of crashing.
-    def _sync_label_levels(self):
+    # `detail_level` is a level index: 0 = full resolution, higher = coarser (levels downsample X and Y
+    # by 2^n; Z is never downsampled — see `create_slices_multiscales`). `None` means "leave it to
+    # napari", i.e. the coarsest level, which is the behaviour every 3D view had before this existed.
+    # It defaults to 0 because a pixelated mask is not a usable 3D view, and it is exposed as a control
+    # because full resolution costs memory on a large volume and only the person looking at the image
+    # can judge that trade (docs/UI.md → "3D detail").
+    #
+    # Applied to EVERY multiscale scalar layer, image and labels alike. A crisp mask floating over a
+    # coarse image is its own kind of wrong, and the layers stay aligned either way — napari derives a
+    # level's world scale from its shape (`downsample_factors = level_shapes[0] / level_shapes`), so
+    # mixing levels never misplaces anything, it only mixes sharpness.
+    #
+    # `locked_data_level` is public API as of napari 0.7.1 (the version in pixi.lock); the guard keeps an
+    # older napari on its own behaviour instead of crashing.
+    def _sync_multiscale_levels(self):
         in_3d = self._viewer.dims.ndisplay == 3
         for layer in self._viewer.layers:
-            if not isinstance(layer, napari.layers.Labels) or not getattr(layer, "multiscale", False):
+            if not getattr(layer, "multiscale", False):
                 continue
             if not hasattr(layer, "locked_data_level"):
-                print("[labels] napari has no locked_data_level; 3D will render the coarsest level",
-                      flush=True)
+                print("[3d] napari has no locked_data_level; 3D renders the coarsest level", flush=True)
                 return
             try:
-                layer.locked_data_level = 0 if in_3d else None
+                layer.locked_data_level = self._clamp_level(layer) if in_3d else None
             except Exception as e:
                 # never let a display nicety take the viewer down
-                print(f"[labels] could not pin {layer.name} to full resolution: {e}", flush=True)
+                print(f"[3d] could not set the level of {layer.name}: {e}", flush=True)
+
+    def _clamp_level(self, layer):
+        """The requested 3D level, clamped to the levels THIS layer actually has (napari_utils)."""
+        return napari_utils.clamped_level(self._3d_level, len(getattr(layer, "level_shapes", []) or []))
+
+    def set_3d_level(self, level=None):
+        """Set the 3D detail level (None = napari's automatic choice, the coarsest level).
+
+        Separate from `set_z_view` on purpose: moving the slider must not re-run that command's
+        `reset_view()` and throw away the camera the user has just positioned."""
+        self._3d_level = None if level is None else int(level)
+        self._sync_multiscale_levels()
+        return {"level": self._3d_level, "applied": self._viewer.dims.ndisplay == 3}
+
+    def multiscale_levels(self):
+        """Levels the OPEN IMAGE has — the range the detail control offers. 1 (or 0) means no choice."""
+        return len(self._im_data) if self._im_data else 0
 
     def clear(self):
         self._viewer.layers.clear()
@@ -277,8 +305,14 @@ class NapariState:
         """
         z_len = self._z_axis_len() or 0
         if show_3d and z_len > 1:
+            # reset_view ONLY on the 2D→3D transition. Setting ndisplay=3 programmatically leaves the
+            # camera uninitialised for the 3D extent (docs/NAPARI.md), but re-running it on a command
+            # that arrives while already in 3D would throw away the camera the user just positioned —
+            # which is what any repeat of this command does.
+            was_2d = self._viewer.dims.ndisplay != 3
             self._viewer.dims.ndisplay = 3
-            self._viewer.reset_view()
+            if was_2d:
+                self._viewer.reset_view()
             return {"ndisplay": 3, "z": None}
 
         self._viewer.dims.ndisplay = 2
@@ -471,9 +505,9 @@ class NapariState:
             if after_add is not None:
                 after_add(value_name, layer)
 
-        # A layer ADDED while the viewer is already in 3D never sees an `ndisplay` event, so pin it here
-        # too — otherwise turning a mask on during a 3D session shows nothing. Cheap and idempotent.
-        self._sync_label_levels()
+        # A layer ADDED while the viewer is already in 3D never sees an `ndisplay` event, so apply the
+        # level here too — otherwise turning a mask on during a 3D session shows nothing. Idempotent.
+        self._sync_multiscale_levels()
 
     def show_labels(self, value_name: str = "default",
                     label_files: list = None,
@@ -2043,7 +2077,11 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             hw = napari_utils.canvas_size(state._viewer) if state._viewer is not None else None
             return {"type": "pong", "started_at": _STARTED_AT, "protocol": PROTOCOL,
                     "canvas_size_y": hw[0] if hw else None,
-                    "canvas_size_x": hw[1] if hw else None}
+                    "canvas_size_x": hw[1] if hw else None,
+                    # how many multiscale levels the OPEN IMAGE has — the range the 3D detail control
+                    # offers. Rides the health poll for the same reason the canvas size does.
+                    "multiscale_levels": state.multiscale_levels(),
+                    "detail_level": state._3d_level}
 
         elif t == "gl_info":
             return {"type": "gl_info", **_gl_info()}
@@ -2057,6 +2095,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 as_dask=cmd.get("as_dask", True),
                 visible=cmd.get("visible", True),
             )
+
+        elif t == "set_3d_level":
+            return state.set_3d_level(cmd.get("level", None))
 
         elif t == "set_z_view":
             return state.set_z_view(show_3d=cmd.get("show_3d", False), z=cmd.get("z", None))

@@ -36,6 +36,10 @@ const props = defineProps<{
   sizeZ?: number | null
   show3D?: boolean
   zSlice?: number | null
+  // multiscale levels the open image has. >1 makes the 3D detail control meaningful (and visible);
+  // omit it, or pass 0/1, and the row is exactly what it was.
+  levels?: number | null
+  detail3d?: number | null
 }>()
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
@@ -46,6 +50,7 @@ const emit = defineEmits<{
   (e: 'update:scaleBar', v: boolean): void
   (e: 'update:show3D', v: boolean): void
   (e: 'update:zSlice', v: number): void
+  (e: 'update:detail3d', v: number): void
 }>()
 
 const hasOverlays = computed(() => props.timestamp !== undefined || props.scaleBar !== undefined)
@@ -80,6 +85,12 @@ const overlays = computed<string[]>({
 const suffixDraft = useFieldDraft(() => props.suffix)
 const sizeXDraft  = useFieldDraft(() => props.sizeX)
 const sizeYDraft  = useFieldDraft(() => props.sizeY)
+
+// The 3D detail row: only when 3D is selected AND there is more than one level to choose between.
+const hasDetail = computed(() => props.show3D === true && (props.levels ?? 0) > 1)
+// what a level actually costs you, in the terms you can see: levels halve X and Y (never Z), so level
+// n is 1/2^n of the image's width. Said as a fraction rather than an index, because "2" means nothing.
+const detailLabel = (lv: number) => (lv <= 0 ? 'full' : `1/${2 ** lv}`)
 
 const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
   emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
@@ -135,6 +146,18 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
                @input="$emit('update:zSlice', ($event.target as HTMLInputElement).valueAsNumber)" />
         <span class="mo-val cc-readout">{{ zSlice ?? 0 }}</span>
       </template>
+    </span>
+
+    <!-- How much detail the 3D render uses. napari's own choice in 3D is the COARSEST pyramid level,
+         which erases a segmentation; full resolution costs memory on a big volume. Only the person
+         looking at the image can weigh that, so it is a control. -->
+    <span v-if="hasDetail" class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'3D render detail'">detail</span>
+      <input type="range" min="0" :max="(levels ?? 1) - 1" step="1" class="mo-range"
+             :value="detail3d ?? 0"
+             v-tooltip.bottom="'Full resolution is sharpest and heaviest; coarser is faster'"
+             @input="$emit('update:detail3d', ($event.target as HTMLInputElement).valueAsNumber)" />
+      <span class="mo-val cc-readout">{{ detailLabel(detail3d ?? 0) }}</span>
     </span>
 
     <span v-if="hasOverlays" class="cc-row-group mo-own-row">
