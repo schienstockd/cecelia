@@ -76,8 +76,13 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 
 <template>
   <!-- `.cc-row` of `.cc-row-group`s (style.css): the row wraps between GROUPS, so it never orphans a
-       label or splits `724 × 722`. The viewer sidebar is narrow enough that this lands as two lines;
-       the Animation page's header keeps them on one — no breakpoint, no per-surface variant. -->
+       label or splits `724 × 722`.
+
+       WHERE a group lands must not depend on the container, or one component renders as two layouts
+       and the surfaces have to be cross-checked by eye after every change. The rule: a group holding a
+       TEXT FIELD or a chip row takes its OWN line (`.mo-own-row`, and `.tc-note` in TitleCardControls);
+       the short numeric groups — fps, px, z — may share one. Everything below this component is then
+       the same block on all three surfaces. -->
   <div class="mo cc-row">
     <span class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames per second'">fps</span>
@@ -97,7 +102,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
              @change="onAxis('sizeY', $event)" />
     </span>
 
-    <span class="cc-row-group mo-grow">
+    <span class="cc-row-group mo-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Added to the file name'">name</span>
       <input type="text" class="cc-input-2xs mo-txt" :value="suffix" placeholder="suffix"
              v-tooltip.bottom="'Added to the file name; keeps versions apart'"
@@ -121,7 +126,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
       </template>
     </span>
 
-    <span v-if="hasOverlays" class="cc-row-group">
+    <span v-if="hasOverlays" class="cc-row-group mo-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Drawn into the recorded frames'">show</span>
       <ChipSelect multiple :options="OVERLAY_OPTIONS" v-model="overlays"
                   aria-label="Overlays burnt into the movie"
@@ -132,13 +137,21 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 
 <style scoped>
 .mo { min-width: 0; }
-/* The name group takes a WHOLE line of its own (`flex-basis: 100%`), everywhere. It used to absorb
+/* Groups that take a WHOLE line of their own, everywhere (Dominik, 2026-08-08). Two different
+   reasons, one rule:
+
+   NAME — a filename is free text and is the one field here that wants the width. It used to absorb
    leftover width (`1 1 8rem`), which in the viewer's 22rem popover left it sharing a line with the
-   two size fields and squeezed to a few characters — and a filename is free text, the one field here
-   that genuinely wants the width (Dominik, 2026-08-08). Full-width on the wider surfaces too, rather
-   than a breakpoint: the same control reading differently per surface is what this component exists
-   to prevent. */
-.mo-grow { flex: 1 1 100%; }
+   two size fields and squeezed to a few characters.
+
+   SHOW — because the Z group beside it CHANGES WIDTH: picking 3D hides the slice slider and its
+   readout, which freed enough room for the overlay chips to reflow up onto the z row. A control
+   jumping when you touch an unrelated one is worse than a row that is sometimes short, so the
+   overlays are pinned to the layout the 2D state already had.
+
+   Full-width on the wider surfaces too, rather than a breakpoint: the same control reading
+   differently per surface is what this component exists to prevent. */
+.mo-own-row { flex: 1 1 100%; }
 /* .mo-lbl → .cc-lbl-col (style.css): one reserved label column shared with the title-card and
    compare rows, so the whole Movie block starts its controls on the same x. */
 .mo-range { width: 4.5rem; flex: 1 1 3rem; min-width: 2.5rem; }
