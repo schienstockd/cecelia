@@ -121,7 +121,47 @@ class NapariState:
         self._autosave_timer.setInterval(500)   # debounce window: one write ~500ms after the last change
         self._autosave_timer.timeout.connect(self._autosave_flush)
 
+        # Keep label layers RENDERABLE in 3D — see _sync_label_levels. Connected here, on the viewer's
+        # own event, rather than at the places we set `ndisplay` ourselves: the user can also flip 2D/3D
+        # from napari's own button, and that has to behave the same as the movie panel's z control.
+        self._viewer.dims.events.ndisplay.connect(lambda _e=None: self._sync_label_levels())
+
     # ── Viewer lifecycle ───────────────────────────────────────────────────────
+
+    # napari renders a MULTISCALE layer at its COARSEST level in 3D — automatic level selection is a
+    # 2D-viewport calculation, so there is nothing to compute once the whole volume is on screen:
+    #
+    #     elif slice_input.ndisplay == 3:
+    #         data_level = len(data) - 1        # napari/layers/_scalar_field/scalar_field.py
+    #
+    # For an intensity image that is fine: a coarse image still looks like the image. For LABELS it is
+    # not, because our pyramids are built by strided subsampling (`create_slices_multiscales`), not by
+    # a mode filter — level n keeps every 2^n-th voxel per axis, so at the coarsest level a segmentation
+    # of ordinary-sized cells is almost entirely background. Switching the movie's z control to 3D
+    # therefore made the masks vanish.
+    #
+    # So pin label layers to full resolution while the viewer is in 3D, and hand the level back to
+    # napari in 2D, where the automatic choice is what keeps panning a large image fast.
+    #
+    # LEVEL 0, not "the finest level under some memory budget" — full resolution costs memory on a big
+    # volume and that is accepted: pixelated masks are not an acceptable 3D view (Dominik, 2026-08-08).
+    # Don't reintroduce a coarser choice as an optimisation. `locked_data_level`
+    # is public API as of napari 0.7.1 (the pinned version); the guard keeps an older napari on today's
+    # behaviour instead of crashing.
+    def _sync_label_levels(self):
+        in_3d = self._viewer.dims.ndisplay == 3
+        for layer in self._viewer.layers:
+            if not isinstance(layer, napari.layers.Labels) or not getattr(layer, "multiscale", False):
+                continue
+            if not hasattr(layer, "locked_data_level"):
+                print("[labels] napari has no locked_data_level; 3D will render the coarsest level",
+                      flush=True)
+                return
+            try:
+                layer.locked_data_level = 0 if in_3d else None
+            except Exception as e:
+                # never let a display nicety take the viewer down
+                print(f"[labels] could not pin {layer.name} to full resolution: {e}", flush=True)
 
     def clear(self):
         self._viewer.layers.clear()
@@ -430,6 +470,10 @@ class NapariState:
                   f"scale={self._im_scale} cache={cache} levels={len(arrays)}", flush=True)
             if after_add is not None:
                 after_add(value_name, layer)
+
+        # A layer ADDED while the viewer is already in 3D never sees an `ndisplay` event, so pin it here
+        # too — otherwise turning a mask on during a 3D session shows nothing. Cheap and idempotent.
+        self._sync_label_levels()
 
     def show_labels(self, value_name: str = "default",
                     label_files: list = None,
