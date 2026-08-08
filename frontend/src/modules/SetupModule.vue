@@ -2,10 +2,11 @@
 // First-launch setup wizard (bare route /setup). One screen: pick where projects are stored, which
 // the backend writes to the user's custom.toml (~/.cecelia in prod). Removes the terminal-editing
 // barrier for non-technical users. See docs/todo/ONBOARDING_PLAN.md.
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppControlStore } from '../stores/appControl'
 import { useLogStore } from '../stores/log'
+import { debouncedLatest } from '../utils/debouncedLatest'
 
 const router = useRouter()
 const appCtl = useAppControlStore()
@@ -14,9 +15,15 @@ const log = useLogStore()
 const path = ref('')
 const submitting = ref(false)
 const restarting = ref(false)   // fallback path: backend asked for a restart (D3) — poll health then go
-// live validation feedback from GET /api/setup/validate (debounced)
+// live validation feedback from GET /api/setup/validate (coalesced — utils/debouncedLatest, so a
+// typed path doesn't hit the backend once per keystroke; docs/UI.md → *Continuous controls*)
 const check = ref<{ ok: boolean; message: string; willCreate: boolean } | null>(null)
-let _validateTimer: ReturnType<typeof setTimeout> | undefined
+const validateRun = debouncedLatest<string>(async (p, isCurrent) => {
+  const res = await fetch(`/api/setup/validate?path=${encodeURIComponent(p)}`)
+  const d = await res.json()
+  if (isCurrent()) check.value = d
+}, { wait: 300, onError: () => { /* leave check null; submit still guards server-side */ } })
+onUnmounted(() => validateRun.cancel())
 
 onMounted(async () => {
   try {
@@ -25,23 +32,12 @@ onMounted(async () => {
   } catch { path.value = '' }
 })
 
-// debounce validation so we don't hit the backend on every keystroke
 watch(path, () => {
   check.value = null
-  clearTimeout(_validateTimer)
+  validateRun.cancel()
   const p = path.value.trim()
-  if (!p) return
-  _validateTimer = setTimeout(validate, 300)
+  if (p) validateRun.schedule(p)
 })
-
-async function validate() {
-  const p = path.value.trim()
-  if (!p) return
-  try {
-    const res = await fetch(`/api/setup/validate?path=${encodeURIComponent(p)}`)
-    check.value = await res.json()
-  } catch { /* leave check null; submit still guards server-side */ }
-}
 
 async function submit() {
   const p = path.value.trim()

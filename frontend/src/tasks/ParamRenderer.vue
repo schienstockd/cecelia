@@ -4,11 +4,12 @@
   Supports nested section (collapsible box) with recursive rendering.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
-import { paramAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
+import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import { isChosenValueName, preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -326,19 +327,30 @@ const advisoryCtx = computed<AdvisorContext>(() => ({
   values: props.context?.values,
 }))
 
-let advisorySeq = 0
-async function loadAdvisory() {
-  const a = advisor.value
-  advisory.value = null
-  if (!a) return
-  const seq = ++advisorySeq          // only the latest run may write; a slider drag races otherwise
-  advisoryLoading.value = true
-  try {
-    const r = await a.advise(val.value, advisoryCtx.value)
-    if (seq === advisorySeq) advisory.value = r
-  } finally {
-    if (seq === advisorySeq) advisoryLoading.value = false
-  }
+// Coalesced, latest-wins (docs/UI.md → "Continuous controls"): an advisor may hit the backend
+// (`/api/tracking/motion-dims`, `/api/images/geometry`) and its trigger is a SLIDER, which emits an
+// event per pixel of travel. The old hand-rolled sequence token discarded the stale REPLIES but still
+// sent every request, so a drag fired a request per step at the API. `debouncedLatest` collapses the
+// burst into one, never runs two at once, and hands the run an `isCurrent()` for the same stale guard.
+const advisoryRun = debouncedLatest<{ advisor: ParamAdvisor | undefined; value: unknown; ctx: AdvisorContext }>(
+  async ({ advisor: a, value, ctx }, isCurrent) => {
+    if (!a) return
+    advisoryLoading.value = true
+    try {
+      const r = await a.advise(value, ctx)
+      if (isCurrent()) advisory.value = r
+    } finally {
+      if (isCurrent()) advisoryLoading.value = false
+    }
+  },
+  { wait: 200, onError: () => { advisoryLoading.value = false } },
+)
+function loadAdvisory() {
+  advisory.value = null           // clear immediately — a stale readout is worse than none
+  advisoryRun.cancel()            // …and stop an in-flight run applying its (now older) answer over it
+  advisoryLoading.value = false   // a cancelled run skips its own `finally`, so reset the flag here
+  if (!advisor.value) return
+  advisoryRun.schedule({ advisor: advisor.value, value: val.value, ctx: advisoryCtx.value })
 }
 // `val` is in the key list on purpose: an async advisor still depends on the CURRENT value (the grid
 // estimate changes as the slider moves), and `reloadOn` only covers the context. The fetch itself is
@@ -346,6 +358,7 @@ async function loadAdvisory() {
 // are cheap enough (one metadata read) that correctness wins over a caching layer nobody needs yet.
 watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value)],
   () => { loadAdvisory() }, { immediate: true, deep: true })
+onUnmounted(() => advisoryRun.cancel())
 
 // group helpers — value is Record<string, ParamValues> keyed by "0", "1", ...
 const groupEntries = computed(() => {

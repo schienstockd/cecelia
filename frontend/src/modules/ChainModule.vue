@@ -23,6 +23,7 @@ import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
@@ -400,17 +401,20 @@ const qcBandH = computed(() =>
 // canonical /api/plot_data (popType=labels, chartType=count) — one request per image (no set handle
 // here), so `values` is the per-image count series and `total` their sum. Debounced; re-runs as tasks
 // complete so the count fills in during a live run.
-let qcFetchTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleQcFetch() {
-  if (qcFetchTimer) clearTimeout(qcFetchTimer)
-  qcFetchTimer = setTimeout(fetchQcData, 250)
-}
-async function fetchQcData() {
+// Coalesced (utils/debouncedLatest, docs/UI.md → *Continuous controls*): the triggers below arrive in
+// bursts during a live run (a completed task bumps `doneCount`), and one pass is images × columns ×
+// value_names requests — never two passes at once, and `isCurrent()` drops a pass the next one replaced.
+const qcRun = debouncedLatest<void>((_a, isCurrent) => fetchQcData(isCurrent), { wait: 250 })
+const scheduleQcFetch = () => qcRun.schedule()
+onUnmounted(() => qcRun.cancel())
+
+async function fetchQcData(isCurrent: () => boolean) {
   const uid = projectMeta.current?.uid
   const { imageIds } = liveLayout.value
   if (!uid || !showQc.value || !qcColumns.value.length || !imageIds.length || !qcValueNames.value.length) return
   for (const col of qcColumns.value) {
     for (const vn of qcValueNames.value) {
+      if (!isCurrent()) return                     // a newer pass owns the table now
       const key = qcKey(col.nodeId, vn)
       const cur = new Map(qcData.value)
       cur.set(key, { ...(cur.get(key) ?? {}), loading: true })

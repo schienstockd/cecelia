@@ -8,6 +8,7 @@ import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { cropBoxFromRect, fracRangeLabel, frameCacheKey, normalizeRange, type CropInfo, type NormRect } from '../utils/crop3d'
+import { debouncedLatest } from '../utils/debouncedLatest'
 import RangeSlider from './RangeSlider.vue'
 
 const props = defineProps<{ projectUid: string; imageUid: string; imageName: string; valueName: string; setUid: string }>()
@@ -82,38 +83,44 @@ async function loadInfo() {
     if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
     info.value = d as CropInfo
     t.value = Math.floor(((d.nT as number) - 1) / 2)
-    loadFrame()
+    requestFrame(); frameRun.flush()      // first paint: no reason to sit out the debounce window
   } catch (e) { if (gen === reqGen) err.value = e instanceof Error ? e.message : String(e) }
 }
 
 // The displayed MIP projects only over the KEPT z-range, so the z slider previews what you'll keep.
 const frameKey = () => frameCacheKey(props.valueName, t.value, { lo: zLo.value, hi: zHi.value })
-async function loadFrame() {
-  const gen = reqGen
-  const key = frameKey()
-  const cached = urlCache.get(key)
+
+// One render per burst — scrubbing t or dragging the z range emits an event per pixel of travel, and
+// each one is a server-side MIP. The shared scheduler (`utils/debouncedLatest`, docs/UI.md →
+// *Continuous controls*) collapses the burst, keeps one request in flight at a time, and hands the run
+// an `isCurrent()` so a superseded frame is never painted. (Was a hand-rolled timer + `frameKey` guard.)
+interface FrameReq { gen: number; key: string; t: number; zLo: number; zHi: number }
+const frameRun = debouncedLatest<FrameReq>(async (req, isCurrent) => {
+  const cached = urlCache.get(req.key)
   if (cached) { frameUrl.value = cached; return }
   loading.value = true
   try {
-    const z = normalizeRange(zLo.value, zHi.value)
-    const r = await fetch(`/api/crop/frame?${qs()}&t=${t.value}&zLo=${z.lo}&zHi=${z.hi}`)
+    const z = normalizeRange(req.zLo, req.zHi)
+    const r = await fetch(`/api/crop/frame?${qs()}&t=${req.t}&zLo=${z.lo}&zHi=${z.hi}`)
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`)
     const blob = new Blob([await r.arrayBuffer()], { type: 'image/png' })
     // The version switched while this was in flight: `clearCache()` has already run, so caching this
-    // URL would both leak it and let the OLD store's frame be served to the NEW version.
-    if (gen !== reqGen) return
+    // URL would both leak it and let the OLD store's frame be served to the NEW version. Separate from
+    // `isCurrent()`, which only knows about newer FRAME requests, not about the image changing.
+    if (req.gen !== reqGen) return
     const url = URL.createObjectURL(blob)
-    urlCache.set(key, url)
-    if (frameKey() === key) frameUrl.value = url    // ignore a stale response if the user moved on
-  } catch (e) { if (gen === reqGen) err.value = e instanceof Error ? e.message : String(e) }
-  finally { if (gen === reqGen) loading.value = false }
-}
+    urlCache.set(req.key, url)
+    if (isCurrent() && frameKey() === req.key) frameUrl.value = url
+  } catch (e) { if (req.gen === reqGen) err.value = e instanceof Error ? e.message : String(e) }
+  finally { if (req.gen === reqGen) loading.value = false }
+}, { wait: 130, onError: e => { err.value = e instanceof Error ? e.message : String(e); loading.value = false } })
 
-let deb: ReturnType<typeof setTimeout> | null = null
-const debFrame = () => { if (deb) clearTimeout(deb); deb = setTimeout(loadFrame, 130) }
-watch([t, zLo, zHi], debFrame)   // t OR the z-range → re-render the MIP
+const requestFrame = () =>
+  frameRun.schedule({ gen: reqGen, key: frameKey(), t: t.value, zLo: zLo.value, zHi: zHi.value })
+
+watch([t, zLo, zHi], requestFrame)   // t OR the z-range → re-render the MIP
 watch(() => [props.projectUid, props.imageUid, props.valueName], loadInfo, { immediate: true })
-onUnmounted(() => { if (deb) clearTimeout(deb); clearCache() })
+onUnmounted(() => { frameRun.cancel(); clearCache() })
 
 function save() {
   if (!rect.value || !info.value || saving.value) return
