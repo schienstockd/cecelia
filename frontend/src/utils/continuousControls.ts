@@ -147,3 +147,30 @@ export function rearmedTimers(source: string): string[] {
   }
   return [...out]
 }
+
+/**
+ * Text-ish inputs bound with `:value` and committed on `@change` — the shape whose DOM value runs
+ * AHEAD of its binding while the field has focus.
+ *
+ * Vue force-patches an input's `value` on every element patch and compares against the DOM's current
+ * text, not the previous binding, so a re-render mid-typing silently replaces what the user typed with
+ * the bound value. It reads as "I entered a name and it jumped back to the prefilled one" — reported
+ * for the movie filename, and present in five more fields on the plot-styling panel.
+ *
+ * `v-model` on the draft is the fix (see `composables/useFieldDraft`), not switching to `@input`:
+ * commit-on-blur is deliberate for a field whose value is parsed or drives a re-render.
+ *
+ * A `<select>` is deliberately not matched — its DOM value only changes through a user selection,
+ * which fires `change` at the same moment, so it cannot drift.
+ */
+const DRIFT_PRONE_TYPE = /^(text|number|search|email|url|tel|password)$/
+
+export function driftingTextFields(source: string): string[] {
+  return openingTags(templateBlock(source))
+    .filter(t => t.startsWith('<input') || t.startsWith('<textarea'))
+    .filter(t => {
+      const type = attr(t, 'type') ?? 'text'          // an <input> with no type is a text field
+      return t.startsWith('<textarea') || DRIFT_PRONE_TYPE.test(type)
+    })
+    .filter(t => /\s:value="/.test(t) && /\s@change="/.test(t) && !/\sv-model/.test(t))
+}

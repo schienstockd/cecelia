@@ -573,11 +573,24 @@ function _movies_dir(img)::String
     d
 end
 
+# One filename-safe fragment: keep [A-Za-z0-9._-], collapse every run of anything else to `_`, and
+# drop the separators the collapse leaves at the EDGES.
+#
+# The edge strip is the whole point. An image called "… -res (cropped)" ends in `)`, so sanitising
+# alone gave "…-res_cropped_" — a name ending in a separator, which is what the movies list showed —
+# and the animation variant compounded it to "…-res_cropped__animation.mp4". `_movie_suffix` had the
+# strip and the image-name path did not, while claiming in a comment to use "the same character rule";
+# they are now the same function, so a movie name cannot be sanitised two ways.
+function _safe_name_part(raw)::String
+    s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
+    String(strip(s, ['_', '.']))
+end
+
 # Movie output path named by the IMAGE (not attrs) — used by the single-image recorders. Sanitises
 # img.name, falls back to the uid when blank/unsafe. `suffix` distinguishes timelapse ("") from
 # animation ("_animation").
 function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = "")::String
-    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
+    safe = _safe_name_part(img.name)
     joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
 end
 
@@ -590,10 +603,7 @@ end
 # but it is free text — the comparison someone wants to label is not always a version.
 const MOVIE_SUFFIX_MAX = 40
 function _movie_suffix(raw)::String
-    s = strip(String(raw === nothing ? "" : raw))
-    isempty(s) && return ""
-    safe = replace(s, r"[^A-Za-z0-9._-]+" => "_")
-    safe = strip(safe, ['_', '.'])                      # no leading/trailing separators in a filename
+    safe = _safe_name_part(raw)                         # shared rule: no leading/trailing separators
     isempty(safe) && return ""
     "_" * first(safe, MOVIE_SUFFIX_MAX)
 end
@@ -623,7 +633,7 @@ function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Ve
     push!(parts, String(uid))
     # the user's filename addition goes BEFORE the extension (it arrives already sanitised + `_`-led
     # from `_movie_suffix`), so the file is still an .mp4 to every listing that filters on the suffix
-    replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * suffix * ".mp4"
+    _safe_name_part(join(parts, "_")) * suffix * ".mp4"
 end
 
 # Channels shown in the movie for `img` = the `config.channels` keys (the ones given a colormap),
@@ -692,6 +702,14 @@ _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_C
 # it silently would be worse than ignoring it. `nothing` for the slice means "whatever is showing",
 # which is what every recording did before the setting existed.
 _show_3d(src)::Bool = Bool(get(src, :show3D, false))
+# 3D detail level from an authored config: a multiscale LEVEL index (0 = full resolution, higher =
+# coarser), or `nothing` for napari's own choice. Absent means 0, not "auto" — a config written before
+# the control existed still wants visible masks.
+function _detail_3d(src)::Union{Int,Nothing}
+    raw = get(src, :detail3d, 0)
+    raw === nothing ? nothing : max(0, _to_int(raw))
+end
+
 function _z_slice(src)::Union{Int,Nothing}
     _show_3d(src) && return nothing
     raw = get(src, :zSlice, nothing)
@@ -792,6 +810,13 @@ function _apply_movie_config!(project_uid::String, image_uid::String, img, confi
     #     inheriting whatever the previous cell left behind.
     _call_napari_api(api_napari_set_z_view,
                      (; show3D = _show_3d(config), zSlice = _z_slice(config)))
+
+    # 1d. how much detail the 3D render uses. Only in 3D — in 2D napari picks the level from the
+    #     viewport, which is what keeps a large image responsive. Without this a batch 3D movie would
+    #     render its masks at the coarsest pyramid level, i.e. not at all (docs/NAPARI.md → 3D detail).
+    if _show_3d(config)
+        _call_napari_api(api_napari_set_3d_level, (; level = _detail_3d(config)))
+    end
 
     # 2. channel colormaps + visibility. `channels` = {name → colormap} for the channels to SHOW; every
     #    other channel is hidden. Applied via a partial view-state (colormap/visible are whitelisted).
@@ -1573,6 +1598,29 @@ function api_napari_set_z_view(body_bytes::Vector{UInt8})
     end
 end
 
+# ── REST: POST /api/napari/set-3d-level ───────────────────────────────────────
+# How much detail the 3D view renders — a multiscale LEVEL index (0 = full resolution, higher =
+# coarser), or `null` for napari's own choice (the coarsest level). Separate from set-z-view because
+# that one resets the camera on entering 3D and this is dragged on a slider. See docs/NAPARI.md.
+function api_napari_set_3d_level(body_bytes::Vector{UInt8})
+    data  = JSON3.read(String(body_bytes))
+    raw   = get(data, :level, 0)
+    level = raw === nothing ? nothing : _to_int(raw)
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            resp = set_3d_level!(v; level = level)
+            200, JSON3.write((; ok = true, level = get(resp, "level", nothing),
+                                applied = get(resp, "applied", false)))
+        catch e
+            @warn "set_3d_level failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 # ── REST: POST /api/napari/show-populations ───────────────────────────────────
 # Consumer direction: colour each population's cells as a points layer in napari (ports the
 # old napari_utils.show_pop_mapping). Julia owns membership; the bridge reads centroids from
@@ -2087,6 +2135,8 @@ function api_napari_status(req::HTTP.Request)
     bridge_started = nothing
     canvas_x = nothing
     canvas_y = nothing
+    ms_levels = nothing
+    detail = nothing
     if v !== nothing
         try
             resp = send(v, Dict("type" => "ping"))
@@ -2096,6 +2146,10 @@ function api_napari_status(req::HTTP.Request)
             # placeholder, so the honest default is visible (docs/NAPARI.md)
             canvas_x = get(resp, "canvas_size_x", nothing)
             canvas_y = get(resp, "canvas_size_y", nothing)
+            # levels the OPEN IMAGE has + the level 3D is currently pinned to — the range and value of
+            # the 3D detail control (docs/NAPARI.md → *3D detail*)
+            ms_levels = get(resp, "multiscale_levels", nothing)
+            detail    = get(resp, "detail_level", nothing)
         catch
         end
     end
@@ -2106,7 +2160,8 @@ function api_napari_status(req::HTTP.Request)
     200, JSON3.write((; alive = alive, starting = _viewer_starting[],
                         bridgeStartedAt = bridge_started, bridgeUptimeSeconds = bridge_uptime,
                         bridgeStale = bridge_stale,
-                        canvasSizeX = canvas_x, canvasSizeY = canvas_y))
+                        canvasSizeX = canvas_x, canvasSizeY = canvas_y,
+                        multiscaleLevels = ms_levels, detailLevel = detail))
 end
 
 # ── REST: discrete-GPU toggle ─────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -136,5 +136,43 @@ describe('clampContour / labelContour', () => {
     expect(buildBatchMovieConfig({}, [], {}).labelContour).toBe(0)
     expect(buildBatchMovieConfig({ labelContour: 3 }, [], {}).labelContour).toBe(3)
     expect(buildBatchMovieConfig({ labelContour: -1 }, [], {}).labelContour).toBe(0)
+  })
+})
+
+// Mirrors the Julia `_safe_name_part` testset (api/test/runtests.jl) — the two sanitisers must agree,
+// or the filename the batch panel PREVIEWS is not the one the recorder writes.
+// napari's own 3D choice is the COARSEST pyramid level, which erases a strided label pyramid — so an
+// authored batch config says "full resolution" rather than leaving it unsaid. See docs/NAPARI.md.
+describe('buildBatchMovieConfig 3D detail', () => {
+  const build = (cfg: Record<string, unknown>) =>
+    buildBatchMovieConfig(cfg, ['segA'], {})
+  it('sends full resolution by default in 3D', () => {
+    expect(build({ show3D: true }).detail3d).toBe(0)
+  })
+  it('carries an explicitly chosen level', () => {
+    expect(build({ show3D: true, detail3d: 2 }).detail3d).toBe(2)
+  })
+  it('sends nothing in 2D — the level only applies to a volumetric render', () => {
+    expect(build({ show3D: false, detail3d: 2 }).detail3d).toBeNull()
+  })
+})
+
+describe('safeNamePart', () => {
+  it('drops the separator a trailing bracket leaves behind', () => {
+    // the reported one: an image named "… -res (cropped)" showed up as "…-res_cropped_"
+    expect(safeNamePart('M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)'))
+      .toBe('M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped')
+  })
+  it('keeps the characters a filename may hold, collapses the rest', () => {
+    expect(safeNamePart('a/b c:d')).toBe('a_b_c_d')
+    expect(safeNamePart('Day 3.v2-final')).toBe('Day_3.v2-final')
+  })
+  it('strips leading separators and dots too', () => {
+    expect(safeNamePart('../../etc/passwd')).toBe('etc_passwd')
+    expect(safeNamePart('__x__')).toBe('x')
+  })
+  it('a name with nothing usable in it comes back empty', () => {
+    expect(safeNamePart('   ')).toBe('')
+    expect(safeNamePart('()')).toBe('')
   })
 })

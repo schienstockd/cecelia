@@ -13,6 +13,7 @@
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
 import { computed } from 'vue'
 import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 const props = defineProps<{
@@ -35,6 +36,10 @@ const props = defineProps<{
   sizeZ?: number | null
   show3D?: boolean
   zSlice?: number | null
+  // multiscale levels the open image has. >1 makes the 3D detail control meaningful (and visible);
+  // omit it, or pass 0/1, and the row is exactly what it was.
+  levels?: number | null
+  detail3d?: number | null
 }>()
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
@@ -45,6 +50,7 @@ const emit = defineEmits<{
   (e: 'update:scaleBar', v: boolean): void
   (e: 'update:show3D', v: boolean): void
   (e: 'update:zSlice', v: number): void
+  (e: 'update:detail3d', v: number): void
 }>()
 
 const hasOverlays = computed(() => props.timestamp !== undefined || props.scaleBar !== undefined)
@@ -70,8 +76,24 @@ const overlays = computed<string[]>({
   },
 })
 
-const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
-  emit(`update:${axis}` as 'update:sizeX', parseMovieAxis((ev.target as HTMLInputElement).value))
+// The three FREE-TEXT fields commit on `@change` (blur / Enter), not per keystroke — parsing a
+// half-typed width would clamp "8" to the minimum before the user reaches "800". That makes them
+// uncontrolled while focused, and Vue force-patches an input's `value` on every element patch, so a
+// re-render mid-typing used to replace what was typed with the bound value: the reported "I enter a
+// name and it jumps back to the prefilled one", on both this surface and the batch panel.
+// `useFieldDraft` keeps the DOM and the binding in lockstep without changing when the value commits.
+const suffixDraft = useFieldDraft(() => props.suffix)
+const sizeXDraft  = useFieldDraft(() => props.sizeX)
+const sizeYDraft  = useFieldDraft(() => props.sizeY)
+
+// The 3D detail row: only when 3D is selected AND there is more than one level to choose between.
+const hasDetail = computed(() => props.show3D === true && (props.levels ?? 0) > 1)
+// what a level actually costs you, in the terms you can see: levels halve X and Y (never Z), so level
+// n is 1/2^n of the image's width. Said as a fraction rather than an index, because "2" means nothing.
+const detailLabel = (lv: number) => (lv <= 0 ? 'full' : `1/${2 ** lv}`)
+
+const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
+  emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
 </script>
 
 <template>
@@ -93,20 +115,20 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 
     <span class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Output size in pixels; blank = canvas size'">px</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeX ?? ''"
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
              :placeholder="movieAxisPlaceholder(canvasX)" v-tooltip.bottom="'Width; blank = canvas width'"
-             @change="onAxis('sizeX', $event)" />
+             @change="onAxis('sizeX', sizeXDraft)" />
       <span class="cc-muted cc-fs-2xs">×</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeY ?? ''"
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
              :placeholder="movieAxisPlaceholder(canvasY)" v-tooltip.bottom="'Height; blank = canvas height'"
-             @change="onAxis('sizeY', $event)" />
+             @change="onAxis('sizeY', sizeYDraft)" />
     </span>
 
     <span class="cc-row-group mo-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Added to the file name'">name</span>
-      <input type="text" class="cc-input-2xs mo-txt" :value="suffix" placeholder="suffix"
+      <input type="text" class="cc-input-2xs mo-txt" v-model="suffixDraft" placeholder="suffix"
              v-tooltip.bottom="'Added to the file name; keeps versions apart'"
-             @change="$emit('update:suffix', ($event.target as HTMLInputElement).value)" />
+             @change="$emit('update:suffix', suffixDraft)" />
     </span>
 
     <!-- How much of the z stack the movie shows. ONE switch for both the image and the mask layers:
@@ -124,6 +146,18 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
                @input="$emit('update:zSlice', ($event.target as HTMLInputElement).valueAsNumber)" />
         <span class="mo-val cc-readout">{{ zSlice ?? 0 }}</span>
       </template>
+    </span>
+
+    <!-- How much detail the 3D render uses. napari's own choice in 3D is the COARSEST pyramid level,
+         which erases a segmentation; full resolution costs memory on a big volume. Only the person
+         looking at the image can weigh that, so it is a control. -->
+    <span v-if="hasDetail" class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'3D render detail'">detail</span>
+      <input type="range" min="0" :max="(levels ?? 1) - 1" step="1" class="mo-range"
+             :value="detail3d ?? 0"
+             v-tooltip.bottom="'Full resolution is sharpest and heaviest; coarser is faster'"
+             @input="$emit('update:detail3d', ($event.target as HTMLInputElement).valueAsNumber)" />
+      <span class="mo-val cc-readout">{{ detailLabel(detail3d ?? 0) }}</span>
     </span>
 
     <span v-if="hasOverlays" class="cc-row-group mo-own-row">
