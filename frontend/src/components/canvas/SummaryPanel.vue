@@ -10,13 +10,14 @@
   Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, watchEffect, onMounted, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
+import { applyStatUnitState } from '../../utils/statUnitState'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -190,6 +191,11 @@ const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit
 const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
 const canStatUnit = computed(() => crossImage.value && hasMeasure.value
   && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
+// Persist the summary level EXPLICITLY (and clear it when the plot has none) instead of leaving each
+// reader to resolve `?? 'individual'`. This panel is the only place that can decide — `canStatUnit`
+// depends on live selections the saved board never records — and the pair is read by the plot request,
+// the board export and the Julia-side board read-back. See utils/statUnitState.ts.
+watchEffect(() => { applyStatUnitState(props.ui, canStatUnit.value) })
 // groupBy: split the measure by a categorical column (generic sub-axis, e.g. HMM state). '' = none.
 // Options are DISCOVERED from the actual obs columns of the selected image+segmentation (so we never
 // offer a column that doesn't exist — that produced an "ignoring unknown columns" warning and an

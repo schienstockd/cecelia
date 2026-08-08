@@ -218,11 +218,19 @@ def get_analysis_boards(project_uid: str) -> dict:
     """The Analysis boards this project already has, and WHAT EACH ONE SHOWS — read this before
     proposing a figure, so you extend the user's thinking instead of rebuilding it.
 
-    Returns `boards: [{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?, popType?, pops?,
-    title?}]}]`. `ref` is the plot-spec id (summary) or interactive view key; `pops` are the plotted
-    populations as `valueName/pop`. Empty slots are omitted, so `plots: []` means a board exists but is
-    blank. A SUMMARY, not the stored layout — grid geometry, styling and captions are the user's and are
-    not exposed.
+    Returns `boards: [{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?, popType?,
+    groupBy?, statUnit?, imageAgg?, pops?, highlight?, features?, title?}]}]`. `ref` is the plot-spec
+    id (summary) or interactive view key; `pops` are the plotted populations as `valueName/pop`. Empty
+    slots are omitted, so `plots: []` means a board exists but is blank. A SUMMARY, not the stored
+    layout — grid geometry and styling are the user's and are not exposed.
+
+    `statUnit` is the SUMMARY LEVEL, and two boards that differ only there are NOT duplicates:
+    "individual" plots every cell/track as its own point, "image" collapses each image to one
+    `imageAgg` (e.g. mean) value first — the same measures asked at two different levels, which is a
+    normal and deliberate pair to keep side by side. Read it before saying a board repeats another.
+    It is stored explicitly and removed where a plot has no summary level, so an ABSENT `statUnit`
+    means exactly that — not "left at the default". `imageAgg` ("mean"/"median") comes with it and
+    says how each image is collapsed.
 
     Use it to (a) not duplicate a board that already answers the question, (b) match the measures and
     populations the user already chose rather than inventing your own, and (c) name a new board so it

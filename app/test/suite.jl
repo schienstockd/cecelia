@@ -8453,31 +8453,86 @@ end
 
         mkpath(joinpath(proj.root, "settings"))
         bf = joinpath(proj.root, "settings", "analysisBoards.json")
+        # The slot shape below is COPIED from a real analysisBoards.json, not hand-authored to match
+        # the parser — note `title` inside the `vis` bag, which is where the frontend actually puts it.
+        # An invented fixture is what certified both bugs in this file's history.
+        _slot(unit) = Dict("kind" => "summary", "ref" => "track_measures",
+                           "state" => Dict("specId" => "track_measures", "measure" => "live.track.speed",
+                                           "chartType" => "boxplot", "popType" => "live",
+                                           "sel" => ["live::B/qc", "live::T/qc"],
+                                           "groupBy" => "live.cell.hmm.state.movement",
+                                           "statUnit" => unit, "imageAgg" => "mean",
+                                           "vis" => Dict("title" => "Speed", "logScale" => false)))
         write(bf, JSON3.write(Dict(
-            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "B vs T motility"),
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "Track measures"),
+                                      Dict("id" => 4, "name" => "Per image measures"),
                                       Dict("id" => 2, "name" => "Empty board")],
-                           "activeId" => 1, "nextId" => 3),
+                           "activeId" => 1, "nextId" => 5),
             "layouts" => Dict(
                 "tab:1" => Dict("cols" => 2, "rows" => 1, "contents" => [
-                    Dict("kind" => "summary", "ref" => "track_measures",
-                         "state" => Dict("specId" => "track_measures", "measure" => "live.track.speed",
-                                         "chartType" => "boxplot", "popType" => "live",
-                                         "sel" => ["live::B/qc", "live::T/qc"], "title" => "Speed")),
+                    _slot("individual"),
                     nothing,                                        # an empty slot is omitted
                 ]),
+                "tab:4" => Dict("cols" => 2, "rows" => 1, "contents" => [_slot("image")]),
                 # tab 2 has no layout entry at all — a real state (tab created, never filled)
             ))))
 
         b = board_summaries(proj)
-        @test length(b) == 2
-        @test b[1]["name"] == "B vs T motility" && b[1]["cols"] == 2 && b[1]["rows"] == 1
+        @test length(b) == 3
+        @test b[1]["name"] == "Track measures" && b[1]["cols"] == 2 && b[1]["rows"] == 1
         @test length(b[1]["plots"]) == 1                            # the nothing slot is dropped
         pl = b[1]["plots"][1]
         @test pl["kind"] == "summary" && pl["ref"] == "track_measures"
-        @test pl["measure"] == "live.track.speed" && pl["chart"] == "boxplot" && pl["title"] == "Speed"
+        @test pl["measure"] == "live.track.speed" && pl["chart"] == "boxplot"
+        @test pl["groupBy"] == "live.cell.hmm.state.movement"
         @test pl["pops"] == ["B/qc", "T/qc"]                        # tkeys decoded to valueName/pop
+        # the caption comes from state.vis.title — reading state.title returned nothing on every real
+        # board, and the old fixture put it there and asserted it worked
+        @test pl["title"] == "Speed"
+
+        # THE REGRESSION. These two boards differ ONLY in summary level, and the summary must say so:
+        # "Track measures" plots every track, "Per image measures" collapses each image to its mean.
+        # While `statUnit` was dropped they serialised identically, and the observer reported a
+        # duplicate board that wasn't one — a confident false claim about the user's own work.
+        pi = b[2]["plots"][1]
+        @test pl["statUnit"] == "individual" && pi["statUnit"] == "image"
+        @test pl != pi
+        @test pl["imageAgg"] == "mean" && pi["imageAgg"] == "mean"  # the pair travels together
         # a tab with no layout is reported, blank, rather than skipped
-        @test b[2]["name"] == "Empty board" && isempty(b[2]["plots"])
+        @test b[3]["name"] == "Empty board" && isempty(b[3]["plots"])
+
+        # highlighted pops + the clustered feature list define what a cluster plot SAYS
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "Clustering")]),
+            "layouts" => Dict("tab:1" => Dict("cols" => 1, "rows" => 1, "contents" => [
+                Dict("kind" => "summary", "ref" => "state_signature",
+                     "state" => Dict("specId" => "state_signature", "hl" => ["/Directed", "/Scanning"],
+                                     "features" => ["live.track.speed", "live.track.straightness"]))])))))
+        pl = board_summaries(proj)[1]["plots"][1]
+        @test pl["highlight"] == ["/Directed", "/Scanning"]
+        @test pl["features"] == ["live.track.speed", "live.track.straightness"]
+
+        # The pair is copied straight through — no default resolved, no guess about which slots have a
+        # summary level. The panel persists it explicitly and clears it when the plot has none
+        # (frontend/src/utils/statUnitState.ts), so a slot with no `statUnit` genuinely has no summary
+        # level. A board written before that (or an interactive view) simply reports neither.
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "no summary level"),
+                                      Dict("id" => 2, "name" => "image-level")]),
+            "layouts" => Dict(
+                "tab:1" => Dict("contents" => [
+                    Dict("kind" => "summary", "ref" => "track_measures",
+                         "state" => Dict("measure" => "live.track.speed")),      # neither key present
+                    Dict("kind" => "interactive", "ref" => "umap", "state" => Dict())]),
+                "tab:2" => Dict("contents" => [
+                    Dict("kind" => "summary", "ref" => "track_measures",
+                         "state" => Dict("measure" => "live.track.speed",
+                                         "statUnit" => "image", "imageAgg" => "median"))])))))
+        bb = board_summaries(proj)
+        @test !haskey(bb[1]["plots"][1], "statUnit") && !haskey(bb[1]["plots"][1], "imageAgg")
+        @test !haskey(bb[1]["plots"][2], "statUnit")     # nothing invented for an interactive view
+        @test bb[2]["plots"][1]["statUnit"] == "image" && bb[2]["plots"][1]["imageAgg"] == "median"
+        @test bb[1]["plots"][1] != bb[2]["plots"][1]     # distinguishable, which is the point
 
         # degradation: a slot with no state, and an unparseable file
         write(bf, JSON3.write(Dict(

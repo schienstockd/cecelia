@@ -119,7 +119,8 @@ returns `boards: []` — it cannot read back what exists.
     group once excluded ones are dropped. A group of one is not a comparison.
 - **Board read-back — DONE.** `board_summaries` (`app/src/ai/lineage.jl`) → `GET /api/analysis/boards`
   → `get_analysis_boards`. Per board: `{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?,
-  popType?, pops?, title?}]}`, `tkey`s decoded to `valueName/pop`, empty slots omitted. A SUMMARY, never
+  popType?, groupBy?, statUnit?, imageAgg?, pops?, highlight?, features?, title?}]}`, `tkey`s decoded
+  to `valueName/pop`, empty slots omitted. A SUMMARY, never
   the stored geometry — and deliberately the **same vocabulary the write side will accept** (Decision 2),
   so read and write describe a board the same way. `_board_tabs` stays the cheap name-only view lineage
   embeds; its "plot detail is not exposed here" note now points here. Every field is optional by
@@ -127,6 +128,30 @@ returns `boards: []` — it cannot read back what exists.
 
 **Checkpoint:** ask Claude "what would you plot for 4kS67f" with no write tool; judge the answer. **If
 the suggestions are not good here, stop — the rest of the plan only makes bad plots faster.**
+
+**Run 2026-08-08 — PASSED, and it found a Phase 0 defect.** Every checkable claim verified against the
+data: it refused to compare by `Mouse` after sizing the groups (1/1/3/2, no condition attribute) rather
+than producing a grouping the design does not support; it caught that `B` on `M3c` decoded into 2 states
+where every other image has 3; it noticed `movement`/`test`/`here`/`there` are byte-identical runs, so
+the `M2b` `largestClusterFrac` warning is one outlier counted four times. Its top suggestion was not a
+plot but a **precondition** — HMM state *indices* are per-fit, so a board grouping by
+`live.cell.hmm.state.movement` and pooling across images may be averaging different behaviours under one
+label (`T` is 74% state 1 on `M2b` vs 3.6–13% on all six peers). That is a correctness problem with an
+*existing* board that no validator in Phase 2 would ever catch — consistent with "validation cannot
+check intent" under Risks.
+
+**The one thing it got wrong was the tool's fault, and is fixed here.** It reported "Track measures" and
+"Per image measures" as accidental duplicates. They are not: they are the same ten plots at two summary
+levels (`statUnit` `individual` vs `image`), and `_board_slot` dropped `statUnit`, so the two boards
+serialised identically. A summary that cannot distinguish two boards is worse than a thin one — it
+manufactures a confident false claim about the user's own work. Fixed by reporting `statUnit`,
+`imageAgg`, `hl` and `features`, and by reading the caption from `state.vis.title` (`state.title`, which
+the parser had been reading, is a key the frontend has never written — the *third* instance in this file
+of a fixture invented to match the parser; the fixture is now copied from a real board).
+
+**What this says about the phases.** The value at the checkpoint came from the READ tools plus
+reasoning, not from anything the write path adds. Phases 1–3 make a board faster to render; they do not
+make the suggestions better. Worth keeping in view when costing them.
 
 ### Phase 1 — make the boards document safe to write concurrently
 - Add `version` to `analysisBoards.json`; `POST /api/projects/boards` rejects a stale version with 409.
@@ -147,8 +172,18 @@ bug fix, independent of everything below.
   { name: "B vs T motility",
     template: "2x2",
     plots: [ {plot: "track_measures", measure: "live.track.speed", chart: "boxplot",
-              pops: ["B/qc", "T/qc"], compare: "pooled"}, … ] }
+              pops: ["B/qc", "T/qc"], statUnit: "image", imageAgg: "mean"}, … ] }
   ```
+  **`statUnit` is a first-class field, not part of a `compare` blob.** An earlier sketch here wrote
+  `compare: "pooled"`, which conflates two orthogonal choices: *which images go in* (scope) and *what
+  one point represents* (summary level). They are set independently in the GUI and stored
+  independently, and the read side now reports them separately — Decision 2 says the two sides share
+  one vocabulary, so the write side must accept the same shape.
+
+  This is not a detail. The checkpoint's own advice for thin `n` — pool across the set, but plot one
+  point per image — *is* `statUnit: "image"`. Without the field, the spec cannot express the single
+  most useful knob for honest small-`n` plotting, and the tool could not author the user's existing
+  "Per image measures" board at all.
 - Expander → `LayoutEntry` (grid areas, slot state, `tkey` selections, `vis` defaults).
 - **Validator** against live project state: known `specId`, chart offered by that spec, populations that
   exist, measures present. A bad `tkey` currently renders an empty plot with **no error** — that is the
