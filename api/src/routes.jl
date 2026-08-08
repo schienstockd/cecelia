@@ -829,13 +829,11 @@ function api_projects_load(body_bytes::Vector{UInt8})
         end
     end
 
-    boards = nothing
-    boards_file = joinpath(_settings_dir_for_project(uid), "analysisBoards.json")
-    if isfile(boards_file)
-        try; boards = JSON3.read(read(boards_file, String)); catch e
-            @warn "Could not read analysis boards" uid exception=e
-        end
-    end
+    # Normalised through the one reader (app/src/analysis_boards.jl) so the client always sees the
+    # current shape and, crucially, the `version` its next autosave has to echo back. `null` when the
+    # project has never saved a board.
+    boards_doc = read_boards_doc(boards_doc_path(proj_dir))
+    boards = boards_doc.present ? boards_doc_payload(boards_doc) : nothing
 
     # Per-object module-page canvas layouts, stored WITH each object at 1/{uid}/moduleCanvases.json
     # (like ccid.json / labelProps — locality + auto-cleanup on delete). Reassemble the per-canvas-key
@@ -878,15 +876,96 @@ function api_projects_boards(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     boards = get(body, :boards, nothing)
-    if boards !== nothing
-        try
-            settings = _settings_dir_for_project(uid); mkpath(settings)
-            write_json_atomic(joinpath(settings, "analysisBoards.json"), boards)
-        catch e
-            return 500, JSON3.write((; error=sprint(showerror, e)))
+    boards === nothing && return 200, JSON3.write((; ok=true))
+    path = boards_doc_path(joinpath(projects_dir(), uid))
+    try
+        current  = read_boards_doc(path)
+        incoming = normalise_boards(boards)
+        # OPTIMISTIC CONCURRENCY. The client echoes the version it last read; if the document has moved
+        # on since (another browser tab, or the MCP add-a-board route later), reject rather than let the
+        # later writer win silently — which is what two tabs open on one project used to do to each
+        # other. The client reloads from the returned document and retries. A client that sends no
+        # version at all is an OLD frontend against a new server: let it through rather than wedge the
+        # autosave, since that is exactly the pairing a mid-session reload produces.
+        want = get(body, :version, nothing)
+        sent = want isa Integer ? Int(want) : want isa Real ? Int(round(want)) : -1
+        if want !== nothing && current.present && current.readable && sent != current.version
+            return 409, JSON3.write((; error="Boards changed since you loaded them",
+                                       code="stale_version", boards=boards_doc_payload(current)))
         end
+        version = write_boards_doc(path, incoming; version = current.version + 1)
+        # Tell every OTHER open client to pick this up. The writer identifies its own echo by `clientId`,
+        # NOT by version: this broadcast goes out before the response does, so the writer still holds the
+        # pre-write version when its own frame arrives — a version test made every autosave reload and
+        # re-render the board that had just been saved. Absent for a non-browser writer (the MCP
+        # add-a-board route), which is correct: every browser should pick that one up.
+        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid,
+                                      "version" => version,
+                                      "clientId" => String(get(body, :clientId, ""))))
+        return 200, JSON3.write((; ok=true, version))
+    catch e
+        return 500, JSON3.write((; error=sprint(showerror, e)))
     end
-    200, JSON3.write((; ok=true))
+end
+
+# POST /api/boards/add  { projectUid, name, plots:[…], template? }
+# CREATE-ONLY: adds ONE board and can never touch an existing one — the write surface behind the MCP
+# `add_analysis_board` tool (docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 3). Deliberately distinct from
+# the autosave above, exactly as /api/chains/create is distinct from /api/chains/save: allow-listing the
+# autosave would have let a caller replace every board in the project with one request, and the server
+# could not have validated a single field of it.
+#
+# 409 on a duplicate name, 422 on a spec the project cannot plot (unknown plot id, a chart that spec
+# doesn't offer, a population that doesn't exist) — rejected BEFORE writing, because a bad `tkey`
+# renders an empty panel with no error at all. The expansion and every check live in the package
+# (`expand_board`), so they are headless-testable and identical from the REPL.
+function api_boards_add(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    proj = try load_project(uid) catch e
+        return 404, JSON3.write((; error="Could not load project: $(sprint(showerror, e))"))
+    end
+    name = String(get(body, :name, ""))
+    plots = get(body, :plots, nothing)
+    template = String(get(body, :template, ""))
+    path = boards_doc_path(joinpath(projects_dir(), uid))
+    try
+        doc = read_boards_doc(path)
+        doc.present && !doc.readable &&
+            return 409, JSON3.write((; error="The project's boards file could not be read; not adding to it"))
+        # Name collision is 409 (a conflict with existing state) rather than 422 (a bad spec), and is
+        # checked before expanding so the caller is told the cheap thing first. `append_board` asserts
+        # it again — it is the invariant's owner, and the REPL reaches it without this route.
+        if any(t -> t isa AbstractDict &&
+                    strip(string(get(t, :name, get(t, "name", "")))) == strip(name), doc.tabs)
+            return 409, JSON3.write((; error="A board named \"$(strip(name))\" already exists in this project",
+                                       code="duplicate_board_name"))
+        end
+        layout = expand_board(proj, name, plots; template = template)
+        updated, id = append_board(doc, name, layout)
+        version = write_boards_doc(path, updated; version = doc.version + 1)
+        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
+        return 200, JSON3.write((; ok=true, tabId=id, name=strip(name), version,
+                                   slots=length(layout["contents"])))
+    catch e
+        e isa BoardSpecError && return 422, JSON3.write((; error=e.msg, code="invalid_board_spec"))
+        return 500, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
+# GET /api/projects/boards?projectUid — the boards document on its own, with its `version`.
+# The cheap read behind both recovery paths: a 409'd autosave reloading before it retries, and a client
+# reacting to the `boards:changed` broadcast. Project OPEN still gets boards inline in
+# api_projects_load — this exists so neither of those has to re-run a whole project load.
+function api_projects_boards_get(req::HTTP.Request)
+    uid = String(get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    200, JSON3.write((; boards=boards_doc_payload(read_boards_doc(boards_doc_path(joinpath(projects_dir(), uid))))))
 end
 
 # POST /api/projects/animations  { projectUid, animations }

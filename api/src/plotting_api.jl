@@ -6,8 +6,6 @@
 # are PACKAGE JSON under app/src/plotDefinitions, served like task specs (Vue keeps no copy).
 # Reuses `_gating_image` / `_resolve_vn` / `_gerr` from gating_api.jl (same include scope).
 
-const _PLOT_SPECS_ROOT = joinpath(@__DIR__, "..", "..", "app", "src", "plotDefinitions")
-
 # JSON has no NaN/Inf literal, so JSON3.write throws on them. Aggregates legitimately produce
 # non-finite values (mean of an empty/all-NaN group, sd/sem/ci95 when n<2, a measure like
 # `aspect_ratio` = minor/major that's NaN when major=0). Recursively map every non-finite float to
@@ -81,18 +79,14 @@ function api_plot_definitions(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     want = get(q, "module", "")
     specs = Any[]
-    isdir(_PLOT_SPECS_ROOT) || return 200, JSON3.write(specs)
-    for f in readdir(_PLOT_SPECS_ROOT; join=true)
-        endswith(f, ".json") || continue
-        try
-            spec = JSON3.read(read(f, String), Dict{String,Any})
-            mods = get(spec, "modules", nothing)
-            hit = isempty(want) || string(get(spec, "module", "")) == want ||
-                  (mods isa AbstractDict && haskey(mods, want))
-            hit && push!(specs, _narrow_spec_poptypes(spec, want))
-        catch e
-            @warn "Skipping malformed plot spec" path=f exception=e
-        end
+    # `plot_specs()` (app/src/analysis_board_spec.jl) is the ONE reader of the registry, so the board
+    # expander validates against exactly the specs this route serves. Narrowing stays here — it is a
+    # per-request view, not a property of the registry.
+    for spec in plot_specs()
+        mods = get(spec, "modules", nothing)
+        hit = isempty(want) || string(get(spec, "module", "")) == want ||
+              (mods isa AbstractDict && haskey(mods, want))
+        hit && push!(specs, _narrow_spec_poptypes(spec, want))
     end
     200, JSON3.write(specs)
 end

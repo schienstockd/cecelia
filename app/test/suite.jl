@@ -883,8 +883,10 @@ end
     @test setdiff(named_jl, named_ts) == Set(["poll_observations"])
     # In the CHAT HAND-OFF only — orientation + authoring aids for a session the user starts fresh;
     # the in-app agent is already oriented and does not browse notebooks.
+    # (`get_available_plots` left this list when add_analysis_board landed — the in-app observer needs
+    # the spec ids and each spec's chart types to author a board, so both prompts now name it.)
     @test setdiff(named_ts, named_jl) ==
-        Set(["get_available_plots", "get_session_briefing", "list_notebooks", "set_notebook_description"])
+        Set(["get_session_briefing", "list_notebooks", "set_notebook_description"])
     # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
     # prompt, plus the observer's own bookkeeping.
     @test setdiff(tools, union(named_jl, named_ts)) ==
@@ -892,7 +894,8 @@ end
              "set_observer_active"])
     # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
     # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
-    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain")
+    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
+              "add_analysis_board")
         @test w in named_jl && w in named_ts
     end
 end
@@ -8444,6 +8447,167 @@ end
         delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
     end
 
+    @testset "board spec expander (MCP board authoring, Phase 2)" begin
+        # The expander turns a SEMANTIC spec into a LayoutEntry and refuses anything the project cannot
+        # plot. The failure it closes: a bad `tkey` renders an EMPTY panel with NO error, so a board can
+        # look authored and show nothing. See docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 2.
+        specs = plot_spec_index()
+        @test haskey(specs, "track_measures")            # anti-vacuity: the registry actually loaded
+        @test length(plot_specs()) >= 5
+
+        # templates: "<cols>x<rows>" only — the named comic plates are a frontend catalogue and stay
+        # GUI-only rather than being duplicated server-side
+        @test board_template_grid("2x2", 4) == (2, 2)
+        @test board_template_grid("3x2", 6) == (3, 2)
+        @test board_template_grid("", 4) == (2, 2)       # empty → smallest near-square grid that fits
+        @test board_template_grid("", 3) == (2, 2)
+        @test board_template_grid("", 1) == (1, 1)
+        @test_throws BoardSpecError board_template_grid("comic-banner", 4)
+        @test_throws BoardSpecError board_template_grid("9x9", 4)
+        # row-major grid areas, the uniform case of plots/layoutTemplates.ts
+        @test board_slot_areas(2, 2) == ["1 / 1 / 2 / 2", "1 / 2 / 2 / 3", "2 / 1 / 3 / 2", "2 / 2 / 3 / 3"]
+
+        proj = CciaProject(; uid = "bsp", name = "spec"); proj.root = mktempdir()
+        ok(plots; kw...) = expand_board(proj, "B vs T", plots; kw...)
+
+        # A project with no populations still expands a board that references none — pops are optional
+        lay = ok([Dict("plot" => "track_measures", "measure" => "live.track.speed", "chart" => "boxplot")])
+        @test lay["cols"] == 1 && lay["rows"] == 1
+        @test length(lay["contents"]) == 1 && lay["contents"][1] !== nothing
+        c = lay["contents"][1]
+        @test c["kind"] == "summary" && c["ref"] == "track_measures"
+        @test c["state"]["chartType"] == "boxplot" && c["state"]["measure"] == "live.track.speed"
+        @test !haskey(c["state"], "vis")        # the panel owns its look — defaultVis() is NOT copied here
+        @test !haskey(c["state"], "statUnit")   # nothing said → nothing guessed; the panel fills it
+
+        # unfilled slots stay empty, and the board keeps the requested shape
+        lay4 = ok([Dict("plot" => "track_measures"), Dict("plot" => "track_measures")]; template = "2x2")
+        @test length(lay4["contents"]) == 4
+        @test lay4["contents"][3] === nothing && lay4["contents"][4] === nothing
+        @test lay4["activeIndex"] == 0
+        # no pops requested → nothing to point the board at, so no scope is forced
+        @test lay4["shared"] == Dict{String,Any}()
+
+        # …but when we DO write per-slot `sel`, the board must be told to read it. `shared.scope`
+        # defaults to "global" in useSummaryData, and panelSel then takes the board-level `shared.sel`
+        # and ignores each slot's own — so an authored board rendered with NO series until the user
+        # picked populations by hand. Regression test for exactly that.
+        withpops = expand_board(proj, "sel", [Dict("plot" => "track_measures", "pops" => ["B/qc"])];
+                                pops = Dict("B/qc" => "flow"))
+        @test withpops["shared"]["scope"] == "local"
+        # The SPEC's own first popType wins over the family the pop happens to be stored under: a flow
+        # gate is legitimately usable as a `live` pop, and track_measures fetches live — which is why
+        # the project's real boards store `live::B/qc/_tracked`. The picker's family is only the
+        # fallback for a spec that offers no popTypes at all.
+        @test withpops["contents"][1]["state"]["sel"] == ["live::B/qc"]
+        # and nothing else is invented in the shared bag — the rest are frontend defaults
+        @test collect(keys(withpops["shared"])) == ["scope"]
+
+        # statUnit and imageAgg travel together (utils/statUnitState.ts)
+        su = ok([Dict("plot" => "track_measures", "statUnit" => "image")])["contents"][1]["state"]
+        @test su["statUnit"] == "image" && su["imageAgg"] == "mean"
+        @test ok([Dict("plot" => "track_measures", "statUnit" => "image",
+                       "imageAgg" => "median")])["contents"][1]["state"]["imageAgg"] == "median"
+
+        # ── the rejections. Every message must name the offending value AND what was available, because
+        # the caller is an agent that can correct itself if told the options.
+        @test_throws BoardSpecError ok([])                                    # a board needs a plot
+        @test_throws BoardSpecError expand_board(proj, "  ", [Dict("plot" => "track_measures")])
+        @test_throws BoardSpecError ok([Dict("measure" => "x")])               # no `plot`
+        @test_throws BoardSpecError ok([Dict("plot" => "no_such_plot")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "chart" => "sankey")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "measure" => "live.track.nope")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "statUnit" => "per-cell")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "statUnit" => "image",
+                                             "imageAgg" => "mode")])
+        # a population that does not exist would render an empty panel in silence — this is the one
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "pops" => ["Ghost/qc"])])
+
+        # ── DERIVED populations must be accepted. `/_tracked` is injected by the picker at query time
+        # and is NOT stored in the gating sidecar, so an earlier version of this validator — which
+        # walked the persisted populations — rejected "B/qc/_tracked", the population the real project's
+        # own boards plot. board_spec_populations now goes through `plot_population_groups`, the same
+        # enumerator that fills the picker, so the validator accepts exactly what the GUI offers.
+        avail = Dict("B/qc/_tracked" => "live", "T/qc/_tracked" => "live", "B/qc" => "flow")
+        d = expand_board(proj, "derived", [Dict("plot" => "track_measures",
+                                                "pops" => ["B/qc/_tracked", "T/qc/_tracked"])];
+                         pops = avail)["contents"][1]
+        @test d["state"]["sel"] == ["live::B/qc/_tracked", "live::T/qc/_tracked"]
+        @test d["state"]["popType"] == "live"        # taken from the picker, not guessed
+        # …and the tkeys the expander writes must decode back to the pops it was given — read and write
+        # describe a board the same way (Decision 2)
+        @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
+              ["B/qc/_tracked", "T/qc/_tracked"]
+        # an explicit popType overrides the picker's
+        @test expand_board(proj, "pt", [Dict("plot" => "track_measures", "popType" => "track",
+                                             "pops" => ["B/qc/_tracked"])];
+                           pops = avail)["contents"][1]["state"]["sel"] == ["track::B/qc/_tracked"]
+        # more plots than slots
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
+
+        e = try ok([Dict("plot" => "no_such_plot")]) catch err; err end
+        @test e isa BoardSpecError && occursin("no_such_plot", e.msg) && occursin("track_measures", e.msg)
+
+        # ── append_board: ADD-ONLY (Decision 1) ────────────────────────────────────────────────────
+        doc = BoardsDoc(3, Any[Dict("id" => 1, "name" => "Track measures")], 1, 1,
+                        Dict{String,Any}("tab:1" => Dict("cols" => 1)), true, true)
+        doc2, id = append_board(doc, "B vs T", lay)
+        @test id == 2 && length(doc2.tabs) == 2
+        @test doc2.tabs[1] == doc.tabs[1]                  # the existing board is untouched
+        @test haskey(doc2.layouts, "tab:1") && haskey(doc2.layouts, "tab:2")
+        @test doc2.next_id == 2 && doc2.version == doc.version   # version is stamped by the writer
+        # the user's ACTIVE tab is not stolen — this writes into a project they may have open
+        @test doc2.active_id == doc.active_id
+        @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
+        @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
+    end
+
+    @testset "boards document — one reader, both shapes, versioned writes" begin
+        # analysisBoards.json has had two shapes. The tab ARRAY used to sit at `tabs.tabs` (a TabGroup
+        # nested under `tabs`) — the collision that made a second parser read `b.tabs` as the array and
+        # report NO boards on every project that had them. Both are read; only the flat one is written.
+        dir = mktempdir()
+        p = boards_doc_path(dir)
+        @test endswith(p, joinpath("settings", "analysisBoards.json"))
+
+        d0 = read_boards_doc(p)                                   # no file at all
+        @test !d0.present && d0.readable && isempty(d0.tabs) && d0.version == 0
+
+        mkpath(dirname(p))
+        legacy = Dict("tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "A")], "activeId" => 1, "nextId" => 2),
+                      "layouts" => Dict("tab:1" => Dict("cols" => 2, "rows" => 1)))
+        write(p, JSON3.write(legacy))
+        d = read_boards_doc(p)
+        @test d.present && d.readable
+        @test length(d.tabs) == 1 && string(d.tabs[1]["name"]) == "A"
+        @test d.active_id == 1 && d.next_id == 2
+        @test d.version == 0                                      # no version key → 0, not an error
+        @test haskey(d.layouts, "tab:1")                          # String keys, not JSON3 Symbols
+
+        # writing converts to the flat shape and stamps the version
+        write_boards_doc(p, d; version = d.version + 1)
+        raw = JSON3.read(read(p, String))
+        @test raw[:version] == 1
+        @test raw[:tabs] isa AbstractVector                        # flat: the array is at the top level
+        @test raw[:activeId] == 1 && raw[:nextId] == 2
+        d2 = read_boards_doc(p)
+        @test d2.version == 1 && length(d2.tabs) == 1 && d2.active_id == 1
+
+        # a file that exists but cannot be parsed is NOT "no boards" — that silence hid the last bug
+        write(p, "{not json")
+        d3 = @test_logs (:warn,) match_mode=:any read_boards_doc(p)
+        @test d3.present && !d3.readable
+
+        # normalise_boards is pure, so the autosave route runs an incoming payload through exactly the
+        # same reader as a load from disk
+        n = normalise_boards(Dict("version" => 7, "tabs" => [Dict("id" => 2, "name" => "B")],
+                                  "activeId" => 2, "nextId" => 3, "layouts" => Dict()))
+        @test n.version == 7 && n.active_id == 2 && length(n.tabs) == 1
+        @test normalise_boards("not a document").readable == false
+        # the payload the client gets always carries the version its next write must echo
+        @test boards_doc_payload(n)["version"] == 7
+    end
+
     @testset "board read-back summarises what a board plots" begin
         # The boards file is written by the FRONTEND, so every field here is optional by construction:
         # a board from an older schema must degrade to fewer fields, never throw.
@@ -8453,31 +8617,86 @@ end
 
         mkpath(joinpath(proj.root, "settings"))
         bf = joinpath(proj.root, "settings", "analysisBoards.json")
+        # The slot shape below is COPIED from a real analysisBoards.json, not hand-authored to match
+        # the parser — note `title` inside the `vis` bag, which is where the frontend actually puts it.
+        # An invented fixture is what certified both bugs in this file's history.
+        _slot(unit) = Dict("kind" => "summary", "ref" => "track_measures",
+                           "state" => Dict("specId" => "track_measures", "measure" => "live.track.speed",
+                                           "chartType" => "boxplot", "popType" => "live",
+                                           "sel" => ["live::B/qc", "live::T/qc"],
+                                           "groupBy" => "live.cell.hmm.state.movement",
+                                           "statUnit" => unit, "imageAgg" => "mean",
+                                           "vis" => Dict("title" => "Speed", "logScale" => false)))
         write(bf, JSON3.write(Dict(
-            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "B vs T motility"),
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "Track measures"),
+                                      Dict("id" => 4, "name" => "Per image measures"),
                                       Dict("id" => 2, "name" => "Empty board")],
-                           "activeId" => 1, "nextId" => 3),
+                           "activeId" => 1, "nextId" => 5),
             "layouts" => Dict(
                 "tab:1" => Dict("cols" => 2, "rows" => 1, "contents" => [
-                    Dict("kind" => "summary", "ref" => "track_measures",
-                         "state" => Dict("specId" => "track_measures", "measure" => "live.track.speed",
-                                         "chartType" => "boxplot", "popType" => "live",
-                                         "sel" => ["live::B/qc", "live::T/qc"], "title" => "Speed")),
+                    _slot("individual"),
                     nothing,                                        # an empty slot is omitted
                 ]),
+                "tab:4" => Dict("cols" => 2, "rows" => 1, "contents" => [_slot("image")]),
                 # tab 2 has no layout entry at all — a real state (tab created, never filled)
             ))))
 
         b = board_summaries(proj)
-        @test length(b) == 2
-        @test b[1]["name"] == "B vs T motility" && b[1]["cols"] == 2 && b[1]["rows"] == 1
+        @test length(b) == 3
+        @test b[1]["name"] == "Track measures" && b[1]["cols"] == 2 && b[1]["rows"] == 1
         @test length(b[1]["plots"]) == 1                            # the nothing slot is dropped
         pl = b[1]["plots"][1]
         @test pl["kind"] == "summary" && pl["ref"] == "track_measures"
-        @test pl["measure"] == "live.track.speed" && pl["chart"] == "boxplot" && pl["title"] == "Speed"
+        @test pl["measure"] == "live.track.speed" && pl["chart"] == "boxplot"
+        @test pl["groupBy"] == "live.cell.hmm.state.movement"
         @test pl["pops"] == ["B/qc", "T/qc"]                        # tkeys decoded to valueName/pop
+        # the caption comes from state.vis.title — reading state.title returned nothing on every real
+        # board, and the old fixture put it there and asserted it worked
+        @test pl["title"] == "Speed"
+
+        # THE REGRESSION. These two boards differ ONLY in summary level, and the summary must say so:
+        # "Track measures" plots every track, "Per image measures" collapses each image to its mean.
+        # While `statUnit` was dropped they serialised identically, and the observer reported a
+        # duplicate board that wasn't one — a confident false claim about the user's own work.
+        pi = b[2]["plots"][1]
+        @test pl["statUnit"] == "individual" && pi["statUnit"] == "image"
+        @test pl != pi
+        @test pl["imageAgg"] == "mean" && pi["imageAgg"] == "mean"  # the pair travels together
         # a tab with no layout is reported, blank, rather than skipped
-        @test b[2]["name"] == "Empty board" && isempty(b[2]["plots"])
+        @test b[3]["name"] == "Empty board" && isempty(b[3]["plots"])
+
+        # highlighted pops + the clustered feature list define what a cluster plot SAYS
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "Clustering")]),
+            "layouts" => Dict("tab:1" => Dict("cols" => 1, "rows" => 1, "contents" => [
+                Dict("kind" => "summary", "ref" => "state_signature",
+                     "state" => Dict("specId" => "state_signature", "hl" => ["/Directed", "/Scanning"],
+                                     "features" => ["live.track.speed", "live.track.straightness"]))])))))
+        pl = board_summaries(proj)[1]["plots"][1]
+        @test pl["highlight"] == ["/Directed", "/Scanning"]
+        @test pl["features"] == ["live.track.speed", "live.track.straightness"]
+
+        # The pair is copied straight through — no default resolved, no guess about which slots have a
+        # summary level. The panel persists it explicitly and clears it when the plot has none
+        # (frontend/src/utils/statUnitState.ts), so a slot with no `statUnit` genuinely has no summary
+        # level. A board written before that (or an interactive view) simply reports neither.
+        write(bf, JSON3.write(Dict(
+            "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "no summary level"),
+                                      Dict("id" => 2, "name" => "image-level")]),
+            "layouts" => Dict(
+                "tab:1" => Dict("contents" => [
+                    Dict("kind" => "summary", "ref" => "track_measures",
+                         "state" => Dict("measure" => "live.track.speed")),      # neither key present
+                    Dict("kind" => "interactive", "ref" => "umap", "state" => Dict())]),
+                "tab:2" => Dict("contents" => [
+                    Dict("kind" => "summary", "ref" => "track_measures",
+                         "state" => Dict("measure" => "live.track.speed",
+                                         "statUnit" => "image", "imageAgg" => "median"))])))))
+        bb = board_summaries(proj)
+        @test !haskey(bb[1]["plots"][1], "statUnit") && !haskey(bb[1]["plots"][1], "imageAgg")
+        @test !haskey(bb[1]["plots"][2], "statUnit")     # nothing invented for an interactive view
+        @test bb[2]["plots"][1]["statUnit"] == "image" && bb[2]["plots"][1]["imageAgg"] == "median"
+        @test bb[1]["plots"][1] != bb[2]["plots"][1]     # distinguishable, which is the point
 
         # degradation: a slot with no state, and an unparseable file
         write(bf, JSON3.write(Dict(
@@ -8489,10 +8708,17 @@ end
         write(bf, "{not json")
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
 
+        # A top-level `tabs` ARRAY is the CURRENT shape (it was the legacy `tabs.tabs` nesting that this
+        # reader used to choke on), so it must read as a real board rather than warn.
+        write(bf, JSON3.write(Dict("version" => 4, "tabs" => [Dict("id" => 9, "name" => "flat")],
+                                   "activeId" => 9, "nextId" => 10, "layouts" => Dict())))
+        fb = board_summaries(proj)
+        @test length(fb) == 1 && fb[1]["name"] == "flat" && isempty(fb[1]["plots"])
+
         # A present-but-unreadable file must WARN, not quietly read as "no boards" — that silence is
         # what hid the `_board_tabs` bug (it read `b.tabs` as the array, a shape the frontend never
         # writes, and reported none on every real project for as long as it existed).
-        write(bf, JSON3.write(Dict("tabs" => [Dict("name" => "bare-array-is-not-the-shape")])))
+        write(bf, JSON3.write([1, 2, 3]))          # valid JSON, not a document
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
     end
 

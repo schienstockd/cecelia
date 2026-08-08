@@ -127,20 +127,47 @@ _nonempty(x) = x !== nothing && !(x isa AbstractString && isempty(x))
 
 # One filled slot → what it plots. `kind` "summary" carries a plot-spec id in `ref` and its choices in
 # `state` (measure / chartType / popType / the eye-selected series); "interactive" carries a view key.
+#
+# `statUnit` is the SUMMARY LEVEL and is never cosmetic: "individual" makes every cell/track a point,
+# "image" collapses each image to one `imageAgg` value first. Two boards that agree on every other
+# field are then still different figures — dropping it made a real project's "Track measures" and
+# "Per image measures" serialise identically, and the observer duly reported a duplicate that wasn't
+# one. A summary that cannot distinguish two boards is worse than a thin summary: it produces a
+# confident false claim about the user's own work.
 function _board_slot(i::Int, c)
     c isa AbstractDict || return nothing
     st = get(c, :state, Dict{Symbol,Any}())
     st isa AbstractDict || (st = Dict{Symbol,Any}())
+    vis = get(st, :vis, nothing)
+    vis isa AbstractDict || (vis = Dict{Symbol,Any}())
     sel = get(st, :sel, nothing)
     pops = sel isa AbstractVector ?
         [let t = _parse_tkey(string(k)); "$(t.valueName)$(t.pop)" end for k in sel] : String[]
     out = Dict{String,Any}("slot" => i, "kind" => string(get(c, :kind, "")), "ref" => string(get(c, :ref, "")))
-    for (key, field) in ("title" => :title, "measure" => :measure, "chart" => :chartType,
-                         "popType" => :popType, "groupBy" => :groupBy)
+    # `statUnit`/`imageAgg` are copied straight through, with no default filled in and no guess about
+    # which slots have a summary level. Resolving absent → "individual" here would copy the panel's
+    # `statUnit ?? 'individual'` into a second language, and deciding WHERE to apply it would copy
+    # `canStatUnit` (crossImage && hasMeasure && chartType ∈ …) as well — a predicate that depends on
+    # live panel state this file does not contain, so the copy could not even be correct. The panel
+    # persists the resolved pair and clears it when the level is not settable
+    # (frontend/src/utils/statUnitState.ts), which makes presence here meaningful on its own.
+    for (key, field) in ("measure" => :measure, "chart" => :chartType, "popType" => :popType,
+                         "groupBy" => :groupBy, "statUnit" => :statUnit, "imageAgg" => :imageAgg)
         v = get(st, field, nothing)
         _nonempty(v) && (out[key] = string(v))
     end
+    # The caption lives in the `vis` bag, NOT on `state`. Reading `state.title` returned nothing on
+    # every real board ever written, while the hand-authored fixture — which put it there — asserted
+    # it worked. Same failure as the `_board_tabs` bug above: a fixture invented to match the parser.
+    t = get(vis, :title, nothing)
+    _nonempty(t) && (out["title"] = string(t))
     isempty(pops) || (out["pops"] = pops)
+    # Highlighted pops and the clustered feature list change what the figure SAYS, so they belong in a
+    # summary of it: a state-signature plot is defined by its features, not by its spec id.
+    for (key, field) in ("highlight" => :hl, "features" => :features)
+        v = get(st, field, nothing)
+        v isa AbstractVector && !isempty(v) && (out[key] = String[string(x) for x in v])
+    end
     out
 end
 
@@ -148,32 +175,32 @@ end
     board_summaries(proj) -> Vector
 
 Every Analysis board in the project and what it shows: `[{name, cols, rows, plots: [{slot, kind, ref,
-measure?, chart?, popType?, pops?, title?}]}]`. Empty slots are omitted. Read-only, summary-level —
-never the stored layout geometry. Returns `[]` when the project has no boards.
+measure?, chart?, popType?, groupBy?, statUnit?, imageAgg?, pops?, highlight?, features?, title?}]}]`.
+Empty slots are omitted. Read-only, summary-level — never the stored layout geometry. Returns `[]`
+when the project has no boards.
+
+`statUnit` ("individual" | "image") is the summary level and is load-bearing: two boards can share
+every other field and still be different figures. The panel persists it explicitly and removes it when
+the plot has no summary level, so presence is meaningful on its own and nothing is resolved here — a
+slot with no `statUnit` has no summary level (or predates the field). See `_board_slot`.
 """
 function board_summaries(proj::CciaProject)
-    p = joinpath(proj.root, "settings", "analysisBoards.json")
-    isfile(p) || return Any[]
-    b = try JSON3.read(read(p, String)) catch e
-        @warn "Could not parse analysis boards; reporting none" path = p exception = e
-        return Any[]
-    end
-    tabs = get(b, :tabs, nothing)
-    layouts = get(b, :layouts, nothing)
-    layouts isa AbstractDict || (layouts = Dict{Symbol,Any}())
-    # tab order comes from `tabs.tabs`; the layout for tab <id> is keyed "tab:<id>" (project-relative,
-    # see frontend utils/boardKeys). A tab with no layout yet is a real state — report it with no plots.
-    tab_list = tabs isa AbstractDict ? get(tabs, :tabs, nothing) : nothing
-    entries = tab_list isa AbstractVector ? tab_list : Any[]
+    p = boards_doc_path(proj)
+    doc = read_boards_doc(p)          # ONE parser, and it reads both document shapes — analysis_boards.jl
+    doc.present || return Any[]
     # A file that EXISTS but yields no tabs is "I cannot read this", not "there are no boards" — the
     # difference is exactly what hid the `_board_tabs` bug (it read `b.tabs` as the array, which the
     # frontend never writes, and returned empty in silence). Say so rather than degrading quietly.
-    isempty(entries) && @warn "Analysis boards file has no readable tabs; reporting none" path = p
+    (doc.readable && !isempty(doc.tabs)) ||
+        @warn "Analysis boards file has no readable tabs; reporting none" path = p
+    layouts = doc.layouts
     out = Any[]
-    for t in entries
+    # the layout for tab <id> is keyed "tab:<id>" (project-relative, see frontend utils/boardKeys). A
+    # tab with no layout yet is a real state — report it with no plots.
+    for t in doc.tabs
         t isa AbstractDict || continue
         id = get(t, :id, nothing)
-        lay = id === nothing ? nothing : get(layouts, Symbol("tab:$(id)"), nothing)
+        lay = id === nothing ? nothing : get(layouts, "tab:$(id)", nothing)   # String keys — normalise_boards
         plots = Any[]
         cols = rows = 0
         if lay isa AbstractDict

@@ -190,6 +190,15 @@ const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit
 const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
 const canStatUnit = computed(() => crossImage.value && hasMeasure.value
   && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
+// NB an earlier version of this persisted the summary level EXPLICITLY from a `watchEffect` here, so
+// that no reader had to resolve `?? 'individual'`. REVERTED 2026-08-08: the effect both read and wrote
+// `props.ui`, which is a store-owned reactive object that every OTHER panel on the board also writes
+// through the deep autosave watcher — a write-read cycle across ten mounted panels, not the isolated
+// idempotent call its unit tests exercised. Boards rendered blank and the document version climbed on
+// its own. The helper (utils/statUnitState.ts) is kept and still unit-tested; if this is retried it
+// must be a one-shot on mount, not a reactive effect, and it must be watched in a real browser with
+// ten panels on one board. `statUnit` therefore stays absent-when-default on disk, and
+// `board_summaries` reports it only when the user set it — see docs/ANALYSIS.md.
 // groupBy: split the measure by a categorical column (generic sub-axis, e.g. HMM state). '' = none.
 // Options are DISCOVERED from the actual obs columns of the selected image+segmentation (so we never
 // offer a column that doesn't exist — that produced an "ignoring unknown columns" warning and an
@@ -634,7 +643,9 @@ async function exportSvg(): Promise<string | null> {
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
-defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
+// `isBusy` is read by the board EXPORT before it captures: capturing a panel mid-fetch put a blank
+// or half-drawn plot into the finished PDF, silently. See utils/awaitIdle.ts.
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () => loading.value })
 </script>
 
 <template>

@@ -44,7 +44,7 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(DisallowedRoute):
             self.c._request("GET", "/api/gating/save")
 
-    def test_writes_are_only_the_five_recoverable_routes(self):
+    def test_writes_are_only_the_six_recoverable_routes(self):
         # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only), notebook
         # write (create-only), notebook describe (description text only), notebook revise (snapshots
         # first, so it's recoverable), and chain create (create-only + validated — and a template is
@@ -54,6 +54,7 @@ class ClientTest(unittest.TestCase):
         # to add a route, the question to answer first is whether it can destroy something.
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
         self.assertEqual(writes, [
+            ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),

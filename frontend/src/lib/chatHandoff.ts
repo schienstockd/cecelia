@@ -29,18 +29,27 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `can group by, e.g. Mouse or Location), ` +
       `cross-set QC (get_cohort_qc), the lab log (read_lab_log), the notebook/REPL data-access ` +
       `surface (get_repl_api), and the notebooks themselves (list_notebooks, get_notebook — so you can ` +
-      `read one I'm stuck in and walk me through the fix). They are read-only except five additive ` +
+      `read one I'm stuck in and walk me through the fix). They are read-only except six additive ` +
       `actions, taken only when I ask: appending to the lab log (append_lab_log), creating a Pluto notebook ` +
       `(create_notebook), making a new version of one (revise_notebook — it snapshots first, so nothing is ` +
-      `lost), rewording a notebook's description (set_notebook_description), and designing a chain — the ` +
-      `wired task pipeline — with create_chain.`,
+      `lost), rewording a notebook's description (set_notebook_description), designing a chain — the ` +
+      `wired task pipeline — with create_chain, and adding one Analysis board with add_analysis_board.`,
     ``,
     `Before you propose any figure or cross-image comparison: call get_image_attributes for the axes my ` +
       `images can be grouped by, and use list_images' per-image attr to size the groups once excluded ` +
       `images are dropped — four images from one mouse are not four replicates, and a group of one is not ` +
       `a comparison. If a set has no attributes, say the grouping is unavailable rather than inventing one ` +
       `from my filenames. And call get_analysis_boards first, so you extend the boards I already built ` +
-      `instead of rebuilding them — match the measures and populations I already chose.`,
+      `instead of rebuilding them — match the measures and populations I already chose. Two of my boards ` +
+      `may differ only in statUnit; that is the same plots at two summary levels, not a duplicate.`,
+    ``,
+    `On boards: add_analysis_board ADDS one board to my /analysis page — it cannot modify, rename, ` +
+      `reorder or delete one, so it lands beside mine and I delete it in a click if it's wrong. Give the ` +
+      `plots in reading order using the spec ids from get_available_plots and the exact "valueName/pop" ` +
+      `strings from get_populations; the server rejects a plot or population that doesn't exist rather ` +
+      `than writing a board that renders blank. Prefer statUnit "image" when my per-image n is small — ` +
+      `pooling every track treats one image's 400 tracks as 400 replicates. Then tell me which values you ` +
+      `read from my data and which you defaulted.`,
     ``,
     `On chains: you can DESIGN one but you cannot run it. create_chain writes a template that sits ` +
       `inert in my Chains whiteboard until I press Run, and there is no tool that starts it — so hand it ` +
@@ -62,7 +71,8 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `(e.g. "3 of 12 images flagged; 2 have too few tracks"), then ask me which direction I'd like to ` +
       `take — for example: QC the workflow (the cohort numbers for what just ran), look for something ` +
       `that's off across the set, understand the processing pipeline, go deeper into the analysis ` +
-      `(populations, phenotype/motility, behaviour, clustering), build me a notebook for a specific ` +
+      `(populations, phenotype/motility, behaviour, clustering), add me a board of plots on my Analysis ` +
+      `page (add_analysis_board), build me a notebook for a specific ` +
       `question (e.g. cell speed over time) that I can then edit and run myself — read get_repl_api ` +
       `first so the code is correct — or design a chain for a pipeline I want to run. Then follow my lead.`,
     ``,

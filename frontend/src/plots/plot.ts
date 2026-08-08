@@ -250,6 +250,21 @@ function textWidth(text: string, fontPx: number): number {
   _measCtx.font = `${fontPx}px ${FONT}`
   return _measCtx.measureText(text).width
 }
+/**
+ * Left margin that fits the longest Y tick label exactly, in px.
+ *
+ * Used wherever CATEGORY labels sit on the Y axis: the heatmap (feature names) and any chart flipped
+ * 90° (`vis.rotate`), where the series labels move from X to Y. Both used to guess — the heatmap at a
+ * fixed 120 (which CLIPPED long feature names) and the flipped charts at a fixed 104 (which left a
+ * wide empty gap for short ones like "T · 1"). Measuring is the fix for both directions, so it is one
+ * helper rather than two constants. `+12` covers the tick mark and its gap; the clamp keeps a very
+ * long label from eating the plot.
+ */
+export function yLabelMargin(labels: readonly unknown[], fontPx: number): number {
+  const longest = labels.reduce<number>((m, s) => Math.max(m, textWidth(String(s), fontPx)), 0)
+  return Math.round(Math.min(240, Math.max(40, longest + 12)))
+}
+
 const THEME = {
   style: { background: 'white', color: '#111', fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -473,14 +488,17 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // the position axis carries the SERIES labels — long ones overlap unless rotated. `resolveXRotation`
   // honours the user's setting first and otherwise rotates only when they genuinely don't fit, reporting
   // it on `_autoRotatedX` so the panel can say a setting was adjusted (see plots/autoOverride.ts).
-  const xrot = resolveXRotation(seriesIndex(r, keyOf).labels, o)
+  const posLabels = seriesIndex(r, keyOf).labels
+  const xrot = resolveXRotation(posLabels, o)
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
                     ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }
   // room for rotated x labels (else clipped by the panel border); room for series labels on Y when flipped
   if (xrot.rotate) opts.marginBottom = xRotMargin(76, o)
-  if (o.rotate) opts.marginLeft = 104
+  // flipped: the SERIES labels move to Y, so fit the margin to them instead of reserving a fixed 104px
+  // (short labels like "T · 1" left a wide empty gap on the left) — same helper as the heatmap.
+  if (o.rotate) opts.marginLeft = yLabelMargin(posLabels, o.fontSize || 11)
   // …and PIXEL room for the stats annotation text, which is offset beyond its data coordinate (dx: 8
   // when rotated, dy: -6 otherwise). The domain padding above puts the mark inside the plot; without
   // this the glyph still overhangs the frame and gets clipped. On the measure axis's far side: right
@@ -584,8 +602,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
   // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
-  const longestYW = (r.yLabels ?? []).reduce((m, s) => Math.max(m, textWidth(String(s), o.fontSize || 11)), 0)
-  const marginLeft = Math.round(Math.min(240, Math.max(40, longestYW + 12)))
+  const marginLeft = yLabelMargin(r.yLabels ?? [], o.fontSize || 11)
   // the column labels are population / category names — same overlap problem, same resolver. The bands
   // start after marginLeft, so that is what's reserved.
   const xrot = resolveXRotation((r.xLabels ?? []).map(String),

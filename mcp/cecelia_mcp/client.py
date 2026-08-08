@@ -1,16 +1,18 @@
 """Read-only HTTP client for the Cecelia Julia API, used by the MCP observer server.
 
 Every request goes through an explicit ALLOW-LIST of (method, path) pairs. That list IS the
-observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/lablog/append``
+observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/boards/add``
+(create-only — adds ONE Analysis board beside the user's own, which they delete in one click; it
+cannot modify, rename, reorder or delete a board), ``POST /api/lablog/append``
 (append-only), ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
 overwrites), ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in the
 registry sidecar — not its cells), ``POST /api/notebooks/revise`` (which SNAPSHOTS the current
 notebook first — a restorable version — then overwrites its cells; it's how a notebook gets a new
 version, never a "-v2" copy), and ``POST /api/chains/create`` (create-only + server-validated —
-writes a chain TEMPLATE the user then runs themselves). All five are recoverable / non-destructive to
+writes a chain TEMPLATE the user then runs themselves). All six are recoverable / non-destructive to
 project & analysis data: no allow-listed route can touch cell data, images, gates, or QC, revise
-can't lose a notebook's content (the pre-revision state is always snapshotted), and a template is
-inert until a human presses Run. Any attempt to call a route not on the list raises
+can't lose a notebook's content (the pre-revision state is always snapshotted), a template is
+inert until a human presses Run, and an added board is one tab beside the user's own. Any attempt to call a route not on the list raises
 ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails loudly in
 tests rather than silently mutating a project.
 
@@ -37,6 +39,12 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {
+        ("POST", "/api/boards/add"),      # WRITE 6/6 — create-only: adds ONE Analysis board, never
+                                          # edits/deletes/reorders one. Server-validated against the
+                                          # project (unknown plot id, chart the spec doesn't offer, a
+                                          # population that doesn't exist → 422 before anything is
+                                          # written), 409 on a duplicate name. NOT
+                                          # /api/projects/boards, the browser's whole-document autosave
         ("GET", "/api/projects"),
         ("GET", "/api/images"),
         ("GET", "/api/images/meta"),
@@ -347,3 +355,13 @@ class CeceliaClient:
             template["startTargets"] = start_targets
         return self._request("POST", "/api/chains/create",
                              body={"projectUid": project_uid, "template": template})
+
+    def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = ""):
+        # Create-only: adds ONE board and cannot modify, delete, rename or reorder any existing one
+        # (409 on a duplicate name, 422 on a spec the project cannot plot). Deliberately NOT
+        # /api/projects/boards, which is the browser's autosave of the WHOLE document — allow-listing
+        # that would let one request replace every board in the project.
+        body: dict = {"projectUid": project_uid, "name": name, "plots": plots}
+        if template:
+            body["template"] = template
+        return self._request("POST", "/api/boards/add", body=body)

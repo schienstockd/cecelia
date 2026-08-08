@@ -1,6 +1,6 @@
 # MCP board authoring — Claude adds an Analysis board, the user keeps it
 
-**Status:** planning (2026-08-08), branch `work/mcp-boards`. Extends the observer's
+**Status:** BUILT (2026-08-08) — Phases 0–3 shipped; Phase 4 was cut. Branches `work/mcp-boards` (Phase 0) then `work/board-readback`. Extends the observer's
 design-but-don't-run split to the Analysis board — the third artefact after notebooks
 ([`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md)) and chains.
 
@@ -119,7 +119,8 @@ returns `boards: []` — it cannot read back what exists.
     group once excluded ones are dropped. A group of one is not a comparison.
 - **Board read-back — DONE.** `board_summaries` (`app/src/ai/lineage.jl`) → `GET /api/analysis/boards`
   → `get_analysis_boards`. Per board: `{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?,
-  popType?, pops?, title?}]}`, `tkey`s decoded to `valueName/pop`, empty slots omitted. A SUMMARY, never
+  popType?, groupBy?, statUnit?, imageAgg?, pops?, highlight?, features?, title?}]}`, `tkey`s decoded
+  to `valueName/pop`, empty slots omitted. A SUMMARY, never
   the stored geometry — and deliberately the **same vocabulary the write side will accept** (Decision 2),
   so read and write describe a board the same way. `_board_tabs` stays the cheap name-only view lineage
   embeds; its "plot detail is not exposed here" note now points here. Every field is optional by
@@ -128,7 +129,43 @@ returns `boards: []` — it cannot read back what exists.
 **Checkpoint:** ask Claude "what would you plot for 4kS67f" with no write tool; judge the answer. **If
 the suggestions are not good here, stop — the rest of the plan only makes bad plots faster.**
 
-### Phase 1 — make the boards document safe to write concurrently
+**Run 2026-08-08 — PASSED, and it found a Phase 0 defect.** Every checkable claim verified against the
+data: it refused to compare by `Mouse` after sizing the groups (1/1/3/2, no condition attribute) rather
+than producing a grouping the design does not support; it caught that `B` on `M3c` decoded into 2 states
+where every other image has 3; it noticed `movement`/`test`/`here`/`there` are byte-identical runs, so
+the `M2b` `largestClusterFrac` warning is one outlier counted four times. Its top suggestion was not a
+plot but a **precondition** — HMM state *indices* are per-fit, so a board grouping by
+`live.cell.hmm.state.movement` and pooling across images may be averaging different behaviours under one
+label (`T` is 74% state 1 on `M2b` vs 3.6–13% on all six peers). That is a correctness problem with an
+*existing* board that no validator in Phase 2 would ever catch — consistent with "validation cannot
+check intent" under Risks.
+
+**The one thing it got wrong was the tool's fault, and is fixed here.** It reported "Track measures" and
+"Per image measures" as accidental duplicates. They are not: they are the same ten plots at two summary
+levels (`statUnit` `individual` vs `image`), and `_board_slot` dropped `statUnit`, so the two boards
+serialised identically. A summary that cannot distinguish two boards is worse than a thin one — it
+manufactures a confident false claim about the user's own work. Fixed by reporting `statUnit`,
+`imageAgg`, `hl` and `features`, and by reading the caption from `state.vis.title` (`state.title`, which
+the parser had been reading, is a key the frontend has never written — the *third* instance in this file
+of a fixture invented to match the parser; the fixture is now copied from a real board).
+
+**What this says about the phases.** The value at the checkpoint came from the READ tools plus
+reasoning, not from anything the write path adds. Phases 1–3 make a board faster to render; they do not
+make the suggestions better. Worth keeping in view when costing them.
+
+### Phase 1 — make the boards document safe to write concurrently — **DONE**
+
+Shipped as designed, with **one deviation**: on 409 the client reloads and does **not** retry. The
+plan said "reload and retry", but the document is a single blob, so re-sending our copy at the fresh
+version would simply move the clobber one step later — the other tab's boards would be the ones lost
+instead of ours. The debounced edit that lost the race is dropped with a warning in the log; the user
+sees current state rather than silently destroying someone else's work. A real fix is a merge, or
+one-file-per-board (Decision 1 already names that as the prerequisite if boards ever need versions).
+
+The reader/writer was also consolidated into `app/src/analysis_boards.jl` rather than added alongside
+the existing parsers — the route, the project-open payload and `board_summaries` now share one, which
+is what should have been true before the `_board_tabs` bug.
+
 - Add `version` to `analysisBoards.json`; `POST /api/projects/boards` rejects a stale version with 409.
 - **Normalise the payload shape here, not separately.** `{tabs: <TabGroup>, layouts}` puts the tab array
   at `tabs.tabs` — a name collision that reads badly and is what a second, assumption-written parser
@@ -141,23 +178,50 @@ the suggestions are not good here, stop — the rest of the plan only makes bad 
 **Checkpoint:** two browser tabs on one project stop clobbering each other. Shippable on its own as a
 bug fix, independent of everything below.
 
-### Phase 2 — the board spec and its server-side expander
+### Phase 2 — the board spec and its server-side expander — **DONE**
 - Define the semantic spec (Decision 2/4). Sketch, to be pinned in Phase 2:
   ```
   { name: "B vs T motility",
     template: "2x2",
     plots: [ {plot: "track_measures", measure: "live.track.speed", chart: "boxplot",
-              pops: ["B/qc", "T/qc"], compare: "pooled"}, … ] }
+              pops: ["B/qc", "T/qc"], statUnit: "image", imageAgg: "mean"}, … ] }
   ```
-- Expander → `LayoutEntry` (grid areas, slot state, `tkey` selections, `vis` defaults).
+  **`statUnit` is a first-class field, not part of a `compare` blob.** An earlier sketch here wrote
+  `compare: "pooled"`, which conflates two orthogonal choices: *which images go in* (scope) and *what
+  one point represents* (summary level). They are set independently in the GUI and stored
+  independently, and the read side now reports them separately — Decision 2 says the two sides share
+  one vocabulary, so the write side must accept the same shape.
+
+  This is not a detail. The checkpoint's own advice for thin `n` — pool across the set, but plot one
+  point per image — *is* `statUnit: "image"`. Without the field, the spec cannot express the single
+  most useful knob for honest small-`n` plotting, and the tool could not author the user's existing
+  "Per image measures" board at all.
+- Expander → `LayoutEntry` (grid areas, slot state, `tkey` selections). **No `vis` bag** — the sketch
+  above said "vis defaults", but `SummaryPanel` already resolves `props.vis ?? defaultVis()`, so
+  emitting one would copy ~25 frontend defaults into Julia to drift. An expanded slot carries only
+  semantics.
+- **Templates are `"<cols>x<rows>"` only.** Decision 4 allowed "a comic-plate id"; the plates are a
+  frontend catalogue (`plots/layoutTemplates.ts`) and duplicating them server-side would be the same
+  mistake as the vis bag. A plate id is rejected with a message pointing at the GUI.
 - **Validator** against live project state: known `specId`, chart offered by that spec, populations that
   exist, measures present. A bad `tkey` currently renders an empty plot with **no error** — that is the
   failure this closes.
 - Pure Julia, headless-testable: package tests for expand + reject cases.
 
-**Checkpoint:** a spec round-trips to a board the GUI renders identically to a hand-built one.
+**The populations must come from `plot_population_groups`, not from a walk of the persisted pops.**
+The first implementation walked the gating sidecars and would have rejected `B/qc/_tracked` — the
+population `4kS67f`'s own boards plot — because DERIVED pops (`/_tracked`) are injected by the picker
+at query time and are never stored (`docs/POPULATION.md`). Validating against the same enumerator that
+fills the board's series picker means the validator accepts exactly what the GUI offers, including the
+`root_derived_ok` rule that hides root `/_tracked` when tracking was gated.
 
-### Phase 3 — the MCP tool
+**Checkpoint:** a spec round-trips to a board the GUI renders identically to a hand-built one.
+*Verified against `4kS67f` in the REPL* — a two-plot `2x2` spec expands to `sel:
+["live::B/qc/_tracked", "live::T/qc/_tracked"]`, which is byte-identical to what the user's hand-built
+board stores, and the `tkey`s decode back through `_parse_tkey` to the pops that were passed in. Not
+yet opened in a browser.
+
+### Phase 3 — the MCP tool — **DONE**
 - `POST /api/boards/add` (create-only, 409 on an existing tab name), added to the client allowlist as
   write 6/6.
 - `add_analysis_board(project_uid, name, plots, template="")` — one board per call.
@@ -168,6 +232,12 @@ bug fix, independent of everything below.
   user's own and can be deleted in the GUI.
 
 **Checkpoint:** the permission prompt is readable enough to approve or reject on sight.
+*Not yet exercised* — this needs a real MCP session against a running app, which is the last
+outstanding verification for the whole plan.
+
+Also landed with it: `get_available_plots` moved out of the "chat hand-off only" list in the
+prompt-parity test, because the in-app observer now needs spec ids and chart types to author a board.
+The detector caught that itself, which is what it is for.
 
 ### Phase 4 — (removed)
 Board versioning was cut on 2026-08-08; see Decision 1 for why, and for the order to follow if it is
