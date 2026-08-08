@@ -13,3 +13,27 @@ export function parseTkey(key: string): SeriesTarget {
   const i = rest.indexOf('/')
   return i < 0 ? { popType, valueName: rest, pop: '' } : { popType, valueName: rest.slice(0, i), pop: rest.slice(i) }
 }
+
+/**
+ * Per-panel `parseTkey` map that keeps its RESULT IDENTITY while the keys are unchanged.
+ *
+ * A canvas builds each panel's series list in the template (`:series="panelSeries(…)"`), so a plain
+ * `.map(parseTkey)` mints a new array of new objects on every canvas render — the panel then re-renders
+ * for a list that says exactly what it said before. Same family as `DEFAULT_VIS` (plots/plot.ts): a
+ * fallback or a derivation evaluated during render must not churn prop identity.
+ *
+ * Keyed by the joined keys, which is COMPLETE — the targets are a pure function of them and of nothing
+ * else — so a cached list can never be stale. `id` is the panel (slot index / panel id); one entry each,
+ * so panels don't evict each other.
+ */
+export function seriesMemo<K>(): (id: K, keys: readonly string[]) => SeriesTarget[] {
+  const cache = new Map<K, { key: string; targets: SeriesTarget[] }>()
+  return (id, keys) => {
+    const key = keys.join('|')
+    const hit = cache.get(id)
+    if (hit && hit.key === key) return hit.targets
+    const targets = keys.map(parseTkey)
+    cache.set(id, { key, targets })
+    return targets
+  }
+}

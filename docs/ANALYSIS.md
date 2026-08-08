@@ -146,6 +146,10 @@ wrote them (`add_analysis_board` omits the bag on purpose — `app/src/analysis_
 loop hit Claude-authored boards only. Use the shared frozen `DEFAULT_VIS` wherever the fallback is READ;
 keep `defaultVis()` where a panel needs its own bag to write into.
 
+The general rule: **anything a canvas derives for a panel DURING RENDER must keep its identity while its
+inputs are unchanged.** The panel's series list is the other instance — `seriesMemo` (`plots/series.ts`)
+holds one entry per panel, keyed by the selection it parsed.
+
 `'none'` keeps the panel rather than hiding it because the rail carries two independent things: the
 selection list *and* the shared `PlotOptions` styling + scope footer, which a self-contained plot may
 still use (`GatingStrategyView` reads `vis.fontSize`).
