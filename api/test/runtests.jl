@@ -1617,6 +1617,133 @@ end
     @test _comparison_frame_total(2, 0)  == 0           # unknown T → let each pass report its own
 end
 
+# The comparison GRID (docs/todo/MOVIE_COMPARE_PLAN.md, generalised). `_record_grid!` and everything
+# under it is blind to what made two cells differ, so what needs pinning is the layer above: what shape
+# a pair of selections means, what each cell pins, and what a cell says about the masks it draws.
+@testset "API: movie comparison grid" begin
+    base = Dict{Symbol,Any}(:channels => Dict("CD3" => "green"))
+
+    # 2+ of BOTH → the cross-product. One row per MASK; that row's cells are the VERSIONS, so versions
+    # read across and masks read down.
+    grid = _compare_grid(merge(base, Dict{Symbol,Any}(
+        :valueNames => ["default", "af"], :labelValueNames => ["cellpose", "coastal"])))
+    @test length(grid) == 2
+    @test [r.label for r in grid] == ["cellpose", "coastal"]
+    @test [c.label for c in grid[1].columns] == ["default", "af"]
+    @test [String(c.config[:valueName]) for c in grid[1].columns] == ["default", "af"]
+    # every cell of a row draws THAT row's mask, and only it
+    @test all(c -> c.config[:labelValueNames] == ["cellpose"], grid[1].columns)
+    @test all(c -> c.config[:labelValueNames] == ["coastal"],  grid[2].columns)
+    @test all(r -> all(c -> haskey(c.config, :channels), r.columns), grid)   # the config rides along
+    # rectangular: 2 x 2 is FOUR renders, not two — the cost is multiplicative
+    @test sum(length(r.columns) for r in grid) == 4
+
+    # 2+ of ONE only → a single row, side by side, whichever list it came from.
+    vonly = _compare_grid(Dict{Symbol,Any}(:valueNames => ["default", "af"]))
+    @test length(vonly) == 1
+    @test [c.label for c in vonly[1].columns] == ["default", "af"]
+    @test vonly[1].label == ""                       # no outer compose → nothing to caption
+
+    monly = _compare_grid(Dict{Symbol,Any}(:valueNames => ["af"], :labelValueNames => ["a", "b"]))
+    @test length(monly) == 1
+    @test [c.label for c in monly[1].columns] == ["a", "b"]
+    # …all on the ONE selected version, which is what keeps a mask row comparable
+    @test all(c -> String(c.config[:valueName]) == "af", monly[1].columns)
+    @test [c.config[:labelValueNames] for c in monly[1].columns] == [["a"], ["b"]]
+
+    # A single mask is drawn in the one cell rather than becoming a row of its own.
+    one = _compare_grid(Dict{Symbol,Any}(:labelValueNames => ["a"]))
+    @test length(one) == 1 && length(one[1].columns) == 1
+    @test one[1].columns[1].config[:labelValueNames] == ["a"]
+
+    # Nothing selected is still ONE cell — a plain movie is a 1x1 grid, not a special case.
+    plain = _compare_grid(Dict{Symbol,Any}())
+    @test length(plain) == 1 && length(plain[1].columns) == 1
+    @test String(plain[1].columns[1].config[:valueName]) == ""
+
+    # D4 — the contrast toggle. Anything unrecognised reads as the default rather than failing a batch.
+    @test _share_contrast("reference") && _share_contrast("") && _share_contrast("nonsense")
+    @test !_share_contrast("version")
+
+    # Frame arithmetic for ONE progress bar across every pass AND every compose.
+    @test _grid_frame_total(1, 2, 20) == 60          # 2 passes + the compose = the old 1-D case
+    @test _grid_frame_total(1, 3, 20) == 80
+    @test _comparison_frame_total(2, 20) == _grid_frame_total(1, 2, 20)
+    @test _grid_frame_total(2, 2, 20) == 140         # 4 cells + 2 row composes + 1 stack
+    @test _grid_frame_total(3, 1, 20) == 80          # a column of 3 = 3 cells + the stack (no row composes)
+    @test _grid_frame_total(1, 1, 20) == 0           # one cell = a plain record, own total
+    @test _grid_frame_total(2, 2, 0)  == 0           # unknown T → let each pass report its own
+
+    # The count `_record_grid!` actually uses is read off the grid, so it cannot drift from the loop
+    # (which walks it with a running counter). It must agree with the rectangular form above on every
+    # rectangular grid — that agreement IS the contract between the progress bar and the pass loop.
+    for (vs, ms) in ((["a", "b"], ["s1", "s2"]), (["a", "b", "c"], ["s1", "s2"]),
+                     (["a", "b"], String[]), (["a"], ["s1", "s2"]), (String[], String[]))
+        g = _compare_grid(Dict{Symbol,Any}(:valueNames => vs, :labelValueNames => ms))
+        @test _grid_frame_total(g, 20) == _grid_frame_total(length(g), length(g[1].columns), 20)
+    end
+    # …and a RAGGED grid (which `_compare_grid` never builds, but the loop tolerates) is counted by
+    # what is in it, not by its widest row: 2 + 1 cells, one row compose, one stack = 5 units.
+    ragged = MovieRow[(; label = "r1", columns = _version_columns(Dict{Symbol,Any}(), ["a", "b"])),
+                      (; label = "r2", columns = _version_columns(Dict{Symbol,Any}(), ["a"]))]
+    @test _grid_frame_total(ragged, 20) == 100
+
+    # The column list is authored ONCE for a whole batch, so it does not vary per image — unlike the
+    # per-image mask list below, which drops what an image hasn't got.
+    @test _config_compare_segmentations(Dict(:labelValueNames => ["a", " b ", "a", ""])) == ["a", "b"]
+    @test _config_compare_segmentations(Dict{Symbol,Any}()) == String[]
+
+    # Masks per image: THREE-valued. `nothing` (key absent) must stay distinct from an empty list —
+    # absent leaves the canvas alone (what "record what's on screen" needs), empty means no masks.
+    img = (; labels = Dict{String,Vector{String}}("a" => ["a.zarr"], "b" => ["b.zarr", "b_nuc.zarr"]))
+    @test _config_label_value_names(Dict{Symbol,Any}(), img)                  === nothing
+    @test _config_label_value_names(Dict(:labelValueNames => String[]), img)  == String[]
+    @test _config_label_value_names(Dict(:labelValueNames => ["b", "a"]), img) == ["b", "a"]
+    # unregistered + duplicate names are dropped rather than handed to the bridge
+    @test _config_label_value_names(Dict(:labelValueNames => ["a", "gone", "a"]), img) == ["a"]
+    # an image with no label registry at all is not an error — it simply has no masks
+    @test _config_label_value_names(Dict(:labelValueNames => ["a"]), (; name = "x")) == String[]
+
+    # Mask OUTLINE width. Clamped, not validated: a bad value is a display nicety and must not fail a
+    # whole batch, and napari has no meaning for a negative contour.
+    @test _label_contour(Dict{Symbol,Any}())              == 0      # absent → filled, what it always was
+    @test _label_contour(Dict(:labelContour => 3))        == 3
+    @test _label_contour(Dict(:labelContour => -2))       == 0
+    @test _label_contour(Dict(:labelContour => 999))      == LABEL_CONTOUR_MAX
+    @test _label_contour(Dict(:labelContour => 2.7))      == 3      # _to_int rounds
+
+    # How much of the z stack a movie shows. `show3D` WINS over a z index: the index is a leftover from
+    # the last time 2D was chosen, and dropping it silently would lose the user's slice.
+    @test !_show_3d(Dict{Symbol,Any}())
+    @test _show_3d(Dict(:show3D => true))
+    @test _z_slice(Dict{Symbol,Any}())                       === nothing   # "whatever is showing"
+    @test _z_slice(Dict(:zSlice => 4))                       == 4
+    @test _z_slice(Dict(:zSlice => -1))                      == 0          # floored, clamped again bridge-side
+    @test _z_slice(Dict(:show3D => true, :zSlice => 4))      === nothing   # 3D ignores the index…
+    @test _z_slice(Dict(:show3D => false, :zSlice => 4))     == 4          # …and keeps it for next time
+
+    # …and the store files that go on the wire, in the {valueName => [files]} shape show-labels takes.
+    @test _label_files_for(img, ["b"])   == Dict("b" => ["b.zarr", "b_nuc.zarr"])
+    @test _label_files_for(img, nothing) == Dict{String,Vector{String}}()
+    @test _label_files_for(img, ["gone"]) == Dict{String,Vector{String}}()
+
+    # SKELETONS are the second registry with the same three-valued contract — separate stores, a
+    # separate picker (BRANCHING_PLAN Decision 6), and they had the identical bug for the identical
+    # reason. The two must not read each other's names.
+    both = (; labels        = Dict{String,Vector{String}}("a" => ["a.zarr"]),
+              branch_labels = Dict{String,Vector{String}}("sk" => ["sk.zarr"]))
+    @test _config_branch_value_names(Dict{Symbol,Any}(), both)                    === nothing
+    @test _config_branch_value_names(Dict(:branchValueNames => String[]), both)   == String[]
+    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), both)     == ["sk"]
+    # a mask name is not a skeleton name, and vice versa — each is filtered by its OWN registry
+    @test _config_branch_value_names(Dict(:branchValueNames => ["a"]), both)      == String[]
+    @test _config_label_value_names(Dict(:labelValueNames => ["sk"]), both)       == String[]
+    @test _branch_files_for(both, ["sk"]) == Dict("sk" => ["sk.zarr"])
+    @test _branch_files_for(both, ["a"])  == Dict{String,Vector{String}}()
+    # an image with no skeletons at all is not an error
+    @test _config_branch_value_names(Dict(:branchValueNames => ["sk"]), img) == String[]
+end
+
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in
 # `_ws_clients` (broadcast_ws puts a serialised frame per client). These frames drive the observer's
 # 10-attempts pattern + note/lab-log surfacing (docs/ai-assist/OBSERVER.md §4-5).
@@ -3126,7 +3253,7 @@ end
         "/api/napari/gpu", "/api/napari/open",
         "/api/napari/overlay-legend", "/api/napari/refresh-labels",
         "/api/napari/restart", "/api/napari/screenshot",
-        "/api/napari/selection-scope", "/api/napari/show-labels",
+        "/api/napari/selection-scope", "/api/napari/set-z-view", "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
         "/api/napari/start-selection", "/api/napari/stop-selection",
         "/api/napari/view-state", "/api/notebooks/build-sysimage",
@@ -3193,7 +3320,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 99
+    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 100
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

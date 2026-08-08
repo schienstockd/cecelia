@@ -222,6 +222,42 @@ class NapariState:
         except Exception:
             return None
 
+    def set_z_view(self, show_3d: bool = False, z=None):
+        """Show the WHOLE z stack as a 3D render, or a single z SLICE in 2D.
+
+        Both layer kinds follow the viewer's `ndisplay`, which is why this is one switch rather than a
+        per-layer setting: a Labels layer cannot be projected at all (`Labels.projection_mode` accepts
+        only `'none'` — napari raises `ValueError` for `'max'`), so "the whole stack" for a MASK can
+        only mean the volumetric render. Flattening the channels with a thick slice would therefore
+        show a projected image against a single-plane mask, which is worse than either.
+
+        A 2D image is left alone: forcing a flat plane into a rotatable 3D view helps nobody, which is
+        the same guard `open_image` applies to its `show_3d` flag. `z=None` in 2D keeps whatever slice
+        is showing. Returns the state actually reached, so the caller can tell it was refused.
+        """
+        z_len = self._z_axis_len() or 0
+        if show_3d and z_len > 1:
+            self._viewer.dims.ndisplay = 3
+            self._viewer.reset_view()
+            return {"ndisplay": 3, "z": None}
+
+        self._viewer.dims.ndisplay = 2
+        if z is not None and z_len > 1:
+            axes = self._display_axes()
+            if "z" in axes:
+                idx = axes.index("z")
+                step = list(self._viewer.dims.current_step)
+                nsteps = self._viewer.dims.nsteps
+                if idx < len(step) and idx < len(nsteps):
+                    # clamp: the caller's z came from a config that may outlive the image it was
+                    # written against (a cropped version has fewer planes)
+                    step[idx] = max(0, min(int(z), int(nsteps[idx]) - 1))
+                    self._viewer.dims.current_step = tuple(step)
+        cur = self._viewer.dims.current_step
+        axes = self._display_axes()
+        at = int(cur[axes.index("z")]) if "z" in axes and axes.index("z") < len(cur) else None
+        return {"ndisplay": 2, "z": at}
+
     def _time_axis_len(self):
         """Length of the image's `t` axis, or None if there is no `t` axis / no data loaded.
         Reads from the full (channel-inclusive) data shape, since `self._axes` includes `c`."""
@@ -331,7 +367,7 @@ class NapariState:
 
     def _show_label_stores(self, subdir: str, suffix: str, value_name: str,
                            label_files: list, show: bool, cache: bool,
-                           levels: int = None, after_add=None):
+                           levels: int = None, contour: int = 0, after_add=None):
         """Add or remove one family's label layers — the ONE implementation behind `show_labels`,
         `show_branch_labels` and the live preview.
 
@@ -380,7 +416,7 @@ class NapariState:
             layer = napari_utils.add_labels(
                 self._viewer, arrays if len(arrays) > 1 else arrays[0],
                 name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
-                cache=cache,
+                cache=cache, contour=contour,
                 # align the layer's dims to the viewer's BY NAME (see expand_to_axes) — a store
                 # with fewer axes than the image would otherwise have them read from the right —
                 # and stretch a projected store across the axis it collapsed (lazy; no bytes).
@@ -398,12 +434,15 @@ class NapariState:
     def show_labels(self, value_name: str = "default",
                     label_files: list = None,
                     show_labels: bool = True, show_points: bool = False,
-                    cache: bool = False, preview: bool = False):
+                    cache: bool = False, preview: bool = False, contour: int = 0):
         """Add or remove the cell-segmentation labels layers for a value_name.
 
         `show_points` is INERT and always has been — centroid points are their own command
         (`show_populations`, which knows about pop types and colours). Kept only so the existing wire
         payload from `show_labels!` stays valid; don't build anything on it.
+
+        `contour` draws each label as an outline of that many pixels rather than a filled region
+        (0 = filled, napari's default) — an outline keeps the channel signal under the mask readable.
 
         `preview=True` shows a store that is still being WRITTEN by a running segmentation, in its own
         `({vn}) Labels (live)` layer. Two things differ, and both are forced here rather than trusted
@@ -430,6 +469,7 @@ class NapariState:
             value_name, label_files, show_labels,
             cache=False if preview else cache,
             levels=1 if preview else None,
+            contour=contour,
         )
 
     def refresh_labels(self, value_name: str = "default", label_files: list = None):
@@ -1973,6 +2013,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 as_dask=cmd.get("as_dask", True),
                 visible=cmd.get("visible", True),
             )
+
+        elif t == "set_z_view":
+            return state.set_z_view(show_3d=cmd.get("show_3d", False), z=cmd.get("z", None))
 
         elif t == "show_labels":
             state.show_labels(

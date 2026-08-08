@@ -48,28 +48,28 @@ const has = (s: string) => props.sections.includes(s as 'layout')
       </button>
       <div v-show="open.layout" class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Show the series key beside the plot'"><span>Legend</span>
-          <CcToggle :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
+          <CcToggle aria-label="Legend" :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Log scale on the measure axis'"><span>Log scale</span>
-          <CcToggle :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
+          <CcToggle aria-label="Log scale" :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Draw axis gridlines behind the data'"><span>Gridlines</span>
-          <CcToggle :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
+          <CcToggle aria-label="Gridlines" :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
         <div class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!xLabelOverride }"
              v-tooltip.left="overrideTooltip(xLabelOverride, 'Rotate the x tick labels (angle below)')">
           <span>Rotate X labels<i v-if="xLabelOverride" class="pi pi-exclamation-triangle po-warn" /></span>
-          <CcToggle v-model="rotateXShown" /></div>
+          <CcToggle aria-label="Rotate X labels" v-model="rotateXShown" /></div>
         <!-- the angle applies whenever labels are rotated, however that came about -->
         <label v-if="rotateXShown" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'X tick-label angle (degrees)'"><span>X angle</span>
           <input type="range" min="0" max="90" step="5" :value="vis.rotateXAngle ?? 45"
                  @input="set({ rotateXAngle: parseInt(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
-          <CcToggle :model-value="vis.rotate"
+          <CcToggle aria-label="Rotate 90 degrees" :model-value="vis.rotate"
                  @update:model-value="set({ rotate: $event, ...($event ? { facet: false } : {}) })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One small-multiple panel per series (mutually exclusive with rotate)'"><span>Facet</span>
-          <CcToggle :model-value="vis.facet"
+          <CcToggle aria-label="Facet" :model-value="vis.facet"
                  @update:model-value="set({ facet: $event, ...($event ? { rotate: false } : {}) })" /></div>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Dark plot background; export always uses light'"><span>Dark theme</span>
-          <CcToggle :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
+          <CcToggle aria-label="Dark theme" :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y min</span>
           <input class="po-txt" type="text" :value="vis.yMin" @change="set({ yMin: ($event.target as HTMLInputElement).value })" /></label>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Measure-axis range (blank = auto)'"><span>Y max</span>
@@ -88,7 +88,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
             <option value="beeswarm">beeswarm</option><option value="random">random</option><option value="none">none</option>
           </select></label>
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Colour points by series (else grey)'"><span>Colour data</span>
-          <CcToggle :model-value="vis.colorData" @update:model-value="set({ colorData: $event })" /></div>
+          <CcToggle aria-label="Colour data" :model-value="vis.colorData" @update:model-value="set({ colorData: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Radius of each plotted cell'"><span>Point size</span>
           <input type="range" min="0.5" max="8" step="0.5" :value="vis.pointSize"
                  @input="set({ pointSize: Number(($event.target as HTMLInputElement).value) })" />
@@ -128,7 +128,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
       </button>
       <div v-show="open.stats" class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Between-group test — Mann-Whitney (2 groups) / Kruskal-Wallis (>2) by default'"><span>Compare groups</span>
-          <CcToggle :model-value="!!vis.statsEnabled" @update:model-value="set({ statsEnabled: $event })" /></div>
+          <CcToggle aria-label="Compare groups" :model-value="!!vis.statsEnabled" @update:model-value="set({ statsEnabled: $event })" /></div>
         <label v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'auto = Mann-Whitney (2) / Kruskal-Wallis (>2)'"><span>Test</span>
           <select class="po-sel" :value="vis.statsTest ?? 'auto'"
                   @change="set({ statsTest: ($event.target as HTMLSelectElement).value as VisProps['statsTest'] })">
@@ -142,11 +142,11 @@ const has = (s: string) => props.sections.includes(s as 'layout')
              class="po-note cc-muted cc-fs-2xs"
              v-tooltip.left="readout.stats.reason || 'Test the active plot ran'">{{ readout.stats.note }}</div>
         <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'One letter per group; shared letter = no difference'"><span>Compact letters</span>
-          <CcToggle :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
+          <CcToggle aria-label="Compact letters" :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Also show non-significant brackets'"><span>Show ns</span>
-          <CcToggle :model-value="!!vis.statsShowNs" @update:model-value="set({ statsShowNs: $event })" /></div>
+          <CcToggle aria-label="Show ns" :model-value="!!vis.statsShowNs" @update:model-value="set({ statsShowNs: $event })" /></div>
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.left="'Swap p-values for the * / ** / *** ladder'"><span>Stars only</span>
-          <CcToggle :model-value="!!vis.statsUseStars" @update:model-value="set({ statsUseStars: $event })" /></div>
+          <CcToggle aria-label="Stars only" :model-value="!!vis.statsUseStars" @update:model-value="set({ statsUseStars: $event })" /></div>
       </div>
     </template>
 

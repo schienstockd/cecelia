@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
   tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips,
-  hasPerOptionTips,
+  hasPerOptionTips, unnamedToggles,
 } from './uiCopy'
 
 describe('normalise', () => {
@@ -420,6 +420,17 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
     expect(bare).toEqual([])
   })
 
+  // A tooltip is not a NAME. CcToggle hides its real <input>, so a toggle whose caption sits outside
+  // the component announces as an unlabelled checkbox — which 17 call sites did until `ariaLabel`
+  // existed. Separate from the tooltip checks on purpose: their ancestor rule (a captioned row covers
+  // its children) is exactly what cannot supply a name.
+  it('every CcToggle carries its own accessible name', () => {
+    const unnamed: string[] = []
+    for (const [path, src] of sfcs)
+      for (const c of unnamedToggles(src, path)) unnamed.push(`${path}:${c.line}`)
+    expect(unnamed).toEqual([])
+  })
+
   // The other half of the same rule, and the reason it has to be enforced from both sides: the
   // presence ratchet above is what put a second `param.tip` on every bool param's switch, where it
   // rendered on top of the control. Fixing one without pinning the other just re-breaks it.
@@ -428,6 +439,40 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
     for (const [path, src] of sfcs)
       for (const d of duplicateTooltips(src, path)) dupes.push(`${path}:${d.line} <${d.tag}> ${d.tooltip}`)
     expect(dupes).toEqual([])
+  })
+})
+
+describe('unnamedToggles', () => {
+  const sfc = (tpl: string) => `<template>${tpl}</template>`
+
+  it('flags a toggle whose caption sits outside the component', () => {
+    // the shape the whole plot-options panel is written in — the row says what it is, the control
+    // itself says nothing, and a screen reader only ever sees the control
+    expect(unnamedToggles(sfc(`<div><span>Legend</span><CcToggle v-model="x" /></div>`)))
+      .toEqual([{ tag: 'CcToggle', line: 1 }])
+  })
+
+  it('accepts any of the three ways to name one', () => {
+    expect(unnamedToggles(sfc(`<CcToggle label="Legend" v-model="x" />`))).toEqual([])
+    expect(unnamedToggles(sfc(`<CcToggle :label="lbl" v-model="x" />`))).toEqual([])
+    expect(unnamedToggles(sfc(`<CcToggle aria-label="Legend" v-model="x" />`))).toEqual([])
+    expect(unnamedToggles(sfc(`<CcToggle :aria-label="p.label" v-model="x" />`))).toEqual([])
+    expect(unnamedToggles(sfc(`<CcToggle v-model="x">Use discrete GPU</CcToggle>`))).toEqual([])
+  })
+
+  it('does NOT accept a tooltip as a name', () => {
+    // hover help and an accessible name are different things; the ancestor rule the tooltip checks
+    // use is exactly what cannot supply the latter
+    expect(unnamedToggles(sfc(`<div v-tooltip="'Show the key'"><CcToggle v-model="x" /></div>`)))
+      .toEqual([{ tag: 'CcToggle', line: 1 }])
+  })
+
+  it('is not confused by a > inside a handler', () => {
+    expect(unnamedToggles(sfc(`<CcToggle @update:model-value="v => set(v)" label="X" />`))).toEqual([])
+  })
+
+  it('skips CcToggle.vue itself — the primitive cannot name its own callers', () => {
+    expect(unnamedToggles(sfc(`<CcToggle v-model="x" />`), 'src/components/CcToggle.vue')).toEqual([])
   })
 })
 

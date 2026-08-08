@@ -88,6 +88,11 @@
   --cc-fs-sm:  0.75rem;   /* =  12px */
   --cc-fs-md:  0.82rem;
   --cc-fs-lg:  0.9rem;    /* ≈ 14px — the one step ABOVE body: dialog prose, prominent hints */
+
+  /* Width of the label column shared by stacked `.cc-row-group`s — see `.cc-lbl-col` below. Sized to
+     the longest label in the movie block (`version`) at the eyebrow size; override it on a container
+     that needs a wider one. */
+  --cc-lbl-col: 3.4rem;
 }
 
 /* ── Reset / base ──────────────────────────────────────────────────────────── */
@@ -427,6 +432,22 @@ body {
    Without it the row breaks anywhere and orphans a label or a lone number on a line of its own — which
    is exactly how the movie controls read once a size and a filename field joined the fps slider. */
 .cc-row-group { display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0; }
+/* …and its label, when several such groups STACK and their labels should read as a column. Reserving
+   one width is the whole point: `fps` / `px` / `name` / `show` / `title` / `version` / `masks` are
+   different lengths, so without it every control starts at a different x and the block reads ragged
+   (Dominik, 2026-08-08 — first on the movie compare rows, then the same in the recorder popover and
+   the batch panel's Movie section).
+
+   Compose, don't replace: this is a WIDTH rule only — the label still says what it is with
+   `.cc-eyebrow .cc-fs-2xs`. Set `--cc-lbl-col` on the container to widen the column locally. */
+.cc-lbl-col { flex-shrink: 0; min-width: var(--cc-lbl-col); }
+/* The WRAPPING case, opt-in: a chip row that spills onto a second line would otherwise drag its
+   centred label to the middle of the block. Only the group that can wrap takes this — a single-line
+   row (fps + slider + readout) still wants its label centred on the control, so top-aligning it
+   everywhere would trade one misalignment for another. `padding-top` is optical: it centres the ~10px
+   eyebrow against the first row of chips rather than against the top of their box. */
+.cc-row-group-top { align-items: flex-start; }
+.cc-row-group-top > .cc-lbl-col { padding-top: 0.2rem; }
 
 /* ONE density scale, composed with any text scenario: `.cc-muted .cc-fs-xs`, `.cc-eyebrow .cc-fs-2xs`,
    `.cc-readout .cc-fs-2xs`, `.cc-empty-inline .cc-fs-3xs`.

@@ -326,6 +326,40 @@ export interface DuplicateTooltip extends UncoveredControl {
  * @param src   full SFC source
  * @param path  the file's path — used only to skip the wrapper primitives' own definitions
  */
+/**
+ * `CcToggle`s with no accessible NAME — no `label` prop, no slot text, no `aria-label`.
+ *
+ * A tooltip is not a name. `CcToggle` renders a `<label>` wrapping a `display:none` checkbox, so with
+ * the caption outside the component (`<span>Legend</span><CcToggle …/>`, which is how the plot options
+ * and the movie rows are written) the control has NO text content and a screen reader announces an
+ * unlabelled checkbox. 17 call sites were in that state when the `ariaLabel` prop was added.
+ *
+ * Deliberately NOT part of `scanTooltips`: that answers "can the user find out what this does on
+ * hover", and its ancestor rule is what makes a captioned row count as covered. This asks a different
+ * question — does the control carry its own name — and an ancestor cannot supply one.
+ *
+ * Scoped to `CcToggle` because it is the primitive whose real input is hidden. A native `<input>` or
+ * `<select>` inside a `<label>` is named by that label without any help.
+ */
+export const unnamedToggles = (src: string, path = ''): UncoveredControl[] => {
+  if (PRIMITIVE_SFC.test(path)) return []
+  const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
+  const out: UncoveredControl[] = []
+  const re = /<CcToggle((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(tpl)) !== null) {
+    const [, attrs, selfClosing] = m
+    if (/(?:^|\s):?label\s*=|(?:^|\s):?aria-label\s*=/.test(attrs)) continue
+    // slot text counts: `<CcToggle …>Use discrete GPU</CcToggle>` names the control the same way
+    if (!selfClosing) {
+      const close = tpl.indexOf('</CcToggle>', re.lastIndex)
+      if (close !== -1 && tpl.slice(re.lastIndex, close).trim()) continue
+    }
+    out.push({ tag: 'CcToggle', line: tpl.slice(0, m.index).split('\n').length })
+  }
+  return out
+}
+
 export const uncoveredControls = (src: string, path = ''): UncoveredControl[] =>
   scanTooltips(src, path).uncovered
 

@@ -295,34 +295,81 @@ bar + Cancel (a per-run flag, `request_batch_cancel!`, stops it after the curren
 record can't be interrupted). It is **not** a scheduler task: napari is a single UI-serial viewer in
 `api/`, not pooled headless compute.
 
-### Side-by-side version comparison
+### Side-by-side comparison
 
-Both movie surfaces — the viewer's recorder and the batch — can record **several image versions of one
-image as columns of a single movie** (raw next to AF-corrected, say). The picker is one control,
-`MovieCompareControls.vue`: a reorderable `ChipSelect` over the image's versions, where the selection
-*is* the mode — none records the active version, one records that version, two or more compare. Design
-and rejected alternatives: `docs/todo/MOVIE_COMPARE_PLAN.md`.
+Both movie surfaces — the viewer's recorder and the batch — can record **several cells of one image in
+a single movie**, laid out as a grid: image **versions run across the columns**, segmentation **masks
+run down the rows**.
 
-**It is N recordings plus one compose, not a cleverer render.** `_record_columns!`
-(`api/src/napari_api.jl`) records each column through the SAME path a single movie uses — so overlays,
-staging, cancel and the size policy all keep working — into `{final}.col<i>.tmp.mp4`, then the bridge's
-`stitch_movies` command composes the finished files frame by frame (`movie_io.stitch_movies`) and
-promotes the result. Composing several versions as layers of ONE canvas was rejected: `NapariState`
+| Picked | Layout | Renders |
+|---|---|---|
+| 2+ versions, 2+ masks | the cross-product — a grid | rows × cols |
+| 2+ of one only | one row, side by side (whichever list it came from) | N |
+| one of each | one cell — an ordinary recording | 1 |
+
+The picker is one control, `MovieCompareControls.vue`: two reorderable `ChipSelect`s where the
+selection *is* the mode (none = the ordinary movie, one = that one, two or more = a comparison).
+**There is no axis to choose** — the two selections fully determine the layout (`compareShape` in TS,
+`_compare_grid` in Julia). The row-vs-column toggle appears only for a single-row comparison, because
+a grid already fixes both directions. Design and rejected alternatives:
+`docs/todo/MOVIE_COMPARE_PLAN.md`.
+
+**It is one recording per CELL plus a nested compose, not a cleverer render.** `_record_grid!`
+(`api/src/napari_api.jl`) records each cell through the SAME path a single movie uses — so staging,
+cancel and the size policy all keep working — into `{final}.r<i>c<j>.tmp.mp4`. The compose then runs
+the bridge's `stitch_movies` command **twice**: each row's cells are stitched side by side into a
+strip, then the strips are stacked. `movie_io.stitch_movies` already does one dimension at a time,
+correctly and with a working cancel, so a grid is two passes of it rather than a second compositor
+that would have to re-derive padding, caption bands and staging. A single-row grid skips the outer
+stitch entirely and is byte-for-byte the comparison it always was. Composing several versions as layers of ONE canvas was rejected: `NapariState`
 binds `_im_data`/`_axes`/`_channel_axis` to a single store and every overlay, cache and autosave reads
 that state.
 
 Consequences worth knowing:
 
-- **An N-version comparison is N full renders.** The UI states the pass count before you start.
-- **The size fields mean ONE COLUMN.** The 4096 clamp is a GL-canvas limit, so it stays per pass; the
-  composed file is N × that (plus a 2 px divider and a caption strip per column) and may exceed it.
+- **The cost is MULTIPLICATIVE, not additive.** 2 versions × 2 masks is **four** full renders, not
+  two. The UI states the pass count on the action button before you start.
+- **Captions:** each cell carries its version name; each row strip carries its mask name. A single-row
+  comparison captions the cells only.
+- **How much of the z stack.** `show3D` records the WHOLE stack as a volumetric render (`ndisplay=3`);
+  otherwise the movie is 2D at `zSlice` (absent = whatever slice is showing). ONE switch for the image
+  AND the mask layers, because napari's `Labels.projection_mode` accepts only `'none'` — a mask cannot
+  be flattened over z, so projecting just the channels would put a MIP next to a single-plane mask.
+  (Thick slices, `dims.margin_left`/`margin_right` + `projection_mode`, do work for images and are what
+  a channels-only projection would use if that is ever wanted.) Applied by `set_z_view` after each
+  cell's open, which resets the dims; a 2D image refuses 3D and an out-of-range slice is clamped. The
+  viewer's 3D button and the movie's z control read and write the SAME per-set `show3D` pref.
+- **Mask outline.** `labelContour` (0 = filled, N = an N-px outline) is set on the Labels layer so the
+  channel signal under a mask stays readable. It is a settable napari PROPERTY, not a constructor
+  argument — `add_labels` applies it after the add, because passing it to `viewer.add_labels` raises
+  `TypeError` (napari 0.7.1). It is also in `_VIEW_LAYER_KEYS`, so a value the user sets live persists
+  to the props file and rides the recorder's per-cell view apply; the viewer's slider pushes it through
+  a partial view-state apply rather than re-adding the layer, which would re-read the store.
+- **The size fields mean ONE CELL.** The 4096 clamp is a GL-canvas limit, so it stays per pass; the
+  composed file is cols × rows of that (plus a 2 px divider and a caption strip per cell) and may
+  exceed it — a 2 × 2 grid at the canvas size is roughly four times the pixels.
 - **Contrast is a choice, and it is visible.** *Matched* (the default) applies column 1's intensity
   mapping to every column, so a correction is judged on one ruler; *own* leaves each column with the
   napari settings saved for its own version — which exist per version, because layer props are keyed on
   the zarr filename (`_props_path`). Camera and timepoint are shared either way. Sent as
   `compareContrast: 'reference' | 'version'`.
-- **The first column is not re-opened when it is already the version on screen** (`_version_is_open`),
-  so the viewer's "record what's shown" promise survives ticking a second chip.
+- **A column is not re-opened when its version is already the one on screen** (`_version_is_open`,
+  checked per column). On the version axis only the first can match, so the viewer's "record what's
+  shown" promise survives ticking a second chip. On the segmentation axis every column names the same
+  version, so after column 1 **nothing re-opens at all** — the passes differ only by which mask is up,
+  with no re-sampled contrast and no reloaded pyramid. A segmentation comparison is still N renders,
+  but it is the cheap N.
+- **Skeletons ride the same contract.** `branchValueNames` against `img.branch_labels`, three-valued
+  like `labelValueNames` and filtered by its OWN registry (a mask name is not a skeleton name). There
+  is no movie picker for them — they stay out of the generic labels picker (BRANCHING_PLAN Decision
+  6) — so the viewer's recorder sends whatever is ON SCREEN, and the batch sends nothing, which leaves
+  its skeletons untouched rather than silently cleared.
+- **Overlays do NOT survive a column on their own.** `open_image` starts with `layers.clear()`, so each
+  pass re-applies the config to an empty canvas: tracks, population points and the label masks are back
+  only because `_apply_movie_config!` asks for them. Masks in particular are driven by
+  `labelValueNames`, which is **three-valued** — absent leaves the canvas alone (the plain "record
+  what's on screen"), `[]` means no masks, a list means exactly those. The batch always sends a list
+  (an authored config says what it wants); the viewer omits it when it has nothing to say.
 - **One title card, on the composed file** — the per-column passes record without one.
 - Unequal-length inputs hold their last frame rather than truncating; unequal frame sizes are centred
   on the largest tile. Both are safety nets: every column screenshots the same canvas size.

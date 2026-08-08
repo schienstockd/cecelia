@@ -9,13 +9,21 @@
 //
 // Label: pass text via the `label` prop or the default slot (slot wins). Both sit to the RIGHT of the
 // switch; the whole control is one clickable <label>. Add a tooltip at the call site with v-tooltip.
+//
+// `ariaLabel` is for the OTHER shape — a row that already shows its own label to the LEFT of the
+// switch (the `fps` / `px` / `show` eyebrow rows, PlotOptions, SummaryPanel). Those pass no `label`,
+// so the control has no text content and therefore no accessible name at all; naming it here puts the
+// name on the <input>, where a screen reader looks, rather than on the wrapping <label>. It changes
+// nothing visually — a bare `aria-label` at the call site would land on the root <label> and be
+// ignored, which is why this is a prop and not fallthrough.
 const model = defineModel<boolean>({ required: true })
-defineProps<{ label?: string; disabled?: boolean }>()
+defineProps<{ label?: string; ariaLabel?: string; disabled?: boolean }>()
 </script>
 
 <template>
   <label class="cc-toggle" :class="{ disabled }">
-    <input type="checkbox" class="cc-toggle-input" v-model="model" :disabled="disabled" />
+    <input type="checkbox" class="cc-toggle-input" v-model="model" :disabled="disabled"
+           :aria-label="ariaLabel" />
     <span class="cc-toggle-track"><span class="cc-toggle-thumb" /></span>
     <span v-if="$slots.default || label" class="cc-toggle-label"><slot>{{ label }}</slot></span>
   </label>

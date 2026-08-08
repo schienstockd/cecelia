@@ -185,8 +185,11 @@ export const useSettingsStore = defineStore('settings', () => {
     // [] or one = an ordinary single-version movie), with the layout + contrast mode that go with them.
     // `showTimestamp`/`showScaleBar` are napari's BAKED overlays — burnt into every recorded frame, so
     // leaving them out is a record-time decision, not something the movie can be edited to undo.
+    // `compareSegmentations` is the same idea for the segmentation masks. The two together give the
+    // layout with nothing to store: versions across, masks down (see `compareShape`).
     movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
-              titleCard?: TitleCardCfg; compareVersions?: string[]
+              titleCard?: TitleCardCfg; compareVersions?: string[]; compareSegmentations?: string[]
+              labelContour?: number; zSlice?: number | null
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
               showTimestamp?: boolean; showScaleBar?: boolean }
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
@@ -200,6 +203,12 @@ export const useSettingsStore = defineStore('settings', () => {
       // (docs/todo/MOVIE_COMPARE_PLAN.md). `valueName` is what configs saved before that carried; read
       // it through `versionsFromConfig`, never directly.
       valueNames?: string[]
+      // Segmentation masks drawn into every movie, in order — 2+ makes them the grid's ROWS. Read
+      // through `segmentationsFromConfig`.
+      labelValueNames?: string[]
+      labelContour?: number                 // mask outline width in px (0 = filled)
+      show3D?: boolean                      // whole z stack as a 3D render…
+      zSlice?: number | null                // …or this slice in 2D (null = whatever is showing)
       compareLayout?: CompareLayout; compareContrast?: CompareContrast
       valueName?: string                    // image version to open ('' = active) — legacy, migrated
       channels?: Record<string, string>     // channelName → colormap (only these shown)
@@ -248,7 +257,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // timelapse-recording params (per set); defaults match the backend (fps 15, size = canvas)
   const getMovieConfig = (setUid: string): {
     fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
-    compareVersions: string[]; compareLayout: CompareLayout; compareContrast: CompareContrast
+    compareVersions: string[]; compareSegmentations: string[]; labelContour: number
+    zSlice: number | null
+    compareLayout: CompareLayout; compareContrast: CompareContrast
     showTimestamp: boolean; showScaleBar: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
@@ -258,6 +269,14 @@ export const useSettingsStore = defineStore('settings', () => {
     titleCard: _setPrefs.value[setUid]?.movie?.titleCard ?? { ...TITLE_CARD_DEFAULT },
     // side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md); [] = record the active version
     compareVersions: _setPrefs.value[setUid]?.movie?.compareVersions ?? [],
+    // …and the masks; [] = draw whatever the viewer already shows
+    compareSegmentations: _setPrefs.value[setUid]?.movie?.compareSegmentations ?? [],
+    // 0 = filled masks, which is what every movie drew before the control existed
+    labelContour: _setPrefs.value[setUid]?.movie?.labelContour ?? 0,
+    // null = record whatever slice is showing (what every recording did before the setting existed).
+    // The 3D half is the EXISTING per-set `show3D` pref — one stored value, so the viewer's 3D button
+    // and the movie's z control cannot disagree.
+    zSlice: _setPrefs.value[setUid]?.movie?.zSlice ?? null,
     compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     // default ON — what every movie was before the toggles existed
@@ -267,7 +286,9 @@ export const useSettingsStore = defineStore('settings', () => {
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
                                    suffix?: string | null; titleCard?: TitleCardCfg
-                                   compareVersions?: string[]; compareLayout?: CompareLayout
+                                   compareVersions?: string[]; compareSegmentations?: string[]
+                                   labelContour?: number; zSlice?: number | null
+                                   compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
                                    showTimestamp?: boolean; showScaleBar?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })

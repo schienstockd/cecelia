@@ -22,9 +22,10 @@ import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
+         segmentationsFromConfig, compareShape,
          type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
@@ -75,7 +76,7 @@ const sizeY = computed<number | null>({ get: () => movie.value.sizeY, set: v => 
 // filename addition; defaults to the version this batch opens (blank = the active one), so a corrected
 // run and a raw run don't write over each other. null = untouched, '' = deliberately cleared.
 const suffix = computed<string>({
-  get: () => movie.value.suffix ?? compareSuffix(compareVersions.value),
+  get: () => movie.value.suffix ?? compareSuffix(compareVersions.value, compareSegmentations.value),
   set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { suffix: v }) } })
 
 // Which versions each movie shows, in column order (docs/todo/MOVIE_COMPARE_PLAN.md). Reads a config
@@ -84,6 +85,29 @@ const suffix = computed<string>({
 const compareVersions = computed<string[]>({
   get: () => versionsFromConfig(cfg.value, versionNames.value),
   set: v => patch({ valueNames: v }),
+})
+// Which segmentation masks each movie DRAWS, in column order — and on the segmentation axis, the
+// columns themselves. Empty means no masks: an authored batch config always says what it wants, so the
+// backend gets an explicit empty list rather than "leave the canvas alone".
+const compareSegmentations = computed<string[]>({
+  get: () => segmentationsFromConfig(cfg.value, segNames.value),
+  set: v => patch({ labelValueNames: v }),
+})
+// Versions across, masks down — the two selections fully determine the layout, nothing to choose.
+const compareShapeNow = computed(() => compareShape(compareVersions.value, compareSegmentations.value))
+// Mask outline width (0 = filled). Persisted only — unlike the viewer's recorder this page drives no
+// live layers of its own; the value reaches napari when the batch applies the config per image.
+const labelContour = computed<number>({
+  get: () => clampContour(cfg.value.labelContour), set: v => patch({ labelContour: clampContour(v) }) })
+// Whole z stack (3D) or one slice. Authored per SET here rather than read from the live viewer — the
+// batch opens each image itself, so there is no "what is on screen" to inherit.
+const show3D = computed<boolean>({ get: () => !!cfg.value.show3D, set: v => patch({ show3D: v }) })
+const zSlice = computed<number | null>({
+  get: () => cfg.value.zSlice ?? null, set: v => patch({ zSlice: v }) })
+// the shallowest stack in the selection — a slice index deeper than that would not exist on every image
+const zDepth = computed(() => {
+  const zs = imgs.value.map(i => i.sizeZ ?? 1).filter(n => n > 1)
+  return zs.length ? Math.min(...zs) : 1
 })
 // napari's baked overlays, burnt into every frame (per set, like fps/size)
 const movieTimestamp = computed<boolean>({
@@ -150,7 +174,7 @@ const OVERLAY_OPTIONS: ChipOption[] = [
   { value: 'trackclust', label: '', icon: 'pi pi-sitemap',        tip: 'Track-cluster populations' },
   { value: 'gated',      label: '', icon: 'pi pi-filter',         tip: 'Gated track populations' },
   { value: 'pops',       label: '', icon: 'pi pi-chart-scatter',  tip: 'Populations (points)' },
-  { value: 'labels',     label: '', icon: 'pi pi-palette',        tip: 'Colour label masks by the colour-by measure' },
+  { value: 'labels',     label: '', icon: 'pi pi-palette',        tip: 'Colour the drawn masks by the colour-by measure' },
 ]
 const overlaysModel = computed<string[]>({
   get: () => [showTracks.value && 'tracks', showTrackclust.value && 'trackclust', showGated.value && 'gated',
@@ -341,7 +365,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <section v-if="versionNames.length > 1" class="bm-sec">
         <h4>Image versions <span class="bm-sub cc-muted">click to include · drag to order</span></h4>
         <MovieCompareControls :available="versionNames"
+                              :available-segmentations="segNames"
                               v-model:versions="compareVersions"
+                              v-model:segmentations="compareSegmentations"
+                              v-model:contour="labelContour"
                               v-model:layout="compareLayout"
                               v-model:contrast="compareContrast" />
       </section>
@@ -351,7 +378,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <h4>Movie</h4>
         <MovieOutputControls v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
-                             v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar" />
+                             v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
+                             :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 
@@ -374,7 +402,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <i class="pi pi-eye" /> Preview on open image
         </button>
         <button class="cc-btn cc-btn-primary" :disabled="!canRun" @click="generate"
-                v-tooltip.top="compareActionTip(compareVersions, 'Record one movie per selected image')">
+                v-tooltip.top="compareActionTip(compareShapeNow, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
         </button>
       </div>

@@ -1,10 +1,14 @@
 # Side-by-side version comparison in movies
 
-**Status:** P1–P6 built (stitcher · bridge command · `_record_columns!` · both callers · UI · docs),
-all four suites green. **Not yet run against a live napari** — the recording loop itself
-(`_record_columns!`) needs the viewer, so its passes, the shared-view apply and the composed output
-have not been exercised end to end. Everything either side of it is unit-tested.
-**Branch/worktree:** `work/movie-compare` (`~/cc-workspace/cecelia/movie-compare`).
+**Status:** P1–P6 built, then GENERALISED (2026-08-08, see *Risks* item 6): versions and segmentation
+masks are the two dimensions of a **grid**, `_record_columns!` became `_record_grid!` and the compose
+became nested. **The names below are the ones this plan was written against and are kept as the build
+record — read `docs/NAPARI.md` → *Side-by-side comparison* and `INVENTORY.md` for what exists now.**
+All four suites green. **Still not run against a live napari** — the recording loop needs the viewer,
+so its passes, the shared-view apply and the composed output have not been exercised end to end.
+Everything either side of it is unit-tested.
+**Branch/worktree:** `work/movie-compare`, then `work/movie-seg-audit`
+(`~/cc-workspace/cecelia/movie-seg-audit`).
 **Related:** `docs/todo/ANIMATION_PLAN.md` (F1 batch / F2 animation / H title card), `docs/NAPARI.md`
 → *Movie output size*, `docs/UI.md` → *UX primitive catalog*.
 
@@ -278,5 +282,26 @@ redesign, the BatchMoviesPanel select replacement, settings persistence + migrat
 5. **Versions with different channel names.** `imChannelNames` is versioned, so a version *could*
    name its channels differently; then D4's layer-name matching leaves that column with its own
    props. Acceptable (and rare) — log which layers did not match.
-6. **Open question:** should a comparison also be offered across **segmentations** (same version, two
-   label sets)? D9 makes it a config change, not a rewrite — but it is not in scope until asked.
+6. ~~**Open question:** should a comparison also be offered across **segmentations**?~~ **BUILT**
+   (2026-08-08) — and it went further than the question asked. Versions and masks are now the two
+   dimensions of a **grid** (versions across, masks down), so picking two of both gives the
+   cross-product rather than forcing a choice between them. Three things were added: a second column
+   builder (`_segmentation_columns`), the grid builder that arranges them (`_compare_grid` /
+   `compareShape`), and — the part D9 could not have predicted — the ability to say "show these masks"
+   at all.
+
+   D9 half-held. The column SPEC was indeed enough to vary what a cell shows, but the pass loop itself
+   had to grow a second dimension (`_record_columns!` → `_record_grid!`) and the compose became nested.
+   `movie_io.stitch_movies` needed no change at all — a grid is two passes of the one-dimensional
+   stitcher, rows then strips.
+
+   D1's claim that "overlays … all work, because each pass IS today's recording" was **wrong for label
+   masks**: `open_image` clears the canvas and `_apply_movie_config!` restored tracks, points and
+   colour-by but never the label layers, so a comparison silently dropped them (and the batch's
+   `labels` chip was a no-op on every image after the first). See
+   `docs/todo/MOVIE_SEGMENTATION_AUDIT.md` and `docs/NAPARI.md` → *Side-by-side comparison*.
+
+   **New consequence worth stating up front:** the cost is now MULTIPLICATIVE. D3 said an N-version
+   comparison is N full renders; a grid is rows × cols. 3 versions × 2 masks is six renders of the
+   whole timecourse. The action button's tooltip states the count, and the progress bar spans every
+   pass and every compose (`_grid_frame_total`).

@@ -19,7 +19,8 @@ import MovieOutputControls from './MovieOutputControls.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import { movieSizeParams } from '../utils/movieSize'
-import { normaliseVersions, compareSuffix, compareActionTip,
+import { clampContour } from '../utils/batchMovie'
+import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { useNapariStatus } from '../composables/useNapariStatus'
@@ -114,9 +115,32 @@ const hasLabelRows = computed(() => labelRows.value.length > 0)
 const currentSetUid = computed(() =>
   projectStore.napariImageUid ? projectStore.setUidOfImage(projectStore.napariImageUid) : null)
 // per-set option accessors bound to the open image's set (write-throughs persist to the settings store)
+// Deliberately the SAME stored value the viewer's 3D button reads and the movie's z control writes —
+// one setting with two entry points, not two settings that can disagree about what is on screen.
 const show3D = computed<boolean>({
   get: () => currentSetUid.value ? settings.getShow3D(currentSetUid.value) : false,
-  set: v => { if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v) } })
+  set: v => {
+    if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
+    void pushZView(v, zSlice.value)
+  } })
+// Which z slice a 2D recording pins. null = whatever is showing, which is what every recording did
+// before the setting existed.
+const zSlice = computed<number | null>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null,
+  set: v => {
+    if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { zSlice: v })
+    void pushZView(show3D.value, v)
+  } })
+
+// Apply the z choice to the LIVE viewer, so it is chosen by looking at it rather than by watching a
+// render finish. Same reasoning as the outline slider; the backend applies the same call per cell.
+async function pushZView(is3D: boolean, z: number | null) {
+  try {
+    await fetch('/api/napari/set-z-view', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ show3D: is3D, zSlice: is3D ? null : z }) })
+  } catch { /* napari not running — persisted, and applies on the next open */ }
+}
 const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
@@ -137,8 +161,8 @@ const movieSizeY = computed<number | null>({
 // A comparison names itself after the versions it shows, so it can't overwrite either single-version
 // recording; a plain record still falls back to the version shown in napari.
 const movieSuffixDefault = computed(() =>
-  compareVersions.value.length
-    ? compareSuffix(compareVersions.value)
+  (compareVersions.value.length || compareSegmentations.value.length)
+    ? compareSuffix(compareVersions.value, compareSegmentations.value)
     : (selectedValueName.value && selectedValueName.value !== 'default' ? selectedValueName.value : ''))
 const movieSuffix = computed<string>({
   get: () => {
@@ -150,9 +174,56 @@ const movieSuffix = computed<string>({
 // records what's on screen (unchanged), two or more record a column per version into one movie.
 const compareVersions = computed<string[]>({
   get: () => currentSetUid.value
-    ? normaliseVersions(settings.getMovieConfig(currentSetUid.value).compareVersions, valueNames.value)
+    ? normaliseItems(settings.getMovieConfig(currentSetUid.value).compareVersions, valueNames.value)
     : [],
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareVersions: v }) } })
+// …and the segmentation axis's list. Empty means "whatever is on screen": the recorder then sends NO
+// mask list at all, which is what keeps the plain "record what's shown" record untouched.
+const compareSegmentations = computed<string[]>({
+  get: () => currentSetUid.value
+    ? normaliseItems(settings.getMovieConfig(currentSetUid.value).compareSegmentations, labelNames.value)
+    : [],
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareSegmentations: v }) } })
+// Versions across, masks down — the two selections fully determine the layout, nothing to choose.
+const compareShapeNow = computed(() => compareShape(compareVersions.value, compareSegmentations.value))
+// Mask outline width. Pushed to the LIVE viewer as well as persisted: it is a display property of the
+// layers already on screen, so seeing it is how you choose it — a value you can only judge by watching
+// a render finish is not a setting, it's a guess.
+const labelContour = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).labelContour : 0,
+  set: v => {
+    const n = clampContour(v)
+    if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { labelContour: n })
+    void pushLabelContour(n)
+  } })
+
+// Apply the outline to every mask layer currently on screen, without rebuilding them: `contour` is a
+// captured view prop (napari_utils._VIEW_LAYER_KEYS), so a partial view-state apply is enough and the
+// layer keeps its data, position and colouring. Rebuilding via show-labels would re-read the store.
+async function pushLabelContour(n: number) {
+  const names = labelNames.value.filter(vn => visibleLabels.value[vn])
+  if (!names.length) return
+  const layers: Record<string, { contour: number }> = {}
+  for (const vn of names) layers[`(${vn}) Labels`] = { contour: n }
+  try {
+    await fetch('/api/napari/apply-view-state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewState: { layers } }) })
+  } catch { /* napari not running — the value is persisted and applies on the next open */ }
+}
+// What the recording draws as masks. An explicit pick wins; otherwise the label sets the user has
+// toggled on in this panel, so a version comparison keeps the masks that are on screen instead of
+// coming back bare in every column after the first (the re-open clears the canvas).
+const movieLabelValueNames = computed<string[]>(() =>
+  compareSegmentations.value.length
+    ? compareSegmentations.value
+    : labelNames.value.filter(vn => visibleLabels.value[vn]))
+// Skeletons (`segment.branching`) are a separate registry with a separate toggle, and they had the
+// same bug masks did — the re-open cleared them and nothing asked for them back. There is no movie
+// picker for them (they are deliberately kept out of the generic labels picker), so the recorder
+// takes what is ON SCREEN, which is what "record what's shown" means for an overlay with no config.
+const movieBranchValueNames = computed<string[]>(() =>
+  Object.keys(napariImage.value?.branchLabels ?? {}).filter(vn => branchVns.value[vn]))
 const compareLayout = computed<CompareLayout>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
@@ -282,10 +353,12 @@ async function recordTimelapse() {
         { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
     const versions = compareVersions.value
+    const shape    = compareShapeNow.value
     const t = taskStore.add({
       module: 'viewer',
-      label: versions.length > 1
-        ? `Compare ${versions.length} versions — ${napariImage.value?.name ?? 'movie'}`
+      label: shape.cells > 1
+        ? (shape.grid ? `Compare ${shape.cols} x ${shape.rows}` : `Compare ${shape.cols}`)
+          + ` — ${napariImage.value?.name ?? 'movie'}`
         : `Record ${napariImage.value?.name ?? 'movie'}`,
       imageUid: uid, imageName: napariImage.value?.name ?? '', status: 'queued',
       taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
@@ -293,8 +366,14 @@ async function recordTimelapse() {
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
       suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin,
-      // 2+ versions = a side-by-side comparison; fewer is the plain record the backend already did
-      valueNames: versions, compareLayout: compareLayout.value, compareContrast: compareContrast.value,
+      // More than one cell = a comparison; one is the plain record the backend already did.
+      // `labelValueNames` is OMITTED when there is nothing to say — absent means "leave the masks
+      // alone", which is what the plain record has always done.
+      valueNames: versions, labelContour: labelContour.value,
+      show3D: show3D.value, zSlice: show3D.value ? null : zSlice.value,
+      ...(movieLabelValueNames.value.length ? { labelValueNames: movieLabelValueNames.value } : {}),
+      ...(movieBranchValueNames.value.length ? { branchValueNames: movieBranchValueNames.value } : {}),
+      compareLayout: compareLayout.value, compareContrast: compareContrast.value,
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
@@ -750,7 +829,10 @@ onUnmounted(() => {
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
         <div class="movie-row">
           <MovieCompareControls class="movie-versions" :available="valueNames"
+                                :available-segmentations="labelNames"
                                 v-model:versions="compareVersions"
+                                v-model:segmentations="compareSegmentations"
+                                v-model:contour="labelContour"
                                 v-model:layout="compareLayout"
                                 v-model:contrast="compareContrast" />
           <button ref="movieOptsAnchor" class="opt-btn cc-btn cc-btn-ghost cc-btn-icon"
@@ -761,7 +843,7 @@ onUnmounted(() => {
           </button>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
-                  v-tooltip.bottom="compareActionTip(compareVersions,
+                  v-tooltip.bottom="compareActionTip(compareShapeNow,
                     'Record the current view over the time axis → mp4 in the project\'s movies/ folder')">
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
@@ -770,7 +852,9 @@ onUnmounted(() => {
           <div class="movie-opts">
             <MovieOutputControls v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
-                                 v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar" />
+                                 v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
+                                 :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
+                                 v-model:zSlice="zSlice" />
             <TitleCardControls v-model="movieTitleCardModel" />
           </div>
         </TeleportPopover>

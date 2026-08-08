@@ -121,7 +121,15 @@ def _wrap_lines(draw, text, font, max_w):
     """Word-wrap `text` to fit `max_w`. A single word wider than the line (e.g. a long image name with
     no spaces) is hard-broken — preferring a break just after a '-' or '_' within the fitting prefix, so
     names like ``M1a-MERTK_KAT-…-res_0001`` split at separators rather than mid-token. Never ellipsises,
-    so the whole title is always shown."""
+    so the whole title is always shown.
+
+    ``max_w`` is clamped to at least 1px and the hard-break loop is guarded on ``w`` being non-empty.
+    Both are termination guards, not cosmetics: ``render_card_frame`` derives ``max_w`` as
+    ``width - 2*margin`` with a 16px floor on the margin, so any frame under ~32px wide made it
+    NEGATIVE — every prefix then "doesn't fit", the loop appended an empty string forever and the
+    render hung, holding the recording open with it. Reachable from a legitimate size request: the
+    movie size policy clamps the top end at 4096 but the bottom end at 2."""
+    max_w = max(1, max_w)
     lines, cur = [], ""
     for w in str(text).split():
         trial = w if not cur else cur + " " + w
@@ -131,7 +139,7 @@ def _wrap_lines(draw, text, font, max_w):
         if cur:
             lines.append(cur)
             cur = ""
-        while draw.textlength(w, font=font) > max_w:
+        while w and draw.textlength(w, font=font) > max_w:
             n = _fit_prefix(draw, w, font, max_w)
             sep = max(w.rfind("-", 0, n), w.rfind("_", 0, n))   # prefer a separator break
             cut = sep + 1 if sep > 0 else n
@@ -143,12 +151,28 @@ def _wrap_lines(draw, text, font, max_w):
     return lines
 
 
+def _font_scale(width, height):
+    """The reference dimension the card's fonts are sized against.
+
+    Type used to scale off ``height`` alone while every other measurement on the card — the margin, the
+    wrap width, the ellipsis point — is driven by ``width``. The card therefore rendered at a size that
+    depended on the frame's ASPECT RATIO: a 500x500 batch recording drew its title at 5.0% of the frame
+    width where a 1200x800 viewer recording drew it at 3.33%, i.e. half again as large for the same
+    card. Capping the reference at ``width * 2/3`` (a 3:2 frame) leaves every landscape recording
+    exactly as it was and only pulls square/portrait ones back into line.
+    """
+    return min(max(2, int(height)), (max(2, int(width)) * 2) / 3)
+
+
 def render_card_frame(content, width, height):
     """Render the title card once as an (H, W, 3) uint8 RGB array. The title word-wraps so the whole
     image name shows; content that overflows the height is clipped (movies are tall enough for the
-    small legend in practice) and long legend labels are ellipsised."""
+    small legend in practice) and long legend labels are ellipsised.
+
+    Text is sized off ``_font_scale`` rather than the raw height — see there for why."""
     width = max(2, int(width))
     height = max(2, int(height))
+    scale = _font_scale(width, height)
     img = Image.new("RGB", (width, height), _BG)
     d = ImageDraw.Draw(img)
     margin = max(16, int(width * 0.045))
@@ -169,13 +193,13 @@ def render_card_frame(content, width, height):
 
     title = str(content.get("title") or "").strip()
     if title:
-        tf = _font(height * 0.05)                     # a bit smaller so long image names fit
+        tf = _font(scale * 0.05)                     # a bit smaller so long image names fit
         for ln in _wrap_lines(d, title, tf, max_w):   # wrap (never clip) so the whole name shows
             y += line(x, y, ln, tf, _FG_TITLE)
-        y += int(height * 0.02)
+        y += int(scale * 0.02)
 
-    head_f = _font(height * 0.032)
-    label_f = _font(height * 0.030)
+    head_f = _font(scale * 0.032)
+    label_f = _font(scale * 0.030)
     row_h = int(text_h(label_f) * 1.5)
     swatch = int(text_h(label_f))
 
@@ -185,7 +209,7 @@ def render_card_frame(content, width, height):
             continue
         heading = str(section.get("heading") or "").strip()
         if heading:
-            y += line(x, y, heading, head_f, _FG_HEAD) + int(height * 0.006)
+            y += line(x, y, heading, head_f, _FG_HEAD) + int(scale * 0.006)
         for it in items:
             rgb = _hex_rgb(it.get("colour"))
             label_x = x
@@ -194,12 +218,12 @@ def render_card_frame(content, width, height):
                 label_x = x + swatch + int(swatch * 0.5)
             d.text((label_x, y), clip(str(it.get("label") or ""), label_f), font=label_f, fill=_FG_LABEL)
             y += row_h
-        y += int(height * 0.015)
+        y += int(scale * 0.015)
 
     note = str(content.get("note") or "").strip()
     if note:
-        nf = _font(height * 0.028)
-        y += int(height * 0.01)
+        nf = _font(scale * 0.028)
+        y += int(scale * 0.01)
         d.text((x, y), clip(note, nf), font=nf, fill=_FG_NOTE)
 
     return np.asarray(img, dtype=np.uint8)

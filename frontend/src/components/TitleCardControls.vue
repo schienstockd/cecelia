@@ -12,6 +12,12 @@
 // v-model takes the WHOLE config and emits a whole new object, which suits all three call sites: the
 // viewer and batch panels persist via a merge-patch into their per-set config, and the animation store
 // holds a ref with a deep watch that autosaves either way.
+//
+// LABEL TIER: an eyebrow to the left of the switch, matching the `fps`/`px`/`name`/`show` rows this
+// control always sits under (MovieOutputControls). It used to use CcToggle's own `label`, which is a
+// tier and a half larger (--cc-fs-md vs --cc-fs-2xs) and full-brightness — so "Title card" read as a
+// section heading rather than as the fourth row of the same block, loudest in the batch panel where
+// the real section headings are that size too.
 import CcToggle from './CcToggle.vue'
 import type { TitleCardCfg } from '../utils/batchMovie'
 
@@ -27,11 +33,16 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 
 <template>
   <div class="tc cc-row">
-    <CcToggle
-      :model-value="modelValue.enabled"
-      label="Title card"
-      v-tooltip.bottom="'Prepend a slide with the image name, attributes, channels and their colours'"
-      @update:model-value="v => patch({ enabled: v })" />
+    <span class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
+            v-tooltip.bottom="'Prepend a slide with the image name, attributes, channels and their colours'">title</span>
+      <!-- the tooltip rides the LABEL, which is this row's heading; repeating it on the switch beside
+           it is what `duplicateTooltips` (uiCopy.test.ts) exists to catch -->
+      <CcToggle
+        :model-value="modelValue.enabled"
+        aria-label="Title card"
+        @update:model-value="v => patch({ enabled: v })" />
+    </span>
     <template v-if="modelValue.enabled">
       <!-- slider + its readout are ONE wrap unit (`.cc-row-group`): the panel is narrow enough that
            they would otherwise split across lines and read as an orphan number -->
@@ -51,8 +62,18 @@ const setDuration = (v: number) => patch({ durationSec: Math.min(10, Math.max(1,
 
 <style scoped>
 .tc { min-width: 0; }
+/* the label column is the shared `.cc-lbl-col` (style.css) — that IS what makes the rows align */
 .tc-range { width: 4.5rem; flex: 1 1 3rem; min-width: 2.5rem; }
 .tc-dur { min-width: 1.6rem; }
-/* the note takes the leftover width where there is any, and wraps to its own line where there is not */
-.tc-note { flex: 1 1 8rem; min-width: 6rem; }
+/* The note takes a WHOLE line of its own, everywhere — the same rule (and the same `flex-basis: 100%`)
+   as MovieOutputControls' `name` and `show` groups.
+
+   It used to absorb the leftover width, so where it landed depended on the container: its own row in
+   the batch panel, squeezed onto the title row in the viewer's 22rem popover. That is one component
+   rendering as two layouts, which is exactly what having one component is supposed to prevent —
+   Dominik was cross-checking the two surfaces by eye after every change (2026-08-08).
+
+   The rule for this block, stated once so it stops being decided by accident: a group holding a TEXT
+   FIELD or a chip row takes its own line; the short numeric groups (fps, px, z) may share one. */
+.tc-note { flex: 1 1 100%; min-width: 6rem; }
 </style>

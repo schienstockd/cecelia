@@ -202,10 +202,22 @@ function handle_movie_record(ws, data)
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
     tc          = get(data, :titleCard, nothing)
     card        = (tc isa AbstractDict && Bool(get(tc, :enabled, false))) ? tc : nothing
-    # Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md): 2+ versions record one column
-    # each into a single file. 0 or 1 is the plain record it always was.
+    # Side-by-side comparison (docs/todo/MOVIE_COMPARE_PLAN.md): versions across the columns, masks
+    # down the rows, one pass per cell into a single file. A single cell is the plain record it was.
     vns_raw     = get(data, :valueNames, nothing)
     value_names = vns_raw === nothing ? String[] : collect(String, vns_raw)
+    # The segmentation masks to show. ABSENT and EMPTY differ: absent leaves the canvas alone (what a
+    # plain "record what's on screen" wants), empty is an explicit no-masks. 2+ also makes them the
+    # grid's ROWS. See `_config_label_value_names`.
+    lvns_raw    = get(data, :labelValueNames, nothing)
+    label_vns   = lvns_raw === nothing ? nothing : collect(String, lvns_raw)
+    # skeletons (`segment.branching`) — a separate registry and a separate picker, same three-valued
+    # contract; the batch sends neither, so its skeletons stay untouched
+    bvns_raw    = get(data, :branchValueNames, nothing)
+    branch_vns  = bvns_raw === nothing ? nothing : collect(String, bvns_raw)
+    contour     = _label_contour(data)          # mask outline width, 0 = filled
+    show_3d     = _show_3d(data)                # whole z stack as a 3D render…
+    z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
     layout      = String(get(data, :compareLayout, "row"))
     # napari's baked overlays, burnt into every frame. Default true = what every movie was.
@@ -225,7 +237,10 @@ function handle_movie_record(ws, data)
     @async try
         run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
                          suffix = suffix, title_card = card, keyframes = keyframes,
-                         value_names = value_names, share_contrast = share_ctr, layout = layout,
+                         value_names = value_names, label_value_names = label_vns,
+                         branch_value_names = branch_vns,
+                         label_contour = contour, show_3d = show_3d, z_slice = z_slice,
+                         share_contrast = share_ctr, layout = layout,
                          show_timestamp = show_ts, show_scale_bar = show_sb, api_url = api_url)
     catch e
         @warn "movie record crashed" exception = e

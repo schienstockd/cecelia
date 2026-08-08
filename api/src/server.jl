@@ -402,6 +402,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/napari/restart" => (req, body_bytes) -> (api_napari_restart(body_bytes)),
     "/api/napari/gpu" => (req, body_bytes) -> (api_napari_gpu_set(body_bytes)),
     "/api/napari/configure-autosave" => (req, body_bytes) -> (api_napari_configure_autosave(body_bytes)),
+    "/api/napari/set-z-view" => (req, body_bytes) -> (api_napari_set_z_view(body_bytes)),
     "/api/napari/show-labels" => (req, body_bytes) -> (api_napari_show_labels(body_bytes)),
     "/api/napari/refresh-labels" => (req, body_bytes) -> (api_napari_refresh_labels(body_bytes)),
     "/api/napari/show-populations" => (req, body_bytes) -> (api_napari_show_populations(body_bytes)),
