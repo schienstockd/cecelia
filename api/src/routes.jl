@@ -569,7 +569,6 @@ function api_compressor_get(_req)
     200, JSON3.write((; current = Cecelia.image_compressor(),
                         default = Cecelia.IMAGE_COMPRESSOR_DEFAULT,
                         measuredOn = Cecelia.IMAGE_COMPRESSOR_MEASURED_ON,
-                        docsUrl = Cecelia.IMAGE_COMPRESSOR_DOCS_URL,
                         choices = choices))
 end
 

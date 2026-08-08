@@ -493,9 +493,6 @@ const IMAGE_COMPRESSOR_CHOICES = [
 const IMAGE_COMPRESSOR_MEASURED_ON =
     "1.7 GB 16-bit timecourse, whole store · zarr v2, nested keys, 512×512 chunks"
 
-#: The byte-shuffle filter belongs to Blosc, not to zstd/lz4 — link it separately.
-const IMAGE_COMPRESSOR_DOCS_URL = "https://www.blosc.org/"
-
 const IMAGE_COMPRESSOR_DEFAULT = "zstd-shuffle"
 
 """

@@ -513,8 +513,6 @@ async function switchWt(path: string) {
         <div class="cmp-head">
           <span class="svc-name">Image compression</span>
           <span class="field-hint cc-muted cc-fs-xs">{{ compressor.measuredOn }}</span>
-          <a :href="compressor.docsUrl" target="_blank" rel="noopener"
-             class="cmp-link cc-fs-xs" v-tooltip.top="'Blosc: the shuffle filter'">Blosc <i class="pi pi-external-link" /></a>
         </div>
         <SelectionTable :columns="COMPRESSOR_COLUMNS" :rows="compressor.choices"
                         :model-value="compressor.current" :disabled="compressorBusy"
@@ -941,7 +939,6 @@ async function switchWt(path: string) {
   gap: 0.6rem;
   margin-bottom: 0.35rem;
 }
-.cmp-link { margin-left: auto; }
 .settings-section {
   margin-bottom: 2rem;
 }
