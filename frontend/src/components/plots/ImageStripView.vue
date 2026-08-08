@@ -19,7 +19,7 @@ import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { captureViewLegend } from '../../utils/napariOverlays'
-import { restoreOverlays } from '../../utils/napariOverlays'
+import { restoreOverlays, applyViewState } from '../../utils/napariOverlays'
 import { suppressAutoShowOnce, releaseAutoShowSuppression } from '../../composables/useNapariAutoShow'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
@@ -231,10 +231,7 @@ async function onNapariOpened(payload: { imageUid?: string }) {
   if (!p || !payload?.imageUid || payload.imageUid !== p.imageUid) return
   pendingApply.value = null
   try {
-    await fetch('/api/napari/apply-view-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ viewState: p.snapshot }),
-    })
+    await applyViewState(p.snapshot)          // shared builder — see utils/napariOverlays
     // re-push the tracks/pops the frame had (open only recreates channel layers; overlays come from
     // show-tracks/show-populations, which zoom-to-source must re-request). Derived from the snapshot's
     // overlay layer names + the captured colour-by, so the overlays reappear as they were.

@@ -14,6 +14,7 @@ import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
 import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
+import { rafCoalesce } from '../../utils/rafCoalesce'
 import type { PlotDataResponse } from '../../plots/types'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
@@ -110,7 +111,9 @@ const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
 // on-screen (dark-theme) chart — dark theme is only for webpage display. Legend/title overlays are HTML
 // (not in the SVG), so — as with the existing per-plot PNG export — they're omitted from the image.
 async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | null> {
-  if (!light) return svgToImageURL(svgOf(node as Element | null), type)
+  // renders are coalesced to a frame, so `node` can be one frame behind the current props — an export
+  // must never serialise the PREVIOUS chart. The light path rebuilds from props anyway.
+  if (!light) { await frame.flush(); return svgToImageURL(svgOf(node as Element | null), type) }
   if (!host.value) return null
   if (!Plot) Plot = await import('@observablehq/plot')
   const base = props.data ? buildPlotOptions(Plot, props.data, { ...props.opts, darkTheme: false }) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -122,15 +125,24 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
 }
 defineExpose({ toImageURL })
 
-watch(() => [props.data, props.opts], () => render(), { deep: true })
+// Coalesce to at most ONE render per animation frame (docs/UI.md → "Continuous controls"). Both
+// triggers are burst sources: a styling slider (point size, font size, x angle) fires per pixel of
+// travel, and the ResizeObserver fires per frame while a panel/row-height is dragged — and a board can
+// hold up to 36 slots, each of which rebuilds its whole Plot from scratch. Rendering per event queued
+// tens of superseded rebuilds and the board kept redrawing well after the mouse was released.
+// `render(0)`: never the legend's corrective second pass, which drives itself from inside `render`.
+const frame = rafCoalesce(() => render(0))
+const scheduleRender = () => frame.schedule()
+
+watch(() => [props.data, props.opts], scheduleRender, { deep: true })
 onMounted(() => {
   render()
   if (host.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(() => render())
+    ro = new ResizeObserver(scheduleRender)
     ro.observe(host.value)
   }
 })
-onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
+onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
 </script>
 
 <template><div ref="host" class="plot-host" :style="{ background: hostBg }" /></template>

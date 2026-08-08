@@ -6,7 +6,8 @@ import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
-import { pushLabels as apiPushLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
+import { pushLabels as apiPushLabels, buildTitleCard, pushZView, pushLabelContour,
+         type TitleCardPayload } from '../utils/napariOverlays'
 import {
   pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
   colourLegend, colourLegendLabels, resetColourLegend,
@@ -121,7 +122,7 @@ const show3D = computed<boolean>({
   get: () => currentSetUid.value ? settings.getShow3D(currentSetUid.value) : false,
   set: v => {
     if (currentSetUid.value) settings.setShow3D(currentSetUid.value, v)
-    void pushZView(v, zSlice.value)
+    pushZView(v, zSlice.value)
   } })
 // Which z slice a 2D recording pins. null = whatever is showing, which is what every recording did
 // before the setting existed.
@@ -129,18 +130,10 @@ const zSlice = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).zSlice : null,
   set: v => {
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { zSlice: v })
-    void pushZView(show3D.value, v)
+    // Apply the z choice to the LIVE viewer, so it is chosen by looking at it rather than by watching a
+    // render finish. Coalesced in `napariOverlays` — a drag is a burst, and each push costs a plane load.
+    pushZView(show3D.value, v)
   } })
-
-// Apply the z choice to the LIVE viewer, so it is chosen by looking at it rather than by watching a
-// render finish. Same reasoning as the outline slider; the backend applies the same call per cell.
-async function pushZView(is3D: boolean, z: number | null) {
-  try {
-    await fetch('/api/napari/set-z-view', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ show3D: is3D, zSlice: is3D ? null : z }) })
-  } catch { /* napari not running — persisted, and applies on the next open */ }
-}
 const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
@@ -194,23 +187,9 @@ const labelContour = computed<number>({
   set: v => {
     const n = clampContour(v)
     if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { labelContour: n })
-    void pushLabelContour(n)
+    // Apply the outline to every mask layer currently on screen. Coalesced in `napariOverlays`.
+    pushLabelContour(labelNames.value.filter(vn => visibleLabels.value[vn]), n)
   } })
-
-// Apply the outline to every mask layer currently on screen, without rebuilding them: `contour` is a
-// captured view prop (napari_utils._VIEW_LAYER_KEYS), so a partial view-state apply is enough and the
-// layer keeps its data, position and colouring. Rebuilding via show-labels would re-read the store.
-async function pushLabelContour(n: number) {
-  const names = labelNames.value.filter(vn => visibleLabels.value[vn])
-  if (!names.length) return
-  const layers: Record<string, { contour: number }> = {}
-  for (const vn of names) layers[`(${vn}) Labels`] = { contour: n }
-  try {
-    await fetch('/api/napari/apply-view-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ viewState: { layers } }) })
-  } catch { /* napari not running — the value is persisted and applies on the next open */ }
-}
 // What the recording draws as masks. An explicit pick wins; otherwise the label sets the user has
 // toggled on in this panel, so a version comparison keeps the masks that are on screen instead of
 // coming back bare in every column after the first (the re-open clears the canvas).

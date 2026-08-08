@@ -1,4 +1,5 @@
 import { ref, inject, onMounted, onBeforeUnmount, type Ref, type InjectionKey } from 'vue'
+import { rafCoalesce } from '../utils/rafCoalesce'
 
 // Generic VISUAL zoom for any plot canvas (the Analysis board's fixed grid AND the free-floating module
 // canvases). A CSS `transform: scale` on the content — purely visual, so it never resizes the plots'
@@ -28,38 +29,37 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   // across one drag, so the updates queue and land well after the mouse is released.
   const zooming = ref(false)
   // …and the steps are coalesced to one per animation frame: an input burst should cost one paint, not
-  // one per event.
-  let raf = 0
-  let pending: number | null = null
+  // one per event. Shared primitive (`utils/rafCoalesce`) — the same one PlotChart renders through.
+  const frame = rafCoalesce<number>(z => { zoom.value = clampZoom(z) })
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  const current = () => pending ?? zoom.value
-  function flush() {
-    raf = 0
-    if (pending !== null) { zoom.value = clampZoom(pending); pending = null }
-  }
+  // read the PENDING value when there is one, so successive steps within a frame compound
+  const current = () => frame.peek() ?? zoom.value
   function endSoon() {
     if (idleTimer) clearTimeout(idleTimer)
     // outlive the tail of a drag, then drop the layer — will-change held forever costs memory
     idleTimer = setTimeout(() => { zooming.value = false }, 250)
   }
+  // fit/reset SET the zoom outright, so they drop anything the frame still owes — otherwise a fit
+  // clicked during the tail of a wheel gesture is overwritten a frame later by the step it interrupted.
   function fitWidth() {
     const vp = viewport.value, c = content()
     if (!vp || c.w == null || c.w <= 0) return
+    frame.cancel()
     zoom.value = clampZoom((vp.clientWidth - 8) / c.w)
   }
   function fitHeight() {
     const vp = viewport.value, c = content()
     if (!vp || c.h <= 0) return
+    frame.cancel()
     const availH = window.innerHeight - vp.getBoundingClientRect().top - 16
     zoom.value = clampZoom(availH / c.h)
   }
   function setZoom(z: number) {
-    pending = z
+    frame.schedule(z)
     zooming.value = true
-    if (!raf) raf = requestAnimationFrame(flush)
     endSoon()
   }
-  function reset() { pending = null; zoom.value = 1 }
+  function reset() { frame.cancel(); zoom.value = 1 }
   // base the step on the PENDING value, not the applied one — successive steps within one frame must
   // compound, or a fast wheel/key repeat silently loses steps
   const zoomBy = (factor: number) => setZoom(current() * factor)
@@ -89,7 +89,7 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   onBeforeUnmount(() => {
     viewport.value?.removeEventListener('wheel', onWheel)
     window.removeEventListener('keydown', onKey)
-    if (raf) cancelAnimationFrame(raf)
+    frame.cancel()
     if (idleTimer) clearTimeout(idleTimer)
   })
   // fit width only if the content actually overflows the viewport (used on first render so a big board

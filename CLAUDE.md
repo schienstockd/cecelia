@@ -586,6 +586,8 @@ See [`docs/UI.md`](docs/UI.md) for the full reference: design tokens, button uti
 
 **Persist every user-settable option.** Any option on a module page / canvas (chart type, scope, compare mode, highlights, sliders, …) MUST live in persisted view state (`useViewState` over a store-backed bag / panel `state`), never a bare `ref()` — a `ref()` resets on remount, so options vanish when the user navigates away and back. This is a hard convention for new pages; see `docs/MODULES.md` → "RULE: persist every user-settable option" and `docs/UI.md` → "Persisting view state".
 
+**A continuous control's effect is coalesced, never per event.** A slider (`<input type="range">`, a drag handle, a wheel gesture) fires an event per pixel of travel. Its `@input` may WRITE the value; anything slower goes through one of the **three canonical schedulers** — `utils/debouncedLatest.ts` (a request), `utils/rafCoalesce.ts` (a paint), `utils/debouncedSave.ts` (a write-behind autosave) — or moves to `@change` (once, on release). **Never hand-roll a fourth `setTimeout` + sequence-token pair**, and **put the coalescing at the sink, not the call site**: one scheduler per slow endpoint, so a new caller can't reintroduce the spam. Enforced by `utils/continuousControls.test.ts`; rule + which to pick in `docs/UI.md` → "Continuous controls".
+
 ---
 
 ## Task system

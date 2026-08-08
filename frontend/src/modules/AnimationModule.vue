@@ -14,7 +14,7 @@ import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
 import { useSettingsStore } from '../stores/settings'
 import { useTaskStore } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
-import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../utils/napariOverlays'
+import { buildTitleCard, unionViewSnapshot, applyViewState, type TitleCardPayload } from '../utils/napariOverlays'
 import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
@@ -54,12 +54,7 @@ function onDrop(targetId: string) {
 // tweak it in napari + Update). No-op if napari isn't running / the image isn't open.
 async function applyToNapari(s: AnimSnapshot) {
   if (!s.snapshot) return
-  try {
-    await fetch('/api/napari/apply-view-state', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ viewState: s.snapshot }),
-    })
-  } catch { /* napari not running */ }
+  await applyViewState(s.snapshot)   // shared builder; swallows a network error (napari not running)
 }
 // select a keyframe; if Sync is on, push it to napari
 function selectKeyframe(s: AnimSnapshot) {

@@ -5,6 +5,7 @@ import { useAnalysisTabsStore } from './analysisTabs'
 import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 import { boardsPayload, tabGroupOf, shouldReloadBoards, type BoardsDoc } from '../utils/boardDoc'
 import { shortId } from '../utils/id'
+import { debouncedSave } from '../utils/debouncedSave'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
@@ -106,8 +107,6 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   // Identifies THIS client's writes in the boards:changed broadcast. The server broadcasts before it
   // returns, so a writer cannot recognise its own echo by version — it still holds the pre-write one.
   const _clientId = shortId()
-  const _restoring = ref(false)
-  let _boardTimer: ReturnType<typeof setTimeout> | null = null
 
   function setVersion(uid: string, v: number) { if (Number.isFinite(v)) _boardVersion[uid] = v }
   function versionOf(uid: string) { return _boardVersion[uid] ?? 0 }
@@ -127,55 +126,52 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     return true
   }
 
-  function scheduleBoardAutosave() {
-    if (_restoring.value) return
+  // Write-behind autosave (shared helper — utils/debouncedSave). The helper owns the timer and the
+  // restore suppression; the version/conflict handling below is this store's own.
+  const _autosave = debouncedSave(async () => {
     // lazy import projectMeta to avoid a store-init cycle (projectMeta → analysisLayout)
-    import('./projectMeta').then(({ useProjectMetaStore }) => {
-      const uid = useProjectMetaStore().current?.uid
-      if (!uid) return
-      const groupKey = `analysis:${uid}`
-      if (_boardTimer) clearTimeout(_boardTimer)
-      _boardTimer = setTimeout(async () => {
-        const boards = boardsPayload(useAnalysisTabsStore().serialize(groupKey), serialize(groupKey))
-        const s = JSON.stringify(boards)
-        if (_boardLastSaved[uid] === s) return   // nothing changed → no request
-        _boardLastSaved[uid] = s
-        const res = await fetch('/api/projects/boards', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: uid, boards, version: versionOf(uid), clientId: _clientId }),
-        }).catch(() => null)
-        if (!res) return
-        if (res.status === 409) {
-          // Another client (or tab) wrote since we loaded. Take THEIR document rather than overwrite
-          // it — this whole file is one blob, so "retry with our copy" would just move the clobber one
-          // step later and lose their boards instead of ours. The debounced edit that lost the race is
-          // dropped; the user sees the current state instead of silently destroying someone's work.
-          _boardLastSaved[uid] = ''
-          if (await reloadBoards(uid)) {
-            const { useLogStore } = await import('./log')
-            useLogStore().warn('Boards were changed elsewhere — reloaded, your last edit was not saved.',
-                               { source: 'analysis' })
-          }
-          return
-        }
-        if (res.ok) {
-          const body = await res.json().catch(() => null) as { version?: number } | null
-          if (typeof body?.version === 'number') setVersion(uid, body.version)
-        }
-      }, 800)
-    })
-  }
+    const { useProjectMetaStore } = await import('./projectMeta')
+    const uid = useProjectMetaStore().current?.uid
+    if (!uid) return
+    const groupKey = `analysis:${uid}`
+    const boards = boardsPayload(useAnalysisTabsStore().serialize(groupKey), serialize(groupKey))
+    const s = JSON.stringify(boards)
+    if (_boardLastSaved[uid] === s) return   // nothing changed → no request
+    _boardLastSaved[uid] = s
+    const res = await fetch('/api/projects/boards', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, boards, version: versionOf(uid), clientId: _clientId }),
+    }).catch(() => null)
+    if (!res) return
+    if (res.status === 409) {
+      // Another client (or tab) wrote since we loaded. Take THEIR document rather than overwrite
+      // it — this whole file is one blob, so "retry with our copy" would just move the clobber one
+      // step later and lose their boards instead of ours. The debounced edit that lost the race is
+      // dropped; the user sees the current state instead of silently destroying someone's work.
+      _boardLastSaved[uid] = ''
+      if (await reloadBoards(uid)) {
+        const { useLogStore } = await import('./log')
+        useLogStore().warn('Boards were changed elsewhere — reloaded, your last edit was not saved.',
+                           { source: 'analysis' })
+      }
+      return
+    }
+    if (res.ok) {
+      const body = await res.json().catch(() => null) as { version?: number } | null
+      if (typeof body?.version === 'number') setVersion(uid, body.version)
+    }
+  }, { wait: 800 })
+  const scheduleBoardAutosave = () => _autosave.schedule()
 
   // Re-key the loaded layouts onto the CURRENT project's group (`analysis:<uid>`) — tolerating both the
   // new relative form (`tab:<id>`) and a legacy baked-in `analysis:<oldUid>:tab:<id>` — so a project's
   // boards survive a uid change (import-as-copy / rename) instead of orphaning. See utils/boardKeys.
   function load(groupKey: string, map: Record<string, LayoutEntry> | null | undefined) {
-    _restoring.value = true   // don't echo the just-loaded board straight back to disk
-    try {
+    // don't echo the just-loaded board straight back to disk. The suppression window is derived from
+    // the autosave's own debounce (utils/debouncedSave), so the two can't drift apart.
+    _autosave.duringRestore(() => {
       for (const [k, v] of Object.entries(rekeyBoards(groupKey, map))) entries.value[k] = v
-    } finally {
-      setTimeout(() => { _restoring.value = false }, 900)   // > the 800ms autosave debounce
-    }
+    })
   }
 
   // Autosave on any change to the grid layouts (slot contents incl. strip cells) or the tab list.
@@ -183,8 +179,8 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   watch([entries, () => tabsStore.entries], scheduleBoardAutosave, { deep: true })
 
   // Another client wrote the boards → pick it up, so a second browser tab converges instead of sitting
-  // on a stale document until reload. `load()` already suppresses the echo autosave (_restoring, 900ms
-  // > the 800ms debounce), and shouldReloadBoards drops our own broadcast.
+  // on a stale document until reload. `load()` already suppresses the echo autosave (duringRestore
+  // holds past the debounce window), and shouldReloadBoards drops our own broadcast.
   import('./ws').then(({ useWsStore }) => {
     useWsStore().on('boards:changed', (frame: unknown) => {
       import('./projectMeta').then(({ useProjectMetaStore }) => {

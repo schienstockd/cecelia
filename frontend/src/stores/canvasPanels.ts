@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { CanvasItem } from '../composables/useCanvasPanels'
+import { debouncedSave } from '../utils/debouncedSave'
 
 // Persisted canvas state, keyed per canvas (e.g. `summary:behaviourAnalysis`, `gate:flow`). Lives in
 // a store rather than the component so the open plots SURVIVE navigating away from and back to a
@@ -82,47 +83,39 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
     return out
   }
 
+  // Write-behind autosave (shared helper — utils/debouncedSave): ~400ms after the last edit, send ONLY
+  // the objects whose serialization changed since the last save (dirty-tracking) — off the interaction
+  // path (UI already re-rendered), no lag. The helper owns the timer and the restore suppression; the
+  // per-object dirty check below is this store's own.
+  const _autosave = debouncedSave(async () => {
+    // lazy import to avoid a store-init cycle (projectMeta → project → this store)
+    const { useProjectMetaStore } = await import('./projectMeta')
+    const uid = useProjectMetaStore().current?.uid
+    if (!uid) return
+    const changed: Record<string, { entries: Record<string, CanvasEntry>; geom: Record<string, PanelGeom> }> = {}
+    for (const [obj, d] of Object.entries(serializeByObject())) {
+      const s = JSON.stringify(d)
+      if (_lastSaved[obj] !== s) { changed[obj] = d; _lastSaved[obj] = s }
+    }
+    if (Object.keys(changed).length === 0) return   // nothing actually changed → no request
+    await fetch('/api/projects/canvases', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, objects: changed }),
+    }).catch(() => {})
+  }, { wait: 400 })
+
   // Restore from disk. Merges module-page keys (never clobbers the board or in-session non-module keys),
   // then sets the dirty-tracking baseline so the restored state is NOT re-sent on open.
-  const _restoring = ref(false)
   function load(data: { entries?: Record<string, CanvasEntry>; geom?: Record<string, PanelGeom> } | null | undefined) {
     if (!data) return
-    _restoring.value = true
-    try {
+    _autosave.duringRestore(() => {
       if (data.entries) for (const [k, v] of Object.entries(data.entries)) if (isModuleKey(k)) entries.value[k] = v
       if (data.geom)    for (const [k, v] of Object.entries(data.geom))    if (isModuleKey(k)) geom.value[k] = v
       for (const [obj, d] of Object.entries(serializeByObject())) _lastSaved[obj] = JSON.stringify(d)
-    } finally {
-      // Clear after the debounce window so the restore's own mutations don't trigger a write-back.
-      setTimeout(() => { _restoring.value = false }, 600)
-    }
-  }
-
-  // Debounced autosave: ~400ms after the last edit, send ONLY the objects whose serialization changed
-  // since the last save (dirty-tracking) — off the interaction path (UI already re-rendered), no lag.
-  let _timer: ReturnType<typeof setTimeout> | null = null
-  function _scheduleAutosave() {
-    if (_restoring.value) return
-    // lazy import to avoid a store-init cycle (projectMeta → project → this store)
-    import('./projectMeta').then(({ useProjectMetaStore }) => {
-      const uid = useProjectMetaStore().current?.uid
-      if (!uid) return
-      if (_timer) clearTimeout(_timer)
-      _timer = setTimeout(() => {
-        const changed: Record<string, { entries: Record<string, CanvasEntry>; geom: Record<string, PanelGeom> }> = {}
-        for (const [obj, d] of Object.entries(serializeByObject())) {
-          const s = JSON.stringify(d)
-          if (_lastSaved[obj] !== s) { changed[obj] = d; _lastSaved[obj] = s }
-        }
-        if (Object.keys(changed).length === 0) return   // nothing actually changed → no request
-        fetch('/api/projects/canvases', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: uid, objects: changed }),
-        }).catch(() => {})
-      }, 400)
     })
   }
-  watch([entries, geom], _scheduleAutosave, { deep: true })
+
+  watch([entries, geom], () => _autosave.schedule(), { deep: true })
 
   return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, copyEntry, clear, load }
 })

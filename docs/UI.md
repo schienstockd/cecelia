@@ -578,6 +578,42 @@ actions or open dropdowns (e.g. `ModuleLayout`'s filter-toggle bar, gate arrange
 colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-assignment matrix
 (cross-population-exclusive + integral solid colour), or reorderable tab strips (`TabbedCanvas`).
 
+### Continuous controls — the effect is coalesced, never per event (mandatory)
+
+A slider is a **burst source**. `<input type="range">` emits an event per pixel of travel, so a short
+drag is 20–60 events, and a drag handle or a wheel gesture is the same shape. Writing a value 60 times
+costs nothing. Doing anything *slow* 60 times reads as a bug, always the same way: **the thing you are
+dragging keeps moving for seconds after you let go**, working through requests you already superseded.
+
+**The rule.** A continuous control's `@input` may write state. Any effect beyond that — a request, a
+napari command, a full chart rebuild — must be one of:
+
+| | Use | When |
+|---|---|---|
+| **Coalesced — a request** | `utils/debouncedLatest.ts` | Someone is waiting for the answer (a preview, a plot fetch, a live napari push). One run per burst, never two in flight, and the running call gets `isCurrent()` so a superseded reply can't land. Keep the wait SHORT (~80 ms) for something judged by watching — this is coalescing, not deferral. |
+| **Coalesced — a paint** | `utils/rafCoalesce.ts` | The effect is pure drawing (`PlotChart`, `useCanvasZoom`). The frame is the right unit: the last value before the browser paints is the only one worth drawing, and there is no result to keep. `peek()` exposes the pending value so steps within one frame compound instead of cancelling. |
+| **Coalesced — a write** | `utils/debouncedSave.ts` | Write-behind autosave (boards, canvases, animations). Nothing waits on it, but a RESTORE writes the same state a user edit does — `duringRestore()` suppresses the echo for a window derived from the debounce, so the two can't drift apart. |
+| **On release** | `@change` instead of `@input` | The effect is expensive and there is nothing to see mid-drag. `@input` still writes the value so the readout tracks the thumb; `@change` fires once, on release. See `PoolThrottle` and the napari-dots slider in `PopulationManager`. |
+
+Three helpers rather than one because the three differ in what happens to superseded work: a request
+keeps a result and must discard the stale one, a paint has no result at all, and a write has no result
+but does have a restore to defend against. **Do not hand-roll a fourth** `setTimeout` + sequence-token
+pair — that is what these were extracted from.
+
+**Put the coalescing at the SINK, not at each call site.** There is one napari viewer, so
+`utils/napariOverlays.ts` owns one scheduler per live endpoint (`pushZView`, `pushLabelContour`) and a
+second call site cannot reintroduce the spam. Same reflex as every other cross-cutting helper here: one
+way to do it, and the second way is the bug. A slider three components away from the sink can't be
+audited by reading either file — only the sink can hold the guarantee.
+
+Enforced by `utils/continuousControls.test.ts`: it scans every SFC for range inputs, and a handler that
+*calls* something (rather than writing a value or emitting) must name where its effect lands. It also
+pins the live napari endpoints to their one owner. It cannot follow an `emit` into the parent — which is
+exactly how the z-slider bug got in — so the sink-side rule above is the part that actually holds.
+
+**Say that a slow result is coming.** A control whose effect is coalesced looks broken if nothing
+changes for 200 ms. Pair it with the delayed spinner + stale dimming (see *Plot loading state* below).
+
 ---
 
 ## Modals & dialogs — always use `BaseModal`

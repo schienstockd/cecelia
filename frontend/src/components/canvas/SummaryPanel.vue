@@ -10,12 +10,13 @@
   Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
+import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
@@ -338,14 +339,21 @@ const loading = ref(false)
 // delayed spinner — only shows if a fetch runs past the threshold, so quick plots never flash it
 const showSpinner = useDelayedLoading(loading)
 const error = ref('')
-// Fetch coordination. Rapid setting changes cascade through several watchers (measure → validCharts →
+// Fetch coordination — the shared scheduler (`utils/debouncedLatest`, docs/UI.md → *Continuous
+// controls*). Rapid setting changes cascade through several watchers (measure → validCharts →
 // chartType, groupBy → timeSeries, …); without this those fired overlapping requests whose responses
 // landed out of order — the panel showed a stale result and the chart-type/measure selects appeared to
-// "cycle". A short debounce coalesces a burst into one request; a monotonic sequence token means only
-// the LATEST request may write `result` (older in-flight responses are discarded).
-let fetchSeq = 0
-let fetchTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleFetch() { if (fetchTimer) clearTimeout(fetchTimer); fetchTimer = setTimeout(fetchData, 60) }
+// "cycle". The short window coalesces a burst into one request, only one runs at a time, and the
+// running call's `isCurrent()` goes false the moment a newer one starts, so an older response is
+// discarded rather than written over a newer one. (Was a hand-rolled timer + sequence token.)
+const fetchRun = debouncedLatest<void>(
+  (_arg, isCurrent) => fetchData(isCurrent),
+  { wait: 60, onError: e => {
+      error.value = e instanceof Error ? e.message : String(e); result.value = null; loading.value = false
+    } },
+)
+const scheduleFetch = () => fetchRun.schedule()
+onBeforeUnmount(() => fetchRun.cancel())
 
 // applicable chart types = the spec's allowed set ∩ the charts valid for the detected measure type
 // (docs/PLOTS.md §2). Before the first response (no measureType) just show the spec's set.
@@ -378,9 +386,8 @@ function applyImageSelector(body: Record<string, unknown>) {
   }
 }
 
-async function fetchData() {
-  if (fetchTimer) { clearTimeout(fetchTimer); fetchTimer = null }
-  const seq = ++fetchSeq                                   // only this call may write `result` (see below)
+/** `isCurrent()` comes from the scheduler: false once a newer fetch has started. */
+async function fetchData(isCurrent: () => boolean) {
   // an interaction matrix has no series — its populations are fixed by the run it reads
   if (!isInteraction.value && !ownSeries.value.length) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
@@ -422,12 +429,12 @@ async function fetchData() {
       })
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
       const r = await res.json() as PlotDataResponse
-      if (seq !== fetchSeq) return                         // superseded by a newer request — discard
+      if (!isCurrent()) return                             // superseded by a newer request — discard
       result.value = r
     } catch (e) {
-      if (seq !== fetchSeq) return
+      if (!isCurrent()) return
       error.value = e instanceof Error ? e.message : String(e); result.value = null
-    } finally { if (seq === fetchSeq) loading.value = false }
+    } finally { if (isCurrent()) loading.value = false }
     return
   }
 
@@ -474,12 +481,12 @@ async function fetchData() {
     })
 
     const parts = await Promise.all(requests)
-    if (seq !== fetchSeq) return                           // superseded by a newer request — discard
+    if (!isCurrent()) return                               // superseded by a newer request — discard
     result.value = { ...parts[0], series: parts.flatMap(p => p.series) }
   } catch (e) {
-    if (seq !== fetchSeq) return
+    if (!isCurrent()) return
     error.value = e instanceof Error ? e.message : String(e); result.value = null
-  } finally { if (seq === fetchSeq) loading.value = false }
+  } finally { if (isCurrent()) loading.value = false }
 }
 
 // errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger.
