@@ -158,5 +158,9 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 .mo-val { min-width: 1.6rem; }
 /* wide enough for 4 digits PLUS the number spinner — 4096 was clipping at 3.6rem */
 .mo-num { width: 4.2rem; flex-shrink: 0; }
-.mo-txt { flex: 1 1 auto; min-width: 4rem; }
+/* …but the FIELD stops at a reading width. Taking its own line is about where it sits; letting it
+   then eat a 1200px page is just a stretched box — a filename suffix is a handful of characters, and
+   the Animation page's controls read as one weirdly wide bar without this (Dominik, 2026-08-08).
+   A cap, not a fixed width, so the narrow panels are unchanged: below the cap it still grows. */
+.mo-txt { flex: 1 1 auto; min-width: 4rem; max-width: 22rem; }
 </style>

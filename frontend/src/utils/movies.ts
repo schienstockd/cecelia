@@ -26,6 +26,30 @@ export function sortMovies(movies: MovieEntry[]): MovieEntry[] {
   return [...movies].sort((a, b) => (b.mtime - a.mtime) || a.name.localeCompare(b.name))
 }
 
+// One row of the movie list, as `SelectionTable` wants it: a DISPLAY string per column plus the RAW
+// value each formatted column sorts by. The table renders what it is handed and never parses it back,
+// so "3.4 MB" and a locale date would otherwise sort as text — 900 KB above 1 MB, and months
+// alphabetically. Formatters are injected rather than imported so this stays pure and locale-free
+// under test; the page passes `formatBytes` and its own date format.
+export interface MovieRow {
+  name: string       // the file name — the row id, and what the player streams
+  label: string      // the name without .mp4
+  sizeText: string
+  size: number       // bytes — `sizeText`'s sort key
+  timeText: string
+  mtime: number      // unix seconds — `timeText`'s sort key
+}
+export function movieRows(movies: MovieEntry[],
+                          formatSize: (bytes: number) => string,
+                          formatTime: (mtime: number) => string): MovieRow[] {
+  return movies.map(m => ({
+    name: m.name,
+    label: movieDisplayName(m.name),
+    sizeText: formatSize(m.size), size: m.size,
+    timeText: formatTime(m.mtime), mtime: m.mtime,
+  }))
+}
+
 export interface Box { w: number; h: number }
 
 // Mouse/centre-anchored zoom for the player's scroll viewport. Given the content box BEFORE and AFTER

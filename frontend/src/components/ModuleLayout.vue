@@ -44,7 +44,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useProjectStore } from '../stores/project'
-import { useSettingsStore } from '../stores/settings'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
 import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters } from '../utils/rowFilters'
@@ -55,6 +54,7 @@ import SetBar from './SetBar.vue'
 import CohortCheckButton from './CohortCheckButton.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
+import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import CcToggle from './CcToggle.vue'
@@ -86,28 +86,12 @@ const emit = defineEmits<{
   selectionChange: [uids: string[]]
 }>()
 
-// #right panel width — resizable + persisted per module (so TaskRunner, batch-movies, etc. all share
-// one resizable base). null → sizes to content (the historical behaviour) unless a default is given.
-const _rwKey = props.module ? `cc.rightw.${props.module}` : ''
-const _rwSaved = _rwKey ? localStorage.getItem(_rwKey) : null
-const rightWidth = ref<number | null>(_rwSaved ? Number(_rwSaved) : (props.rightDefaultWidth ?? null))
-function startResize(e: MouseEvent) {
-  e.preventDefault()
-  const startX = e.clientX
-  const panel = (e.currentTarget as HTMLElement).parentElement as HTMLElement
-  const startW = rightWidth.value ?? panel.offsetWidth
-  const onMove = (ev: MouseEvent) => { rightWidth.value = Math.max(200, Math.min(680, startW + (startX - ev.clientX))) }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    if (_rwKey && rightWidth.value) localStorage.setItem(_rwKey, String(Math.round(rightWidth.value)))
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
+// #right panel width — persisted per module, so a page's runner keeps the width the user gave IT.
+// The panel itself (handle + collapse + resize) is `CollapsiblePanel`; this only names the key.
+// Width stays per module, collapse is the one shared flag — see that component.
+const rightWidthKey = computed(() => props.module ? `cc.rightw.${props.module}` : 'cc.rightw.default')
 
 const project    = useProjectStore()
-const settings   = useSettingsStore()
 const taskDefs   = useTaskDefsStore()
 const activeSet  = computed(() => project.activeSet())
 // namespace remembered selections per module so they don't bleed across pages (docs/UI.md)
@@ -467,26 +451,15 @@ const visibleUids = computed<string[]>(() =>
       </div>
 
       <!-- ── Right: module-specific panel (collapsible + resizable) ── -->
-      <div v-if="$slots.right" class="right-panel" :class="{ collapsed: settings.rightPanelCollapsed }"
-           :style="(!settings.rightPanelCollapsed && rightWidth) ? { width: rightWidth + 'px' } : undefined">
-        <!-- drag the left edge to resize (persisted per module); shared by TaskRunner + every panel -->
-        <div v-if="!settings.rightPanelCollapsed" class="right-resizer" @mousedown="startResize"
-             v-tooltip.left="'Drag to resize'" />
-        <button class="right-handle"
-          @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
-          v-tooltip.left="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'"
-          :aria-label="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'">
-          <i :class="['pi', settings.rightPanelCollapsed ? 'pi-angle-double-left' : 'pi-angle-double-right']" />
-        </button>
-        <div v-show="!settings.rightPanelCollapsed" class="right-slot">
-          <slot
-            name="right"
-            :set-uid="activeSet?.uid"
-            :selected-uids="selectedUids"
-            :selected-names="selectedNames"
-          />
-        </div>
-      </div>
+      <CollapsiblePanel v-if="$slots.right" :storage-key="rightWidthKey" label="functions panel"
+                        :max="680" :default-width="rightDefaultWidth ?? null">
+        <slot
+          name="right"
+          :set-uid="activeSet?.uid"
+          :selected-uids="selectedUids"
+          :selected-names="selectedNames"
+        />
+      </CollapsiblePanel>
 
     </div>
   </div>
@@ -522,35 +495,7 @@ const visibleUids = computed<string[]>(() =>
 .image-panel.no-right > .attr-filter,
 .image-panel.no-right > .panel-scroll { padding-right: 0.9rem; }
 
-/* ── Right panel (collapsible) ──────────────────────────────────────────────
-   A thin always-visible handle on the left edge toggles the slot; when collapsed
-   only the handle remains, so the function/tasks panel folds away to the right. */
-.right-panel {
-  display: flex;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-/* Full-height strip down the panel's edge, NOT an icon button: it has no height of its own and
-   stretches as a flex child. .cc-btn-icon's fixed square collapsed it to a chip at the top. */
-.right-handle {
-  flex-shrink: 0;
-  width: 1.1rem;
-  border: none;
-  border-left: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.12s, color 0.12s;
-}
-.right-handle .pi { font-size: var(--cc-fs-xs); }
-.right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-/* drag strip on the panel's left edge to resize (col-resize); thin, highlights on hover */
-.right-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: transparent; transition: background 0.12s; }
-.right-resizer:hover { background: var(--cc-accent); }
-.right-slot { flex: 1; display: flex; min-width: 0; min-height: 0; overflow-y: auto; }
+/* The right panel's own chrome (handle / resizer / slot) lives in CollapsiblePanel.vue */
 
 .action-bar {
   display: flex;

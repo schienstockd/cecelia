@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, type MovieEntry } from './movies'
+import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
+         type MovieEntry } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -65,5 +66,33 @@ describe('sortMovies', () => {
     const sorted = sortMovies(list)
     expect(sorted.map(m => m.name)).toEqual(['a.mp4', 'c.mp4', 'b.mp4'])
     expect(list[0].name).toBe('b.mp4')   // original untouched
+  })
+})
+
+describe('movieRows', () => {
+  const movies: MovieEntry[] = [
+    { name: 'big_old.mp4',  size: 2_000_000, mtime: 1_000 },
+    { name: 'small_new.mp4', size:   900_000, mtime: 9_000 },
+  ]
+  const rows = movieRows(movies, b => `${Math.round(b / 1000)} kB`, t => `at ${t}`)
+
+  it('carries a display string AND the raw value each formatted column sorts by', () => {
+    // the point of the raw fields: "900 kB" sorts ABOVE "2000 kB" as text, and a locale date sorts
+    // alphabetically by month. The table must sort on `size`/`mtime`, never on what it renders.
+    expect(rows[0]).toEqual({ name: 'big_old.mp4', label: 'big_old',
+                              sizeText: '2000 kB', size: 2_000_000,
+                              timeText: 'at 1000', mtime: 1_000 })
+    expect(rows[1].size).toBe(900_000)
+    expect(rows[1].mtime).toBe(9_000)
+  })
+
+  it('keys each row by the FILE name (what the player streams), not the label', () => {
+    expect(rows.map(r => r.name)).toEqual(['big_old.mp4', 'small_new.mp4'])
+    expect(rows.map(r => r.label)).toEqual(['big_old', 'small_new'])
+  })
+
+  it('preserves the order it is given — sortMovies decides the default, the table re-sorts', () => {
+    expect(movieRows(sortMovies(movies), String, String).map(r => r.name))
+      .toEqual(['small_new.mp4', 'big_old.mp4'])     // newest first
   })
 })

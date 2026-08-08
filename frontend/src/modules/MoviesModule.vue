@@ -8,9 +8,12 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
-import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, type MovieEntry } from '../utils/movies'
+import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
+         type MovieEntry } from '../utils/movies'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
+import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -133,10 +136,6 @@ async function refresh() {
   }
 }
 
-function select(name: string) {
-  selected.value = name
-}
-
 // <video> resets playbackRate to 1 whenever a new source loads, so re-apply the persisted speed on
 // load (and whenever the user changes it). Also grab the movie's intrinsic size for the zoom box, and
 // start playback if autoplay is on (covers selecting a new movie, not just the first load — the native
@@ -160,6 +159,17 @@ watch(projectUid, refresh)
 function movieTime(mtime: number): string {
   return new Date(mtime * 1000).toLocaleString()
 }
+
+// ── The list ──────────────────────────────────────────────────────────────────
+// A `SelectionTable`, not a bespoke playlist: picking one movie by comparing its date and size is
+// exactly what that component is for, and it carries the sorting. `sortMovies` (newest first) is still
+// the order it is HANDED — clearing the sort with a third header click comes back to it.
+const MOVIE_COLUMNS: SelectionColumn[] = [
+  { key: 'label',    label: 'Movie',    sortable: true },
+  { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime' },
+  { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size' },
+]
+const movieTableRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
 </script>
 
 <template>
@@ -203,18 +213,16 @@ function movieTime(mtime: number): string {
         <div v-if="selected" class="mov-caption">{{ movieDisplayName(selected) }}</div>
       </div>
 
-      <!-- Playlist -->
-      <aside class="mov-list cc-card">
-        <div class="mov-list-head cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}</div>
-        <button v-for="m in movies" :key="m.name" class="mov-item"
-                :class="{ active: m.name === selected }" @click="select(m.name)">
-          <i class="pi pi-video mov-item-ico" />
-          <span class="mov-item-body">
-            <span class="mov-item-name">{{ movieDisplayName(m.name) }}</span>
-            <span class="mov-item-meta cc-muted cc-fs-xs">{{ formatBytes(m.size) }} · {{ movieTime(m.mtime) }}</span>
-          </span>
-        </button>
-      </aside>
+      <!-- The list — folds away and drags wider, like the module pages' functions panel -->
+      <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="380" :max="720">
+        <div class="mov-list cc-card">
+          <div class="mov-list-head cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}</div>
+          <SelectionTable class="mov-table" :columns="MOVIE_COLUMNS" :rows="movieTableRows"
+                          v-model="selected" id-key="name" sort-storage-key="cc.movies.sort"
+                          column-width-key="cc.movies.colw" :default-column-width="150"
+                          :row-tooltip="r => `Play ${r.label}`" />
+        </div>
+      </CollapsiblePanel>
     </div>
   </ModulePage>
 </template>
@@ -241,18 +249,10 @@ function movieTime(mtime: number): string {
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
 .mov-caption { font-size: var(--cc-fs-md); color: var(--cc-text); word-break: break-all; }
 
-/* Playlist */
-.mov-list { width: 18rem; flex-shrink: 0; overflow-y: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
+/* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
+.mov-list { flex: 1; min-width: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
 .mov-list-head { padding: 0.35rem 0.5rem 0.5rem; }   /* + .cc-eyebrow (uppercase/dim/spacing) */
-.mov-item {
-  display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
-  background: none; border: none; cursor: pointer; color: var(--cc-text-dim);
-  padding: 0.45rem 0.5rem; border-radius: var(--cc-radius-sm); transition: background 0.12s, color 0.12s;
-}
-.mov-item:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.mov-item.active { background: var(--cc-surface-2); color: var(--cc-text); }
-.mov-item-ico { font-size: var(--cc-fs-md); flex-shrink: 0; color: var(--cc-accent); }
-.mov-item-body { display: flex; flex-direction: column; min-width: 0; }
-.mov-item-name { font-size: var(--cc-fs-md); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the table brings its own sized-column layout (column-width-key); drag a header edge to widen one */
+.mov-table { min-width: 100%; }
 
 </style>

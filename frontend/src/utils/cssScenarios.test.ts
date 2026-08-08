@@ -337,7 +337,7 @@ describe('icon-only buttons', () => {
   // Pinned explicitly, path and all: deriving the allow-list from the findings would make the check
   // tautological, catching a new hand-rolled button only via the total count.
   const SEG_BUTTONS = [
-    'components/ModuleLayout.vue | right-handle',       // full-height right-panel collapse strip
+    'components/CollapsiblePanel.vue | cc-panel-handle', // full-height side-panel collapse strip
     'components/canvas/TabbedCanvas.vue | tab-add',     // full-height "+" cell in the tab strip
     'components/WhatNewCard.vue | wn-nav wn-nav-prev',  // full-height left-edge tip-nav overlay
     'components/WhatNewCard.vue | wn-nav wn-nav-next',  // full-height right-edge tip-nav overlay
