@@ -35,7 +35,9 @@ in T/_qc" or "do the tracked B cells move slower" are answerable directly.
 For behaviour + clustering: get_behaviour_summary(project, image/set) gives the HMM state distribution
 (fraction per state) + transitions; get_cluster_summary(project, image/set) gives each clustering run's
 cluster count / sizes / largest fraction / features. A collapsed state distribution or one cluster
-swallowing most points on ONE image (vs its peers) is worth flagging.
+swallowing most points on ONE image (vs its peers) is worth flagging. One run `suffix` appearing under
+several segmentations is ONE joint clustering over all of them — its named cluster populations are
+shared by every member, so plot them across the whole run, not just the segmentation they were named on.
 Before proposing ANY figure or cross-image comparison, two calls. get_image_attributes(project, set)
 gives the axes the images can be grouped by (e.g. Mouse, Location) — without one you can only plot per
 image or pooled, which throws the experiment's design away: four images from one mouse are not four

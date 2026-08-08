@@ -386,6 +386,10 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
       - `suffix` is the run id (e.g. "movement"/"test"); `granularity` "cell" = clustPops, "track" =
         clustTracks. The measure list a run clustered on is in `featuresByRun[suffix]` (same for every
         image, so it's given once — not repeated per entry).
+      - ONE `suffix` on SEVERAL `valueName`s is ONE JOINT run over those segmentations, not a run each:
+        clustering pools the selected populations, so cluster 3 means the same thing on each of them and
+        any named cluster populations are shared across them all (get_populations lists those names
+        under EVERY member segmentation). Read the sizes per valueName, but the run once.
       - `largestFrac` near 1.0 (one cluster swallowing most points) or a very low `nClusters` vs peers
         means a near-uninformative / collapsed clustering for that image — worth flagging.
     Summary-level (sizes, not raw cluster assignments). Reads current on-disk state."""

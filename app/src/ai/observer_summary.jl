@@ -31,7 +31,14 @@ const _OBSERVER_POP_TYPES = ("flow", "track", "clust", "trackclust", "region")
 # (definitions AND measures), so the "walk the gating maps" loop lives once.
 function _observer_each_population(f::Function, img::CciaImage)
     for v in sort(img_value_names(img)), pt in _OBSERVER_POP_TYPES
-        isfile(gating_path(img._dir, v; pop_type = pt)) || continue
+        # A CLUSTER pop_type often has NO sidecar of its own: cluster pops are global to a run and
+        # shared across its co-clustered segmentations, so the names are authored under one of them
+        # (e.g. B) and `load_pop_map` lends them, relabeled, to every sibling that carries the same
+        # `clusters.{suffix}` column (see _borrow_cluster_pop_map). Gating on the file existing hid
+        # exactly those borrowers — the observer reported "clusters exist for B only" for a run that
+        # T is equally part of, so a board it authored covered half the data. Gate-drawn maps
+        # (flow/track) ARE per-segmentation, so they keep the cheap isfile skip.
+        (_is_cluster_pop_type(pt) || isfile(gating_path(img._dir, v; pop_type = pt))) || continue
         m = load_pop_map(img; value_name = v, pop_type = pt)
         for path in pop_paths(m)
             p = pop_at(m, path); p.transient && continue

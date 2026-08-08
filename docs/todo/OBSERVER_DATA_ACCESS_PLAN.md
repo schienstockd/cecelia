@@ -97,7 +97,10 @@ MCP-tool docstring**, not another copy of the plumbing:
   (`populations_summary`), `GET /api/analysis/populations`, MCP `get_populations`, allow-listed; pkg +
   api + mcp tests. Per-image pop tree + gate/filter DEFINITIONS (cheap sidecar read). Membership COUNTS
   are deferred to Slice C (they need computing gates over the full table — heavy, forbidden on an
-  always-on read).
+  always-on read). The enumerator (`_observer_each_population`, shared with C) skips a value_name with
+  no gating file only for the GATE-drawn types: cluster pops are global to a run and auto-shared across
+  its co-clustered segmentations, so a borrower has no file of its own and must still be listed — else
+  the observer reports a joint B+T clustering as "clusters exist for B only".
 - **C — Measures** (`get_measure_summary`). ✅ **DONE** — `app/src/ai/measures.jl` (`measure_summary`),
   `GET /api/analysis/measures`, MCP `get_measure_summary`, allow-listed; pkg (fixture-gated + pure
   summary logic) + api + mcp tests, validated off-suite on real gated data. Per-population phenotype +
