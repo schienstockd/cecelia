@@ -883,8 +883,10 @@ end
     @test setdiff(named_jl, named_ts) == Set(["poll_observations"])
     # In the CHAT HAND-OFF only — orientation + authoring aids for a session the user starts fresh;
     # the in-app agent is already oriented and does not browse notebooks.
+    # (`get_available_plots` left this list when add_analysis_board landed — the in-app observer needs
+    # the spec ids and each spec's chart types to author a board, so both prompts now name it.)
     @test setdiff(named_ts, named_jl) ==
-        Set(["get_available_plots", "get_session_briefing", "list_notebooks", "set_notebook_description"])
+        Set(["get_session_briefing", "list_notebooks", "set_notebook_description"])
     # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
     # prompt, plus the observer's own bookkeeping.
     @test setdiff(tools, union(named_jl, named_ts)) ==
@@ -892,7 +894,8 @@ end
              "set_observer_active"])
     # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
     # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
-    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain")
+    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
+              "add_analysis_board")
         @test w in named_jl && w in named_ts
     end
 end
@@ -8442,6 +8445,104 @@ end
         register_cohort_metrics!(fun, ["nCells", "nClusters"])   # idempotent overwrite
         @test COHORT_METRICS[fun] == ["nCells", "nClusters"]
         delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
+    end
+
+    @testset "board spec expander (MCP board authoring, Phase 2)" begin
+        # The expander turns a SEMANTIC spec into a LayoutEntry and refuses anything the project cannot
+        # plot. The failure it closes: a bad `tkey` renders an EMPTY panel with NO error, so a board can
+        # look authored and show nothing. See docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 2.
+        specs = plot_spec_index()
+        @test haskey(specs, "track_measures")            # anti-vacuity: the registry actually loaded
+        @test length(plot_specs()) >= 5
+
+        # templates: "<cols>x<rows>" only — the named comic plates are a frontend catalogue and stay
+        # GUI-only rather than being duplicated server-side
+        @test board_template_grid("2x2", 4) == (2, 2)
+        @test board_template_grid("3x2", 6) == (3, 2)
+        @test board_template_grid("", 4) == (2, 2)       # empty → smallest near-square grid that fits
+        @test board_template_grid("", 3) == (2, 2)
+        @test board_template_grid("", 1) == (1, 1)
+        @test_throws BoardSpecError board_template_grid("comic-banner", 4)
+        @test_throws BoardSpecError board_template_grid("9x9", 4)
+        # row-major grid areas, the uniform case of plots/layoutTemplates.ts
+        @test board_slot_areas(2, 2) == ["1 / 1 / 2 / 2", "1 / 2 / 2 / 3", "2 / 1 / 3 / 2", "2 / 2 / 3 / 3"]
+
+        proj = CciaProject(; uid = "bsp", name = "spec"); proj.root = mktempdir()
+        ok(plots; kw...) = expand_board(proj, "B vs T", plots; kw...)
+
+        # A project with no populations still expands a board that references none — pops are optional
+        lay = ok([Dict("plot" => "track_measures", "measure" => "live.track.speed", "chart" => "boxplot")])
+        @test lay["cols"] == 1 && lay["rows"] == 1
+        @test length(lay["contents"]) == 1 && lay["contents"][1] !== nothing
+        c = lay["contents"][1]
+        @test c["kind"] == "summary" && c["ref"] == "track_measures"
+        @test c["state"]["chartType"] == "boxplot" && c["state"]["measure"] == "live.track.speed"
+        @test !haskey(c["state"], "vis")        # the panel owns its look — defaultVis() is NOT copied here
+        @test !haskey(c["state"], "statUnit")   # nothing said → nothing guessed; the panel fills it
+
+        # unfilled slots stay empty, and the board keeps the requested shape
+        lay4 = ok([Dict("plot" => "track_measures"), Dict("plot" => "track_measures")]; template = "2x2")
+        @test length(lay4["contents"]) == 4
+        @test lay4["contents"][3] === nothing && lay4["contents"][4] === nothing
+        @test lay4["activeIndex"] == 0 && lay4["shared"] == Dict{String,Any}()
+
+        # statUnit and imageAgg travel together (utils/statUnitState.ts)
+        su = ok([Dict("plot" => "track_measures", "statUnit" => "image")])["contents"][1]["state"]
+        @test su["statUnit"] == "image" && su["imageAgg"] == "mean"
+        @test ok([Dict("plot" => "track_measures", "statUnit" => "image",
+                       "imageAgg" => "median")])["contents"][1]["state"]["imageAgg"] == "median"
+
+        # ── the rejections. Every message must name the offending value AND what was available, because
+        # the caller is an agent that can correct itself if told the options.
+        @test_throws BoardSpecError ok([])                                    # a board needs a plot
+        @test_throws BoardSpecError expand_board(proj, "  ", [Dict("plot" => "track_measures")])
+        @test_throws BoardSpecError ok([Dict("measure" => "x")])               # no `plot`
+        @test_throws BoardSpecError ok([Dict("plot" => "no_such_plot")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "chart" => "sankey")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "measure" => "live.track.nope")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "statUnit" => "per-cell")])
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "statUnit" => "image",
+                                             "imageAgg" => "mode")])
+        # a population that does not exist would render an empty panel in silence — this is the one
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures", "pops" => ["Ghost/qc"])])
+
+        # ── DERIVED populations must be accepted. `/_tracked` is injected by the picker at query time
+        # and is NOT stored in the gating sidecar, so an earlier version of this validator — which
+        # walked the persisted populations — rejected "B/qc/_tracked", the population the real project's
+        # own boards plot. board_spec_populations now goes through `plot_population_groups`, the same
+        # enumerator that fills the picker, so the validator accepts exactly what the GUI offers.
+        avail = Dict("B/qc/_tracked" => "live", "T/qc/_tracked" => "live", "B/qc" => "flow")
+        d = expand_board(proj, "derived", [Dict("plot" => "track_measures",
+                                                "pops" => ["B/qc/_tracked", "T/qc/_tracked"])];
+                         pops = avail)["contents"][1]
+        @test d["state"]["sel"] == ["live::B/qc/_tracked", "live::T/qc/_tracked"]
+        @test d["state"]["popType"] == "live"        # taken from the picker, not guessed
+        # …and the tkeys the expander writes must decode back to the pops it was given — read and write
+        # describe a board the same way (Decision 2)
+        @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
+              ["B/qc/_tracked", "T/qc/_tracked"]
+        # an explicit popType overrides the picker's
+        @test expand_board(proj, "pt", [Dict("plot" => "track_measures", "popType" => "track",
+                                             "pops" => ["B/qc/_tracked"])];
+                           pops = avail)["contents"][1]["state"]["sel"] == ["track::B/qc/_tracked"]
+        # more plots than slots
+        @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
+
+        e = try ok([Dict("plot" => "no_such_plot")]) catch err; err end
+        @test e isa BoardSpecError && occursin("no_such_plot", e.msg) && occursin("track_measures", e.msg)
+
+        # ── append_board: ADD-ONLY (Decision 1) ────────────────────────────────────────────────────
+        doc = BoardsDoc(3, Any[Dict("id" => 1, "name" => "Track measures")], 1, 1,
+                        Dict{String,Any}("tab:1" => Dict("cols" => 1)), true, true)
+        doc2, id = append_board(doc, "B vs T", lay)
+        @test id == 2 && length(doc2.tabs) == 2
+        @test doc2.tabs[1] == doc.tabs[1]                  # the existing board is untouched
+        @test haskey(doc2.layouts, "tab:1") && haskey(doc2.layouts, "tab:2")
+        @test doc2.next_id == 2 && doc2.version == doc.version   # version is stamped by the writer
+        # the user's ACTIVE tab is not stolen — this writes into a project they may have open
+        @test doc2.active_id == doc.active_id
+        @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
+        @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
     end
 
     @testset "boards document — one reader, both shapes, versioned writes" begin

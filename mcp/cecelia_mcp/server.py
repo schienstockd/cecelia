@@ -214,6 +214,44 @@ def get_available_plots(module: str = "") -> list:
 
 
 @mcp.tool()
+def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "") -> dict:
+    """ADD one Analysis board to the project — a figure the user opens on the /analysis page.
+
+    Additive and one board per call: this cannot modify, rename, reorder or delete any board. It lands
+    BESIDE the user's own boards and they delete it in one click, so a board you got wrong costs them a
+    click, not their work. 409 if the name is taken (pick another; never try to replace theirs).
+
+    `plots` is a list, in reading order, of:
+      {plot, measure?, chart?, pops?, popType?, groupBy?, statUnit?, imageAgg?}
+      - `plot`     the plot-spec id from get_available_plots (e.g. "track_measures"). REQUIRED.
+      - `chart`    one the spec offers ("boxplot", "violin", …); defaults to its first.
+      - `measure`  one the spec carries (e.g. "live.track.speed"); defaults to the spec's own.
+      - `pops`     populations as "valueName/pop" — EXACTLY as get_populations and get_analysis_boards
+                   report them (e.g. "B/qc/_tracked"). A population that does not exist is rejected.
+      - `groupBy`  a categorical column to split by (e.g. "live.cell.hmm.state.movement").
+      - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
+                   `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
+                   every track across images treats one image's 400 tracks as 400 replicates.
+    `template` is "<cols>x<rows>" (e.g. "2x2"); omitted picks a grid that fits. The comic plates are
+    GUI-only. Grid areas, styling and captions are the user's — you choose which plots, in what order.
+
+    RESOLVE WHAT IS RESOLVABLE FIRST, like create_chain. get_analysis_boards for what they already
+    built (match their measures and populations rather than inventing your own, and don't rebuild a
+    board that exists — two boards differing only in `statUnit` are NOT duplicates); get_populations
+    for the exact pop strings; get_available_plots for the spec ids and the charts each offers;
+    get_measure_summary for whether a measure has the n to be worth plotting; get_image_attributes +
+    list_images' `attr` before anything cross-image. Pick the canonical clustering run rather than
+    guessing among leftovers, and drop excluded images.
+
+    The server validates against the project and refuses to write a board that would render blank —
+    unknown plot id, a chart that spec doesn't offer, a measure it doesn't carry, a population that
+    does not exist (422, naming what was available). It CANNOT check intent: a well-formed board built
+    on the wrong clustering run is still wrong. So say in chat which values you read from the data and
+    which you defaulted, and tell the user the board was added beside their own."""
+    return _client.add_analysis_board(project_uid, name, plots, template)
+
+
+@mcp.tool()
 def get_analysis_boards(project_uid: str) -> dict:
     """The Analysis boards this project already has, and WHAT EACH ONE SHOWS — read this before
     proposing a figure, so you extend the user's thinking instead of rebuilding it.

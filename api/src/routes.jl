@@ -902,6 +902,55 @@ function api_projects_boards(body_bytes::Vector{UInt8})
     end
 end
 
+# POST /api/boards/add  { projectUid, name, plots:[…], template? }
+# CREATE-ONLY: adds ONE board and can never touch an existing one — the write surface behind the MCP
+# `add_analysis_board` tool (docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 3). Deliberately distinct from
+# the autosave above, exactly as /api/chains/create is distinct from /api/chains/save: allow-listing the
+# autosave would have let a caller replace every board in the project with one request, and the server
+# could not have validated a single field of it.
+#
+# 409 on a duplicate name, 422 on a spec the project cannot plot (unknown plot id, a chart that spec
+# doesn't offer, a population that doesn't exist) — rejected BEFORE writing, because a bad `tkey`
+# renders an empty panel with no error at all. The expansion and every check live in the package
+# (`expand_board`), so they are headless-testable and identical from the REPL.
+function api_boards_add(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    proj = try load_project(uid) catch e
+        return 404, JSON3.write((; error="Could not load project: $(sprint(showerror, e))"))
+    end
+    name = String(get(body, :name, ""))
+    plots = get(body, :plots, nothing)
+    template = String(get(body, :template, ""))
+    path = boards_doc_path(joinpath(projects_dir(), uid))
+    try
+        doc = read_boards_doc(path)
+        doc.present && !doc.readable &&
+            return 409, JSON3.write((; error="The project's boards file could not be read; not adding to it"))
+        # Name collision is 409 (a conflict with existing state) rather than 422 (a bad spec), and is
+        # checked before expanding so the caller is told the cheap thing first. `append_board` asserts
+        # it again — it is the invariant's owner, and the REPL reaches it without this route.
+        if any(t -> t isa AbstractDict &&
+                    strip(string(get(t, :name, get(t, "name", "")))) == strip(name), doc.tabs)
+            return 409, JSON3.write((; error="A board named \"$(strip(name))\" already exists in this project",
+                                       code="duplicate_board_name"))
+        end
+        layout = expand_board(proj, name, plots; template = template)
+        updated, id = append_board(doc, name, layout)
+        version = write_boards_doc(path, updated; version = doc.version + 1)
+        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
+        return 200, JSON3.write((; ok=true, tabId=id, name=strip(name), version,
+                                   slots=length(layout["contents"])))
+    catch e
+        e isa BoardSpecError && return 422, JSON3.write((; error=e.msg, code="invalid_board_spec"))
+        return 500, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
 # GET /api/projects/boards?projectUid — the boards document on its own, with its `version`.
 # The cheap read behind both recovery paths: a 409'd autosave reloading before it retries, and a client
 # reacting to the `boards:changed` broadcast. Project OPEN still gets boards inline in

@@ -3103,6 +3103,7 @@ end
         "/api/app/restart", "/api/app/shutdown",
         "/api/app/switch-worktree", "/api/board-assets/copy",
         "/api/board-assets/delete", "/api/board-assets/save",
+        "/api/boards/add",   # create-only board authoring (MCP write 6/6); NOT /api/projects/boards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
         "/api/gating/copy", "/api/gating/pop/add",
@@ -3192,7 +3193,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 98
+    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 99
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

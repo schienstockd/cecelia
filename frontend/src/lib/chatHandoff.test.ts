@@ -49,7 +49,7 @@ describe('buildChatPrompt', () => {
     expect(p).toContain('get_module_params')       // real param keys/ranges before authoring
     expect(p).toMatch(/cannot run it/i)            // designs, never launches
     expect(p).toMatch(/press Run/i)                // …and says whose job that is
-    expect(p).toMatch(/five additive actions/i)    // the write count moved 4 → 5; keep it honest
+    expect(p).toMatch(/six additive actions/i)     // the write count moved 5 → 6; keep it honest
   })
 
   it('is paste-and-run: no placeholder, no relative doc path, tells it not to self-setup', () => {

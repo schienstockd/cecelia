@@ -1,6 +1,6 @@
 # MCP board authoring — Claude adds an Analysis board, the user keeps it
 
-**Status:** planning (2026-08-08), branch `work/mcp-boards`. Extends the observer's
+**Status:** BUILT (2026-08-08) — Phases 0–3 shipped; Phase 4 was cut. Branches `work/mcp-boards` (Phase 0) then `work/board-readback`. Extends the observer's
 design-but-don't-run split to the Analysis board — the third artefact after notebooks
 ([`NOTEBOOK_PLAYGROUND_PLAN.md`](NOTEBOOK_PLAYGROUND_PLAN.md)) and chains.
 
@@ -178,7 +178,7 @@ is what should have been true before the `_board_tabs` bug.
 **Checkpoint:** two browser tabs on one project stop clobbering each other. Shippable on its own as a
 bug fix, independent of everything below.
 
-### Phase 2 — the board spec and its server-side expander
+### Phase 2 — the board spec and its server-side expander — **DONE**
 - Define the semantic spec (Decision 2/4). Sketch, to be pinned in Phase 2:
   ```
   { name: "B vs T motility",
@@ -196,15 +196,32 @@ bug fix, independent of everything below.
   point per image — *is* `statUnit: "image"`. Without the field, the spec cannot express the single
   most useful knob for honest small-`n` plotting, and the tool could not author the user's existing
   "Per image measures" board at all.
-- Expander → `LayoutEntry` (grid areas, slot state, `tkey` selections, `vis` defaults).
+- Expander → `LayoutEntry` (grid areas, slot state, `tkey` selections). **No `vis` bag** — the sketch
+  above said "vis defaults", but `SummaryPanel` already resolves `props.vis ?? defaultVis()`, so
+  emitting one would copy ~25 frontend defaults into Julia to drift. An expanded slot carries only
+  semantics.
+- **Templates are `"<cols>x<rows>"` only.** Decision 4 allowed "a comic-plate id"; the plates are a
+  frontend catalogue (`plots/layoutTemplates.ts`) and duplicating them server-side would be the same
+  mistake as the vis bag. A plate id is rejected with a message pointing at the GUI.
 - **Validator** against live project state: known `specId`, chart offered by that spec, populations that
   exist, measures present. A bad `tkey` currently renders an empty plot with **no error** — that is the
   failure this closes.
 - Pure Julia, headless-testable: package tests for expand + reject cases.
 
-**Checkpoint:** a spec round-trips to a board the GUI renders identically to a hand-built one.
+**The populations must come from `plot_population_groups`, not from a walk of the persisted pops.**
+The first implementation walked the gating sidecars and would have rejected `B/qc/_tracked` — the
+population `4kS67f`'s own boards plot — because DERIVED pops (`/_tracked`) are injected by the picker
+at query time and are never stored (`docs/POPULATION.md`). Validating against the same enumerator that
+fills the board's series picker means the validator accepts exactly what the GUI offers, including the
+`root_derived_ok` rule that hides root `/_tracked` when tracking was gated.
 
-### Phase 3 — the MCP tool
+**Checkpoint:** a spec round-trips to a board the GUI renders identically to a hand-built one.
+*Verified against `4kS67f` in the REPL* — a two-plot `2x2` spec expands to `sel:
+["live::B/qc/_tracked", "live::T/qc/_tracked"]`, which is byte-identical to what the user's hand-built
+board stores, and the `tkey`s decode back through `_parse_tkey` to the pops that were passed in. Not
+yet opened in a browser.
+
+### Phase 3 — the MCP tool — **DONE**
 - `POST /api/boards/add` (create-only, 409 on an existing tab name), added to the client allowlist as
   write 6/6.
 - `add_analysis_board(project_uid, name, plots, template="")` — one board per call.
@@ -215,6 +232,12 @@ bug fix, independent of everything below.
   user's own and can be deleted in the GUI.
 
 **Checkpoint:** the permission prompt is readable enough to approve or reject on sight.
+*Not yet exercised* — this needs a real MCP session against a running app, which is the last
+outstanding verification for the whole plan.
+
+Also landed with it: `get_available_plots` moved out of the "chat hand-off only" list in the
+prompt-parity test, because the in-app observer now needs spec ids and chart types to author a board.
+The detector caught that itself, which is what it is for.
 
 ### Phase 4 — (removed)
 Board versioning was cut on 2026-08-08; see Decision 1 for why, and for the order to follow if it is
