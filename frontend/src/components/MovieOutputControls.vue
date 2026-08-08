@@ -13,6 +13,7 @@
 // viewer and batch panels share a per-set movie config, Animation keeps per-project refs.
 import { computed } from 'vue'
 import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 const props = defineProps<{
@@ -70,8 +71,18 @@ const overlays = computed<string[]>({
   },
 })
 
-const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
-  emit(`update:${axis}` as 'update:sizeX', parseMovieAxis((ev.target as HTMLInputElement).value))
+// The three FREE-TEXT fields commit on `@change` (blur / Enter), not per keystroke — parsing a
+// half-typed width would clamp "8" to the minimum before the user reaches "800". That makes them
+// uncontrolled while focused, and Vue force-patches an input's `value` on every element patch, so a
+// re-render mid-typing used to replace what was typed with the bound value: the reported "I enter a
+// name and it jumps back to the prefilled one", on both this surface and the batch panel.
+// `useFieldDraft` keeps the DOM and the binding in lockstep without changing when the value commits.
+const suffixDraft = useFieldDraft(() => props.suffix)
+const sizeXDraft  = useFieldDraft(() => props.sizeX)
+const sizeYDraft  = useFieldDraft(() => props.sizeY)
+
+const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
+  emit(`update:${axis}` as 'update:sizeX', parseMovieAxis(raw))
 </script>
 
 <template>
@@ -93,20 +104,20 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 
     <span class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Output size in pixels; blank = canvas size'">px</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeX ?? ''"
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeXDraft"
              :placeholder="movieAxisPlaceholder(canvasX)" v-tooltip.bottom="'Width; blank = canvas width'"
-             @change="onAxis('sizeX', $event)" />
+             @change="onAxis('sizeX', sizeXDraft)" />
       <span class="cc-muted cc-fs-2xs">×</span>
-      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" :value="sizeY ?? ''"
+      <input type="number" min="2" max="4096" step="2" class="cc-input-2xs mo-num" v-model="sizeYDraft"
              :placeholder="movieAxisPlaceholder(canvasY)" v-tooltip.bottom="'Height; blank = canvas height'"
-             @change="onAxis('sizeY', $event)" />
+             @change="onAxis('sizeY', sizeYDraft)" />
     </span>
 
     <span class="cc-row-group mo-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Added to the file name'">name</span>
-      <input type="text" class="cc-input-2xs mo-txt" :value="suffix" placeholder="suffix"
+      <input type="text" class="cc-input-2xs mo-txt" v-model="suffixDraft" placeholder="suffix"
              v-tooltip.bottom="'Added to the file name; keeps versions apart'"
-             @change="$emit('update:suffix', ($event.target as HTMLInputElement).value)" />
+             @change="$emit('update:suffix', suffixDraft)" />
     </span>
 
     <!-- How much of the z stack the movie shows. ONE switch for both the image and the mask layers:

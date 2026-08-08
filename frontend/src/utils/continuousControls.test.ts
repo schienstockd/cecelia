@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { openingTags, templateBlock, sinkOf, rangeControls, undeclaredControls, rearmedTimers } from './continuousControls'
+import { openingTags, templateBlock, sinkOf, rangeControls, undeclaredControls, rearmedTimers,
+         driftingTextFields } from './continuousControls'
 
 describe('openingTags', () => {
   it('does not end a tag on a `>` inside an attribute value', () => {
@@ -116,6 +117,35 @@ describe('rearmedTimers', () => {
   })
   it('a one-shot timer is not a re-arm', () => {
     expect(rearmedTimers('const t = setTimeout(go, 200); onUnmounted(() => clearTimeout(t))')).toEqual([])
+  })
+})
+
+describe('driftingTextFields', () => {
+  it('flags a text field bound with :value and committed on @change', () => {
+    expect(driftingTextFields('<input type="text" :value="name" @change="save($event)" />')).toHaveLength(1)
+    expect(driftingTextFields('<input :value="name" @change="save($event)" />')).toHaveLength(1)   // no type = text
+  })
+  it('a v-model draft is the fix, so it is not flagged', () => {
+    expect(driftingTextFields('<input type="text" v-model="draft" @change="save(draft)" />')).toEqual([])
+  })
+  it('a select cannot drift — its value only changes when the user picks, which fires change', () => {
+    expect(driftingTextFields('<select :value="v" @change="set($event)"><option/></select>')).toEqual([])
+  })
+  it('a range input is a different rule (see above), not this one', () => {
+    expect(driftingTextFields('<input type="range" :value="n" @change="apply(n)" />')).toEqual([])
+  })
+})
+
+// The sibling of the coalescing rule, and the same underlying mistake: letting the DOM and the model
+// disagree. A field bound with `:value` and committed on `@change` is uncontrolled while focused, and
+// Vue force-patches `value` against the DOM's current text on every element patch — so a re-render
+// mid-typing throws away what the user typed. Reported as "I enter a movie name and it reverts to the
+// prefilled one"; the plot-styling panel had five more of them. `useFieldDraft` is the fix.
+describe('no text field lets the DOM drift from its binding', () => {
+  it('every :value + @change text field uses a v-model draft', () => {
+    const drifting = sources
+      .flatMap(s => driftingTextFields(s.text).map(tag => `${s.path}: ${tag.slice(0, 80)}`))
+    expect(drifting).toEqual([])
   })
 })
 
