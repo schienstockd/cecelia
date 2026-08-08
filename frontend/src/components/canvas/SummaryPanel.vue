@@ -643,7 +643,9 @@ async function exportSvg(): Promise<string | null> {
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
-defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
+// `isBusy` is read by the board EXPORT before it captures: capturing a panel mid-fetch put a blank
+// or half-drawn plot into the finished PDF, silently. See utils/awaitIdle.ts.
+defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () => loading.value })
 </script>
 
 <template>

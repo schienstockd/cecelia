@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { computed, watch, ref, provide, nextTick, useTemplateRef } from 'vue'
+import { awaitIdle, anyBusy } from '../../utils/awaitIdle'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { plotHostToImageURL } from '../../plots/export'
@@ -126,7 +127,7 @@ const gridStyle = computed(() => {
 
 // ── visual zoom (fit-to-view, Word/Illustrator style) — A4 modes only (Free already fills width) ──
 const canvasWrapRef = useTemplateRef<HTMLElement>('canvasWrapRef')
-const { zoom, fitWidth, fitHeight, fitWidthIfOverflow, setZoom, reset: resetZoom } =
+const { zoom, zooming, fitWidth, fitHeight, fitWidthIfOverflow, setZoom, reset: resetZoom } =
   useCanvasZoom(canvasWrapRef, () => ({ w: boardW.value, h: boardH.value }))
 provide(CANVAS_ZOOM_KEY, zoom)   // docked panels don't pixel-drag, but keep the contract uniform
 // neutralise zoom during PDF capture so the measured slot rects are at full 1:1 size (the transform
@@ -136,7 +137,12 @@ const zoomWrapStyle = computed(() => boardW.value != null
   ? { width: `${boardW.value * effZoom.value}px`, height: `${boardH.value * effZoom.value}px`, margin: '0 auto' }
   : { width: '100%' })
 const gridZoomStyle = computed(() => (boardW.value != null && effZoom.value !== 1)
-  ? { transform: `scale(${effZoom.value})`, transformOrigin: 'top left' } : {})
+  // `will-change` only WHILE zooming: it promotes the board to its own compositor layer so a drag
+  // re-composites instead of re-rasterising every SVG plot per step. Held permanently it would keep a
+  // full-board layer alive for nothing, so useCanvasZoom drops the flag shortly after the interaction.
+  ? { transform: `scale(${effZoom.value})`, transformOrigin: 'top left',
+      ...(zooming.value ? { willChange: 'transform' } : {}) }
+  : {})
 // first render (and image switch): fit-to-width if the board would overflow, so the whole board is
 // visible without hiding the sidebar; a board that already fits stays at 100%.
 watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
@@ -382,8 +388,8 @@ function labelFor(c: SlotContent): string {
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
-type SummaryRef = { getCsv(): string | null | Promise<string | null>; getStatsCsv?(): string; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
-type ExportRef = { exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
+type SummaryRef = { getCsv(): string | null | Promise<string | null>; getStatsCsv?(): string; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null>; isBusy?(): boolean }
+type ExportRef = { exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null>; isBusy?(): boolean }
 const summaryRefs = new Map<number, SummaryRef>()
 const interactiveRefs = new Map<number, ExportRef>()
 function setSummaryRef(i: number, el: unknown) { if (el) summaryRefs.set(i, el as SummaryRef); else summaryRefs.delete(i) }
@@ -399,6 +405,11 @@ async function capturePage(vector = false) {
   const slotEls = Array.from(gridEl.querySelectorAll('.lc-slot')) as HTMLElement[]
   capturing.value = true
   await new Promise(r => requestAnimationFrame(() => r(null)))   // let the grip-hide take effect
+  // …and wait for every panel to STOP loading. One rAF only covered the grip; a slot still fetching or
+  // drawing was captured as-is, which put a blank plot into the finished PDF with no error. Bounded, so
+  // a stuck panel degrades to the old behaviour instead of hanging the export button.
+  const settled = await awaitIdle(() => anyBusy([...summaryRefs.values(), ...interactiveRefs.values()]))
+  if (!settled) console.warn('[board export] a panel was still loading; capturing anyway')
   // measure the grid + each slot so the PDF reproduces the ON-SCREEN layout (spans, plates, row height,
   // gaps) exactly — the board IS the layout guide, so slots land at their real proportions/positions.
   const gr = gridEl.getBoundingClientRect()
