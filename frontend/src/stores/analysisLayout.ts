@@ -7,8 +7,11 @@ import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
 // chosen template (cols/rows + per-slot grid-area) and each slot's CONTENT, plus the canvas-level
-// `shared` bag consumed by useSummaryData. In-memory (survives navigation, not reload); cleared
-// per-project from stores/project.ts. A slot's content is routed by `kind`:
+// `shared` bag consumed by useSummaryData. PERSISTED per project: the autosave below POSTs the whole
+// {tabs, layouts} payload to /api/projects/boards → settings/analysisBoards.json, restored by `load()`
+// at project open; the store is also cleared per-project from stores/project.ts. (This said "in-memory,
+// not reload" until 2026-08-08 — it predated the autosave, and had a reader conclude boards weren't
+// persisted at all.) A slot's content is routed by `kind`:
 //   summary     → a SummaryPanel bound to a plot spec (ref = specId)
 //   interactive → an InteractivePanel view (ref = view key; Phase B)
 //   image       → a static PNG (napari screenshot; Phase D)
