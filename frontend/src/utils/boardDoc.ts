@@ -39,16 +39,27 @@ export function tabGroupOf(doc: Partial<BoardsDoc> | null | undefined): BoardTab
 /**
  * Should a `boards:changed` broadcast make THIS client reload?
  *
- * No for another project, and no for the echo of our own write — the writer already holds that state,
- * and reloading it would bounce the board through a restore for nothing. A version at or below ours is
- * also stale news (broadcasts can arrive out of order).
+ * No for another project, and no for the echo of our OWN write, which is identified by `clientId` —
+ * NOT by comparing versions. The server broadcasts before it returns the response, so a writer still
+ * holds the pre-write version when its own frame arrives: a version test says "newer, reload" and the
+ * writer reloads its own write, replacing every board entry and re-rendering the whole canvas on every
+ * autosave. That is a timing race, so it cannot be fixed with a timing-based guard.
+ *
+ * A version at or below ours is still ignored — broadcasts can arrive out of order — but that is the
+ * secondary check now, not the identity one.
+ *
+ * A frame with NO `clientId` is someone else by construction (the MCP add-a-board route, or an older
+ * client), so it is honoured.
  */
 export function shouldReloadBoards(
-  frame: { projectUid?: unknown; version?: unknown } | null | undefined,
+  frame: { projectUid?: unknown; version?: unknown; clientId?: unknown } | null | undefined,
   uid: string | null | undefined,
   ourVersion: number,
+  ourClientId?: string,
 ): boolean {
   if (!uid || !frame || String(frame.projectUid ?? '') !== uid) return false
+  const from = String(frame.clientId ?? '')
+  if (from && ourClientId && from === ourClientId) return false      // our own write coming back
   const v = Number(frame.version)
   return Number.isFinite(v) && v > ourVersion
 }

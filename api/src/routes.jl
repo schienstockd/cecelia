@@ -894,8 +894,14 @@ function api_projects_boards(body_bytes::Vector{UInt8})
                                        code="stale_version", boards=boards_doc_payload(current)))
         end
         version = write_boards_doc(path, incoming; version = current.version + 1)
-        # tell every OTHER open client to pick this up (the writer ignores its own echo by version).
-        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
+        # Tell every OTHER open client to pick this up. The writer identifies its own echo by `clientId`,
+        # NOT by version: this broadcast goes out before the response does, so the writer still holds the
+        # pre-write version when its own frame arrives — a version test made every autosave reload and
+        # re-render the board that had just been saved. Absent for a non-browser writer (the MCP
+        # add-a-board route), which is correct: every browser should pick that one up.
+        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid,
+                                      "version" => version,
+                                      "clientId" => String(get(body, :clientId, ""))))
         return 200, JSON3.write((; ok=true, version))
     catch e
         return 500, JSON3.write((; error=sprint(showerror, e)))

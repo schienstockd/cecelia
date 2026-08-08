@@ -4,6 +4,7 @@ import { uniform, type LayoutTemplate } from '../plots/layoutTemplates'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 import { boardsPayload, tabGroupOf, shouldReloadBoards, type BoardsDoc } from '../utils/boardDoc'
+import { shortId } from '../utils/id'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
@@ -102,6 +103,9 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   // The document version each project was last READ or WRITTEN at — the optimistic-concurrency token
   // the next write echoes back. See utils/boardDoc.ts.
   const _boardVersion: Record<string, number> = {}
+  // Identifies THIS client's writes in the boards:changed broadcast. The server broadcasts before it
+  // returns, so a writer cannot recognise its own echo by version — it still holds the pre-write one.
+  const _clientId = shortId()
   const _restoring = ref(false)
   let _boardTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -138,7 +142,7 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
         _boardLastSaved[uid] = s
         const res = await fetch('/api/projects/boards', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: uid, boards, version: versionOf(uid) }),
+          body: JSON.stringify({ projectUid: uid, boards, version: versionOf(uid), clientId: _clientId }),
         }).catch(() => null)
         if (!res) return
         if (res.status === 409) {
@@ -185,7 +189,7 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     useWsStore().on('boards:changed', (frame: unknown) => {
       import('./projectMeta').then(({ useProjectMetaStore }) => {
         const uid = useProjectMetaStore().current?.uid
-        if (uid && shouldReloadBoards(frame as never, uid, versionOf(uid))) void reloadBoards(uid)
+        if (uid && shouldReloadBoards(frame as never, uid, versionOf(uid), _clientId)) void reloadBoards(uid)
       })
     })
   })
