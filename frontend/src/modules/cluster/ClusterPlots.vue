@@ -29,7 +29,7 @@ import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
 import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
-import { defaultVis, type VisProps } from '../../plots/plot'
+import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (views read their own keys: umap→labels, heatmap→features).
@@ -103,9 +103,9 @@ const activeHL = computed(() =>
 // plot styling (VisProps) follows the SAME global/local scope as the highlights (like the summary
 // canvas): GLOBAL = one styling bag for every plot; LOCAL = the active plot's own. The pop manager
 // edits the active scope's bag; each panel renders with its own effective bag.
-const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? defaultVis())
+const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? DEFAULT_VIS)
 const activeVis = computed(() =>
-  scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? defaultVis()))
+  scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activePanel.value) activePanel.value.state.vis = { ...(activePanel.value.state.vis ?? defaultVis()), ...patch }

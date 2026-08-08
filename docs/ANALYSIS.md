@@ -138,6 +138,14 @@ registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCa
 | `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
 | `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics` |
 
+**A slot with no `vis` falls back to `DEFAULT_VIS`, never `defaultVis()`.** The factory mints a new bag
+per call, so a template-side `?? defaultVis()` gives every panel a "new" vis on every board render — the
+chart rebuilds, reports its auto-overrides back up, the board stores the readout and renders again
+("Maximum recursive updates exceeded"). Slots lack a `vis` exactly when something other than the GUI
+wrote them (`add_analysis_board` omits the bag on purpose — `app/src/analysis_board_spec.jl`), so the
+loop hit Claude-authored boards only. Use the shared frozen `DEFAULT_VIS` wherever the fallback is READ;
+keep `defaultVis()` where a panel needs its own bag to write into.
+
 `'none'` keeps the panel rather than hiding it because the rail carries two independent things: the
 selection list *and* the shared `PlotOptions` styling + scope footer, which a self-contained plot may
 still use (`GatingStrategyView` reads `vis.fontSize`).

@@ -25,7 +25,7 @@ import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey } from '../../plots/series'
-import { defaultVis, type VisProps } from '../../plots/plot'
+import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
@@ -97,7 +97,7 @@ for (const p of panels.value) migrateSpecId(p.state)
 const panelSel = (s: PanelState) => scope.value === 'global' ? gSel.value : s.sel
 const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activePanel.value?.state.sel ?? []))
 const panelVis = (s: PanelState) => scope.value === 'global' ? gVis.value : s.vis
-const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? defaultVis()))
+const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
 // the stats test each panel's last result actually ran (`auto` resolves it server-side from the group
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:

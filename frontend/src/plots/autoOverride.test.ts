@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   overrideTooltip, overrideNote, transformOverride, xRotationOverride, needsXRotation, effectiveOf,
+  sameOverrides,
 } from './autoOverride'
 
 // One concept: a setting the app could not honour and substituted. It existed twice, ad hoc — the two
@@ -118,5 +119,32 @@ describe('effectiveOf', () => {
   it('works for any value type, not just booleans (the gating selects)', () => {
     expect(effectiveOf(transformOverride('logicle', 'linear'), 'logicle', 'linear')).toBe('linear')
     expect(effectiveOf(null, 'logicle', 'linear')).toBe('logicle')
+  })
+})
+
+// The emit gate. A re-render that substituted exactly what the last one did must stay silent: the host
+// keeps the set, the board keeps the host's readout, and writing that on every render re-rendered the
+// panel — "Maximum recursive updates exceeded" on any board whose slots carry no vis of their own.
+describe('sameOverrides', () => {
+  const rotated = xRotationOverride(true, false)!
+
+  it('two empty sets are the same — the case that caused the loop', () => {
+    expect(sameOverrides([], [])).toBe(true)
+  })
+
+  it('compares by CONTENT, not identity — a rebuilt equal set is still silent', () => {
+    expect(sameOverrides([rotated], [xRotationOverride(true, false)!])).toBe(true)
+  })
+
+  it('a substitution appearing or lifting is real news', () => {
+    expect(sameOverrides([rotated], [])).toBe(false)
+    expect(sameOverrides([], [rotated])).toBe(false)
+  })
+
+  it('same setting, different substitution', () => {
+    expect(sameOverrides(
+      [transformOverride('logicle', 'linear')!],
+      [transformOverride('biexp', 'linear')!],
+    )).toBe(false)
   })
 })

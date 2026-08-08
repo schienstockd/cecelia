@@ -17,7 +17,7 @@ import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, defaultVis, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
@@ -515,7 +515,7 @@ watch(readout, n => emit('readout', n), { immediate: true, deep: true })
 
 const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
 
-const vis = computed<VisProps>(() => props.vis ?? defaultVis())
+const vis = computed<VisProps>(() => props.vis ?? DEFAULT_VIS)
 const hasData = computed(() => {
   const r = result.value
   if (!r) return false
