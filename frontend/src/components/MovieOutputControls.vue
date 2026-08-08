@@ -136,7 +136,9 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 </template>
 
 <style scoped>
-.mo { min-width: 0; }
+/* The block stops at a reading width, everywhere — see `--cc-movie-block` (style.css) for why the
+   cap is on the BLOCK rather than per field. */
+.mo { min-width: 0; max-width: var(--cc-movie-block); }
 /* Groups that take a WHOLE line of their own, everywhere (Dominik, 2026-08-08). Two different
    reasons, one rule:
 
@@ -158,9 +160,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', ev: Event) =>
 .mo-val { min-width: 1.6rem; }
 /* wide enough for 4 digits PLUS the number spinner — 4096 was clipping at 3.6rem */
 .mo-num { width: 4.2rem; flex-shrink: 0; }
-/* …but the FIELD stops at a reading width. Taking its own line is about where it sits; letting it
-   then eat a 1200px page is just a stretched box — a filename suffix is a handful of characters, and
-   the Animation page's controls read as one weirdly wide bar without this (Dominik, 2026-08-08).
-   A cap, not a fixed width, so the narrow panels are unchanged: below the cap it still grows. */
-.mo-txt { flex: 1 1 auto; min-width: 4rem; max-width: 22rem; }
+/* …and the field then fills its own line, up to the block cap above (which is what stops it eating a
+   1200px page — a filename suffix is a handful of characters). */
+.mo-txt { flex: 1 1 auto; min-width: 4rem; }
 </style>

@@ -17,8 +17,8 @@ import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napa
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
+import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
-import TeleportPopover from './TeleportPopover.vue'
 import { movieSizeParams } from '../utils/movieSize'
 import { clampContour } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -210,11 +210,8 @@ const compareContrast = computed<CompareContrast>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareContrast : COMPARE_CONTRAST_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareContrast: v }) } })
 
-// The movie OPTIONS (fps / size / name / title card) live in a popover off the gear: the viewer is a
-// narrow floating panel, and four dense rows of controls is what made this section the crowded one.
-// TeleportPopover because a plain absolute panel would clip inside the FloatingPanel.
-const movieOptsOpen = ref(false)
-const movieOptsAnchor = ref<HTMLElement | null>(null)
+// The movie OPTIONS (fps / size / name / title card) live in a popover off the gear — see
+// MovieOptionsButton, which owns that chrome for both this panel and the Animation page.
 // napari's baked overlays. They are drawn into the canvas, so a recording burns them in — hiding them
 // is a record-time decision, and the batch RE-OPENS each image (which turns the scale bar back on),
 // so toggling them in the napari window is not an alternative.
@@ -816,12 +813,14 @@ onUnmounted(() => {
                                 v-model:contour="labelContour"
                                 v-model:layout="compareLayout"
                                 v-model:contrast="compareContrast" />
-          <button ref="movieOptsAnchor" class="opt-btn cc-btn cc-btn-ghost cc-btn-icon"
-                  :class="{ 'cc-btn-on cc-btn-on-tint': movieOptsOpen }"
-                  @click="movieOptsOpen = !movieOptsOpen"
-                  v-tooltip.bottom="'Movie options: frame rate, size, file name, title card'">
-            <i class="pi pi-cog" />
-          </button>
+          <MovieOptionsButton class="opt-btn">
+            <MovieOutputControls v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
+                                 v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
+                                 v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
+                                 :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
+                                 v-model:zSlice="zSlice" />
+            <TitleCardControls v-model="movieTitleCardModel" />
+          </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
                   v-tooltip.bottom="compareActionTip(compareShapeNow,
@@ -829,16 +828,6 @@ onUnmounted(() => {
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
         </div>
-        <TeleportPopover v-model="movieOptsOpen" :anchor="movieOptsAnchor" placement="bottom-end">
-          <div class="movie-opts">
-            <MovieOutputControls v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
-                                 v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
-                                 v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
-                                 :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
-                                 v-model:zSlice="zSlice" />
-            <TitleCardControls v-model="movieTitleCardModel" />
-          </div>
-        </TeleportPopover>
       </div>
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint cc-muted">No image open in Napari.</span></div>
@@ -906,7 +895,6 @@ onUnmounted(() => {
 .movie-versions { flex: 1; min-width: 0; }
 .movie-rec { margin-left: 0.1rem; }
 /* the popover is free of the panel's width, so give the controls room to lay out on one line each */
-.movie-opts { display: flex; flex-direction: column; gap: 0.45rem; width: 22rem; max-width: 80vw; }
 /* .movie-lbl/-range/-val/-controls were left behind when MovieOutputControls was extracted — the
    component owns them now, so the dead rules are gone rather than re-orphaned here. */
 
