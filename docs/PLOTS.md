@@ -533,7 +533,12 @@ Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all
 four `plot_summary_data` methods + `/api/plot_data` as `matrixMode`/`measures`/`category`/`separator`/
 `zscore`/`matrixNormalize`). Returns a flat `cells` `[{x,y,value,n|count}]` + ordered `xLabels`/
-`yLabels` + `valueLabel`. Frontend: `buildHeatmap` in `plot.ts` (`Plot.cell`, the colour scale per the
+`yLabels` + `valueLabel`. An **empty frame is an empty grid, not an error** (`_empty_matrix`): a
+population with no rows on this image comes back from `pop_df` with no columns at all, and erroring on
+the then-absent `category` column printed a raw error message into the panel every time a cluster pop
+was absent from one image of a per-image board. Every other chart type answers an empty frame with an
+empty series and lets the panel render "No data for the selected populations" — the matrix matches that;
+a missing `category` on a NON-empty frame is still an error. Frontend: `buildHeatmap` in `plot.ts` (`Plot.cell`, the colour scale per the
 mode above, **white** tile borders + a **black `theme_classic` L-axis**, tight margins; continuous
 legend stashed in `_colorLegend` for `PlotChart` to draw as an overlay). In-cell value text is a
 `heatmapValues` toggle — **off** by default for profile (matches R), on for crosstab. The panel offers

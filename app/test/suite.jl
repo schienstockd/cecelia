@@ -7040,6 +7040,24 @@ end
                                measures=["speed"], category="st")
     c2 = first(c for c in prn["cells"] if c["x"] == "2")
     @test c2["value"] === nothing && c2["n"] == 0     # state 2 has only a NaN → null cell
+
+    # EMPTY FRAME (a population with no rows in this image) → an empty GRID, never an error. pop_df
+    # returns a frame with no columns at all, which used to trip the category check and print
+    # "matrix needs a `category` column present in the data" into the panel — the failure a per-image
+    # board of cluster pops hits whenever one cluster is absent from one image. Every other chart type
+    # answers this with an empty series; the response keys must match the populated ones so the
+    # renderer's empty state fires instead of breaking.
+    for (mode, extra) in (("crosstab", "normalize"), ("profile", "zscore"))
+        e = Cecelia._summary_agg(DataFrame(), "matrix"; measure=nothing, granularity=:cell, nbins=0,
+                                 normalize=:none, by_image=false, matrix_mode=mode,
+                                 measures=["speed"], category="tr")
+        @test e["chartType"] == "matrix" && e["matrixMode"] == mode && e["category"] == "tr"
+        @test isempty(e["cells"]) && isempty(e["xLabels"]) && isempty(e["yLabels"])
+        @test haskey(e, extra) && haskey(e, "valueLabel")   # same shape as the populated response
+    end
+    # …but an unknown mode is still an error, empty frame or not
+    @test_throws ErrorException Cecelia._summary_agg(DataFrame(), "matrix"; measure=nothing,
+        granularity=:cell, nbins=0, normalize=:none, by_image=false, matrix_mode="bogus", category="tr")
 end
 
 @testset "plot attribute grouping (compare by attr)" begin
@@ -8832,6 +8850,27 @@ end
         # scoping mirrors lineage
         @test length(populations_summary(proj; image_uid = "i1").images) == 1
         @test isempty(populations_summary(proj; image_uid = "nope").images)
+
+        # AUTO-SHARED cluster pops are reported for the borrowing segmentation too. Cluster pops are
+        # global to a run: the names are authored under ONE co-clustered value_name (A) and every
+        # sibling in the run (B) carries the same `clusters.movement` column, so `load_pop_map` lends
+        # them relabeled. The observer used to skip any value_name with no sidecar FILE, so B looked
+        # unclustered — and a board authored from that covered half the run's data.
+        img.label_props["B"] = "B.h5ad"
+        mkpath(Cecelia.img_label_props_dir(img))
+        for vn in ("A", "B")      # both segments took part in the `movement` track-clustering run
+            write(Cecelia._clustfeatures_path(img_track_props_path(img, vn)),
+                  JSON3.write(Dict("clusters.movement" =>
+                      Dict("features" => ["live.track.speed"], "partOf" => ["i1"]))))
+        end
+        shared = populations_summary(proj).images[1].populations
+        bdir = shared[findall(p -> p.name == "Directed" && p.valueName == "B", shared)]
+        @test length(bdir) == 1 && bdir[1].popType == "trackclust"
+        @test bdir[1].filter.measure == "clusters.movement"        # the SAME run, not a new definition
+        # a segment that is NOT in the run borrows nothing (no clustfeatures sidecar → no pops)
+        img.label_props["C"] = "C.h5ad"
+        cpops = populations_summary(proj).images[1].populations
+        @test isempty(findall(p -> p.valueName == "C", cpops))
     end
 
     @testset "measure summary (Slice C)" begin

@@ -647,14 +647,45 @@ end
 #
 # Returns a flat `cells` list `[{x, y, value, n|count}]` plus ordered `xLabels`/`yLabels` (so the
 # renderer lays out a fixed grid even where a cell is absent). Pure over the frame, headless-testable.
+# The crosstab's value label — what the cell NUMBER is once `normalize` is applied. One derivation,
+# shared by the populated grid and the empty one below (the legend title must not depend on the data).
+_crosstab_value_label(normalize::Symbol) =
+    normalize == :row ? "P(to|from)" : normalize == :col ? "P(from|to)" :
+    normalize == :total ? "fraction" : "count"
+
+# The SAME response shape with an empty grid, for a request whose frame has no rows (an absent
+# population). Keys mirror each mode's populated return exactly — the renderer reads `cells` to decide
+# it has nothing to draw, so a missing key would break the empty state rather than show it.
+function _empty_matrix(mode::AbstractString, cat::AbstractString, normalize::Symbol,
+                       zscore::Bool, granularity::Symbol)::Dict{String,Any}
+    base = Dict{String,Any}("chartType" => "matrix", "matrixMode" => String(mode),
+        "xLabels" => String[], "yLabels" => String[], "cells" => Dict{String,Any}[],
+        "category" => cat, "granularity" => String(granularity), "series" => Any[])
+    mode == "profile"  && return merge(base, Dict{String,Any}(
+        "zscore" => zscore, "valueLabel" => zscore ? "z-score" : "mean"))
+    mode == "crosstab" && return merge(base, Dict{String,Any}(
+        "normalize" => String(normalize), "valueLabel" => _crosstab_value_label(normalize)))
+    error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab)")
+end
+
 function _matrix_agg(df::DataFrame; mode::AbstractString,
                      measures::AbstractVector{<:AbstractString}=String[],
                      category::Union{Nothing,AbstractString}=nothing,
                      separator::AbstractString="_", zscore::Bool=false,
                      normalize::Symbol=:none, granularity::Symbol=:cell)::Dict{String,Any}
     cat = category === nothing ? nothing : String(category)
-    (cat === nothing || !(cat in names(df))) &&
-        error("plot_summary_data: matrix needs a `category` column present in the data (got $(cat === nothing ? "none" : repr(cat)))")
+    cat === nothing &&
+        error("plot_summary_data: matrix needs a `category` column present in the data (got none)")
+    # A population with NO rows here is an EMPTY PLOT, not a spec error. pop_df returns a frame with no
+    # columns at all in that case, so the presence check below would fail on a perfectly valid request
+    # and put a raw error string in the panel — which is what a per-image board of cluster pops shows
+    # whenever one cluster is absent from one image (cluster "Directed" exists in 3 of 7 images here).
+    # Every other chart type answers an empty frame with an empty series and the panel renders its
+    # normal "No data for the selected populations."; a matrix must behave the same. A MISSING column on
+    # a NON-empty frame is still a real error.
+    nrow(df) == 0 && return _empty_matrix(mode, cat, normalize, zscore, granularity)
+    !(cat in names(df)) &&
+        error("plot_summary_data: matrix needs a `category` column present in the data (got $(repr(cat)))")
     catvals = df[!, cat]
     # finite/non-missing category key per row (`nothing` for dropped rows)
     catkeys = Union{Nothing,String}[(ismissing(v) || (v isa Real && !isfinite(v))) ? nothing :
@@ -724,8 +755,7 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
                   normalize == :total ? (total == 0 ? 0.0 : c / total) : Float64(c)
             push!(cells, Dict{String,Any}("x" => t, "y" => f, "value" => val, "count" => c))
         end
-        vlabel = normalize == :row ? "P(to|from)" : normalize == :col ? "P(from|to)" :
-                 normalize == :total ? "fraction" : "count"
+        vlabel = _crosstab_value_label(normalize)
         return Dict{String,Any}("chartType" => "matrix", "matrixMode" => "crosstab",
             "xLabels" => tos, "yLabels" => froms, "cells" => cells, "category" => cat,
             "normalize" => String(normalize), "valueLabel" => vlabel,
