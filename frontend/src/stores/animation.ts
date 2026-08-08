@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
+import { debouncedSave } from '../utils/debouncedSave'
 
 export interface AnimSnapshot {
   id: string
@@ -28,20 +29,38 @@ export const useAnimationStore = defineStore('animation', () => {
   const sizeY = ref<number | null>(null)
   const suffix = ref('')                 // filename addition, so two renders of one image can coexist
   const titleCard = ref<TitleCardCfg>({ ...TITLE_CARD_DEFAULT })   // Phase H4 description slide (per project)
-  const _restoring = ref(false)         // suppress autosave while hydrating from the project load
+  // Write-behind autosave → /api/projects/animations (dirty on any keyframe/fps change, incl. deep
+  // edits to a keyframe's viewState from the row toggles). Shared helper — utils/debouncedSave.
+  const _autosave = debouncedSave(async () => {
+    const uid = useProjectMetaStore().current?.uid
+    if (!uid) return
+    await fetch('/api/projects/animations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, animations: { snapshots: snapshots.value, fps: fps.value, sizeX: sizeX.value,
+                                                 sizeY: sizeY.value, suffix: suffix.value,
+                                                 titleCard: titleCard.value } }),
+    }).catch(() => { /* autosave is best-effort */ })
+  }, { wait: 600 })
+  const _save = () => _autosave.schedule()
+  watch(snapshots, _save, { deep: true })
+  watch([fps, sizeX, sizeY, suffix], _save)
+  watch(titleCard, _save, { deep: true })
 
-  // hydrate from the project-load response (or clear on a project with none / on switch)
+  // hydrate from the project-load response (or clear on a project with none / on switch).
+  // `duringRestore` holds the autosave past the debounce window: Vue's watchers run AFTER this function
+  // returns, so clearing a flag on the last line (what this used to do) suppressed nothing and every
+  // project open posted the animations it had just read straight back.
   function load(data: { snapshots?: AnimSnapshot[]; fps?: number; sizeX?: number | null;
                         sizeY?: number | null; suffix?: string;
                         titleCard?: TitleCardCfg } | null | undefined) {
-    _restoring.value = true
-    snapshots.value = data?.snapshots ?? []
-    fps.value = data?.fps ?? 15
-    sizeX.value = data?.sizeX ?? null
-    sizeY.value = data?.sizeY ?? null
-    suffix.value = data?.suffix ?? ''
-    titleCard.value = data?.titleCard ?? { ...TITLE_CARD_DEFAULT }
-    _restoring.value = false
+    _autosave.duringRestore(() => {
+      snapshots.value = data?.snapshots ?? []
+      fps.value = data?.fps ?? 15
+      sizeX.value = data?.sizeX ?? null
+      sizeY.value = data?.sizeY ?? null
+      suffix.value = data?.suffix ?? ''
+      titleCard.value = data?.titleCard ?? { ...TITLE_CARD_DEFAULT }
+    })
   }
   function add(s: AnimSnapshot) { snapshots.value = [...snapshots.value, s] }
   function remove(id: string) { snapshots.value = snapshots.value.filter(s => s.id !== id) }
@@ -59,27 +78,6 @@ export const useAnimationStore = defineStore('animation', () => {
     const next = [...arr]; [next[i], next[j]] = [next[j], next[i]]
     snapshots.value = next
   }
-
-  // debounced autosave → /api/projects/animations (dirty on any keyframe/fps change, incl. deep edits
-  // to a keyframe's viewState from the row toggles)
-  let timer: ReturnType<typeof setTimeout> | null = null
-  function _save() {
-    if (_restoring.value) return
-    const uid = useProjectMetaStore().current?.uid
-    if (!uid) return
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      fetch('/api/projects/animations', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: uid, animations: { snapshots: snapshots.value, fps: fps.value, sizeX: sizeX.value,
-                                                   sizeY: sizeY.value, suffix: suffix.value,
-                                                   titleCard: titleCard.value } }),
-      }).catch(() => { /* autosave is best-effort */ })
-    }, 600)
-  }
-  watch(snapshots, _save, { deep: true })
-  watch([fps, sizeX, sizeY, suffix], _save)
-  watch(titleCard, _save, { deep: true })
 
   // drag-and-drop: place the dragged keyframe at the target's position (both must be the same image —
   // the timeline is per-image).
