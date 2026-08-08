@@ -61,9 +61,14 @@ def get_project_info(project_uid: str) -> dict:
 
 @mcp.tool()
 def list_images(project_uid: str) -> list:
-    """Every image in the project: uid, name, processing status, which set it belongs to, and
-    `included` — false means EXCLUDED from analysis (a silent member; downstream/cohort counts should
-    drop it). An excluded image that is still "done" is intentional but easy to miss — see its note."""
+    """Every image in the project: uid, name, processing status, which set it belongs to, `attr` (its
+    attribute ASSIGNMENT, e.g. `{"Mouse": "3", "Location": "b"}`), and `included` — false means
+    EXCLUDED from analysis (a silent member; downstream/cohort counts should drop it). An excluded
+    image that is still "done" is intentional but easy to miss — see its note.
+
+    Use `attr` to size the groups before choosing a cross-image plot: get_image_attributes says what you
+    MAY group by, this says how many images land in each group once the excluded ones are dropped. A
+    group of one is not a comparison."""
     return _client.list_images(project_uid).get("images", [])
 
 
@@ -209,6 +214,41 @@ def get_available_plots(module: str = "") -> list:
 
 
 @mcp.tool()
+def get_analysis_boards(project_uid: str) -> dict:
+    """The Analysis boards this project already has, and WHAT EACH ONE SHOWS — read this before
+    proposing a figure, so you extend the user's thinking instead of rebuilding it.
+
+    Returns `boards: [{name, cols, rows, plots: [{slot, kind, ref, measure?, chart?, popType?, pops?,
+    title?}]}]`. `ref` is the plot-spec id (summary) or interactive view key; `pops` are the plotted
+    populations as `valueName/pop`. Empty slots are omitted, so `plots: []` means a board exists but is
+    blank. A SUMMARY, not the stored layout — grid geometry, styling and captions are the user's and are
+    not exposed.
+
+    Use it to (a) not duplicate a board that already answers the question, (b) match the measures and
+    populations the user already chose rather than inventing your own, and (c) name a new board so it
+    reads beside theirs. `get_analysis_lineage` also lists board names; this is the plot detail."""
+    return _client.get_analysis_boards(project_uid)
+
+
+@mcp.tool()
+def get_image_attributes(project_uid: str, set_uid: str, image_uids: str = "") -> dict:
+    """The per-image ATTRIBUTES on a set — `{attrs: [{name, values}]}`, e.g.
+    `[{name: "Mouse", values: ["1","2","3","4"]}, {name: "Location", values: ["a","b","c","d"]}]`.
+
+    These are the axes a plot can GROUP BY. Without them you can only plot per-image or pooled, which
+    throws away the comparison the experiment was designed around — four images from one mouse are not
+    four replicates. Check this before proposing any cross-image plot, and say which attribute you
+    grouped by and why.
+
+    `set_uid` comes from get_project_info's `sets`; attributes are a SET-level concept, so a single
+    image has none and an empty `attrs` means the set was never annotated (offer per-image or pooled,
+    and say the grouping is unavailable rather than inventing one from filenames). Optional
+    `image_uids` (comma-separated) narrows to a subset. Values are the DISTINCT values present, not
+    the per-image assignment — for which image has which value, use list_images. Read-only."""
+    return _client.get_image_attributes(project_uid, set_uid, image_uids or None)
+
+
+@mcp.tool()
 def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
     the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);
@@ -223,7 +263,8 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
         - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
         - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
       - `chains`: wired whiteboard templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
-      - `boards`: analysis-board tab names (best-effort; the board's plot detail is not exposed here).
+      - `boards`: analysis-board tab NAMES (best-effort). For what each board actually plots, use
+        get_analysis_boards — this is the cheap name-only view.
       - `rollup`: `{pipeline, divergences}` — the common stage sequence across images, and which images
         diverge (missing a stage the others ran, or excluded). Start here to spot the odd image out.
 

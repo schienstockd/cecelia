@@ -61,6 +61,23 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/write"),
         ])
 
+    def test_image_attributes_is_a_read_and_reuses_the_canonical_route(self):
+        # Attribute discovery has ONE route (/api/plots/attrs) — the same one the summary canvas's
+        # "compare by attribute" picker and the UMAP colour/facet picker use. The observer reads it
+        # rather than growing a second attribute surface, and it is a GET, so the write set above is
+        # untouched by exposing it. See docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 0.
+        with _patch_urlopen({"attrs": [{"name": "Mouse", "values": ["1", "2"]}]}) as u:
+            self.c.get_image_attributes("p", "s")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/plots/attrs", req.full_url)
+        self.assertIn("setUid=s", req.full_url)
+        # the subset filter is only sent when asked for
+        self.assertNotIn("imageUids", req.full_url)
+        with _patch_urlopen({"attrs": []}) as u:
+            self.c.get_image_attributes("p", "s", "a,b")
+        self.assertIn("imageUids=a%2Cb", u.call_args[0][0].full_url)
+
     def test_chain_launch_and_in_place_chain_edits_stay_unreachable(self):
         # The point of the whole design: Claude designs chains, the user runs them. Launching has no
         # HTTP route at all (it's the `chain:run` WS message), and the routes that would let Claude

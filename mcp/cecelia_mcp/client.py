@@ -44,6 +44,9 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/tasks/history"),
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
         ("GET", "/api/plots/definitions"),  # available plot types (chart types, data needs, scope modes)
+        ("GET", "/api/plots/attrs"),     # per-set image ATTRIBUTES (name + distinct values) — the axes a
+                                         # board can compare by; the same route the summary canvas and the
+                                         # UMAP colour/facet picker use, not a second attribute surface
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
@@ -52,6 +55,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
         ("GET", "/api/analysis/spatial"),  # region runs + pairwise cell-type contact log-odds (association/avoidance)
         ("GET", "/api/analysis/chains"),  # whiteboard chains: wired templates (DAG) + recent runs
+        ("GET", "/api/analysis/boards"),  # existing Analysis boards + what each slot plots (summary, not layout)
         ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
@@ -182,6 +186,15 @@ class CeceliaClient:
 
     def list_images(self, project_uid: str):
         return self._request("GET", "/api/images", {"projectUid": project_uid})
+
+    def get_analysis_boards(self, project_uid: str):
+        return self._request("GET", "/api/analysis/boards", {"projectUid": project_uid})
+
+    def get_image_attributes(self, project_uid: str, set_uid: str, image_uids: str | None = None):
+        params = {"projectUid": project_uid, "setUid": set_uid}
+        if image_uids:
+            params["imageUids"] = image_uids
+        return self._request("GET", "/api/plots/attrs", params)
 
     def get_image_meta(self, project_uid: str, image_uid: str):
         return self._request(

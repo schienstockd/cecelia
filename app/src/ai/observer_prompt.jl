@@ -36,6 +36,14 @@ For behaviour + clustering: get_behaviour_summary(project, image/set) gives the 
 (fraction per state) + transitions; get_cluster_summary(project, image/set) gives each clustering run's
 cluster count / sizes / largest fraction / features. A collapsed state distribution or one cluster
 swallowing most points on ONE image (vs its peers) is worth flagging.
+Before proposing ANY figure or cross-image comparison, two calls. get_image_attributes(project, set)
+gives the axes the images can be grouped by (e.g. Mouse, Location) — without one you can only plot per
+image or pooled, which throws the experiment's design away: four images from one mouse are not four
+replicates. list_images' per-image `attr` then sizes the groups once excluded images are dropped (a
+group of one is not a comparison). An empty `attrs` means the set was never annotated — say the grouping
+is unavailable rather than inventing one from filenames. And get_analysis_boards(project) shows the
+boards the user already built and what each slot plots, so you extend their thinking instead of
+rebuilding it; match the measures and populations they already chose.
 For the INTENDED pipeline (vs what the run-log window happens to show): get_chains(project) gives the
 wired chain templates (which task feeds which) + the actual chain runs and their node outcomes — how to
 tell chain-orchestrated work from ad-hoc runs, and to see a pipeline that ran before the log window.

@@ -1270,9 +1270,14 @@ function api_images_list(req::HTTP.Request)
     end
     sets = [(; uid=s.uid, name=s.name, imageCount=length(s.image_uids)) for s in proj._sets]
     imgs = Vector{Any}()
+    # `attr` is the per-image ASSIGNMENT (Mouse => "3"), distinct from GET /api/plots/attrs, which is
+    # the set's attribute AXES (name + distinct values) and stays the one discovery route. Both are
+    # needed to choose a cross-image plot: the axes say what you may group by, the assignment says how
+    # many images land in each group — see docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 0.
     for s in proj._sets, img in images(s)
         push!(imgs, (; uid=img.uid, name=img.name, status=img.status,
-                       included=image_included(img), setUid=s.uid, setName=s.name))
+                       included=image_included(img), setUid=s.uid, setName=s.name,
+                       attr=Dict(string(k) => string(v) for (k, v) in img.attr)))
     end
     200, JSON3.write((; projectUid=project_uid, name=proj.name,
                         count=length(imgs), sets, images=imgs))
@@ -1500,6 +1505,12 @@ api_analysis_spatial(req::HTTP.Request) =
 # Project-level (ignores image/set scope). Slice E.
 api_analysis_chains(req::HTTP.Request) =
     _observer_summary_route(req, (p, _i, _s) -> chains_summary(p))
+# GET /api/analysis/boards — the Analysis boards a project already has and WHAT THEY SHOW (a summary,
+# never the stored layout geometry). Lineage's `boards` is tab names only; this is the plot detail, so
+# the observer can see an existing board instead of proposing a duplicate. Project-level, read-only.
+# See board_summaries + docs/todo/MCP_BOARD_AUTHORING_PLAN.md, Phase 0.
+api_analysis_boards(req::HTTP.Request) =
+    _observer_summary_route(req, (p, _i, _s) -> board_summaries(p))
 
 # GET /api/observer/briefing?projectUid — the observer SESSION BRIEFING (Observer Phase 2 §2): a small
 # startup context (project name + image count, flagged images, recent lab log) a fresh Chat-to-Claude

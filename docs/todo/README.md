@@ -116,6 +116,16 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   Vite alias to add at the first commit that swaps a WhatNewCard's grey placeholder for
   `<SketchCanvas>`. Rough.js + animejs; sketches are JSON; R Cecelia logo is the smoke-test port.
   Supersedes `docs/prompts/sketch-engine-prompt.md`.
+- `MCP_BOARD_AUTHORING_PLAN.md` — **planning** (`work/mcp-boards`). Let Claude ADD an Analysis board
+  (one per call, create-only, never modify/delete) — the third artefact after notebooks and chains,
+  same design-but-don't-run split. The naive version (allowlist the existing autosave route) is wrong
+  three ways: it is a *verbatim whole-document overwrite*, the on-disk `LayoutEntry` is unreadable in a
+  preview and unvalidatable, and it races the browser's 800 ms autosave. So: a **semantic spec expanded
+  and validated server-side**, a separate create-only route, and a versioned+merged boards document —
+  which also fixes the existing bug where **two browser tabs clobber each other's boards**. Phase 0
+  (image attributes + board read-back) is a prerequisite with a hard stop: probing `4kS67f` showed the
+  metadata is good enough to plot well, but five cluster runs (three junk-named) and no exposed
+  attributes mean it would currently miss the comparison that matters.
 - `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
   manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
   instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why
