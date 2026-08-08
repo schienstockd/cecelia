@@ -263,12 +263,12 @@ end
 # toggle silently doing nothing. (A genuinely missing zarr is skipped bridge-side without
 # raising — see napari_bridge.show_labels — so this only fires on real load errors.)
 function _show_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}}, show::Bool;
-                           cache::Bool=false, preview::Bool=false)
+                           cache::Bool=false, preview::Bool=false, contour::Int=0)
     errs = String[]
     for (vn, files) in all_labels
         try
             show_labels!(v; value_name = vn, label_files = files, show_labels = show, cache = cache,
-                         preview = preview)
+                         preview = preview, contour = contour)
         catch e
             @warn "show_labels failed" value_name=vn files=files preview=preview exception=(e, catch_backtrace())
             push!(errs, "$vn: $(sprint(showerror, e))")
@@ -330,6 +330,16 @@ function api_napari_open(body_bytes::Vector{UInt8})
     # Default false (correct); users can flip on for faster slice-scrubbing when they're not
     # iterating on the segmentation.
     labels_cache    = Bool(get(data, :labelsCache, false))
+    # 0 = filled (napari's default); N draws each label as an N-px outline instead
+    labels_contour  = _label_contour(data)
+    # Whether this open is worth telling the app about. A RECORDING opens an image per cell, applies a
+    # config, records and moves on; those are not the user arriving at an image, and announcing them as
+    # such is actively harmful — the app-level auto-show (`useNapariAutoShow`) answers `napari:opened`
+    # with a full overlay re-push, which then BLOCKS on `_viewer_lock` (held for the whole sequence) and
+    # lands in a burst once the movie is finished, one per cell per image. Harmless to the file, but it
+    # is why the masks LOOKED present while you watched the window: they came back the moment the
+    # render ended, long after every frame had been captured. Default true — only the recorder opts out.
+    announce        = Bool(get(data, :announce, true))
 
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error = "imageUid required"))
@@ -390,7 +400,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
         _current_image_uid[] = image_uid
 
         if show_labels_req && !isempty(all_labels)
-            _show_all_labels!(v, all_labels, true; cache = labels_cache)
+            _show_all_labels!(v, all_labels, true; cache = labels_cache, contour = labels_contour)
         end
         if show_branch_labels_req && !isempty(all_branch_labels)
             _show_all_branch_labels!(v, all_branch_labels, true; cache = labels_cache)
@@ -404,7 +414,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
         _configure_autosave!(v, task_dir, zarr_path, auto_save)
 
         @info "Opened image in Napari" image_uid zarr_path
-        broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => image_uid))
+        announce && broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => image_uid))
         200, JSON3.write((; ok = true, imageUid = image_uid))
     catch e
         @warn "Failed to open image in Napari" image_uid exception = e
@@ -626,6 +636,72 @@ function _shown_channel_names(img, config, vn)::Vector{String}
     ch_all === nothing ? collect(wanted) : String[c for c in ch_all if c in wanted]
 end
 
+# ── Segmentation masks in a movie ─────────────────────────────────────────────
+# The label layers a movie config asks for. THREE-valued on purpose:
+#
+#   * `nothing` — the config says nothing about masks (it predates the setting, or the caller records
+#     the live view). Leave the canvas alone.
+#   * `String[]` — an explicit "no masks". Not the same as `nothing`: a user who cleared the picker
+#     must get a movie without masks, even though the viewer still shows them.
+#   * a list — show exactly these, hide every other registered segmentation.
+#
+# Unregistered names are dropped rather than passed on to the bridge, which would log a skip per frame-
+# less store; the frontend's `normaliseItems` drops them too, so both ends agree on a deleted set.
+function _config_label_value_names(config, img)::Union{Nothing,Vector{String}}
+    raw = get(config, :labelValueNames, nothing)
+    raw === nothing && return nothing
+    known = _has_labels(img) ? img.labels : Dict{String,Vector{String}}()
+    seen  = Set{String}()
+    String[v for v in (String(x) for x in raw)
+           if haskey(known, v) && !(v in seen) && (push!(seen, v); true)]
+end
+
+# `img.labels` exists on a CciaImage but the movie helpers are also exercised against light NamedTuple
+# stand-ins in the tests — one guarded read instead of a `hasproperty` at every call site.
+_has_labels(img)::Bool = hasproperty(img, :labels) && img.labels isa AbstractDict
+
+# Label OUTLINE width in pixels: 0 = filled (napari's default), N = an N-px contour, which is what lets
+# the channel signal under a mask stay readable. Read from a request body or a movie config through the
+# one accessor so the routes and the recorder cannot disagree about the key or its floor. Clamped
+# rather than validated — a negative contour is meaningless to napari, and failing a whole batch over a
+# display nicety would be the wrong trade.
+const LABEL_CONTOUR_MAX = 10
+_label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_CONTOUR_MAX)
+
+# How much of the z stack a movie shows: the whole thing as a 3D render, or one slice in 2D.
+# `show3D` wins — a z index alongside it is a leftover from the last time 2D was chosen, and dropping
+# it silently would be worse than ignoring it. `nothing` for the slice means "whatever is showing",
+# which is what every recording did before the setting existed.
+_show_3d(src)::Bool = Bool(get(src, :show3D, false))
+function _z_slice(src)::Union{Int,Nothing}
+    _show_3d(src) && return nothing
+    raw = get(src, :zSlice, nothing)
+    raw === nothing ? nothing : max(0, _to_int(raw))
+end
+
+# {valueName => [store files]} for `vns`, the shape `_parse_all_labels`/`_show_all_labels!` consume.
+# `nothing` (mask-agnostic config) and an empty list both give an empty map — the caller pairs it with
+# a `showLabels` flag, which is what distinguishes them on the wire.
+function _label_files_for(img, vns::Union{Nothing,AbstractVector})::Dict{String,Vector{String}}
+    (vns === nothing || !_has_labels(img)) && return Dict{String,Vector{String}}()
+    Dict{String,Vector{String}}(String(v) => img.labels[String(v)] for v in vns
+                                if haskey(img.labels, String(v)))
+end
+
+# Show exactly `wanted`'s masks and hide every other registered one, on a canvas that was NOT re-opened.
+# Two calls because `show-labels` carries one `show` flag for its whole payload; both go through the
+# ordinary handler, so the movie path shows masks the same way the viewer does (no second variant).
+function _apply_label_layers!(img, wanted::AbstractVector; contour::Int = 0)::Nothing
+    _has_labels(img) || return nothing
+    keep = Set(String(v) for v in wanted)
+    show = _label_files_for(img, collect(keep))
+    hide = Dict{String,Vector{String}}(k => v for (k, v) in img.labels if !(k in keep))
+    isempty(hide) || _call_napari_api(api_napari_show_labels, (; allLabels = hide, showLabels = false))
+    isempty(show) || _call_napari_api(api_napari_show_labels,
+                                      (; allLabels = show, showLabels = true, labelContour = contour))
+    nothing
+end
+
 # Full attr-named output path under {proj}/movies/.
 function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[];
                          suffix::AbstractString = "")::String
@@ -640,6 +716,11 @@ end
 function _apply_movie_config!(project_uid::String, image_uid::String, img, config; do_open::Bool = true)::Nothing
     vn_raw = strip(String(get(config, :valueName, "")))
     vn     = isempty(vn_raw) ? nothing : vn_raw
+    # Which segmentation masks this column shows. `nothing` = the config predates the setting (or the
+    # caller doesn't drive masks) → leave whatever is on screen alone; a LIST is authoritative, including
+    # the empty one, which means "no masks". See `_config_label_value_names`.
+    label_vns = _config_label_value_names(config, img)
+    contour   = _label_contour(config)      # 0 = filled masks, N = an N-px outline
 
     # 1. open (auto-load saved props → per-image contrast, Decision 4; no auto-save — we're driving it).
     #    SKIP the open when this exact image (active version) is already shown: re-opening re-samples the
@@ -647,11 +728,33 @@ function _apply_movie_config!(project_uid::String, image_uid::String, img, confi
     #    was never saved to props. Preview passes do_open=false (it applies to the open image only), and a
     #    batch skips re-opening its first image when that's the one already open. Both preserve live contrast.
     already_open = (_current_image_uid[] == image_uid) && isempty(vn_raw)
-    if do_open && !already_open
+    opened       = do_open && !already_open
+    if opened
         ok, _ = _call_napari_api(api_napari_open, (; projectUid = project_uid, imageUid = image_uid,
-            valueName = vn, autoLoadProps = true, autoSaveProps = false))
+            valueName = vn, autoLoadProps = true, autoSaveProps = false,
+            # a recorder's opens are transient — see `announce` in api_napari_open
+            announce = false,
+            # The masks ride the OPEN rather than a show-labels after it, so the saved layer props
+            # (opacity above all — an opaque mask hides the channel under it) land on them, exactly as
+            # the interactive viewer does it. `open_image` clears the canvas, so without this the movie
+            # path silently drops every label layer the user had.
+            showLabels = label_vns !== nothing, allLabels = _label_files_for(img, label_vns),
+            labelContour = contour))
         ok || error("could not open image in napari")
     end
+
+    # 1b. …and when there was no open, nothing was cleared: the masks of the PREVIOUS column (or of the
+    #     live viewer) are still on screen, so show/hide explicitly. This is what makes a segmentation
+    #     comparison cheap — the columns differ only by which mask is up, with no re-open at all.
+    if !opened && label_vns !== nothing
+        _apply_label_layers!(img, label_vns; contour = contour)
+    end
+
+    # 1c. how much of the z stack to show — the whole thing in 3D, or one slice in 2D. AFTER the open,
+    #     which resets the dims, and unconditional so a 2D recording pins its slice rather than
+    #     inheriting whatever the previous cell left behind.
+    _call_napari_api(api_napari_set_z_view,
+                     (; show3D = _show_3d(config), zSlice = _z_slice(config)))
 
     # 2. channel colormaps + visibility. `channels` = {name → colormap} for the channels to SHOW; every
     #    other channel is hidden. Applied via a partial view-state (colormap/visible are whitelisted).
@@ -843,25 +946,88 @@ function _title_card_content(img, config)
     )
 end
 
-# ── Side-by-side version comparison ───────────────────────────────────────────
+# ── Side-by-side comparison ───────────────────────────────────────────────────
 # docs/todo/MOVIE_COMPARE_PLAN.md. A comparison is N recordings plus one compose, NOT one clever
 # render: each column goes through the SAME path a single movie uses, so overlays, staging, cancel and
 # the size policy keep working untouched, and the finished files are composed frame-by-frame in the
 # bridge (D1; D2 records why the alternative — several versions as layers of one canvas — was rejected).
+#
+# What differs between cells is TWO dimensions, and a movie is a GRID of them:
+#
+#   * image VERSIONS run across the columns (raw next to AF-corrected),
+#   * segmentation MASKS run down the rows (model A above model B).
+#
+# Pick two of one and one of the other and the grid degenerates to a single row — a plain side-by-side
+# comparison, whichever list it came from. Pick two of BOTH and you get the cross-product, which is the
+# only layout that answers "does this correction change what each model segments?" in one file.
+#
+# Everything downstream of the grid is blind to what made two cells differ, which is what D9 bought:
+# the pass loop, the per-frame progress arithmetic, cancel, staging, the caption band and the compose
+# all key off `Vector{MovieRow}` and never ask. Adding a third dimension would be a builder here plus a
+# picker in the UI — though note the cost is multiplicative, not additive (see `_grid_frame_total`).
 
-# One column: what its caption says, and the movie config that produces it. The loop never asks what
-# makes two columns differ, so comparing two colour-by measures or two segmentations later is a config
-# change rather than a rewrite (D9). Config keys are Symbols because that is how every reader here
-# (`_apply_movie_config!`, `_title_card_content`, `_shown_channel_names`) addresses them.
+# One column: what its caption says, and the movie config that produces it. Config keys are Symbols
+# because that is how every reader here (`_apply_movie_config!`, `_title_card_content`,
+# `_shown_channel_names`) addresses them.
 const MovieColumn = NamedTuple{(:label, :config),Tuple{String,Dict{Symbol,Any}}}
+# One row of the grid: the cells across it, and what the caption under the whole strip says. A
+# single-row grid captions nothing — there is no outer compose to hang a label on.
+const MovieRow = NamedTuple{(:label, :columns),Tuple{String,Vector{MovieColumn}}}
+
+# The config's whole base, as the Symbol-keyed Dict a column carries. Split out so both builders pin
+# their own key onto the SAME starting point — a column differs from its config by one entry, never by
+# which keys survived being copied.
+_column_base(config)::Dict{Symbol,Any} = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in pairs(config))
 
 # The columns of a VERSION comparison: the authored config once per selected version, in the order the
 # user put the chips in. `""` means the active version — what the config already meant on its own.
 function _version_columns(config, value_names::AbstractVector)::Vector{MovieColumn}
-    base = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in pairs(config))
+    base = _column_base(config)
     MovieColumn[(; label  = (n = strip(String(vn)); isempty(n) ? "active" : n),
                    config = merge(base, Dict{Symbol,Any}(:valueName => strip(String(vn)))))
                 for vn in value_names]
+end
+
+# The columns of a SEGMENTATION comparison: one label set per column, every column on the SAME image
+# version. Pinning the version is what keeps the two dimensions independent — a mask row varies only
+# the mask, so the row reads as one model's answer to one image.
+#
+# Cheap by construction: with the version fixed, no column after the first re-opens the image
+# (`_version_is_open`), so the passes differ only by which mask is on screen — no re-sampled contrast,
+# no reloaded pyramid.
+function _segmentation_columns(config, label_value_names::AbstractVector,
+                               value_name::AbstractString)::Vector{MovieColumn}
+    base = _column_base(config)
+    MovieColumn[(; label  = (n = strip(String(sn)); isempty(n) ? "none" : n),
+                   config = merge(base, Dict{Symbol,Any}(
+                       :valueName       => value_name,
+                       :labelValueNames => String[strip(String(sn))])))
+                for sn in label_value_names]
+end
+
+# The ONE grid builder every recorder calls. Versions across, masks down:
+#
+#   * 2+ of BOTH        → the cross-product. One row per mask; that row's cells are the versions.
+#   * 2+ of one only    → a single row of that list, side by side — the plain comparison.
+#   * neither           → one cell, which is an ordinary single recording.
+#
+# The degenerate cases are not special-cased anywhere below: a plain movie is a 1x1 grid, and a
+# comparison is a 1xN one, so `_record_grid!` has exactly one shape to reason about.
+function _compare_grid(config)::Vector{MovieRow}
+    versions = _config_value_names(config)              # never empty ("" = the active version)
+    masks    = _config_compare_segmentations(config)
+    if length(versions) > 1 && length(masks) > 1
+        # A cell draws ONE mask on ONE version; the row is captioned with the mask, so the caption
+        # under each cell can stay the version and read as a column header repeated per row.
+        return MovieRow[(; label   = m,
+                           columns = _version_columns(
+                               merge(_column_base(config), Dict{Symbol,Any}(:labelValueNames => String[m])),
+                               versions))
+                        for m in masks]
+    end
+    length(masks) > 1 &&
+        return MovieRow[(; label = "", columns = _segmentation_columns(config, masks, first(versions)))]
+    MovieRow[(; label = "", columns = _version_columns(config, versions))]
 end
 
 # The versions a config records, in column order. `valueNames` is the comparison list; a config from
@@ -871,6 +1037,18 @@ function _config_value_names(config)::Vector{String}
     raw = get(config, :valueNames, nothing)
     names = raw === nothing ? String[] : [String(v) for v in raw]
     isempty(names) ? [String(get(config, :valueName, ""))] : names
+end
+
+# The segmentations a config splits into columns. Deliberately NOT `_config_label_value_names`: that
+# one is image-scoped (it drops names this image doesn't have) and three-valued, while the column list
+# is authored once for a whole batch and must not vary per image — an image missing one of the sets
+# would otherwise get a different number of columns than its neighbours.
+function _config_compare_segmentations(config)::Vector{String}
+    raw = get(config, :labelValueNames, nothing)
+    raw === nothing && return String[]
+    seen = Set{String}()
+    String[v for v in (strip(String(x)) for x in raw)
+           if !isempty(v) && !(v in seen) && (push!(seen, v); true)]
 end
 
 # D4: how the columns are contrasted. "reference" (the default) applies column 1's intensity mapping to
@@ -889,22 +1067,47 @@ function _t_sweep_frames(img, t_start::Int, t_end)::Int
     t1 <= t0 ? 0 : (t1 - t0 + 1)
 end
 
-# Frames a whole comparison renders, so the passes and the compose drive ONE progress bar instead of
-# restarting it per version: a pass per column, plus the compose (as many frames as the longest pass).
-# An estimate made before anything runs — the bridge clamps it if a pass comes out longer.
-_comparison_frame_total(n_columns::Int, per_pass::Int)::Int =
-    (n_columns <= 1 || per_pass <= 0) ? 0 : (n_columns + 1) * per_pass
+# Frames a whole grid renders, so the passes and the composes drive ONE progress bar instead of
+# restarting it per cell: a pass per CELL, plus a compose per row (only when a row has something to
+# compose) and one more to stack the rows. An estimate made before anything runs — the bridge clamps it
+# if a pass comes out longer.
+#
+# Note what this makes visible: a grid is rows x cols RENDERS. 2 versions x 2 masks is four full
+# recordings, not two — which is why the UI states the pass count on the button before you commit.
+function _grid_frame_total(n_rows::Int, n_cols::Int, per_pass::Int)::Int
+    cells = n_rows * n_cols
+    (cells <= 1 || per_pass <= 0) && return 0
+    composes = (n_cols > 1 ? n_rows : 0) + (n_rows > 1 ? 1 : 0)
+    (cells + composes) * per_pass
+end
+# …and the same count read off the ACTUAL grid, which is what `_record_grid!` uses. It mirrors the loop
+# unit for unit — a pass per cell, a compose per row that has something to compose (a one-cell row IS
+# its own strip), and a stack when there is more than one row. The rectangular form above assumes every
+# row is the same width; this one cannot be wrong about a grid it was handed, and the two are asserted
+# to agree on rectangular input.
+function _grid_frame_total(rows::Vector{MovieRow}, per_pass::Int)::Int
+    cells = sum(length(r.columns) for r in rows; init = 0)
+    (cells <= 1 || per_pass <= 0) && return 0
+    (cells + count(r -> length(r.columns) > 1, rows) + (length(rows) > 1 ? 1 : 0)) * per_pass
+end
+# The single-row case by its old name — a 1xN grid, which is what every comparison was until masks
+# became a second dimension.
+_comparison_frame_total(n_columns::Int, per_pass::Int)::Int = _grid_frame_total(1, n_columns, per_pass)
 
 # A captured view WITHOUT its per-layer props — the camera and the timepoint, nothing about intensity.
 # What "each version keeps its own saved napari settings" (D4) applies to the later columns.
 _camera_only(snapshot) =
     Dict{String,Any}(String(k) => v for (k, v) in pairs(snapshot) if String(k) != "layers")
 
-# Is `value_name` the image version the viewer already has open? The FIRST column must not re-open one
-# that is: re-opening re-samples the channel contrast (`add_image contrast=True`), which would throw
-# away a look the user set live and never saved — and "record what is on screen" is the whole promise
-# of the viewer's Record button. Blank already means "the active version", which `_apply_movie_config!`
-# treats as already-open; this extends the same skip to naming that version explicitly.
+# Is `value_name` the image version the viewer already has open? A column must not re-open one that is:
+# re-opening re-samples the channel contrast (`add_image contrast=True`), which would throw away a look
+# the user set live and never saved — and "record what is on screen" is the whole promise of the
+# viewer's Record button. Blank already means "the active version", which `_apply_movie_config!` treats
+# as already-open; this extends the same skip to naming that version explicitly.
+#
+# Checked for EVERY column, not just the first. On the version axis only the first can match (each later
+# column names a different version, so the open happens as it must); on the segmentation axis every
+# column names the same version, so after column 1 opens it none of the others re-open at all.
 function _version_is_open(img, image_uid::AbstractString, value_name::AbstractString)::Bool
     _current_image_uid[] == image_uid || return false
     vn = strip(value_name)
@@ -913,33 +1116,40 @@ function _version_is_open(img, image_uid::AbstractString, value_name::AbstractSt
     path !== nothing && _current_zarr_path[] == path
 end
 
-# Record one column per entry and compose them into `out_path`. Returns the bridge-shaped reply
-# (`frames`/`path`/`cancelled`/…), so a caller treats a comparison exactly like a single record.
+# Record every cell of `rows` and compose them into `out_path`. Returns the bridge-shaped reply
+# (`frames`/`path`/`cancelled`/…), so a caller treats a grid exactly like a single record.
 #
-# ONE column is not a special case: it records straight to `out_path`, which is what a plain movie has
+# ONE cell is not a special case: it records straight to `out_path`, which is what a plain movie has
 # always been — so both callers can route everything through here.
 #
-# Contrast (D4): column 1 establishes the look. `share_contrast` decides whether the later columns
-# inherit its intensity mapping (matched — the usual case, so a correction is judged on one ruler) or
-# keep the saved napari settings of their own version. The camera and the timepoint are shared either
-# way: different framing between columns is not a comparison.
+# The compose is NESTED, and deliberately so: each row's cells are stitched side by side into a strip,
+# then the strips are stacked. `movie_io.stitch_movies` already does one dimension at a time, correctly
+# and with a working cancel, so a grid is two passes of it rather than a second compositor that would
+# have to re-derive padding, caption bands and staging. A single-row grid skips the outer stitch
+# entirely and is byte-for-byte the comparison it always was — including honouring `layout`, which is
+# the user's row-vs-column choice and only means anything when there is one row to point it at.
+#
+# Contrast (D4): the FIRST cell establishes the look and every later cell inherits it (or keeps its own
+# version's saved settings). Across a grid that matters more than across a row — a mask row is the same
+# pixels twice, and the eye reads a contrast difference as a segmentation difference.
 #
 # Holds `_with_viewer` across the WHOLE sequence — between two passes the viewer must not be opened on
-# something else, or column 2 would record a different image.
-function _record_columns!(task_id::String, project_uid::String, image_uid::String, img,
-                          columns::Vector{MovieColumn}, out_path::String;
-                          fps::Int = 15, size_x = nothing, size_y = nothing, title_card = nothing,
-                          share_contrast::Bool = true, layout::String = "row",
-                          t_start::Int = 0, t_end = nothing, api_url = nothing,
-                          show_timestamp::Bool = true, show_scale_bar::Bool = true)::Dict{String,Any}
-    n = length(columns)
-    n == 0 && error("no columns to record")
+# something else, or the next cell would record a different image.
+function _record_grid!(task_id::String, project_uid::String, image_uid::String, img,
+                       rows::Vector{MovieRow}, out_path::String;
+                       fps::Int = 15, size_x = nothing, size_y = nothing, title_card = nothing,
+                       share_contrast::Bool = true, layout::String = "row",
+                       t_start::Int = 0, t_end = nothing, api_url = nothing,
+                       show_timestamp::Bool = true, show_scale_bar::Bool = true)::Dict{String,Any}
+    isempty(rows) && error("no rows to record")
+    n_rows = length(rows)
+    cells  = sum(length(r.columns) for r in rows)
+    cells == 0 && error("no columns to record")
     _with_viewer() do
         v = _viewer()
         (isnothing(v) || !_viewer_alive()) && error("Napari not running")
-
-        if n == 1
-            _apply_movie_config!(project_uid, image_uid, img, columns[1].config)
+        if cells == 1
+            _apply_movie_config!(project_uid, image_uid, img, rows[1].columns[1].config)
             return record_timelapse!(v, out_path; fps = fps, size_x = size_x, size_y = size_y,
                                      t_start = t_start, t_end = t_end, title_card = title_card,
                                      task_id = task_id, api_url = api_url,
@@ -947,41 +1157,86 @@ function _record_columns!(task_id::String, project_uid::String, image_uid::Strin
         end
 
         per_pass = _t_sweep_frames(img, t_start, t_end)
-        total    = _comparison_frame_total(n, per_pass)
-        temps    = [string(out_path, ".col", i, ".tmp.mp4") for i in 1:n]
+        total    = _grid_frame_total(rows, per_pass)
+        strips   = String[]
+        temps    = String[]          # everything staged, so `finally` can sweep it in one place
         shared   = nothing
+        done     = 0                 # cells rendered so far — for the "[n/cells]" log line
+        # ONE progress bar spans every render AND every compose, so the bar is a running COUNTER of
+        # work units rather than an offset computed per stage. Computed offsets are what went wrong
+        # first: they have to account for the row composes interleaved between the rows, and get it
+        # wrong differently again when a row has a single cell and is not composed at all. A counter
+        # cannot drift from `_grid_frame_total`, which counts the same units.
+        slot     = 0
+        next_offset() = (o = slot * per_pass; slot += 1; o)
         try
-            for (i, col) in enumerate(columns)
-                cfg = col.config
-                if i == 1 && _version_is_open(img, image_uid, String(get(cfg, :valueName, "")))
-                    cfg = merge(cfg, Dict{Symbol,Any}(:valueName => ""))   # don't re-open it
+            for (ri, row) in enumerate(rows)
+                cell_paths = String[]
+                for (ci, col) in enumerate(row.columns)
+                    cfg = col.config
+                    if _version_is_open(img, image_uid, String(get(cfg, :valueName, "")))
+                        cfg = merge(cfg, Dict{Symbol,Any}(:valueName => ""))   # don't re-open it
+                    end
+                    _apply_movie_config!(project_uid, image_uid, img, cfg)
+                    if shared === nothing
+                        shared = capture_view_state(v)
+                    elseif !isempty(shared)
+                        apply_view_state!(v, share_contrast ? shared : _camera_only(shared))
+                    end
+                    path = string(out_path, ".r", ri, "c", ci, ".tmp.mp4")
+                    push!(temps, path); push!(cell_paths, path)
+                    where = n_rows > 1 ? "$(row.label) · $(col.label)" : col.label
+                    ws_log(nothing, task_id, "[$(done + 1)/$cells] recording $where")
+                    # No title card per pass — it goes on the fully composed file, once (D6).
+                    resp = record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
+                                             t_start = t_start, t_end = t_end, title_card = nothing,
+                                             task_id = task_id, api_url = api_url,
+                                             frame_offset = next_offset(), frame_total = total,
+                                             show_timestamp = show_timestamp,
+                                             show_scale_bar = show_scale_bar)
+                    # A cancelled pass ends the whole grid: nothing is composed, and `out_path` still
+                    # holds whatever movie was there before.
+                    get(resp, "cancelled", false) === true && return resp
+                    done += 1
                 end
-                _apply_movie_config!(project_uid, image_uid, img, cfg)
-                if i == 1
-                    shared = capture_view_state(v)
-                elseif !isempty(shared)
-                    apply_view_state!(v, share_contrast ? shared : _camera_only(shared))
+
+                # One row → this IS the final compose (labels + title card + the user's layout).
+                if n_rows == 1
+                    ws_log(nothing, task_id, "composing $(length(cell_paths)) columns → $(basename(out_path))")
+                    return stitch_movies!(v, out_path, cell_paths;
+                                          labels = [c.label for c in row.columns],
+                                          layout = layout, fps = fps, title_card = title_card,
+                                          task_id = task_id, api_url = api_url,
+                                          frame_offset = next_offset(), frame_total = total)
                 end
-                ws_log(nothing, task_id, "[$i/$n] recording $(col.label)")
-                # No title card per pass — it goes on the composed file, once (D6).
-                resp = record_timelapse!(v, temps[i]; fps = fps, size_x = size_x, size_y = size_y,
-                                         t_start = t_start, t_end = t_end, title_card = nothing,
-                                         task_id = task_id, api_url = api_url,
-                                         frame_offset = (i - 1) * per_pass, frame_total = total,
-                                         show_timestamp = show_timestamp,
-                                         show_scale_bar = show_scale_bar)
-                # A cancelled pass ends the comparison: nothing is composed, and `out_path` still holds
-                # whatever movie was there before.
-                get(resp, "cancelled", false) === true && return resp
+
+                if length(cell_paths) == 1
+                    # nothing to stitch across — the cell IS the strip, and consumes no compose slot
+                    # (which is exactly what `_grid_frame_total` assumes when n_cols == 1)
+                    push!(strips, cell_paths[1])
+                else
+                    strip = string(out_path, ".row", ri, ".tmp.mp4")
+                    push!(temps, strip)
+                    ws_log(nothing, task_id, "composing row $ri/$n_rows ($(row.label))")
+                    resp = stitch_movies!(v, strip, cell_paths;
+                                          labels = [c.label for c in row.columns],
+                                          layout = "row", fps = fps, title_card = nothing,
+                                          task_id = task_id, api_url = api_url,
+                                          frame_offset = next_offset(), frame_total = total)
+                    get(resp, "cancelled", false) === true && return resp
+                    push!(strips, strip)
+                end
             end
-            ws_log(nothing, task_id, "composing $n columns → $(basename(out_path))")
-            return stitch_movies!(v, out_path, temps; labels = [c.label for c in columns],
-                                  layout = layout, fps = fps, title_card = title_card,
+
+            ws_log(nothing, task_id, "stacking $n_rows rows → $(basename(out_path))")
+            return stitch_movies!(v, out_path, strips; labels = [r.label for r in rows],
+                                  layout = "column", fps = fps, title_card = title_card,
                                   task_id = task_id, api_url = api_url,
-                                  frame_offset = n * per_pass, frame_total = total)
+                                  frame_offset = next_offset(), frame_total = total)
         finally
-            # The per-column recordings are scratch. They are named `*.tmp.mp4`, so anything left by a
-            # hard kill is already hidden from `/api/movies` and swept by `_clear_stale_staging`.
+            # The per-cell and per-row recordings are scratch. They are named `*.tmp.mp4`, so anything
+            # left by a hard kill is already hidden from `/api/movies` and swept by
+            # `_clear_stale_staging`.
             for p in temps
                 isfile(p) && (try; rm(p); catch; end)
             end
@@ -1012,10 +1267,10 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     t_start = Int(get(config, :tStart, 0))
     t_end_v = get(config, :tEnd, nothing)
     t_end   = t_end_v === nothing ? nothing : Int(t_end_v)
-    # Which image versions each movie shows. 2+ makes every movie a side-by-side comparison; one (or
-    # the pre-comparison single `valueName`) is the ordinary batch — the same path with one column, so
-    # the batch keeps no second recording loop of its own. Same for every image, so build it once.
-    columns        = _version_columns(config, _config_value_names(config))
+    # What each movie shows, as a grid (versions across, masks down). More than one cell makes every
+    # movie a comparison; one cell is the ordinary batch — the same path, so the batch keeps no second
+    # recording loop of its own. Authored once for the whole batch, so build it once.
+    grid           = _compare_grid(config)
     share_contrast = _share_contrast(get(config, :compareContrast, ""))
     layout         = String(get(config, :compareLayout, "row"))
     # napari's baked overlays. Default true = what every movie was; the batch RE-OPENS each image, which
@@ -1040,12 +1295,12 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
             # otherwise write the same attr-named files over each other
             path = _movie_out_path(img, file_attrs, chan_names; suffix = _movie_suffix(suffix))
             ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
-            # One column per selected version (a comparison), or the one authored config. Both go
-            # through `_record_columns!`, so the batch has no second recording path of its own.
+            # One cell per (mask, version) pair, or the one authored config. Both go through
+            # `_record_grid!`, so the batch has no second recording path of its own.
             # task_id: the bridge polls the SAME cancel flag per frame, so Cancel stops the image being
             # recorded rather than only the ones after it. Per-frame progress is deliberately NOT
             # relayed here — the batch's bar counts images.
-            resp = _record_columns!(task_id, project_uid, uid, img, columns, path;
+            resp = _record_grid!(task_id, project_uid, uid, img, grid, path;
                                     fps = fps, size_x = size_x, size_y = size_y,
                                     t_start = t_start, t_end = t_end,
                                     title_card = _title_card_content(img, config),
@@ -1087,20 +1342,34 @@ end
 #
 # `keyframes === nothing` records the open image's T-sweep; otherwise it renders the keyframe animation.
 #
-# `value_names` (2 or more) makes it a side-by-side VERSION COMPARISON instead: one pass per version,
-# composed into one file (`_record_columns!`). Fewer than two leaves the plain single record exactly as
-# it was — it records what is on screen without touching the viewer at all, and that contract is worth
-# more than routing one movie through the comparison path for symmetry.
+# Two or more cells makes it a COMPARISON instead — versions across the columns, masks down the rows,
+# one pass per cell, composed into one file (`_record_grid!`). A single cell leaves the plain single
+# record exactly as it was: it records what is on screen without touching the viewer at all, and that
+# contract is worth more than routing one movie through the comparison path for symmetry.
+#
+# `label_value_names` is also what carries the masks INTO a comparison: each pass re-applies the config
+# to a canvas the open cleared, so a version comparison keeps its segmentations only because the caller
+# names them here.
 function run_single_movie(task_id::String, project_uid::String, image_uid::String;
                           fps::Int = 15, size_x::Union{Int,Nothing} = nothing,
                           size_y::Union{Int,Nothing} = nothing, suffix::AbstractString = "",
                           title_card = nothing, keyframes = nothing,
                           value_names::Vector{String} = String[],
+                          label_value_names::Union{Vector{String},Nothing} = nothing,
+                          label_contour::Int = 0,
+                          show_3d::Bool = false, z_slice::Union{Int,Nothing} = nothing,
                           share_contrast::Bool = true, layout::String = "row",
                           show_timestamp::Bool = true, show_scale_bar::Bool = true,
                           api_url::AbstractString = "http://localhost:8080")
     animation = keyframes !== nothing
-    comparing = !animation && length(value_names) > 1
+    # The viewer's recorder authors no channels/overlays of its own (it records the live view), so its
+    # config is just the two lists — but it goes through the SAME builder the batch does.
+    column_config = Dict{Symbol,Any}(:valueNames => value_names, :labelContour => label_contour,
+                                     :show3D => show_3d)
+    z_slice === nothing || (column_config[:zSlice] = z_slice)
+    label_value_names === nothing || (column_config[:labelValueNames] = label_value_names)
+    grid      = _compare_grid(column_config)
+    comparing = !animation && sum(length(r.columns) for r in grid) > 1
     fun       = animation ? "movie:animation" : "movie:record"
     img, err  = _gating_image(project_uid, image_uid)
     if err !== nothing
@@ -1125,15 +1394,16 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "viewer")
     ws_progress(nothing, task_id, 0, 1)          # a real total arrives with the first frame report
     ws_log(nothing, task_id, comparing ?
-           "Comparing $(join(value_names, " · ")) → $(basename(path))" :
+           "Comparing $(join((isempty(r.label) ? join((c.label for c in r.columns), " · ") :
+                              string(r.label, ": ", join((c.label for c in r.columns), " · "))
+                              for r in grid), " / ")) → $(basename(path))" :
            "Recording → $(basename(path))")
 
     status = "done"
     result = Dict{String,Any}("path" => path)
     try
         resp = comparing ?
-            _record_columns!(task_id, project_uid, image_uid, img,
-                             _version_columns(Dict{Symbol,Any}(), value_names), path;
+            _record_grid!(task_id, project_uid, image_uid, img, grid, path;
                              fps = fps, size_x = size_x, size_y = size_y, title_card = title_card,
                              share_contrast = share_contrast, layout = layout, api_url = api_url,
                              show_timestamp = show_timestamp, show_scale_bar = show_scale_bar) :
@@ -1201,13 +1471,15 @@ function api_napari_show_labels(body_bytes::Vector{UInt8})
     # layer (see show_labels! / the bridge). Branch labels are written once at the end of
     # segment.branching, so there is never a partial branch store to preview.
     preview = Bool(get(data, :preview, false))
+    contour = _label_contour(data)
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
     _with_viewer() do
         try
-            _show_all_labels!(v, all_labels, show; cache = labels_cache, preview = preview)
+            _show_all_labels!(v, all_labels, show; cache = labels_cache, preview = preview,
+                              contour = contour)
             _show_all_branch_labels!(v, all_branch_labels, show; cache = labels_cache)
             200, JSON3.write((; ok = true))
         catch e
@@ -1234,6 +1506,29 @@ function api_napari_refresh_labels(body_bytes::Vector{UInt8})
             _refresh_all_labels!(v, all_labels)
             200, JSON3.write((; ok = true))
         catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/set-z-view ─────────────────────────────────────────
+# Whole z stack (3D) or a single z slice (2D). Drives the live viewer AND is what a recording applies,
+# so a movie of a 3D view is not silently flattened back to one plane by its re-open.
+function api_napari_set_z_view(body_bytes::Vector{UInt8})
+    data    = JSON3.read(String(body_bytes))
+    show_3d = Bool(get(data, :show3D, false))
+    z_raw   = get(data, :zSlice, nothing)
+    z       = z_raw === nothing ? nothing : _to_int(z_raw)
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            resp = set_z_view!(v; show_3d = show_3d, z = z)
+            200, JSON3.write((; ok = true, ndisplay = get(resp, "ndisplay", nothing),
+                                z = get(resp, "z", nothing)))
+        catch e
+            @warn "set_z_view failed" exception = e
             500, JSON3.write((; error = sprint(showerror, e)))
         end
     end

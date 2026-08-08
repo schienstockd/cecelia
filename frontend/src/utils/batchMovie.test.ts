@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -105,5 +105,36 @@ describe('defaultChannelSeed', () => {
   it('assigns palette colours in order, wrapping when channels exceed the palette', () => {
     expect(defaultChannelSeed(['a', 'b', 'c'], ['red', 'green'])).toEqual({ a: 'red', b: 'green', c: 'red' })
     expect(defaultChannelSeed(['a'], [])).toEqual({})
+  })
+})
+
+describe('buildBatchMovieConfig — segmentation masks', () => {
+  it('always sends a mask list, so an authored batch means what it says', () => {
+    // ABSENT and EMPTY differ on the backend: absent leaves the canvas alone, empty is "no masks".
+    // A batch config is authored, so it must be explicit — otherwise a user who cleared the picker
+    // would still get whatever masks happened to be on screen for the first image.
+    expect(buildBatchMovieConfig({}, [], {}).labelValueNames).toEqual([])
+    expect(buildBatchMovieConfig({ labelValueNames: ['cellpose'] }, [], {}).labelValueNames)
+      .toEqual(['cellpose'])
+  })
+
+  it('keeps the mask order — the chip order is the column order', () => {
+    expect(buildBatchMovieConfig({ labelValueNames: ['coastal', 'cellpose'] }, [], {}).labelValueNames)
+      .toEqual(['coastal', 'cellpose'])
+  })
+})
+
+describe('clampContour / labelContour', () => {
+  it('clamps rather than rejects — a bad outline must not fail a whole batch', () => {
+    expect(clampContour(undefined)).toBe(0)
+    expect(clampContour(-4)).toBe(0)
+    expect(clampContour(999)).toBe(LABEL_CONTOUR_MAX)
+    expect(clampContour(2.7)).toBe(3)
+  })
+
+  it('rides the batch config, defaulting to filled', () => {
+    expect(buildBatchMovieConfig({}, [], {}).labelContour).toBe(0)
+    expect(buildBatchMovieConfig({ labelContour: 3 }, [], {}).labelContour).toBe(3)
+    expect(buildBatchMovieConfig({ labelContour: -1 }, [], {}).labelContour).toBe(0)
   })
 })

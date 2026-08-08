@@ -315,7 +315,7 @@ def expand_to_axes(data, layer_axes, viewer_axes, viewer_shape=None):
 
 
 def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels', visible=True,
-               cache=False, axes=None, image_axes=None, image_shape=None):
+               cache=False, contour=0, axes=None, image_axes=None, image_shape=None):
   """Add an instance/label layer (0 = background) at ``opacity`` (0.7 by default). Returns the layer.
 
   ``cache=False`` by default (napari's own default is True). napari's Labels layer, with a
@@ -336,7 +336,13 @@ def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels',
   silently renders time as Z. See ``expand_to_axes``; without the names we can only fix up ``scale``,
   which does not fix the dimension assignment. ``image_shape`` (the viewer's extent, channel axis
   excluded) additionally stretches a projected store across the axis it collapsed — a MIP-derived
-  skeleton belongs to the whole volume, so it renders on every plane rather than only the first."""
+  skeleton belongs to the whole volume, so it renders on every plane rather than only the first.
+
+  ``contour`` draws each label as an outline of that many pixels instead of a filled region (0, the
+  napari default, keeps it filled) — an outline lets the channel signal under the mask stay readable.
+  Set at ADD time as well as being a captured view prop, because the paths that re-add a layer without
+  then loading the props file — the movie recorder swapping masks between cells — would otherwise come
+  back filled."""
   require_napari()
   # ONE place every labels layer goes through — align here, not at each call site.
   labels, aligned = expand_to_axes(labels, axes, image_axes, viewer_shape=image_shape)
@@ -345,7 +351,14 @@ def add_labels(viewer, labels, *, scale, units=None, opacity=0.7, name='Labels',
             opacity=opacity, visible=visible, cache=bool(cache))
   if units is not None:
     kw['units'] = units if aligned else align_axis_vector(units, nd)
-  return viewer.add_labels(labels, **kw)
+  layer = viewer.add_labels(labels, **kw)
+  # `contour` is a settable PROPERTY, not a constructor argument — `Labels.__init__` does not accept it
+  # (checked on napari 0.7.1), so passing it in `kw` raises TypeError and takes every mask layer with
+  # it. Set after the add, and only when asked, so the default path is byte-for-byte unchanged.
+  wanted = max(0, int(contour or 0))
+  if wanted:
+    layer.contour = wanted
+  return layer
 
 
 def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colormap='turbo',
@@ -504,9 +517,12 @@ def broadcast_track_to_cells(cell_track_ids, track_labels, track_values):
 # (capture at screenshot / zoom-to-source) and available to coastal.
 
 _VIEW_CAMERA_KEYS = ('center', 'zoom', 'angles', 'perspective')
-# per-layer display props to capture/restore; guarded — a layer type lacking one is simply skipped
+# per-layer display props to capture/restore; guarded — a layer type lacking one is simply skipped.
+# `contour` is Labels-only (0 = filled, N = an N-px outline), which costs an image layer nothing here
+# and means an outline the user set survives a re-open: both the props file and the movie recorder's
+# per-cell view apply go through these keys.
 _VIEW_LAYER_KEYS = ('visible', 'opacity', 'blending', 'gamma', 'contrast_limits', 'colormap',
-                    'rendering', 'interpolation2d', 'interpolation3d', 'depiction')
+                    'rendering', 'interpolation2d', 'interpolation3d', 'depiction', 'contour')
 
 
 def _json_scalar(v):

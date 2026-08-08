@@ -454,7 +454,7 @@ const pct = computed(() => {
     <!-- bool → shared toggle switch. No `v-tooltip`: `param-label` above already carries `param.tip`
          on its info icon, and repeating it here renders the tooltip ON TOP of the switch you were
          about to click. See `HEADING_COVERED` / `duplicateTooltips` in utils/uiCopy.ts. -->
-    <CcToggle v-else-if="param.type === 'bool'"
+    <CcToggle v-else-if="param.type === 'bool'" :aria-label="param.label"
       :model-value="val as boolean" @update:model-value="val = $event" />
 
     <!-- text -->

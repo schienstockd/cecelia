@@ -159,13 +159,17 @@ end
 # `({vn}) Labels (live)` layer — see the bridge's `show_labels` for what that changes (level 0 only,
 # caching forced off). A finished set and its own preview never coexist: the bridge evicts one when
 # adding the other.
+# `contour` draws each label as an N-px outline instead of a filled region (0 = filled, the napari
+# default) — set at ADD time so a layer re-added without a props load (the movie recorder swapping
+# masks between cells) does not come back filled.
 function show_labels!(v::NapariViewer;
                       value_name::String="default",
                       label_files::Vector{String}=["labels.zarr"],
                       show_labels::Bool=true,
                       show_points::Bool=false,
                       cache::Bool=false,
-                      preview::Bool=false)
+                      preview::Bool=false,
+                      contour::Int=0)
     send(v, Dict{String,Any}(
         "type"         => "show_labels",
         "value_name"   => value_name,
@@ -174,6 +178,7 @@ function show_labels!(v::NapariViewer;
         "show_points"  => show_points,
         "cache"        => cache,
         "preview"      => preview,
+        "contour"      => contour,
     ))
     v
 end
@@ -190,6 +195,17 @@ function refresh_labels!(v::NapariViewer;
         "label_files" => label_files,
     ))
     v
+end
+
+# Whole z stack as a 3D render, or one z SLICE in 2D. ONE switch for both layer kinds because both
+# follow the viewer's `ndisplay` — and a Labels layer cannot be projected at all (napari's
+# `Labels.projection_mode` accepts only "none"), so "the whole stack" for a mask can only mean the
+# volumetric render. `z = nothing` in 2D keeps whatever slice is showing. Returns the state actually
+# reached: a 2D image refuses 3D, and a z beyond the stack is clamped.
+function set_z_view!(v::NapariViewer; show_3d::Bool=false, z::Union{Int,Nothing}=nothing)
+    cmd = Dict{String,Any}("type" => "set_z_view", "show_3d" => show_3d)
+    z === nothing || (cmd["z"] = z)
+    send(v, cmd)
 end
 
 # Skeleton labels written by `segment.branching` — stored under `branchLabels/` and namespaced

@@ -719,7 +719,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
             <div v-if="hmCtl.zscore" class="sp-pop-row cc-muted"
                    v-tooltip.left="'Off = 0–1 per feature; on = z-score rows'">
               <span>Z-score rows</span>
-              <CcToggle v-model="zscore" />
+              <CcToggle aria-label="Z-score rows" v-model="zscore" />
             </div>
             <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.left="'Normalise the transition matrix'">
               <span>Normalize</span>
@@ -732,7 +732,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
             </label>
             <div v-if="hmCtl.cellValues" class="sp-pop-row cc-muted" v-tooltip.left="'Print the value in each cell'">
               <span>Cell values</span>
-              <CcToggle v-model="heatmapValues" />
+              <CcToggle aria-label="Cell values" v-model="heatmapValues" />
             </div>
           </template>
           <label v-if="chartType === 'histogram'" class="sp-pop-row cc-muted" v-tooltip.left="'Number of histogram bins'">
@@ -750,7 +750,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
           <div v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row cc-muted"
                  v-tooltip.left="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
             <span>Proportion</span>
-            <CcToggle v-model="normalize" />
+            <CcToggle aria-label="Proportion" v-model="normalize" />
           </div>
           <template v-if="timeSeries">
             <label class="sp-pop-row cc-muted" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
@@ -759,7 +759,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg })
             </label>
             <div class="sp-pop-row cc-muted" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
               <span>Interval</span>
-              <CcToggle v-model="interval" />
+              <CcToggle aria-label="Interval" v-model="interval" />
             </div>
           </template>
         </div>

@@ -20,6 +20,17 @@ export interface BatchMovieCfg {
   // more record a side-by-side comparison. `valueName` is what configs saved before that carried —
   // read it through `versionsFromConfig`, never directly, so an old config keeps its version.
   valueNames?: string[]
+  // The segmentation masks each movie draws, in order. 2+ makes them the grid's ROWS (with the
+  // versions as its columns); one draws it in every cell. Read via `segmentationsFromConfig`.
+  labelValueNames?: string[]
+  // Mask outline width in px — 0 draws them filled (napari's default), N draws an N-px contour so the
+  // channel signal underneath stays readable. Clamped to 0..LABEL_CONTOUR_MAX.
+  labelContour?: number
+  // How much of the z stack a movie shows: the whole thing as a 3D render, or one slice in 2D.
+  // `show3D` wins; `zSlice` undefined means "whatever is showing", which is what every recording did
+  // before the setting existed. One switch for both layer kinds — see `set_z_view` in the bridge.
+  show3D?: boolean
+  zSlice?: number | null
   compareLayout?: CompareLayout
   compareContrast?: CompareContrast
   valueName?: string
@@ -39,6 +50,10 @@ export interface BatchMovieCfg {
 export interface BatchMovieRequestConfig {
   valueName: string
   valueNames: string[]
+  labelValueNames: string[]
+  labelContour: number
+  show3D: boolean
+  zSlice: number | null
   compareLayout: CompareLayout
   compareContrast: CompareContrast
   channels: Record<string, string>
@@ -59,6 +74,13 @@ export interface BatchMovieRequestConfig {
 // Title card is ON by default (Phase H decision 3); duration clamped to 1–10s.
 export const TITLE_CARD_DEFAULT: TitleCardCfg = { enabled: true, note: '', durationSec: 3 }
 
+/** Mask outline width, clamped. 0 = filled. Mirrors `LABEL_CONTOUR_MAX` / `_label_contour`
+ *  (api/src/napari_api.jl) — both ends clamp rather than reject, since a bad value here is a display
+ *  nicety and must not fail a whole batch. */
+export const LABEL_CONTOUR_MAX = 10
+export const clampContour = (v: number | undefined): number =>
+  Math.min(LABEL_CONTOUR_MAX, Math.max(0, Math.round(v ?? 0) || 0))
+
 export function buildBatchMovieConfig(
   cfg: BatchMovieCfg,
   segNames: string[],
@@ -71,6 +93,14 @@ export function buildBatchMovieConfig(
   return {
     valueName: versions[0] ?? '',
     valueNames: versions,
+    // Always sent, even empty: the backend treats an ABSENT list as "leave the masks alone" and an
+    // empty one as "no masks", and an authored batch config always means the latter.
+    labelValueNames: cfg.labelValueNames ?? [],
+    labelContour: clampContour(cfg.labelContour),
+    show3D: !!cfg.show3D,
+    // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it
+    // (`_z_slice`), and sending null rather than dropping the key keeps the two ends reading alike
+    zSlice: cfg.show3D ? null : (cfg.zSlice ?? null),
     compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     channels: cfg.channels ?? {},

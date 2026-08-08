@@ -79,6 +79,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
 | A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
 | A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
+| An on/off toggle whose caption sits OUTSIDE it (a row label, an eyebrow) | `CcToggle` + `aria-label` — a tooltip is not a name, and the hidden `<input>` has no text of its own (enforced by `unnamedToggles`) | relying on the row's `v-tooltip`, which covers hover help but leaves the control unnamed |
+| Several such groups STACKED, whose labels should read as a column | `.cc-lbl-col` on each label (+ `.cc-row-group-top` on a group whose content wraps); override the width with `--cc-lbl-col` | letting each label size itself, so every control starts at a different x |
 | Numeric value readout beside a control | `.cc-readout` (+ `-strong` prominent; + a `.cc-fs-*` step) | a bespoke `.*-val`/`.*-num` |
 | Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` (base is 11px; + a `.cc-fs-*` step) | a scoped uppercase-heading rule |
 | Card / panel / surface container | `.cc-card` (+ `-2` when it sits *on* a surface-1 panel) | a scoped `surface + 1px border + radius` block |

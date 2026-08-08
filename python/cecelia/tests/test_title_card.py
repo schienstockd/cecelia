@@ -67,6 +67,49 @@ class RenderCardFrameTests(unittest.TestCase):
         self.assertEqual(arr.shape, (120, 200, 3))
 
 
+class FontScaleTests(unittest.TestCase):
+    """The card's type must not change size with the frame's ASPECT RATIO.
+
+    Every font here scales off one reference while the margin, the wrap width and the ellipsis point
+    are all driven by ``width``. When that reference was the raw height, a 500x500 batch recording drew
+    its title at 5.0% of the frame width and a 1200x800 viewer recording at 3.33% — the same card, half
+    again as large, purely because of the shape of the movie.
+    """
+
+    def _title_px_as_frac_of_width(self, w, h):
+        return (tc._font_scale(w, h) * 0.05) / w
+
+    def test_landscape_is_untouched(self):
+        # the cap only binds below 3:2, so every wide recording renders exactly as it did
+        for w, h in ((1600, 900), (1200, 800), (1024, 600)):
+            self.assertEqual(tc._font_scale(w, h), h)
+
+    def test_square_and_portrait_are_pulled_back(self):
+        self.assertLess(tc._font_scale(500, 500), 500)
+        self.assertLess(tc._font_scale(400, 800), 800)
+
+    def test_same_relative_size_across_shapes(self):
+        ref = self._title_px_as_frac_of_width(1200, 800)
+        for w, h in ((500, 500), (600, 900), (800, 800)):
+            self.assertAlmostEqual(self._title_px_as_frac_of_width(w, h), ref, places=6)
+
+    def test_degenerate_sizes_terminate(self):
+        # NOT just "doesn't raise": a frame narrower than twice the 16px margin makes `max_w`
+        # NEGATIVE, and `_wrap_lines` used to append an empty string forever — the render hung and
+        # took the recording with it. The bottom of the movie size policy is 2px, so this is
+        # reachable from a size someone can actually type.
+        self.assertGreater(tc._font_scale(0, 0), 0)
+        for w, h in ((1, 1), (2, 2), (10, 400), (31, 31)):
+            arr = tc.render_card_frame({"title": "a-long_name-that-cannot-fit"}, w, h)
+            self.assertEqual(arr.shape[2], 3)
+
+    def test_wrap_lines_terminates_on_a_negative_width(self):
+        from PIL import Image, ImageDraw
+        d = ImageDraw.Draw(Image.new("RGB", (4, 4)))
+        f = tc._font(10)
+        self.assertTrue(tc._wrap_lines(d, "abc", f, -50))       # returns at all = the fix
+
+
 class FontCoverageTests(unittest.TestCase):
     """The font must render the characters real title cards actually contain.
 
