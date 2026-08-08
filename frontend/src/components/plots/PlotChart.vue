@@ -13,7 +13,7 @@ import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue
 import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
-import { xRotationOverride, type AutoOverride } from '../../plots/autoOverride'
+import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import type { PlotDataResponse } from '../../plots/types'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
@@ -36,6 +36,10 @@ let titleNode: HTMLElement | null = null
 // reservation was wrong, render ONCE more with the real number. Remembered across renders so a resize
 // starts from the last known height instead of flashing the estimate again.
 let legendH = 0
+// last set announced to the host — the emit is change-gated against it (see below). `null` until the
+// first render, so a REMOUNT always re-announces (the host keeps its own copy and would otherwise
+// stay on the previous chart's note).
+let lastOverrides: AutoOverride[] | null = null
 
 async function render(pass = 0) {
   if (!host.value) return
@@ -60,8 +64,14 @@ async function render(pass = 0) {
   // matches the plot ink.
   ;(node as SVGElement).style.setProperty('--plot-background', props.opts?.darkTheme ? '#1f2226' : 'white')
   host.value.append(node)
-  // report any setting the builder substituted (`_autoRotatedX`)
-  emit('auto-override', [xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel)].filter(Boolean) as AutoOverride[])
+  // report any setting the builder substituted (`_autoRotatedX`) — but only when it actually CHANGED.
+  // The host stores this and the board stores the host's readout, so an unconditional emit makes every
+  // render a state write, which renders again. See sameOverrides in plots/autoOverride.ts.
+  const overrides = [xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel)]
+    .filter(Boolean) as AutoOverride[]
+  if (!lastOverrides || !sameOverrides(overrides, lastOverrides)) {
+    lastOverrides = overrides; emit('auto-override', overrides)
+  }
 
   const ink = props.opts.darkTheme ? '#e6e6e6' : '#111'
   if (props.opts.legend && base._colorLegend) {

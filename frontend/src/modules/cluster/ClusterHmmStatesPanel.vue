@@ -17,7 +17,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef, nextT
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
-import { defaultVis, paletteRange, type VisProps } from '../../plots/plot'
+import { DEFAULT_VIS, paletteRange, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -34,7 +34,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
-const v = computed<VisProps>(() => props.vis ?? defaultVis())
+const v = computed<VisProps>(() => props.vis ?? DEFAULT_VIS)
 
 const measure = computed({
   get: () => (props.state.measure && props.hmmCols.includes(props.state.measure)) ? props.state.measure : (props.hmmCols[0] ?? ''),

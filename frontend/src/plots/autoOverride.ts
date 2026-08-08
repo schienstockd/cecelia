@@ -52,6 +52,19 @@ export function overrideTooltip(o: AutoOverride | null, fallback: string): strin
 export const effectiveOf = <T>(o: AutoOverride | null, preference: T, whenOverridden: T): T =>
   o ? whenOverridden : preference
 
+/**
+ * Do two override sets say the same thing? The emitter uses this to stay QUIET when a re-render
+ * substituted exactly what the last one did — a fresh `[]` announced as news is still news to Vue,
+ * and the host turns it into a readout the board writes down, which re-renders the panel, which
+ * re-renders the plot ("Maximum recursive updates exceeded"). An override is four short strings, so
+ * compare them; there is no identity to lean on.
+ */
+export function sameOverrides(a: AutoOverride[], b: AutoOverride[]): boolean {
+  return a.length === b.length &&
+    a.every((o, i) => o.setting === b[i].setting && o.from === b[i].from &&
+                      o.to === b[i].to && o.why === b[i].why)
+}
+
 /** A one-line notice for a plot footer, when there is no single control to mark. */
 export function overrideNote(overrides: AutoOverride[]): string {
   if (!overrides.length) return ''

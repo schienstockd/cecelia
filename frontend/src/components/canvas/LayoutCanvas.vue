@@ -27,7 +27,7 @@ import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisL
 import { useSummaryData } from '../../composables/useSummaryData'
 import { useClusterContext } from '../../composables/useClusterContext'
 import { tkey, parseTkey } from '../../plots/series'
-import { defaultVis, type VisProps } from '../../plots/plot'
+import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
@@ -262,12 +262,12 @@ function onDrop(i: number) { if (dragFrom.i >= 0) layout.swap(props.canvasKey, d
 
 // ── global/local scope (drives eye-selection + vis), targeting the ACTIVE slot when local ─────────
 const panelSel = (c: SlotContent) => scope.value === 'global' ? gSel.value : (st(c).sel ?? [])
-const panelVis = (c: SlotContent) => scope.value === 'global' ? gVis.value : (st(c).vis ?? defaultVis())
+const panelVis = (c: SlotContent) => scope.value === 'global' ? gVis.value : (st(c).vis ?? DEFAULT_VIS)
 const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activeContent.value ? st(activeContent.value).sel : []))
 // fall back to defaultVis() when the active slot has no local vis yet (matches ClusterPlots) — else the
 // pop manager's `vis` is undefined and the whole PlotOptions styling block is hidden (the "cluster-tracks
 // manager has no plot params" bug).
-const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activeContent.value ? (st(activeContent.value).vis ?? defaultVis()) : defaultVis()))
+const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activeContent.value ? (st(activeContent.value).vis ?? DEFAULT_VIS) : DEFAULT_VIS))
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)

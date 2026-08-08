@@ -225,6 +225,25 @@ export const defaultVis = (): VisProps => ({
   statsEnabled: false, statsTest: 'auto', statsShowNs: false, statsUseStars: false, statsUseLetters: false,
 })
 
+/**
+ * The SHARED fallback for a panel that has no vis of its own — `state.vis ?? DEFAULT_VIS`.
+ *
+ * Identity, not convenience. `defaultVis()` mints a new object per call, so a template-side
+ * `st(c).vis ?? defaultVis()` handed a fresh `vis` prop to every panel on EVERY parent render. That
+ * made the panel's `buildOpts` recompute, PlotChart re-render the whole SVG, and — because the render
+ * reports its auto-overrides back up — the board write the readout, re-render, and start again:
+ * "Maximum recursive updates exceeded". A slot only lacks `vis` when something other than the GUI
+ * wrote it (`add_analysis_board` deliberately omits the bag — see app/src/analysis_board_spec.jl), so
+ * the loop hit exactly the boards Claude authored.
+ *
+ * Frozen because it is shared: every write path already REPLACES the bag (`{...vis, ...patch}`), so
+ * nothing mutates it in place, and freezing keeps it that way.
+ *
+ * Use this wherever the fallback is READ. Keep `defaultVis()` where a panel needs its OWN bag to
+ * write into (new slot state, a spread base).
+ */
+export const DEFAULT_VIS: VisProps = Object.freeze(defaultVis())
+
 export interface BuildOpts extends VisProps {
   chartType: ChartType
   byImage: boolean                       // cross-image per_image scope
