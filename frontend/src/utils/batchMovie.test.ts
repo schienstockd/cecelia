@@ -141,6 +141,22 @@ describe('clampContour / labelContour', () => {
 
 // Mirrors the Julia `_safe_name_part` testset (api/test/runtests.jl) — the two sanitisers must agree,
 // or the filename the batch panel PREVIEWS is not the one the recorder writes.
+// napari's own 3D choice is the COARSEST pyramid level, which erases a strided label pyramid — so an
+// authored batch config says "full resolution" rather than leaving it unsaid. See docs/NAPARI.md.
+describe('buildBatchMovieConfig 3D detail', () => {
+  const build = (cfg: Record<string, unknown>) =>
+    buildBatchMovieConfig(cfg, ['segA'], {})
+  it('sends full resolution by default in 3D', () => {
+    expect(build({ show3D: true }).detail3d).toBe(0)
+  })
+  it('carries an explicitly chosen level', () => {
+    expect(build({ show3D: true, detail3d: 2 }).detail3d).toBe(2)
+  })
+  it('sends nothing in 2D — the level only applies to a volumetric render', () => {
+    expect(build({ show3D: false, detail3d: 2 }).detail3d).toBeNull()
+  })
+})
+
 describe('safeNamePart', () => {
   it('drops the separator a trailing bracket leaves behind', () => {
     // the reported one: an image named "… -res (cropped)" showed up as "…-res_cropped_"

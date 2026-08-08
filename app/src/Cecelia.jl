@@ -143,7 +143,7 @@ export chain_node, make_chain
 # ── Napari viewer ─────────────────────────────────────────────────────────────
 export NapariViewer
 export launch!, close!, restart!, send
-export open_image!, show_labels!, show_branch_labels!, refresh_labels!, set_z_view!
+export open_image!, show_labels!, show_branch_labels!, refresh_labels!, set_z_view!, set_3d_level!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, record_timelapse!, record_keyframes!, stitch_movies!
 export capture_view_state, apply_view_state!, preview_region

@@ -779,7 +779,7 @@ if show_3d and (self._z_axis_len() or 0) > 1:
     self._viewer.reset_view()
 ```
 
-### Label layers must be PINNED to full resolution in 3D
+### 3D detail — the multiscale level is a setting, not napari's default
 
 napari renders a multiscale layer at its **coarsest** level in 3D — automatic level selection is a
 2D-viewport calculation, and there is nothing to compute once the whole volume is on screen:
@@ -791,17 +791,31 @@ elif slice_input.ndisplay == 3:
 
 For an intensity image that is fine — a coarse image still looks like the image. For **labels** it is
 not. Our pyramids are built by **strided subsampling** (`create_slices_multiscales`), not by a mode
-filter, so level *n* keeps every 2ⁿ-th voxel per axis and at the coarsest level a segmentation of
-ordinary-sized cells is almost entirely background. Toggling the movie's z control to 3D therefore made
-the masks disappear.
+filter, and they downsample **X and Y only** (Z is never reduced), so level *n* keeps every 2ⁿ-th voxel
+per axis. At the coarsest level a segmentation of ordinary-sized cells is almost entirely background:
+a 2-level image lands on labels ¼ the width — blocky but present — while a 4-level image lands on
+1/16, where a 12-px cell is under a pixel and the mask reads as *gone*. Toggling the movie's z control
+to 3D therefore made the masks disappear, and how badly depended on the image.
 
-`NapariState._sync_label_levels` pins every multiscale `Labels` layer to level 0 while `ndisplay == 3`
-and hands the level back to napari in 2D, where the automatic choice is what keeps panning a large image
-fast. **Level 0, not a memory-budgeted choice** — full resolution costs memory on a large volume and that
-is accepted; pixelated masks are not an acceptable 3D view (Dominik, 2026-08-08). It is wired to `viewer.dims.events.ndisplay` — not to the places we set `ndisplay` ourselves —
-because the user can also flip 2D/3D from napari's own button, and both routes must behave the same; and
-it is called again after adding a label layer, since a layer added during a 3D session never sees that
-event.
+So the level is a **setting**. `NapariState._sync_multiscale_levels` applies it to every multiscale
+layer — image and labels alike — while `ndisplay == 3`, and hands the choice back to napari in 2D,
+where the automatic behaviour is what keeps panning a large image fast.
+
+| | |
+|---|---|
+| **Default** | level 0 — full resolution. A pixelated mask is not a usable 3D view. |
+| **Control** | Movie options → *detail*, shown only in 3D and only when the image has more than one level. Readout is the fraction of full width (`full`, `1/2`, `1/4`…), not the index, because an index means nothing. |
+| **Why a control** | Full resolution costs memory on a large volume, and only the person looking at the image can weigh that against sharpness. Ship the trade, don't hardcode it. |
+| **Command** | `POST /api/napari/set-3d-level {level}` → `set_3d_level!` → bridge `set_3d_level`. `null` = napari's own choice. |
+| **Per layer** | The request is per viewer, the depth is per layer — a live-preview label store is opened at one level while the image beside it has four — so it is clamped per layer by `napari_utils.clamped_level` (tested). napari silently ignores an out-of-range index, which would leave that layer wherever it was. |
+
+Mixing levels never *misplaces* anything: napari derives a level's world scale from its shape
+(`downsample_factors = level_shapes[0] / level_shapes`), so a layer at level 0 and one at level 3
+occupy the same world extent. Only sharpness differs.
+
+Its own command rather than an argument to `set_z_view` — that one calls `reset_view()` on entering
+3D, and dragging a detail slider must not keep throwing the user's camera away. (`set_z_view` now only
+resets on the actual 2D→3D transition, for the same reason.)
 
 > `Labels.locked_data_level` is public API **as of napari 0.7.1** (the version in `pixi.lock`; the
 > `pixi.toml` bound is the looser `napari >= 0.7`). The bridge guards with `hasattr` and logs, so an

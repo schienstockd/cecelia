@@ -53,6 +53,17 @@ export function pushLabelContour(valueNames: string[], contour: number): void {
   _contourPush.schedule(layers)
 }
 
+const _detailPush = debouncedLatest<number | null>(
+  async level => { await _post('/api/napari/set-3d-level', { level }) },
+  { wait: LIVE_PUSH_WAIT },
+)
+/** How much detail the 3D view renders: a multiscale level index (0 = full resolution, higher =
+ *  coarser), or null for napari's own choice. Coalesced — it is a slider, and each change re-slices
+ *  every multiscale layer in the viewer. */
+export function pushDetail3d(level: number | null): void {
+  _detailPush.schedule(level)
+}
+
 /** Apply a WHOLE captured view snapshot (keyframe select, zoom-to-source). One-shot and awaited — it
  *  answers a click, not a drag, so it is deliberately NOT coalesced: the caller wants this exact
  *  snapshot applied, and a later one must not silently replace it. The bridge skips absent layers. */

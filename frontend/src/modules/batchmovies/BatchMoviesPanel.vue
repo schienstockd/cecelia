@@ -46,7 +46,7 @@ const settings    = useSettingsStore()
 const tasks       = useTaskStore()
 const ws          = useWsStore()
 // the canvas size napari would record at, for the size fields' placeholder (shared poll)
-const { canvasSizeX, canvasSizeY } = useNapariStatus()
+const { canvasSizeX, canvasSizeY, multiscaleLevels } = useNapariStatus()
 const log         = useLogStore()
 
 const uniq = (xs: string[]) => [...new Set(xs)]
@@ -102,6 +102,11 @@ const labelContour = computed<number>({
 // Whole z stack (3D) or one slice. Authored per SET here rather than read from the live viewer — the
 // batch opens each image itself, so there is no "what is on screen" to inherit.
 const show3D = computed<boolean>({ get: () => !!cfg.value.show3D, set: v => patch({ show3D: v }) })
+// 3D detail (multiscale level, 0 = full resolution). Stored in the batch config and applied per image
+// by the recorder; the RANGE comes from the image currently open in napari, so the control only offers
+// itself when there is something on screen to judge it against.
+const detail3d = computed<number>({
+  get: () => (cfg.value.detail3d as number | undefined) ?? 0, set: v => patch({ detail3d: v }) })
 const zSlice = computed<number | null>({
   get: () => cfg.value.zSlice ?? null, set: v => patch({ zSlice: v }) })
 // the shallowest stack in the selection — a slice index deeper than that would not exist on every image
@@ -379,7 +384,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <MovieOutputControls v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
-                             :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice" />
+                             :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice"
+                             :levels="multiscaleLevels" v-model:detail3d="detail3d" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 
