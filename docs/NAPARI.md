@@ -779,6 +779,34 @@ if show_3d and (self._z_axis_len() or 0) > 1:
     self._viewer.reset_view()
 ```
 
+### Label layers must be PINNED to full resolution in 3D
+
+napari renders a multiscale layer at its **coarsest** level in 3D — automatic level selection is a
+2D-viewport calculation, and there is nothing to compute once the whole volume is on screen:
+
+```python
+elif slice_input.ndisplay == 3:
+    data_level = len(data) - 1        # napari/layers/_scalar_field/scalar_field.py
+```
+
+For an intensity image that is fine — a coarse image still looks like the image. For **labels** it is
+not. Our pyramids are built by **strided subsampling** (`create_slices_multiscales`), not by a mode
+filter, so level *n* keeps every 2ⁿ-th voxel per axis and at the coarsest level a segmentation of
+ordinary-sized cells is almost entirely background. Toggling the movie's z control to 3D therefore made
+the masks disappear.
+
+`NapariState._sync_label_levels` pins every multiscale `Labels` layer to level 0 while `ndisplay == 3`
+and hands the level back to napari in 2D, where the automatic choice is what keeps panning a large image
+fast. **Level 0, not a memory-budgeted choice** — full resolution costs memory on a large volume and that
+is accepted; pixelated masks are not an acceptable 3D view (Dominik, 2026-08-08). It is wired to `viewer.dims.events.ndisplay` — not to the places we set `ndisplay` ourselves —
+because the user can also flip 2D/3D from napari's own button, and both routes must behave the same; and
+it is called again after adding a label layer, since a layer added during a 3D session never sees that
+event.
+
+> `Labels.locked_data_level` is public API **as of napari 0.7.1** (the version in `pixi.lock`; the
+> `pixi.toml` bound is the looser `napari >= 0.7`). The bridge guards with `hasattr` and logs, so an
+> older napari degrades to the coarsest-level behaviour rather than crashing.
+
 ---
 
 ## 3D crop
