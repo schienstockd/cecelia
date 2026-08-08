@@ -829,13 +829,11 @@ function api_projects_load(body_bytes::Vector{UInt8})
         end
     end
 
-    boards = nothing
-    boards_file = joinpath(_settings_dir_for_project(uid), "analysisBoards.json")
-    if isfile(boards_file)
-        try; boards = JSON3.read(read(boards_file, String)); catch e
-            @warn "Could not read analysis boards" uid exception=e
-        end
-    end
+    # Normalised through the one reader (app/src/analysis_boards.jl) so the client always sees the
+    # current shape and, crucially, the `version` its next autosave has to echo back. `null` when the
+    # project has never saved a board.
+    boards_doc = read_boards_doc(boards_doc_path(proj_dir))
+    boards = boards_doc.present ? boards_doc_payload(boards_doc) : nothing
 
     # Per-object module-page canvas layouts, stored WITH each object at 1/{uid}/moduleCanvases.json
     # (like ccid.json / labelProps — locality + auto-cleanup on delete). Reassemble the per-canvas-key
@@ -878,15 +876,41 @@ function api_projects_boards(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     boards = get(body, :boards, nothing)
-    if boards !== nothing
-        try
-            settings = _settings_dir_for_project(uid); mkpath(settings)
-            write_json_atomic(joinpath(settings, "analysisBoards.json"), boards)
-        catch e
-            return 500, JSON3.write((; error=sprint(showerror, e)))
+    boards === nothing && return 200, JSON3.write((; ok=true))
+    path = boards_doc_path(joinpath(projects_dir(), uid))
+    try
+        current  = read_boards_doc(path)
+        incoming = normalise_boards(boards)
+        # OPTIMISTIC CONCURRENCY. The client echoes the version it last read; if the document has moved
+        # on since (another browser tab, or the MCP add-a-board route later), reject rather than let the
+        # later writer win silently — which is what two tabs open on one project used to do to each
+        # other. The client reloads from the returned document and retries. A client that sends no
+        # version at all is an OLD frontend against a new server: let it through rather than wedge the
+        # autosave, since that is exactly the pairing a mid-session reload produces.
+        want = get(body, :version, nothing)
+        sent = want isa Integer ? Int(want) : want isa Real ? Int(round(want)) : -1
+        if want !== nothing && current.present && current.readable && sent != current.version
+            return 409, JSON3.write((; error="Boards changed since you loaded them",
+                                       code="stale_version", boards=boards_doc_payload(current)))
         end
+        version = write_boards_doc(path, incoming; version = current.version + 1)
+        # tell every OTHER open client to pick this up (the writer ignores its own echo by version).
+        broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
+        return 200, JSON3.write((; ok=true, version))
+    catch e
+        return 500, JSON3.write((; error=sprint(showerror, e)))
     end
-    200, JSON3.write((; ok=true))
+end
+
+# GET /api/projects/boards?projectUid — the boards document on its own, with its `version`.
+# The cheap read behind both recovery paths: a 409'd autosave reloading before it retries, and a client
+# reacting to the `boards:changed` broadcast. Project OPEN still gets boards inline in
+# api_projects_load — this exists so neither of those has to re-run a whole project load.
+function api_projects_boards_get(req::HTTP.Request)
+    uid = String(get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    200, JSON3.write((; boards=boards_doc_payload(read_boards_doc(boards_doc_path(joinpath(projects_dir(), uid))))))
 end
 
 # POST /api/projects/animations  { projectUid, animations }

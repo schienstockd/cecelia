@@ -185,28 +185,22 @@ the plot has no summary level, so presence is meaningful on its own and nothing 
 slot with no `statUnit` has no summary level (or predates the field). See `_board_slot`.
 """
 function board_summaries(proj::CciaProject)
-    p = joinpath(proj.root, "settings", "analysisBoards.json")
-    isfile(p) || return Any[]
-    b = try JSON3.read(read(p, String)) catch e
-        @warn "Could not parse analysis boards; reporting none" path = p exception = e
-        return Any[]
-    end
-    tabs = get(b, :tabs, nothing)
-    layouts = get(b, :layouts, nothing)
-    layouts isa AbstractDict || (layouts = Dict{Symbol,Any}())
-    # tab order comes from `tabs.tabs`; the layout for tab <id> is keyed "tab:<id>" (project-relative,
-    # see frontend utils/boardKeys). A tab with no layout yet is a real state — report it with no plots.
-    tab_list = tabs isa AbstractDict ? get(tabs, :tabs, nothing) : nothing
-    entries = tab_list isa AbstractVector ? tab_list : Any[]
+    p = boards_doc_path(proj)
+    doc = read_boards_doc(p)          # ONE parser, and it reads both document shapes — analysis_boards.jl
+    doc.present || return Any[]
     # A file that EXISTS but yields no tabs is "I cannot read this", not "there are no boards" — the
     # difference is exactly what hid the `_board_tabs` bug (it read `b.tabs` as the array, which the
     # frontend never writes, and returned empty in silence). Say so rather than degrading quietly.
-    isempty(entries) && @warn "Analysis boards file has no readable tabs; reporting none" path = p
+    (doc.readable && !isempty(doc.tabs)) ||
+        @warn "Analysis boards file has no readable tabs; reporting none" path = p
+    layouts = doc.layouts
     out = Any[]
-    for t in entries
+    # the layout for tab <id> is keyed "tab:<id>" (project-relative, see frontend utils/boardKeys). A
+    # tab with no layout yet is a real state — report it with no plots.
+    for t in doc.tabs
         t isa AbstractDict || continue
         id = get(t, :id, nothing)
-        lay = id === nothing ? nothing : get(layouts, Symbol("tab:$(id)"), nothing)
+        lay = id === nothing ? nothing : get(layouts, "tab:$(id)", nothing)   # String keys — normalise_boards
         plots = Any[]
         cols = rows = 0
         if lay isa AbstractDict

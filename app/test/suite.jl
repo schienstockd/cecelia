@@ -8444,6 +8444,52 @@ end
         delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
     end
 
+    @testset "boards document — one reader, both shapes, versioned writes" begin
+        # analysisBoards.json has had two shapes. The tab ARRAY used to sit at `tabs.tabs` (a TabGroup
+        # nested under `tabs`) — the collision that made a second parser read `b.tabs` as the array and
+        # report NO boards on every project that had them. Both are read; only the flat one is written.
+        dir = mktempdir()
+        p = boards_doc_path(dir)
+        @test endswith(p, joinpath("settings", "analysisBoards.json"))
+
+        d0 = read_boards_doc(p)                                   # no file at all
+        @test !d0.present && d0.readable && isempty(d0.tabs) && d0.version == 0
+
+        mkpath(dirname(p))
+        legacy = Dict("tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "A")], "activeId" => 1, "nextId" => 2),
+                      "layouts" => Dict("tab:1" => Dict("cols" => 2, "rows" => 1)))
+        write(p, JSON3.write(legacy))
+        d = read_boards_doc(p)
+        @test d.present && d.readable
+        @test length(d.tabs) == 1 && string(d.tabs[1]["name"]) == "A"
+        @test d.active_id == 1 && d.next_id == 2
+        @test d.version == 0                                      # no version key → 0, not an error
+        @test haskey(d.layouts, "tab:1")                          # String keys, not JSON3 Symbols
+
+        # writing converts to the flat shape and stamps the version
+        write_boards_doc(p, d; version = d.version + 1)
+        raw = JSON3.read(read(p, String))
+        @test raw[:version] == 1
+        @test raw[:tabs] isa AbstractVector                        # flat: the array is at the top level
+        @test raw[:activeId] == 1 && raw[:nextId] == 2
+        d2 = read_boards_doc(p)
+        @test d2.version == 1 && length(d2.tabs) == 1 && d2.active_id == 1
+
+        # a file that exists but cannot be parsed is NOT "no boards" — that silence hid the last bug
+        write(p, "{not json")
+        d3 = @test_logs (:warn,) match_mode=:any read_boards_doc(p)
+        @test d3.present && !d3.readable
+
+        # normalise_boards is pure, so the autosave route runs an incoming payload through exactly the
+        # same reader as a load from disk
+        n = normalise_boards(Dict("version" => 7, "tabs" => [Dict("id" => 2, "name" => "B")],
+                                  "activeId" => 2, "nextId" => 3, "layouts" => Dict()))
+        @test n.version == 7 && n.active_id == 2 && length(n.tabs) == 1
+        @test normalise_boards("not a document").readable == false
+        # the payload the client gets always carries the version its next write must echo
+        @test boards_doc_payload(n)["version"] == 7
+    end
+
     @testset "board read-back summarises what a board plots" begin
         # The boards file is written by the FRONTEND, so every field here is optional by construction:
         # a board from an older schema must degrade to fewer fields, never throw.
@@ -8544,10 +8590,17 @@ end
         write(bf, "{not json")
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
 
+        # A top-level `tabs` ARRAY is the CURRENT shape (it was the legacy `tabs.tabs` nesting that this
+        # reader used to choke on), so it must read as a real board rather than warn.
+        write(bf, JSON3.write(Dict("version" => 4, "tabs" => [Dict("id" => 9, "name" => "flat")],
+                                   "activeId" => 9, "nextId" => 10, "layouts" => Dict())))
+        fb = board_summaries(proj)
+        @test length(fb) == 1 && fb[1]["name"] == "flat" && isempty(fb[1]["plots"])
+
         # A present-but-unreadable file must WARN, not quietly read as "no boards" — that silence is
         # what hid the `_board_tabs` bug (it read `b.tabs` as the array, a shape the frontend never
         # writes, and reported none on every real project for as long as it existed).
-        write(bf, JSON3.write(Dict("tabs" => [Dict("name" => "bare-array-is-not-the-shape")])))
+        write(bf, JSON3.write([1, 2, 3]))          # valid JSON, not a document
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
     end
 

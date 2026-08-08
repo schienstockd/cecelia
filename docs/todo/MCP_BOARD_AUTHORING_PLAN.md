@@ -153,7 +153,19 @@ of a fixture invented to match the parser; the fixture is now copied from a real
 reasoning, not from anything the write path adds. Phases 1–3 make a board faster to render; they do not
 make the suggestions better. Worth keeping in view when costing them.
 
-### Phase 1 — make the boards document safe to write concurrently
+### Phase 1 — make the boards document safe to write concurrently — **DONE**
+
+Shipped as designed, with **one deviation**: on 409 the client reloads and does **not** retry. The
+plan said "reload and retry", but the document is a single blob, so re-sending our copy at the fresh
+version would simply move the clobber one step later — the other tab's boards would be the ones lost
+instead of ours. The debounced edit that lost the race is dropped with a warning in the log; the user
+sees current state rather than silently destroying someone else's work. A real fix is a merge, or
+one-file-per-board (Decision 1 already names that as the prerequisite if boards ever need versions).
+
+The reader/writer was also consolidated into `app/src/analysis_boards.jl` rather than added alongside
+the existing parsers — the route, the project-open payload and `board_summaries` now share one, which
+is what should have been true before the `_board_tabs` bug.
+
 - Add `version` to `analysisBoards.json`; `POST /api/projects/boards` rejects a stale version with 409.
 - **Normalise the payload shape here, not separately.** `{tabs: <TabGroup>, layouts}` puts the tab array
   at `tabs.tabs` — a name collision that reads badly and is what a second, assumption-written parser

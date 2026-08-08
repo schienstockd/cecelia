@@ -6,6 +6,7 @@ import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnimationStore } from './animation'
+import { tabGroupOf, type BoardsDoc } from '../utils/boardDoc'
 
 export interface ProjectRecord {
   uid: string
@@ -74,7 +75,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       const body = await res.json().catch(() => ({})) as {
         project?: ProjectRecord
         sets?: CciaSet[]
-        boards?: { tabs?: unknown; layouts?: Record<string, unknown> } | null
+        boards?: Partial<BoardsDoc> | null
         moduleCanvases?: { entries?: Record<string, unknown>; geom?: Record<string, unknown> } | null
         animations?: { snapshots?: unknown[] } | null
         error?: string
@@ -85,8 +86,11 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
       if (body.boards) {
         const groupKey = `analysis:${body.project!.uid}`
-        useAnalysisTabsStore().load(groupKey, body.boards.tabs as never)
+        // The server normalises the document (both historical shapes) and stamps `version` — the
+        // optimistic-concurrency token the autosave must echo back. See utils/boardDoc.ts.
+        useAnalysisTabsStore().load(groupKey, tabGroupOf(body.boards) as never)
         useAnalysisLayoutStore().load(groupKey, body.boards.layouts as never)
+        useAnalysisLayoutStore().setVersion(body.project!.uid, body.boards.version ?? 0)
       }
       // rehydrate per-image module-page canvases (moduleCanvases.json)
       if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)

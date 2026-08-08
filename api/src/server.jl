@@ -271,6 +271,9 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
     "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
+    # NB same path as the POST autosave, different method — the cheap reload behind a 409'd write and
+    # the boards:changed broadcast (see api_projects_boards_get).
+    "/api/projects/boards" => (req, body_bytes) -> (api_projects_boards_get(req)),
     "/api/analysis/measures" => (req, body_bytes) -> (api_analysis_measures(req)),
     "/api/analysis/behaviour" => (req, body_bytes) -> (api_analysis_behaviour(req)),
     "/api/analysis/clusters" => (req, body_bytes) -> (api_analysis_clusters(req)),
