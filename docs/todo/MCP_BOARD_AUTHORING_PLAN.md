@@ -130,6 +130,11 @@ the suggestions are not good here, stop — the rest of the plan only makes bad 
 
 ### Phase 1 — make the boards document safe to write concurrently
 - Add `version` to `analysisBoards.json`; `POST /api/projects/boards` rejects a stale version with 409.
+- **Normalise the payload shape here, not separately.** `{tabs: <TabGroup>, layouts}` puts the tab array
+  at `tabs.tabs` — a name collision that reads badly and is what a second, assumption-written parser
+  got wrong (see below). It is not worth a standalone migration: real projects have boards on disk and
+  `.ccbundle` exports carry the file. But Phase 1 must already read old documents and write new ones to
+  add `version`, so reshaping is nearly free at that point — read either form, write the clean one.
 - Frontend: send the last-read version; on 409, `load()` and retry.
 - WS "boards changed" broadcast + frontend reload through the existing `_restoring` path.
 
@@ -167,6 +172,23 @@ bug fix, independent of everything below.
 ### Phase 4 — (removed)
 Board versioning was cut on 2026-08-08; see Decision 1 for why, and for the order to follow if it is
 ever revived.
+
+## Bug found while building Phase 0 (2026-08-08)
+
+`get_analysis_lineage`'s `boards` had been **empty for every project that has boards** — so any observer
+session was told the project had none. `_board_tabs` read `b.tabs` expecting the array, but the
+persisted shape is a `TabGroup` (`{tabs, activeId, nextId}`), so its `isa AbstractVector` guard failed
+and it returned `String[]`.
+
+Two things kept it hidden, and both are worth remembering:
+- **Its test fixture was invented to match the parser**, not copied from a real file — it wrote
+  `"tabs" => [{name}]`, a shape the frontend never produces. A green test certified the bug.
+- **It degraded silently.** "Best-effort — any missing/renamed field just yields fewer names" means a
+  parser cannot distinguish *no boards* from *I cannot read this*.
+
+Fixed by deleting the second parser: `_board_tabs` now derives from `board_summaries`, so there is one
+reader of `analysisBoards.json`, the fixture mirrors `analysisTabs.ts` `serialize()`, and an
+unreadable-but-present file now warns instead of returning empty.
 
 ## Risks
 

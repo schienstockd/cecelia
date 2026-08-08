@@ -95,21 +95,12 @@ function _chain_summaries(proj::CciaProject)
     out
 end
 
-# Analysis-board tab names (best-effort). `board_summaries` below reads the plot semantics too — this
-# stays the cheap name-only view lineage embeds. Any missing/renamed field just yields fewer names.
-function _board_tabs(proj::CciaProject)
-    p = joinpath(proj.root, "settings", "analysisBoards.json")
-    isfile(p) || return String[]
-    b = try JSON3.read(read(p, String)) catch; return String[] end
-    tabs = get(b, :tabs, nothing); tabs isa AbstractVector || return String[]
-    names = String[]
-    for t in tabs
-        t isa AbstractDict || continue
-        nm = string(get(t, :name, get(t, :label, get(t, :title, get(t, :id, "")))))
-        isempty(nm) || push!(names, nm)
-    end
-    names
-end
+# Analysis-board tab NAMES — derived from `board_summaries` (below) so there is ONE parser of
+# analysisBoards.json. This had its own, and the two disagreed: it read `b.tabs` expecting the array,
+# but the persisted shape is a TabGroup — `{tabs: [...], activeId, nextId}` — so `tabs isa
+# AbstractVector` was false and lineage reported NO boards on every project that had them. The
+# "best-effort, just yields fewer names" defence is what let it stay silent.
+_board_tabs(proj::CciaProject) = String[string(b["name"]) for b in board_summaries(proj)]
 
 
 # ── Analysis-board READ-BACK ────────────────────────────────────────────────────────────────────────
@@ -163,7 +154,10 @@ never the stored layout geometry. Returns `[]` when the project has no boards.
 function board_summaries(proj::CciaProject)
     p = joinpath(proj.root, "settings", "analysisBoards.json")
     isfile(p) || return Any[]
-    b = try JSON3.read(read(p, String)) catch; return Any[] end
+    b = try JSON3.read(read(p, String)) catch e
+        @warn "Could not parse analysis boards; reporting none" path = p exception = e
+        return Any[]
+    end
     tabs = get(b, :tabs, nothing)
     layouts = get(b, :layouts, nothing)
     layouts isa AbstractDict || (layouts = Dict{Symbol,Any}())
@@ -171,6 +165,10 @@ function board_summaries(proj::CciaProject)
     # see frontend utils/boardKeys). A tab with no layout yet is a real state — report it with no plots.
     tab_list = tabs isa AbstractDict ? get(tabs, :tabs, nothing) : nothing
     entries = tab_list isa AbstractVector ? tab_list : Any[]
+    # A file that EXISTS but yields no tabs is "I cannot read this", not "there are no boards" — the
+    # difference is exactly what hid the `_board_tabs` bug (it read `b.tabs` as the array, which the
+    # frontend never writes, and returned empty in silence). Say so rather than degrading quietly.
+    isempty(entries) && @warn "Analysis boards file has no readable tabs; reporting none" path = p
     out = Any[]
     for t in entries
         t isa AbstractDict || continue

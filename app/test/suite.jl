@@ -8438,7 +8438,13 @@ end
         @test b[1]["plots"][1]["ref"] == "umap" && !haskey(b[1]["plots"][1], "measure")
         @test b[1]["cols"] == 0                                     # missing grid → 0, not an error
         write(bf, "{not json")
-        @test board_summaries(proj) == Any[]
+        @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
+
+        # A present-but-unreadable file must WARN, not quietly read as "no boards" — that silence is
+        # what hid the `_board_tabs` bug (it read `b.tabs` as the array, a shape the frontend never
+        # writes, and reported none on every real project for as long as it existed).
+        write(bf, JSON3.write(Dict("tabs" => [Dict("name" => "bare-array-is-not-the-shape")])))
+        @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
     end
 
     @testset "analysis lineage (Slice A synthesizer)" begin
@@ -8477,7 +8483,13 @@ end
              ChainNode(; id = "n2", fn = "tracking.bayesian_tracking")], ChainEdge[]))
         mkpath(joinpath(proj.root, "settings"))
         open(joinpath(proj.root, "settings", "analysisBoards.json"), "w") do io
-            JSON3.write(io, Dict("tabs" => [Dict("name" => "Behaviour"), Dict("name" => "Counts")]))
+            # the REAL persisted shape: `tabs` is a TabGroup ({tabs, activeId, nextId}), not a bare
+            # array. This fixture used to be the bare array — written to match a parser that read
+            # `b.tabs` as the list — so the test passed while lineage reported no boards on every real
+            # project. Keep this mirroring stores/analysisTabs.ts `serialize`.
+            JSON3.write(io, Dict("tabs" => Dict(
+                "tabs" => [Dict("id" => 1, "name" => "Behaviour"), Dict("id" => 2, "name" => "Counts")],
+                "activeId" => 1, "nextId" => 3)))
         end
 
         lin = analysis_lineage(proj)
