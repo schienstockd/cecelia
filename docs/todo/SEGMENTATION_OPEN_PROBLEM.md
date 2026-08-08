@@ -22,7 +22,8 @@ All numbers are on `zolIMa/fXgbTl` (16-bit, drift-corrected; 31×4×32×420×441
 > existing stores keep the old label. See `SMOOTHING_PLAN.md` → *Legacy value name*.
 
 **Continues** `SEG_QUALITY_PLAN.md` Phase 3 (coastal-native segmentation). **Depends on the
-AF/smoothing work in** `SMOOTHING_PLAN.md` (built) and `AF_QUANTISATION.md`.
+AF/smoothing work in** `SMOOTHING_PLAN.md` (built), `AF_QUANTISATION.md` (input precision) and
+`AF_CORRECTION_AUDIT.md` (what the correction mechanism actually does, measured).
 
 ## Goal
 
