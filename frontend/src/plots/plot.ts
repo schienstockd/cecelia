@@ -1046,7 +1046,7 @@ function frequency(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     return {
       ...THEME, color,
       fx: { label: r.measure },
-      x: { axis: null },
+      x: { axis: null, type: 'band' },   // same reason as the stacked branch below
       y: { label: yLabel, grid: false },
       marks: [
         Plot.barY(rows, { fx: 'category', x: 'series', y: 'value', fill: 'series', tip: true }),
@@ -1056,7 +1056,11 @@ function frequency(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   }
   return {
     ...THEME, color,
-    x: { label: r.measure },
+    // `type: 'band'` is not cosmetic: categories that LOOK numeric ("1"/"2"/"3" — every HMM state
+    // column is an integer code) make Plot infer an ordinal scale from strings-that-are-numbers and
+    // emit its own ⚠️ glyph into the SVG ("Please check the console"), which lands in the BROWSER
+    // console, not ours. Saying band explicitly is the documented way to state the intent.
+    x: { label: r.measure, type: 'band' },
     y: { label: yLabel, grid: false },
     marks: [
       Plot.barY(rows, { x: 'category', y: 'value', fill: 'series',
