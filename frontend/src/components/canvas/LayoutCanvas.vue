@@ -26,7 +26,7 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
 import { useClusterContext } from '../../composables/useClusterContext'
-import { tkey, parseTkey } from '../../plots/series'
+import { tkey, parseTkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
@@ -278,7 +278,10 @@ function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activeContent.value) st(activeContent.value).vis = { ...(st(activeContent.value).vis ?? defaultVis()), ...patch }
 }
-const panelSeries = (c: SlotContent): SeriesTarget[] => panelSel(c).map(parseTkey)
+// keyed by SLOT INDEX so a slot keeps one entry; identity holds while its selection does (see
+// seriesMemo) — a template-built list must not hand every panel a "new" series array per render.
+const memoSeries = seriesMemo<number>()
+const panelSeries = (i: number, c: SlotContent): SeriesTarget[] => memoSeries(i, panelSel(c))
 
 // the stats test each summary slot's last result actually ran (`auto` resolves it server-side from the
 // group count) — the rail shows the ACTIVE slot's, so the user can see what `auto` chose. Keyed by slot
@@ -588,7 +591,7 @@ defineExpose({ capturePage, collectCsvs })
                           :spec="specById[entry.contents[i]!.ref]"
                           :project-uid="projectUid" :image-uid="imageUid"
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                          :group-attr="panelGroupAttr" :series="panelSeries(entry.contents[i]!)" :series-color="seriesColor"
+                          :group-attr="panelGroupAttr" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"

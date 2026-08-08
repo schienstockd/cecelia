@@ -24,7 +24,7 @@ import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import CanvasZoomControl from './CanvasZoomControl.vue'
-import { tkey, parseTkey } from '../../plots/series'
+import { tkey, parseTkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
@@ -122,7 +122,9 @@ function setVis(patch: Partial<VisProps>) {
   else if (activePanel.value) activePanel.value.state.vis = { ...activePanel.value.state.vis, ...patch }
 }
 // a panel's series = its selected target keys parsed back into {valueName, pop}
-const panelSeries = (s: PanelState): SeriesTarget[] => panelSel(s).map(parseTkey)
+// keyed by PANEL ID (panels are free-floating, not slot-indexed) — see seriesMemo
+const memoSeries = seriesMemo<number>()
+const panelSeries = (id: number, s: PanelState): SeriesTarget[] => memoSeries(id, panelSel(s))
 
 function addPanel(specId: string) { if (specId) { add(); const p = panels.value.at(-1); if (p) p.state.specId = specId } }
 
@@ -216,7 +218,7 @@ watch(segPops, () => {
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
                         :group-attr="panelGroupAttr"
-                        :series="panelSeries(p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
+                        :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="reloadToken" :persist-key="`${ckey}:${p.id}`"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
