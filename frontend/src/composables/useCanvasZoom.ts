@@ -22,6 +22,26 @@ const clampZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z))
 // fills the width — then fitWidth is a no-op).
 export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => { w: number | null; h: number }) {
   const zoom = ref(1)
+  // True while an interactive zoom is in flight (slider drag, wheel, key repeat). The host uses it to
+  // promote the scaled subtree to its own compositor layer for the duration — scaling a board of SVG
+  // plots otherwise re-rasterises the whole thing on every step, and the range input emits ~36 of them
+  // across one drag, so the updates queue and land well after the mouse is released.
+  const zooming = ref(false)
+  // …and the steps are coalesced to one per animation frame: an input burst should cost one paint, not
+  // one per event.
+  let raf = 0
+  let pending: number | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  const current = () => pending ?? zoom.value
+  function flush() {
+    raf = 0
+    if (pending !== null) { zoom.value = clampZoom(pending); pending = null }
+  }
+  function endSoon() {
+    if (idleTimer) clearTimeout(idleTimer)
+    // outlive the tail of a drag, then drop the layer — will-change held forever costs memory
+    idleTimer = setTimeout(() => { zooming.value = false }, 250)
+  }
   function fitWidth() {
     const vp = viewport.value, c = content()
     if (!vp || c.w == null || c.w <= 0) return
@@ -33,9 +53,16 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
     const availH = window.innerHeight - vp.getBoundingClientRect().top - 16
     zoom.value = clampZoom(availH / c.h)
   }
-  function setZoom(z: number) { zoom.value = clampZoom(z) }
-  function reset() { zoom.value = 1 }
-  const zoomBy = (factor: number) => setZoom(zoom.value * factor)
+  function setZoom(z: number) {
+    pending = z
+    zooming.value = true
+    if (!raf) raf = requestAnimationFrame(flush)
+    endSoon()
+  }
+  function reset() { pending = null; zoom.value = 1 }
+  // base the step on the PENDING value, not the applied one — successive steps within one frame must
+  // compound, or a fast wheel/key repeat silently loses steps
+  const zoomBy = (factor: number) => setZoom(current() * factor)
 
   // Keyboard/wheel shortcuts (mirrors Illustrator/Figma): shift+wheel over the canvas zooms; shift +/-
   // steps zoom, shift+0 resets. Bound here so every host (board + module canvases) gets them for free.
@@ -62,6 +89,8 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   onBeforeUnmount(() => {
     viewport.value?.removeEventListener('wheel', onWheel)
     window.removeEventListener('keydown', onKey)
+    if (raf) cancelAnimationFrame(raf)
+    if (idleTimer) clearTimeout(idleTimer)
   })
   // fit width only if the content actually overflows the viewport (used on first render so a big board
   // is visible without hiding the sidebar, but a board that already fits is left at 100%).
@@ -69,5 +98,5 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
     const vp = viewport.value, c = content()
     if (vp && c.w != null && c.w > vp.clientWidth) fitWidth()
   }
-  return { zoom, fitWidth, fitHeight, fitWidthIfOverflow, setZoom, reset }
+  return { zoom, zooming, fitWidth, fitHeight, fitWidthIfOverflow, setZoom, reset }
 }

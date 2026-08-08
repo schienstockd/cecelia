@@ -64,6 +64,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   {
     key: 'creates', title: 'Creates', icon: 'pi-file-edit', tone: 'good',
     items: [
+      'Analysis boards — a page of plots, added beside your own',
       'Chains — a wired pipeline you review, then run',
       'Pluto notebooks — runnable analysis you then own & edit',
       'CSV exports for Prism / R',
@@ -75,7 +76,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
     items: [
       'Change your data (h5ad, gates, project config)',
       'Run anything — not a task, not a chain it built',
-      'Overwrite, rename or delete your chains & notebooks',
+      'Overwrite, rename or delete your chains, notebooks & boards',
       'Open raw image pixels',
       'Draw the biological conclusion — that stays yours',
     ],
@@ -111,7 +112,7 @@ export const CLAUDE_TERMINAL = {
 // Keep them short and uniform so they read as a clean row of chips.
 export const CLAUDE_EXAMPLES: string[] = [
   'Why is this image off?',
-  'Plot the behaviour differences',
+  'Add a board of behaviour plots',
   'Build a cell-speed notebook',
   'Design a segment + track chain',
 ]

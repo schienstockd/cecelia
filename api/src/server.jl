@@ -271,6 +271,9 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
     "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
+    # NB same path as the POST autosave, different method — the cheap reload behind a 409'd write and
+    # the boards:changed broadcast (see api_projects_boards_get).
+    "/api/projects/boards" => (req, body_bytes) -> (api_projects_boards_get(req)),
     "/api/analysis/measures" => (req, body_bytes) -> (api_analysis_measures(req)),
     "/api/analysis/behaviour" => (req, body_bytes) -> (api_analysis_behaviour(req)),
     "/api/analysis/clusters" => (req, body_bytes) -> (api_analysis_clusters(req)),
@@ -364,6 +367,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/labels/delete" => (req, body_bytes) -> (api_images_delete_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/create" => (req, body_bytes) -> (api_chains_create(body_bytes)),
+    # create-only: adds ONE board, never edits one. NOT /api/projects/boards, which overwrites the
+    # whole document (see api_boards_add).
+    "/api/boards/add" => (req, body_bytes) -> (api_boards_add(body_bytes)),
     "/api/chains/rename" => (req, body_bytes) -> (api_chains_rename(body_bytes)),
     "/api/chains/delete" => (req, body_bytes) -> (api_chains_delete(body_bytes)),
     "/api/optical-flow/inspect" => (req, body_bytes) -> (api_optical_flow_inspect(body_bytes)),

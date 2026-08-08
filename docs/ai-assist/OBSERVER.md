@@ -66,6 +66,7 @@ create_notebook           → create a Pluto notebook from cells (Phase 2). Crea
 revise_notebook           → new version of an EXISTING notebook: snapshots it (restorable) then overwrites its cells. Real versioning, not a "-v2" copy.
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 create_chain              → author a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-validated. INERT until the user presses Run — there is no tool to launch it.
+add_analysis_board        → ADD one board to /analysis. Add-only (409 on a duplicate name): cannot modify, rename, reorder or delete a board, so it sits beside the user's own. Server-validated against the project (422 rather than a board that renders blank).
 ```
 
 **Write (Phase 2 — deferred):**
@@ -251,14 +252,22 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   **`revise_notebook`** makes a new version of an existing one (`/api/notebooks/revise` — snapshots then
   overwrites; real versioning, not a `-v2` copy). `set_notebook_description` rewords its blurb afterwards
   (`/api/notebooks/describe`, description text only).
-- **`get_available_plots`** — the board's plot types, for viz suggestions.
+- **`get_available_plots`** — the board's plot types, for viz suggestions; also the spec ids and
+  chart types `add_analysis_board` authors against.
+- **`add_analysis_board`** — ADD one board to `/analysis` from a semantic spec (which plots, which
+  populations, in what order); the server expands it to the stored layout and refuses a spec the
+  project cannot plot, because a bad selection renders an EMPTY panel with no error. Add-only.
+  See `docs/todo/MCP_BOARD_AUTHORING_PLAN.md` and `docs/ANALYSIS.md`.
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
 - **Additive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
   (append-only), `POST /api/notebooks/write` (create-only, 409 on existing), `POST
   /api/notebooks/describe` (a notebook's description string only — not its cells), `POST
-  /api/notebooks/revise` (snapshots first) and `POST /api/chains/create` (create-only + validated).
+  /api/notebooks/revise` (snapshots first), `POST /api/chains/create` (create-only + validated) and
+  `POST /api/boards/add` (create-only + validated — ADDS one Analysis board; cannot modify, rename,
+  reorder or delete one, and is deliberately NOT the browser's whole-document board autosave, which
+  would let a single request replace every board in the project).
   None touch cell data, images, gates, QC, or notebook content; the invariant test asserts the exact
   set. No task-run, gate, h5ad, or config write.
 - **Claude designs; the user runs — enforced by the transport.** `create_chain` writes a chain

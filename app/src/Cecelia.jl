@@ -184,6 +184,12 @@ include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
 include("lab_log.jl")
 include("lab_log_context.jl")
+# the one reader/writer of settings/analysisBoards.json — after CciaProject (model/project.jl), and
+# before ai/lineage.jl, whose board_summaries reads through it
+include("analysis_boards.jl")
+# the semantic board spec + its expander/validator (MCP board authoring, Phase 2). After
+# analysis_boards.jl for BoardsDoc; `_observer_each_population` (ai/) is resolved at call time.
+include("analysis_board_spec.jl")
 include("tasks/task.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
@@ -250,6 +256,9 @@ include("ai/chains.jl")
 include("ai/repl_api.jl")
 include("ai/briefing.jl")
 export analysis_lineage, board_summaries, populations_summary, measure_summary, behaviour_summary, cluster_summary
+export BoardsDoc, boards_doc_path, normalise_boards, read_boards_doc, write_boards_doc, boards_doc_payload
+export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, board_template_grid,
+       board_slot_areas
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix

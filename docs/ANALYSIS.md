@@ -30,6 +30,40 @@ on edit via its own routes, and `lastOpenedAt` is stamped on open. Restored on o
 `boards`. **Backend restart** is needed the first time these routes are active (`api/` is not
 Revise-tracked; see `CLAUDE.md`).
 
+**Claude can ADD a board.** The MCP observer's `add_analysis_board` (write 6/6) posts a semantic spec
+— which plots, which populations, in what order — to `POST /api/boards/add`, and the server expands it
+into a `LayoutEntry` and validates it against the project (`app/src/analysis_board_spec.jl`). Add-only:
+it cannot modify, rename, reorder or delete a board, so an authored board lands beside the user's own
+and is one click to remove. The in-app *"What can Claude do here?"* dialog
+(`frontend/src/lib/claudeOverview.ts`) states both halves — the capability and the add-only limit —
+and is where a user checks before letting Claude near their Analysis page. See
+`docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
+
+**The document has ONE reader/writer** — `app/src/analysis_boards.jl` (`read_boards_doc` /
+`normalise_boards` / `write_boards_doc`), used by the autosave route, the project-open payload and
+`board_summaries` alike. The last time this file had two parsers they disagreed about its shape and
+`get_analysis_lineage` reported no boards on every project that had them. Its shape:
+
+```
+{version, tabs: [{id, name}], activeId, nextId, layouts: {"tab:<id>": …}}   ← written
+{tabs: {tabs: […], activeId, nextId}, layouts: {…}}                        ← legacy, still read
+```
+
+Both are read; only the flat one is written, so a document converts the next time it is saved (no
+migration step — real projects have boards on disk and `.ccbundle` exports carry the file).
+
+**`version` is optimistic concurrency**, not artefact history. The autosave is a debounced overwrite of
+the whole document, so two browser tabs open on one project used to clobber each other with no error.
+Each write echoes the version it last read; a stale write is rejected 409, and the client reloads via
+`GET /api/projects/boards` rather than retrying — the file is one blob, so re-sending our copy would
+just move the clobber one step later and lose the *other* tab's boards instead. The debounced edit that
+lost the race is dropped, with a warning in the log. A successful write broadcasts `boards:changed`
+(`projectUid`, `version`, `clientId`) so other clients converge; the writer ignores its own echo by
+**`clientId`, not version** (`frontend/src/utils/boardDoc.ts`) — the route broadcasts before it returns,
+so a writer still holds the pre-write version when its own frame arrives, and a version test made every
+autosave reload and re-render the board it had just saved. A frame with no `clientId` is a non-browser
+writer (the MCP add route) and IS honoured. The reload goes through the existing `_restoring` suppression.
+
 **Layout keys are stored project-RELATIVE** (`tab:<id>`, no uid) via `frontend/src/utils/boardKeys.ts`
 — `serialize` strips the `analysis:<uid>:` prefix on save, `load(groupKey, …)` re-applies the *current*
 uid (tolerating a legacy baked-in old-uid key). So a project's boards survive a uid change (import-as-

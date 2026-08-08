@@ -20,6 +20,7 @@ describe('claudeOverview content model', () => {
     expect(byKey.cant.tone).toBe('muted')                // the "can't" group reads as recessive
     expect(byKey.creates.items.join(' ')).toMatch(/notebook/i)   // notebooks are the headline "create"
     expect(byKey.creates.items.join(' ')).toMatch(/chain/i)      // …and chains, since it can author one
+    expect(byKey.creates.items.join(' ')).toMatch(/board/i)      // …and boards (add_analysis_board)
     for (const g of CLAUDE_CAPABILITIES) expect(g.items.length).toBeGreaterThan(0)
   })
 
@@ -31,6 +32,9 @@ describe('claudeOverview content model', () => {
     expect(cant).toMatch(/run anything|cannot run|can't run/i)
     expect(cant).toMatch(/chain/i)
     expect(cant).toMatch(/overwrite|rename|delete/i)
+    // boards are ADD-ONLY, and this dialog is where someone checks before letting Claude near their
+    // Analysis page — the limit has to be stated wherever the capability is
+    expect(cant).toMatch(/board/i)
   })
 
   it('offers example prompts spanning QC → notebook → chain', () => {
