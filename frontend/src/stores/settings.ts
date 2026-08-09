@@ -190,6 +190,9 @@ export const useSettingsStore = defineStore('settings', () => {
     movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
               titleCard?: TitleCardCfg; compareVersions?: string[]; compareSegmentations?: string[]
               labelContour?: number; zSlice?: number | null
+              // 3D multiscale detail: level index (0 = full resolution, higher = coarser), or null for
+              // napari's own choice (its coarsest level). Per set, like the other viewer prefs.
+              detail3d?: number | null
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
               showTimestamp?: boolean; showScaleBar?: boolean }
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
@@ -209,6 +212,7 @@ export const useSettingsStore = defineStore('settings', () => {
       labelContour?: number                 // mask outline width in px (0 = filled)
       show3D?: boolean                      // whole z stack as a 3D render…
       zSlice?: number | null                // …or this slice in 2D (null = whatever is showing)
+      detail3d?: number | null              // 3D detail: multiscale level (0 = full res), null = auto
       compareLayout?: CompareLayout; compareContrast?: CompareContrast
       valueName?: string                    // image version to open ('' = active) — legacy, migrated
       channels?: Record<string, string>     // channelName → colormap (only these shown)
@@ -259,6 +263,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fps: number; sizeX: number | null; sizeY: number | null; suffix: string | null; titleCard: TitleCardCfg
     compareVersions: string[]; compareSegmentations: string[]; labelContour: number
     zSlice: number | null
+    detail3d: number | null
     compareLayout: CompareLayout; compareContrast: CompareContrast
     showTimestamp: boolean; showScaleBar: boolean
   } => ({
@@ -277,6 +282,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // The 3D half is the EXISTING per-set `show3D` pref — one stored value, so the viewer's 3D button
     // and the movie's z control cannot disagree.
     zSlice: _setPrefs.value[setUid]?.movie?.zSlice ?? null,
+    // 0 = full resolution. napari's own 3D choice is the COARSEST level, which erases a strided label
+    // pyramid — so the default is full and the cost is a visible control (docs/NAPARI.md → 3D detail).
+    detail3d: _setPrefs.value[setUid]?.movie?.detail3d ?? 0,
     compareLayout: _setPrefs.value[setUid]?.movie?.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: _setPrefs.value[setUid]?.movie?.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     // default ON — what every movie was before the toggles existed
@@ -288,6 +296,7 @@ export const useSettingsStore = defineStore('settings', () => {
                                    suffix?: string | null; titleCard?: TitleCardCfg
                                    compareVersions?: string[]; compareSegmentations?: string[]
                                    labelContour?: number; zSlice?: number | null
+                                   detail3d?: number | null
                                    compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
                                    showTimestamp?: boolean; showScaleBar?: boolean }) {

@@ -13,7 +13,7 @@ const NAPARI_BRIDGE = joinpath(@__DIR__, "..", "..", "napari", "napari_bridge.py
 # argument, or a changed reply. Asserted equal by the "language boundaries agree on their protocol"
 # testset. Losing the window on a mismatch is recoverable — layer props and the T/Z position are
 # autosaved (`save_layer_props`), so a relaunch reopens where the user was.
-const NAPARI_PROTOCOL = 3
+const NAPARI_PROTOCOL = 4
 # Python interpreter comes from `python_bin_path()` (config default "python3"), resolved within
 # the activated Pixi env — i.e. launch via `pixi run`. No hardcoded venv path; see docs/SHIPPING.md.
 
@@ -206,6 +206,17 @@ function set_z_view!(v::NapariViewer; show_3d::Bool=false, z::Union{Int,Nothing}
     cmd = Dict{String,Any}("type" => "set_z_view", "show_3d" => show_3d)
     z === nothing || (cmd["z"] = z)
     send(v, cmd)
+end
+
+# How much detail the 3D view renders: a multiscale LEVEL index (0 = full resolution, higher = coarser;
+# levels halve X and Y, never Z). `nothing` hands the choice back to napari, which in 3D always takes
+# the COARSEST level — fine for an intensity image, and fatal for a strided label pyramid, which is why
+# this is a setting rather than napari's default. See docs/NAPARI.md → *3D detail*.
+#
+# Its own command, not an argument to `set_z_view!`: that one resets the camera when it enters 3D, and
+# dragging a detail slider must not keep throwing the user's view away.
+function set_3d_level!(v::NapariViewer; level::Union{Int,Nothing}=0)
+    send(v, Dict{String,Any}("type" => "set_3d_level", "level" => level))
 end
 
 # Skeleton labels written by `segment.branching` — stored under `branchLabels/` and namespaced

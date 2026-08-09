@@ -14,6 +14,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 const bridgeStale = ref(false)
 const canvasSizeX = ref<number | null>(null)
 const canvasSizeY = ref<number | null>(null)
+// multiscale levels the OPEN IMAGE has — the range the 3D detail control offers (0 or 1 = no choice
+// to make, so the control hides). See docs/NAPARI.md → *3D detail*.
+const multiscaleLevels = ref<number>(0)
 
 let timer: number | undefined
 let watchers = 0
@@ -22,10 +25,12 @@ let watchers = 0
 export async function pollNapariStatus() {
   try {
     const s = await (await fetch('/api/napari/status')).json() as
-      { bridgeStale?: boolean; canvasSizeX?: number | null; canvasSizeY?: number | null }
+      { bridgeStale?: boolean; canvasSizeX?: number | null; canvasSizeY?: number | null
+        multiscaleLevels?: number | null }
     bridgeStale.value = !!s.bridgeStale
     canvasSizeX.value = s.canvasSizeX ?? null
     canvasSizeY.value = s.canvasSizeY ?? null
+    multiscaleLevels.value = s.multiscaleLevels ?? 0
   } catch {
     bridgeStale.value = false            // no bridge → nothing to warn about, and no canvas to report
   }
@@ -45,5 +50,5 @@ export function useNapariStatus() {
     watchers -= 1
     if (watchers <= 0 && timer !== undefined) { clearInterval(timer); timer = undefined }
   })
-  return { bridgeStale, canvasSizeX, canvasSizeY, poll: pollNapariStatus }
+  return { bridgeStale, canvasSizeX, canvasSizeY, multiscaleLevels, poll: pollNapariStatus }
 }

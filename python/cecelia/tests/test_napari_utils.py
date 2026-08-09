@@ -812,3 +812,27 @@ class PreviewRegionFromCornersTest(unittest.TestCase):
         # whatever level napari picked, the region is expressed in level-0 pixels
         self.assertLessEqual(r['xy']['Y'][1], 1024)
         self.assertLessEqual(r['xy']['X'][1], 1024)
+
+
+class ClampedLevelTest(unittest.TestCase):
+    """The 3D detail level is a request per VIEWER against a depth that is per LAYER."""
+
+    def test_a_valid_level_passes_through(self):
+        self.assertEqual(napari_utils.clamped_level(0, 4), 0)
+        self.assertEqual(napari_utils.clamped_level(2, 4), 2)
+
+    def test_a_shallower_layer_gets_its_own_coarsest(self):
+        # the live-preview label store is opened at ONE level while the image beside it has four;
+        # napari ignores an out-of-range index, which would silently leave that layer alone
+        self.assertEqual(napari_utils.clamped_level(3, 1), 0)
+        self.assertEqual(napari_utils.clamped_level(3, 2), 1)
+
+    def test_none_means_leave_it_to_napari(self):
+        self.assertIsNone(napari_utils.clamped_level(None, 4))
+
+    def test_no_levels_reported_falls_back_to_the_only_valid_index(self):
+        self.assertEqual(napari_utils.clamped_level(2, 0), 0)
+        self.assertEqual(napari_utils.clamped_level(2, None), 0)
+
+    def test_a_negative_request_is_still_a_valid_index(self):
+        self.assertEqual(napari_utils.clamped_level(-1, 4), 0)

@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
-import { pushLabels as apiPushLabels, buildTitleCard, pushZView, pushLabelContour,
+import { pushLabels as apiPushLabels, buildTitleCard, pushZView, pushLabelContour, pushDetail3d,
          type TitleCardPayload } from '../utils/napariOverlays'
 import {
   pushAllOverlays, pushTracksNow, pushPopulationsNow, pushColourLabelsNow,
@@ -163,6 +163,15 @@ const movieSuffix = computed<string>({
     return stored ?? movieSuffixDefault.value
   },
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { suffix: v }) } })
+// How much detail the 3D render uses — a multiscale LEVEL index (0 = full resolution, higher =
+// coarser). Pushed live like the z choice: it is a display property you judge by looking at it.
+const detail3d = computed<number>({
+  get: () => currentSetUid.value ? (settings.getMovieConfig(currentSetUid.value).detail3d ?? 0) : 0,
+  set: v => {
+    if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { detail3d: v })
+    pushDetail3d(v)
+  } })
+
 // Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
 // records what's on screen (unchanged), two or more record a column per version into one movie.
 const compareVersions = computed<string[]>({
@@ -594,7 +603,7 @@ watch(() => projectStore.napariReloadTick, () => reloadViewer())
 // Bridge status (shared poll — see useNapariStatus): `bridgeStale` warns that napari is running older
 // code than the checkout (it's a separate process that survives a backend restart), and the canvas size
 // is what a movie records at when no size is asked for, shown as the size fields' placeholder.
-const { bridgeStale, canvasSizeX, canvasSizeY, poll: pollBridge } = useNapariStatus()
+const { bridgeStale, canvasSizeX, canvasSizeY, multiscaleLevels, poll: pollBridge } = useNapariStatus()
 async function restartNapari() {
   try {
     const res = await fetch('/api/napari/restart', {
@@ -818,7 +827,8 @@ onUnmounted(() => {
                                  v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
-                                 v-model:zSlice="zSlice" />
+                                 v-model:zSlice="zSlice"
+                                 :levels="multiscaleLevels" v-model:detail3d="detail3d" />
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"

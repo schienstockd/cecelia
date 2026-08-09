@@ -31,6 +31,8 @@ export interface BatchMovieCfg {
   // before the setting existed. One switch for both layer kinds — see `set_z_view` in the bridge.
   show3D?: boolean
   zSlice?: number | null
+  // 3D multiscale detail: level index (0 = full resolution, higher = coarser), null = napari's choice
+  detail3d?: number | null
   compareLayout?: CompareLayout
   compareContrast?: CompareContrast
   valueName?: string
@@ -54,6 +56,7 @@ export interface BatchMovieRequestConfig {
   labelContour: number
   show3D: boolean
   zSlice: number | null
+  detail3d: number | null
   compareLayout: CompareLayout
   compareContrast: CompareContrast
   channels: Record<string, string>
@@ -101,6 +104,9 @@ export function buildBatchMovieConfig(
     // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it
     // (`_z_slice`), and sending null rather than dropping the key keeps the two ends reading alike
     zSlice: cfg.show3D ? null : (cfg.zSlice ?? null),
+    // only meaningful in 3D; sent as 0 (full resolution) by default, because napari's own 3D choice is
+    // the coarsest level and that erases a strided label pyramid (docs/NAPARI.md → 3D detail)
+    detail3d: cfg.show3D ? (cfg.detail3d ?? 0) : null,
     compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
     channels: cfg.channels ?? {},
@@ -146,7 +152,15 @@ export function movieFilename(
     }
   }
   parts.push(uid || 'uid')
-  return parts.join('_').replace(/[^A-Za-z0-9._-]+/g, '_') + '.mp4'
+  return safeNamePart(parts.join('_')) + '.mp4'
+}
+
+/** One filename-safe fragment — mirrors `_safe_name_part` (api/src/napari_api.jl); keep the two in
+ *  sync. Keeps [A-Za-z0-9._-], collapses every other run to `_`, and drops the separators that
+ *  collapse leaves at the EDGES: an image called "… -res (cropped)" ends in `)`, so sanitising alone
+ *  produced a name ending in `_`. */
+export function safeNamePart(raw: string): string {
+  return raw.trim().replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[_.]+|[_.]+$/g, '')
 }
 
 // ── seeding (so the config isn't blank) ────────────────────────────────────────
