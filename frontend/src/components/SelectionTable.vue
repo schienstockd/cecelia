@@ -52,6 +52,15 @@ export interface SelectionColumn {
   /** starting px width for THIS column, overriding `defaultColumnWidth`. A size or a count needs far
    *  less room than a name, and one width for all of them is what pushes a table off its panel. */
   width?: number
+  /**
+   * Pin this column to the left while the rest scrolls horizontally. Only meaningful on a LEADING run
+   * of columns — a sticky column after a scrolling one would slide over its neighbour.
+   *
+   * The offsets are COMPUTED from the pick column plus the widths of the sticky columns before it, so
+   * they stay right when a column is dragged. Hand-written `left:` values are what kept this
+   * ImageTable-only: they were `0 / 36px / 68px`, correct until one of those columns changed width.
+   */
+  sticky?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -224,6 +233,23 @@ const sortedRows = computed(() => {
 // radio column ended up as wide as the data columns. So the fixed path declares all of them: a narrow
 // constant for the radio, the composable's width per data column, and the rest for `#actions`.
 const resizable = computed(() => !!props.columnWidthKey)
+
+// px offset for each sticky column: the pick column, then every sticky column before this one. Only a
+// LEADING run counts — the first non-sticky column ends it, since pinning something after a scrolling
+// column would let it slide over its neighbour.
+const PICK_COL_PX = 28   // .sel-col-pick is 1.75rem
+const stickyLeft = computed<Record<string, number>>(() => {
+  const out: Record<string, number> = {}
+  let x = props.selectionMode === 'none' ? 0 : PICK_COL_PX
+  for (const c of props.columns) {
+    if (!c.sticky) break
+    out[c.key] = x
+    x += parseFloat(widthOf(c.key))
+  }
+  return out
+})
+const stickyStyle = (key: string) =>
+  key in stickyLeft.value ? { left: `${stickyLeft.value[key]}px` } : undefined
 const { widthOf, onColumnResizeStart } = useColumnResize({
   defaultWidth: (key: string) =>
     props.columns.find(c => c.key === key)?.width ?? props.defaultColumnWidth,
@@ -241,12 +267,13 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
     </colgroup>
     <thead>
       <tr>
-        <th v-if="selectionMode !== 'none'">
+        <th v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input v-if="selectionMode === 'multi'" type="checkbox" :checked="allSelected"
                  :indeterminate.prop="someSelected" :disabled="disabled" @click.stop="toggleAll"
                  v-tooltip.right="'Select all / none'" />
         </th>
-        <th v-for="c in columns" :key="c.key"
+        <th v-for="c in columns" :key="c.key" :class="{ 'sel-sticky': c.sticky }"
+            :style="stickyStyle(c.key)"
             v-tooltip.bottom="c.sortable ? `${c.label} — click to sort` : undefined">
           <span v-if="c.sortable" class="sel-th-sort" :class="{ active: sortActive(c.key) }"
                 @click="toggleSort(c)">
@@ -265,12 +292,13 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
       <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isPicked(row) }, rowClass?.(row)]"
           v-tooltip.top="tipOf(row)"
           @click="pick(row)" @dblclick="$emit('row-dblclick', row)">
-        <td v-if="selectionMode !== 'none'">
+        <td v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input :type="selectionMode === 'multi' ? 'checkbox' : 'radio'"
                  :checked="isPicked(row)"
                  :disabled="disabled || disabledIds.includes(idOf(row))" tabindex="-1">
         </td>
-        <td v-for="c in columns" :key="c.key" :class="{ 'sel-ellipsis': c.ellipsis }">
+        <td v-for="c in columns" :key="c.key"
+            :class="{ 'sel-ellipsis': c.ellipsis, 'sel-sticky': c.sticky }" :style="stickyStyle(c.key)">
           <!-- A caller may render a cell itself — an inline edit, a badge, an icon — without forking
                the table. Falls through to the verbatim value, which is what every column was. -->
           <slot :name="`cell-${c.key}`" :row="row" :value="row[c.key]">
@@ -336,6 +364,11 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
    to its content — and is also why the radio column needs one of its own (see the colgroup). */
 .sel-table.sized { width: 100%; table-layout: fixed; }
 .sel-col-pick { width: 1.75rem; }
+/* Pinned columns. They need their own background or the scrolling cells show THROUGH them, and a
+   header one sits above the body ones where the two overlap. */
+.sel-sticky { position: sticky; z-index: 2; background: var(--cc-surface-1); }
+.sel-sticky-pick { left: 0; }
+thead .sel-sticky { z-index: 3; }
 .sel-table.sized th { position: relative; }
 .sel-table.sized th, .sel-table.sized td { overflow: hidden; text-overflow: ellipsis; }
 .sel-col-resize {
