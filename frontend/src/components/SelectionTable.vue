@@ -1,26 +1,34 @@
 <script setup lang="ts">
-// THE canonical single-select comparison table (docs/UI.md → UX-primitive catalog).
+// THE canonical table (docs/UI.md → UX-primitive catalog). Rows and columns anywhere in the app.
 //
-// Use this wherever the user picks ONE option and the reason to prefer one is a set of comparable
-// numbers — a codec, a preset, a model, a profile. A dropdown is the wrong control there: it hides
-// the very figures the decision rests on behind a label, so the user either takes the default on
-// faith or goes looking in the docs. A table puts them on screen at the point of deciding.
+// It began as the single-select COMPARISON table — pick one option where the reason to prefer one is
+// a set of comparable numbers (a codec, a preset, a model). A dropdown is the wrong control there: it
+// hides the very figures the decision rests on behind a label. That case is still what it is best at,
+// and `selectionMode: 'single'` is still the default.
+//
+// It now also covers the other two shapes, because four tables were hand-rolled purely for want of
+// them (`docs/todo/MOVIE_MANAGEMENT_PLAN.md` Decision 9): `'multi'` (checkboxes) and `'none'` (a plain
+// list, where a row click means whatever the caller says via `@row-click`). None of those four could
+// sort or resize as a result — capabilities that live here and are free on the way in.
 //
 // Deliberately dumb: it renders whatever display strings it is handed and never formats a number
 // itself. The values are measured somewhere real (a backend constant, a benchmark) and should be
 // stated in exactly one place — a component that reformatted them would become a second one.
 //
-// An optional `#actions` scoped slot adds a trailing cell per row for row-scoped buttons (rename,
-// delete). Added for the optical-flow model vault, which is exactly this component's stated case —
-// "a model" — and had been hand-rolled as a <ul> before that was noticed. Clicks inside it do NOT
-// select the row.
+// Two scoped slots keep a caller from forking it:
+//   #actions            a trailing cell per row for row-scoped buttons (rename, delete). Clicks
+//                       inside it do NOT select the row.
+//   #cell-<columnKey>   render one cell yourself — an inline edit, a badge, an icon — falling back to
+//                       the verbatim value, which is what every column was before the slot existed.
 //
-// Rows are selected by CLICKING ANYWHERE on the row; the radio is a visual + a11y affordance, not
-// the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
+// Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
+// not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, getCurrentInstance } from 'vue'
 import { sortRows, cycleSort, sortIconFor, type SortState, type SortValue } from '../utils/sortRows'
 import { useColumnResize } from '../composables/useColumnResize'
+import { allSelected as allChosen, someSelected as someChosen,
+         toggleAllSelection, toggleOneSelection } from '../utils/tableSelection'
 
 export interface SelectionColumn {
   /** key into the row object; its value is rendered verbatim */
@@ -43,8 +51,17 @@ export interface SelectionColumn {
 const props = withDefaults(defineProps<{
   columns: SelectionColumn[]
   rows: Record<string, any>[]
-  /** currently selected row id */
-  modelValue: string
+  /** the chosen row id (`selectionMode: 'single'`). Ignored by the other two modes. */
+  modelValue?: string
+  /**
+   * The chosen row ids (`selectionMode: 'multi'`), as `v-model:selected`.
+   *
+   * A SEPARATE model rather than widening `modelValue` to `string | string[]`: that union propagates
+   * into every single-select caller's handler signature, so the three existing consumers would each
+   * have to start handling an array they can never receive. One id and many ids are different data,
+   * and naming them differently keeps each caller's types honest.
+   */
+  selected?: string[]
   /** which row field is the id (defaults to `name`) */
   idKey?: string
   disabled?: boolean
@@ -61,6 +78,27 @@ const props = withDefaults(defineProps<{
   columnWidthKey?: string
   /** starting px width per column when `columnWidthKey` is set. */
   defaultColumnWidth?: number
+  /**
+   * How a row is picked (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 9):
+   *
+   *  - `single` a radio; `modelValue` is the chosen id. The original behaviour, still the default.
+   *  - `multi`  a checkbox per row; `modelValue` is an array of ids.
+   *  - `none`   no pick column at all — the table is a LIST, and what a row click means is the
+   *             caller's business (`@row-click`: navigate into a directory, open a notebook).
+   *
+   * Four hand-rolled tables existed only because this axis didn't: a table with no selection, or with
+   * checkboxes, had nowhere to go and grew its own `<thead>`/`<tbody>`/hover CSS — and none of them
+   * could sort or resize as a result.
+   */
+  selectionMode?: 'single' | 'multi' | 'none'
+  /**
+   * Extra classes for a row — `{ 'dir-row': e.isdir, active: … }`, exactly as you'd write on a `<tr>`.
+   * Three of the four migrated tables state something about a row in CSS (a directory, an already-open
+   * project, an excluded image), and none of it is the table's business to know.
+   */
+  rowClass?: (row: Record<string, any>) => string | Record<string, boolean>
+  /** Rows the checkbox can't reach in `multi` (already migrated, not an image, …), by id. */
+  disabledIds?: string[]
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -68,21 +106,59 @@ const props = withDefaults(defineProps<{
   sortStorageKey: '',
   columnWidthKey: '',
   defaultColumnWidth: 140,
+  selectionMode: 'single',
+  disabledIds: () => [],
 })
 
-const emit = defineEmits<{ 'update:modelValue': [string] }>()
+const emit = defineEmits<{
+  'update:modelValue': [string]
+  'update:selected': [string[]]
+  /** a row was clicked. Always fires, whatever the selection mode — `none` uses only this. */
+  'row-click': [Record<string, any>]
+  'row-dblclick': [Record<string, any>]
+}>()
 
 const idOf = (row: Record<string, any>) => String(row[props.idKey])
 const tipOf = (row: Record<string, any>) =>
   props.rowTooltip ? props.rowTooltip(row) : 'Select this option'
 
+// A `none`-mode row is only interactive if the caller listens for the click, so the pointer cursor and
+// the hover highlight follow that rather than being on unconditionally — a list of read-only rows that
+// lights up under the mouse promises something it doesn't do.
+const inst = getCurrentInstance()
+const rowsClickable = computed(() =>
+  props.selectionMode !== 'none' || !!inst?.vnode.props?.onRowClick)
+
+/** The chosen ids, whichever mode — one shape for the template so it never branches on the mode. */
+const selectedIds = computed<string[]>(() =>
+  props.selectionMode === 'multi' ? (props.selected ?? [])
+    : props.modelValue ? [props.modelValue] : [])
+const isPicked = (row: Record<string, any>) => selectedIds.value.includes(idOf(row))
+
 function pick(row: Record<string, any>) {
-  if (props.disabled) return
+  emit('row-click', row)
+  if (props.disabled || props.selectionMode === 'none') return
   const id = idOf(row)
+  if (props.selectionMode === 'multi') {
+    emit('update:selected', toggleOneSelection(id, selectedIds.value))
+    return
+  }
   if (id !== props.modelValue) emit('update:modelValue', id)
 }
 
-const selected = computed(() => props.modelValue)
+// ── Select-all (multi) ─────────────────────────────────────────────────────────
+// Lives here rather than being a caller's header cell: it is part of what `multi` MEANS, and both
+// tables that had it had also hand-rolled the same tri-state (`allSelected` / `someSelected` /
+// `:indeterminate.prop`). It only ever covers the rows currently RENDERED — a select-all that reached
+// rows a filter is hiding is the classic way to act on something you cannot see.
+const selectableIds = computed(() =>
+  sortedRows.value.map(idOf).filter(id => !props.disabledIds.includes(id)))
+const allSelected  = computed(() => allChosen(selectableIds.value, selectedIds.value))
+const someSelected = computed(() => someChosen(selectableIds.value, selectedIds.value))
+function toggleAll() {
+  if (props.disabled) return
+  emit('update:selected', toggleAllSelection(selectableIds.value, selectedIds.value))
+}
 
 // ── Sorting (opt-in per column) ────────────────────────────────────────────────
 // A header cycles asc → desc → OFF, where off restores the order the caller handed us — which is
@@ -136,13 +212,17 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
   <table class="sel-table" :class="{ sized: resizable }">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="resizable">
-      <col class="sel-col-pick">
+      <col v-if="selectionMode !== 'none'" class="sel-col-pick">
       <col v-for="c in columns" :key="c.key" :style="{ width: widthOf(c.key) }">
       <col v-if="$slots.actions">
     </colgroup>
     <thead>
       <tr>
-        <th></th>
+        <th v-if="selectionMode !== 'none'">
+          <input v-if="selectionMode === 'multi'" type="checkbox" :checked="allSelected"
+                 :indeterminate.prop="someSelected" :disabled="disabled" @click.stop="toggleAll"
+                 v-tooltip.right="'Select all / none'" />
+        </th>
         <th v-for="c in columns" :key="c.key"
             v-tooltip.bottom="c.sortable ? `${c.label} — click to sort` : undefined">
           <span v-if="c.sortable" class="sel-th-sort" :class="{ active: sortActive(c.key) }"
@@ -158,22 +238,43 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
       </tr>
     </thead>
     <tbody>
-      <tr v-for="row in sortedRows" :key="idOf(row)"
-          :class="{ 'sel-row': true, 'sel-on': idOf(row) === selected }"
+      <template v-for="row in sortedRows" :key="idOf(row)">
+      <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isPicked(row) }, rowClass?.(row)]"
           v-tooltip.top="tipOf(row)"
-          @click="pick(row)">
-        <td>
-          <input type="radio" :checked="idOf(row) === selected" :disabled="disabled" tabindex="-1">
+          @click="pick(row)" @dblclick="$emit('row-dblclick', row)">
+        <td v-if="selectionMode !== 'none'">
+          <input :type="selectionMode === 'multi' ? 'checkbox' : 'radio'"
+                 :checked="isPicked(row)"
+                 :disabled="disabled || disabledIds.includes(idOf(row))" tabindex="-1">
         </td>
         <td v-for="c in columns" :key="c.key" :class="{ 'sel-ellipsis': c.ellipsis }">
-          <a v-if="c.kind === 'link' && row[c.key]" :href="row[c.key]" target="_blank"
-             rel="noopener" @click.stop><i class="pi pi-external-link" /></a>
-          <template v-else-if="c.kind !== 'link'">{{ row[c.key] }}</template>
+          <!-- A caller may render a cell itself — an inline edit, a badge, an icon — without forking
+               the table. Falls through to the verbatim value, which is what every column was. -->
+          <slot :name="`cell-${c.key}`" :row="row" :value="row[c.key]">
+            <a v-if="c.kind === 'link' && row[c.key]" :href="row[c.key]" target="_blank"
+               rel="noopener" @click.stop><i class="pi pi-external-link" /></a>
+            <template v-else-if="c.kind !== 'link'">{{ row[c.key] }}</template>
+          </slot>
         </td>
         <!-- Per-row actions (rename, delete, …). `@click.stop` so a button never doubles as a row
              pick — the row hit target is the whole row, which would otherwise swallow the intent. -->
         <td v-if="$slots.actions" class="sel-actions" @click.stop>
           <slot name="actions" :row="row" />
+        </td>
+      </tr>
+      <!-- An expanded detail row under its row, spanning every column — a version history, a preview,
+           a diff. The caller decides which row is open (the slot simply renders nothing for the rest),
+           so the table keeps no expansion state of its own. -->
+      <tr v-if="$slots['row-detail']" class="sel-detail-row">
+        <td :colspan="columns.length + (selectionMode !== 'none' ? 1 : 0) + ($slots.actions ? 1 : 0)">
+          <slot name="row-detail" :row="row" />
+        </td>
+      </tr>
+      </template>
+      <tr v-if="!sortedRows.length && $slots.empty">
+        <td :colspan="columns.length + (selectionMode !== 'none' ? 1 : 0) + ($slots.actions ? 1 : 0)"
+            class="sel-empty">
+          <slot name="empty" />
         </td>
       </tr>
     </tbody>
@@ -220,6 +321,9 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
 .sel-col-resize:hover::after { background: var(--cc-accent); }
 /* an over-long value truncates instead of widening the table; the row tooltip carries the full text */
 .sel-ellipsis { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* an EMPTY `row-detail` slot still renders a <tr>, so it must not draw a border/hover of its own */
+.sel-detail-row:hover { background: none; }
+.sel-empty { text-align: center; padding: 0.6rem; }
 .sel-row { cursor: pointer; }
 .sel-row:hover { background: var(--cc-surface-2); }
 /* selected = amber, as a tint + left rule rather than a solid fill — `--cc-selected` is the house
