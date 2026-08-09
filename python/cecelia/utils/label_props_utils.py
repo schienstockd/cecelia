@@ -74,6 +74,29 @@ def physical_size_for_axis(sizes_zyx, axis):
     return float(sizes_zyx[idx])
 
 
+def scale_centroids(df, sizes_zyx, copy=True):
+    """Scale whichever of ``centroid_x``/``_y``/``_z`` are present on `df` from **pixels to µm**, each
+    column by ITS OWN axis resolution — never by tail position, so a 2D frame is handled correctly. An
+    absent centroid column is skipped; a frame with none comes back unchanged.
+
+    Mirror of the Julia ``scale_centroids!`` (`app/src/label_props.jl`) — THE one pixel→µm conversion for
+    centroids in each language, so the two sides of the boundary cannot drift. `sizes_zyx` is the
+    ``[sz, sy, sx]`` vector Julia's ``img_physical_sizes`` hands every task.
+
+    ``centroid_t`` is deliberately NOT scaled: it stays a FRAME index (btrack's `t` is a frame number,
+    and scaling it would silently redefine every frame-counted parameter — see PR #491).
+
+    Centroids are stored in PIXELS on disk, always (docs/DATAMODEL.md); this converts on read only.
+    `copy=False` scales in place.
+    """
+    out = df.copy() if copy else df
+    for col in list(out.columns):
+        if re.match(r"^centroid_[xyz]$", str(col)):
+            out[col] = out[col].to_numpy(dtype=np.float64) * physical_size_for_axis(
+                sizes_zyx, axis_of(col))
+    return out
+
+
 # ── channel-name ↔ raw intensity column (mirror of the Julia label_props.jl helpers) ─────────────────
 # Intensity columns are stored raw as `{mean|median}_intensity_{i}` (+ optional channel-type prefix like
 # `nuc_`); they display as the image's channel names, positionally (index i ↔ chans[i], 0-based). These

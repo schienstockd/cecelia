@@ -79,7 +79,7 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     nrow(df) == 0 && (on_log("[ERROR] clustRegions: no cells for basis pops=$(pops)"); return nothing)
 
     # basis populations (value_name, pop) pairs + per-segment codes — shared resolver (spatial.jl)
-    basis, segments, _phys = _basis_segments(imgs, df)
+    basis, segments = _basis_segments(imgs, df)
     length(basis) < 2 &&
         (on_log("[ERROR] clustRegions: need ≥2 basis populations to form a composition (got $(basis))"); return nothing)
     isempty(segments) && (on_log("[ERROR] clustRegions: no segments resolved"); return nothing)

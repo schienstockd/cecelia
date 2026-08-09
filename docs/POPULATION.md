@@ -178,6 +178,24 @@ as **empty membership + a warning**, never a hard error — one absent column ca
 
 ## `pop_df` — unified accessor
 
+> **`pop_df` is THE accessor for population data; `label_props` is the escape hatch.** Any function
+> that needs a population's cells or tracks goes through `pop_df` — including their **coordinates**
+> (`centroids = :pixel | :physical`, below). A REPL or notebook user should never have to touch the
+> label-props view to get population data: `pop_df` is what the data *is*.
+>
+> `label_props` stays the right tool for exactly three jobs, and nothing else:
+> 1. **Writes** — `add_obs`/`save!`. `pop_df` is read-only.
+> 2. **The Python boundary** — there is no `pop_df` in Python; a task hands Python a `propsPath` +
+>    label ids, and it reads `LabelPropsView` (btrack, `spatial_utils`, the napari bridge).
+> 3. **Reads with no population** — every cell of a table regardless of membership
+>    (`tracking.track_measures` wants every cell carrying a `track_id`), or a bespoke column set.
+>
+> There is **no performance reason** to prefer `label_props` for population data: with `pop_cols`
+> (or `centroids`) the columns are pushed into the same narrow read, measured identical to a bare
+> `view_centroid_cols` at 1.5M cells. Reading membership from `pop_df` and then re-reading the
+> centroids off disk — which `detectAggregates`/`cellContacts` used to do — is two reads for one
+> job and was measurably slower (953 ms → 458 ms at 1.5M cells).
+
 > **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the `pop_map`
 > accessors (`load_pop_map`/`save_pop_map!`) — the generic, `pop_type`-neutral population layer.
 > Deliberately **not** in `gating_engine.jl`: the accessor serves all `pop_type`s (`flow`, `live`,
@@ -190,10 +208,34 @@ pop_df(obj, pop_type, pops;
        include_x=false, include_obs=true,
        drop_na=false, unique_labels=true, flush_cache=false,
        raw_channel_names=false, granularity=:cell,
-       cell_measures=String[], categorical=String[]) -> DataFrame
+       cell_measures=String[], categorical=String[],
+       centroids=false) -> DataFrame
 ```
 
 Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capabilities:
+
+- **Coordinates, in the unit you want (`centroids`).** `false` (default) leaves today's behaviour
+  alone; `:pixel` adds the segmentation's centroid columns **as stored** (pixels, and `centroid_t`
+  in frames); `:physical` adds them with x/y/z converted to **µm**. The caller never names the
+  columns — which axes exist differs per segmentation (no `centroid_z` on a 2D image), so the set is
+  resolved **per value_name** and pushed into the same read.
+
+  Three properties worth knowing:
+  - **Conversion is `scale_centroids!`, the one shared helper** (`label_props.jl`, mirrored in Python
+    as `label_props_utils.scale_centroids`) — each column scaled by *its own* axis resolution, by
+    name, never by tail position. It is the same conversion `track_measures`, `cellContacts`,
+    `detectAggregates`, `spatial_utils` and btrack use.
+  - **Scaling happens per image, before pooling.** The set-level `pop_df(imgs, uids, …)` calls the
+    single-image method per image, so pooling across images with *different pixel sizes* is correct
+    by construction. Never scale a pooled frame afterwards — it has no single physical size.
+  - **It fails loudly rather than lying.** An **uncalibrated** image warns and returns pixels
+    (`img_physical_sizes` defaults a missing axis to `1.0`, which is indistinguishable from a real
+    1 µm/px — see `img_is_calibrated`); a frame with no cell coordinates at all (a `:track`-grained
+    or `branch` frame) warns too, instead of ignoring the argument.
+
+  `centroid_t` is **never** scaled — it stays a frame index, the same choice btrack made (scaling
+  time silently redefines every frame-counted parameter). Use `img_physical_sizes(img)[2]`
+  (minutes/frame) if you need physical time.
 
 - **Channel names resolved by default.** Intensity columns are returned under their channel
   names (`mean_intensity_0` → `"CD4"`, `nuc_mean_intensity_0` → `"nuc_CD4"`), mirroring R

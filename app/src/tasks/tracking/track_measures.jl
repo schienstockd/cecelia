@@ -200,8 +200,10 @@ function _load_tracks_with_labels(props_path::String,
     select_cols(lp, vcat(spatial_cols, temporal_cols, ["track_id"]))
     df = as_df(lp; include_x=false, include_obs=true)
 
-    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
-    res = [physical_size_for_axis(pixel_res, axis_of(c)) for c in spatial_cols]
+    # pixels → µm via the ONE shared conversion (`scale_centroids!`), so this cannot drift from what
+    # `pop_df(…; centroids = :physical)` and the spatial tasks compute. Not `pop_df` itself: this wants
+    # every cell carrying a `track_id`, which is not a population — no membership to resolve.
+    scale_centroids!(df, pixel_res)
 
     _to_int(x) = x isa Integer ? Int(x) : Int(round(Float64(x)))
 
@@ -209,8 +211,10 @@ function _load_tracks_with_labels(props_path::String,
     for row in eachrow(df)
         tid = row.track_id
         (tid isa Number && !isnan(tid)) || continue          # untracked cells: NaN/missing
+        # time is scaled here, not by `scale_centroids!` — that leaves `centroid_t` a frame index on
+        # purpose (see its docstring); `Track` wants minutes so speed comes out µm/min.
         t_phys = Float64(row[t_col]) * time_step
-        coords = [Float64(row[spatial_cols[k]]) * res[k] for k in eachindex(spatial_cols)]
+        coords = [Float64(row[c]) for c in spatial_cols]
         push!(get!(groups, Int(tid), []), (t_phys, coords, _to_int(row.label)))
     end
 

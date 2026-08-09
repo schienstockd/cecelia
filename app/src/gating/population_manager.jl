@@ -1273,7 +1273,7 @@ _pop_df_mtime(p::AbstractString) = isfile(p) ? string(mtime(p)) : "∅"
 # a manual override for in-memory edits that were never written to disk.
 function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols, include_x,
                            include_obs, unique_labels, drop_na, raw_channel_names,
-                           granularity, cell_measures, categorical)::String
+                           granularity, cell_measures, categorical, centroids = false)::String
     is_track  = String(pop_type) == "track"
     is_branch = String(pop_type) == "branch"
     stamps = String[]
@@ -1297,6 +1297,10 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
              include_x, include_obs, unique_labels, drop_na, raw_channel_names, granularity,
              join(sort(String.(collect(cell_measures))), "&"),
              join(sort(String.(collect(categorical))), "&"),
+             # only WHETHER centroids were read belongs in the key, not the unit: the cache holds the
+             # frame as read (pixels) and `:physical` scales the returned copy, so `:pixel` and
+             # `:physical` legitimately share one cached read instead of doubling the entries.
+             centroids !== false,
              join(stamps, "|"))
     string(hash(parts))
 end
@@ -1345,10 +1349,54 @@ function resolve_pops(img::CciaImage, pop_type::AbstractString;
     out
 end
 
+# Ensure a `fetch(vn, cols)` provider also returns `vn`'s centroid columns. Resolved PER value_name —
+# which axes exist differs per segmentation (no `centroid_z` on a 2D one), so a single global column
+# list would ask a 2D file for a column it hasn't got. Appended to the PUSHDOWN (not filtered after the
+# read), so `centroids=` costs the same as naming the columns in `pop_cols`: measured identical to a
+# bare `view_centroid_cols` read at 1.5M cells. An EMPTY selection is already the read-everything
+# shape, which carries the centroids anyway — leave it alone rather than narrowing it.
+_fetch_with_centroids(img::CciaImage, fetch::Function) = function (vn, cols)
+    isempty(cols) && return fetch(vn, cols)
+    lp = label_props(img; value_name = vn)
+    fetch(vn, unique(vcat(String.(cols), centroid_columns(lp), temporal_columns(lp))))
+end
+
+# The ONE exit for every `pop_df` branch: the cache holds the frame AS READ (pixels), and the unit
+# conversion is applied to the returned COPY. Two reasons it goes here rather than at each `return`:
+# `pop_df` has five of them (track/trackclust, branch, labels, :track, cell) and a new one would
+# silently skip the conversion; and scaling the copy keeps the cached frame in one coordinate system, so
+# `:pixel` and `:physical` can share a cached read (`copy` is copycols=true, so this cannot write
+# through to it).
+#
+# `img` is in scope for the whole method — a `pop_df` call is always scoped to ONE image — so no per-row
+# image lookup is needed. The set-level method calls this one per image, which is what makes pooling
+# across images with DIFFERENT pixel sizes correct: each contribution is scaled before the `vcat`, and a
+# pooled frame never has one physical size applied to it afterwards.
+function _pop_df_finish(df::DataFrame, img::CciaImage, centroids::Union{Bool,Symbol})::DataFrame
+    centroids === false && return df
+    if !any(c -> occursin(r"^centroid_[xyz]$", c), names(df))
+        # A track-grained or branch frame has no cell coordinates to convert (track tables hold measures
+        # + lineage; a branch table's coordinates are `image-coord-src/dst-*`, not centroids). Say so
+        # instead of handing back a frame that quietly ignored the argument.
+        nrow(df) == 0 || @warn "pop_df(centroids=$(repr(centroids))): no centroid_x/_y/_z in this \
+            frame — track-grained and branch frames carry no cell coordinates." maxlog = 1
+        return df
+    end
+    centroids === :pixel && return df
+    if !img_is_calibrated(img)
+        # `img_physical_sizes` defaults a missing axis to 1.0, so scaling would be a no-op that is
+        # nonetheless LABELLED µm. Pixels are the honest answer; say which one the caller got.
+        @warn "pop_df(centroids=:physical): image '$(img.uid)' has no physical pixel size — returning \
+            PIXELS, not µm. Set it on the image (Image info → physical size) and re-run." maxlog = 1
+        return df
+    end
+    scale_centroids!(df, img)
+end
+
 """
     pop_df(img, pop_type, pops; value_name=nothing, pop_cols=nothing, include_x=false,
            include_obs=true, unique_labels=true, drop_na=false, flush_cache=false,
-           raw_channel_names=false) -> DataFrame
+           raw_channel_names=false, centroids=false) -> DataFrame
 
 Unified population accessor. Returns the cells of `pops` with a `pop` + `value_name`
 column and the requested `pop_cols` (read from the H5AD via `label_props`). Pools across
@@ -1393,6 +1441,22 @@ By default intensity columns are returned under their **channel names** (e.g.
 `pop_cols` may name an intensity column **by its channel name** (`"CD4"`, `"nuc_CD4"`) OR by its raw
 `{measure}_intensity_{i}` name — the reader resolves a channel name to its raw column, so you can
 request the name you see. (Get the channel names from `get_gating_channels`/`get_measure_summary`.)
+
+`centroids` adds the cells' **coordinates** without you having to name the columns (which axes exist
+differs per segmentation — no `centroid_z` on a 2D image):
+- `false` (default) — unchanged: present in the frame only if you asked for them (via `pop_cols`) or
+  requested no columns at all.
+- `:pixel` — the present `centroid_x`/`_y`/`_z` (+ `centroid_t`), **as stored: pixels and frames**.
+  Resolved per value_name, so pooling a 2D and a 3D segmentation in one call works.
+- `:physical` — the same columns with x/y/z scaled to **µm** (`scale_centroids!`, each axis by its own
+  resolution). Applied per image *before* pooling, so a set-level call across images with different
+  pixel sizes is correct — a pooled frame has no single physical size to apply afterwards.
+  `centroid_t` stays a FRAME index (see `scale_centroids!`).
+
+Prefer this over reading centroids through `label_props` yourself: it is the same narrow read (the
+columns are pushed into the reader, not filtered afterwards) and it resolves membership in the same
+call. On an **uncalibrated** image `:physical` warns and returns pixels — `img_physical_sizes` defaults
+a missing axis to 1.0, so there is otherwise nothing to tell "µm" and "pixels" apart.
 """
 function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                 value_name::Union{AbstractString,Nothing}=nothing, pop_cols=nothing,
@@ -1400,9 +1464,12 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                 drop_na::Bool=false, flush_cache::Bool=false,
                 raw_channel_names::Bool=false, granularity::Symbol=:cell,
                 cell_measures=String[], categorical=String[],
-                expand_cluster_pops::Bool=true)::DataFrame
+                expand_cluster_pops::Bool=true,
+                centroids::Union{Bool,Symbol}=false)::DataFrame
     granularity in (:cell, :track) ||
         error("pop_df: granularity must be :cell or :track (got :$granularity)")
+    (centroids === false || centroids === :pixel || centroids === :physical) ||
+        error("pop_df: centroids must be false, :pixel or :physical (got $(repr(centroids)))")
     # value_name=nothing → active segmentation key (same resolution as label_props(img))
     resolved_vn = resolve_value_name(img, value_name)
     # cluster pops are GLOBAL to a run → a bare ref spans all co-clustered segmentations (R popDT
@@ -1420,9 +1487,10 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
 
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,
-                             cell_measures, categorical)
+                             cell_measures, categorical, centroids)
     flush_cache && delete!(img._pop_df_cache, ckey)
-    haskey(img._pop_df_cache, ckey) && return copy(img._pop_df_cache[ckey]::DataFrame)
+    haskey(img._pop_df_cache, ckey) &&
+        return _pop_df_finish(copy(img._pop_df_cache[ckey]::DataFrame), img, centroids)
 
     # `track` / `trackclust` pop_types: membership is defined directly on per-track properties
     # (one point per track), evaluated over the `track_props` table — `track` via hand-drawn gates
@@ -1437,7 +1505,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                                   unique_labels=unique_labels, drop_na=drop_na,
                                   granularity=granularity)
         img._pop_df_cache[ckey] = df
-        return copy(df)
+        return _pop_df_finish(copy(df), img, centroids)
     end
 
     # `branch` pop_type: gates on per-branch measurements (branch-type, length, tortuosity, …) in
@@ -1453,11 +1521,15 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
             isempty(cols) || select_cols(lp, cols)
             as_df(lp; include_x=(isempty(cols) ? include_x : true), include_obs=include_obs)
         end
+        # NOT decorated with `centroids`: a branch table has no cell centroids at all — its coordinates
+        # are `image-coord-src/dst-*` (see `branch_segments` in anisotropy.jl), and resolving centroid
+        # names here would read the CELL table's axes against the branch sidecar. `_pop_df_finish` warns
+        # if a caller asked for coordinates on this path.
         df = _pop_df(branch_load, branch_fetch, "branch", pops;
                      default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
                      drop_na=drop_na, membership_fetch=branch_fetch)
         img._pop_df_cache[ckey] = df
-        return copy(df)
+        return _pop_df_finish(copy(df), img, centroids)
     end
 
     # `labels` pop_type: ALL cells of the segmentation's labelProps, UNGATED — no gating map, no
@@ -1476,13 +1548,18 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         # path is for gated/measure reads — to summarise an OBS column (HMM state, clusters), read it
         # directly via `as_df`, not through here (obs isn't a first-class pushdown target).
         no_cols = pop_cols === nothing || isempty(pop_cols)
-        no_cols || select_cols(lp, String.(pop_cols))
+        # `centroids` widens a narrowed read to include this value_name's coordinate columns; the
+        # no-columns read already returns label/centroids, so it needs nothing.
+        cols = no_cols ? String[] :
+               (centroids === false ? String.(pop_cols) :
+                unique(vcat(String.(pop_cols), centroid_columns(lp), temporal_columns(lp))))
+        no_cols || select_cols(lp, cols)
         df = as_df(lp; include_x=(no_cols ? include_x : true),
                        include_obs=(no_cols ? false : include_obs))
         df[!, "value_name"] .= resolved_vn
         df[!, "pop"]        .= "/labels"
         img._pop_df_cache[ckey] = df
-        return copy(df)
+        return _pop_df_finish(copy(df), img, centroids)
     end
 
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
@@ -1505,7 +1582,7 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                             pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na,
                             cell_measures=cell_measures, categorical=categorical)
         img._pop_df_cache[ckey] = df
-        return copy(df)
+        return _pop_df_finish(copy(df), img, centroids)
     end
     # label_props chain idiom (docs/DATAMODEL.md). Output columns resolve channel names by
     # default (raw_channel_names=true keeps raw); the conditional select + as_df kwargs keep
@@ -1521,11 +1598,15 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         isempty(cols) || select_cols(lp, cols)
         as_df(lp; include_x=(isempty(cols) ? include_x : true), include_obs=include_obs)
     end
-    df = _pop_df(load_map, fetch, pop_type, pops;
+    # only the OUTPUT fetch gains the centroid columns — gate eval (`membership_fetch`) reads exactly
+    # the columns its gates name and must not be widened.
+    out_fetch = centroids === false ? fetch : _fetch_with_centroids(img, fetch)
+    df = _pop_df(load_map, out_fetch, pop_type, pops;
                  default_vn=resolved_vn, pop_cols=pop_cols, unique_labels=unique_labels,
                  drop_na=drop_na, membership_fetch=membership_fetch)
     img._pop_df_cache[ckey] = df
-    copy(df)   # return a copy so callers never mutate the cached frame
+    # a copy so callers never mutate the cached frame; `_pop_df_finish` converts units on that copy
+    _pop_df_finish(copy(df), img, centroids)
 end
 
 """
@@ -1538,6 +1619,10 @@ in images X/Y/Z). `uids` is parallel to `imgs` (the API passes a `CciaSet`'s `_i
 Per-image rows are already deduped within their image; the `uID` column keeps same-label cells from
 different images distinct (the `uID` is part of `pop_df`'s dedup key — see `_pop_df`). All `kwargs`
 (`value_name`/`pop_cols`/`granularity`/…) pass straight through to the per-image `pop_df`.
+
+Because the work happens per image, `centroids = :physical` is correct across images with **different
+pixel sizes**: each image's coordinates are scaled with its OWN resolution before the `vcat`. Never
+scale a pooled frame afterwards — it has no single physical size to apply.
 """
 function pop_df(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector, pop_type::AbstractString,
                 pops; kwargs...)::DataFrame

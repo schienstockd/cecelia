@@ -70,7 +70,7 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
     # under its own type; set-scope form carries uID (shared _basis_segments).
     df = pop_df_multi([img], [img.uid], pops; pop_cols = String[], granularity = :cell)
     nrow(df) == 0 && (on_log("[ERROR] neighbourStats: no cells for pops=$(pops)"); return nothing)
-    basis, segments, _phys = _basis_segments([img], df)
+    basis, segments = _basis_segments([img], df)
     length(basis) < 2 &&
         (on_log("[ERROR] neighbourStats: need ≥2 populations for pairwise stats (got $(basis))"); return nothing)
 

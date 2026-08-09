@@ -54,6 +54,59 @@ class TestByAxisResolution(unittest.TestCase):
         self.assertEqual(physical_size_for_axis(phys, axis_of("centroid_x")), 0.25)
 
 
+class TestScaleCentroids(unittest.TestCase):
+    """The Python half of THE one pixel→µm centroid conversion. Its Julia mirror
+    (`scale_centroids!`) is asserted on the same numbers in app/test/suite.jl, so the two
+    languages cannot drift on which axis scales by what."""
+
+    PHYS = [3.0, 0.5, 0.25]   # [sz, sy, sx]
+
+    def _df(self, with_z=True):
+        import pandas as pd
+        d = {"label": [1, 2], "centroid_x": [100.0, 200.0], "centroid_y": [10.0, 20.0],
+             "centroid_t": [0.0, 1.0], "area": [5.0, 6.0]}
+        if with_z:
+            d["centroid_z"] = [4.0, 8.0]
+        return pd.DataFrame(d)
+
+    def test_each_axis_by_its_own_resolution(self):
+        from cecelia.utils.label_props_utils import scale_centroids
+        out = scale_centroids(self._df(), self.PHYS)
+        self.assertEqual(list(out["centroid_x"]), [25.0, 50.0])    # ×sx 0.25
+        self.assertEqual(list(out["centroid_y"]), [5.0, 10.0])     # ×sy 0.5
+        self.assertEqual(list(out["centroid_z"]), [12.0, 24.0])    # ×sz 3.0
+
+    def test_time_and_measures_untouched(self):
+        from cecelia.utils.label_props_utils import scale_centroids
+        out = scale_centroids(self._df(), self.PHYS)
+        self.assertEqual(list(out["centroid_t"]), [0.0, 1.0])      # frames, deliberately not scaled
+        self.assertEqual(list(out["area"]), [5.0, 6.0])
+        self.assertEqual(list(out["label"]), [1, 2])
+
+    def test_2d_frame_scales_x_by_sx_not_by_position(self):
+        # the whole point of by-name mapping: with no centroid_z, x must STILL use sx (0.25).
+        # A tail-aligned implementation would hand x the sy value here.
+        from cecelia.utils.label_props_utils import scale_centroids
+        out = scale_centroids(self._df(with_z=False), self.PHYS)
+        self.assertEqual(list(out["centroid_x"]), [25.0, 50.0])
+        self.assertEqual(list(out["centroid_y"]), [5.0, 10.0])
+        self.assertNotIn("centroid_z", out.columns)
+
+    def test_no_centroid_columns_is_a_noop(self):
+        import pandas as pd
+        from cecelia.utils.label_props_utils import scale_centroids
+        df = pd.DataFrame({"label": [1], "area": [5.0]})
+        self.assertTrue(scale_centroids(df, self.PHYS).equals(df))
+
+    def test_copy_by_default_and_in_place_on_request(self):
+        from cecelia.utils.label_props_utils import scale_centroids
+        df = self._df()
+        scale_centroids(df, self.PHYS)
+        self.assertEqual(list(df["centroid_x"]), [100.0, 200.0])   # untouched
+        scale_centroids(df, self.PHYS, copy=False)
+        self.assertEqual(list(df["centroid_x"]), [25.0, 50.0])
+
+
 class TestNormaliseCentroids(unittest.TestCase):
     def test_case_a_relabel_matrix_untouched(self):
         a = _legacy_obsm(3)

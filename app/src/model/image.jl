@@ -507,6 +507,28 @@ function img_physical_sizes(img::CciaImage)::Tuple{Vector{Float64}, Float64}
 end
 
 """
+    img_is_calibrated(img) -> Bool
+
+Whether the image carries a real physical pixel size (`PhysicalSizeX` **and** `PhysicalSizeY` present
+and > 0). `PhysicalSizeZ` is not required — a 2D image legitimately has none.
+
+The companion to `img_physical_sizes`, which defaults a missing axis to `1.0` so that measures stay
+correct in pixel units. That default is deliberately indistinguishable from a genuine 1 µm/px, so any
+consumer that *reports* µm (rather than just computing) needs this to tell "uncalibrated" from
+"calibrated at 1.0" — `pop_df(…; centroids = :physical)` uses it to warn instead of relabelling pixels
+as microns. (`api_images_meta_get` keeps the same distinction for the UI by reading `meta` raw.)
+"""
+function img_is_calibrated(img::CciaImage)::Bool
+    ok(key) = begin
+        v = get(img.meta, key, nothing)
+        (isnothing(v) || v == "") && return false
+        p = tryparse_f64(v)
+        !isnothing(p) && p > 0
+    end
+    ok("PhysicalSizeX") && ok("PhysicalSizeY")
+end
+
+"""
     physical_size_for_axis(img_or_sizes, axis::Symbol) -> Float64
 
 Physical pixel size (µm/px) for ONE spatial axis (`:x`/`:y`/`:z`). Explicit per-axis lookup so a
