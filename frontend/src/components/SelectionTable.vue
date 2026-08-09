@@ -82,6 +82,15 @@ const props = withDefaults(defineProps<{
   /** starting px width per column when `columnWidthKey` is set. */
   defaultColumnWidth?: number
   /**
+   * Width of the trailing `#actions` column when the sized path is on.
+   *
+   * It MUST be declared. `table-layout: fixed` splits only what is left over between columns with no
+   * width — so in a panel narrower than the declared columns there is nothing left, and the actions
+   * column collapses to zero: the Movies list asked for 3x150px plus the pick column inside a 380px
+   * panel, and its star and delete buttons simply were not there.
+   */
+  actionsWidth?: string
+  /**
    * How a row is picked (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 9):
    *
    *  - `single` a radio; `modelValue` is the chosen id. The original behaviour, still the default.
@@ -115,6 +124,7 @@ const props = withDefaults(defineProps<{
   sortStorageKey: '',
   columnWidthKey: '',
   defaultColumnWidth: 140,
+  actionsWidth: '4.5rem',
   selectionMode: 'single',
   disabledIds: () => [],
 })
@@ -223,7 +233,7 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
     <colgroup v-if="resizable">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
       <col v-for="c in columns" :key="c.key" :style="{ width: widthOf(c.key) }">
-      <col v-if="$slots.actions">
+      <col v-if="$slots.actions" :style="{ width: actionsWidth }">
     </colgroup>
     <thead>
       <tr>

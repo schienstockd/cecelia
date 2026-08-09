@@ -209,10 +209,12 @@ const toggleStar = (r: MovieRow) => patchMeta(r.name, { starred: !r.starred })
 // code change (Decision 3). Editing them is the same inline-edit primitive as the name.
 const { draft: tagDraft, start: startTags, cancel: cancelTags, commit: commitTags,
         focusInput: focusTagInput, isEditing: isTagging } = useInlineEdit()
-const tagKey = (name: string) => `tags:${name}`
-const beginTags = (r: MovieRow) => startTags(tagKey(r.name), r.tags.join(', '))
+// Keyed by the plain movie name, like the rename above: the two `useInlineEdit` instances are already
+// separate, so a `tags:` prefix namespaced nothing and only had to be kept in step in three places —
+// which it wasn't, and the tag input never rendered.
+const beginTags = (r: MovieRow) => startTags(r.name, r.tags.join(', '))
 const saveTags = (r: MovieRow) =>
-  commitTags(tagKey(r.name), r.tags.join(', '), v => patchMeta(r.name, { tags: parseMovieTags(v) }))
+  commitTags(r.name, r.tags.join(', '), v => patchMeta(r.name, { tags: parseMovieTags(v) }))
 
 async function deleteMovie(r: MovieRow) {
   if (!projectUid.value) return
@@ -348,13 +350,23 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
           <SelectionTable class="mov-table" :columns="MOVIE_COLUMNS" :rows="movieTableRows"
                           v-model="selected" id-key="name" sort-storage-key="cc.movies.sort"
                           column-width-key="cc.movies.colw" :default-column-width="150"
+                          actions-width="2.4rem"
                           :row-tooltip="r => `Play ${r.label}`">
+            <!-- The star leads the NAME cell rather than sitting in the actions column: this panel is
+                 380px by default and the sized columns are wider than that, so anything trailing is
+                 off the right edge until you scroll. A bookmark you cannot see is not a bookmark.
+                 `.stop` because the row click plays the movie. -->
+            <template #cell-label="{ row }">
+              <span class="mov-labelcell">
+                <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
+                        @click.stop="toggleStar(row)"
+                        v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
+                  <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
+                </button>
+                <span class="mov-label" :title="row.name">{{ row.label }}</span>
+              </span>
+            </template>
             <template #actions="{ row }">
-              <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
-                      @click="toggleStar(row)"
-                      v-tooltip.left="row.starred ? 'Unstar' : 'Star this movie'">
-                <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
-              </button>
               <ConfirmDeleteButton title="Delete movie" armed-title="Click again to delete"
                                    @confirm="deleteMovie(row)" />
             </template>
@@ -399,6 +411,9 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
 .mov-star:hover { opacity: .7; }
 .mov-star.on { opacity: 1; color: var(--cc-warn); }
 .mov-filters { padding: 0 0.5rem 0.4rem; }
+/* the name cell: star, then the name, which takes the rest and ellipsises rather than widening */
+.mov-labelcell { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.mov-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
 .mov-list { flex: 1; min-width: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
