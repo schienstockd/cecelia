@@ -1,6 +1,7 @@
 # Movie management
 
-**Status:** in-progress (`work/movie-management`) — Phases 0–4 built; Phase 5 (one table) and Phase 6 (edit/recreate) open.
+**Status:** in-progress (`work/movie-management`) — Phases 0–4 built; Phase 5a/5b built (3 of 4 tables
+migrated, `FileBrowser` a stated exception); 5c (`ImageTable`) and Phase 6 (edit/recreate) open.
 Supersedes `docs/prompts/movie-management-component-prompt.md`.
 
 ## Goal
@@ -125,7 +126,7 @@ There are **eight** table surfaces, not two:
 The four hand-rolled ones (`NotebookTable`, `ProjectPanel`, `FileBrowser`, `LegacyMigrateDialog`) are
 **257 lines of table markup and 19 table-CSS rules**, and **not one of them can sort or resize** —
 capabilities `SelectionTable` already has and they would inherit for free. That is the win, and it is
-measured rather than asserted.
+measured rather than asserted. Three of the four migrated; see Phase 5 for why `FileBrowser` did not.
 
 The capability gap is **two axes**, both additive:
 - `selectionMode: 'none' | 'single' | 'multi'` — today the radio is unconditional.
@@ -161,10 +162,18 @@ compose star / tag / `producedBy` with the existing column sort.
 movie with its `producedBy` + config after a successful write. Backend only — nothing reads it yet,
 but every movie recorded from here carries its provenance.
 
-**Phase 5 — one table (Decision 9).** 5a: add `selectionMode` + the `#cell-<key>` slot to
-`SelectionTable`, both additive, existing consumers unchanged. 5b: migrate `NotebookTable`,
-`ProjectPanel`, `FileBrowser`, `LegacyMigrateDialog` — each gains sort and resize on the way in. 5c:
-`ImageTable` last, separately, once 5a/5b have carried real traffic.
+**Phase 5 — one table (Decision 9).** 5a: `SelectionTable` grows the axes the hand-rolled tables were
+missing — `selectionMode`, `#cell-<key>`, `rowClass`, `#row-detail` (gated by `isExpanded`), `#empty`,
+`row-dblclick`, a tri-state select-all that comes with `multi`, and a generic row type so slots hand a
+caller its own type instead of a bare record. 5b: `ProjectPanel`, `LegacyMigrateDialog` and
+`NotebookTable` migrated, each gaining sortable headers. 5c: `ImageTable` last, separately.
+
+**`FileBrowser` is a deliberate exception** — found by doing the migration, not by planning it. Its row
+CLICK is per-row semantics rather than a table concern (a directory navigates, a file selects), its
+`..` row is synthetic and not in the data, and it *omits* the checkbox on unselectable rows where
+`disabledIds` would render a disabled one. Sorting it would need `..` pinned regardless of the sort —
+a new problem, not a free capability. The counted win there was sort/resize, and neither is worth
+those three concessions on a control people use to find files.
 
 **Phase 6 — edit / recreate (PARKED).** An "edit" action that reopens the Animation or Batch page
 prefilled from a saved config. Parked because it needs UX decisions this plan does not make: where it

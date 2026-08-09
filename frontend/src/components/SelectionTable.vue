@@ -102,6 +102,12 @@ const props = withDefaults(defineProps<{
   rowClass?: (row: Row) => string | Record<string, boolean>
   /** Rows the checkbox can't reach in `multi` (already migrated, not an image, …), by id. */
   disabledIds?: string[]
+  /**
+   * Which rows show their `#row-detail`. Required for that slot to render anything: without it the
+   * table would emit a detail `<tr>` under EVERY row and the caller's `v-if` would leave an empty,
+   * bordered, tinted row behind each one. Expansion state stays the CALLER's — the table only asks.
+   */
+  isExpanded?: (row: Row) => boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -268,7 +274,7 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
       <!-- An expanded detail row under its row, spanning every column — a version history, a preview,
            a diff. The caller decides which row is open (the slot simply renders nothing for the rest),
            so the table keeps no expansion state of its own. -->
-      <tr v-if="$slots['row-detail']" class="sel-detail-row">
+      <tr v-if="$slots['row-detail'] && isExpanded?.(row)" class="sel-detail-row">
         <td :colspan="columns.length + (selectionMode !== 'none' ? 1 : 0) + ($slots.actions ? 1 : 0)">
           <slot name="row-detail" :row="row" />
         </td>
@@ -289,7 +295,12 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
   border-collapse: collapse;
   font-size: var(--cc-fs-sm);
 }
-.sel-actions { white-space: nowrap; }
+/* The actions cell: right-aligned and nowrap, and deliberately NOT `display: flex` — that takes the
+   <td> out of the table layout, so it stops sharing the row's height and vertical-align, which reads
+   as a ragged row. `.cc-btn` is inline-flex already, so margin (not `gap`) spaces them — and it spaces
+   EVERY control, since ConfirmDeleteButton's root is `.cc-del`, not `.cc-btn`. */
+.sel-actions { white-space: nowrap; text-align: right; }
+.sel-actions > * + * { margin-left: 0.3rem; }
 .sel-table th {
   text-align: left;
   font-weight: 500;
