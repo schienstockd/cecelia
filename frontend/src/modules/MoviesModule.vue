@@ -177,6 +177,20 @@ const MOVIE_COLUMNS: SelectionColumn[] = [
   { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime', width: 120 },
   { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size',  width: 70 },
 ]
+// ── Filters ───────────────────────────────────────────────────────────────────
+// Star and tags COMPOSE with each other and with the column sort — they answer different questions,
+// so one never replaces another (Decision 3/4). Both persist: a filter that resets on navigation is
+// one the user has to re-apply every time they come back to compare two movies.
+const starredOnly = ref(localStorage.getItem('cc.movies.starredOnly') === 'true')
+watch(starredOnly, v => localStorage.setItem('cc.movies.starredOnly', String(v)))
+const pickedTags = ref<string[]>(JSON.parse(localStorage.getItem('cc.movies.tags') ?? '[]'))
+watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
+
+// Declared BEFORE the rows that read them. `movieTableRows` is a lazy computed, but the `watch` on it
+// further down is NOT lazy — a watcher evaluates its source once at creation to capture the old value,
+// and that reached these two while they were still in the temporal dead zone. Setup threw, so the
+// whole page rendered blank; neither vue-tsc nor the production build sees it, because TS does not
+// track TDZ through a closure.
 const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
 const movieTableRows = computed(() => filterMovieRows(allRows.value, starredOnly.value, pickedTags.value))
 const rowOf = (name: string) => allRows.value.find(r => r.name === name)
@@ -267,15 +281,6 @@ async function deleteChecked() {
     log.error(`Could not delete ${n} movie(s): ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   }
 }
-
-// ── Filters ───────────────────────────────────────────────────────────────────
-// Star and tags COMPOSE with each other and with the column sort — they answer different questions,
-// so one never replaces another (Decision 3/4). Both persist: a filter that resets on navigation is
-// one the user has to re-apply every time they come back to compare two movies.
-const starredOnly = ref(localStorage.getItem('cc.movies.starredOnly') === 'true')
-watch(starredOnly, v => localStorage.setItem('cc.movies.starredOnly', String(v)))
-const pickedTags = ref<string[]>(JSON.parse(localStorage.getItem('cc.movies.tags') ?? '[]'))
-watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
 
 const filterOptions = computed<ChipOption[]>(() => {
   const { tags, producers } = movieFilterOptions(movies.value)

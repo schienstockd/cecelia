@@ -23,8 +23,14 @@
  * - **Top-level calls only** (column 0). A `watch` inside a function or a lifecycle hook runs when
  *   that runs, by which point every `const` is initialised. Indentation is a reliable proxy here
  *   because `<script setup>` bodies in this codebase are not wrapped in anything.
- * - **`computed` is NOT checked.** Its getter is lazy; naming a later const is fine until something
- *   reads it, by which time setup has finished.
+ * - **`computed` is NOT checked** where it is declared. Its getter is lazy; naming a later const is
+ *   fine until something reads it, by which time setup has finished.
+ * - **…but a computed NAMED BY A WATCH SOURCE is followed, one hop.** That is the exception the rule
+ *   above creates, and it is what blanked the Movies page: `watch(movieTableRows, …)` sat above the
+ *   `starredOnly` ref that `movieTableRows` reads. The computed was declared before the watch, so a
+ *   direct check saw nothing — but naming it as a source is precisely what makes its lazy getter run
+ *   at setup, dead zone and all. One hop, not a graph walk: two levels of indirection between a
+ *   watcher and a dead binding has not happened, and a full walk would need real scope analysis.
  */
 
 export interface SetupOrderHazard {
@@ -66,6 +72,12 @@ function callArgs(script: string, at: number): string {
   return script.slice(open + 1)
 }
 
+/** The `computed(...)` getter text for a top-level `const <name> = computed(`, else ''. */
+function computedBody(script: string, name: string): string {
+  const at = script.search(new RegExp(`^(?:const|let)\\s+${name}\\s*=\\s*computed\\s*\\(`, 'm'))
+  return at < 0 ? '' : callArgs(script, at)
+}
+
 /** The first argument only — split at the first comma that is not inside brackets or a string. */
 function firstArg(args: string): string {
   let depth = 0, quote = ''
@@ -88,16 +100,27 @@ export function setupOrderHazards(src: string): SetupOrderHazard[] {
   const lineAt = (i: number) => src.slice(0, scriptAt + i).split('\n').length
 
   const out: SetupOrderHazard[] = []
+  const names = (text: string, name: string) =>
+    // NOT preceded by a dot: `props.vis` is a property access, not the `vis` binding. Without
+    // this, SummaryPanel's fetch watch — which correctly reads `props.vis?.statsEnabled` — is
+    // reported against a `const vis` declared 25 lines below it.
+    new RegExp(`(?<![.$\\w])${name}\\b`).test(text)
+
   for (const m of script.matchAll(TOP_WATCH)) {
     const args = callArgs(script, m.index!)
     // watchEffect's whole argument IS the effect; watch's first argument is the source
     const immediate = m[1] ? args : firstArg(args)
+
+    // Everything the source names that IS already initialised and is a computed: reading it here runs
+    // its getter, so its body is evaluated at this point too (see the one-hop note above).
+    const viaComputed = [...decls]
+      .filter(([n, at]) => at < m.index! && names(immediate, n))
+      .map(([n]) => computedBody(script, n))
+      .filter(Boolean)
+
     for (const [name, declAt] of decls) {
       if (declAt <= m.index!) continue
-      // NOT preceded by a dot: `props.vis` is a property access, not the `vis` binding. Without
-      // this, SummaryPanel's fetch watch — which correctly reads `props.vis?.statsEnabled` — is
-      // reported against a `const vis` declared 25 lines below it.
-      if (new RegExp(`(?<![.$\\w])${name}\\b`).test(immediate))
+      if (names(immediate, name) || viaComputed.some(body => names(body, name)))
         out.push({ name, line: lineAt(m.index!) })
     }
   }

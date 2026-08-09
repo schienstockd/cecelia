@@ -59,6 +59,36 @@ const b = computed(() => 1)
     expect(setupOrderHazards(src)).toEqual([])
   })
 
+  // …UNLESS a watch source names it. That is what makes the lazy getter run at setup, and it is the
+  // one that blanked the Movies page: `movieTableRows` was declared above the watch, so a direct check
+  // saw nothing, while the `starredOnly` ref its body reads was sixty lines below.
+  it('follows a watch source ONE HOP into the computed it names', () => {
+    const src = sfc(`
+const rows = computed(() => filter(all.value, starredOnly.value))
+watch(rows, r => keep(r))
+const starredOnly = ref(false)
+`)
+    expect(setupOrderHazards(src)).toEqual([{ name: 'starredOnly', line: 4 }])
+  })
+
+  it('is happy once that ref moves above the watch', () => {
+    const src = sfc(`
+const starredOnly = ref(false)
+const rows = computed(() => filter(all.value, starredOnly.value))
+watch(rows, r => keep(r))
+`)
+    expect(setupOrderHazards(src)).toEqual([])
+  })
+
+  it('does not follow a non-computed source — a plain ref reads nothing of its own', () => {
+    const src = sfc(`
+const plain = ref(0)
+watch(plain, () => {})
+const later = ref(1)
+`)
+    expect(setupOrderHazards(src)).toEqual([])
+  })
+
   it('understands a destructured declaration', () => {
     const src = sfc(`
 watch(() => scope.value, () => {})
