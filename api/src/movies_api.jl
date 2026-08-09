@@ -184,60 +184,95 @@ function api_movies_meta_get(req::HTTP.Request)
     200, JSON3.write((; name, entry = e))
 end
 
-# POST /api/movies/meta {projectUid, name, displayName?, starred?, tags?}
-# Set the user-owned metadata. Every field is OPTIONAL and absent means "leave alone", so the three
-# controls on the page patch independently without reading each other's values first.
+# The movies this request addresses: `name` (one) or `names` (many). Returns the valid, existing ones
+# and the rejects, so a caller learns which of a selection it could not touch instead of a bare 400.
 #
-# Registers the movie even when no entry exists yet — every movie on disk predates this registry, so
-# starring an old one has to be able to create its row.
+# ONE list, not two routes: every metadata write is read-modify-write over a SINGLE json file, so a
+# client looping N requests would rewrite the registry N times — and any two of those in flight at once
+# lose one side's edit, since each read predates the other's write. Categorising a selection is exactly
+# the case that produces N of them at once.
+function _movie_targets(uid::AbstractString, body)::Tuple{Vector{String},Vector{String}}
+    raw = haskey(body, :names) ? collect(String, body[:names]) : [String(get(body, :name, ""))]
+    dir = _movies_dir_for_project(uid)
+    ok, bad = String[], String[]
+    for n in raw
+        (_valid_movie_name(n) && isfile(joinpath(dir, n))) ? push!(ok, n) : push!(bad, n)
+    end
+    ok, bad
+end
+
+# POST /api/movies/meta {projectUid, name|names, displayName?, starred?, tags?, addTags?, removeTags?}
+# Set the user-owned metadata on one movie or many. Every field is OPTIONAL and absent means "leave
+# alone", so the page's controls patch independently without reading each other's values first.
+#
+# `tags` REPLACES; `addTags`/`removeTags` are set operations that leave the rest of a movie's tags in
+# place. Both exist because they answer different questions: the per-movie editor states the whole list,
+# while categorising a selection must not wipe tags the individual movies already carry.
+#
+# Registers a movie that has no entry yet — every movie on disk predates this registry, so starring an
+# old one has to be able to create its row.
 function api_movies_meta_set(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    uid  = String(get(body, :projectUid, ""))
-    name = String(get(body, :name, ""))
+    uid = String(get(body, :projectUid, ""))
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
-    _valid_movie_name(name) || return 400, JSON3.write((; error = "Invalid movie name"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
-    isfile(joinpath(_movies_dir_for_project(uid), name)) ||
-        return 404, JSON3.write((; error = "Movie not found: $name"))
+    names, rejected = _movie_targets(uid, body)
+    isempty(names) && return 404, JSON3.write((; error = "No such movie", rejected))
 
+    add    = haskey(body, :addTags)    ? _clean_movie_tags(body[:addTags])    : String[]
+    remove = haskey(body, :removeTags) ? Set(_clean_movie_tags(body[:removeTags])) : Set{String}()
     reg = _read_movies_registry(uid)
-    e   = get(reg, name, Dict{String,Any}())
-    haskey(body, :displayName) && (e["displayName"] = _clean_movie_name(body[:displayName]))
-    haskey(body, :starred)     && (e["starred"]     = Bool(body[:starred]))
-    haskey(body, :tags)        && (e["tags"]        = _clean_movie_tags(body[:tags]))
-    reg[name] = e
+    for name in names
+        e = get(reg, name, Dict{String,Any}())
+        # A display name identifies ONE movie, so it is deliberately not applied across a selection —
+        # bulk-renaming every movie to the same label would only make them indistinguishable.
+        (haskey(body, :displayName) && length(names) == 1) &&
+            (e["displayName"] = _clean_movie_name(body[:displayName]))
+        haskey(body, :starred) && (e["starred"] = Bool(body[:starred]))
+        haskey(body, :tags)    && (e["tags"]    = _clean_movie_tags(body[:tags]))
+        if !isempty(add) || !isempty(remove)
+            cur = _clean_movie_tags(get(e, "tags", nothing))
+            e["tags"] = _clean_movie_tags([[t for t in cur if t ∉ remove]; add])
+        end
+        reg[name] = e
+    end
     _write_movies_registry!(uid, reg)
-    200, JSON3.write((; ok = true, name,
-                        displayName = _clean_movie_name(get(e, "displayName", "")),
-                        starred = get(e, "starred", false) === true,
-                        tags = _clean_movie_tags(get(e, "tags", nothing))))
+    200, JSON3.write((; ok = true, names, rejected))
 end
 
-# POST /api/movies/delete {projectUid, name} — remove ONE movie file and its registry entry.
-# A movie is not an image: there are no version/label/analysis scopes to choose between
+# POST /api/movies/delete {projectUid, name|names} — remove the movie file(s) and their registry
+# entries. A movie is not an image: there are no version/label/analysis scopes to choose between
 # (MOVIE_MANAGEMENT_PLAN.md → Not doing), so this is a plain delete behind the page's confirm.
+#
+# `_movie_targets` is what keeps this inside the movies dir: it admits only `[A-Za-z0-9._-]+.mp4`, so
+# no separator and no `..` can appear, and it drops anything that isn't a file that's actually there.
 function api_movies_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
     end
-    uid  = String(get(body, :projectUid, ""))
-    name = String(get(body, :name, ""))
+    uid = String(get(body, :projectUid, ""))
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
-    # The name guard is what keeps this route from deleting anything outside the movies dir: it admits
-    # only [A-Za-z0-9._-]+.mp4, so no separator and no `..` can appear.
-    _valid_movie_name(name) || return 400, JSON3.write((; error = "Invalid movie name"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    names, rejected = _movie_targets(uid, body)
+    isempty(names) && return 404, JSON3.write((; error = "No such movie", rejected))
 
-    f = joinpath(_movies_dir_for_project(uid), name)
-    isfile(f) || return 404, JSON3.write((; error = "Movie not found: $name"))
-    rm(f; force = true)
+    dir = _movies_dir_for_project(uid)
     reg = _read_movies_registry(uid)
-    if haskey(reg, name)
-        delete!(reg, name)
-        _write_movies_registry!(uid, reg)
+    deleted = String[]
+    for name in names
+        try
+            rm(joinpath(dir, name); force = true)
+            delete!(reg, name)
+            push!(deleted, name)
+        catch e
+            # One locked/held file must not abandon the rest of the selection half-done
+            @warn "could not delete movie" name exception = e
+            push!(rejected, name)
+        end
     end
-    @info "Deleted movie" name project = uid
-    200, JSON3.write((; ok = true, name))
+    _write_movies_registry!(uid, reg)
+    @info "Deleted movies" n = length(deleted) project = uid
+    200, JSON3.write((; ok = true, deleted, rejected))
 end

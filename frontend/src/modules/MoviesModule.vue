@@ -16,7 +16,8 @@ import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
-import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
+import ConfirmButton from '../components/ConfirmButton.vue'
+import BaseModal from '../components/BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
 const projectMeta = useProjectMetaStore()
@@ -168,10 +169,13 @@ function movieTime(mtime: number): string {
 // A `SelectionTable`, not a bespoke playlist: picking one movie by comparing its date and size is
 // exactly what that component is for, and it carries the sorting. `sortMovies` (newest first) is still
 // the order it is HANDED — clearing the sort with a third header click comes back to it.
+// Per-column widths: a size needs a fraction of what a name does, and one width for all of them is
+// what pushed the table off its panel.
 const MOVIE_COLUMNS: SelectionColumn[] = [
-  { key: 'label',    label: 'Movie',    sortable: true },
-  { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime' },
-  { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size' },
+  { key: 'label',    label: 'Movie',    sortable: true, width: 190 },
+  { key: 'tagText',  label: 'Tags',     sortable: true, width: 120 },
+  { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime', width: 120 },
+  { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size',  width: 70 },
 ]
 const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
 const movieTableRows = computed(() => filterMovieRows(allRows.value, starredOnly.value, pickedTags.value))
@@ -179,19 +183,22 @@ const rowOf = (name: string) => allRows.value.find(r => r.name === name)
 
 // ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
 // The metadata lives in settings/movies.json, keyed by filename, and is patched one field at a time —
-// an absent field means "leave alone", so these three never have to read each other's values.
-// Each writes through immediately and re-lists, so the row and the filter chips agree.
-async function patchMeta(name: string, patch: Record<string, unknown>) {
-  if (!projectUid.value) return
+// an absent field means "leave alone", so these never have to read each other's values.
+//
+// ONE call for N movies, never a loop: the registry is a single JSON file, so N requests rewrite it N
+// times and any two in flight lose one side's edit. Categorising a selection is exactly that case.
+async function patchMeta(names: string[], patch: Record<string, unknown>) {
+  if (!projectUid.value || !names.length) return
   try {
     const res = await fetch('/api/movies/meta', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, name, ...patch }),
+      body: JSON.stringify({ projectUid: projectUid.value, names, ...patch }),
     })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
     await refresh()
   } catch (e) {
-    log.error(`Could not update ${name}: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+    log.error(`Could not update ${names.length} movie(s): ${e instanceof Error ? e.message : String(e)}`,
+              { source: 'movies' })
   }
 }
 
@@ -201,9 +208,9 @@ const { draft: nameDraft, start: startRename, cancel: cancelRename, commit: comm
         focusInput: focusRenameInput, isEditing: isRenaming } = useInlineEdit()
 const beginRename = (r: MovieRow) => startRename(r.name, r.renamed ? r.label : '')
 const saveRename = (r: MovieRow) =>
-  commitRename(r.name, r.renamed ? r.label : '', v => patchMeta(r.name, { displayName: v }))
+  commitRename(r.name, r.renamed ? r.label : '', v => patchMeta([r.name], { displayName: v }))
 
-const toggleStar = (r: MovieRow) => patchMeta(r.name, { starred: !r.starred })
+const toggleStar = (r: MovieRow) => patchMeta([r.name], { starred: !r.starred })
 
 // Tags are free text (comma or newline separated), parsed to a list — the taxonomy grows without a
 // code change (Decision 3). Editing them is the same inline-edit primitive as the name.
@@ -214,20 +221,50 @@ const { draft: tagDraft, start: startTags, cancel: cancelTags, commit: commitTag
 // which it wasn't, and the tag input never rendered.
 const beginTags = (r: MovieRow) => startTags(r.name, r.tags.join(', '))
 const saveTags = (r: MovieRow) =>
-  commitTags(r.name, r.tags.join(', '), v => patchMeta(r.name, { tags: parseMovieTags(v) }))
+  commitTags(r.name, r.tags.join(', '), v => patchMeta([r.name], { tags: parseMovieTags(v) }))
 
-async function deleteMovie(r: MovieRow) {
-  if (!projectUid.value) return
+// ── The selection, and what acts on it ────────────────────────────────────────
+// Two independent things, as on the image table: `checked` is the working SET the bulk actions apply
+// to, and `playing` is the one movie in the player, set by its eye. Conflating them is what made a
+// single-select list unable to delete or categorise more than one at a time.
+const checked = ref<string[]>([])
+// a filter (or a delete) can take a checked movie off the list; it must not stay in the selection,
+// where it would be acted on invisibly
+watch(movieTableRows, rows => {
+  const live = new Set(rows.map(r => r.name))
+  const kept = checked.value.filter(n => live.has(n))
+  if (kept.length !== checked.value.length) checked.value = kept
+})
+
+// Add tags ACROSS the selection — `addTags` is a set operation server-side, so it never wipes tags an
+// individual movie already carries. That is the difference between categorising and relabelling.
+const tagDialog = ref(false)
+const bulkTags = ref('')
+async function applyBulkTags() {
+  const tags = parseMovieTags(bulkTags.value)
+  tagDialog.value = false
+  bulkTags.value = ''
+  if (!tags.length) return
+  await patchMeta(checked.value, { addTags: tags })
+  log.info(`Tagged ${checked.value.length} movie(s)`, { source: 'movies' })
+}
+
+async function deleteChecked() {
+  if (!projectUid.value || !checked.value.length) return
+  const n = checked.value.length
   try {
     const res = await fetch('/api/movies/delete', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, name: r.name }),
+      body: JSON.stringify({ projectUid: projectUid.value, names: checked.value }),
     })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
-    log.info(`Deleted ${r.label}`, { source: 'movies' })
+    const body = await res.json().catch(() => ({})) as { deleted?: string[]; rejected?: string[] }
+    log.info(`Deleted ${body.deleted?.length ?? n} movie(s)`, { source: 'movies' })
+    if (body.rejected?.length) log.warn(`Could not delete: ${body.rejected.join(', ')}`, { source: 'movies' })
+    checked.value = []
     await refresh()
   } catch (e) {
-    log.error(`Could not delete ${r.name}: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+    log.error(`Could not delete ${n} movie(s): ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   }
 }
 
@@ -295,45 +332,41 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
         </div>
         <p v-else class="cc-empty">Select a movie to play.</p>
 
-        <!-- The selected movie's metadata, under the player rather than in the list: a name and a tag
-             list are free text and want the width, and this is where the user is already looking at
-             the thing they are labelling. The list keeps the quick triage (star, delete). -->
-        <div v-if="selectedRow" class="mov-meta cc-row">
-          <button class="mov-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: selectedRow.starred }"
-                  @click="toggleStar(selectedRow)"
-                  v-tooltip.top="selectedRow.starred ? 'Unstar' : 'Star this movie'">
-            <i :class="selectedRow.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
-          </button>
-          <input v-if="isRenaming(selectedRow.name)" :ref="focusRenameInput" v-model="nameDraft"
-                 class="cc-input-xs mov-name-edit" v-tooltip.top="'Enter to save, Esc to cancel'"
-                 @keyup.enter="saveRename(selectedRow)" @keyup.esc="cancelRename"
-                 @blur="saveRename(selectedRow)" />
-          <span v-else class="mov-caption" :title="selectedRow.name"
-                @click="beginRename(selectedRow)"
-                v-tooltip.top="'Click to rename (the file keeps its name)'">{{ selectedRow.label }}</span>
-
-          <span v-if="selectedRow.producedBy" class="cc-muted cc-fs-xs"
-                v-tooltip.top="'Which page recorded this'">{{ selectedRow.producedBy }}</span>
-
-          <input v-if="isTagging(selectedRow.name)" :ref="focusTagInput" v-model="tagDraft"
-                 class="cc-input-xs mov-tag-edit" placeholder="tags, comma separated"
-                 v-tooltip.top="'Enter to save, Esc to cancel'"
-                 @keyup.enter="saveTags(selectedRow)" @keyup.esc="cancelTags"
-                 @blur="saveTags(selectedRow)" />
-          <span v-else class="mov-tags" @click="beginTags(selectedRow)"
-                v-tooltip.top="'Click to edit tags'">
-            <span v-for="t in selectedRow.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
-            <span v-if="!selectedRow.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
-          </span>
-        </div>
+        <div v-if="selectedRow" class="mov-caption">{{ selectedRow.label }}</div>
       </div>
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
-      <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="380" :max="720">
+      <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="520" :max="900">
         <div class="mov-list cc-card">
           <div class="mov-list-head cc-eyebrow">
             {{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
               v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
+          </div>
+
+          <!-- Bulk actions on the CHECKED movies — the Import page's model: file operations act on the
+               selection, not one row at a time. Only present while something is checked. -->
+          <div v-if="checked.length" class="mov-bulk cc-row cc-row-tight">
+            <span class="cc-eyebrow cc-fs-2xs">{{ checked.length }} selected</span>
+            <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="tagDialog = true"
+                    v-tooltip.bottom="'Add tags to the selected movies'">
+              <i class="pi pi-tag" /> Tag
+            </button>
+            <!-- arm → confirm, the canonical destructive pattern. The buttons live HERE, not inside
+                 ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
+            <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, arm, confirm, cancel }">
+              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-micro mov-danger" @click="arm"
+                      v-tooltip.bottom="'Delete the selected movies'">
+                <i class="pi pi-trash" /> Delete {{ checked.length }}
+              </button>
+              <template v-else>
+                <button class="cc-btn cc-btn-primary cc-btn-micro" @click="confirm"
+                        v-tooltip.bottom="'Permanently delete these files'">
+                  <i class="pi pi-check" /> Delete {{ checked.length }}
+                </button>
+                <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="cancel"
+                        v-tooltip.bottom="'Keep them'"><i class="pi pi-times" /></button>
+              </template>
+            </ConfirmButton>
           </div>
           <!-- Star and tags compose with each other and with the column sort — one never replaces
                another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
@@ -347,33 +380,68 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
             <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
                         aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
           </div>
-          <SelectionTable class="mov-table" :columns="MOVIE_COLUMNS" :rows="movieTableRows"
-                          v-model="selected" id-key="name" sort-storage-key="cc.movies.sort"
-                          column-width-key="cc.movies.colw" :default-column-width="150"
-                          actions-width="2.4rem"
-                          :row-tooltip="r => `Play ${r.label}`">
-            <!-- The star leads the NAME cell rather than sitting in the actions column: this panel is
-                 380px by default and the sized columns are wider than that, so anything trailing is
-                 off the right edge until you scroll. A bookmark you cannot see is not a bookmark.
-                 `.stop` because the row click plays the movie. -->
+          <!-- Multi-select: the checkbox is the working SET the bulk actions apply to, and the eye is
+               what plays — the same split as the image table, where selection drives the run and the
+               eye drives napari. -->
+          <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
+                          :rows="movieTableRows" v-model:selected="checked" id-key="name"
+                          sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
+                          :row-tooltip="r => `Select ${r.label} — click the eye to play it`">
+            <!-- eye · star · the name, editable in place. Renaming from the row is the point: the
+                 alternative was selecting each movie and editing a field under the player. -->
             <template #cell-label="{ row }">
               <span class="mov-labelcell">
+                <button class="mov-eye cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                        :class="{ on: selected === row.name }" @click.stop="selected = row.name"
+                        v-tooltip.right="selected === row.name ? 'Playing' : 'Play this movie'">
+                  <i class="pi pi-eye" />
+                </button>
                 <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
                         @click.stop="toggleStar(row)"
                         v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
                   <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
                 </button>
-                <span class="mov-label" :title="row.name">{{ row.label }}</span>
+                <input v-if="isRenaming(row.name)" :ref="focusRenameInput" v-model="nameDraft"
+                       class="cc-input-2xs mov-cell-edit" v-tooltip.right="'Enter to save, Esc to cancel'"
+                       @click.stop @keyup.enter="saveRename(row)" @keyup.esc="cancelRename"
+                       @blur="saveRename(row)" />
+                <span v-else class="mov-label" :title="row.name"
+                      @click.stop="beginRename(row)">{{ row.label }}</span>
               </span>
             </template>
-            <template #actions="{ row }">
-              <ConfirmDeleteButton title="Delete movie" armed-title="Click again to delete"
-                                   @confirm="deleteMovie(row)" />
+
+            <!-- Tags in the row too, for the same reason -->
+            <template #cell-tagText="{ row }">
+              <input v-if="isTagging(row.name)" :ref="focusTagInput" v-model="tagDraft"
+                     class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
+                     v-tooltip.right="'Enter to save, Esc to cancel'"
+                     @click.stop @keyup.enter="saveTags(row)" @keyup.esc="cancelTags"
+                     @blur="saveTags(row)" />
+              <span v-else class="mov-tags" @click.stop="beginTags(row)"
+                    v-tooltip.right="'Click to edit tags'">
+                <span v-for="t in row.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
+                <span v-if="!row.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
+              </span>
             </template>
           </SelectionTable>
         </div>
       </CollapsiblePanel>
     </div>
+
+    <!-- Bulk tagging. `addTags` is a set operation server-side, so this ADDS to what each movie already
+         carries — categorising a selection must not flatten the tags they differ by. -->
+    <BaseModal v-if="tagDialog" title="Tag movies" width="420px" @close="tagDialog = false">
+      <p class="cc-muted cc-fs-md">Added to {{ checked.length }} selected movie(s).</p>
+      <input v-model="bulkTags" class="cc-input-xs mov-bulk-input" placeholder="tags, comma separated"
+             v-tooltip.bottom="'Comma separated; existing tags are kept'"
+             @keyup.enter="applyBulkTags" />
+      <template #footer>
+        <button class="cc-btn cc-btn-ghost" @click="tagDialog = false">Cancel</button>
+        <button class="cc-btn cc-btn-primary" :disabled="!bulkTags.trim()" @click="applyBulkTags">
+          <i class="pi pi-tag" /> Add
+        </button>
+      </template>
+    </BaseModal>
   </ModulePage>
 </template>
 
@@ -412,8 +480,20 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
 .mov-star.on { opacity: 1; color: var(--cc-warn); }
 .mov-filters { padding: 0 0.5rem 0.4rem; }
 /* the name cell: star, then the name, which takes the rest and ellipsises rather than widening */
-.mov-labelcell { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
-.mov-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mov-labelcell { display: flex; align-items: center; gap: 0.2rem; min-width: 0; }
+/* the name fills what the two icons leave, ellipsising rather than widening the column. `cursor:text`
+   because clicking it starts an edit. */
+.mov-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: text; }
+.mov-cell-edit { flex: 1; min-width: 0; }
+/* Eye — which movie is in the player. Dim until hovered when off, like the star beside it, so a
+   column of them doesn't compete with the names. */
+.mov-eye { opacity: .25; }
+.mov-eye:hover { opacity: .7; }
+.mov-eye.on { opacity: 1; color: var(--cc-accent); }
+.mov-bulk { padding: 0 0.5rem 0.4rem; }
+.mov-bulk-input { width: 100%; }
+.mov-danger:hover:not(:disabled) { color: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
 .mov-list { flex: 1; min-width: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */

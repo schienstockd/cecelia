@@ -149,7 +149,7 @@ describe('movieRows', () => {
                               timeText: 'at 1000', mtime: 1_000,
                               // a pre-registry movie carries the registry fields at their "unset"
                               // values, so the table reads ONE row shape and never has to branch
-                              starred: false, tags: [], producedBy: '',
+                              starred: false, tags: [], tagText: '', producedBy: '',
                               renamed: false, configStale: false })
     expect(rows[1].size).toBe(900_000)
     expect(rows[1].mtime).toBe(9_000)

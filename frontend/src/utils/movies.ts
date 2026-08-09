@@ -67,6 +67,7 @@ export interface MovieRow {
   // movie up again by name
   starred: boolean
   tags: string[]
+  tagText: string    // the tags as one string — what the Tags column SORTS by and seeds its editor with
   producedBy: string
   renamed: boolean       // a display name is set — the file name is then worth showing on hover
   configStale: boolean
@@ -81,6 +82,7 @@ export function movieRows(movies: MovieEntry[],
     timeText: formatTime(m.mtime), mtime: m.mtime,
     starred: m.starred === true,
     tags: m.tags ?? [],
+    tagText: (m.tags ?? []).join(', '),
     producedBy: m.producedBy ?? '',
     renamed: !!(m.displayName ?? '').trim(),
     configStale: m.configStale === true,

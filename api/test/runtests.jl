@@ -2420,10 +2420,39 @@ end
         @test a.displayName == "Day 3 CNO"               # trimmed, inner whitespace collapsed
         @test isfile(joinpath(mdir, "a.mp4"))
 
-        # ── guards: traversal, a name that isn't ours, a movie that doesn't exist
-        @test _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"../x.mp4"))[1] == 400
+        # ── guards: traversal and a movie that doesn't exist are both "no such movie", and the
+        #    offending names come BACK, so a caller can say which of a selection it could not touch
+        st, body = _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"../x.mp4"))
+        @test st == 404 && JSON3.read(body).rejected == ["../x.mp4"]
         @test _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"nope.mp4"))[1] == 404
-        @test _post(api_movies_delete,   Dict("projectUid"=>uid, "name"=>"../a.mp4"))[1] == 400
+        @test _post(api_movies_delete,   Dict("projectUid"=>uid, "name"=>"../a.mp4"))[1] == 404
+
+        # ── BULK: one call, one read-modify-write. A client looping N requests would rewrite the
+        #    registry N times, and two in flight at once lose one side's edit.
+        write(joinpath(mdir, "c.mp4"), "c")
+        # addTags is a set operation — it must not wipe tags a movie already carries ("figure 2" on a)
+        st, body = _post(api_movies_meta_set,
+                         Dict("projectUid"=>uid, "names"=>["a.mp4", "c.mp4"], "addTags"=>["cohort 1"]))
+        @test st == 200
+        byname = Dict(m.name => m for m in movies_with_meta(uid))
+        @test byname["a.mp4"].tags == ["figure 2", "cohort 1"]
+        @test byname["c.mp4"].tags == ["cohort 1"]
+        # …and removeTags takes one back out without touching the others
+        _post(api_movies_meta_set, Dict("projectUid"=>uid, "names"=>["a.mp4"], "removeTags"=>["figure 2"]))
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).tags == ["cohort 1"]
+        # a bulk call carries the valid names through and reports the rest
+        st, body = _post(api_movies_meta_set,
+                         Dict("projectUid"=>uid, "names"=>["c.mp4", "ghost.mp4"], "starred"=>true))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.names == ["c.mp4"] && d.rejected == ["ghost.mp4"]
+        # a display name identifies ONE movie, so it is not applied across a selection
+        _post(api_movies_meta_set, Dict("projectUid"=>uid, "names"=>["a.mp4","c.mp4"], "displayName"=>"X"))
+        @test all(m -> m.displayName != "X", movies_with_meta(uid))
+        # bulk delete removes every named file in one pass
+        st, body = _post(api_movies_delete, Dict("projectUid"=>uid, "names"=>["c.mp4", "ghost.mp4"]))
+        @test st == 200 && JSON3.read(body).deleted == ["c.mp4"]
+        @test !isfile(joinpath(mdir, "c.mp4"))
 
         # ── config banking + the stale rule
         register_movie!(uid, "b.mp4"; produced_by = "batch",
@@ -2453,12 +2482,16 @@ end
                         config = Dict("fps" => 15), config_kind = "look")   # re-stamp → fresh again
         @test !only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).configStale
 
-        # a re-record MERGES: the user's name/star/tags outlive the new bytes
+        # a re-record MERGES: the user's name/star/tags outlive the new bytes. Asserted as SURVIVAL
+        # against whatever they are now — a literal here would just re-encode the edits made above and
+        # break every time one of them changes, which is not what this is pinning.
+        before = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
         register_movie!(uid, "a.mp4"; produced_by = "viewer",
                         config = Dict("look" => Dict("channels" => Dict("CD3" => "green"))),
                         config_kind = "look")
         a = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
-        @test a.displayName == "Day 3 CNO" && a.starred && a.tags == ["figure 2"]
+        @test a.displayName == before.displayName && !isempty(a.displayName)
+        @test a.starred == before.starred && a.tags == before.tags && !isempty(a.tags)
         @test a.producedBy == "viewer" && a.configKind == "look"
 
         # the full entry (with the config the list omits) comes from the meta GET

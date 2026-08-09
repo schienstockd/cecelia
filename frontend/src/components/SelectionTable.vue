@@ -49,6 +49,9 @@ export interface SelectionColumn {
   sortKey?: string
   /** truncate an over-long value with an ellipsis instead of widening the table. Full value on hover. */
   ellipsis?: boolean
+  /** starting px width for THIS column, overriding `defaultColumnWidth`. A size or a count needs far
+   *  less room than a name, and one width for all of them is what pushes a table off its panel. */
+  width?: number
 }
 
 const props = withDefaults(defineProps<{
@@ -222,7 +225,8 @@ const sortedRows = computed(() => {
 // constant for the radio, the composable's width per data column, and the rest for `#actions`.
 const resizable = computed(() => !!props.columnWidthKey)
 const { widthOf, onColumnResizeStart } = useColumnResize({
-  defaultWidth: () => props.defaultColumnWidth,
+  defaultWidth: (key: string) =>
+    props.columns.find(c => c.key === key)?.width ?? props.defaultColumnWidth,
   storageKey: props.columnWidthKey || undefined,
 })
 </script>
