@@ -351,12 +351,12 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
                           :row-tooltip="r => `Play ${r.label}`">
             <template #actions="{ row }">
               <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
-                      @click="toggleStar(row as MovieRow)"
+                      @click="toggleStar(row)"
                       v-tooltip.left="row.starred ? 'Unstar' : 'Star this movie'">
                 <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
               </button>
               <ConfirmDeleteButton title="Delete movie" armed-title="Click again to delete"
-                                   @confirm="deleteMovie(row as MovieRow)" />
+                                   @confirm="deleteMovie(row)" />
             </template>
           </SelectionTable>
         </div>

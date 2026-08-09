@@ -7,6 +7,7 @@
 // docs/todo/LEGACY_MIGRATION_PLAN.md.
 import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 
 const props = defineProps<{ projectUid: string; setUid: string }>()
 const emit = defineEmits<{ (e: 'imported', images: unknown[]): void; (e: 'close'): void }>()
@@ -33,12 +34,15 @@ const scanning = ref(false)
 const importing = ref(false)
 const error = ref('')
 const manifest = ref<Manifest | null>(null)
-const selected = ref<Set<string>>(new Set())
+const selected = ref<string[]>([])   // v-model:selected on the table (ids, in pick order)
 const done = ref(0)              // >0 after a successful import → show the next-step panel
 
-const nTracks = (im: LegacyImage) => Object.values(im.tracking).reduce((a, b) => a + b, 0)
-const isTracked = (im: LegacyImage) => Object.keys(im.tracking).length > 0
-const excludedList = (im: LegacyImage) =>
+// Typed by the FIELD each needs rather than by `LegacyImage`, so they can be called from a
+// `#cell-` slot (whose row is a generic record) without a cast at every call site.
+const nTracks = (im: { tracking: Record<string, number> }) =>
+  Object.values(im.tracking).reduce((a, b) => a + b, 0)
+const isTracked = (im: { tracking: Record<string, number> }) => Object.keys(im.tracking).length > 0
+const excludedList = (im: { excluded: LegacyImage['excluded'] }) =>
   [im.excluded.clustering && 'clustering', im.excluded.gating && 'gating', im.excluded.hmm && 'HMM']
     .filter(Boolean) as string[]
 
@@ -46,7 +50,7 @@ const summary = computed(() => {
   const imgs = manifest.value?.images ?? []
   const seg = imgs.filter(i => i.segmentation.length).length
   const tracked = imgs.filter(isTracked).length
-  return { total: imgs.length, seg, tracked, picked: selected.value.size }
+  return { total: imgs.length, seg, tracked, picked: selected.value.length }
 })
 
 async function scan() {
@@ -65,7 +69,7 @@ async function scan() {
     const body = await res.json().catch(() => ({})) as Manifest
     if (!res.ok || body.error) throw new Error(body.error ?? `HTTP ${res.status}`)
     manifest.value = body
-    selected.value = new Set(body.images.map(i => i.uid))   // all ticked by default
+    selected.value = body.images.map(i => i.uid)   // all ticked by default
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -73,32 +77,25 @@ async function scan() {
   }
 }
 
-function toggle(uid: string) {
-  const s = new Set(selected.value)
-  s.has(uid) ? s.delete(uid) : s.add(uid)
-  selected.value = s
-}
-
-const allSelected = computed(() => {
-  const n = manifest.value?.images.length ?? 0
-  return n > 0 && selected.value.size === n
-})
-const someSelected = computed(() => {
-  const n = manifest.value?.images.length ?? 0
-  return selected.value.size > 0 && selected.value.size < n
-})
-function toggleAll() {
-  const imgs = manifest.value?.images ?? []
-  selected.value = allSelected.value ? new Set() : new Set(imgs.map(i => i.uid))
-}
+// Per-row toggle, select-all and its tri-state header box are SelectionTable's (`selectionMode:
+// 'multi'`) — this file had its own copy of all three, as did FileBrowser.
+//
+// Every cell but the name is rendered by a `#cell-` slot (tags, a stacked name/uid/warnings block), so
+// the column keys below exist to name the HEADERS and to say what each sorts by.
+const LM_COLUMNS: SelectionColumn[] = [
+  { key: 'name',      label: 'Image',           sortable: true },
+  { key: 'sizeText',  label: 'Size' },
+  { key: 'transfers', label: 'Transfers' },
+  { key: 'excluded',  label: 'Not transferred' },
+]
 
 async function confirmImport() {
   const m = manifest.value
-  if (!m || selected.value.size === 0) return
+  if (!m || selected.value.length === 0) return
   importing.value = true
   error.value = ''
   try {
-    const images = m.images.filter(i => selected.value.has(i.uid))
+    const images = m.images.filter(i => selected.value.includes(i.uid))
       .map(i => ({ uid: i.uid, name: i.name }))
     const res = await fetch('/api/import/register-legacy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -173,49 +170,36 @@ async function confirmImport() {
         </p>
 
         <div class="lm-tablewrap">
-          <table class="lm-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    :checked="allSelected"
-                    :indeterminate.prop="someSelected"
-                    @change="toggleAll"
-                    v-tooltip.right="'Select all / none'"
-                  />
-                </th>
-                <th>Image</th><th>Size</th>
-                <th>Transfers</th><th>Not transferred</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="im in manifest.images" :key="im.uid" :class="{ off: !selected.has(im.uid) }">
-                <td><input type="checkbox" :checked="selected.has(im.uid)" @change="toggle(im.uid)"
-                           v-tooltip.right="'Include this image in the migration'" /></td>
-                <td>
-                  <div class="lm-name">{{ im.name }}</div>
-                  <div class="cc-muted">{{ im.uid }}</div>
-                  <div v-for="w in im.warnings" :key="w" class="lm-warn"><i class="pi pi-info-circle" /> {{ w }}</div>
-                </td>
-                <td class="cc-muted">
-                  <span v-if="im.size.SizeC">{{ im.size.SizeC }}c</span>
-                  <span v-if="im.size.SizeZ && im.size.SizeZ > 1"> · {{ im.size.SizeZ }}z</span>
-                  <span v-if="im.size.SizeT && im.size.SizeT > 1"> · {{ im.size.SizeT }}t</span>
-                </td>
-                <td>
-                  <span class="lm-tag ok">image</span>
-                  <span v-for="s in im.segmentation" :key="s" class="lm-tag ok">seg: {{ s }}</span>
-                  <span v-if="isTracked(im)" class="lm-tag ok">tracking: {{ nTracks(im) }}</span>
-                  <span v-if="!im.segmentation.length" class="cc-muted">image only</span>
-                </td>
-                <td>
-                  <span v-for="x in excludedList(im)" :key="x" class="lm-tag off-tag">{{ x }}</span>
-                  <span v-if="!excludedList(im).length" class="cc-muted">—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- The canonical table (docs/UI.md), `multi`: it owns the checkboxes, the tri-state
+               select-all and the row hit target, which were hand-rolled here. Sortable headers come
+               with it — worth having on a migration list of dozens of images. -->
+          <SelectionTable class="lm-table" selection-mode="multi" :columns="LM_COLUMNS"
+                          :rows="manifest.images" v-model:selected="selected" id-key="uid"
+                          :row-class="im => ({ off: !selected.includes(im.uid) })"
+                          :row-tooltip="() => 'Include this image in the migration'">
+            <template #cell-name="{ row: im }">
+              <div class="lm-name">{{ im.name }}</div>
+              <div class="cc-muted">{{ im.uid }}</div>
+              <div v-for="w in im.warnings" :key="w" class="lm-warn"><i class="pi pi-info-circle" /> {{ w }}</div>
+            </template>
+            <template #cell-sizeText="{ row: im }">
+              <span class="cc-muted">
+                <span v-if="im.size.SizeC">{{ im.size.SizeC }}c</span>
+                <span v-if="im.size.SizeZ && im.size.SizeZ > 1"> · {{ im.size.SizeZ }}z</span>
+                <span v-if="im.size.SizeT && im.size.SizeT > 1"> · {{ im.size.SizeT }}t</span>
+              </span>
+            </template>
+            <template #cell-transfers="{ row: im }">
+              <span class="lm-tag ok">image</span>
+              <span v-for="s in im.segmentation" :key="s" class="lm-tag ok">seg: {{ s }}</span>
+              <span v-if="isTracked(im)" class="lm-tag ok">tracking: {{ nTracks(im) }}</span>
+              <span v-if="!im.segmentation.length" class="cc-muted">image only</span>
+            </template>
+            <template #cell-excluded="{ row: im }">
+              <span v-for="x in excludedList(im)" :key="x" class="lm-tag off-tag">{{ x }}</span>
+              <span v-if="!excludedList(im).length" class="cc-muted">—</span>
+            </template>
+          </SelectionTable>
         </div>
       </template>
     </div>
@@ -227,11 +211,11 @@ async function confirmImport() {
         <button
           v-if="manifest && manifest.images.length"
           class="cc-btn cc-btn-primary"
-          :disabled="importing || selected.size === 0"
+          :disabled="importing || selected.length === 0"
           @click="confirmImport"
         >
           <i :class="importing ? 'pi pi-spin pi-spinner' : 'pi pi-download'" />
-          Import {{ selected.size }} image{{ selected.size === 1 ? '' : 's' }}
+          Import {{ selected.length }} image{{ selected.length === 1 ? '' : 's' }}
         </button>
       </template>
     </template>
@@ -253,10 +237,11 @@ async function confirmImport() {
 .lm-error { color: #f87171; margin: 0; font-size: var(--cc-fs-md); }
 .lm-summary { margin: 0; font-size: var(--cc-fs-lg); color: var(--cc-text); }
 .lm-tablewrap { max-height: 46vh; overflow: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
-.lm-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); color: var(--cc-text); }
-.lm-table th, .lm-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--cc-border); vertical-align: top; }
-.lm-table thead th { position: sticky; top: 0; background: var(--cc-surface-1); font-weight: 600; color: var(--cc-text-dim); }
-.lm-table tr.off { opacity: 0.45; }
+/* header, borders, padding and hover are SelectionTable's now. What is left is this dialog's own
+   meaning: an unticked row is dimmed, and the cells top-align because the name cell is a stack. */
+.lm-table { width: 100%; }
+.lm-table :deep(td) { vertical-align: top; }
+.lm-table :deep(.off) { opacity: 0.45; }
 .lm-name { font-weight: 500; }
 .lm-warn { color: #fbbf24; font-size: var(--cc-fs-sm); margin-top: 0.15rem; }
 .lm-tag { display: inline-block; margin: 0.1rem 0.2rem 0.1rem 0; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs); font-size: var(--cc-fs-sm); }

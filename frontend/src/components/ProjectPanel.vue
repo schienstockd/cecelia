@@ -6,6 +6,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -38,6 +39,24 @@ async function createProject() {
 
 // ── Recent list ─────────────────────────────────────────────────────────────
 const selectedUid = ref<string | null>(null)
+// SelectionTable's model is a plain id; this panel's is nullable (nothing selected on an empty list)
+const selectedUidModel = computed<string>({
+  get: () => selectedUid.value ?? '',
+  set: v => { selectedUid.value = v || null },
+})
+
+// The table renders display strings and sorts on the raw value beside them (docs/UI.md), so the
+// truncated path and the formatted date each carry what they mean.
+const PROJECT_COLUMNS: SelectionColumn[] = [
+  { key: 'name',     label: 'Name',        sortable: true },
+  { key: 'pathText', label: 'Location',    sortable: true, sortKey: 'path' },
+  { key: 'dateText', label: 'Last opened', sortable: true, sortKey: 'lastOpenedAt' },
+]
+const projectRows = computed(() => projectMeta.recent.map(p => ({
+  ...p,
+  pathText: p.path.length > 40 ? '…' + p.path.slice(-38) : p.path,
+  dateText: formatDate(p.lastOpenedAt),
+})))
 
 async function openSelected() {
   if (!selectedUid.value) return
@@ -219,58 +238,37 @@ function formatDate(iso: string | null): string {
           </button>
         </div>
 
-        <table v-else class="proj-table">
-          <thead>
-            <tr>
-              <th class="col-sel" />
-              <th class="col-name">Name</th>
-              <th class="col-path">Location</th>
-              <th class="col-date">Last opened</th>
-              <th class="col-actions" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="p in projectMeta.recent"
-              :key="p.uid"
-              class="proj-row"
-              :class="{ selected: selectedUid === p.uid, active: projectMeta.current?.uid === p.uid }"
-              @click="selectedUid = p.uid"
-              @dblclick="openSelected"
-              v-tooltip.right="p.uid === projectMeta.current?.uid
-                ? 'This project is already open'
-                : `Double-click to open ${p.name}`"
-            >
-              <td class="col-sel">
-                <input type="radio"
-                  :checked="selectedUid === p.uid"
-                  @change="selectedUid = p.uid"
-                />
-              </td>
-              <td class="col-name">
-                <span class="proj-name">{{ p.name }}</span>
-                <span v-if="projectMeta.current?.uid === p.uid" class="open-badge"
-                  v-tooltip.right="'Currently open project'">open</span>
-              </td>
-              <td class="col-path dim cc-muted" v-tooltip.bottom="p.path">
-                {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
-              </td>
-              <td class="col-date dim cc-muted">{{ formatDate(p.lastOpenedAt) }}</td>
-              <td class="col-actions">
-                <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
-                <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy" @click.stop="exportProject(p)"
-                        v-tooltip.left="'Export this project to a portable .ccbundle'">
-                  <i class="pi pi-download" />
-                </button>
-                <!-- delete a project (not the open one) — canonical arm→confirm single button -->
-                <ConfirmDeleteButton v-if="projectMeta.current?.uid !== p.uid"
-                                     title="Delete this project from disk"
-                                     armed-title="Click again to permanently delete"
-                                     @confirm="deleteProject(p.uid)" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- The canonical table (docs/UI.md). It was hand-rolled here before `SelectionTable` could do
+             single-select with row actions; the sortable headers come for free with the move. -->
+        <SelectionTable v-else class="proj-table" :columns="PROJECT_COLUMNS" :rows="projectRows"
+                        v-model="selectedUidModel" id-key="uid" sort-storage-key="cc.projects.sort"
+                        :row-class="p => ({ active: projectMeta.current?.uid === p.uid })"
+                        :row-tooltip="p => p.uid === projectMeta.current?.uid
+                          ? 'This project is already open'
+                          : `Double-click to open ${p.name}`"
+                        @row-dblclick="openSelected">
+          <template #cell-name="{ row: p }">
+            <span class="proj-name">{{ p.name }}</span>
+            <span v-if="projectMeta.current?.uid === p.uid" class="open-badge"
+              v-tooltip.right="'Currently open project'">open</span>
+          </template>
+          <template #cell-pathText="{ row: p }">
+            <span class="dim cc-muted" v-tooltip.bottom="p.path">{{ p.pathText }}</span>
+          </template>
+          <template #actions="{ row: p }">
+            <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
+            <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy"
+                    @click="exportProject(p)"
+                    v-tooltip.left="'Export this project to a portable .ccbundle'">
+              <i class="pi pi-download" />
+            </button>
+            <!-- delete a project (not the open one) — canonical arm→confirm single button -->
+            <ConfirmDeleteButton v-if="projectMeta.current?.uid !== p.uid"
+                                 title="Delete this project from disk"
+                                 armed-title="Click again to permanently delete"
+                                 @confirm="deleteProject(p.uid)" />
+          </template>
+        </SelectionTable>
       </div>
 
       <!-- ── NEW PROJECT tab ───────────────────────────────────────────── -->
@@ -480,21 +478,9 @@ function formatDate(iso: string | null): string {
 .pp-empty { gap: 0.75rem; padding: 3rem 1rem; }
 .pp-empty p { margin: 0; }
 
-/* project table */
-.proj-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); }
-.proj-table thead th {
-  text-align: left; font-size: var(--cc-fs-xs); font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  position: sticky; top: 0; background: var(--cc-surface-1);
-}
-.col-sel  { width: 32px; }
-.col-name { min-width: 150px; }
-.col-path { flex: 1; }
-.col-date { width: 120px; }
-.col-actions { width: 72px; white-space: nowrap; text-align: right; }
+/* project table — the header, row, hover, selected and cell padding are all SelectionTable's now.
+   What is left is only what this panel means: the already-open project reads as a tint. */
+.proj-table { width: 100%; }
 
 /* small square row-action button (export, cancel) — matches ConfirmDeleteButton's footprint */
 .pp-row-btn { transition: color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
@@ -539,15 +525,10 @@ function formatDate(iso: string | null): string {
   white-space: normal; word-break: break-all; user-select: text;   /* show full path, selectable */
 }
 
-.proj-row {
-  border-bottom: 1px solid var(--cc-border);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.proj-row td { padding: 0.45rem 0.75rem; vertical-align: middle; }
-.proj-row:hover { background: var(--cc-surface-2); }
-.proj-row.selected { background: #a78bfa14; }
-.proj-row.active { background: #a78bfa0a; }
+/* The ALREADY-OPEN project — a fainter tint than the selection, which SelectionTable draws. Scoped
+   styles carry the component's data attribute, and the row is SelectionTable's element, so this needs
+   `:deep` to reach it. */
+:deep(.active) { background: #a78bfa0a; }
 
 .proj-name { color: var(--cc-text); font-weight: 500; margin-right: 0.4rem; }
 .open-badge {

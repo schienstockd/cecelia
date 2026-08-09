@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="Row extends Record<string, any>">
 // THE canonical table (docs/UI.md → UX-primitive catalog). Rows and columns anywhere in the app.
 //
 // It began as the single-select COMPARISON table — pick one option where the reason to prefer one is
@@ -20,6 +20,9 @@
 //                       inside it do NOT select the row.
 //   #cell-<columnKey>   render one cell yourself — an inline edit, a badge, an icon — falling back to
 //                       the verbatim value, which is what every column was before the slot existed.
+//
+// GENERIC over its row type, so `#cell-<key>`/`#actions`/`rowClass` hand the caller its OWN row type
+// rather than a bare record — without it every slot that calls a typed helper needs a cast.
 //
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
@@ -50,7 +53,7 @@ export interface SelectionColumn {
 
 const props = withDefaults(defineProps<{
   columns: SelectionColumn[]
-  rows: Record<string, any>[]
+  rows: Row[]
   /** the chosen row id (`selectionMode: 'single'`). Ignored by the other two modes. */
   modelValue?: string
   /**
@@ -66,7 +69,7 @@ const props = withDefaults(defineProps<{
   idKey?: string
   disabled?: boolean
   /** per-row hover help. Falls back to a generic line so the control is never tooltip-less. */
-  rowTooltip?: (row: Record<string, any>) => string
+  rowTooltip?: (row: Row) => string
   /** header for the trailing `#actions` column; omit when the slot is unused */
   actionsLabel?: string
   /** localStorage key for the chosen sort. Omit and the sort resets on remount. */
@@ -96,7 +99,7 @@ const props = withDefaults(defineProps<{
    * Three of the four migrated tables state something about a row in CSS (a directory, an already-open
    * project, an excluded image), and none of it is the table's business to know.
    */
-  rowClass?: (row: Record<string, any>) => string | Record<string, boolean>
+  rowClass?: (row: Row) => string | Record<string, boolean>
   /** Rows the checkbox can't reach in `multi` (already migrated, not an image, …), by id. */
   disabledIds?: string[]
 }>(), {
@@ -114,12 +117,12 @@ const emit = defineEmits<{
   'update:modelValue': [string]
   'update:selected': [string[]]
   /** a row was clicked. Always fires, whatever the selection mode — `none` uses only this. */
-  'row-click': [Record<string, any>]
-  'row-dblclick': [Record<string, any>]
+  'row-click': [Row]
+  'row-dblclick': [Row]
 }>()
 
-const idOf = (row: Record<string, any>) => String(row[props.idKey])
-const tipOf = (row: Record<string, any>) =>
+const idOf = (row: Row) => String(row[props.idKey])
+const tipOf = (row: Row) =>
   props.rowTooltip ? props.rowTooltip(row) : 'Select this option'
 
 // A `none`-mode row is only interactive if the caller listens for the click, so the pointer cursor and
@@ -133,9 +136,9 @@ const rowsClickable = computed(() =>
 const selectedIds = computed<string[]>(() =>
   props.selectionMode === 'multi' ? (props.selected ?? [])
     : props.modelValue ? [props.modelValue] : [])
-const isPicked = (row: Record<string, any>) => selectedIds.value.includes(idOf(row))
+const isPicked = (row: Row) => selectedIds.value.includes(idOf(row))
 
-function pick(row: Record<string, any>) {
+function pick(row: Row) {
   emit('row-click', row)
   if (props.disabled || props.selectionMode === 'none') return
   const id = idOf(row)
@@ -193,7 +196,7 @@ const sortedRows = computed(() => {
   if (!s) return props.rows
   const col = props.columns.find(c => c.key === s.key)
   const field = col?.sortKey ?? s.key
-  return sortRows(props.rows, r => r[field] as SortValue, s.dir)
+  return sortRows(props.rows, (r: Row) => r[field] as SortValue, s.dir)
 })
 
 // ── Column widths (opt-in) ─────────────────────────────────────────────────────
