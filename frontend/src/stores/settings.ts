@@ -44,8 +44,13 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariLabelsCache') !== 'false'  // default true
   )
 
+  // Contrast/colormap/T-Z, autosaved per image the moment they change and reloaded on open. Default ON
+  // (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 8): contrast is deliberately image state rather than a
+  // copy inside every movie config, and the movie path force-loads it (`autoLoadProps = true` in
+  // `_apply_movie_config!`). With this off nothing was ever written, so that load found no file and
+  // napari auto-contrasted per image — a recorded look was not reproducible.
   const napariAutoSaveLayerProps = ref(
-    localStorage.getItem('cc.napariAutoSaveLayerProps') === 'true'  // default false
+    localStorage.getItem('cc.napariAutoSaveLayerProps') !== 'false'  // default true
   )
 
   const napariAsDask = ref(

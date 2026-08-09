@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
+         filterMovieRows, movieFilterOptions, parseMovieTags,
          type MovieEntry } from './movies'
 
 describe('movieStreamUrl', () => {
@@ -19,6 +20,70 @@ describe('movieDisplayName', () => {
   })
   it('leaves a name without extension alone', () => {
     expect(movieDisplayName('plain')).toBe('plain')
+  })
+  it('prefers the display name when the entry has one', () => {
+    expect(movieDisplayName({ name: 'gBT.mp4', size: 1, mtime: 1, displayName: 'Day 3 CNO' }))
+      .toBe('Day 3 CNO')
+  })
+  it('falls back to the file name when the display name is blank or whitespace', () => {
+    // clearing an inline edit sends '', which must read as "not set" rather than as an empty label
+    expect(movieDisplayName({ name: 'gBT.mp4', size: 1, mtime: 1, displayName: '' })).toBe('gBT')
+    expect(movieDisplayName({ name: 'gBT.mp4', size: 1, mtime: 1, displayName: '   ' })).toBe('gBT')
+  })
+  it('reads a pre-registry entry exactly as before', () => {
+    expect(movieDisplayName({ name: 'gBT.mp4', size: 1, mtime: 1 })).toBe('gBT')
+  })
+})
+
+describe('filterMovieRows', () => {
+  const rows = movieRows([
+    { name: 'a.mp4', size: 1, mtime: 3, starred: true,  tags: ['figure 2'], producedBy: 'animation' },
+    { name: 'b.mp4', size: 1, mtime: 2, starred: false, tags: ['draft'],    producedBy: 'batch' },
+    { name: 'c.mp4', size: 1, mtime: 1 },   // pre-registry: no star, no tags, no producer
+  ], String, String)
+
+  it('passes everything through when nothing is active', () => {
+    expect(filterMovieRows(rows, false, []).map(r => r.name)).toEqual(['a.mp4', 'b.mp4', 'c.mp4'])
+  })
+  it('starred-only keeps just the starred rows', () => {
+    expect(filterMovieRows(rows, true, []).map(r => r.name)).toEqual(['a.mp4'])
+  })
+  it('tags are ANY-of, not ALL-of', () => {
+    expect(filterMovieRows(rows, false, ['figure 2', 'draft']).map(r => r.name))
+      .toEqual(['a.mp4', 'b.mp4'])
+  })
+  it('a producer filters from the same list as a tag', () => {
+    expect(filterMovieRows(rows, false, ['batch']).map(r => r.name)).toEqual(['b.mp4'])
+  })
+  it('star and tags COMPOSE — a row must pass both', () => {
+    expect(filterMovieRows(rows, true, ['draft']).map(r => r.name)).toEqual([])
+    expect(filterMovieRows(rows, true, ['figure 2']).map(r => r.name)).toEqual(['a.mp4'])
+  })
+})
+
+describe('movieFilterOptions', () => {
+  it('collects the tags and producers in use, sorted and deduped', () => {
+    expect(movieFilterOptions([
+      { name: 'a.mp4', size: 1, mtime: 1, tags: ['zeta', 'alpha'], producedBy: 'batch' },
+      { name: 'b.mp4', size: 1, mtime: 1, tags: ['alpha'],         producedBy: 'animation' },
+      { name: 'c.mp4', size: 1, mtime: 1 },
+    ])).toEqual({ tags: ['alpha', 'zeta'], producers: ['animation', 'batch'] })
+  })
+  it('is empty for a project whose movies all predate the registry', () => {
+    expect(movieFilterOptions([{ name: 'a.mp4', size: 1, mtime: 1 }]))
+      .toEqual({ tags: [], producers: [] })
+  })
+})
+
+describe('parseMovieTags', () => {
+  it('splits on commas and newlines, trims, and dedupes in order', () => {
+    expect(parseMovieTags(' figure 2, draft ,figure 2\nfinal ')).toEqual(['figure 2', 'draft', 'final'])
+  })
+  it('collapses inner whitespace, so one tag cannot be two things', () => {
+    expect(parseMovieTags('figure   2')).toEqual(['figure 2'])
+  })
+  it('is empty for blank input', () => {
+    expect(parseMovieTags('   ,  , ')).toEqual([])
   })
 })
 
@@ -81,7 +146,11 @@ describe('movieRows', () => {
     // alphabetically by month. The table must sort on `size`/`mtime`, never on what it renders.
     expect(rows[0]).toEqual({ name: 'big_old.mp4', label: 'big_old',
                               sizeText: '2000 kB', size: 2_000_000,
-                              timeText: 'at 1000', mtime: 1_000 })
+                              timeText: 'at 1000', mtime: 1_000,
+                              // a pre-registry movie carries the registry fields at their "unset"
+                              // values, so the table reads ONE row shape and never has to branch
+                              starred: false, tags: [], producedBy: '',
+                              renamed: false, configStale: false })
     expect(rows[1].size).toBe(900_000)
     expect(rows[1].mtime).toBe(9_000)
   })

@@ -126,6 +126,16 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   (image attributes + board read-back) is a prerequisite with a hard stop: probing `4kS67f` showed the
   metadata is good enough to plot well, but five cluster runs (three junk-named) and no exposed
   attributes mean it would currently miss the comparison that matters.
+- `MOVIE_MANAGEMENT_PLAN.md` — **in-progress** (`work/movie-management`). Movies become a managed
+  collection: `settings/movies.json` keyed by filename (the `notebooks.json` shape), display-name
+  rename that never touches the file, free-form tags + a recorder-written `producedBy`, star, delete,
+  filters. The audit is the substance: there was **no per-movie record at all**, the generation config
+  was **browser-local** (`cc.napariSetPrefs`), movies **overwrite silently**, and the napari protocol
+  versions are the wrong shape to reuse (they reject and relaunch; saved config needs migration). Both
+  generation configs already round-trip — `seedConfigFromViewState` ↔ `apply-movie-config` — so no new
+  capture mechanism was needed. Also flips `napariAutoSaveLayerProps` to true, without which a saved
+  look is not reproducible. `ImageTable` deliberately does NOT merge into the shared table (Decision 9).
+  Phase 5 revises the ONE-TABLE question with counts (8 surfaces; the 4 hand-rolled ones are 257 lines of markup and cannot sort or resize); Phase 6 (edit/recreate) parked.
 - `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
   manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
   instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why

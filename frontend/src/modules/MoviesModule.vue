@@ -8,11 +8,15 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
-import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
-         type MovieEntry } from '../utils/movies'
+import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
+         filterMovieRows, movieFilterOptions, parseMovieTags,
+         type MovieEntry, type MovieRow } from '../utils/movies'
+import { useInlineEdit } from '../composables/useInlineEdit'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
 const projectMeta = useProjectMetaStore()
@@ -169,7 +173,85 @@ const MOVIE_COLUMNS: SelectionColumn[] = [
   { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime' },
   { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size' },
 ]
-const movieTableRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
+const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
+const movieTableRows = computed(() => filterMovieRows(allRows.value, starredOnly.value, pickedTags.value))
+const rowOf = (name: string) => allRows.value.find(r => r.name === name)
+
+// ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
+// The metadata lives in settings/movies.json, keyed by filename, and is patched one field at a time —
+// an absent field means "leave alone", so these three never have to read each other's values.
+// Each writes through immediately and re-lists, so the row and the filter chips agree.
+async function patchMeta(name: string, patch: Record<string, unknown>) {
+  if (!projectUid.value) return
+  try {
+    const res = await fetch('/api/movies/meta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, name, ...patch }),
+    })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
+    await refresh()
+  } catch (e) {
+    log.error(`Could not update ${name}: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+  }
+}
+
+// Rename is a DISPLAY NAME — the file is never renamed (Decision 2), so nothing that resolves a movie
+// by path can break. Clearing the field is a real edit: it goes back to the file name.
+const { draft: nameDraft, start: startRename, cancel: cancelRename, commit: commitRename,
+        focusInput: focusRenameInput, isEditing: isRenaming } = useInlineEdit()
+const beginRename = (r: MovieRow) => startRename(r.name, r.renamed ? r.label : '')
+const saveRename = (r: MovieRow) =>
+  commitRename(r.name, r.renamed ? r.label : '', v => patchMeta(r.name, { displayName: v }))
+
+const toggleStar = (r: MovieRow) => patchMeta(r.name, { starred: !r.starred })
+
+// Tags are free text (comma or newline separated), parsed to a list — the taxonomy grows without a
+// code change (Decision 3). Editing them is the same inline-edit primitive as the name.
+const { draft: tagDraft, start: startTags, cancel: cancelTags, commit: commitTags,
+        focusInput: focusTagInput, isEditing: isTagging } = useInlineEdit()
+const tagKey = (name: string) => `tags:${name}`
+const beginTags = (r: MovieRow) => startTags(tagKey(r.name), r.tags.join(', '))
+const saveTags = (r: MovieRow) =>
+  commitTags(tagKey(r.name), r.tags.join(', '), v => patchMeta(r.name, { tags: parseMovieTags(v) }))
+
+async function deleteMovie(r: MovieRow) {
+  if (!projectUid.value) return
+  try {
+    const res = await fetch('/api/movies/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, name: r.name }),
+    })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
+    log.info(`Deleted ${r.label}`, { source: 'movies' })
+    await refresh()
+  } catch (e) {
+    log.error(`Could not delete ${r.name}: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+  }
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+// Star and tags COMPOSE with each other and with the column sort — they answer different questions,
+// so one never replaces another (Decision 3/4). Both persist: a filter that resets on navigation is
+// one the user has to re-apply every time they come back to compare two movies.
+const starredOnly = ref(localStorage.getItem('cc.movies.starredOnly') === 'true')
+watch(starredOnly, v => localStorage.setItem('cc.movies.starredOnly', String(v)))
+const pickedTags = ref<string[]>(JSON.parse(localStorage.getItem('cc.movies.tags') ?? '[]'))
+watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
+
+const filterOptions = computed<ChipOption[]>(() => {
+  const { tags, producers } = movieFilterOptions(movies.value)
+  return [...tags.map(t => ({ value: t, label: t })),
+          ...producers.map(p => ({ value: p, label: p, icon: 'pi pi-video' }))]
+})
+// A picked chip whose tag no longer exists anywhere would hide every row with no visible cause.
+watch(filterOptions, opts => {
+  const live = new Set(opts.map(o => o.value))
+  const kept = pickedTags.value.filter(t => live.has(t))
+  if (kept.length !== pickedTags.value.length) pickedTags.value = kept
+})
+const starredCount = computed(() => allRows.value.filter(r => r.starred).length)
+const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.length)
+const selectedRow = computed(() => rowOf(selected.value) ?? null)
 </script>
 
 <template>
@@ -210,17 +292,73 @@ const movieTableRows = computed(() => movieRows(movies.value, formatBytes, movie
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" />
         </div>
         <p v-else class="cc-empty">Select a movie to play.</p>
-        <div v-if="selected" class="mov-caption">{{ movieDisplayName(selected) }}</div>
+
+        <!-- The selected movie's metadata, under the player rather than in the list: a name and a tag
+             list are free text and want the width, and this is where the user is already looking at
+             the thing they are labelling. The list keeps the quick triage (star, delete). -->
+        <div v-if="selectedRow" class="mov-meta cc-row">
+          <button class="mov-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: selectedRow.starred }"
+                  @click="toggleStar(selectedRow)"
+                  v-tooltip.top="selectedRow.starred ? 'Unstar' : 'Star this movie'">
+            <i :class="selectedRow.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
+          </button>
+          <input v-if="isRenaming(selectedRow.name)" :ref="focusRenameInput" v-model="nameDraft"
+                 class="cc-input-xs mov-name-edit" v-tooltip.top="'Enter to save, Esc to cancel'"
+                 @keyup.enter="saveRename(selectedRow)" @keyup.esc="cancelRename"
+                 @blur="saveRename(selectedRow)" />
+          <span v-else class="mov-caption" :title="selectedRow.name"
+                @click="beginRename(selectedRow)"
+                v-tooltip.top="'Click to rename (the file keeps its name)'">{{ selectedRow.label }}</span>
+
+          <span v-if="selectedRow.producedBy" class="cc-muted cc-fs-xs"
+                v-tooltip.top="'Which page recorded this'">{{ selectedRow.producedBy }}</span>
+
+          <input v-if="isTagging(selectedRow.name)" :ref="focusTagInput" v-model="tagDraft"
+                 class="cc-input-xs mov-tag-edit" placeholder="tags, comma separated"
+                 v-tooltip.top="'Enter to save, Esc to cancel'"
+                 @keyup.enter="saveTags(selectedRow)" @keyup.esc="cancelTags"
+                 @blur="saveTags(selectedRow)" />
+          <span v-else class="mov-tags" @click="beginTags(selectedRow)"
+                v-tooltip.top="'Click to edit tags'">
+            <span v-for="t in selectedRow.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
+            <span v-if="!selectedRow.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
+          </span>
+        </div>
       </div>
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
       <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="380" :max="720">
         <div class="mov-list cc-card">
-          <div class="mov-list-head cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}</div>
+          <div class="mov-list-head cc-eyebrow">
+            {{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
+              v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
+          </div>
+          <!-- Star and tags compose with each other and with the column sort — one never replaces
+               another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
+          <div v-if="starredCount || filterOptions.length" class="mov-filters cc-row cc-row-tight">
+            <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
+                    :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
+                    @click="starredOnly = !starredOnly"
+                    v-tooltip.bottom="starredOnly ? 'Show all movies' : 'Show only starred movies'">
+              <i :class="starredOnly ? 'pi pi-star-fill' : 'pi pi-star'" /> {{ starredCount }}
+            </button>
+            <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
+                        aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
+          </div>
           <SelectionTable class="mov-table" :columns="MOVIE_COLUMNS" :rows="movieTableRows"
                           v-model="selected" id-key="name" sort-storage-key="cc.movies.sort"
                           column-width-key="cc.movies.colw" :default-column-width="150"
-                          :row-tooltip="r => `Play ${r.label}`" />
+                          :row-tooltip="r => `Play ${r.label}`">
+            <template #actions="{ row }">
+              <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
+                      @click="toggleStar(row as MovieRow)"
+                      v-tooltip.left="row.starred ? 'Unstar' : 'Star this movie'">
+                <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
+              </button>
+              <ConfirmDeleteButton title="Delete movie" armed-title="Click again to delete"
+                                   @confirm="deleteMovie(row as MovieRow)" />
+            </template>
+          </SelectionTable>
         </div>
       </CollapsiblePanel>
     </div>
@@ -247,7 +385,20 @@ const movieTableRows = computed(() => movieRows(movies.value, formatBytes, movie
   background: #000; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
 }
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
-.mov-caption { font-size: var(--cc-fs-md); color: var(--cc-text); word-break: break-all; }
+.mov-caption { font-size: var(--cc-fs-md); color: var(--cc-text); word-break: break-all; cursor: text; }
+/* the selected movie's metadata strip — name, what recorded it, tags */
+.mov-meta { align-items: baseline; }
+.mov-name-edit { flex: 1 1 12rem; max-width: 24rem; }
+.mov-tag-edit { flex: 1 1 10rem; max-width: 20rem; }
+.mov-tags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; cursor: text; }
+.mov-tag { background: var(--cc-surface-2); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-pill); padding: 0 0.4rem; color: var(--cc-text-dim); }
+/* Star — dim until hovered when unset, so a column of unset stars doesn't compete with the row text.
+   Same treatment as ImageTable's per-image star. */
+.mov-star { opacity: .25; }
+.mov-star:hover { opacity: .7; }
+.mov-star.on { opacity: 1; color: var(--cc-warn); }
+.mov-filters { padding: 0 0.5rem 0.4rem; }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
 .mov-list { flex: 1; min-width: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */

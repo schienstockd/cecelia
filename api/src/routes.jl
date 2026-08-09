@@ -20,30 +20,21 @@ _valid_asset_id(id::AbstractString) = occursin(r"^[A-Za-z0-9_-]+$", id)   # guar
 _movies_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_uid, "movies")
 _valid_movie_name(name::AbstractString) = occursin(r"^[A-Za-z0-9._-]+\.mp4$", name)
 
-# GET /api/movies?projectUid=… → { movies: [{name, size, mtime}] } sorted newest-first. Lists the
-# project's rendered .mp4s for the player playlist; the bytes are streamed separately (range-served) by
-# try_serve_movie in server.jl. Empty list (not 404) when the movies dir doesn't exist yet.
+# GET /api/movies?projectUid=… → { movies: [{name, size, mtime, displayName, starred, tags,
+# producedBy, hasConfig, configKind, configStale}] } sorted newest-first. Lists the project's rendered
+# .mp4s for the player playlist, each merged with its `settings/movies.json` entry; the bytes are
+# streamed separately (range-served) by try_serve_movie in server.jl. Empty list (not 404) when the
+# movies dir doesn't exist yet.
+#
+# The listing itself lives in `movies_with_meta` (movies_api.jl), which also reconciles the registry
+# against the directory in the same pass. The saved CONFIG is deliberately not in this response — a
+# keyframe config is large and the list renders none of it; `/api/movies/meta` fetches one on demand.
 function api_movies_list(req::HTTP.Request)
     query = HTTP.queryparams(HTTP.URI(req.target))
     uid   = get(query, "projectUid", "")
     isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
-    dir = _movies_dir_for_project(uid)
-    movies = NamedTuple[]
-    if isdir(dir)
-        for name in readdir(dir)
-            # skip in-progress temps: `prepend_title_to_movie` writes `{name}.mp4.tmp.mp4` beside the
-            # real file and renames on success, and imageio needs that `.mp4` extension to pick a
-            # writer — so a run killed mid-encode leaves something a bare `.mp4` filter would list as
-            # a real movie.
-            (endswith(lowercase(name), ".mp4") && !occursin(".tmp.", name) &&
-                isfile(joinpath(dir, name))) || continue
-            f = joinpath(dir, name)
-            push!(movies, (; name, size=filesize(f), mtime=mtime(f)))
-        end
-        sort!(movies; by = m -> m.mtime, rev = true)
-    end
-    200, JSON3.write((; movies))
+    200, JSON3.write((; movies = movies_with_meta(uid)))
 end
 
 # Copy a captured PNG (temp file) into settings/board-assets/<id>.png; returns the new asset id.

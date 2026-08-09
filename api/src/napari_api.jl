@@ -1312,7 +1312,7 @@ end
 function run_batch_movies(task_id::String, project_uid::String, image_uids::Vector{String},
                           config, file_attrs::Vector{String}, fps::Int;
                           size_x::Union{Int,Nothing}=nothing, size_y::Union{Int,Nothing}=nothing,
-                          suffix::AbstractString="")
+                          suffix::AbstractString="", movie_config = nothing)
     n   = length(image_uids)
     rep = isempty(image_uids) ? "" : first(image_uids)
     done = 0; errors = String[]
@@ -1375,6 +1375,11 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
                 ws_log(nothing, task_id, "[$i/$n] cancelled — $(basename(path)) not written")
             else
                 done += 1
+                # Bank how this one was made, keyed by the file just written (Phase 4). One authored
+                # config produced every image in the batch, so each entry gets the same `config` — what
+                # differs per movie is only which image it opened, and that is in the filename.
+                register_movie!(project_uid, basename(path);
+                                produced_by = "batch", config = movie_config, config_kind = "look")
                 ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
             end
         catch e
@@ -1423,6 +1428,7 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                           show_3d::Bool = false, z_slice::Union{Int,Nothing} = nothing,
                           share_contrast::Bool = true, layout::String = "row",
                           show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                          movie_config = nothing,
                           api_url::AbstractString = "http://localhost:8080")
     animation = keyframes !== nothing
     # The viewer's recorder authors no channels/overlays of its own (it records the live view), so its
@@ -1487,6 +1493,13 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
             # previous movie at this path is still the one on disk
             ws_log(nothing, task_id, "[CANCELLED] stopped after $frames frame(s) — nothing written")
         else
+            # Bank how it was made, keyed by the file just written (Phase 4). The two kinds are
+            # deliberate (MOVIE_MANAGEMENT_PLAN.md Decision 7): an animation IS its keyframes, while a
+            # viewer recording is a "look" — the same shape the batch authors, so both edit on the page
+            # that owns that kind.
+            register_movie!(project_uid, basename(path);
+                            produced_by = animation ? "animation" : "viewer",
+                            config = movie_config, config_kind = animation ? "keyframes" : "look")
             merge!(result, Dict{String,Any}("frames" => frames,
                                             "sizeX" => get(resp, "sizeX", nothing),
                                             "sizeY" => get(resp, "sizeY", nothing)))
