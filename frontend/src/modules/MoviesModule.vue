@@ -193,7 +193,6 @@ watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v))
 // track TDZ through a closure.
 const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
 const movieTableRows = computed(() => filterMovieRows(allRows.value, starredOnly.value, pickedTags.value))
-const rowOf = (name: string) => allRows.value.find(r => r.name === name)
 
 // ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
 // The metadata lives in settings/movies.json, keyed by filename, and is patched one field at a time —
@@ -253,11 +252,21 @@ watch(movieTableRows, rows => {
 // Add tags ACROSS the selection — `addTags` is a set operation server-side, so it never wipes tags an
 // individual movie already carries. That is the difference between categorising and relabelling.
 const tagDialog = ref(false)
-const bulkTags = ref('')
-async function applyBulkTags() {
-  const tags = parseMovieTags(bulkTags.value)
-  tagDialog.value = false
+const bulkTags = ref('')          // new tags, typed
+const pickedExisting = ref<string[]>([])   // tags already in use elsewhere, chosen
+// Picking beats retyping: a taxonomy is only useful if the same word lands on every movie, and
+// "cohort 1" typed a second time as "Cohort 1" is two categories that look like one.
+const tagsInUse = computed(() => movieFilterOptions(movies.value).tags)
+const bulkTagsToAdd = computed(() =>
+  [...new Set([...pickedExisting.value, ...parseMovieTags(bulkTags.value)])])
+function openTagDialog() {
   bulkTags.value = ''
+  pickedExisting.value = []
+  tagDialog.value = true
+}
+async function applyBulkTags() {
+  const tags = bulkTagsToAdd.value
+  tagDialog.value = false
   if (!tags.length) return
   await patchMeta(checked.value, { addTags: tags })
   log.info(`Tagged ${checked.value.length} movie(s)`, { source: 'movies' })
@@ -295,7 +304,6 @@ watch(filterOptions, opts => {
 })
 const starredCount = computed(() => allRows.value.filter(r => r.starred).length)
 const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.length)
-const selectedRow = computed(() => rowOf(selected.value) ?? null)
 </script>
 
 <template>
@@ -336,8 +344,6 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" />
         </div>
         <p v-else class="cc-empty">Select a movie to play.</p>
-
-        <div v-if="selectedRow" class="mov-caption">{{ selectedRow.label }}</div>
       </div>
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
@@ -352,7 +358,7 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
                selection, not one row at a time. Only present while something is checked. -->
           <div v-if="checked.length" class="mov-bulk cc-row cc-row-tight">
             <span class="cc-eyebrow cc-fs-2xs">{{ checked.length }} selected</span>
-            <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="tagDialog = true"
+            <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="openTagDialog"
                     v-tooltip.bottom="'Add tags to the selected movies'">
               <i class="pi pi-tag" /> Tag
             </button>
@@ -417,8 +423,11 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
 
             <!-- Tags in the row too, for the same reason -->
             <template #cell-tagText="{ row }">
+              <!-- `list` gives the row editor the same "pick what already exists" the modal does,
+                   without a popover inside a table cell. -->
               <input v-if="isTagging(row.name)" :ref="focusTagInput" v-model="tagDraft"
                      class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
+                     list="mov-tags-in-use"
                      v-tooltip.right="'Enter to save, Esc to cancel'"
                      @click.stop @keyup.enter="saveTags(row)" @keyup.esc="cancelTags"
                      @blur="saveTags(row)" />
@@ -429,6 +438,9 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
               </span>
             </template>
           </SelectionTable>
+          <datalist id="mov-tags-in-use">
+            <option v-for="t in tagsInUse" :key="t" :value="t" />
+          </datalist>
         </div>
       </CollapsiblePanel>
     </div>
@@ -437,13 +449,19 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
          carries — categorising a selection must not flatten the tags they differ by. -->
     <BaseModal v-if="tagDialog" title="Tag movies" width="420px" @close="tagDialog = false">
       <p class="cc-muted cc-fs-md">Added to {{ checked.length }} selected movie(s).</p>
-      <input v-model="bulkTags" class="cc-input-xs mov-bulk-input" placeholder="tags, comma separated"
-             v-tooltip.bottom="'Comma separated; existing tags are kept'"
+      <!-- Pick one already in use, rather than retyping it. A tag typed a second time with different
+           capitalisation is a second category that looks like the first. -->
+      <ChipSelect v-if="tagsInUse.length" multiple v-model="pickedExisting"
+                  :options="tagsInUse.map(t => ({ value: t, label: t }))"
+                  aria-label="Existing tags" v-tooltip.bottom="'Tags already used in this project'" />
+      <input v-model="bulkTags" class="cc-input-xs mov-bulk-input"
+             :placeholder="tagsInUse.length ? 'or a new tag, comma separated' : 'tags, comma separated'"
+             v-tooltip.bottom="'Comma separated; a movie keeps the tags it already has'"
              @keyup.enter="applyBulkTags" />
       <template #footer>
         <button class="cc-btn cc-btn-ghost" @click="tagDialog = false">Cancel</button>
-        <button class="cc-btn cc-btn-primary" :disabled="!bulkTags.trim()" @click="applyBulkTags">
-          <i class="pi pi-tag" /> Add
+        <button class="cc-btn cc-btn-primary" :disabled="!bulkTagsToAdd.length" @click="applyBulkTags">
+          <i class="pi pi-tag" /> Add {{ bulkTagsToAdd.length || '' }}
         </button>
       </template>
     </BaseModal>
@@ -470,7 +488,6 @@ const selectedRow = computed(() => rowOf(selected.value) ?? null)
   background: #000; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
 }
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
-.mov-caption { font-size: var(--cc-fs-md); color: var(--cc-text); word-break: break-all; cursor: text; }
 /* the selected movie's metadata strip — name, what recorded it, tags */
 .mov-meta { align-items: baseline; }
 .mov-name-edit { flex: 1 1 12rem; max-width: 24rem; }
