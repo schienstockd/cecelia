@@ -22,6 +22,7 @@ import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import TitleCardControls from '../components/TitleCardControls.vue'
 import MovieOutputControls from '../components/MovieOutputControls.vue'
+import MovieOptionsButton from '../components/MovieOptionsButton.vue'
 import { movieSizeParams } from '../utils/movieSize'
 import { useNapariStatus } from '../composables/useNapariStatus'
 
@@ -258,9 +259,12 @@ async function render() {
 <template>
   <ModulePage title="Animation" layout="scroll">
     <template #controls>
-      <MovieOutputControls v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
-                           v-model:suffix="anim.suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
-      <TitleCardControls v-model="anim.titleCard" />
+      <!-- Movie options behind the gear, the same component the viewer's recorder uses -->
+      <MovieOptionsButton>
+        <MovieOutputControls v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
+                             v-model:suffix="anim.suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
+        <TitleCardControls v-model="anim.titleCard" />
+      </MovieOptionsButton>
       <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
               v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
                 : 'Need ≥2 keyframes for this image, open in napari'">
@@ -361,8 +365,8 @@ async function render() {
 </template>
 
 <style scoped>
-.anim-range { width: 5rem; accent-color: var(--cc-accent); }
-.anim-num { font-size: var(--cc-fs-sm); color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
+/* (.anim-range/.anim-num were left behind when MovieOutputControls was extracted — nothing in the
+   template referenced them.) */
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
 .anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: pointer; }
