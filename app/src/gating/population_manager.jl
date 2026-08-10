@@ -73,19 +73,65 @@ mutable struct PopulationMap
     value_name::String
     pops::Dict{String,Population}          # path → Population
     order::Vector{String}                  # insertion order (parents before children)
+    # Which unit the SPATIAL gate coordinates (on `centroid_x`/`_y`/`_z` axes) are stored in:
+    # "um" or "px". Persisted in the gating file; **absent ⇒ "px"**, which is every file written
+    # before spatial gates moved to µm, so an unmigrated project keeps evaluating correctly
+    # (docs/todo/SPATIAL_GATE_UNITS_PLAN.md, decision 4). `recompute!` scales the data to µm ONLY
+    # when this says "um". Non-spatial gates are unaffected — an intensity gate has no pixel scale.
+    spatial_unit::String
+    # µm/px for this map's image, `[sz, sy, sx]` (`img_physical_sizes`), stamped by
+    # `load_pop_map(img; …)`. NOT persisted: the scale belongs to the IMAGE, not the gate — storing it
+    # would bake one image's pixel size into a gate and break copying it to another image (decision 2).
+    # `nothing` = unknown (the task_dir form, or a hand-built map in a test) ⇒ no scaling.
+    physical_sizes::Union{Vector{Float64},Nothing}
     # recompute cache (populated by gating_engine.recompute!)
     _labels::Union{Vector,Nothing}
     _membership::Union{Dict{String,BitVector},Nothing}
 end
 
-PopulationMap(; pop_type::AbstractString="flow", value_name::AbstractString="default") =
+# The two spatial-unit values. "px" is the legacy default for a file with no stamp.
+const SPATIAL_UNIT_PX = "px"
+const SPATIAL_UNIT_UM = "um"
+
+PopulationMap(; pop_type::AbstractString="flow", value_name::AbstractString="default",
+              spatial_unit::AbstractString=SPATIAL_UNIT_PX,
+              physical_sizes::Union{AbstractVector{<:Real},Nothing}=nothing) =
     PopulationMap(String(pop_type), String(value_name),
-                  Dict{String,Population}(), String[], nothing, nothing)
+                  Dict{String,Population}(), String[], String(spatial_unit),
+                  physical_sizes === nothing ? nothing : Vector{Float64}(physical_sizes),
+                  nothing, nothing)
 
 Base.length(m::PopulationMap) = length(m.order)
 pop_at(m::PopulationMap, path::AbstractString) = m.pops[String(path)]
 has_pop(m::PopulationMap, path::AbstractString) = haskey(m.pops, String(path))
 pop_paths(m::PopulationMap) = copy(m.order)
+
+"""
+    has_spatial_gate(m) -> Bool
+
+Does any population in `m` gate on a SPATIAL axis (`centroid_x`/`_y`/`_z`) — as a gate axis or as a
+filter measure? Those are the only gates whose meaning depends on the image's pixel size, so this is
+the predicate for "does copying this map to another image need that image to be calibrated"
+(docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). A map of intensity/morphology gates is portable
+regardless of calibration.
+"""
+function has_spatial_gate(m::PopulationMap)::Bool
+    for path in m.order
+        p = m.pops[path]
+        if p.gate !== nothing
+            (is_spatial_axis(String(p.gate.x_channel)) || is_spatial_axis(String(p.gate.y_channel))) &&
+                return true
+        end
+        p.filter_measure === nothing ||
+            (is_spatial_axis(String(p.filter_measure)) && return true)
+        p.filter_conditions === nothing && continue
+        # conditions are normalised NamedTuples (`_normalise_conditions`), so `.measure` is a String
+        for c in p.filter_conditions
+            is_spatial_axis(String(c.measure)) && return true
+        end
+    end
+    false
+end
 
 """Direct children of `parent` (insertion order)."""
 direct_children(m::PopulationMap, parent::AbstractString) =
@@ -233,6 +279,9 @@ function to_tree(m::PopulationMap; include_transient::Bool=true)::Dict{String,An
     Dict{String,Any}(
         "value_name" => m.value_name,
         "pop_type" => m.pop_type,
+        # Which unit this file's SPATIAL gate coordinates are in. Written always (so a file this code
+        # saves is self-describing); read back with a "px" default for pre-existing files.
+        "spatial_unit" => m.spatial_unit,
         "populations" => [_node_dict(m, p; include_transient = include_transient) for p in roots],
     )
 end
@@ -257,7 +306,10 @@ end
 """Build a map from a nested-tree dict."""
 function from_tree(tree::AbstractDict)::PopulationMap
     g(k, default=nothing) = get(tree, k, get(tree, Symbol(k), default))
-    m = PopulationMap(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")))
+    # No stamp ⇒ "px": every gating file written before spatial gates moved to µm holds pixel
+    # coordinates, and must keep evaluating as pixels (SPATIAL_GATE_UNITS_PLAN.md decision 4).
+    m = PopulationMap(; pop_type=String(g("pop_type", "flow")), value_name=String(g("value_name", "default")),
+                      spatial_unit=String(g("spatial_unit", SPATIAL_UNIT_PX)))
     for node in g("populations", [])
         _add_node!(m, node, ROOT)
     end
@@ -554,9 +606,32 @@ end
 
 function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::AbstractString="flow")
     m = load_pop_map(img._dir, value_name; pop_type=pop_type)
+    # Stamp THIS image's µm/px so `recompute!` can put spatial gate axes and the cell data in the same
+    # unit. Per image on purpose: the same µm gate copied to another image must be evaluated with that
+    # image's own scale (SPATIAL_GATE_UNITS_PLAN.md decision 2). Only for a calibrated image — an
+    # uncalibrated one has no µm, and `img_physical_sizes`' 1.0 default would masquerade as one.
+    img_is_calibrated(img) && (m.physical_sizes = first(img_physical_sizes(img)))
+    # ── adopt µm whenever there is nothing to reinterpret ──
+    # The unit stamp only constrains a file that ALREADY holds position coordinates: with no spatial
+    # gate in it there are no numbers whose meaning could change, so a calibrated image upgrades the map
+    # to µm here — on a brand-new map and equally on a long-standing intensity-only one. That is what
+    # makes the migration unnecessary rather than merely unused (SPATIAL_GATE_UNITS_PLAN.md decision 8):
+    # every existing gating file adopts µm the next time it is saved, and the first position gate anyone
+    # draws is already physical.
+    #
+    # The two cases it deliberately leaves alone:
+    #   • a map that DOES have a position gate — its coordinates were drawn in the stamped unit, and
+    #     re-stamping would silently move every one of them;
+    #   • an uncalibrated image — there is no µm to adopt, and `img_physical_sizes`' 1.0 default would
+    #     masquerade as one, so it stays px until a pixel size is set.
+    (img_is_calibrated(img) && !has_spatial_gate(m)) && (m.spatial_unit = SPATIAL_UNIT_UM)
     # cluster pop_types with no own sidecar → try to borrow from a co-clustered sibling (auto-share)
     (_is_cluster_pop_type(pop_type) && isempty(m.pops)) || return m
-    something(_borrow_cluster_pop_map(img, String(value_name), String(pop_type)), m)
+    borrowed = _borrow_cluster_pop_map(img, String(value_name), String(pop_type))
+    borrowed === nothing && return m
+    # a borrowed map came from a sibling segmentation of the SAME image → same pixel sizes
+    borrowed.physical_sizes = m.physical_sizes
+    borrowed
 end
 
 # Old-R `popDT(popType="clust", pops=c("A","B","C"))` returned those cluster pops across ALL

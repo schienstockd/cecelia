@@ -24,6 +24,7 @@ import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
+import { axisLabelWithUnit } from '../../utils/gatingAxes'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
@@ -80,6 +81,7 @@ const points = ref<Float32Array | null>(null)
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })            // fixed (full data range)
 const viewExtents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })        // = extents (camera fixed)
 const viewTick = ref(0)
+const xUnit = ref(''); const yUnit = ref('')      // served by plotmeta; '' for a non-spatial axis
 const xTicks = ref<{ pos: number; label: string }[]>([])
 const yTicks = ref<{ pos: number; label: string }[]>([])
 const popLayers = ref<PopLayer[]>([])
@@ -144,7 +146,8 @@ async function fetchMeta() {
   const meta = await (await fetch(`/api/gating/plotmeta?${key}`)).json() as {
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
-    usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean }
+    usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean
+    xUnit?: string; yUnit?: string }
   // A newer fetch (image/segmentation/axis/parent switch) is already in flight — a late stale meta
   // would otherwise overwrite the fresh extents/ticks/gates (last-writer race), leaving the plot on
   // the wrong axes or blank until the user nudged a control. (Mirrors fetchGatesFor's key guard.)
@@ -155,6 +158,9 @@ async function fetchMeta() {
   xTicks.value = meta.xTicks; yTicks.value = meta.yTicks
   effXt.value = meta.usedX ?? xt.value
   effYt.value = meta.usedY ?? yt.value
+  // the unit the SERVER put the values in (µm / px for a spatial axis, '' otherwise) — never guessed
+  // here, so the axis label can't claim µm while the numbers are pixels
+  xUnit.value = meta.xUnit ?? ''; yUnit.value = meta.yUnit ?? ''
   serverGates.value = meta.gates ?? []
 }
 // refresh ONLY the server-projected child-gate outlines — gates come from plotmeta now, so a gate
@@ -391,7 +397,8 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
     </template>
     <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
-                     :x-label="g.colLabel(xChan)" :y-label="g.colLabel(yChan)"
+                     :x-label="axisLabelWithUnit(g.colLabel(xChan), xUnit)"
+                     :y-label="axisLabelWithUnit(g.colLabel(yChan), yUnit)"
                      :pop-layers="popLayers" :render-mode="renderMode" :show-pops="showPops"
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"

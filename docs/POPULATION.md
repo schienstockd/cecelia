@@ -328,6 +328,53 @@ the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks vi
 `/api/images/value-name-check` and flags them). The canvas **plot layout** is separate frontend state
 (the canvas store, loaded project-wide + autosaved), so it's copied client-side (`canvasPanels.copyEntry`),
 not by the route.
+
+### Position gates are stored in µm
+
+Spatial gate axes (`centroid_x`/`_y`/`_z`) are the one gate kind whose meaning depends on the image's
+pixel size. They are therefore stored in **µm**, not pixels — a pixel rectangle copied to an image with
+a different pixel size would select a different *physical* region, silently. Full rationale and phasing:
+[`docs/todo/SPATIAL_GATE_UNITS_PLAN.md`](todo/SPATIAL_GATE_UNITS_PLAN.md).
+
+Four rules hold this together:
+
+1. **The scale belongs to the IMAGE, not the gate.** `load_pop_map(img; …)` stamps that image's µm/px
+   onto the map (`PopulationMap.physical_sizes`, never persisted). So the same µm gate evaluated on two
+   images uses each one's own resolution — which is exactly what makes copying it meaningful. Folding
+   the scale into the stored transform spec would bake one image's pixel size into the gate; don't.
+2. **`recompute!` applies it, and nothing else does.** It scales the fetched frame's centroid columns
+   (`scale_centroids!`) before evaluating. `recompute!` has six call sites, five with their own fetch
+   closure — converting per caller would drift and a population's members would depend on which path
+   resolved it.
+3. **A `spatial_unit` stamp on the gating file, and NO migration.** `"um"` or `"px"`; **absent ⇒
+   `"px"`**, which is every file written before this. The stamp only constrains a file that *already
+   holds position coordinates*: `load_pop_map(img; …)` upgrades the map to `"um"` whenever the image is
+   calibrated and the map has **no spatial gate** (`has_spatial_gate`) — nothing to reinterpret — so an
+   existing intensity-only strategy adopts µm the next time it is saved and the first position gate
+   anyone draws is already physical. Left alone: a map that *does* carry a position gate (its numbers
+   were drawn in the stamped unit; re-stamping would silently move them), and an uncalibrated image
+   (no µm to adopt).
+4. **Uncalibrated ⇒ pixels, and copying a position gate onto such an image is refused.**
+   `img_physical_sizes` defaults a missing axis to `1.0`, indistinguishable from a real 1 µm/px, so
+   `img_is_calibrated` is the gate. `/api/gating/copy` skips a target with no pixel size when the
+   strategy contains a position gate (`has_spatial_gate`), with a reason, rather than writing gates that
+   would be read as px.
+
+The display path agrees by construction: `_plot_xy_raw` scales spatial axes with the same three
+conditions, so the dots, the whole-dataset extents that drive the ticks, and the projected gate outlines
+are all in one unit — and the axis label carries it (`xUnit`/`yUnit` → `axisLabelWithUnit`), because a
+bare `centroid_x` reading in pixels is what made this ambiguous in the first place. `centroid_t` is
+**not** spatial (`is_spatial_axis`): it stays a frame index, labelled rather than converted.
+
+**There is no migration, deliberately.** A converter was written and then dropped: position gating is
+new enough that no project contains a pixel-space position gate, so it could only ever have been a
+permanent Settings entry that did nothing (the same call as the retired centroid-axes patch — see
+`docs/todo/CENTROID_AXES_PLAN.md` Phase 2). The lazy adoption in rule 3 covers every real case. The one
+thing it does not: a position gate drawn *before* this change stays in px forever, and keeps evaluating
+correctly as px. If one ever turns up, the converter is in git history on `work/spatial-gate-units`
+(`python/cecelia/utils/spatial_gate_units.py`) — note that it needed the stamp for idempotency, because
+500 px and 500 µm are the same number on disk.
+
 - **`value_name=nothing`** resolves to the image's **active** segmentation (same resolution
   as `label_props(img)`); pass a name to set the default value_name for unprefixed pops.
 - **`drop_na`** drops cells that are NA/NaN in any requested `pop_col` (mirrors R popDT

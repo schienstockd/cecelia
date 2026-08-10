@@ -143,12 +143,41 @@ function _axis_ticks(t::AxisTransform, rmin::Real, rmax::Real; n::Int = 6)
      end for i in 1:n]
 end
 
+# µm/px to apply to ONE plot axis so the DISPLAYED values are in the same unit as the GATES.
+# Returns 1.0 — no conversion — for a non-spatial axis, a legacy px-stamped map, or an uncalibrated
+# image. Deliberately the SAME three conditions `recompute!` scales on (docs/todo/SPATIAL_GATE_UNITS_
+# PLAN.md decision 3), so the dots, the ticks and the gate outlines cannot end up in different units.
+# `centroid_t` is not spatial (`is_spatial_axis`) and stays a frame index.
+function _axis_scale(img, vn, pop_type, col)::Float64
+    is_spatial_axis(String(col)) || return 1.0
+    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
+    (m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing) || return 1.0
+    physical_size_for_axis(m.physical_sizes, axis_of(String(col)))
+end
+
+# The unit a plot axis is displayed in — served to the client so it can label the axis (and so the
+# label can never claim µm while the numbers are pixels). "" for a non-spatial axis (an intensity or
+# morphology column has no length unit to state).
+_axis_unit(img, vn, pop_type, col)::String =
+    !is_spatial_axis(String(col)) ? "" :
+    (_axis_scale(img, vn, pop_type, col) == 1.0 ? SPATIAL_UNIT_PX : "µm")
+
+# read the raw x/y vectors, then put SPATIAL axes into the gates' unit. One wrapper over the stored-value
+# read so every consumer — the point cloud, the whole-dataset extents that drive the ticks, density —
+# gets the same unit from one place; the plotdata handler reads both through this.
+function _plot_xy_raw(img, vn, pop_type, x, y, pop)
+    xv, yv = _plot_xy_stored(img, vn, pop_type, x, y, pop)
+    sx = _axis_scale(img, vn, pop_type, x); sy = _axis_scale(img, vn, pop_type, y)
+    (sx == 1.0 ? xv : xv .* sx, sy == 1.0 ? yv : yv .* sy)
+end
+
 # read x/y (optionally subset to a population) → transformed Float32 vectors.
 # Chain idiom (docs/DATAMODEL.md): select the two channels, push the population's label
 # filter into the reader (filter_rows), then materialise once.
-# read the raw x/y vectors for the scatter (one row per cell, or per track for pop_type="track"),
-# optionally subset to a population, before transform.
-function _plot_xy_raw(img, vn, pop_type, x, y, pop)
+# read the STORED x/y vectors for the scatter (one row per cell, or per track for pop_type="track"),
+# optionally subset to a population, before transform. Values as they are on disk — centroids in
+# pixels; `_plot_xy_raw` is the wrapper that converts spatial axes.
+function _plot_xy_stored(img, vn, pop_type, x, y, pop)
     if _track_grained(pop_type)
         # per-track scatter: one point per track from `track_props` (label == track_id)
         tp = track_props(img; value_name = vn,
@@ -500,6 +529,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     if _track_grained(pop_type) && !is_tracked(img; value_name = vn)
         return 200, JSON3.write((; n = 0, mode = "scatter", tracked = false,
             xExtent = [0.0, 1.0], yExtent = [0.0, 1.0], xLabel = x, yLabel = y,
+            xUnit = "", yUnit = "",              # same response shape as the real path below
             xTicks = Dict{String,Any}[], yTicks = Dict{String,Any}[],
             usedX = "linear", usedY = "linear", gates = Dict{String,Any}[]))
     end
@@ -562,6 +592,7 @@ function api_gating_plotmeta(req::HTTP.Request)
         n = n, mode = mode, tracked = true,
         xExtent = [xext[1], xext[2]], yExtent = [yext[1], yext[2]],
         xLabel = x, yLabel = y,
+        xUnit = _axis_unit(img, vn, pop_type, x), yUnit = _axis_unit(img, vn, pop_type, y),
         xTicks = _axis_ticks(xt, rxext[1], rxext[2]),
         yTicks = _axis_ticks(yt, ryext[1], ryext[2]),
         usedX = transform_kind(xt), usedY = transform_kind(yt),
@@ -846,6 +877,12 @@ function api_gating_copy(body_bytes::Vector{UInt8})
             timg === nothing && (skipped[tuid] = "not found"; continue)
             img_has_value_name(timg, vn) ||
                 (skipped[tuid] = "no segmentation '$vn'"; continue)   # gates would reference absent channels
+            # A µm POSITION gate needs the target's own pixel size to be evaluated. Without one the
+            # coordinates would silently be read as pixels — wrong by the pixel size, which is the
+            # exact silent-drift this unit change removes. Refuse rather than warn-and-proceed
+            # (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). Intensity-only strategies copy fine.
+            (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
+                (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
             try
                 save_pop_map!(m, timg)                        # writes target gating sidecar (replace)
                 _broadcast_popmap(proj, tuid, vn, pt, m)      # refresh any client viewing the target

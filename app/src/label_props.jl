@@ -255,6 +255,19 @@ end
 # makes positional reads a silent 2D bug). `axis_of` is the one place that parses an axis from a name.
 axis_of(col::AbstractString)::Symbol = Symbol(match(r"^centroid_([xyzt])$", col)[1])
 
+"""
+    is_spatial_axis(col) -> Bool
+
+Is `col` a SPATIAL centroid column (`centroid_x`/`_y`/`_z`) — i.e. one whose values carry a physical
+pixel size and can be converted to µm by `scale_centroids!`?
+
+`centroid_t` is deliberately **false**: it is a frame index, not a length, and is never scaled (see
+`scale_centroids!`). The one predicate for "does the pixel scale apply to this column", used by the
+gating display/eval paths and the spatial-unit migration so they cannot disagree about which axes are
+physical.
+"""
+is_spatial_axis(col::AbstractString)::Bool = occursin(r"^centroid_[xyz]$", col)
+
 _read_uns_strings(fid, key) = haskey(fid, key) ? _as_strings(read(fid[key])) : String[]
 
 # `centroid-N` (skimage's positional names) and a bare `t` are NOT acceptable anywhere — measurement
