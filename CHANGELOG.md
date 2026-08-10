@@ -17,7 +17,7 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ## [0.1.1] — 2026-08-10
 
-42 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
+45 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
 and it is still finding its shape, so the minor bump waits for it to settle rather than for the next
 substantial change.
 
@@ -48,6 +48,11 @@ substantial change.
 - Movie options throughout: explicit output size, frame range, title cards, mask outline width,
   filename suffix and attribute-based naming, and recording on the task rail with progress + cancel.
 - **The Animation page picks its own image**, having become a proper module page.
+- **A LabArchives notebook can be linked to a project.** The person analysing the images is often not
+  the one who ran the experiment, and the design — cohort, protocol, the question being asked — lives
+  in a lab notebook nothing here could see. Cecelia never talks to LabArchives and deliberately never
+  learns how: Claude reads it through the user's own authenticated session and hands over a summary,
+  which is cached beside the data and carried into the next session's briefing and the GUI.
 - **Optical-flow segmentation** — a training task, a model vault page, and a preview backend.
 - **The MCP observer can author analysis boards** (add-only; the user keeps them) and **design chain
   templates it cannot run**, and it can see image attributes and existing boards.
@@ -66,9 +71,22 @@ substantial change.
 - The mp4 writer leaked a staged `.tmp.mp4` on a failed or cancelled render.
 - Movie title cards rendered every non-ASCII character as a box.
 - A re-import reverted renamed channels; the import chunk-size parameter was wired to nothing.
+- **The Metadata panel's "Original path" regex read the wrong path** — it fed the *converted* store
+  name (`ccidImage.ome.zarr`), identical on every image, so the option could never do what it exists
+  for. It now reads the recorded source location, and the builder gained a `/ folder` separator,
+  2nd/3rd-last field positions (an absolute path has a variable number of leading folders, so counting
+  from the start is useless), and a `strip extension` that applies only to the last field — applied to
+  a `2026.07.16` date folder it had matched nothing at all.
+- Column widths in `SelectionTable` were squeezed below what was specified while the frozen-column
+  offsets were computed from the specified values, so sticky columns sat misaligned — visible on the
+  Movies table once the Details columns ran past the panel.
 
 ### Infrastructure
 
+- **Release notes now come from `CHANGELOG.md`.** They used to be GitHub's auto-generated pull-request
+  list — which is also what the in-app What's New modal rendered, so the app's answer to "what
+  changed" was a list of branch names. This section is what you are reading in both places.
+- The notebook table takes the shared resize path (drag-to-resize, persisted widths, a reset).
 - One write-behind autosave helper for the three stores that each had their own, `rafCoalesce` for
   paint-rate work, and a written-down coalescing rule with detectors for the two ways it breaks.
 
