@@ -1336,8 +1336,8 @@ capture group `()` is used if present, else the whole match (`extractWith` in
 `frontend/src/utils/regexBuilder.ts` — the single extractor, so the live preview equals the applied
 result). The field's tooltip carries a brief example for people who don't know regex. There is **one** regex
 input with **one** live preview (`regexSample → regexPreview` against the first target image); a
-collapsible **Builder** with two modes — **Split into fields** (separator × 1st/2nd/3rd/last field ×
-drop-extension, `buildFieldRegex`) and **Around a marker** (extract a token *preceded/followed by*
+collapsible **Builder** with two modes — **Split into fields** (separator × 1st/2nd/3rd or
+3rd-/2nd-last/last field × drop-extension, `buildFieldRegex`) and **Around a marker** (extract a token *preceded/followed by*
 context via lookbehind/lookahead, `buildLookaroundRegex`). Each context side is a **literal text +
 a class that varies** (so "M" `+ number` → `(?<=M\d+)` anchors M1b/M2a/M4f without hardcoding the
 mouse number → `b`/`a`/`f`); the extract token is a class or a raw custom pattern. Both modes write
@@ -1345,6 +1345,20 @@ straight into that same field on any change, so it's a way to construct the visi
 second input.
 The user then watches the preview and can hand-edit the pattern. The pure builder/extract logic
 lives in the util (Vitest-covered); the component only wires refs.
+
+*The **Original path** source is `oriPath` — `meta.ori_path`, the location the image was imported
+from — resolved by `regexSampleFor`, never `filepath`.* `filepath` is the converted store inside the
+project (`ccidImage.ome.zarr`, or `ccidDriftCorrected.ome.zarr` once a processed version is active),
+which is the same uninformative name for every image; matching against it made the option useless.
+The point of the path source is the **upstream folders** people organise by — `…/20260714/M1b-MERTK.ori`
+→ the imaging date. That is what the from-the-end field positions and the `/ folder` separator are
+for: an absolute path has a variable number of leading folders, so the containing folder is only
+reachable as the *2nd-last* field. The folder separator is the **class `[/\]`** — either character
+splits — because a Windows `ori_path` can be a drive letter, a UNC share, or (the browse route and
+Julia's `joinpath` disagreeing) mixed. `stripExt` applies to the **last field only**, the one an
+extension can be on; anywhere else it would mangle a legitimately dotted token such as a
+`2026.07.16` date folder, so the *no ext* toggle is hidden for the other positions. Images with no
+recorded `ori_path` fall back to the name, and the preview shows the string actually matched.
 
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
