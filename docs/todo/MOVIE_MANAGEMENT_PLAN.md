@@ -1,7 +1,7 @@
 # Movie management
 
-**Status:** in-progress (`work/movie-management`) — Phases 0–4 built; Phase 5a/5b built (3 of 4 tables
-migrated, `FileBrowser` a stated exception); 5c (`ImageTable`) and Phase 6 (edit/recreate) open.
+**Status:** in-progress (`work/movie-management`) — Phases 0–5 built. All eight table surfaces are on
+`SelectionTable` bar `FileBrowser`, a stated exception (see Phase 5). Phase 6 (edit/recreate) open.
 Supersedes `docs/prompts/movie-management-component-prompt.md`.
 
 ## Goal
@@ -166,7 +166,19 @@ but every movie recorded from here carries its provenance.
 missing — `selectionMode`, `#cell-<key>`, `rowClass`, `#row-detail` (gated by `isExpanded`), `#empty`,
 `row-dblclick`, a tri-state select-all that comes with `multi`, and a generic row type so slots hand a
 caller its own type instead of a bare record. 5b: `ProjectPanel`, `LegacyMigrateDialog` and
-`NotebookTable` migrated, each gaining sortable headers. 5c: `ImageTable` last, separately.
+`NotebookTable` migrated, each gaining sortable headers. 5c: `ImageTable` migrated (−131 lines), keeping
+its selection and sort as models (`v-model:selected`, `v-model:sort`) because both live in the project
+store per (scope, set) and order through the domain-aware `sortImages`.
+
+**What the migration actually cost, against Decision 9's estimate.** `ImageTable` shed ~130 lines, not
+the larger number implied — most of its bulk is domain logic (napari open, QC badges, run tags, crop
+and copy dialogs, CSV) that no generic table absorbs — and `SelectionTable` took on ten configuration
+axes to get there. The counted win was always the four hand-rolled tables; the win here is that sticky
+columns, select-all, sort and resize have ONE implementation, so a fix lands everywhere. Three bugs
+found on first render were all collisions between the shared table and its caller, none visible to
+typecheck or the suite: a caller's `width` losing to `.sel-table.sized`, `position: relative` on a
+header beating `position: sticky` (which shifted the pinned headers 60px right, hiding a column), and a
+`#cell-` slot whose `v-if` renders nothing falling through to `row[key]`.
 
 **`FileBrowser` is a deliberate exception** — found by doing the migration, not by planning it. Its row
 CLICK is per-row semantics rather than a table concern (a directory navigates, a file selects), its

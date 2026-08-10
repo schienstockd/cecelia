@@ -135,7 +135,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   generation configs already round-trip — `seedConfigFromViewState` ↔ `apply-movie-config` — so no new
   capture mechanism was needed. Also flips `napariAutoSaveLayerProps` to true, without which a saved
   look is not reproducible. `ImageTable` deliberately does NOT merge into the shared table (Decision 9).
-  Phase 5 revises the ONE-TABLE question with counts (8 surfaces; the 4 hand-rolled ones are 257 lines of markup and cannot sort or resize); Phase 6 (edit/recreate) parked.
+  Phase 5 answered the ONE-TABLE question with counts and then did it: all eight surfaces are on `SelectionTable` bar `FileBrowser` (a stated exception — its row click is per-row semantics and its `..` row is synthetic). Phase 6 (edit/recreate) parked.
 - `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
   manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
   instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why
