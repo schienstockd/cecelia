@@ -15,6 +15,63 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.1] — 2026-08-10
+
+42 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
+and it is still finding its shape, so the minor bump waits for it to settle rather than for the next
+substantial change.
+
+### Changed — store format (read this first)
+
+- **Zarr v3 / OME-NGFF 0.5 stores can now be written.** Opt-in and **not** the default: the default
+  stays flat-key v2, chosen from a measured storage-vs-access table in Settings → Storage (v3 costs
+  ~14% less on disk and reads ~40% slower). Import picks the format and **every derived store inherits
+  it**; there is no converter.
+- **A store written as v3 cannot be opened by `v0.1.0`.** v3 *reading* landed in this same cycle, so an
+  older install has no reader for it. Nothing forces the choice, but it is a one-way door per store.
+- **New imports are little-endian** (`<u2` rather than `>u2`), following bioformats2raw 0.12 — which
+  retires the byte-order class of bug entirely. Existing stores are untouched and still read correctly.
+- **The NGFF version is now stamped** on the stores we write. Anything written before this has none,
+  which is why the metadata modal reports it per stored version.
+- Chunk-key separator and shard depth are import settings, inherited by derived stores like the format.
+
+### Added
+
+- **Movies are a managed collection, not a directory listing** — a per-project registry under
+  `settings/` (so it travels with a `.ccbundle`), an in-app player, star / tags / rename / delete and
+  bulk actions on a checked selection, and a sortable, resizable, collapsible list. A movie banks the
+  config that produced it, so it can be **reopened for editing on the page that made it**.
+- **The movie list shows its source image** — channel and attribute columns behind a Details toggle,
+  with the image table's attribute filter (now one shared control, `AttrFilterPanel`).
+- **Side-by-side comparison movies** — image versions across the columns × segmentation masks down the
+  rows, recorded one pass per cell and composed into one file.
+- Movie options throughout: explicit output size, frame range, title cards, mask outline width,
+  filename suffix and attribute-based naming, and recording on the task rail with progress + cancel.
+- **The Animation page picks its own image**, having become a proper module page.
+- **Optical-flow segmentation** — a training task, a model vault page, and a preview backend.
+- **The MCP observer can author analysis boards** (add-only; the user keeps them) and **design chain
+  templates it cannot run**, and it can see image attributes and existing boards.
+- Chain whiteboard: automatic layout for a DAG with no saved positions, plus a Tidy button.
+- Gates are positioned in µm, through one pixel scale.
+
+### Fixed
+
+- The Movies page rendered blank (a temporal-dead-zone throw in setup), and the detector gap that let
+  it through is closed.
+- The analysis board re-rendered itself to Vue's recursion limit; a client reloaded its own write on
+  every autosave; the read-back could not tell two boards apart. Boards are now versioned so two tabs
+  stop clobbering each other.
+- Skeletons vanished from a recording exactly like masks did, and a mask's outline width did not reach
+  napari — so recordings came out filled.
+- The mp4 writer leaked a staged `.tmp.mp4` on a failed or cancelled render.
+- Movie title cards rendered every non-ASCII character as a box.
+- A re-import reverted renamed channels; the import chunk-size parameter was wired to nothing.
+
+### Infrastructure
+
+- One write-behind autosave helper for the three stores that each had their own, `rafCoalesce` for
+  paint-rate work, and a written-down coalescing rule with detectors for the two ways it breaks.
+
 ## [0.1.0] — 2026-08-05
 
 **The first plain release.** Everything before this was an `-rcN` snapshot; nine of them never
@@ -238,7 +295,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/schienstockd/cecelia/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...v0.1.0
 [0.1.0-rc9]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...v0.1.0-rc9
 [0.1.0-rc8]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc7...v0.1.0-rc8
