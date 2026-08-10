@@ -48,6 +48,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
 | Chips / segmented picker | `components/ChipSelect.vue` | hand-rolled pill/`.seg` rows |
 | Colour picker dropdown | `components/SwatchSelect.vue` | a bespoke swatch grid |
+| Filtering rows by their attributes | `components/AttrFilterPanel.vue` + `utils/attrFilter.ts` (`v-model` an `AttrFilterState`, `:rows` anything with an `attr` bag) | a second set of chip rows + Apply/Reset/Invert, or a per-page matching clause |
 | **ANY table of rows and columns** — pick one, pick many, or a plain list | `components/SelectionTable.vue` — `selectionMode` `single` (default, a radio) / `multi` (checkboxes, `v-model:selected`) / `none` (a list; `@row-click` is what a row means). Per-column `sortable`, `sortKey` for a formatted cell, `ellipsis` for a long one; `#cell-<key>` to render one cell yourself, `#actions` for row buttons | a `<select>` that hides the trade-off, or a hand-rolled `<table>` — four of those existed only because `multi`/`none` didn't, and none of them could sort or resize |
 | Sorting a list by a clicked header | `utils/sortRows.ts` — `sortRows(rows, valueOf, dir)` + `cycleSort`/`sortIconFor` | a per-table comparator, or an inline asc/desc/off cycle |
 | Drag-resizable table columns | `composables/useColumnResize.ts` (`SelectionTable` opts in via `columnWidthKey`) | a per-table mousemove drag + an unpersisted widths `ref` |
@@ -1078,6 +1079,48 @@ sketch carries the explanation; the card is not the place for prose.
 
 Rationale + the sketch-act format: `docs/todo/SKETCH_ENGINE_PLAN.md`.
 
+## Filtering rows by attribute — `AttrFilterPanel`
+
+`frontend/src/components/AttrFilterPanel.vue` + `frontend/src/utils/attrFilter.ts`
+
+A chip row per attribute key, then **Apply / Reset / Invert**. Two surfaces use it: the image table's
+Filter dropdown (`ModuleLayout`) and the Movies list. It was the image table's alone and inline; nothing
+about it is about images, so it takes `:rows` — anything carrying an `attr` bag — and a `noun` for its
+tooltips. It renders **nothing** when the rows have no attributes, so a host can place it unguarded.
+
+- **Draft vs applied is deliberate.** Picking chips does not narrow the list; Apply does. Narrowing on
+  every click makes a multi-attribute filter a fight, because each partial selection hides the rows the
+  next chip would have come from. `AttrFilterState` carries both, plus `invert`.
+- **ALL keys, ANY value within a key** — a row is "control AND 4h", and picking two values of one
+  attribute means either. A missing attribute reads as `''`, which is what makes the "never annotated"
+  chip (rendered `—`) work. `invert` flips the whole verdict, not each clause.
+- The host owns **whether it is open** (its own Filter button, in its own button idiom) and where the
+  state lives — per module in `localStorage` for the image table, `cc.movies.attrFilter` for Movies.
+- The panel shell is `.cc-filter-panel` / `-rows` / `-row` / `-key` / `-chips` in `style.css`, shared
+  with `ModuleLayout`'s *Processed with* row, which is the same scenario.
+
+---
+
+## Movies list — the Details columns
+
+`frontend/src/modules/MoviesModule.vue`
+
+A **Details** toggle adds the SOURCE IMAGE's channels and attributes as columns beside each movie, the
+same shape the image table's own attribute view has. Off by default: they say nothing until a project
+has attributes, and the list lives in a side panel where every column costs width.
+
+- **Which image a movie is of** is banked in the registry (`imageUid`, `api/src/movies_api.jl`), and
+  resolved from the FILENAME for everything recorded before that — a batch file terminates with the uid,
+  a viewer file starts with the image name (`utils/movies.ts` → `resolveMovieImageUid`). Two images that
+  share a name resolve to nothing rather than to a guess.
+- **The channel columns are slots**, so column *N* means the same thing on every row. The `image` /
+  `in movie` picker switches what fills them: the image's own channels, or only the ones that movie
+  shows (`channels`, banked by the recorder). A blank cell in `in movie` mode is information.
+- The table scrolls inside the card, not the card itself, and the Movie column is pinned — with Details
+  on the table is wider than the panel.
+
+---
+
 ## ModuleLayout component
 
 `frontend/src/components/ModuleLayout.vue`
@@ -1089,7 +1132,8 @@ Owns the full two-column layout, SetBar, image selection state, attr filtering, 
 The filter panel renders automatically when `show-filter="true"` and the active set has either images with `attr` values or images with a run history. It disappears when there is neither, so it is safe to leave enabled even for modules that may or may not have attrs.
 
 **Two filter families in the one dropdown:**
-- **Attributes** — chips per attr key/value (Apply/Reset/Invert).
+- **Attributes** — chips per attr key/value (Apply/Reset/Invert). The shared `AttrFilterPanel` (above),
+  not this component's own; `ModuleLayout` holds the state and decides what it narrows.
 - **Processed with** — a function picker + an *ever* / *last run* mode, to narrow the list to the images a given function has been run on. This answers "which images have I already denoised/segmented?" It is **derived** from each image's automatic run log (`CciaImage.runLog`) via the pure helpers in `frontend/src/utils/runLog.ts` (`wasProcessedWith`, `funsRunAcross`) — there is deliberately **no** separate persisted status attribute to keep in sync; the run log is the single source of truth. Only functions that have actually been run across the set are offered, and both modes ignore **failed** runs (a failed run left no output). The same run log backs the **run tag** shown beside each image's UID in `ImageTable` — a task-manager-style module pill for the image's last **successful** run (`lastSuccessfulRun` + `taskDefs.labelFor`, coloured from the shared `frontend/src/utils/taskModule.ts` palette that also colours the task manager) — and the per-row run-history cog popover. All three filter/hide states persist per module in `localStorage`.
 
 **Collapsible chrome (free up working space).** Two persisted toggles, both in the `settings` store (`localStorage`):

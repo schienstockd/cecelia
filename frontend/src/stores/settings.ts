@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../utils/batchMovie'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
+import { type MovieChannelMode } from '../utils/movies'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -78,6 +79,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const moviesZoom = ref(Number(localStorage.getItem('cc.moviesZoom') ?? '1') || 1)
   const moviesAutoplay = ref(localStorage.getItem('cc.moviesAutoplay') !== 'false')   // default true
   const moviesLoop = ref(localStorage.getItem('cc.moviesLoop') === 'true')            // default false
+  // The movie list's Details columns — the source image's channels and attributes beside each movie.
+  // Off by default: they only mean something once a project has attributes, and the list lives in a
+  // side panel where every extra column costs width. `moviesChannelMode` picks which channels fill
+  // them ('image' = the image's own, 'movie' = only the ones that movie shows).
+  const moviesShowDetails = ref(localStorage.getItem('cc.moviesShowDetails') === 'true')
+  const moviesChannelMode = ref<MovieChannelMode>(
+    localStorage.getItem('cc.moviesChannelMode') === 'movie' ? 'movie' : 'image')
 
   // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
   // to free up working space. Both default expanded, both persist across sessions.
@@ -346,6 +354,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(moviesZoom,               v => localStorage.setItem('cc.moviesZoom',               String(v)))
   watch(moviesAutoplay,           v => localStorage.setItem('cc.moviesAutoplay',           String(v)))
   watch(moviesLoop,               v => localStorage.setItem('cc.moviesLoop',               String(v)))
+  watch(moviesShowDetails,        v => localStorage.setItem('cc.moviesShowDetails',        String(v)))
+  watch(moviesChannelMode,        v => localStorage.setItem('cc.moviesChannelMode',        String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
@@ -359,5 +369,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })

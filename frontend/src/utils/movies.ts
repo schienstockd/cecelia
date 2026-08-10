@@ -2,6 +2,10 @@
 // lists the project's rendered .mp4s (GET /api/movies) and streams them via the range-capable serve
 // route (GET /api/movies/file). See api/src/server.jl → try_serve_movie / api_movies_list.
 
+// The ONE filename-sanitiser, shared with the recorder's own filename preview — a movie name has to be
+// taken apart here exactly the way it was put together there (see resolveMovieImageUid).
+import { safeNamePart } from './batchMovie'
+
 export interface MovieEntry {
   name: string     // file name, e.g. "myImage_animation.mp4" — the id, and what the player streams
   size: number     // bytes
@@ -13,6 +17,8 @@ export interface MovieEntry {
   starred?: boolean
   tags?: string[]        // free-form; the growing taxonomy (Decision 3)
   producedBy?: string    // 'viewer' | 'animation' | 'batch' — written by the recorder, not the user
+  imageUid?: string      // which image it was recorded from; '' when the registry cannot say
+  channels?: string[]    // the channels the movie SHOWS (recorder-banked, image order)
   hasConfig?: boolean    // a saved generation config exists (fetched on demand, not in the list)
   configKind?: string    // 'look' | 'keyframes' (Decision 7)
   configStale?: boolean  // the file was re-recorded after the config was saved (Decision 5)
@@ -51,6 +57,100 @@ export function sortMovies(movies: MovieEntry[]): MovieEntry[] {
   return [...movies].sort((a, b) => (b.mtime - a.mtime) || a.name.localeCompare(b.name))
 }
 
+// ── Joining a movie back to its image ─────────────────────────────────────────
+// So the list can show an image's channels and attributes beside its movies (the Details columns).
+
+/** What this needs from an image — structurally a subset of `CciaImage`, declared here so the module
+ *  stays pure and independent of the project store. */
+export interface MovieImage {
+  uid: string
+  name: string
+  channelNames?: string[]
+  attr?: Record<string, string>
+}
+
+/** `safeNamePart(s)` split into the `_`-separated tokens a movie filename is assembled from. */
+const nameTokens = (s: string): string[] => safeNamePart(s).split('_').filter(Boolean)
+
+/** Does `hay` contain `needle` as a contiguous run of tokens? */
+function containsRun(hay: string[], needle: string[]): boolean {
+  if (!needle.length || needle.length > hay.length) return false
+  for (let i = 0; i + needle.length <= hay.length; i++)
+    if (needle.every((t, j) => hay[i + j] === t)) return true
+  return false
+}
+
+/**
+ * Which image a movie is of: the uid the registry banked, else the one its FILENAME names.
+ *
+ * The fallback carries every movie recorded before the registry knew — which for a batch is all of
+ * them, since a batch's saved config lists the whole selection rather than the one image each file is
+ * (`_entry_image_uid`, api/src/movies_api.jl). Two shapes have to be recognised because the recorders
+ * name files differently: a batch terminates with the uid (`_movie_basename`), the viewer STARTS with
+ * the image name (`_movie_named_path`), and either can carry attribute parts and a user suffix around
+ * it. So: an exact uid token wins; otherwise the image whose sanitised name appears as a run of tokens.
+ *
+ * Ambiguity resolves to `''` rather than a guess — two images CAN share a name, and labelling a movie
+ * with the wrong one's attributes is worse than labelling it with none. The longest name match wins
+ * first, so "cell" doesn't beat "cell_2" on a file that names the latter.
+ */
+export function resolveMovieImageUid(fileName: string, bankedUid: string,
+                                     images: MovieImage[]): string {
+  const known = new Set(images.map(i => i.uid))
+  if (bankedUid && known.has(bankedUid)) return bankedUid
+  const tokens = nameTokens(fileName.replace(/\.mp4$/i, ''))
+  const byUid = tokens.find(t => known.has(t))
+  if (byUid) return byUid
+  let best: MovieImage[] = [], bestLen = 0
+  for (const img of images) {
+    const parts = nameTokens(img.name)
+    if (!parts.length || !containsRun(tokens, parts)) continue
+    if (parts.length > bestLen) { best = [img]; bestLen = parts.length }
+    else if (parts.length === bestLen) best.push(img)
+  }
+  // a banked uid naming an image that has since been deleted is still the truthful answer
+  return best.length === 1 ? best[0].uid : bankedUid
+}
+
+/** Which list fills the channel columns: the image's own channels, or the ones the movie shows. */
+export type MovieChannelMode = 'image' | 'movie'
+export const MOVIE_CHANNEL_MODES: MovieChannelMode[] = ['image', 'movie']
+
+/**
+ * The channel columns for one row — `count` slots, so the Nth column means the same thing on every row.
+ *
+ * In `'movie'` mode a slot is filled only when the movie actually shows that channel, which is what
+ * makes the columns comparable: reading down column 2 answers "which of these movies has CD8 in it".
+ * A shown channel that matches no slot (the image's channel names were edited after the recording) is
+ * appended past the image's own, so nothing the registry banked is silently dropped.
+ */
+export function movieChannelCells(imageChannels: string[], movieChannels: string[],
+                                  count: number, mode: MovieChannelMode): string[] {
+  if (mode === 'image')
+    return Array.from({ length: count }, (_, i) => imageChannels[i] ?? '')
+  const shown = new Set(movieChannels.map(_chKey))
+  const cells = Array.from({ length: count }, (_, i) =>
+    i < imageChannels.length && shown.has(_chKey(imageChannels[i])) ? imageChannels[i] : '')
+  let next = imageChannels.length
+  for (const c of _unmatchedChannels(imageChannels, movieChannels))
+    if (next < count) cells[next++] = c
+  return cells
+}
+
+// Channel names are matched leniently (trimmed, case-insensitive): the recorder banks what the napari
+// layer was called, and that has been through a round trip the image's own list has not.
+const _chKey = (s: string): string => s.trim().toLowerCase()
+const _unmatchedChannels = (imageChannels: string[], movieChannels: string[]): string[] =>
+  movieChannels.filter(c => !imageChannels.some(ic => _chKey(ic) === _chKey(c)))
+
+/** How many channel slots the table needs — the widest row, in the mode being shown. */
+export function movieChannelCount(rows: Array<{ imageChannels: string[]; movieChannels: string[] }>,
+                                  mode: MovieChannelMode): number {
+  return rows.reduce((n, r) => Math.max(n, mode === 'image' ? r.imageChannels.length
+    : Math.max(r.imageChannels.length + _unmatchedChannels(r.imageChannels, r.movieChannels).length,
+               r.movieChannels.length)), 0)
+}
+
 // One row of the movie list, as `SelectionTable` wants it: a DISPLAY string per column plus the RAW
 // value each formatted column sorts by. The table renders what it is handed and never parses it back,
 // so "3.4 MB" and a locale date would otherwise sort as text — 900 KB above 1 MB, and months
@@ -76,24 +176,48 @@ export interface MovieRow {
   // movie predates the registry, which is most of them in an older project.
   hasConfig: boolean
   configKind: string
+  // ── the image this movie is of, joined in so the Details columns need no second lookup per row.
+  // Empty/blank when it can't be identified, which is what an older project's movies look like.
+  imageUid: string
+  imageName: string
+  imageChannels: string[]   // the image's own channel names, in order
+  movieChannels: string[]   // the channels the movie SHOWS (recorder-banked)
+  attr: Record<string, string>
+  // Each attribute ALSO flattened as `attr:<key>`, because `SelectionTable` sorts by reading the sort
+  // key straight off the row (`sortRows`), so a column's value has to be a top-level field. Missing on
+  // a row whose image has no such attribute — `sortRows` puts blanks last either way.
+  [key: `attr:${string}`]: string
 }
 export function movieRows(movies: MovieEntry[],
                           formatSize: (bytes: number) => string,
-                          formatTime: (mtime: number) => string): MovieRow[] {
-  return movies.map(m => ({
-    name: m.name,
-    label: movieDisplayName(m),
-    sizeText: formatSize(m.size), size: m.size,
-    timeText: formatTime(m.mtime), mtime: m.mtime,
-    starred: m.starred === true,
-    tags: m.tags ?? [],
-    tagText: (m.tags ?? []).join(', '),
-    producedBy: m.producedBy ?? '',
-    renamed: !!(m.displayName ?? '').trim(),
-    configStale: m.configStale === true,
-    hasConfig: m.hasConfig === true,
-    configKind: m.configKind ?? '',
-  }))
+                          formatTime: (mtime: number) => string,
+                          images: MovieImage[] = []): MovieRow[] {
+  const byUid = new Map(images.map(i => [i.uid, i]))
+  return movies.map(m => {
+    const uid = resolveMovieImageUid(m.name, m.imageUid ?? '', images)
+    const img = byUid.get(uid)
+    const attr = img?.attr ?? {}
+    return {
+      name: m.name,
+      label: movieDisplayName(m),
+      sizeText: formatSize(m.size), size: m.size,
+      timeText: formatTime(m.mtime), mtime: m.mtime,
+      starred: m.starred === true,
+      tags: m.tags ?? [],
+      tagText: (m.tags ?? []).join(', '),
+      producedBy: m.producedBy ?? '',
+      renamed: !!(m.displayName ?? '').trim(),
+      configStale: m.configStale === true,
+      hasConfig: m.hasConfig === true,
+      configKind: m.configKind ?? '',
+      imageUid: uid,
+      imageName: img?.name ?? '',
+      imageChannels: img?.channelNames ?? [],
+      movieChannels: m.channels ?? [],
+      attr,
+      ...Object.fromEntries(Object.entries(attr).map(([k, v]) => [`attr:${k}`, v])),
+    }
+  })
 }
 
 /**

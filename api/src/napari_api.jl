@@ -1410,9 +1410,11 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
                 done += 1
                 # Bank how this one was made, keyed by the file just written (Phase 4). One authored
                 # config produced every image in the batch, so each entry gets the same `config` — what
-                # differs per movie is only which image it opened, and that is in the filename.
+                # differs per movie is only which image it opened, which is why `image_uid` and the
+                # shown channels are banked PER ENTRY rather than left to the shared config.
                 register_movie!(project_uid, basename(path);
-                                produced_by = "batch", config = movie_config, config_kind = "look")
+                                produced_by = "batch", image_uid = uid, channels = chan_names,
+                                config = movie_config, config_kind = "look")
                 ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
             end
         catch e
@@ -1538,8 +1540,17 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
             # deliberate (MOVIE_MANAGEMENT_PLAN.md Decision 7): an animation IS its keyframes, while a
             # viewer recording is a "look" — the same shape the batch authors, so both edit on the page
             # that owns that kind.
+            # The viewer records the LIVE view and authors no channel list of its own, so the only
+            # record of what was on screen is the `look` the request seeded from it. An animation
+            # usually has none — its channels are whatever each keyframe's view state carries — and
+            # `register_movie!` then simply leaves the field unset.
+            look  = movie_config === nothing ? nothing : get(movie_config, "look", nothing)
+            shown = look isa AbstractDict ?
+                _shown_channel_names(img, look, isempty(value_names) ? nothing : first(value_names)) :
+                String[]
             register_movie!(project_uid, basename(path);
                             produced_by = animation ? "animation" : "viewer",
+                            image_uid = image_uid, channels = shown,
                             config = movie_config, config_kind = animation ? "keyframes" : "look")
             merge!(result, Dict{String,Any}("frames" => frames,
                                             "sizeX" => get(resp, "sizeX", nothing),

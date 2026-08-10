@@ -418,6 +418,27 @@ body {
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .cc-card-2 { background: var(--cc-surface-2); }
 
+/* A FILTER DROPDOWN — a panel that drops out of an action bar holding one labelled row of controls per
+   thing you can filter by. Two surfaces are this scenario: the image table's attribute chips and its
+   "Processed with" row (ModuleLayout), and the Movies list's attribute chips — and the first two
+   already shared these rules inline, which is what made a third consumer need them promoted rather
+   than copied.
+
+   The shell only. What the rows CONTAIN, and the Apply/Reset/Invert bar under them, belong to whoever
+   renders them (`components/AttrFilterPanel.vue`). See docs/UI.md → Filtering rows by attribute. */
+.cc-filter-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--cc-border);
+  padding: 0.5rem 1rem;
+  background: var(--cc-bg);
+}
+.cc-filter-rows { display: flex; flex-direction: column; gap: 0.3rem; }
+.cc-filter-row  { display: flex; align-items: center; gap: 0.6rem; min-height: 1.6rem; }
+/* the key names the row; it never grows, and ellipsises rather than pushing the chips off the edge */
+.cc-filter-key  { min-width: 80px; flex-shrink: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-filter-chips { flex: 1; min-width: 0; }
+
 /* A row of controls that must WRAP when its container is narrow — a module page's control bar, a panel
    toolbar, a viewer's option row. Measured before extracting: 19 sites already spelled out
    `display:flex; align-items:center; flex-wrap:wrap; gap:…`, between them using 14 different gap

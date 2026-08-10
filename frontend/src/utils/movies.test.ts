@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
-         type MovieEntry } from './movies'
+         resolveMovieImageUid, movieChannelCells, movieChannelCount,
+         type MovieEntry, type MovieImage } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -151,7 +152,11 @@ describe('movieRows', () => {
                               // values, so the table reads ONE row shape and never has to branch
                               starred: false, tags: [], tagText: '', producedBy: '',
                               renamed: false, configStale: false,
-                              hasConfig: false, configKind: '' })
+                              hasConfig: false, configKind: '',
+                              // …including the image join, which resolves to nothing when no images
+                              // were handed in — the page reads one row shape either way
+                              imageUid: '', imageName: '',
+                              imageChannels: [], movieChannels: [], attr: {} })
     expect(rows[1].size).toBe(900_000)
     expect(rows[1].mtime).toBe(9_000)
   })
@@ -174,4 +179,122 @@ describe('movieRows', () => {
     expect(movieRows(sortMovies(movies), String, String).map(r => r.name))
       .toEqual(['small_new.mp4', 'big_old.mp4'])     // newest first
   })
+})
+
+// The join that lets the movie list show an image's channels and attributes (docs/UI.md → Movies).
+// Everything below is about movies recorded BEFORE the registry banked a uid, which is all of them in
+// an existing project — so the filename fallback is the part that has to be right.
+describe('resolveMovieImageUid', () => {
+  const images: MovieImage[] = [
+    { uid: 'zolIMa', name: 'ctrl 4h' },
+    { uid: 'fXgbTl', name: 'treated 4h' },
+  ]
+
+  it('prefers the uid the registry banked', () => {
+    expect(resolveMovieImageUid('anything.mp4', 'fXgbTl', images)).toBe('fXgbTl')
+  })
+
+  it('finds the uid a BATCH filename terminates with, around attrs and a user suffix', () => {
+    // _movie_basename: <attr1>_<attr2>_..._<uid>[_suffix].mp4
+    expect(resolveMovieImageUid('control_4h_zolIMa.mp4', '', images)).toBe('zolIMa')
+    expect(resolveMovieImageUid('control_4h_zolIMa_corrected.mp4', '', images)).toBe('zolIMa')
+  })
+
+  it('finds the image a VIEWER filename STARTS with — the recorders name from opposite ends', () => {
+    // _movie_named_path: <safe image name>[_suffix][_animation].mp4
+    expect(resolveMovieImageUid('ctrl_4h.mp4', '', images)).toBe('zolIMa')
+    expect(resolveMovieImageUid('ctrl_4h_animation.mp4', '', images)).toBe('zolIMa')
+    expect(resolveMovieImageUid('treated_4h_AF_animation.mp4', '', images)).toBe('fXgbTl')
+  })
+
+  it('takes the LONGEST name match, so a prefix does not beat the image actually named', () => {
+    const two: MovieImage[] = [{ uid: 'aaa', name: 'cell' }, { uid: 'bbb', name: 'cell 2' }]
+    expect(resolveMovieImageUid('cell_2.mp4', '', two)).toBe('bbb')
+  })
+
+  it('refuses to guess between images that share a name', () => {
+    // two images CAN share a name; labelling a movie with the wrong one's attributes is worse than
+    // labelling it with none
+    const dupes: MovieImage[] = [{ uid: 'aaa', name: 'day 1' }, { uid: 'bbb', name: 'day 1' }]
+    expect(resolveMovieImageUid('day_1.mp4', '', dupes)).toBe('')
+  })
+
+  it('matches nothing rather than something for a name that is in no filename', () => {
+    expect(resolveMovieImageUid('some_other_movie.mp4', '', images)).toBe('')
+  })
+
+  it('keeps a banked uid whose image has since been deleted — that is still the truthful answer', () => {
+    expect(resolveMovieImageUid('some_other_movie.mp4', 'gone42', images)).toBe('gone42')
+  })
+})
+
+describe('movieChannelCells', () => {
+  const image = ['DAPI', 'CD8', 'SHG']
+
+  it("shows the image's channels in their own slots", () => {
+    expect(movieChannelCells(image, ['CD8'], 3, 'image')).toEqual(['DAPI', 'CD8', 'SHG'])
+  })
+
+  it('blanks the slots a movie does not show, so a column stays comparable down the list', () => {
+    // reading down column 2 then answers "which of these movies has CD8 in it"
+    expect(movieChannelCells(image, ['CD8', 'SHG'], 3, 'movie')).toEqual(['', 'CD8', 'SHG'])
+  })
+
+  it('matches channel names leniently — the recorder banks what the napari layer was called', () => {
+    expect(movieChannelCells(image, [' cd8 '], 3, 'movie')).toEqual(['', 'CD8', ''])
+  })
+
+  it('keeps a shown channel that matches no slot, past the image\'s own', () => {
+    // the image's channel names were edited after the recording; dropping it would silently lose
+    // what the registry actually banked
+    expect(movieChannelCells(image, ['CD8', 'oldName'], 4, 'movie'))
+      .toEqual(['', 'CD8', '', 'oldName'])
+  })
+
+  it('pads to the column count so every row has a cell per column', () => {
+    expect(movieChannelCells(['DAPI'], [], 3, 'image')).toEqual(['DAPI', '', ''])
+  })
+})
+
+describe('movieChannelCount', () => {
+  it('is the widest image in image mode', () => {
+    expect(movieChannelCount([{ imageChannels: ['a', 'b'], movieChannels: [] },
+                              { imageChannels: ['a'], movieChannels: ['x', 'y', 'z'] }], 'image')).toBe(2)
+  })
+
+  it('makes room for shown channels that match no slot, but only in movie mode', () => {
+    const rows = [{ imageChannels: ['a', 'b'], movieChannels: ['a', 'gone'] }]
+    expect(movieChannelCount(rows, 'movie')).toBe(3)
+    expect(movieChannelCount(rows, 'image')).toBe(2)
+  })
+})
+
+describe('movieRows — the image join', () => {
+  const images: MovieImage[] = [
+    { uid: 'zolIMa', name: 'ctrl 4h', channelNames: ['DAPI', 'CD8'],
+      attr: { Treatment: 'control', Timepoint: '4h' } },
+    { uid: 'fXgbTl', name: 'treated 4h', channelNames: ['DAPI', 'CD8', 'SHG'],
+      attr: { Treatment: 'anti-PD1' } },
+  ]
+  const rows = movieRows([{ name: 'ctrl_4h.mp4', size: 1, mtime: 2, channels: ['CD8'] },
+                          { name: 'x_fXgbTl.mp4', size: 1, mtime: 1, imageUid: 'fXgbTl' }],
+                         String, String, images)
+
+  it('carries the resolved image, its channels and its attributes onto the row', () => {
+    expect(rows[0].imageUid).toBe('zolIMa')
+    expect(rows[0].imageName).toBe('ctrl 4h')
+    expect(rows[0].imageChannels).toEqual(['DAPI', 'CD8'])
+    expect(rows[0].movieChannels).toEqual(['CD8'])
+    expect(rows[0].attr).toEqual({ Treatment: 'control', Timepoint: '4h' })
+  })
+
+  it('flattens each attribute as `attr:<key>` — SelectionTable sorts by reading the key off the row', () => {
+    expect(rows[0]['attr:Treatment']).toBe('control')
+    expect(rows[1]['attr:Treatment']).toBe('anti-PD1')
+    // an image without the attribute simply lacks the field; sortRows puts blanks last
+    expect(rows[1]['attr:Timepoint']).toBeUndefined()
+  })
+
+  // the union of keys across rows is `attrKeysOf` (utils/attrFilter.ts) — one implementation, shared
+  // with the image table's own attribute filter, so a movie row is just another `AttrBearing`
 })
