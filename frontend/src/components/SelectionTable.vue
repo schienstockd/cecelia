@@ -141,6 +141,12 @@ const props = withDefaults(defineProps<{
    * bordered, tinted row behind each one. Expansion state stays the CALLER's — the table only asks.
    */
   isExpanded?: (row: Row) => boolean
+  /**
+   * Offer the header select-all in `multi`. Off for a table that is multi in SHAPE but capped to one
+   * by its own rule (the image table's `singleSelect`), where "select all" is a button that cannot do
+   * what it says.
+   */
+  selectAll?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -151,6 +157,7 @@ const props = withDefaults(defineProps<{
   actionsWidth: '4.5rem',
   selectionMode: 'single',
   disabledIds: () => [],
+  selectAll: true,
 })
 
 const emit = defineEmits<{
@@ -183,6 +190,9 @@ function pick(row: Row) {
   emit('row-click', row)
   if (props.disabled || props.selectionMode === 'none') return
   const id = idOf(row)
+  // `disabledIds` greys the checkbox; the ROW is the hit target, so it has to refuse here too or a
+  // click anywhere else on the row selects what the checkbox says cannot be selected
+  if (props.disabledIds.includes(id)) return
   if (props.selectionMode === 'multi') {
     emit('update:selected', toggleOneSelection(id, selectedIds.value))
     return
@@ -290,7 +300,7 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
     <thead>
       <tr>
         <th v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
-          <input v-if="selectionMode === 'multi'" type="checkbox" :checked="allSelected"
+          <input v-if="selectionMode === 'multi' && selectAll" type="checkbox" :checked="allSelected"
                  :indeterminate.prop="someSelected" :disabled="disabled" @click.stop="toggleAll"
                  v-tooltip.right="'Select all / none'" />
         </th>
@@ -388,11 +398,16 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
    to its content — and is also why the radio column needs one of its own (see the colgroup). */
 .sel-table.sized { width: 100%; table-layout: fixed; }
 .sel-col-pick { width: 1.75rem; }
-/* Pinned columns. They need their own background or the scrolling cells show THROUGH them, and a
-   header one sits above the body ones where the two overlap. */
-.sel-sticky { position: sticky; z-index: 2; background: var(--cc-surface-1); }
+/* Pinned columns. They need an OPAQUE background or the scrolled cells show THROUGH them — and it has
+   to track the ROW's state, or a hovered or selected row loses its tint exactly where it is frozen.
+   Hence `--row-bg` rather than a fixed colour: the selected tint is a `color-mix` onto transparent for
+   the normal cells, and the same mix onto the page background here. */
+.sel-table { --row-bg: var(--cc-bg); }
+.sel-row:hover { --row-bg: var(--cc-surface-2); }
+.sel-on { --row-bg: color-mix(in srgb, var(--cc-selected) 12%, var(--cc-bg)); }
+.sel-sticky { position: sticky; z-index: 2; background: var(--row-bg); }
 .sel-sticky-pick { left: 0; }
-thead .sel-sticky { z-index: 3; }
+thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-table.sized th { position: relative; }
 .sel-table.sized th, .sel-table.sized td { overflow: hidden; text-overflow: ellipsis; }
 .sel-col-resize {

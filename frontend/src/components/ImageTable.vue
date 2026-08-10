@@ -9,10 +9,10 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
-import { isExcluded, isIncluded, includedUids, isImported, isStarred } from '../utils/inclusion'
+import { isExcluded, isIncluded, isImported, isStarred } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
-import { cycleSort, sortIconFor } from '../utils/sortRows'
-import { useColumnResize } from '../composables/useColumnResize'
+import { type SortState } from '../utils/sortRows'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
 import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
@@ -272,20 +272,9 @@ const images = computed(() => {
 const scope = computed(() => props.selectionScope ?? 'default')
 
 // ── Sort ──────────────────────────────────────────────────────────────────────
-// Click a column header to sort by it: asc → desc → off (natural import order). Persisted per
-// page + set in the project store (like the selection) so it survives navigating away and back.
-// Sort logic itself is the pure, tested sortImages() helper; here we only hold the chosen column.
-function toggleSort(key: string) {
-  const cur = project.getImageSort(scope.value, props.setUid)
-  project.setImageSort(scope.value, props.setUid, cycleSort(cur, key))
-}
-function sortActive(key: string): boolean {
-  return project.getImageSort(scope.value, props.setUid)?.key === key
-}
-// Neutral (both-arrows) hint when unsorted; a direction arrow when this column is the active sort.
-function sortIcon(key: string): string {
-  return sortIconFor(project.getImageSort(scope.value, props.setUid), key)
-}
+// The header affordance and the asc → desc → off cycle are SelectionTable's; what stays here is where
+// the choice LIVES (per page + set in the project store, so it survives navigating away) and how it is
+// applied (the pure, tested `sortImages`). See `sortModel` below.
 
 function commit() {
   project.setImageSelection(scope.value, props.setUid, [...selected.value])
@@ -318,21 +307,8 @@ watch(() => project.getImageSelection(scope.value, props.setUid).join(','), (csv
 // incl. on excluded ones); everywhere else selection is the runnable (included) subset only.
 const canSelectExcluded = computed(() => props.module === 'import' || props.module === 'metadata')
 
-// Selectable set for select-all + the "all/some" header state: all images where excluded are
-// selectable (import/metadata), else only the included (runnable) subset.
-const selectableUids = computed(() =>
-  canSelectExcluded.value ? images.value.map(i => i.uid) : includedUids(images.value))
-const allSelected = computed(() =>
-  selectableUids.value.length > 0 && selectableUids.value.every(u => selected.value.has(u))
-)
-const someSelected = computed(() =>
-  selected.value.size > 0 && !allSelected.value
-)
-
-function toggleAll() {
-  selected.value = allSelected.value ? new Set() : new Set(selectableUids.value)
-  commit()
-}
+// Select-all and its tri-state header box are SelectionTable's; which rows it may reach is stated
+// here, as `unselectableUids`.
 
 // Quick way to batch-fix physical-size/timing warnings: select every flagged image in one click,
 // then open a clean reference image's dialog and Copy/Fill flagged onto exactly this selection.
@@ -383,22 +359,6 @@ async function resyncFlagged() {
   } finally {
     resyncing.value = false
   }
-}
-
-function toggle(uid: string) {
-  const img = images.value.find(i => i.uid === uid)
-  if (img && isExcluded(img) && !canSelectExcluded.value) return   // excluded → not runnable (except import/metadata)
-  if (props.singleSelect) {
-    // radio-style: clicking selects only this image (clicking the selected one clears it)
-    selected.value = selected.value.has(uid) ? new Set() : new Set([uid])
-  } else if (selected.value.has(uid)) {
-    selected.value.delete(uid)
-    selected.value = new Set(selected.value)
-  } else {
-    selected.value.add(uid)
-    selected.value = new Set(selected.value)
-  }
-  commit()
 }
 
 // ── Napari ────────────────────────────────────────────────────────────────────
@@ -481,10 +441,47 @@ function defaultWidth(key: string): number {
   if (key.startsWith('attr-')) return 110
   return 100
 }
-// Drag-to-resize is the shared `useColumnResize` (the same one SelectionTable uses) — it had been
-// inline here, and unpersisted, so every navigation away threw the widths the user had set.
-const { widthOf: colW, onColumnResizeStart: startResize } =
-  useColumnResize({ defaultWidth, storageKey: 'cc-imagetable-colw' })
+// ── Columns ───────────────────────────────────────────────────────────────────
+// The table itself is the shared `SelectionTable` (docs/UI.md): it owns the header, the checkboxes and
+// their tri-state select-all, the sticky left columns, the resize handles and the row hit target. What
+// stays here is what is ABOUT an image — every cell comes back through a `#cell-` slot.
+//
+// A column key IS its sort key, so the cycle the table reports goes straight to `sortImages` — hence
+// `attr:${k}` rather than the old `attr-${k}` width key. Widths therefore live under a new storage key;
+// the old one would have mapped the wrong column.
+const COLUMNS = computed<SelectionColumn[]>(() => [
+  { key: 'viewer', label: '', fixed: true, width: 32, sticky: true },
+  { key: 'name', label: 'Name', sortable: true, sticky: true, width: defaultWidth('name') },
+  ...channelIndices.value.map(idx => ({ key: `ch:${idx}`, label: String(idx), width: 90 })),
+  ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 })),
+  ...(!props.showAttrs ? [{ key: 'ch', label: 'Ch', sortable: true, fixed: true, width: 48 }] : []),
+  ...(anyZStack.value ? [{ key: 'z', label: 'Z', sortable: true, fixed: true, width: 48 }] : []),
+  ...(anyTimelapse.value
+    ? [{ key: 'duration', label: 'Duration', sortable: true, fixed: true, width: 90 }] : []),
+  ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
+])
+
+// The sort, held where it always was — per (scope, set) in the project store, ordered by the pure
+// `sortImages`. The table renders the affordance and reports the cycle; `v-model:sort` is what lets it
+// do that without owning the state (see SelectionTable → `sort`).
+const sortModel = computed<SortState>({
+  get: () => project.getImageSort(scope.value, props.setUid),
+  set: v => project.setImageSort(scope.value, props.setUid, v),
+})
+
+// Set ↔ array. The stored selection, the excluded guard and the single-select cap are all this
+// component's rules, so the table is handed a plain list and hands one back.
+const selectedList = computed<string[]>({
+  get: () => [...selected.value],
+  set: v => {
+    selected.value = new Set(props.singleSelect ? v.slice(-1) : v)
+    commit()
+  },
+})
+// Excluded images are not runnable, so they cannot be checked — except on Import/Metadata, where
+// curating them IS the job.
+const unselectableUids = computed(() =>
+  canSelectExcluded.value ? [] : images.value.filter(isExcluded).map(i => i.uid))
 
 </script>
 
@@ -500,240 +497,173 @@ const { widthOf: colW, onColumnResizeStart: startResize } =
   </div>
 
   <div v-else class="table-scroll">
-  <table class="image-table">
-    <thead>
-      <tr>
-        <!-- fixed: checkbox (no select-all in single-select mode) -->
-        <th class="col-fixed col-check">
-          <input v-if="!singleSelect" type="checkbox"
-            :checked="allSelected" :indeterminate="someSelected"
-            @change="toggleAll"
-            v-tooltip.right="'Select / deselect all'"
-          />
-        </th>
+  <!-- The canonical table (docs/UI.md). It owns the header, the checkboxes and their tri-state
+       select-all, the sticky left columns, the resize handles and the row hit target; every cell below
+       is this component's, through a `#cell-` slot. -->
+  <SelectionTable
+    class="image-table"
+    selection-mode="multi"
+    :select-all="!singleSelect"
+    :columns="COLUMNS"
+    :rows="images"
+    id-key="uid"
+    v-model:selected="selectedList"
+    v-model:sort="sortModel"
+    :disabled-ids="unselectableUids"
+    column-width-key="cc-imagetable-cols"
+    :row-class="img => ({ 'row-excluded': isExcluded(img) })"
+    :row-tooltip="img => isExcluded(img) && !canSelectExcluded
+      ? 'Excluded — include it to select for a run' : `Select ${img.name}`"
+  >
+    <!-- Batch-fix affordances live in the NAME header, where the images they act on are read. -->
+    <template #head-name>
+      <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
+        :class="{ active: flaggedActive }" @click.stop="selectFlagged"
+        v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
+        <i class="pi pi-exclamation-triangle" />
+      </button>
+      <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
+        class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
+        @click.stop="resyncFlagged"
+        v-tooltip.bottom="`Re-read size & timing from file for ${flaggedUids.length} flagged image(s)`">
+        <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
+      </button>
+    </template>
 
-        <!-- fixed: napari eye -->
-        <th class="col-fixed col-viewer" />
-
-        <!-- resizable: name (frozen-left) -->
-        <th class="col-resize col-name" :style="{ width: colW('name'), minWidth: colW('name') }">
-          <span class="th-sort" :class="{ active: sortActive('name') }" @click.stop="toggleSort('name')"
-            v-tooltip.bottom="'Sort by name'">
-            Name <i :class="['sort-ico', sortIcon('name')]" />
-          </span>
-          <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon"
-            :class="{ active: flaggedActive }" @click.stop="selectFlagged"
-            v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
-            <i class="pi pi-exclamation-triangle" />
-          </button>
-          <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
-            class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
-            @click.stop="resyncFlagged"
-            v-tooltip.bottom="`Re-read size & timing from file for ${flaggedUids.length} flagged image(s)`">
-            <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
-          </button>
-          <div class="resize-handle" @mousedown.stop.prevent="startResize('name', $event)" />
-        </th>
-
-        <!-- resizable: one column per channel index -->
-        <th
-          v-for="idx in channelIndices" :key="'ch-' + idx"
-          class="col-resize col-ch-name"
-          :style="{ width: colW('ch-' + idx), minWidth: colW('ch-' + idx) }"
-          v-tooltip.bottom="`Channel ${idx} name`"
-        >
-          {{ idx }}
-          <div class="resize-handle" @mousedown.stop.prevent="startResize('ch-' + idx, $event)" />
-        </th>
-
-        <!-- resizable: one column per attr key -->
-        <th
-          v-for="key in attrKeys" :key="'attr-' + key"
-          class="col-resize col-attr"
-          :style="{ width: colW('attr-' + key), minWidth: colW('attr-' + key) }"
-          v-tooltip.bottom="`Attribute: ${key} — click to sort`"
-        >
-          <span class="th-sort" :class="{ active: sortActive('attr:' + key) }" @click.stop="toggleSort('attr:' + key)">
-            {{ key }} <i :class="['sort-ico', sortIcon('attr:' + key)]" />
-          </span>
-          <div class="resize-handle" @mousedown.stop.prevent="startResize('attr-' + key, $event)" />
-        </th>
-
-        <!-- fixed: channel count (only when not showing per-channel columns) -->
-        <th v-if="!showAttrs" class="col-fixed col-ch" v-tooltip.bottom="'Number of channels — click to sort'">
-          <span class="th-sort" :class="{ active: sortActive('ch') }" @click.stop="toggleSort('ch')">
-            Ch <i :class="['sort-ico', sortIcon('ch')]" />
-          </span>
-        </th>
-
-        <!-- fixed: z-slices (only when the set has a z-stack) -->
-        <th v-if="anyZStack" class="col-fixed col-ch" v-tooltip.bottom="'Number of z-slices — click to sort'">
-          <span class="th-sort" :class="{ active: sortActive('z') }" @click.stop="toggleSort('z')">
-            Z <i :class="['sort-ico', sortIcon('z')]" />
-          </span>
-        </th>
-
-        <!-- fixed: timelapse duration (only when the set has a timelapse) -->
-        <th v-if="anyTimelapse" class="col-fixed col-dur"
-          v-tooltip.bottom="'Total timelapse duration (first → last frame) — click to sort'">
-          <span class="th-sort" :class="{ active: sortActive('duration') }" @click.stop="toggleSort('duration')">
-            Duration <i :class="['sort-ico', sortIcon('duration')]" />
-          </span>
-        </th>
-
-        <!-- fixed: per-module status -->
-        <th v-if="module" class="col-fixed col-status">Status</th>
-      </tr>
-    </thead>
-
-    <tbody>
-      <tr
-        v-for="img in images" :key="img.uid"
-        class="image-row"
-        :class="{ 'row-selected': selected.has(img.uid), 'row-excluded': isExcluded(img) }"
-        @click="toggle(img.uid)"
+    <!-- napari eye -->
+    <template #cell-viewer="{ row: img }">
+      <button
+        class="viewer-btn"
+        :class="{ 'viewer-active': project.napariImageUid === img.uid }"
+        :disabled="napariLoading.has(img.uid) || !isImported(img)"
+        @click.stop="openInNapari(img.uid)"
+        v-tooltip.right="!isImported(img)
+          ? 'Import this image first'
+          : project.napariImageUid === img.uid
+            ? 'Currently shown in Napari — click to reload'
+            : 'Open this image in Napari viewer'"
       >
-        <td class="col-fixed col-check" @click.stop>
-          <input type="checkbox" :checked="selected.has(img.uid)"
-            :disabled="isExcluded(img) && !canSelectExcluded"
-            @change="toggle(img.uid)"
-            v-tooltip.right="isExcluded(img) && !canSelectExcluded ? 'Excluded — include it to select for a run' : undefined" />
-        </td>
+        <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
+        <i v-else class="pi pi-eye" />
+      </button>
+    </template>
 
-        <td class="col-fixed col-viewer" @click.stop>
-          <button
-            class="viewer-btn"
-            :class="{ 'viewer-active': project.napariImageUid === img.uid }"
-            :disabled="napariLoading.has(img.uid) || !isImported(img)"
-            @click="openInNapari(img.uid)"
-            v-tooltip.right="!isImported(img)
-              ? 'Import this image first'
-              : project.napariImageUid === img.uid
-                ? 'Currently shown in Napari — click to reload'
-                : 'Open this image in Napari viewer'"
-          >
-            <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
-            <i v-else class="pi pi-eye" />
-          </button>
-        </td>
+    <!-- name: three stacked rows — the name and its badges, the uid + last run, the note -->
+    <template #cell-name="{ row: img }">
+      <span class="name-row">
+        <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
+          v-tooltip.right="warnIconFor(img)!.tip">
+          <i class="pi pi-exclamation-triangle" />
+        </button>
+        <span v-if="qcFor(img)" class="qc-badge" :class="qcFor(img)!.level"
+          v-tooltip.right="qcFor(img)!.long">
+          <i class="pi pi-flag" /> QC
+        </span>
+        <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
+          @click.stop="toggleStarred(img)"
+          v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">
+          <i :class="isStarred(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
+        </button>
+        <span v-if="isExcluded(img)" class="excl-badge"
+          v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
+          <i class="pi pi-ban" /> Excluded
+        </span>
+        <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
+        <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
+        <span class="runlog-cell" @click.stop>
+          <button class="row-icon-btn cc-btn cc-btn-bare cc-btn-icon actions-btn" :class="{ on: actionsUid === img.uid }"
+            @click.stop="toggleActions(img.uid, $event)"
+            v-tooltip.right="'Actions'"><i class="pi pi-ellipsis-h" /></button>
+        </span>
+      </span>
+      <span class="uid-row">
+        <span class="img-uid cc-muted cc-fs-xs">{{ img.uid }}</span>
+        <!-- last successful run — task-manager-style module tag (see run log / taskModule palette) -->
+        <span v-if="lastRunTag(img)" class="run-tag" :style="lastRunTag(img)!.style"
+          v-tooltip.right="lastRunTag(img)!.tip">
+          <span class="run-tag-mod">{{ lastRunTag(img)!.module }}</span>
+          <span class="run-tag-fun">{{ lastRunTag(img)!.fun }}</span>
+        </span>
+      </span>
+      <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
+           exclusion reason (shown in the badge tooltip + CSV) -->
+      <span class="note-row" @click.stop>
+        <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.right="'Enter to save, Esc to cancel'"
+          class="attr-edit" v-model="editValue" :ref="focusEditInput"
+          :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
+          @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
+          @keyup.esc="cancelEdit"
+          @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
+        <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
+          v-tooltip.right="'Click to edit the note'">
+          <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
+        </span>
+      </span>
+    </template>
 
-        <td class="col-resize td-name col-name">
-          <span class="name-row">
-            <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
-              v-tooltip.right="warnIconFor(img)!.tip">
-              <i class="pi pi-exclamation-triangle" />
-            </button>
-            <span v-if="qcFor(img)" class="qc-badge" :class="qcFor(img)!.level"
-              v-tooltip.right="qcFor(img)!.long">
-              <i class="pi pi-flag" /> QC
-            </span>
-            <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
-              @click.stop="toggleStarred(img)"
-              v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">
-              <i :class="isStarred(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
-            </button>
-            <span v-if="isExcluded(img)" class="excl-badge"
-              v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
-              <i class="pi pi-ban" /> Excluded
-            </span>
-            <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
-            <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
-            <span class="runlog-cell" @click.stop>
-              <button class="row-icon-btn cc-btn cc-btn-bare cc-btn-icon actions-btn" :class="{ on: actionsUid === img.uid }"
-                @click.stop="toggleActions(img.uid, $event)"
-                v-tooltip.right="'Actions'"><i class="pi pi-ellipsis-h" /></button>
-            </span>
-          </span>
-          <span class="uid-row">
-            <span class="img-uid cc-muted cc-fs-xs">{{ img.uid }}</span>
-            <!-- last successful run — task-manager-style module tag (see run log / taskModule palette) -->
-            <span v-if="lastRunTag(img)" class="run-tag" :style="lastRunTag(img)!.style"
-              v-tooltip.right="lastRunTag(img)!.tip">
-              <span class="run-tag-mod">{{ lastRunTag(img)!.module }}</span>
-              <span class="run-tag-fun">{{ lastRunTag(img)!.fun }}</span>
-            </span>
-          </span>
-          <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
-               exclusion reason (shown in the badge tooltip + CSV) -->
-          <span class="note-row" @click.stop>
-            <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.right="'Enter to save, Esc to cancel'"
-              class="attr-edit" v-model="editValue" :ref="focusEditInput"
-              :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
-              @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
-              @keyup.esc="cancelEdit"
-              @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
-            <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
-              v-tooltip.right="'Click to edit the note'">
-              <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
-            </span>
-          </span>
-        </td>
+    <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
+    <template v-for="idx in channelIndices" :key="'ch-' + idx" #[`cell-ch:${idx}`]="{ row: img }">
+      <template v-if="editableMeta && channelEditable(img, idx)">
+        <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.right="'Enter to save, Esc to cancel'"
+          class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
+          @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
+          @keyup.esc="cancelEdit"
+          @blur="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))" />
+        <span v-else class="cell-text attr-cell"
+          v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Channel ${idx} — click to name`"
+          @click.stop="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
+          {{ img.channelNames?.[idx - 1] || '—' }}
+        </span>
+      </template>
+      <span v-else-if="img.channelNames?.[idx - 1]" class="cell-text"
+        v-tooltip.right="img.channelNames[idx - 1]">{{ img.channelNames[idx - 1] }}</span>
+      <span v-else class="dim">—</span>
+    </template>
 
-        <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
-        <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize">
-          <template v-if="editableMeta && channelEditable(img, idx)">
-            <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.right="'Enter to save, Esc to cancel'"
-              class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
-              @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
-              @keyup.esc="cancelEdit"
-              @blur="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))" />
-            <span v-else class="cell-text attr-cell"
-              v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Channel ${idx} — click to name`"
-              @click.stop="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
-              {{ img.channelNames?.[idx - 1] || '—' }}
-            </span>
-          </template>
-          <span v-else-if="img.channelNames?.[idx - 1]" class="cell-text"
-            v-tooltip.right="img.channelNames[idx - 1]">{{ img.channelNames[idx - 1] }}</span>
-          <span v-else class="dim">—</span>
-        </td>
+    <!-- attributes: editable only on the Metadata page (editableMeta); read-only elsewhere -->
+    <template v-for="key in attrKeys" :key="'attr-' + key" #[`cell-attr:${key}`]="{ row: img }">
+      <template v-if="editableMeta">
+        <input v-if="isEditing(img.uid, 'attr:' + key)" v-tooltip.right="'Enter to save, Esc to cancel'"
+          class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
+          @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
+          @keyup.esc="cancelEdit"
+          @blur="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))" />
+        <span v-else class="cell-text attr-cell"
+          v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]} — click to edit` : `Set ${key}`"
+          @click.stop="startEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '')">
+          {{ img.attr?.[key] || '—' }}
+        </span>
+      </template>
+      <span v-else class="cell-text"
+        v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]}` : ''">{{ img.attr?.[key] || '—' }}</span>
+    </template>
 
-        <!-- attributes: editable only on the Metadata page (editableMeta); read-only elsewhere -->
-        <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize">
-          <template v-if="editableMeta">
-            <input v-if="isEditing(img.uid, 'attr:' + key)" v-tooltip.right="'Enter to save, Esc to cancel'"
-              class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
-              @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
-              @keyup.esc="cancelEdit"
-              @blur="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))" />
-            <span v-else class="cell-text attr-cell"
-              v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]} — click to edit` : `Set ${key}`"
-              @click.stop="startEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '')">
-              {{ img.attr?.[key] || '—' }}
-            </span>
-          </template>
-          <span v-else class="cell-text"
-            v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]}` : ''">{{ img.attr?.[key] || '—' }}</span>
-        </td>
+    <template #cell-ch="{ row: img }">
+      <span v-if="img.sizeC">{{ img.sizeC }}</span>
+      <span v-else class="dim">—</span>
+    </template>
 
-        <td v-if="!showAttrs" class="col-fixed col-ch">
-          <span v-if="img.sizeC">{{ img.sizeC }}</span>
-          <span v-else class="dim">—</span>
-        </td>
+    <template #cell-z="{ row: img }">
+      <span v-if="(img.sizeZ ?? 0) > 1">{{ img.sizeZ }}</span>
+      <span v-else class="dim">—</span>
+    </template>
 
-        <td v-if="anyZStack" class="col-fixed col-ch">
-          <span v-if="(img.sizeZ ?? 0) > 1">{{ img.sizeZ }}</span>
-          <span v-else class="dim">—</span>
-        </td>
+    <template #cell-duration="{ row: img }">
+      <span v-if="timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit)">{{
+        timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit) }}</span>
+      <span v-else class="dim">—</span>
+    </template>
 
-        <td v-if="anyTimelapse" class="col-fixed col-dur">
-          <span v-if="timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit)">{{
-            timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit) }}</span>
-          <span v-else class="dim">—</span>
-        </td>
-
-        <td v-if="module" class="col-fixed col-status">
-          <span v-if="imageModuleStatus(img)"
-            class="status-badge"
-            :class="statusConfig[imageModuleStatus(img)!]?.cls"
-            v-tooltip.right="statusConfig[imageModuleStatus(img)!]?.label">
-            <span v-if="imageModuleStatus(img) === 'running'" class="spinner" />
-            {{ statusConfig[imageModuleStatus(img)!]?.label }}
-          </span>
-        </td>
-      </tr>
-    </tbody>
-  </table>
+    <template #cell-status="{ row: img }">
+      <span v-if="imageModuleStatus(img)"
+        class="status-badge"
+        :class="statusConfig[imageModuleStatus(img)!]?.cls"
+        v-tooltip.right="statusConfig[imageModuleStatus(img)!]?.label">
+        <span v-if="imageModuleStatus(img) === 'running'" class="spinner" />
+        {{ statusConfig[imageModuleStatus(img)!]?.label }}
+      </span>
+    </template>
+  </SelectionTable>
   </div>
 
   <PhysicalSizeDialog v-if="physSizeDialogUid"
@@ -800,106 +730,29 @@ const { widthOf: colW, onColumnResizeStart: startResize } =
 .empty-cta   { margin-top: 0.85rem; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
+/* The table is SelectionTable now: the header, the sort affordance, the row hover/selected states,
+   the frozen-column offsets and the resize handles all live there. `.image-table` is its ROOT, so it
+   takes this component's scope id directly; anything inside it needs `:deep`.
 
-.image-table {
-  table-layout: fixed;
-  width: max-content;
-  min-width: 100%;
-  border-collapse: collapse;
-  font-size: var(--cc-fs-md);
-}
+   `width: max-content` is what makes the horizontal scroll work — the shared table sizes to 100%,
+   which would compress the columns instead of letting `.table-scroll` scroll them. */
+.table-scroll { overflow-x: auto; width: 100%; }
+.image-table { width: max-content; min-width: 100%; font-size: var(--cc-fs-md); }
 
-.image-table thead th {
-  text-align: left;
-  font-size: var(--cc-fs-xs); font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--cc-text-dim);
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-/* clickable sort header: label + a small arrow that cycles asc → desc → off. Neutral both-arrows
-   icon (dim) hints sortability; the active column shows a direction arrow in the accent colour. */
-.th-sort {
-  cursor: pointer; user-select: none;
-  display: inline-flex; align-items: center; gap: 0.25rem;
-}
-.th-sort:hover { color: var(--cc-text); }
-.th-sort.active { color: var(--cc-text); }
-.sort-ico { font-size: var(--cc-fs-2xs); opacity: 0.3; transition: opacity 0.1s, color 0.1s; }
-.th-sort:hover .sort-ico { opacity: 0.7; }
-.th-sort.active .sort-ico { opacity: 1; color: var(--cc-accent); }
-
+/* Batch-fix buttons in the Name header (select-flagged, re-sync) */
 .select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .select-flagged-btn.active { color: #fbbf24; }
 .select-flagged-btn.active:hover { color: #fcd34d; }
 .select-flagged-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.image-row { border-bottom: 1px solid var(--cc-border); cursor: pointer; transition: background 0.08s; }
-.image-row:hover { background: var(--cc-surface-1); }
-.image-row.row-selected { background: #a78bfa14; }
-/* excluded: greyed but still visible (not hidden) — dim the whole row, un-dim a touch on hover so
-   its note + include toggle stay usable */
-.image-row.row-excluded { opacity: 0.5; cursor: default; }
-.image-row.row-excluded:hover { opacity: 0.8; background: var(--cc-surface-1); }
-.image-row td { padding: 0.4rem 0.75rem; vertical-align: middle; overflow: hidden; }
+/* Excluded: greyed but still visible (not hidden) — dim the whole row, un-dim a touch on hover so its
+   note + include toggle stay usable. `:deep` because the row is SelectionTable's element. */
+.image-table :deep(.row-excluded) { opacity: 0.5; cursor: default; }
+.image-table :deep(.row-excluded:hover) { opacity: 0.8; }
 
-/* ── Column types ────────────────────────────────────────────────────────────── */
-
-/* Fixed-width columns — not resizable */
-.col-fixed  { flex-shrink: 0; }
-.col-check  { width: 36px; min-width: 36px; }
-.col-viewer { width: 32px; min-width: 32px; text-align: center; }
-.col-ch     { width: 40px; min-width: 40px; text-align: center; color: var(--cc-text-dim); }
-.col-dur    { width: 84px; min-width: 84px; text-align: center; color: var(--cc-text-dim); }
-.col-status { width: 100px; min-width: 100px; }
-
-/* ── Frozen left columns (Excel-style freeze panes) ────────────────────────────── */
-/* The table scrolls horizontally inside .table-scroll; the checkbox + viewer + name columns stick to
-   the left so the image identity stays visible. Each frozen cell needs an OPAQUE background (per row
-   state, via --row-bg) so the scrolled columns pass UNDER it; the header sits above the body cells. */
-.table-scroll { overflow-x: auto; width: 100%; }
-.image-row { --row-bg: var(--cc-bg); }
-.image-row:hover { --row-bg: var(--cc-surface-1); }
-.image-row.row-selected { --row-bg: #1b1b29; }          /* ≈ the #a78bfa14 selected tint, opaque */
-.image-table .col-check  { position: sticky; left: 0;    z-index: 2; }
-.image-table .col-viewer { position: sticky; left: 36px; z-index: 2; }   /* after 36px checkbox */
-.image-table .col-name   { position: sticky; left: 68px; z-index: 2; }   /* after 36+32px viewer */
-.image-table tbody .col-check,
-.image-table tbody .col-viewer,
-.image-table tbody .col-name  { background: var(--row-bg); }
-.image-table thead .col-check,
-.image-table thead .col-viewer,
-.image-table thead .col-name  { background: var(--cc-bg); z-index: 3; }  /* header above body */
-.col-ch-name { text-align: center; }
-
-/* Resizable columns — width set dynamically via inline style */
-.col-resize {
-  position: relative;  /* needed for resize handle */
-}
-
-/* ── Resize handle ───────────────────────────────────────────────────────────── */
-
-.resize-handle {
-  position: absolute;
-  right: 0; top: 0;
-  width: 5px; height: 100%;
-  cursor: col-resize;
-  z-index: 1;
-}
-.resize-handle::after {
-  content: '';
-  position: absolute;
-  right: 1px; top: 20%; bottom: 20%;
-  width: 1px;
-  background: var(--cc-border);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-th:hover .resize-handle::after { opacity: 1; }
+/* A name cell is three stacked rows, so it must not be vertically centred like a one-line cell. */
+.image-table :deep(td) { vertical-align: top; overflow: hidden; }
 
 /* ── Cell content ────────────────────────────────────────────────────────────── */
 
@@ -911,7 +764,8 @@ th:hover .resize-handle::after { opacity: 1; }
   color: var(--cc-text);
 }
 
-.td-name .cell-text { color: var(--cc-text); }
+/* (`.td-name .cell-text` lived here and set the colour `.cell-text` above already sets — it was a
+   no-op before the table moved, so it went with the `td-name` class rather than being ported.) */
 
 .name-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
 .name-row .cell-text { flex: 1; min-width: 0; }
@@ -951,7 +805,7 @@ th:hover .resize-handle::after { opacity: 1; }
 
 /* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
    an excluded row so there's an obvious way back */
-.image-row.row-excluded .incl-toggle { opacity: 1; }
+.row-excluded .incl-toggle { opacity: 1; }
 .incl-toggle:hover { color: #fca5a5; }
 
 /* exclusion note — editable reason under the uid, only on excluded rows */
@@ -966,11 +820,11 @@ th:hover .resize-handle::after { opacity: 1; }
 
 /* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
 .row-icon-btn { opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
-.image-row:hover .row-icon-btn { opacity: 1; }
+.sel-row:hover .row-icon-btn { opacity: 1; }
 .row-icon-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 /* disabled (e.g. Crop on a not-yet-imported image): visibly greyed, no hover highlight, not-allowed */
 .row-icon-btn:disabled { cursor: not-allowed; }
-.image-row:hover .row-icon-btn:disabled { opacity: 0.3; }
+.sel-row:hover .row-icon-btn:disabled { opacity: 0.3; }
 .row-icon-btn:disabled:hover { color: var(--cc-text-dim); background: none; }
 
 /* editable attribute cell: click to edit; subtle hover affordance */
@@ -1041,7 +895,7 @@ th:hover .resize-handle::after { opacity: 1; }
   padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
   opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
-.image-row:hover .viewer-btn { opacity: 0.6; }
+.sel-row:hover .viewer-btn { opacity: 0.6; }
 .viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: #1e3a5f44; }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
 .viewer-active { opacity: 1 !important; color: #f97316; }
@@ -1049,7 +903,7 @@ th:hover .resize-handle::after { opacity: 1; }
 
 /* ⋯ actions button: faintly visible at rest (discoverable), full on hover/open */
 .actions-btn { opacity: 0.5; }
-.image-row:hover .actions-btn,
+.sel-row:hover .actions-btn,
 .actions-btn.on { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 
 /* ⋯ dropdown menu (inside TeleportPopover, which provides the surface/border/shadow) */
