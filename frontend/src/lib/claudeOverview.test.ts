@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
   CLAUDE_TERMINAL, claudeChatCommand,
+  claudeCapabilities,
 } from './claudeOverview'
 
 describe('claudeOverview content model', () => {
@@ -56,5 +57,27 @@ describe('claudeOverview content model', () => {
     expect(CLAUDE_TERMINAL.action.length).toBeLessThan(30)      // a button label, not a sentence
     expect(CLAUDE_TERMINAL.done).toMatch(/claude/)             // tells them what to type next
     for (const s of Object.values(CLAUDE_TERMINAL)) expect(s.length).toBeLessThan(140)
+  })
+})
+
+describe('claudeCapabilities — hidden connectors', () => {
+  it('drops lines that need a connector the user hid', () => {
+    const shown = claudeCapabilities([])
+    const hidden = claudeCapabilities(['LabArchives'])
+    expect(JSON.stringify(shown)).toMatch(/LabArchives/)
+    expect(JSON.stringify(hidden)).not.toMatch(/LabArchives/)
+    // …and nothing else is lost with it
+    expect(hidden.length).toBe(shown.length)
+    expect(JSON.stringify(hidden)).toMatch(/Analysis lineage/)
+    expect(JSON.stringify(hidden)).toMatch(/Pluto notebooks/)
+  })
+
+  it('returns plain strings, so the dialog renders them unchanged', () => {
+    for (const g of claudeCapabilities([]))
+      for (const i of g.items) expect(typeof i).toBe('string')
+  })
+
+  it('an unknown connector name hides nothing', () => {
+    expect(claudeCapabilities(['NotAThing'])).toEqual(claudeCapabilities([]))
   })
 })

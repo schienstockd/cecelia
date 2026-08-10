@@ -12,10 +12,13 @@ const pct = () => Math.round(props.zoom * 100)
 </script>
 
 <template>
-  <div class="cz" v-tooltip.bottom="'Zoom the view to fit your screen (does not change the exported page)'">
+  <!-- the group tip moved onto the SLIDER: it was the only hover help the range had, but on the
+       container it also fired over every button's own tip (docs/UI.md → nested tooltips) -->
+  <div class="cz">
     <button class="cz-btn cc-btn cc-btn-bare cc-btn-icon" @click="emit('fitWidth')" v-tooltip.bottom="'Fit width'"><i class="pi pi-arrows-h" /></button>
     <button class="cz-btn cc-btn cc-btn-bare cc-btn-icon" @click="emit('fitHeight')" v-tooltip.bottom="'Fit height'"><i class="pi pi-arrows-v" /></button>
     <input class="cz-range" type="range" :min="ZOOM_MIN * 100" :max="ZOOM_MAX * 100" step="5"
+           v-tooltip.bottom="'Zoom the view (does not change the exported page)'"
            :value="pct()" @input="emit('update:zoom', +($event.target as HTMLInputElement).value / 100)" />
     <button class="cz-val" @click="emit('reset')" v-tooltip.bottom="'Reset to 100%'">{{ pct() }}%</button>
   </div>

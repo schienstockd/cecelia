@@ -50,13 +50,17 @@ const statusTip: Record<string, string> = {
 
     <span class="spacer" />
 
+    <!-- the tip sits on the badge TEXT, not the badge: the badge also holds the dismiss button, whose
+         own tip it fired on top of (docs/UI.md → nested tooltips) -->
     <span v-if="appCtl.updateAvailable && !appCtl.updateDismissed" class="update-badge"
-          @click="openUpdate"
-          v-tooltip.bottom="appCtl.updateScope === 'system'
-            ? 'Update available — a shared installation must be updated by an administrator'
-            : `Update ${appCtl.updateLatest} — see what's new`">
-      <i class="pi pi-arrow-circle-up" />
-      Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
+          @click="openUpdate">
+      <span class="update-txt"
+            v-tooltip.bottom="appCtl.updateScope === 'system'
+              ? 'Update available — a shared installation must be updated by an administrator'
+              : `Update ${appCtl.updateLatest} — see what's new`">
+        <i class="pi pi-arrow-circle-up" />
+        Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
+      </span>
       <button class="update-x cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click.stop="appCtl.dismissUpdate()"
               v-tooltip.bottom="'Remind me later'" aria-label="Dismiss update notice">
         <i class="pi pi-times" />
@@ -141,6 +145,8 @@ const statusTip: Record<string, string> = {
   background: color-mix(in srgb, var(--cc-accent) 22%, transparent);
   color: var(--cc-accent);
 }
+/* purely a tip anchor — the pill above still owns the badge's look, so the × stays inside it */
+.update-txt { display: inline-flex; align-items: center; gap: 0.35rem; }
 .update-badge:hover { background: color-mix(in srgb, var(--cc-accent) 34%, transparent); }
 .update-badge .pi-arrow-circle-up { font-size: var(--cc-fs-md); }
 .update-x { color: inherit; opacity: 0.7; }   /* + cc-btn cc-btn-bare cc-btn-icon */

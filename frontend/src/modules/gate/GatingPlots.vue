@@ -245,7 +245,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                v-tooltip.bottom="'Include cells within ± this many z-slices (0 = current only)'">
           ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
         </label>
-        <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
+        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
+        <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
                   @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"

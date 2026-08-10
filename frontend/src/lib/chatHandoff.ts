@@ -10,8 +10,15 @@
 // both** — the `create_chain` rollout landed in the Julia one first and this file went stale, which is
 // how the user found out (their pasted prompt never mentioned chains). Each file's test asserts the
 // tool names it must name; if you add a tool, add it to both tests too.
-export function buildChatPrompt(projectUid: string, projectName?: string): string {
+export function buildChatPrompt(projectUid: string, projectName?: string,
+                                opts: { labarchives?: boolean } = {}): string {
   const proj = projectName ? `${projectName} (${projectUid})` : projectUid
+  // A connector the user switched OFF in Settings must not appear here. Offering a capability
+  // someone has declared unavailable is worse than staying quiet: they either chase a tool that
+  // will never work, or the assistant proposes a step it cannot take. Defaults to ON so a caller
+  // that knows nothing about connectors gets the full prompt.
+  const la = opts.labarchives !== false
+  const writeCount = la ? 'seven' : 'six'
   // Deliberately a COMPLETE, paste-and-run instruction — no <placeholder> (users paste as-is) and no
   // relative doc reference (an external session can't resolve it, and chasing it wastes a whole
   // session). If the MCP is missing we tell the user, we don't send the assistant to configure it.
@@ -27,10 +34,17 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `the board's plot types (get_available_plots), the boards I already built and what each one plots ` +
       `(get_analysis_boards), how my images are annotated (get_image_attributes — the axes a comparison ` +
       `can group by, e.g. Mouse or Location), ` +
-      `cross-set QC (get_cohort_qc), the lab log (read_lab_log), the notebook/REPL data-access ` +
+      `cross-set QC (get_cohort_qc), the lab log (read_lab_log), ` +
+      (la ? `the experiment as recorded in my ` +
+            `lab notebook (get_labarchives_context — the cohort, protocol and question, plus any arm the ` +
+            `notebook declares that my images don't cover), ` : ``) +
+      `the notebook/REPL data-access ` +
       `surface (get_repl_api), and the notebooks themselves (list_notebooks, get_notebook — so you can ` +
-      `read one I'm stuck in and walk me through the fix). They are read-only except six additive ` +
-      `actions, taken only when I ask: appending to the lab log (append_lab_log), creating a Pluto notebook ` +
+      `read one I'm stuck in and walk me through the fix). They are read-only except ${writeCount} additive ` +
+      `actions, taken only when I ask: appending to the lab log (append_lab_log), ` +
+      (la ? `storing what my ` +
+            `LabArchives notebook says about this experiment (set_labarchives_context), ` : ``) +
+      `creating a Pluto notebook ` +
       `(create_notebook), making a new version of one (revise_notebook — it snapshots first, so nothing is ` +
       `lost), rewording a notebook's description (set_notebook_description), designing a chain — the ` +
       `wired task pipeline — with create_chain, and adding one Analysis board with add_analysis_board.`,
@@ -67,14 +81,23 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `point). Nothing checks that the wiring makes sense for my data — that part is mine.`,
     ``,
     `Don't dive in yet. Call get_session_briefing first to get oriented — it returns the project name + ` +
-      `image count, which images are flagged (QC), and recent lab-log entries. Open with what stands out ` +
+      `image count, which images are flagged (QC)` +
+      (la ? `, recent lab-log entries, and — if my notebook is linked — what the experiment was. I often ` +
+            `did not run the experiment myself, so when that summary IS there, lead with it. When it is ` +
+            `not, do not open on its absence: say nothing about it and offer it as a direction below. `
+          : ` and recent lab-log entries. `) +
+      `Open with what stands out ` +
       `(e.g. "3 of 12 images flagged; 2 have too few tracks"), then ask me which direction I'd like to ` +
       `take — for example: QC the workflow (the cohort numbers for what just ran), look for something ` +
       `that's off across the set, understand the processing pipeline, go deeper into the analysis ` +
       `(populations, phenotype/motility, behaviour, clustering), add me a board of plots on my Analysis ` +
       `page (add_analysis_board), build me a notebook for a specific ` +
       `question (e.g. cell speed over time) that I can then edit and run myself — read get_repl_api ` +
-      `first so the code is correct — or design a chain for a pipeline I want to run. Then follow my lead.`,
+      `first so the code is correct — ` +
+      (la ? `track down what this experiment actually was in my LabArchives notebook and store it ` +
+            `(set_labarchives_context) — expect real searching: the notebook may be a colleague's, the ` +
+            `project name may match hundreds of unrelated pages, and I may not know which page it is — ` : ``) +
+      `or design a chain for a pipeline I want to run. Then follow my lead.`,
     ``,
     `If the cecelia-observer MCP tools are not available in this session, just tell me — do not try ` +
       `to install, register, or configure anything.`,

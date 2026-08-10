@@ -198,8 +198,9 @@ function isNavDisabled(item: NavItem): boolean {
             <i :class="['pi', item.icon, 'nav-icon']" />
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.soon" class="soon-badge">soon</span>
-            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-fs-xs"
-              v-tooltip.right="'Requires an open project'">
+            <!-- no tip of its own: the row's navTip already says "Open or create a project first."
+                 in exactly this state, and a second one inside it fired on top of it -->
+            <span v-else-if="item.requiresProject && !projectMeta.hasProject" class="lock-badge cc-muted cc-fs-xs">
               <i class="pi pi-lock" />
             </span>
           </RouterLink>

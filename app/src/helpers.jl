@@ -120,3 +120,19 @@ function read_state_json(path::AbstractString; as = nothing)
               "the project is intact.")
     end
 end
+
+"""
+    json_native(x)
+
+Recursively convert JSON3 values into native String-keyed `Dict`s / `Vector`s.
+
+THE one converter — parsed JSON reaches us in two shapes that both bite: `JSON3.Object` keys are
+**Symbols** (so `get(o, "key", nothing)` silently misses), and `JSON3.Object isa Dict` is **false**
+while `isa AbstractDict` is true (so a `isa Dict` guard silently skips it). Anything that reads a
+request body or a re-read sidecar and then indexes it by string should pass it through here first,
+rather than growing another private `_native`. Non-JSON3 values pass through untouched, so it is safe
+to call on already-native input.
+"""
+json_native(x) = x
+json_native(x::JSON3.Object) = Dict{String,Any}(String(k) => json_native(v) for (k, v) in x)
+json_native(x::JSON3.Array)  = Any[json_native(v) for v in x]

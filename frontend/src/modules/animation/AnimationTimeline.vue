@@ -127,8 +127,11 @@ async function deleteKeyframe(s: AnimSnapshot) {
               @dragover.prevent @drop="onDrop(f.id)">
             <div class="tl-thumb" :class="{ selected: anim.selectedId === f.id, dragging: dragId === f.id }"
                  draggable="true" @dragstart="dragId = f.id" @dragend="dragId = null"
-                 @click="selectKeyframe(f)" v-tooltip.bottom="'Click to select (drag to reorder)'">
-              <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" />
+                 @click="selectKeyframe(f)">
+              <!-- tip on the thumbnail itself, not the cell: the "edited" badge inside carries its
+                   own, and a cell tip fired on top of it (docs/UI.md → nested tooltips) -->
+              <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`"
+                   v-tooltip.bottom="'Click to select (drag to reorder)'" />
               <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
             </div>
             <div v-if="frameTime(f)" class="tl-time cc-readout cc-fs-2xs">{{ frameTime(f) }}</div>

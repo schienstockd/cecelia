@@ -64,7 +64,7 @@ describe('buildChatPrompt', () => {
     expect(p).toContain('get_module_params')       // real param keys/ranges before authoring
     expect(p).toMatch(/cannot run it/i)            // designs, never launches
     expect(p).toMatch(/press Run/i)                // …and says whose job that is
-    expect(p).toMatch(/six additive actions/i)     // the write count moved 5 → 6; keep it honest
+    expect(p).toMatch(/seven additive actions/i)   // the write count moved 5 → 6 → 7; keep it honest
   })
 
   it('is paste-and-run: no placeholder, no relative doc path, tells it not to self-setup', () => {
@@ -76,5 +76,53 @@ describe('buildChatPrompt', () => {
 
   it('falls back to the uid when no name', () => {
     expect(buildChatPrompt('NRUBxU')).toContain('project NRUBxU.')
+  })
+})
+
+describe('buildChatPrompt — hidden connectors', () => {
+  it('drops LabArchives entirely when the user hid it in Settings', () => {
+    const p = buildChatPrompt('NRUBxU', undefined, { labarchives: false })
+    expect(p).not.toMatch(/labarchives/i)          // no tool name, no prose mention
+    expect(p).not.toContain('set_labarchives_context')
+    expect(p).toMatch(/six additive actions/i)     // the count follows the capability
+    expect(p).toContain('get_session_briefing')    // everything else is untouched
+    expect(p).toContain('create_chain')
+  })
+
+  it('keeps it by default — a caller that knows nothing about connectors gets the full prompt', () => {
+    expect(buildChatPrompt('NRUBxU')).toContain('get_labarchives_context')
+    expect(buildChatPrompt('NRUBxU', undefined, {})).toContain('get_labarchives_context')
+    expect(buildChatPrompt('NRUBxU', undefined, { labarchives: true })).toMatch(/seven additive/i)
+  })
+
+  it('still reads as one sentence, not a gap where the clause was', () => {
+    const p = buildChatPrompt('NRUBxU', undefined, { labarchives: false })
+    expect(p).not.toMatch(/\s,|,,|\s\./)           // no orphaned punctuation from the removed clause
+    expect(p).toContain('the lab log (read_lab_log), the notebook/REPL data-access surface')
+  })
+})
+
+describe('buildChatPrompt — the LabArchives hunt is a DIRECTION, not an opener', () => {
+  // Finding the experiment took ~6 searches across two colleagues' notebooks and a judgement call
+  // about which pages were even the right assay. Announcing its absence up front spends the opening
+  // line on something the user can't act on in one step; offering it on the menu spends nothing.
+  const menuOf = (p: string) => p.slice(p.indexOf('which direction'))
+
+  it('offers finding + storing the notebook context among the directions', () => {
+    const menu = menuOf(buildChatPrompt('NRUBxU'))
+    expect(menu).toContain('set_labarchives_context')
+    expect(menu).toMatch(/searching/i)          // sets the expectation that it is not a lookup
+  })
+
+  it('tells it NOT to open on the absence', () => {
+    const p = buildChatPrompt('NRUBxU')
+    expect(p).toMatch(/do not open on its absence/i)
+    expect(p).toMatch(/when that summary IS there, lead with it/i)   // present is still worth leading on
+  })
+
+  it('a hidden connector removes the direction too', () => {
+    const menu = menuOf(buildChatPrompt('NRUBxU', undefined, { labarchives: false }))
+    expect(menu).not.toMatch(/labarchives/i)
+    expect(menu).toContain('add_analysis_board')   // the rest of the menu is intact
   })
 })

@@ -1587,6 +1587,54 @@ api_analysis_boards(req::HTTP.Request) =
 api_observer_briefing(req::HTTP.Request) =
     _observer_summary_route(req, (p, _i, _s) -> session_briefing(p))
 
+# GET /api/mcp/connections — every MCP server registered in the user's Claude config, for the Settings
+# "MCP connections" panel. Machine-level (no project), READ-ONLY. Generic: it enumerates what's there,
+# so a connector added later needs no change here. It cannot see claude.ai ACCOUNT connectors (e.g.
+# LabArchives) — absence from this list is NOT evidence of "disconnected"; see `mcp_connections`.
+function api_mcp_connections(::HTTP.Request)
+    out = try
+        (; configPath = Cecelia.claude_config_path(),
+           present = isfile(Cecelia.claude_config_path()),
+           connections = mcp_connections())
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(out)
+end
+
+# GET /api/observer/labarchives?projectUid — the FULL LabArchives context sidecar + derived gaps (the
+# briefing carries only headings). Read-only; see app/src/ai/labarchives.jl.
+api_observer_labarchives(req::HTTP.Request) =
+    _observer_summary_route(req, (p, _i, _s) -> merge(read_la_doc(p),
+                                                      Dict{String,Any}("gaps" => la_gaps(p))))
+
+# PUT /api/observer/labarchives — REPLACE the sidecar. Body {projectUid, source, sections, cohort,
+# syncedBy}. The one write; cecelia never fetches from LabArchives itself (no credentials, by design —
+# the connector lives in the user's Claude session), so this is how the context arrives.
+function api_observer_labarchives_set(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    doc = try
+        write_la_doc!(proj;
+                      source     = json_native(get(body, :source, Dict{String,Any}())),
+                      sections   = json_native(get(body, :sections, Any[])),
+                      cohort     = json_native(get(body, :cohort, Any[])),
+                      synced_by  = String(get(body, :syncedBy, "claude")))
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    # Same panel-reload signal the lab log uses — the context card sits in that panel, and an external
+    # Chat-to-Claude session writes here with no frontend action at all.
+    broadcast_ws(Dict{String,Any}("type" => "lab_log_updated", "projectUid" => project_uid))
+    200, JSON3.write(merge(doc, Dict{String,Any}("gaps" => la_gaps(proj, doc))))
+end
+
 # GET /api/repl/api — the notebook/REPL data-access surface (Observer Phase 2 foundation): the
 # NOTEBOOK_API accessors with their live docstrings, plus the docs/REPL.md cookbook when present. Backs
 # the MCP get_repl_api tool so Claude can generate correct `using Cecelia` notebooks without guessing
@@ -2065,8 +2113,22 @@ function api_lablog_read(req::HTTP.Request)
     # uid→name map for the panel's "Show names" toggle: the log stores stable image UIDs; the panel
     # swaps them to current names on demand (names change, so resolution is always against live data).
     image_names = Dict(img.uid => img.name for img in images(proj))
+    # LabArchives context rides along with the log the panel already fetches — the card and the
+    # "no notebook linked" hint both live in this panel, so a second round-trip buys nothing.
+    # NOTE this reports whether a notebook is LINKED, not whether the user's Claude session has the
+    # LabArchives connector: that connector is managed by the claude.ai account, not the local config
+    # we can read, so "is it connected" is not answerable from here and we don't pretend otherwise.
+    la_doc = read_la_doc(proj)
+    la = (; present = get(la_doc, "present", false),
+            readable = get(la_doc, "readable", true),
+            notebookName = string(get(get(la_doc, "source", Dict()), "notebookName", "")),
+            url = string(get(get(la_doc, "source", Dict()), "url", "")),
+            syncedAt = string(get(la_doc, "syncedAt", "")),
+            sections = get(la_doc, "sections", Any[]),
+            gaps = la_gaps(proj, la_doc))
     200, JSON3.write((; content, entries=parse_lab_log(content),
                         dismissed=read_dismissed(proj), imageNames=image_names,
+                        labarchives=la,
                         mtime=(isfile(p) ? mtime(p) : nothing)))
 end
 
@@ -2113,6 +2175,16 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     proj = try load_project(project_uid) catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
     end
+    # A `[LabArchives]` tag is a PROVENANCE claim — "this came from the lab notebook" — and the caller
+    # picks it, so nothing else verifies it. The one check the server can make honestly: you cannot
+    # claim notebook provenance on a project with no notebook linked. It does not (and cannot) prove a
+    # given line really came from the ELN; it removes the case where none of them could have.
+    if startswith(lowercase(strip(author)), "labarchives") &&
+       !get(read_la_doc(proj), "present", false)
+        return 409, JSON3.write((; error =
+            "No LabArchives notebook is linked to this project. Call set_labarchives_context first, " *
+            "or append as [Claude]."))
+    end
     block = try
         append_lab_log!(proj, author, lines)
     catch e
@@ -2120,8 +2192,11 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     end
     # Notify observers (mcp/) of USER-written entries only — not the observer's own [Claude] writes
     # (would loop) nor [Cecelia] auto-digests (not a user decision). See OBSERVER.md §4.
+    # `labarchives` is excluded for the same reason as `claude`: a [LabArchives] block is written BY
+    # the observer (through the MCP append tool), so notifying observers of it would feed the monitor
+    # its own write — the loop this guard exists to prevent.
     let a = lowercase(strip(author))
-        if !startswith(a, "claude") && !startswith(a, "cecelia")
+        if !startswith(a, "claude") && !startswith(a, "cecelia") && !startswith(a, "labarchives")
             broadcast_ws(Dict{String,Any}(
                 "type" => "lab_log_entry_added", "projectUid" => project_uid,
                 "summary" => join(lines, " ")))

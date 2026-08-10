@@ -194,16 +194,18 @@ function exportBoard(kind: string) {
         @dragstart="dragId = t.id"
         @dragover.prevent
         @drop.prevent="onDrop(t.id)"
-        v-tooltip.bottom="'Double-click to rename · drag to reorder'"
       >
         <input
           v-if="editingId === t.id" class="tab-edit" :value="editText"
+          v-tooltip.bottom="'Enter to save · Esc to cancel'"
           @input="editText = ($event.target as HTMLInputElement).value"
           @blur="commitRename" @keydown.enter="commitRename" @keydown.esc="editingId = null"
           @click.stop :ref="el => (el as HTMLInputElement | null)?.focus()"
         />
         <template v-else>
-          <span class="tab-name">{{ t.name }}</span>
+          <!-- the tab's tip lives on its NAME, not the tab: the tab also holds the duplicate/close
+               buttons, and a tip there fired on top of each of theirs -->
+          <span class="tab-name" v-tooltip.bottom="'Double-click to rename · drag to reorder'">{{ t.name }}</span>
           <button class="tab-close cc-btn cc-btn-bare cc-btn-icon cc-btn-micro tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
                   v-tooltip.bottom="'Duplicate board (plots + layout)'" aria-label="Duplicate board"><i class="pi pi-copy" /></button>
           <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"

@@ -351,6 +351,27 @@ twice, and the second one is the one that covers the switch. Comparison is on th
 catches a repeated literal and a repeated binding alike. `HEADING_COVERED` in `utils/uiCopy.ts`; both
 directions pinned in `uiCopy.test.ts`.
 
+**Never put a `v-tooltip` on a CONTAINER that also holds tipped controls.** Hovering the inner button
+then fires both — the row's tip and the button's — and they overlap on screen. This is a different
+failure from the duplicate-tip rule above (the texts differ, so no detector catches it): it is about
+*hover areas nesting*, not about repeated words. Anchor the row's tip on a leaf that no control sits
+on top of — the status pill, or the truncated text that actually needs expanding — and leave every
+button owning its own. Sibling anchors are fine: two tips on two elements side by side can never both
+be hovered. Example: the MCP-connections rows in `SettingsModule.vue`.
+
+Enforced by `nestedTooltips` (`utils/uiCopy.ts`, pinned in `uiCopy.test.ts`), which reads the same
+ancestor stack the coverage check uses — a tipped ancestor makes a child *covered* and, at the same
+time, makes its own tip a double. 29 pre-existing sites were fixed when the rule landed, so the check
+is now a plain "none". Two shapes account for almost all of them, and the fix differs:
+
+| The container tip is… | Fix |
+|---|---|
+| repeating what the buttons already say (`<div class="cc-btn-group" v-tooltip="'Arrange windows'">` over *Tile* / *Cascade*) | delete it |
+| the ONLY cover for an untipped control in the row (a slider, a mode `<select>`) | move it **onto that control** — deleting it trips the coverage rule instead |
+
+Rows whose tip describes the row itself ("drag to reorder", "click to sort") anchor it on the row's
+**text** — the title, the tab name, the column label — never on the row element.
+
 **A chip row carries ONE tooltip — group or per-option, never both**, and `duplicateTooltips` now
 reports either double. The second one is the reason the coverage rule above had to be amended rather
 than extended: the group tooltip and the per-option `tip`s say the same thing in *different words*, so

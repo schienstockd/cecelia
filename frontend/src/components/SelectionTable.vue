@@ -362,10 +362,12 @@ const tableStyle = computed(() =>
                  :indeterminate.prop="someSelected" :disabled="disabled" @click.stop="toggleAll"
                  v-tooltip.right="'Select all / none'" />
         </th>
+        <!-- the sort tip belongs on the sortable LABEL, not the whole cell: the cell also holds the
+             reset-widths button and the resize grip, each with their own (docs/UI.md → nested tips) -->
         <th v-for="(c, ci) in columns" :key="c.key" :class="{ 'sel-sticky': c.sticky }"
-            :style="stickyStyle(c.key)"
-            v-tooltip.bottom="c.sortable ? `${c.label} — click to sort` : undefined">
+            :style="stickyStyle(c.key)">
           <span v-if="c.sortable" class="sel-th-sort" :class="{ active: sortActive(c.key) }"
+                v-tooltip.bottom="`${c.label} — click to sort`"
                 @click="toggleSort(c)">
             {{ c.kind === 'link' ? '' : c.label }} <i :class="['sel-sort-ico', sortIcon(c.key)]" />
           </span>
