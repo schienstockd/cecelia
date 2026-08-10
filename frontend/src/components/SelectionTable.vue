@@ -284,6 +284,15 @@ const stickyLeft = computed<Record<string, number>>(() => {
 const stickyStyle = (key: string) =>
   key in stickyLeft.value ? { left: `${stickyLeft.value[key]}px` } : undefined
 const isResizable = (c: SelectionColumn) => resizable.value && !c.fixed
+// Where the width reset lives: the first column with an actual HEADING, not the first column. Callers
+// open with a narrow label-less chrome column as often as not (the image table's viewer eye), and the
+// icon then floats alone in a blank 32px header while the Movies table has it tucked after "Movie" —
+// one rule reading as two placements. Both of those columns are sticky, so anchoring to the heading
+// keeps the reset on screen when a wide table is scrolled sideways, which is the point of it.
+const resetColIndex = computed(() => {
+  const i = props.columns.findIndex(c => !!c.label)
+  return i < 0 ? 0 : i          // every column unlabelled → nowhere better than the front
+})
 const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   defaultWidth: (key: string) =>
     props.columns.find(c => c.key === key)?.width ?? props.defaultColumnWidth,
@@ -320,9 +329,10 @@ const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
           <slot :name="`head-${c.key}`" :column="c" />
           <!-- Widths persist, so there has to be a way back from a drag that left a column unusably
                narrow — and from a stored width whose column key has since changed, which nothing can
-               be dragged to fix. In the FIRST column because that is the one still on screen when a
-               wide table is scrolled sideways (and it is usually pinned). -->
-          <button v-if="resizable && ci === 0" class="sel-reset-w cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+               be dragged to fix. Beside the first real HEADING (see `resetColIndex`), which is both
+               still on screen when a wide table is scrolled sideways and somewhere the icon reads as
+               belonging to something. -->
+          <button v-if="resizable && ci === resetColIndex" class="sel-reset-w cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   @click.stop="resetWidths" v-tooltip.bottom="'Reset the column widths'">
             <i class="pi pi-arrows-h" />
           </button>

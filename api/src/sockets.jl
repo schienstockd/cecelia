@@ -216,6 +216,9 @@ function handle_movie_record(ws, data)
     bvns_raw    = get(data, :branchValueNames, nothing)
     branch_vns  = bvns_raw === nothing ? nothing : collect(String, bvns_raw)
     contour     = _label_contour(data)          # mask outline width, 0 = filled
+    # which stretch of the timelapse to sweep (frame indices; end `nothing` = the last frame). An
+    # animation ignores it — its keyframes carry their own dims, so the timeline IS the range.
+    t_start, t_end = _t_range(data)
     show_3d     = _show_3d(data)                # whole z stack as a 3D render…
     z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
@@ -238,11 +241,18 @@ function handle_movie_record(ws, data)
     # recorder keeps knowing nothing about the request shape. `look` is the viewer's live channels +
     # overlays, seeded frontend-side from the view state it already reads for the title card; the
     # keyframes ARE the config for an animation.
+    #
+    # `imageUid` and `keyframeMeta` are here for the EDIT side (Phase 6, utils/movieRestore.ts). A movie
+    # is named after its image but nothing could turn that name back into a uid, so which image a look
+    # was recorded on was simply unrecoverable. And `keyframes` is the RENDER payload — `{viewState,
+    # steps}` — which is everything the recorder needs and none of what the timeline editor needs, so
+    # the thumbnail/title/seconds ride along in a parallel array rather than doubling every view state.
     movie_config = Dict{String,Any}(
+        "imageUid" => image_uid, "keyframeMeta" => get(data, :keyframeMeta, nothing),
         "fps" => fps, "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
         "titleCard" => tc, "valueNames" => value_names, "labelValueNames" => label_vns,
         "branchValueNames" => branch_vns, "labelContour" => contour,
-        "show3D" => show_3d, "zSlice" => z_slice,
+        "show3D" => show_3d, "zSlice" => z_slice, "tStart" => t_start, "tEnd" => t_end,
         "compareLayout" => layout, "compareContrast" => get(data, :compareContrast, ""),
         "showTimestamp" => show_ts, "showScaleBar" => show_sb,
         "look" => get(data, :look, nothing), "keyframes" => keyframes)
@@ -254,6 +264,7 @@ function handle_movie_record(ws, data)
                          value_names = value_names, label_value_names = label_vns,
                          branch_value_names = branch_vns,
                          label_contour = contour, show_3d = show_3d, z_slice = z_slice,
+                         t_start = t_start, t_end = t_end,
                          share_contrast = share_ctr, layout = layout,
                          show_timestamp = show_ts, show_scale_bar = show_sb, api_url = api_url)
     catch e
@@ -288,8 +299,11 @@ function handle_movie_batch(ws, data)
         return
     end
     # The authored config IS the batch's provenance — one config, one movie per image (Phase 4).
+    # `imageUids` is the whole selection, banked on EVERY movie in the batch: the edit side reopens the
+    # authoring page, and the run it is reproducing was over all of them, not just the one row clicked.
     movie_config = Dict{String,Any}("config" => config, "fileAttrs" => file_attrs, "fps" => fps,
-                                    "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix)
+                                    "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
+                                    "imageUids" => image_uids)
     _batch_register!(task_id)
     @async try
         run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps;

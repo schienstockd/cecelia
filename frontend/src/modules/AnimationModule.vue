@@ -25,6 +25,9 @@ import MovieOutputControls from '../components/MovieOutputControls.vue'
 import MovieOptionsButton from '../components/MovieOptionsButton.vue'
 import { movieSizeParams } from '../utils/movieSize'
 import { useNapariStatus } from '../composables/useNapariStatus'
+import { keyframeRestore, restoreNote, type MovieRegistryEntry } from '../utils/movieRestore'
+import { useMovieRestore } from '../composables/useMovieRestore'
+import RestoreNotice from '../components/RestoreNotice.vue'
 
 const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
@@ -225,6 +228,13 @@ async function render() {
       viewState: f.snapshot,
       steps: Math.max(1, Math.round((f.duration ?? 1) * anim.fps)),
     }))
+    // What the EDITOR needs back and the recorder does not (Phase 6, utils/movieRestore.ts): the
+    // thumbnail, the title, and the duration in seconds rather than the whole frames it renders at. A
+    // parallel array in the same order — banked with the movie, ignored by the recorder — so restoring
+    // does not mean storing every view state twice.
+    const keyframeMeta = frames.value.map(f => ({
+      assetId: f.assetId, title: f.title, duration: f.duration ?? 1,
+    }))
     // Title card (Phase H4): describe everything shown "at some point" across the animation — build from
     // a UNION of all keyframes' views (channels + overlays merged), via the SHARED buildTitleCard. It
     // includes the Channels section itself (from the union), since the recorder can't reconstruct the
@@ -247,13 +257,74 @@ async function render() {
     })
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: openImageUid.value,
-      keyframes, fps: anim.fps, suffix: anim.suffix, titleCard, apiUrl: window.location.origin,
+      keyframes, keyframeMeta, fps: anim.fps, suffix: anim.suffix, titleCard,
+      apiUrl: window.location.origin,
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {
     log.error(`Render failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
   } finally { rendering.value = false }
 }
+
+// ── Editing a rendered animation's timeline (Phase 6, docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────
+// Arriving from the Movies page with `?fromMovie=…`. Only ONE image's keyframes are replaced — a
+// timeline is per-image (`frames` filters by the open image), so replacing the whole store would take
+// out the timelines of images this movie has nothing to do with.
+//
+// Written to the store's refs directly rather than through `load()`: that one exists for hydrating from
+// the project-open response and deliberately suppresses the autosave, which is right there and wrong
+// here. A restored timeline IS the working one, so it has to persist like any other edit.
+const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = useMovieRestore({
+  kind: 'keyframes',
+  projectUid: () => projectUid.value,
+  onError: m => log.error(m, { source: 'movies' }),
+  apply: (entry: MovieRegistryEntry) => {
+    const r = keyframeRestore(entry.config)
+    if (!r) return null
+    // An animation from before the image was banked attaches to whatever is open — there is no third
+    // option, and refusing would make an old movie permanently uneditable.
+    const uid = r.imageUid || openImageUid.value || ''
+    if (!uid) return null
+
+    const prevFrames = anim.snapshots
+    const prevOut = { fps: anim.fps, sizeX: anim.sizeX, sizeY: anim.sizeY,
+                      suffix: anim.suffix, titleCard: { ...anim.titleCard } }
+    // Fresh ids and a fresh baseline: these are new editable keyframes, not the originals, and reusing
+    // an id would collide with a keyframe of the same animation that is still in the store.
+    const restored: AnimSnapshot[] = r.frames.map(f => ({
+      id: crypto.randomUUID(),
+      assetId: f.assetId,
+      snapshot: JSON.parse(JSON.stringify(f.viewState)),
+      original: JSON.parse(JSON.stringify(f.viewState)),
+      imageUid: uid, imageName: imageName(uid),
+      title: f.title, duration: f.duration,
+    }))
+    anim.snapshots = [...anim.snapshots.filter(s => s.imageUid !== uid), ...restored]
+    if (r.output.fps !== undefined) anim.fps = r.output.fps
+    if (r.output.sizeX !== undefined) anim.sizeX = r.output.sizeX
+    if (r.output.sizeY !== undefined) anim.sizeY = r.output.sizeY
+    if (r.output.suffix !== undefined) anim.suffix = r.output.suffix ?? ''
+    if (r.output.titleCard !== undefined) anim.titleCard = r.output.titleCard
+
+    // The page only shows the OPEN image's keyframes, so restoring another image's timeline looks like
+    // nothing happened. Say which image it is rather than leaving an empty strip to explain itself.
+    const dropped = [...r.dropped]
+    if (!r.imageUid) dropped.push('which image it was recorded on — attached to the open one')
+    else if (uid !== openImageUid.value) dropped.push(`recorded on ${imageName(uid)} — open that image to see it`)
+
+    return {
+      undo: () => {
+        anim.snapshots = prevFrames
+        anim.fps = prevOut.fps
+        anim.sizeX = prevOut.sizeX
+        anim.sizeY = prevOut.sizeY
+        anim.suffix = prevOut.suffix
+        anim.titleCard = prevOut.titleCard
+      },
+      note: restoreNote([], dropped),
+    }
+  },
+})
 </script>
 
 <template>
@@ -272,6 +343,10 @@ async function render() {
       </button>
     </template>
 
+    <!-- Above the empty states too: a timeline restored for an image that isn't open is exactly when
+         the notice has something to say, and it is the only place the Undo lives. -->
+    <RestoreNotice v-if="restoreNotice" class="anim-restored" :source="restoreNotice.movie"
+                   :note="restoreNotice.note" @undo="undoRestore" @dismiss="dismissRestore" />
     <p v-if="!hasProject" class="cc-empty">Open a project to build an animation.</p>
     <p v-else-if="!openImageUid" class="cc-empty">Open an image in napari to start capturing keyframes.</p>
 
@@ -367,6 +442,7 @@ async function render() {
 <style scoped>
 /* (.anim-range/.anim-num were left behind when MovieOutputControls was extracted — nothing in the
    template referenced them.) */
+.anim-restored { margin-bottom: 0.8rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: var(--cc-fs-sm); font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
 .anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); cursor: pointer; }

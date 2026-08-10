@@ -1,8 +1,7 @@
 # Movie management
 
-**Status:** in-progress (`work/movie-management`) — Phases 0–5 built. All eight table surfaces are on
-`SelectionTable` bar `FileBrowser`, a stated exception (see Phase 5). Phase 6 (edit/recreate) open.
-Supersedes `docs/prompts/movie-management-component-prompt.md`.
+**Status:** BUILT — Phases 0–6. All eight table surfaces are on `SelectionTable` bar `FileBrowser`, a
+stated exception (see Phase 5). Supersedes `docs/prompts/movie-management-component-prompt.md`.
 
 ## Goal
 
@@ -187,10 +186,56 @@ CLICK is per-row semantics rather than a table concern (a directory navigates, a
 a new problem, not a free capability. The counted win there was sort/resize, and neither is worth
 those three concessions on a control people use to find files.
 
-**Phase 6 — edit / recreate (PARKED).** An "edit" action that reopens the Animation or Batch page
-prefilled from a saved config. Parked because it needs UX decisions this plan does not make: where it
-navigates, what happens to the config the target page currently holds, and how a dead reference
-(Decision 6) is surfaced without blocking the edit.
+**Phase 6 — edit / recreate.** A ⚙-style action on any movie row that banked a config, reopening the
+page that AUTHORS that kind, prefilled. The three questions this was parked on, and the answers
+(Dominik, 2026-08-10):
+
+1. **It opens the page prefilled; it does not re-render.** Everything lands filled in and the user
+   presses Render themselves — so "remake it with one field changed" is the same two clicks as "remake
+   it unchanged", and nothing seizes napari for minutes from a page nobody is looking at.
+2. **It REPLACES what the page holds, and offers an Undo.** One line above the controls — *Loaded from
+   `<movie>` · Undo* (`components/RestoreNotice.vue`). A confirm dialog was the alternative and was
+   rejected as a click on every trip, including the overwhelmingly common one where the page holds
+   nothing anyone cares about. Undo restores by SNAPSHOT, which is why `replaceBatchMovieConfig` exists:
+   a merge cannot remove a key, so undoing through one would leave behind every option the restored
+   config set and the previous one did not.
+3. **A dead reference is named in that same line, and never blocks.** `missingRefs` resolves the
+   config's version / segmentation / channel names against what the destination images actually offer;
+   `restoreNote` words the result. Decision 6, made visible.
+
+Three things the earlier phases had not noticed, all fixed here rather than worked around:
+
+- **Nothing banked WHICH IMAGE.** A movie is named after its image, but no path turns that name back
+  into a uid — so a look had no idea what it was recorded on. `imageUid` (single) / `imageUids` (the
+  batch's whole selection) now ride in the config, and the Batch page restores the selection with it.
+- **An animation banked the RENDER payload, not the editor's model.** `keyframes` is
+  `{viewState, steps}` — everything the recorder needs and none of what the timeline needs. A parallel
+  `keyframeMeta` (thumbnail, title, seconds) now rides along, which costs a few hundred bytes rather
+  than duplicating every view state. An animation from before this restores as bare views, and says so.
+- **The timeline is per-image, so a restore replaces ONE image's keyframes**, not the store. Written to
+  the animation store's refs directly rather than through `load()` — that one exists for hydrating from
+  the project-open response and deliberately suppresses the autosave, which is right there and wrong
+  here: a restored timeline IS the working one.
+
+The banked keys are now a contract across two languages with nothing type-checking it, so
+*"API: movie config banks what the edit page reads"* (`api/test/runtests.jl`) pins them at the one place
+that writes them. A dropped key would otherwise degrade the edit page silently.
+
+**And one type for the authored config, which is what surfaced the frame range.** Restoring needed
+`fileAttrs` back on the config, which is when it became clear there were **two** `BatchMovieCfg`
+definitions: the canonical one in `utils/batchMovie.ts`, and a twenty-field restatement inside
+`stores/settings.ts` — in a file that already imports from it, so there was never a layering reason for
+the copy. The two had drifted by three fields nothing read: `trackValueNames` (the builder derives it)
+and `tStart`/`tEnd`.
+
+`tStart`/`tEnd` turned out not to be dead but **unreachable**: `run_batch_movies` reads them, feeds
+`_t_sweep_frames`, and the whole stack down to `napari_utils.record_timelapse` honours them — there was
+simply no control anywhere that could ask. So the store's bag became `BatchMovieCfg` itself, the two
+dead fields went, and the frame range was wired up properly instead (Dominik, 2026-08-10): a shared
+`MovieTimeRange.vue` on the two surfaces that sweep T, the missing forwarding on the single-record path
+(`_t_range` → `run_single_movie` → `record_timelapse!`), and the range banked with the movie so a
+recreate reproduces it. Details in `docs/NAPARI.md` → *Movie frame range*; the reason it is frame
+indices with an OPEN end is that one authored range runs across timelapses of unequal length.
 
 ## Not doing
 

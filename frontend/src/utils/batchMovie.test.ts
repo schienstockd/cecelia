@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart } from './batchMovie'
+import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, safeNamePart, resolveFrameRange, storeFrameEnd } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -174,5 +174,112 @@ describe('safeNamePart', () => {
   it('a name with nothing usable in it comes back empty', () => {
     expect(safeNamePart('   ')).toBe('')
     expect(safeNamePart('()')).toBe('')
+  })
+})
+
+// The frame range a movie records. The whole subtlety is that `tEnd` null means "the last frame", not
+// a number — because one config runs across timelapses of different lengths, and a pinned index would
+// truncate every longer one.
+describe('resolveFrameRange', () => {
+  it('reads an absent range as the whole timelapse', () => {
+    expect(resolveFrameRange(undefined, undefined, 100)).toEqual({ lo: 0, hi: 99, full: true })
+  })
+
+  it('reads a null end as the last frame', () => {
+    expect(resolveFrameRange(10, null, 100)).toEqual({ lo: 10, hi: 99, full: false })
+  })
+
+  it('is not "full" once the start moves, even with an open end', () => {
+    expect(resolveFrameRange(1, null, 100).full).toBe(false)
+  })
+
+  // The batch case: one config, images of different lengths. A stored range past THIS image's end
+  // records to its end rather than asking for frames that do not exist.
+  it('clamps a range longer than the image to its last frame', () => {
+    expect(resolveFrameRange(5, 400, 20)).toEqual({ lo: 5, hi: 19, full: false })
+    expect(resolveFrameRange(0, 400, 20).full).toBe(true)   // …and that IS the whole thing
+  })
+
+  it('clamps a start past the end rather than inverting the range', () => {
+    expect(resolveFrameRange(999, 5, 20)).toEqual({ lo: 19, hi: 19, full: false })
+  })
+
+  it('survives a single-frame image', () => {
+    expect(resolveFrameRange(0, null, 1)).toEqual({ lo: 0, hi: 0, full: true })
+    expect(resolveFrameRange(0, null, 0)).toEqual({ lo: 0, hi: 0, full: true })
+  })
+
+  it('rounds a fractional index — a frame is an integer', () => {
+    expect(resolveFrameRange(2.6, 7.2, 100)).toEqual({ lo: 3, hi: 7, full: false })
+  })
+})
+
+describe('storeFrameEnd', () => {
+  it('stores the LAST frame as null, so it keeps meaning "to the end"', () => {
+    expect(storeFrameEnd(99, 100)).toBeNull()
+    expect(storeFrameEnd(120, 100)).toBeNull()
+  })
+
+  it('stores anything short of the end as the index', () => {
+    expect(storeFrameEnd(50, 100)).toBe(50)
+    expect(storeFrameEnd(0, 100)).toBe(0)
+  })
+
+  // The pairing that matters: what is stored, read back on a LONGER image, still means "the end".
+  it('round-trips through resolveFrameRange, and stays open on a longer image', () => {
+    const stored = storeFrameEnd(19, 20)
+    expect(resolveFrameRange(0, stored, 20)).toEqual({ lo: 0, hi: 19, full: true })
+    expect(resolveFrameRange(0, stored, 200)).toEqual({ lo: 0, hi: 199, full: true })
+  })
+})
+
+describe('buildBatchMovieConfig — the frame range', () => {
+  it('always sends the pair, defaulting to the whole timelapse', () => {
+    const c = buildBatchMovieConfig({}, [], {})
+    expect(c.tStart).toBe(0)
+    expect(c.tEnd).toBeNull()
+  })
+
+  it('passes an authored range through', () => {
+    const c = buildBatchMovieConfig({ tStart: 10, tEnd: 60 }, [], {})
+    expect(c.tStart).toBe(10)
+    expect(c.tEnd).toBe(60)
+  })
+
+  it('never sends a negative or fractional index', () => {
+    const c = buildBatchMovieConfig({ tStart: -5, tEnd: 12.4 }, [], {})
+    expect(c.tStart).toBe(0)
+    expect(c.tEnd).toBe(12)
+  })
+})
+
+// What TERMINATES a batch filename. The two recorders had chosen differently — a single viewer
+// recording is named after the IMAGE, a batch after the uid — so regenerating a restored viewer config
+// wrote a uid-named twin beside the original (Dominik, 2026-08-10).
+describe('movieFilename — uid vs image name', () => {
+  const attrs = { Day: '3' }
+  it('ends with the uid by default, which is unique by construction', () => {
+    expect(movieFilename(['Day'], attrs, 'AbC123')).toBe('3_AbC123.mp4')
+  })
+
+  it('ends with the image name when asked, matching a single recording', () => {
+    expect(movieFilename([], attrs, 'AbC123', [], 'M2b-MERTK_KAT (cropped)'))
+      .toBe('M2b-MERTK_KAT_cropped.mp4')
+  })
+
+  it('still joins the attrs in front of it', () => {
+    expect(movieFilename(['Day'], attrs, 'AbC123', [], 'my image')).toBe('3_my_image.mp4')
+  })
+
+  // A name of pure punctuation sanitises to nothing, and a file still has to be written. Mirrors
+  // `_movie_basename`'s own fallback.
+  it('falls back to the uid when the name sanitises to nothing', () => {
+    expect(movieFilename([], attrs, 'AbC123', [], '()')).toBe('AbC123.mp4')
+    expect(movieFilename([], attrs, 'AbC123', [], '   ')).toBe('AbC123.mp4')
+  })
+
+  it('rides the request config, off by default', () => {
+    expect(buildBatchMovieConfig({}, [], {}).nameByImage).toBe(false)
+    expect(buildBatchMovieConfig({ nameByImage: true }, [], {}).nameByImage).toBe(true)
   })
 })

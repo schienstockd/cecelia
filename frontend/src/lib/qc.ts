@@ -40,6 +40,27 @@ export function qcFindings(img: CciaImage): QcFinding[] {
   return Object.values(qc).flatMap(d => d?.findings ?? [])
 }
 
+/**
+ * The image table's QC slot, as one of four states — the distinction `qcSummary` cannot make, because
+ * it returns null both for "QC has never run" and for "QC ran and found nothing".
+ *
+ *  * `none`  — no QC sidecar at all. Nothing has been processed, so there is nothing to vouch for.
+ *  * `clean` — QC ran and raised nothing. This is the one worth SHOWING (a green tick): "checked, fine"
+ *              is information, and it is what makes a blank slot mean "not checked" rather than "fine".
+ *  * `info` / `warn` — findings, worst level wins.
+ *
+ * Calibration (`metadata.*`) findings are excluded throughout, exactly as in `qcSummary`: they have
+ * their own click-to-fix affordance and would otherwise show up twice.
+ */
+export type QcState = 'none' | 'clean' | 'info' | 'warn'
+export function qcState(img: CciaImage): QcState {
+  const docs = Object.values(img.qc ?? {})
+  if (!docs.length) return 'none'
+  const fs = qcFindings(img).filter(f => !isMetadataCode(f.code))
+  if (!fs.length) return 'clean'
+  return fs.some(f => f.level === 'warn') ? 'warn' : 'info'
+}
+
 // Worst-level summary for the badge (calibration `metadata.*` findings excluded — see isMetadataCode),
 // or null when the image has no non-metadata QC findings. `warn` outranks `info`.
 export function qcSummary(img: CciaImage): QcSummary | null {

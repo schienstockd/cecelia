@@ -4,6 +4,7 @@
 // library), streamed from the range-capable backend route so seeking works; playback speed + zoom on
 // top. Motivated by there being no good desktop player to rely on. See docs/todo/ANIMATION_PLAN.md.
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
@@ -11,6 +12,7 @@ import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
          type MovieEntry, type MovieRow } from '../utils/movies'
+import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
 import { useInlineEdit } from '../composables/useInlineEdit'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
@@ -23,6 +25,7 @@ import SelectionTable, { type SelectionColumn } from '../components/SelectionTab
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
 const log = useLogStore()
+const router = useRouter()
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -225,6 +228,24 @@ const saveRename = (r: MovieRow) =>
 
 const toggleStar = (r: MovieRow) => patchMeta([r.name], { starred: !r.starred })
 
+// ── Editing how a movie was made (Phase 6) ────────────────────────────────────
+// A movie carries the config that produced it, so the way to make another one is to reopen the page
+// that AUTHORED it, prefilled — not to re-render blind from here. Which page follows from the config's
+// KIND, not from who recorded it: a viewer look and a batch look edit in the same place (Decision 7).
+// The movie name rides in the query; the destination reads it, applies it, and takes it back out of the
+// URL so a reload can't silently re-apply it (composables/useMovieRestore.ts).
+const canEdit = (r: MovieRow) => r.hasConfig && r.configKind in RESTORE_ROUTE
+function editConfig(r: MovieRow) {
+  if (!canEdit(r)) return
+  router.push({ path: RESTORE_ROUTE[r.configKind as RestoreKind], query: { fromMovie: r.name } })
+}
+// The bytes on disk are from a LATER run than the config banked against them (Decision 5) — the movie
+// was re-recorded, and this config is not what made the file you are looking at. It still opens; the
+// tooltip is where that gets said, since the config is the only thing being reused.
+const editTip = (r: MovieRow) => r.configStale
+  ? 'Edit the saved settings — this movie was re-recorded since, so they may not be what made it'
+  : 'Edit the settings that made this movie'
+
 // Tags are free text (comma or newline separated), parsed to a list — the taxonomy grows without a
 // code change (Decision 3). Editing them is the same inline-edit primitive as the name.
 const { draft: tagDraft, start: startTags, cancel: cancelTags, commit: commitTags,
@@ -412,6 +433,14 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                         v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
                   <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
                 </button>
+                <!-- Only for a movie that banked a config. Absent rather than disabled: every movie
+                     recorded before the registry has none, and a row of dead buttons in an older
+                     project reads as broken rather than as "nothing was saved". -->
+                <button v-if="canEdit(row)" class="mov-edit cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                        :class="{ stale: row.configStale }" @click.stop="editConfig(row)"
+                        v-tooltip.right="editTip(row)">
+                  <i class="pi pi-sliders-h" />
+                </button>
                 <input v-if="isRenaming(row.name)" :ref="focusRenameInput" v-model="nameDraft"
                        class="cc-input-2xs mov-cell-edit" v-tooltip.right="'Enter to save, Esc to cancel'"
                        @click.stop @keyup.enter="saveRename(row)" @keyup.esc="cancelRename"
@@ -513,6 +542,12 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-eye { opacity: .25; }
 .mov-eye:hover { opacity: .7; }
 .mov-eye.on { opacity: 1; color: var(--cc-accent); }
+/* Edit the saved config — same dim-until-hovered treatment as the two beside it. `stale` tints it when
+   the file was re-recorded after the config was banked, so the tooltip's caveat has something visible
+   to belong to. */
+.mov-edit { opacity: .25; }
+.mov-edit:hover { opacity: .7; }
+.mov-edit.stale { opacity: .6; color: var(--cc-warn); }
 .mov-bulk { padding: 0 0.5rem 0.4rem; }
 /* the chip row and the field are two ways to say the same thing, so they need a gap between them —
    flush, they read as one control */

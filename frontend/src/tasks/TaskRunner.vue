@@ -297,21 +297,6 @@ const hiddenTaskNote = computed(() => {
   return queued ? `${running} running · ${queued} queued` : `${running} running`
 })
 
-function cancelAll() {
-  const cancelledChainRuns = new Set<string>()
-  for (const t of activeTasks.value) {
-    if (t.chainRunId) {
-      if (cancelledChainRuns.has(t.chainRunId)) continue
-      cancelledChainRuns.add(t.chainRunId)
-      taskStore.cancelChainRun(t.chainRunId)
-      ws.send({ type: 'chain:cancel', runId: t.chainRunId })
-    } else {
-      taskStore.cancel(t.id)
-      ws.send({ type: 'task:cancel', taskId: t.id })
-    }
-  }
-}
-
 // ── Sidebar resize (shared composable; width persisted) ────────────────────────
 const { widthStyle, onResizeStart } =
   usePanelResize({ min: 200, max: 600, default: 280, storageKey: 'cc-taskrunner-width' })
@@ -450,28 +435,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       </div>
     </section>
 
-    <!-- ── Task list ── -->
+    <!-- ── Task list ── (its heading + the two list-wide actions belong to TaskList itself, so the
+         other host of this list — BatchMoviesPanel — gets them too) -->
     <section class="runner-section tasks-section">
-      <div class="tasks-heading">
-        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Tasks</h3>
-        <div class="tasks-heading-actions">
-          <button
-            v-if="activeTasks.length"
-            class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
-            @click="cancelAll"
-            v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module`"
-          >
-            <i class="pi pi-times-circle" />
-          </button>
-          <button
-            class="clear-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="taskStore.clearFinished(module, projectMeta.current?.uid)"
-            v-tooltip.left="'Remove all completed and failed tasks from the list'"
-          >
-            <i class="pi pi-filter-slash" />
-          </button>
-        </div>
-      </div>
       <div class="tasks-scroll">
         <TaskList :module="module" />
       </div>
@@ -528,23 +494,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
-
-.tasks-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-.tasks-heading .section-heading { margin-bottom: 0; }
-
-.tasks-heading-actions {
-  display: flex;
-  gap: 0.15rem;
-}
-
-/* .clear-btn → cc-btn cc-btn-bare cc-btn-icon */
-.clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
 .tasks-section {
   flex: 1;
