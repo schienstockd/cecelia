@@ -281,11 +281,18 @@ const stickyLeft = computed<Record<string, number>>(() => {
 const stickyStyle = (key: string) =>
   key in stickyLeft.value ? { left: `${stickyLeft.value[key]}px` } : undefined
 const isResizable = (c: SelectionColumn) => resizable.value && !c.fixed
-const { widthOf, onColumnResizeStart } = useColumnResize({
+const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   defaultWidth: (key: string) =>
     props.columns.find(c => c.key === key)?.width ?? props.defaultColumnWidth,
   storageKey: props.columnWidthKey || undefined,
 })
+
+// Widths are persisted, so there has to be a way back: a drag can leave a column unusably narrow, and
+// a stored width outlives a renamed column key. The AFFORDANCE is the caller's to place — the corner
+// of a header is a different spot on a 4-column list and a 20-column image table — so the table
+// exposes the action rather than rendering a button nobody asked for.
+defineExpose({ resetWidths })
+
 </script>
 
 <template>

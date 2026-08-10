@@ -461,6 +461,12 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   ...(props.module ? [{ key: 'status', label: 'Status', fixed: true, width: 90 }] : []),
 ])
 
+// Column widths are persisted, so a drag that leaves one unusably narrow needs a way back. The action
+// is SelectionTable's (it owns the widths); the button sits in the Name header, where this table's
+// other batch affordances already are.
+const tableEl = ref<{ resetWidths: () => void } | null>(null)
+const resetLayout = () => tableEl.value?.resetWidths()
+
 // The sort, held where it always was — per (scope, set) in the project store, ordered by the pure
 // `sortImages`. The table renders the affordance and reports the cycle; `v-model:sort` is what lets it
 // do that without owning the state (see SelectionTable → `sort`).
@@ -501,6 +507,7 @@ const unselectableUids = computed(() =>
        select-all, the sticky left columns, the resize handles and the row hit target; every cell below
        is this component's, through a `#cell-` slot. -->
   <SelectionTable
+    ref="tableEl"
     class="image-table"
     selection-mode="multi"
     :select-all="!singleSelect"
@@ -527,6 +534,10 @@ const unselectableUids = computed(() =>
         @click.stop="resyncFlagged"
         v-tooltip.bottom="`Re-read size & timing from file for ${flaggedUids.length} flagged image(s)`">
         <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
+      </button>
+      <button class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="resetLayout"
+        v-tooltip.bottom="'Reset the column widths'">
+        <i class="pi pi-arrows-h" />
       </button>
     </template>
 
