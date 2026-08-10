@@ -61,6 +61,8 @@ export interface SelectionColumn {
    * ImageTable-only: they were `0 / 36px / 68px`, correct until one of those columns changed width.
    */
   sticky?: boolean
+  /** Exclude from the drag-resize path — a fixed-width column (an icon, a badge, a count). */
+  fixed?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -124,6 +126,16 @@ const props = withDefaults(defineProps<{
   /** Rows the checkbox can't reach in `multi` (already migrated, not an image, …), by id. */
   disabledIds?: string[]
   /**
+   * CONTROLLED sort, as `v-model:sort`. Pass it and the caller owns the state and does the ordering —
+   * the table only renders the affordance and reports the cycle. Omit it and the table sorts itself,
+   * which is what every existing consumer does.
+   *
+   * It exists because a sort is not always a view preference: the image table persists one per (scope,
+   * set) in the project store, and its ordering is domain-aware (`attr:<key>`, a timelapse duration),
+   * neither of which a table that reads row fields out of a localStorage key can do.
+   */
+  sort?: SortState
+  /**
    * Which rows show their `#row-detail`. Required for that slot to render anything: without it the
    * table would emit a detail `<tr>` under EVERY row and the caller's `v-if` would leave an empty,
    * bordered, tinted row behind each one. Expansion state stays the CALLER's — the table only asks.
@@ -144,6 +156,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [string]
   'update:selected': [string[]]
+  'update:sort': [SortState]
   /** a row was clicked. Always fires, whatever the selection mode — `none` uses only this. */
   'row-click': [Row]
   'row-dblclick': [Row]
@@ -204,9 +217,15 @@ function loadSort(): SortState {
     return p && typeof p.key === 'string' && (p.dir === 'asc' || p.dir === 'desc') ? p : null
   } catch { return null }
 }
-const sort = ref<SortState>(loadSort())
+const ownSort = ref<SortState>(loadSort())
+// controlled when the caller passes `sort`, else the table's own persisted state
+const controlled = computed(() => props.sort !== undefined)
+const sort = computed<SortState>({
+  get: () => (controlled.value ? props.sort! : ownSort.value),
+  set: v => { controlled.value ? emit('update:sort', v) : (ownSort.value = v) },
+})
 watch(sort, s => {
-  if (!props.sortStorageKey) return
+  if (!props.sortStorageKey || controlled.value) return
   try {
     if (s) localStorage.setItem(props.sortStorageKey, JSON.stringify(s))
     else localStorage.removeItem(props.sortStorageKey)
@@ -221,7 +240,8 @@ const sortIcon = (key: string) => sortIconFor(sort.value, key)
 
 const sortedRows = computed(() => {
   const s = sort.value
-  if (!s) return props.rows
+  // a controlled sort means the caller has already ordered the rows — re-sorting here would fight it
+  if (!s || controlled.value) return props.rows
   const col = props.columns.find(c => c.key === s.key)
   const field = col?.sortKey ?? s.key
   return sortRows(props.rows, (r: Row) => r[field] as SortValue, s.dir)
@@ -250,6 +270,7 @@ const stickyLeft = computed<Record<string, number>>(() => {
 })
 const stickyStyle = (key: string) =>
   key in stickyLeft.value ? { left: `${stickyLeft.value[key]}px` } : undefined
+const isResizable = (c: SelectionColumn) => resizable.value && !c.fixed
 const { widthOf, onColumnResizeStart } = useColumnResize({
   defaultWidth: (key: string) =>
     props.columns.find(c => c.key === key)?.width ?? props.defaultColumnWidth,
@@ -262,7 +283,8 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="resizable">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
-      <col v-for="c in columns" :key="c.key" :style="{ width: widthOf(c.key) }">
+      <col v-for="c in columns" :key="c.key"
+           :style="c.fixed ? (c.width ? { width: `${c.width}px` } : undefined) : { width: widthOf(c.key) }">
       <col v-if="$slots.actions" :style="{ width: actionsWidth }">
     </colgroup>
     <thead>
@@ -280,8 +302,10 @@ const { widthOf, onColumnResizeStart } = useColumnResize({
             {{ c.kind === 'link' ? '' : c.label }} <i :class="['sel-sort-ico', sortIcon(c.key)]" />
           </span>
           <template v-else>{{ c.kind === 'link' ? '' : c.label }}</template>
+          <!-- extra header chrome for this column (a select-flagged button, a re-sync) -->
+          <slot :name="`head-${c.key}`" :column="c" />
           <!-- drag the header's right edge to widen the column (persisted) -->
-          <div v-if="resizable" class="sel-col-resize" @mousedown.stop="onColumnResizeStart(c.key, $event)"
+          <div v-if="isResizable(c)" class="sel-col-resize" @mousedown.stop="onColumnResizeStart(c.key, $event)"
                v-tooltip.bottom="'Drag to resize the column'" />
         </th>
         <th v-if="$slots.actions">{{ actionsLabel }}</th>
