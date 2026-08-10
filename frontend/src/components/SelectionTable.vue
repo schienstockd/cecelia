@@ -290,12 +290,6 @@ const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   storageKey: props.columnWidthKey || undefined,
 })
 
-// Widths are persisted, so there has to be a way back: a drag can leave a column unusably narrow, and
-// a stored width outlives a renamed column key. The AFFORDANCE is the caller's to place — the corner
-// of a header is a different spot on a 4-column list and a 20-column image table — so the table
-// exposes the action rather than rendering a button nobody asked for.
-defineExpose({ resetWidths })
-
 </script>
 
 <template>
@@ -314,7 +308,7 @@ defineExpose({ resetWidths })
                  :indeterminate.prop="someSelected" :disabled="disabled" @click.stop="toggleAll"
                  v-tooltip.right="'Select all / none'" />
         </th>
-        <th v-for="c in columns" :key="c.key" :class="{ 'sel-sticky': c.sticky }"
+        <th v-for="(c, ci) in columns" :key="c.key" :class="{ 'sel-sticky': c.sticky }"
             :style="stickyStyle(c.key)"
             v-tooltip.bottom="c.sortable ? `${c.label} — click to sort` : undefined">
           <span v-if="c.sortable" class="sel-th-sort" :class="{ active: sortActive(c.key) }"
@@ -324,6 +318,14 @@ defineExpose({ resetWidths })
           <template v-else>{{ c.kind === 'link' ? '' : c.label }}</template>
           <!-- extra header chrome for this column (a select-flagged button, a re-sync) -->
           <slot :name="`head-${c.key}`" :column="c" />
+          <!-- Widths persist, so there has to be a way back from a drag that left a column unusably
+               narrow — and from a stored width whose column key has since changed, which nothing can
+               be dragged to fix. In the FIRST column because that is the one still on screen when a
+               wide table is scrolled sideways (and it is usually pinned). -->
+          <button v-if="resizable && ci === 0" class="sel-reset-w cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  @click.stop="resetWidths" v-tooltip.bottom="'Reset the column widths'">
+            <i class="pi pi-arrows-h" />
+          </button>
           <!-- drag the header's right edge to widen the column (persisted) -->
           <div v-if="isResizable(c)" class="sel-col-resize" @mousedown.stop="onColumnResizeStart(c.key, $event)"
                v-tooltip.bottom="'Drag to resize the column'" />
@@ -408,6 +410,10 @@ defineExpose({ resetWidths })
    to its content — and is also why the radio column needs one of its own (see the colgroup). */
 .sel-table.sized { width: 100%; table-layout: fixed; }
 .sel-col-pick { width: 1.75rem; }
+/* dim until the header is hovered — it is a rescue, not something to reach for */
+.sel-reset-w { opacity: 0.25; margin-left: 0.3rem; vertical-align: middle; }
+th:hover .sel-reset-w { opacity: 0.7; }
+.sel-reset-w:hover { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 /* Pinned columns. They need an OPAQUE background or the scrolled cells show THROUGH them — and it has
    to track the ROW's state, or a hovered or selected row loses its tint exactly where it is frozen.
    Hence `--row-bg` rather than a fixed colour: the selected tint is a `color-mix` onto transparent for
