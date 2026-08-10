@@ -93,9 +93,9 @@ and use the canonical component/utility (`CcToggle`, `.cc-btn*`, `ChipSelect`, `
 new variant of a primitive that already has a canonical form is a bug — same rule as H5AD/zarr/`run_py`.
 Unification status + what's not-yet-extracted lives in [`docs/todo/UX_PRIMITIVES_PLAN.md`](docs/todo/UX_PRIMITIVES_PLAN.md).
 
-## Previous prompts
+## Prompts (`docs/prompts/`)
 
-Completed prompt files are kept in a `previous-prompts/` folder in the **workspace root** (outside `cecelia-feijoa/`) — set aside but accessible. They are **reference only**: historical context for finished work, not instructions to be re-run.
+Feature briefs and one-off audits stay where they are written — `docs/prompts/`, in the repo — including once the work has shipped. They are a **frozen record, reference only**: what was asked and investigated, never instructions to re-run. Convention + how they differ from `docs/todo/`: [`docs/prompts/README.md`](docs/prompts/README.md).
 
 ## TODO.md
 
