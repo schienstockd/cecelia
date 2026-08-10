@@ -2510,6 +2510,41 @@ end
         @test a.starred == before.starred && a.tags == before.tags && !isempty(a.tags)
         @test a.producedBy == "viewer" && a.configKind == "look"
 
+        # ── which image, and what it shows: the two the Movies page joins against the project's images.
+        # The BACK-FILL is the point of the fallbacks — neither field existed when the movies already on
+        # disk were recorded, and the page still has to answer for them.
+        register_movie!(uid, "a.mp4"; produced_by = "viewer", config_kind = "look",
+                        config = Dict("imageUid" => "imgA",
+                                      "look" => Dict("channels" => Dict("CD3"  => "green",
+                                                                        "B220" => "magenta"))))
+        a = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
+        # the single recorder has banked the uid inside its config since Phase 4, so a viewer movie
+        # answers with no migration; the channels come out of the `look` it read off the live view
+        @test a.imageUid == "imgA" && a.channels == ["B220", "CD3"]   # sorted — a JSON object has no order
+        # a BATCH banks the authored config one level in, under `config`
+        register_movie!(uid, "b.mp4"; produced_by = "batch", config_kind = "look",
+                        config = Dict("imageUids" => ["img1", "img2"],
+                                      "config" => Dict("channels" => Dict("DAPI" => "blue"))))
+        bm = only(filter(m -> m.name == "b.mp4", movies_with_meta(uid)))
+        @test bm.channels == ["DAPI"]
+        # …but its `imageUids` is the whole SELECTION, not this file's image. Reading it would label
+        # every movie in the batch with the same wrong one, so it is deliberately not a fallback — the
+        # filename is what identifies a batch movie, and that is resolved client-side.
+        @test bm.imageUid == ""
+        # Banked explicitly, both win — and the channel ORDER survives, which the config fallback cannot
+        # give: the recorder lists them in the image's order, a JSON object has none.
+        register_movie!(uid, "b.mp4"; produced_by = "batch", image_uid = "img2",
+                        channels = ["CD8", "DAPI"], config_kind = "look",
+                        config = Dict("config" => Dict("channels" => Dict("DAPI" => "blue"))))
+        bm = only(filter(m -> m.name == "b.mp4", movies_with_meta(uid)))
+        @test bm.imageUid == "img2" && bm.channels == ["CD8", "DAPI"]
+        # A re-record by a producer that cannot say (an animation shows whatever its keyframes do) leaves
+        # the banked answer standing rather than blanking it
+        register_movie!(uid, "b.mp4"; produced_by = "batch", config_kind = "look",
+                        config = Dict("fps" => 15))
+        bm = only(filter(m -> m.name == "b.mp4", movies_with_meta(uid)))
+        @test bm.imageUid == "img2" && bm.channels == ["CD8", "DAPI"]
+
         # the full entry (with the config the list omits) comes from the meta GET
         st, body = api_movies_meta_get(HTTP.Request("GET", "/api/movies/meta?projectUid=$uid&name=a.mp4"))
         @test st == 200

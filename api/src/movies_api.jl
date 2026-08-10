@@ -71,24 +71,96 @@ end
 const MOVIE_PRODUCERS = ("viewer", "animation", "batch")
 _clean_producer(s)::String = (t = String(s === nothing ? "" : s); t ∈ MOVIE_PRODUCERS ? t : "")
 
+# The channel names a movie SHOWS. Same family as `producedBy` — written by the recorder, which is the
+# only thing that knows how its own request was shaped, so nothing downstream has to read a saved config
+# back to answer "what is in this movie".
+const MOVIE_CHANNELS_MAX = 32
+function _clean_movie_channels(raw)::Vector{String}
+    raw === nothing && return String[]
+    out = String[]
+    for c in raw
+        s = strip(replace(String(c), r"\s+" => " "))
+        (isempty(s) || s ∈ out) && continue
+        push!(out, String(s))
+        length(out) >= MOVIE_CHANNELS_MAX && break
+    end
+    out
+end
+
 """
-    register_movie!(project_uid, filename; produced_by, config, config_kind, config_version)
+    _entry_image_uid(entry) -> String
+
+Which image a movie was recorded from — `""` when it cannot be said.
+
+The entry field is authoritative; the fallback lifts it out of the saved config, where the SINGLE
+recorder has banked it since Phase 4 (`handle_movie_record`), so every viewer/animation movie recorded
+before this field existed answers correctly with no back-fill pass.
+
+A batch entry's `imageUids` is deliberately NOT read: it is the whole selection the one authored config
+was applied to, not the one image this file is. Guessing "the first one" would label every movie in a
+batch with the same wrong image. What identifies a batch movie is its FILENAME, which terminates with
+the uid (`_movie_basename`) — resolved client-side, where the project's images are already loaded.
+"""
+function _entry_image_uid(e::AbstractDict)::String
+    u = get(e, "imageUid", nothing)
+    (u isa AbstractString && !isempty(u)) && return String(u)
+    cfg = get(e, "config", nothing)
+    cfg isa AbstractDict || return ""
+    cu = get(cfg, "imageUid", nothing)
+    cu isa AbstractString ? String(cu) : ""
+end
+
+"""
+    _entry_channels(entry) -> Vector{String}
+
+The channels the movie shows — the recorder's list, else read back out of the saved config.
+
+The fallback is what makes this answer for movies recorded before the field existed, and it has to look
+in two places because the two kinds bank their channel map differently: a batch stores the AUTHORED
+config under `config`, while the viewer stores the live view it read under `look`. Sorted, because a
+JSON object's key order is not the image's channel order — only the recorder-banked list is.
+"""
+function _entry_channels(e::AbstractDict)::Vector{String}
+    haskey(e, "channels") && return _clean_movie_channels(get(e, "channels", nothing))
+    cfg = get(e, "config", nothing)
+    cfg isa AbstractDict || return String[]
+    for k in ("config", "look")
+        sub = get(cfg, k, nothing)
+        sub isa AbstractDict || continue
+        ch = get(sub, "channels", nothing)
+        ch isa AbstractDict && return sort!(_clean_movie_channels([string(c) for c in keys(ch)]))
+    end
+    String[]
+end
+
+"""
+    register_movie!(project_uid, filename; produced_by, image_uid, channels, config, config_kind, config_version)
 
 Record how a movie was made, right after its bytes land (Phase 4). MERGES into any existing entry, so
 the user's display name / star / tags survive a re-record of the same filename — which happens by
 design, since a movie is named after its image and re-recording replaces the file.
 
+`image_uid` is WHICH image this one file is of — the thing the saved config could not say for a batch,
+where one config produces a movie per image. It is what lets the Movies page show an image's channels
+and attributes beside its movies without parsing a filename.
+
 `recordedAt` is stamped here and is what the stale-config rule compares the file's mtime against
 (Decision 5). Best-effort: a registry write must never fail a render that already succeeded.
 """
 function register_movie!(project_uid::AbstractString, filename::AbstractString;
-                         produced_by::AbstractString = "", config = nothing,
+                         produced_by::AbstractString = "", image_uid::AbstractString = "",
+                         channels = nothing, config = nothing,
                          config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION)
     try
         _valid_movie_name(filename) || return nothing
         reg = _read_movies_registry(project_uid)
         e   = get(reg, String(filename), Dict{String,Any}())
         e["producedBy"] = _clean_producer(produced_by)
+        # Both only when known, so a recorder that cannot say (an animation shows whatever the keyframes
+        # do) leaves a previously banked answer standing rather than blanking it on a re-record.
+        isempty(image_uid) || (e["imageUid"] = String(image_uid))
+        chans = _clean_movie_channels(channels)
+        isempty(chans)     || (e["channels"] = chans)
         e["recordedAt"] = time()          # unix seconds — the same clock `mtime` uses, see _config_stale
         if config !== nothing && !isempty(config_kind)
             e["configKind"]    = String(config_kind)
@@ -138,6 +210,10 @@ function movies_with_meta(project_uid::AbstractString)
                           starred     = get(e, "starred", false) === true,
                           tags        = _clean_movie_tags(get(e, "tags", nothing)),
                           producedBy  = _clean_producer(get(e, "producedBy", "")),
+                          # Which image this is of, and what it shows — the two the Movies page joins
+                          # against the project's images to put channels and attributes on the row.
+                          imageUid    = _entry_image_uid(e),
+                          channels    = _entry_channels(e),
                           hasConfig   = haskey(e, "config"),
                           configKind  = String(get(e, "configKind", "")),
                           configStale = _config_stale(e, mt)))

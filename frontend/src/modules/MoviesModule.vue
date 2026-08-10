@@ -6,13 +6,17 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { formatBytes } from '../utils/storage'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
+         movieChannelCells, movieChannelCount,
          type MovieEntry, type MovieRow } from '../utils/movies'
 import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
+import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
+         type AttrFilterState } from '../utils/attrFilter'
 import { useInlineEdit } from '../composables/useInlineEdit'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
@@ -21,8 +25,10 @@ import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import BaseModal from '../components/BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import AttrFilterPanel from '../components/AttrFilterPanel.vue'
 
 const projectMeta = useProjectMetaStore()
+const project = useProjectStore()
 const settings = useSettingsStore()
 const log = useLogStore()
 const router = useRouter()
@@ -174,12 +180,26 @@ function movieTime(mtime: number): string {
 // the order it is HANDED — clearing the sort with a third header click comes back to it.
 // Per-column widths: a size needs a fraction of what a name does, and one width for all of them is
 // what pushed the table off its panel.
-const MOVIE_COLUMNS: SelectionColumn[] = [
-  { key: 'label',    label: 'Movie',    sortable: true, width: 190 },
+//
+// The Details columns (`settings.moviesShowDetails`) are the SOURCE IMAGE's, joined on per row — one
+// column per channel slot and one per attribute key, mirroring the image table's own attribute view so
+// the same facts read the same way on both pages. Off by default: they only say anything once a project
+// has attributes, and this table lives in a side panel where every column costs width.
+const MOVIE_COLUMNS = computed<SelectionColumn[]>(() => [
+  // Pinned: with the Details columns on, the table is wider than the panel, and scrolling sideways past
+  // the name leaves rows you can no longer tell apart. Same reason the image table pins its own.
+  { key: 'label',    label: 'Movie',    sortable: true, width: 190, sticky: true },
   { key: 'tagText',  label: 'Tags',     sortable: true, width: 120 },
+  ...(settings.moviesShowDetails
+    // A channel column is not sortable — the same as the image table's, because its value is a slot's
+    // name rather than a per-movie measure, and ordering a list by "what channel 2 is called" answers
+    // nothing. The attribute columns are, which is the axis a cohort is actually organised on.
+    ? [...channelIndices.value.map(i => ({ key: `ch:${i}`, label: String(i), width: 90 })),
+       ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 }))]
+    : []),
   { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime', width: 120 },
   { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size',  width: 70 },
-]
+])
 // ── Filters ───────────────────────────────────────────────────────────────────
 // Star and tags COMPOSE with each other and with the column sort — they answer different questions,
 // so one never replaces another (Decision 3/4). Both persist: a filter that resets on navigation is
@@ -189,13 +209,66 @@ watch(starredOnly, v => localStorage.setItem('cc.movies.starredOnly', String(v))
 const pickedTags = ref<string[]>(JSON.parse(localStorage.getItem('cc.movies.tags') ?? '[]'))
 watch(pickedTags, v => localStorage.setItem('cc.movies.tags', JSON.stringify(v)), { deep: true })
 
+// Filtering by the source image's ATTRIBUTES — the same control the image table has, over the shared
+// `AttrFilterPanel` (utils/attrFilter.ts). It composes with star and tags like everything else here.
+// Persisted, and TOLERANT of a stale shape: a filter is not worth failing the page over.
+const attrFilter = ref<AttrFilterState>((() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('cc.movies.attrFilter') ?? 'null')
+    return raw && typeof raw === 'object' ? { ...emptyAttrFilter(), ...raw } : emptyAttrFilter()
+  } catch { return emptyAttrFilter() }
+})())
+watch(attrFilter, v => localStorage.setItem('cc.movies.attrFilter', JSON.stringify(v)), { deep: true })
+const filtersOpen = ref(localStorage.getItem('cc.movies.filtersOpen') === 'true')
+watch(filtersOpen, v => localStorage.setItem('cc.movies.filtersOpen', String(v)))
+
 // Declared BEFORE the rows that read them. `movieTableRows` is a lazy computed, but the `watch` on it
 // further down is NOT lazy — a watcher evaluates its source once at creation to capture the old value,
 // and that reached these two while they were still in the temporal dead zone. Setup threw, so the
 // whole page rendered blank; neither vue-tsc nor the production build sees it, because TS does not
 // track TDZ through a closure.
-const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime))
-const movieTableRows = computed(() => filterMovieRows(allRows.value, starredOnly.value, pickedTags.value))
+// The project's images, from the store that already holds them — a movie is joined back to its image
+// client-side, so the Details columns cost no request (utils/movies.ts → resolveMovieImageUid).
+const allImages = computed(() => project.sets.flatMap(s => s.images))
+const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime, allImages.value))
+const movieTableRows = computed(() =>
+  filterMovieRows(allRows.value, starredOnly.value, pickedTags.value)
+    .filter(r => matchesAttrFilter(r.attr, attrFilter.value)))
+// The chips are derived from ALL rows, not the filtered ones — a value you just picked must not
+// disappear from the row it was picked in, and the next attribute's chips have to still be offered.
+const filterAttrKeys = computed(() => attrKeysOf(allRows.value))
+// A persisted filter outlives the project it was picked in: `Treatment: MERTK` carried into a project
+// without it hides every movie, and an empty list looks like an empty folder. Same reflex as the tag
+// chips above — drop what no longer exists rather than leaving it silently narrowing.
+watch(allRows, rows => {
+  const next = pruneAttrFilter(attrFilter.value, rows)
+  if (next !== attrFilter.value) attrFilter.value = next
+})
+
+// ── The Details columns: the source image's channels and attributes ───────────
+// Derived from the rows ACTUALLY SHOWN, so filtering to one cohort drops the columns none of them has
+// rather than leaving a screenful of blanks.
+const attrKeys = computed(() =>
+  settings.moviesShowDetails ? attrKeysOf(movieTableRows.value) : [])
+const channelIndices = computed(() => {
+  const n = settings.moviesShowDetails
+    ? movieChannelCount(movieTableRows.value, settings.moviesChannelMode) : 0
+  return Array.from({ length: n }, (_, i) => i + 1)     // 1-based, like the image table's
+})
+// One cell array per row, computed once rather than per cell — a slot renders `cells[i - 1]`.
+const channelCells = computed(() => {
+  const n = channelIndices.value.length
+  const out: Record<string, string[]> = {}
+  for (const r of movieTableRows.value)
+    out[r.name] = movieChannelCells(r.imageChannels, r.movieChannels, n, settings.moviesChannelMode)
+  return out
+})
+// Word-labelled, so the group tooltip is the coverage — per-option tips on top of it would say the
+// same thing twice and render over the chips (docs/UI.md → Tooltips, pinned by uiCopy.test.ts).
+const CHANNEL_MODES: ChipOption[] = [
+  { value: 'image', label: 'image' },
+  { value: 'movie', label: 'in movie' },
+]
 
 // ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
 // The metadata lives in settings/movies.json, keyed by filename, and is patched one field at a time —
@@ -380,9 +453,18 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
           </div>
 
           <div class="mov-list cc-card">
-            <div class="mov-list-head cc-eyebrow">
-              {{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
-                v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
+            <div class="mov-list-head cc-row cc-row-tight">
+              <!-- the eyebrow is on the COUNT, not the row: it uppercases, and the toggle beside it is
+                   a control with its own label -->
+              <span class="cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
+                v-if="hiddenCount"> · {{ hiddenCount }} hidden</template></span>
+              <!-- The source image's channels + attributes beside each movie. The channel picker only
+                   appears once the columns are on — it has nothing to switch otherwise. -->
+              <ChipSelect v-if="settings.moviesShowDetails" variant="segmented" :options="CHANNEL_MODES"
+                          v-model="settings.moviesChannelMode" aria-label="Channel columns"
+                          v-tooltip.bottom="'Which channels the columns show'" />
+              <CcToggle v-model="settings.moviesShowDetails" label="Details"
+                        v-tooltip.left="'Show the image channels and attributes'" />
             </div>
 
             <!-- Bulk actions on the CHECKED movies — the Import page's model: file operations act on the
@@ -412,7 +494,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             </div>
             <!-- Star and tags compose with each other and with the column sort — one never replaces
                  another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
-            <div v-if="starredCount || filterOptions.length" class="mov-filters cc-row cc-row-tight">
+            <div v-if="starredCount || filterOptions.length || filterAttrKeys.length"
+                 class="mov-filters cc-row cc-row-tight">
               <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
                       :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
                       @click="starredOnly = !starredOnly"
@@ -421,10 +504,23 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
               </button>
               <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
                           aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
+              <!-- the image table's attribute filter, same panel. Opens a dropdown under this row. -->
+              <button v-if="filterAttrKeys.length" class="cc-btn cc-btn-ghost cc-btn-micro mov-filter-btn"
+                      :class="{ 'cc-btn-on cc-btn-on-tint': attrFilterActive(attrFilter) || filtersOpen }"
+                      @click="filtersOpen = !filtersOpen"
+                      v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter by image attribute'">
+                <i class="pi pi-filter" /> Filter{{ attrFilterActive(attrFilter) ? ' •' : '' }}
+              </button>
             </div>
+            <AttrFilterPanel v-if="filtersOpen" class="mov-attr-filter" noun="movies"
+                             :rows="allRows" v-model="attrFilter" />
             <!-- Multi-select: the checkbox is the working SET the bulk actions apply to, and the eye is
                  what plays — the same split as the image table, where selection drives the run and the
                  eye drives napari. -->
+            <!-- The TABLE scrolls, not the card. With the Details columns on it is wider than the
+                 panel, and a card-level `overflow:auto` slid the count, the chip picker and the Details
+                 toggle out of view along with it (Dominik, 2026-08-10). -->
+            <div class="mov-table-scroll">
             <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
                             :rows="movieTableRows" v-model:selected="checked" id-key="name"
                             sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
@@ -460,6 +556,20 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                 </span>
               </template>
 
+              <!-- The image's channel slots. A blank cell in "in movie" mode is information — that
+                   movie does not show this channel — so it reads as an em dash, not as missing data. -->
+              <template v-for="i in channelIndices" :key="'ch-' + i" #[`cell-ch:${i}`]="{ row }">
+                <span class="mov-dim" :title="channelCells[row.name]?.[i - 1] || ''">{{
+                  channelCells[row.name]?.[i - 1] || '—' }}</span>
+              </template>
+
+              <!-- Attributes, read-only: the Metadata page is where an attribute is edited, and a movie
+                   is one of several rows pointing at the same image. -->
+              <template v-for="k in attrKeys" :key="'attr-' + k" #[`cell-attr:${k}`]="{ row }">
+                <span class="mov-dim" :title="row.attr?.[k] ? `${k}: ${row.attr[k]}` : ''">{{
+                  row.attr?.[k] || '—' }}</span>
+              </template>
+
               <!-- Tags in the row too, for the same reason -->
               <template #cell-tagText="{ row }">
                 <!-- `list` gives the row editor the same "pick what already exists" the modal does,
@@ -477,6 +587,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                 </span>
               </template>
             </SelectionTable>
+            </div>
             <datalist id="mov-tags-in-use">
               <option v-for="t in tagsInUse" :key="t" :value="t" />
             </datalist>
@@ -549,6 +660,12 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-star:hover { opacity: .7; }
 .mov-star.on { opacity: 1; color: var(--cc-warn); }
 .mov-filters { padding: 0 0.5rem 0.4rem; }
+.mov-filter-btn { margin-left: auto; }
+/* the shared panel is sized for a page-wide action bar; inside a side panel it needs the card's own
+   padding, and it is not the thing that scrolls */
+.mov-attr-filter { flex-shrink: 0; padding: 0.4rem 0.5rem 0.5rem; margin-bottom: 0.35rem; }
+/* a Details cell is secondary to the movie's own columns, and ellipsises rather than widening one */
+.mov-dim { color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the name cell: star, then the name, which takes the rest and ellipsises rather than widening */
 .mov-labelcell { display: flex; align-items: center; gap: 0.2rem; min-width: 0; }
 /* the name fills what the two icons leave, ellipsising rather than widening the column. `cursor:text`
@@ -574,8 +691,15 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-danger:hover:not(:disabled) { color: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
-.mov-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
-.mov-list-head { padding: 0.35rem 0.5rem 0.5rem; }   /* + .cc-eyebrow (uppercase/dim/spacing) */
+/* The card is the COLUMN — head, bulk actions and filters pinned, the table taking the rest and
+   scrolling itself in both axes. It used to scroll as a whole, which was invisible until a table grew
+   wider than the panel. */
+.mov-list { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 0.35rem;
+  display: flex; flex-direction: column; }   /* + .cc-card (surface/border/radius) */
+.mov-table-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.mov-list-head { padding: 0.35rem 0.5rem 0.5rem; flex-shrink: 0; }   /* + .cc-row (flex/wrap/gap) */
+.mov-list-head > :first-child { margin-right: auto; }
+.mov-bulk, .mov-filters { flex-shrink: 0; }
 /* the table brings its own sized-column layout (column-width-key); drag a header edge to widen one */
 .mov-table { min-width: 100%; }
 

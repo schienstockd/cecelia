@@ -47,6 +47,9 @@ import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
 import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters } from '../utils/rowFilters'
+import { emptyAttrFilter, attrFilterActive, matchesAttrFilter, attrKeysOf,
+         type AttrFilterState } from '../utils/attrFilter'
+import AttrFilterPanel from './AttrFilterPanel.vue'
 import { funsRunAcross, wasProcessedWith, funModuleLabel, type ProcMode } from '../utils/runLog'
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
@@ -56,8 +59,6 @@ import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
-import ChipSelect, { type ChipOption } from './ChipSelect.vue'
-import CcToggle from './CcToggle.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -108,9 +109,10 @@ const selectedNames = computed(() =>
 
 // ── Attr filter ────────────────────────────────────────────────────────────────
 
-const attrFilters    = ref<Record<string, string[]>>({})
-const appliedFilters = ref<Record<string, string[]>>({})
-const filterInvert   = ref(false)
+// The chips, the draft/applied split and the matching rule are `utils/attrFilter.ts` +
+// `AttrFilterPanel.vue` — shared with the Movies list, which asks the same question of rows joined
+// back to their image. This holds the state and decides what it narrows.
+const attrFilter = ref<AttrFilterState>(emptyAttrFilter())
 
 // Attributes and processing-history are two separate dropdowns off the action bar (Filter / Task),
 // each COLLAPSED by default with its own open-state persisted per module (UI.md).
@@ -163,54 +165,11 @@ const procFunLabel = (fun: string) => `${funModuleLabel(fun)} · ${taskDefs.labe
 // the picked fun is only active as a filter while it's still a real candidate (a set switch may drop it)
 const procActive = computed(() => !!procFun.value && runFuns.value.includes(procFun.value))
 
-const attrKeys = computed(() => {
-  const imgs = activeSet.value?.images ?? []
-  const keys = new Set<string>()
-  for (const img of imgs)
-    for (const k of Object.keys(img.attr ?? {})) keys.add(k)
-  return [...keys].sort()
-})
+// Still needed here for the Filter button (nothing to offer without them) and the CSV export's
+// one-column-per-attribute layout; the chips themselves are the panel's.
+const attrKeys = computed(() => attrKeysOf(activeSet.value?.images ?? []))
 
-const attrValueMap = computed(() => {
-  const imgs = activeSet.value?.images ?? []
-  const map: Record<string, Set<string>> = {}
-  for (const img of imgs)
-    for (const [k, v] of Object.entries(img.attr ?? {})) {
-      if (!map[k]) map[k] = new Set()
-      if (v != null) map[k].add(String(v))
-    }
-  return Object.fromEntries(
-    Object.entries(map).map(([k, s]) => [k, [...s].sort()])
-  ) as Record<string, string[]>
-})
-
-const hasFilters = computed(() => Object.values(attrFilters.value).some(v => v.length > 0))
-const hasApplied = computed(() => Object.values(appliedFilters.value).some(v => v.length > 0))
-
-function setAttrFilter(key: string, next: string[]) {
-  attrFilters.value = { ...attrFilters.value, [key]: next }
-}
-// chips for one attribute key (value = label, tooltip = the value)
-function attrChipOpts(key: string): ChipOption[] {
-  // A blank attribute value is a legitimate filter ("which images did I not annotate?"), but its chip
-  // rendered as an unlabelled pill: ChipSelect hides the label span when label === '' (that's how
-  // icon-only chips work), so an empty label with no icon leaves an empty chip. Keep the value — the
-  // filter matches on it — and give it something to show.
-  return (attrValueMap.value[key] ?? []).map(v => v.trim() === ''
-    ? { value: v, label: '—', tip: `No ${key} set` }
-    : { value: v, label: v, tip: v })
-}
-function applyFilters() {
-  appliedFilters.value = Object.fromEntries(
-    Object.entries(attrFilters.value).filter(([, v]) => v.length > 0)
-  )
-}
-function resetFilters() {
-  attrFilters.value    = {}
-  appliedFilters.value = {}
-  filterInvert.value   = false
-}
-
+const hasApplied = computed(() => attrFilterActive(attrFilter.value))
 const filteredUids = computed<string[] | undefined>(() => {
   const attrActive = props.showFilter && hasApplied.value
   const procOn     = props.showFilter && procActive.value
@@ -221,11 +180,7 @@ const filteredUids = computed<string[] | undefined>(() => {
     .filter(img => {
       if (hiddenByRowFilters(img, rowFilterActive.value)) return false
       if (procOn && !wasProcessedWith(img.runLog, procFun.value, procMode.value)) return false
-      if (!attrActive) return true
-      const matches = Object.entries(appliedFilters.value).every(([key, vals]) =>
-        vals.includes(String(img.attr?.[key] ?? ''))
-      )
-      return filterInvert.value ? !matches : matches
+      return !attrActive || matchesAttrFilter(img.attr, attrFilter.value)
     })
     .map(img => img.uid)
 })
@@ -244,10 +199,8 @@ watch(filteredUids, (uids) => {
 // Reset filters on set switch, but restore that set's remembered selection (ImageTable reseeds
 // and emits too; reading the store here keeps the slot props correct without an intermediate empty)
 watch(activeSet, (s) => {
-  attrFilters.value    = {}
-  appliedFilters.value = {}
-  filterInvert.value   = false
-  selectedUids.value   = s ? project.getImageSelection(selScope.value, s.uid) : []
+  attrFilter.value   = emptyAttrFilter()
+  selectedUids.value = s ? project.getImageSelection(selScope.value, s.uid) : []
   emit('selectionChange', selectedUids.value)
 })
 
@@ -364,9 +317,9 @@ const visibleUids = computed<string[]>(() =>
         </div>
 
         <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
-        <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="attr-filter">
-          <div class="filter-row proc-row">
-            <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
+        <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="cc-filter-panel">
+          <div class="cc-filter-row proc-row">
+            <span class="cc-filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
             <div class="proc-controls cc-row">
               <select v-model="procFun" class="proc-select"
                 v-tooltip.bottom="'Only show images this function has been run on'">
@@ -385,26 +338,10 @@ const visibleUids = computed<string[]>(() =>
           </div>
         </div>
 
-        <!-- Filter dropdown: attribute-value chips — only when open -->
-        <div v-if="showFilter && activeSet && attrKeys.length > 0 && filtersOpen" class="attr-filter">
-          <div class="filter-rows">
-            <div v-for="key in attrKeys" :key="key" class="filter-row">
-              <span class="filter-key cc-eyebrow cc-fs-sm" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
-              <ChipSelect class="filter-chips" multiple :options="attrChipOpts(key)"
-                v-tooltip.right="`Show only images with these ${key} values`"
-                :model-value="attrFilters[key] ?? []"
-                @update:model-value="v => setAttrFilter(key, v as string[])" />
-            </div>
-          </div>
-          <div class="filter-actions">
-            <button class="cc-btn cc-btn-ghost" :disabled="!hasFilters" @click="applyFilters"
-              v-tooltip.top="'Apply selected filters to the image list'">Apply</button>
-            <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters" @click="resetFilters"
-              v-tooltip.top="'Clear the attribute filters'">Reset</button>
-            <CcToggle class="filter-invert" v-model="filterInvert" :disabled="!hasApplied" label="Invert"
-              v-tooltip.top="'Invert the filter — show images that do NOT match'" />
-          </div>
-        </div>
+        <!-- Filter dropdown: attribute-value chips — only when open. The panel renders nothing when
+             the set has no attributes, so the guard here is just "is it open". -->
+        <AttrFilterPanel v-if="showFilter && activeSet && filtersOpen" noun="images"
+          :rows="activeSet.images" v-model="attrFilter" />
 
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
@@ -492,7 +429,7 @@ const visibleUids = computed<string[]>(() =>
    area so the right-aligned controls (and their tooltips/floating pickers) aren't flush to the edge.
    Padding on the inner boxes (not image-panel) keeps the action-bar divider spanning full width. */
 .image-panel.no-right > .action-bar { padding-right: 1.1rem; }
-.image-panel.no-right > .attr-filter,
+.image-panel.no-right > .cc-filter-panel,
 .image-panel.no-right > .panel-scroll { padding-right: 0.9rem; }
 
 /* The right panel's own chrome (handle / resizer / slot) lives in CollapsiblePanel.vue */
@@ -524,12 +461,6 @@ const visibleUids = computed<string[]>(() =>
 
 /* ── Attr filter ──────────────────────────────────────────────────────────── */
 
-.attr-filter {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--cc-border);
-  padding: 0.5rem 1rem;
-  background: var(--cc-bg);
-}
 
 /* filter/excluded toggles: grouped, pushed to the right edge of the action bar */
 .table-tools {
@@ -565,30 +496,9 @@ const visibleUids = computed<string[]>(() =>
   color: inherit;
 }
 
-.filter-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid var(--cc-border);
-}
-
-.filter-invert {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  user-select: none;
-  margin-left: 0.25rem;
-}
-.filter-invert input { cursor: pointer; }
-.filter-invert:has(input:disabled) { opacity: 0.4; cursor: not-allowed; }
 
 /* processed-with filter row (function picker + ever/last mode) — its own dropdown, no divider */
-.proc-row .filter-key { min-width: 104px; }
+.proc-row .cc-filter-key { min-width: 104px; }
 
 .proc-select {
   padding: 0.15rem 0.4rem;
@@ -601,18 +511,6 @@ const visibleUids = computed<string[]>(() =>
 .proc-mode.disabled { opacity: 0.4; }
 .proc-mode input { cursor: pointer; }
 
-.filter-rows   { display: flex; flex-direction: column; gap: 0.3rem; }
-
-.filter-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 1.6rem;
-}
-
-.filter-key { min-width: 80px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.filter-chips  { flex: 1; min-width: 0; }
 
 /* ── Scrollable panel body (image table + below-table) ────────────────────── */
 
