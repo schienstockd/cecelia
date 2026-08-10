@@ -524,6 +524,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
                             :rows="movieTableRows" v-model:selected="checked" id-key="name"
                             sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
+                            fit="content"
                             :row-tooltip="r => `Select ${r.label} — click the eye to play it`">
               <!-- eye · star · the name, editable in place. Renaming from the row is the point: the
                    alternative was selecting each movie and editing a field under the player. -->
