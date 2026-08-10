@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildFieldRegex, buildLookaroundRegex, extractWith } from './regexBuilder'
+import { buildFieldRegex, buildLookaroundRegex, extractWith, regexSampleFor } from './regexBuilder'
 
 // End-to-end: build a regex for a common case, then apply it to the sample the user would type it for.
 const field = (sample: string, sep: string, pos: Parameters<typeof buildFieldRegex>[1], stripExt = true) =>
@@ -39,6 +39,84 @@ describe('regexBuilder — field split', () => {
   it('empty separator → empty regex → empty extraction', () => {
     expect(buildFieldRegex('', 'last', true)).toBe('')
     expect(field('a-b', '', 'last')).toBe('')
+  })
+
+  it('counts fields from the end', () => {
+    expect(field('M4d-CD8-GFP-CD20-Tom', '-', 'secondLast')).toBe('CD20')
+    expect(field('M4d-CD8-GFP-CD20-Tom', '-', 'thirdLast')).toBe('GFP')
+    expect(field('mouse_03_ctrl.czi', '_', 'secondLast')).toBe('03')
+  })
+
+  it('from-the-end positions do not match when there are too few fields', () => {
+    expect(field('a-b', '-', 'thirdLast')).toBe('')
+    expect(field('Image1.tif', '-', 'secondLast')).toBe('')
+  })
+
+  it('a multi-char separator means "any of these characters"', () => {
+    // the folder separator: `/` and `\`, so one pattern covers both platforms
+    expect(field('/data/20260714/M1b-MERTK.ori', '/\\', 'last')).toBe('M1b-MERTK')
+    expect(field('C:\\data\\20260714\\M1b-MERTK.ori', '/\\', 'last')).toBe('M1b-MERTK')
+  })
+})
+
+// The point of the "Original path" source: pull acquisition info out of the UPSTREAM FOLDERS the
+// user organises by (a date directory per session), not out of the filename.
+describe('regexBuilder — extracting from the folders of a path', () => {
+  const PATHS = [
+    '/mnt/imaging/20260714/M1b-MERTK.ori',
+    'C:\\imaging\\20260714\\M1b-MERTK.ori',
+    '/mnt/imaging/two/levels/deep/20260714/M1b-MERTK.ori',
+  ]
+
+  it('takes the containing folder as the 2nd-last field, at any depth', () => {
+    const re = buildFieldRegex('/\\', 'secondLast', true)
+    for (const p of PATHS) expect(extractWith(re, p)).toBe('20260714')
+  })
+
+  // Windows source paths reach ccid.json as-is (drive letters, UNC shares, and — since the browse
+  // route and Julia's joinpath can disagree — mixed separators), so the folder separator is the
+  // CLASS [/\\] rather than one platform's character.
+  it('handles Windows paths: drive letter, UNC share, mixed separators', () => {
+    const re = buildFieldRegex('/\\', 'secondLast', true)
+    expect(extractWith(re, 'C:\\imaging\\INCITe\\20260716\\M1b-MERTK.oir')).toBe('20260716')
+    expect(extractWith(re, '\\\\garvan-fs\\imaging\\20260716\\M1b-MERTK.oir')).toBe('20260716')
+    expect(extractWith(re, 'C:/imaging/INCITe\\20260716\\M1b-MERTK.oir')).toBe('20260716')
+    expect(extractWith(buildFieldRegex('/\\', 'last', true), 'C:\\imaging\\20260716\\M1b-MERTK.oir'))
+      .toBe('M1b-MERTK')
+  })
+
+  // stripExt is about the FILE extension, so it must not apply to a folder field — a `2026.07.16`
+  // date folder used to match nothing at all because the dot-free token class was applied to it.
+  it('a dotted folder name survives, with or without the extension toggle', () => {
+    for (const stripExt of [true, false])
+      expect(extractWith(buildFieldRegex('/\\', 'secondLast', stripExt),
+                         'C:\\imaging\\2026.07.16\\M1b-MERTK.oir')).toBe('2026.07.16')
+    // …while the last field still drops its extension as before
+    expect(extractWith(buildFieldRegex('/\\', 'last', true),
+                       'C:\\imaging\\2026.07.16\\M1b-MERTK.oir')).toBe('M1b-MERTK')
+  })
+
+  it('the look-around builder reaches it too (digits between separators)', () => {
+    const re = buildLookaroundRegex(
+      { text: '/', cls: 'none' }, { kind: 'digits', text: '' }, { text: '/', cls: 'none' })
+    expect(extractWith(re, PATHS[0])).toBe('20260714')
+  })
+})
+
+describe('regexSampleFor', () => {
+  // The bug this fixes: `filepath` is the CONVERTED store inside the project
+  // (ccidDriftCorrected.ome.zarr), so matching against it can never see the source folders.
+  const img = { name: 'M1b-MERTK', oriPath: '/mnt/imaging/20260714/M1b-MERTK.ori' }
+
+  it('path → the original source location, name → the image name', () => {
+    expect(regexSampleFor(img, 'path')).toBe('/mnt/imaging/20260714/M1b-MERTK.ori')
+    expect(regexSampleFor(img, 'name')).toBe('M1b-MERTK')
+  })
+
+  it('falls back to the name when no source path was recorded', () => {
+    expect(regexSampleFor({ name: 'M1b-MERTK' }, 'path')).toBe('M1b-MERTK')
+    expect(regexSampleFor({ name: 'M1b-MERTK', oriPath: null }, 'path')).toBe('M1b-MERTK')
+    expect(regexSampleFor({ name: 'M1b-MERTK', oriPath: '' }, 'path')).toBe('M1b-MERTK')
   })
 })
 
