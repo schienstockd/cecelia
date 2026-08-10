@@ -39,7 +39,7 @@ import MovieOutputControls from '../../components/MovieOutputControls.vue'
 import MovieTimeRange from '../../components/MovieTimeRange.vue'
 import { movieSizeParams } from '../../utils/movieSize'
 import { useNapariStatus } from '../../composables/useNapariStatus'
-import { lookRestore, missingRefs, restoreNote, type MovieRegistryEntry } from '../../utils/movieRestore'
+import { lookRestore, missingRefs, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import RestoreNotice from '../../components/RestoreNotice.vue'
 
@@ -314,8 +314,10 @@ async function previewOpen() {
 // Everything this touches is REPLACED rather than patched, and snapshotted first: the config is being
 // swapped as a whole, and a merge could not undo it — it has no way to remove a key, so undoing would
 // leave behind every option the restored config set and the previous one did not.
-function outputSnapshot() {
-  const m = movie.value
+// Takes the set explicitly rather than reading the active one: a restore can SWITCH sets, and what has
+// to be snapshotted is the config of the set about to be overwritten.
+function outputSnapshot(uid: string) {
+  const m = settings.getMovieConfig(uid)
   return { fps: m.fps, sizeX: m.sizeX, sizeY: m.sizeY, suffix: m.suffix,
            showTimestamp: m.showTimestamp, showScaleBar: m.showScaleBar }
 }
@@ -343,20 +345,30 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
   onError: m => log.error(m, { source: 'movies' }),
   apply: (entry: MovieRegistryEntry) => {
     const r = lookRestore(entry.config)
-    const set = setUid.value
-    if (!r || !set) return null
+    if (!r) return null
 
-    // The images the movie was recorded over — a batch reproduces its whole selection, not the one row
-    // that was clicked. Only the ones still in this set: a uid from a deleted image (or another set)
-    // would sit in the selection unselectable and invisible.
+    // WHICH SET, from the movie's own images rather than from whichever set happens to be active — and
+    // switch to it. Config, output and selection are all stored per set, so this has to be settled
+    // before anything is written. Checking the active set instead used to report "images from another
+    // set" and leave the user to go and switch (Dominik, 2026-08-10); a restore is one click and should
+    // repair what it can. Images spanning two sets have no single answer, so that keeps the active set
+    // and says what it dropped.
     const known = new Set(project.sets.flatMap(s => s.images).map(i => i.uid))
+    const set = restoreTargetSet(r.imageUids.map(u => project.setUidOfImage(u)), setUid.value)
+    if (!set) return null
+    const prevSetUid = project.activeSetUid
+    if (prevSetUid !== set) project.activeSetUid = set
+
+    // A batch reproduces its whole selection, not the one row that was clicked. Only the ones in this
+    // set: a uid from a deleted image (or another set) would sit in the selection unselectable and
+    // invisible.
     const inSet = new Set((project.sets.find(s => s.uid === set)?.images ?? []).map(i => i.uid))
     const wanted = r.imageUids.filter(u => inSet.has(u))
     const gone = r.imageUids.filter(u => !known.has(u))
     const elsewhere = r.imageUids.filter(u => known.has(u) && !inSet.has(u))
 
     const prevCfg = { ...settings.getBatchMovieConfig(set) }
-    const prevOut = outputSnapshot()
+    const prevOut = outputSnapshot(set)
     const prevSel = project.getImageSelection('batchMovies', set)
 
     settings.replaceBatchMovieConfig(set, r.cfg)
@@ -383,6 +395,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
         settings.replaceBatchMovieConfig(set, prevCfg)
         settings.setMovieConfig(set, prevOut)
         if (wanted.length) project.setImageSelection('batchMovies', set, prevSel)
+        project.activeSetUid = prevSetUid
       },
       note: restoreNote(missingRefs(r.cfg, availableFor(wanted)), dropped),
     }

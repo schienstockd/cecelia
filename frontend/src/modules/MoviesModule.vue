@@ -329,32 +329,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 
 <template>
   <ModulePage layout="fill">
-    <template #controls>
-      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
-        <i class="pi pi-forward" />
-        <select v-model.number="settings.moviesPlaybackRate" class="mov-select">
-          <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
-        </select>
-      </label>
-      <label class="mov-ctl cc-muted" v-tooltip.bottom="'Zoom the video (Shift + wheel, Shift +/−, Shift + 0 to reset)'">
-        <i class="pi pi-search-plus" />
-        <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
-               @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
-        <span class="mov-num cc-readout">{{ zoomLabel }}</span>
-      </label>
-      <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
-                v-tooltip.bottom="'Play a movie automatically when you select it'" />
-      <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
-                v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
-      <button class="cc-btn cc-btn-ghost" :disabled="loading || !hasProject" @click="refresh"
-            v-tooltip.bottom="'Re-scan the project movies folder'">
-      <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
-      </button>
-    </template>
-
     <p v-if="!hasProject" class="cc-empty">Open a project to browse its movies.</p>
-    <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
-      Animation, Batch movies or Viewer panels; they appear here.</p>
 
     <div v-else class="mov-body">
       <!-- Player -->
@@ -364,112 +339,148 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                  :autoplay="settings.moviesAutoplay" :loop="settings.moviesLoop"
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" />
         </div>
+        <!-- Both empty states live in the STAGE, so the panel beside it (and its Refresh) stays
+             reachable in a project with no movies yet — it used to replace the whole page. -->
+        <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
+          Animation, Batch movies or Viewer panels; they appear here.</p>
         <p v-else class="cc-empty">Select a movie to play.</p>
       </div>
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
       <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="520" :max="900">
-        <div class="mov-list cc-card">
-          <div class="mov-list-head cc-eyebrow">
-            {{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
-              v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
-          </div>
-
-          <!-- Bulk actions on the CHECKED movies — the Import page's model: file operations act on the
-               selection, not one row at a time. Only present while something is checked. -->
-          <div v-if="checked.length" class="mov-bulk cc-row cc-row-tight">
-            <span class="cc-eyebrow cc-fs-2xs">{{ checked.length }} selected</span>
-            <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="openTagDialog"
-                    v-tooltip.bottom="'Add tags to the selected movies'">
-              <i class="pi pi-tag" /> Tag
-            </button>
-            <!-- arm → confirm, the canonical destructive pattern. The buttons live HERE, not inside
-                 ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
-            <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-micro mov-danger" @click="arm"
-                      v-tooltip.bottom="'Delete the selected movies'">
-                <i class="pi pi-trash" /> Delete {{ checked.length }}
+        <div class="mov-side">
+          <!-- Playback options sit WITH the list rather than in a page header: they are what you reach for
+               while picking a movie, and a header row holding four of them across an empty page read as
+               stray chrome (Dominik, 2026-08-10). -->
+          <div class="mov-ctls cc-card">
+            <div class="cc-row cc-row-tight">
+              <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
+                <i class="pi pi-forward" />
+                <select v-model.number="settings.moviesPlaybackRate" class="mov-select">
+                  <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
+                </select>
+              </label>
+              <label class="mov-ctl mov-zoom cc-muted" v-tooltip.bottom="'Zoom the video (Shift + wheel, Shift +/−, Shift + 0 to reset)'">
+                <i class="pi pi-search-plus" />
+                <input type="range" :min="MOVIES_ZOOM_MIN" :max="MOVIES_ZOOM_MAX" step="0.25" :value="settings.moviesZoom"
+                       @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
+                <span class="mov-num cc-readout">{{ zoomLabel }}</span>
+              </label>
+            </div>
+            <div class="cc-row cc-row-tight">
+              <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
+                        v-tooltip.bottom="'Play a movie automatically when you select it'" />
+              <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesLoop" label="Loop"
+                        v-tooltip.bottom="'Repeat the movie when it reaches the end'" />
+              <button class="cc-btn cc-btn-ghost cc-btn-micro mov-refresh" :disabled="loading" @click="refresh"
+                      v-tooltip.left="'Re-scan the project movies folder'">
+                <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
               </button>
-              <template v-else>
-                <button class="cc-btn cc-btn-primary cc-btn-micro" @click="confirm"
-                        v-tooltip.bottom="'Permanently delete these files'">
-                  <i class="pi pi-check" /> Delete {{ checked.length }}
-                </button>
-                <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="cancel"
-                        v-tooltip.bottom="'Keep them'"><i class="pi pi-times" /></button>
-              </template>
-            </ConfirmButton>
+            </div>
           </div>
-          <!-- Star and tags compose with each other and with the column sort — one never replaces
-               another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
-          <div v-if="starredCount || filterOptions.length" class="mov-filters cc-row cc-row-tight">
-            <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
-                    :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
-                    @click="starredOnly = !starredOnly"
-                    v-tooltip.bottom="starredOnly ? 'Show all movies' : 'Show only starred movies'">
-              <i :class="starredOnly ? 'pi pi-star-fill' : 'pi pi-star'" /> {{ starredCount }}
-            </button>
-            <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
-                        aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
-          </div>
-          <!-- Multi-select: the checkbox is the working SET the bulk actions apply to, and the eye is
-               what plays — the same split as the image table, where selection drives the run and the
-               eye drives napari. -->
-          <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
-                          :rows="movieTableRows" v-model:selected="checked" id-key="name"
-                          sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
-                          :row-tooltip="r => `Select ${r.label} — click the eye to play it`">
-            <!-- eye · star · the name, editable in place. Renaming from the row is the point: the
-                 alternative was selecting each movie and editing a field under the player. -->
-            <template #cell-label="{ row }">
-              <span class="mov-labelcell">
-                <button class="mov-eye cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                        :class="{ on: selected === row.name }" @click.stop="selected = row.name"
-                        v-tooltip.right="selected === row.name ? 'Playing' : 'Play this movie'">
-                  <i class="pi pi-eye" />
-                </button>
-                <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
-                        @click.stop="toggleStar(row)"
-                        v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
-                  <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
-                </button>
-                <!-- Only for a movie that banked a config. Absent rather than disabled: every movie
-                     recorded before the registry has none, and a row of dead buttons in an older
-                     project reads as broken rather than as "nothing was saved". -->
-                <button v-if="canEdit(row)" class="mov-edit cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                        :class="{ stale: row.configStale }" @click.stop="editConfig(row)"
-                        v-tooltip.right="editTip(row)">
-                  <i class="pi pi-sliders-h" />
-                </button>
-                <input v-if="isRenaming(row.name)" :ref="focusRenameInput" v-model="nameDraft"
-                       class="cc-input-2xs mov-cell-edit" v-tooltip.right="'Enter to save, Esc to cancel'"
-                       @click.stop @keyup.enter="saveRename(row)" @keyup.esc="cancelRename"
-                       @blur="saveRename(row)" />
-                <span v-else class="mov-label" :title="row.name"
-                      @click.stop="beginRename(row)">{{ row.label }}</span>
-              </span>
-            </template>
 
-            <!-- Tags in the row too, for the same reason -->
-            <template #cell-tagText="{ row }">
-              <!-- `list` gives the row editor the same "pick what already exists" the modal does,
-                   without a popover inside a table cell. -->
-              <input v-if="isTagging(row.name)" :ref="focusTagInput" v-model="tagDraft"
-                     class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
-                     list="mov-tags-in-use"
-                     v-tooltip.right="'Enter to save, Esc to cancel'"
-                     @click.stop @keyup.enter="saveTags(row)" @keyup.esc="cancelTags"
-                     @blur="saveTags(row)" />
-              <span v-else class="mov-tags" @click.stop="beginTags(row)"
-                    v-tooltip.right="'Click to edit tags'">
-                <span v-for="t in row.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
-                <span v-if="!row.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
-              </span>
-            </template>
-          </SelectionTable>
-          <datalist id="mov-tags-in-use">
-            <option v-for="t in tagsInUse" :key="t" :value="t" />
-          </datalist>
+          <div class="mov-list cc-card">
+            <div class="mov-list-head cc-eyebrow">
+              {{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
+                v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
+            </div>
+
+            <!-- Bulk actions on the CHECKED movies — the Import page's model: file operations act on the
+                 selection, not one row at a time. Only present while something is checked. -->
+            <div v-if="checked.length" class="mov-bulk cc-row cc-row-tight">
+              <span class="cc-eyebrow cc-fs-2xs">{{ checked.length }} selected</span>
+              <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="openTagDialog"
+                      v-tooltip.bottom="'Add tags to the selected movies'">
+                <i class="pi pi-tag" /> Tag
+              </button>
+              <!-- arm → confirm, the canonical destructive pattern. The buttons live HERE, not inside
+                   ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
+              <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, arm, confirm, cancel }">
+                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-micro mov-danger" @click="arm"
+                        v-tooltip.bottom="'Delete the selected movies'">
+                  <i class="pi pi-trash" /> Delete {{ checked.length }}
+                </button>
+                <template v-else>
+                  <button class="cc-btn cc-btn-primary cc-btn-micro" @click="confirm"
+                          v-tooltip.bottom="'Permanently delete these files'">
+                    <i class="pi pi-check" /> Delete {{ checked.length }}
+                  </button>
+                  <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="cancel"
+                          v-tooltip.bottom="'Keep them'"><i class="pi pi-times" /></button>
+                </template>
+              </ConfirmButton>
+            </div>
+            <!-- Star and tags compose with each other and with the column sort — one never replaces
+                 another. Both persist, so coming back to compare two movies doesn't mean re-filtering. -->
+            <div v-if="starredCount || filterOptions.length" class="mov-filters cc-row cc-row-tight">
+              <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
+                      :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
+                      @click="starredOnly = !starredOnly"
+                      v-tooltip.bottom="starredOnly ? 'Show all movies' : 'Show only starred movies'">
+                <i :class="starredOnly ? 'pi pi-star-fill' : 'pi pi-star'" /> {{ starredCount }}
+              </button>
+              <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
+                          aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
+            </div>
+            <!-- Multi-select: the checkbox is the working SET the bulk actions apply to, and the eye is
+                 what plays — the same split as the image table, where selection drives the run and the
+                 eye drives napari. -->
+            <SelectionTable class="mov-table" selection-mode="multi" :columns="MOVIE_COLUMNS"
+                            :rows="movieTableRows" v-model:selected="checked" id-key="name"
+                            sort-storage-key="cc.movies.sort" column-width-key="cc.movies.colw"
+                            :row-tooltip="r => `Select ${r.label} — click the eye to play it`">
+              <!-- eye · star · the name, editable in place. Renaming from the row is the point: the
+                   alternative was selecting each movie and editing a field under the player. -->
+              <template #cell-label="{ row }">
+                <span class="mov-labelcell">
+                  <button class="mov-eye cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                          :class="{ on: selected === row.name }" @click.stop="selected = row.name"
+                          v-tooltip.right="selected === row.name ? 'Playing' : 'Play this movie'">
+                    <i class="pi pi-eye" />
+                  </button>
+                  <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
+                          @click.stop="toggleStar(row)"
+                          v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
+                    <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
+                  </button>
+                  <!-- Only for a movie that banked a config. Absent rather than disabled: every movie
+                       recorded before the registry has none, and a row of dead buttons in an older
+                       project reads as broken rather than as "nothing was saved". -->
+                  <button v-if="canEdit(row)" class="mov-edit cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                          :class="{ stale: row.configStale }" @click.stop="editConfig(row)"
+                          v-tooltip.right="editTip(row)">
+                    <i class="pi pi-sliders-h" />
+                  </button>
+                  <input v-if="isRenaming(row.name)" :ref="focusRenameInput" v-model="nameDraft"
+                         class="cc-input-2xs mov-cell-edit" v-tooltip.right="'Enter to save, Esc to cancel'"
+                         @click.stop @keyup.enter="saveRename(row)" @keyup.esc="cancelRename"
+                         @blur="saveRename(row)" />
+                  <span v-else class="mov-label" :title="row.name"
+                        @click.stop="beginRename(row)">{{ row.label }}</span>
+                </span>
+              </template>
+
+              <!-- Tags in the row too, for the same reason -->
+              <template #cell-tagText="{ row }">
+                <!-- `list` gives the row editor the same "pick what already exists" the modal does,
+                     without a popover inside a table cell. -->
+                <input v-if="isTagging(row.name)" :ref="focusTagInput" v-model="tagDraft"
+                       class="cc-input-2xs mov-cell-edit" placeholder="tags, comma separated"
+                       list="mov-tags-in-use"
+                       v-tooltip.right="'Enter to save, Esc to cancel'"
+                       @click.stop @keyup.enter="saveTags(row)" @keyup.esc="cancelTags"
+                       @blur="saveTags(row)" />
+                <span v-else class="mov-tags" @click.stop="beginTags(row)"
+                      v-tooltip.right="'Click to edit tags'">
+                  <span v-for="t in row.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
+                  <span v-if="!row.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
+                </span>
+              </template>
+            </SelectionTable>
+            <datalist id="mov-tags-in-use">
+              <option v-for="t in tagsInUse" :key="t" :value="t" />
+            </datalist>
+          </div>
         </div>
       </CollapsiblePanel>
     </div>
@@ -502,10 +513,18 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-select {
   border-radius: var(--cc-radius-sm); padding: 0.15rem 0.35rem;
 }
-.mov-range { width: 6rem; }
+/* The zoom control takes what the speed picker leaves; the slider itself has a fixed intrinsic width
+   and won't shrink on its own, so it needs `min-width: 0` to share a narrow panel. */
+.mov-zoom { flex: 1; min-width: 0; }
+.mov-range { flex: 1; min-width: 3rem; }
 .mov-num { min-width: 2.2rem; }   /* + .cc-readout (tabular-nums/colour/size) */
+.mov-refresh { margin-left: auto; }
 
-.mov-body { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 1rem; }
+/* The panel's own column: options pinned at the top, the list taking the rest and scrolling itself */
+.mov-side { display: flex; flex-direction: column; gap: 0.4rem; flex: 1; min-width: 0; min-height: 0; }
+.mov-ctls { flex-shrink: 0; display: flex; flex-direction: column; gap: 0.35rem; padding: 0.4rem 0.5rem; }
+
+.mov-body { display: flex; gap: 1rem; flex: 1; min-height: 0; }
 
 /* Player stage — the video area. The viewport is the scroll container; the video is sized to a
    concrete px box (fit × zoom, see videoStyle). `margin:auto` on a flex child centres it when it fits
@@ -555,7 +574,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-danger:hover:not(:disabled) { color: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
-.mov-list { flex: 1; min-width: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
+.mov-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 0.35rem; }   /* + .cc-card (surface/border/radius) */
 .mov-list-head { padding: 0.35rem 0.5rem 0.5rem; }   /* + .cc-eyebrow (uppercase/dim/spacing) */
 /* the table brings its own sized-column layout (column-width-key); drag a header edge to widen one */
 .mov-table { min-width: 100%; }

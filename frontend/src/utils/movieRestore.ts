@@ -248,6 +248,23 @@ export function missingRefs(cfg: BatchMovieCfg, avail: AvailableNames): string[]
   return out
 }
 
+/**
+ * WHICH SET a restore should land in: the one holding the movie's images, not whichever set happens to
+ * be active. Pass each image's home set (`project.setUidOfImage`, `null` when the image is gone).
+ *
+ * Both destinations store per set — the batch page's config and output, and both pages' image
+ * selection — so the target has to be settled before anything is written. Reading the ACTIVE set
+ * instead is what made a restore report "images from another set" and leave the user to go and switch
+ * it themselves (Dominik, 2026-08-10); one click should repair what it can.
+ *
+ * Images spanning two sets have no single answer, so the caller's fallback wins and the difference is
+ * reported. Same when nothing is known (an old movie that banked no image).
+ */
+export function restoreTargetSet(homes: (string | null | undefined)[], fallback: string): string {
+  const found = [...new Set(homes.filter((s): s is string => !!s))]
+  return found.length === 1 ? found[0] : fallback
+}
+
 /** One line naming what could not be restored, or '' when everything came back. Kept here so both
  *  pages word it identically — and short, per the UI copy budget (docs/UI.md). */
 export function restoreNote(missing: string[], dropped: string[]): string {
