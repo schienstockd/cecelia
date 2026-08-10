@@ -418,7 +418,13 @@ defineExpose({ resetWidths })
 .sel-sticky { position: sticky; z-index: 2; background: var(--row-bg); }
 .sel-sticky-pick { left: 0; }
 thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
+/* `relative` only so the resize handle can sit on the header's right edge. It must NOT beat the sticky
+   columns: `.sel-table.sized th` is (0,2,0) and `.sel-sticky` is (0,1,0), so a pinned HEADER cell was
+   winning `position: relative` while its body cell stayed `sticky` — and `relative` + `left: 60px`
+   SHIFTS the cell 60px right without moving the layout, so the header slid over its neighbour and
+   stopped agreeing with the rows. A sticky box is a containing block too, so the handle is fine. */
 .sel-table.sized th { position: relative; }
+.sel-table.sized th.sel-sticky, .sel-table.sized td.sel-sticky { position: sticky; }
 .sel-table.sized th, .sel-table.sized td { overflow: hidden; text-overflow: ellipsis; }
 .sel-col-resize {
   position: absolute; right: 0; top: 0; width: 5px; height: 100%;
