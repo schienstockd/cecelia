@@ -66,6 +66,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/boards"),  # existing Analysis boards + what each slot plots (summary, not layout)
         ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
+        ("GET", "/api/observer/labarchives"),  # the ELN context sidecar in full + derived cohort gaps
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("GET", "/api/notebooks"),         # list a project's notebooks (file, description, version)
@@ -75,6 +76,11 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/notebooks/describe"),  # write 3/4 — edits ONLY a notebook's description string (registry sidecar); not its content
         ("POST", "/api/notebooks/revise"),  # write 4/4 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
         ("POST", "/api/chains/create"),  # write 5/5 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
+        ("POST", "/api/observer/labarchives/set"),  # write 7/7 — REPLACES the LabArchives context
+                                          # sidecar (a cache of an external system of record, so a
+                                          # rewrite loses nothing; LabArchives is itself versioned).
+                                          # Touches no project or analysis data, and never the lab
+                                          # log — a change worth keeping is appended there separately.
     }
 )
 
@@ -291,6 +297,10 @@ class CeceliaClient:
     def read_lab_log(self, project_uid: str):
         return self._request("GET", "/api/lablog", {"projectUid": project_uid})
 
+    def get_labarchives_context(self, project_uid: str):
+        # The FULL LabArchives context sidecar + derived cohort gaps (the briefing carries headings only).
+        return self._request("GET", "/api/observer/labarchives", {"projectUid": project_uid})
+
     def get_recent_logs(self):
         # The backend console ring — server-level @info/@warn/@error (task crashes land here, NOT in
         # the per-image task log, which only captures the Python subprocess's stdout). Not scoped to a
@@ -305,7 +315,18 @@ class CeceliaClient:
         return self._request("GET", "/api/notebooks/content",
                              params={"projectUid": project_uid, "file": file})
 
-    # ── the three writes (all non-destructive to project & analysis data) ────────────
+    # ── the writes (all non-destructive to project & analysis data) ────────────
+    def set_labarchives_context(self, project_uid: str, source: dict, sections: list,
+                                cohort: list, synced_by: str = "claude"):
+        # REPLACE the context sidecar. Cecelia never fetches from LabArchives itself — the connector
+        # lives in the user's Claude session — so this is how the context gets in.
+        return self._request(
+            "POST",
+            "/api/observer/labarchives/set",
+            body={"projectUid": project_uid, "source": source, "sections": sections,
+                  "cohort": cohort, "syncedBy": synced_by},
+        )
+
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(
             "POST",

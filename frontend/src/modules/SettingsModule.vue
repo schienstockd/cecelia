@@ -16,6 +16,10 @@ import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
+import { useObserverStore } from '../stores/observer'
+import { mcpRows, type McpConnection } from '../utils/mcpConnections'
+import { isAuthError } from '../utils/observerSetup'
+import { claudeChatCommand } from '../lib/claudeOverview'
 import CcToggle from '../components/CcToggle.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
@@ -323,6 +327,38 @@ async function pollServices() {
 let svcTimer: number | undefined
 onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
 onUnmounted(() => { if (svcTimer) window.clearInterval(svcTimer) })
+
+// ── MCP connections ────────────────────────────────────────────────────────────
+// What Claude can reach. NOT polled: the config only changes when the user (or our own setup button)
+// edits it, so it's read on open and after a registration attempt. Row model in utils/mcpConnections.ts.
+const observer = useObserverStore()
+const mcpRaw = ref<McpConnection[]>([])
+const hiddenAccountConnectors = computed(() => settings.hiddenMcpAccounts)
+// The Claude Code CLI row leads the list. Its "not detected / not logged in" state used to be a
+// banner in the lab-log panel; with the connections panel here, that banner was a second home for
+// the same fact — and the one further from where you act on it.
+const observerAuthFailed = computed(() => {
+  const last = observer.session?.passes?.[0]
+  return !!last && !last.ok && isAuthError(last.note)
+})
+const mcpConnectionRows = computed(() =>
+  mcpRows(mcpRaw.value, observer.terminalState, settings.hiddenMcpAccounts,
+          { available: observer.available, authFailed: observerAuthFailed.value }))
+function hideAccountConnector(name: string) {
+  if (!settings.hiddenMcpAccounts.includes(name)) settings.hiddenMcpAccounts.push(name)
+}
+async function loadMcpConnections() {
+  try { mcpRaw.value = (await (await fetch('/api/mcp/connections')).json())?.connections ?? [] }
+  catch { mcpRaw.value = [] }
+}
+onMounted(() => { loadMcpConnections(); observer.refresh() })
+// re-read once a setup attempt settles, so the dot reflects the config rather than the click
+watch(() => observer.registering, busy => { if (!busy) loadMcpConnections() })
+
+// The failed-setup fallback command lives here now (diagnostics), not in the lab-log toolbar.
+const { isCopied: observerCmdCopied, copy: copyCmdFlash } = useCopyFlash()
+const observerFallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
+const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
 async function napariAction(kind: 'restart' | 'stop') {
   svcBusy.value = 'napari'; svcMsg.value = ''
@@ -805,6 +841,53 @@ async function switchWt(path: string) {
       <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
     </section>
 
+    <!-- ── MCP connections ─────────────────────────────────────────────── -->
+    <!-- What Claude can reach. Machine rows come from the user's Claude config (real state); account
+         rows are managed by their claude.ai account and are NOT detectable from here, so they carry
+         no dot — listed so people discover Cecelia can use them. Row model: utils/mcpConnections.ts -->
+    <section class="settings-section">
+      <h2 class="section-title">MCP connections</h2>
+
+      <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
+           container that also holds tooltipped buttons fires both at once -->
+      <div v-for="r in mcpConnectionRows" :key="r.kind + r.name" class="mcp-row">
+        <span class="svc-name">{{ r.name }}</span>
+        <span class="svc-pill" :class="r.tone" v-tooltip.top="r.hint"><span class="dot" /> {{ r.label }}</span>
+        <span class="mcp-detail cc-muted cc-fs-xs" v-tooltip.top="r.hint">
+          {{ r.detail }}
+          <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
+        </span>
+        <button v-if="r.name === 'cecelia-observer' && r.tone === 'warn'" class="cc-btn cc-btn-sm"
+                :disabled="observer.registering" @click="observer.registerMcp()"
+                v-tooltip.top="'Register the Cecelia MCP in your Claude config'">
+          <i class="pi pi-download" /> {{ observer.registering ? 'Setting up…' : 'Set up' }}
+        </button>
+        <button v-else-if="r.dismissable" class="cc-btn cc-btn-bare cc-btn-icon"
+                @click="hideAccountConnector(r.name)" v-tooltip.left="'Hide — not used here'">
+          <i class="pi pi-times" />
+        </button>
+        <span v-else />
+      </div>
+
+      <!-- one-click setup FAILED: the resolved command to run by hand. Diagnostics live here now, so
+           the lab-log toolbar keeps only the action. -->
+      <div v-if="observer.registerError" class="svc-row-note cc-row cc-row-tight">
+        <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
+        <template v-if="observerFallbackCommand">
+          <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyObserverFallback"
+                  v-tooltip.left="observerCmdCopied() ? 'Copied!' : 'Copy command'">
+            <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
+          </button>
+        </template>
+      </div>
+
+      <span v-if="hiddenAccountConnectors.length" class="field-hint cc-muted cc-fs-xs">
+        Hidden: {{ hiddenAccountConnectors.join(', ') }}
+        <button class="cc-btn cc-btn-bare cc-fs-xs" @click="settings.hiddenMcpAccounts = []">show again</button>
+      </span>
+    </section>
+
     <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
     <section class="settings-section">
       <h2 class="section-title">Diagnostics</h2>
@@ -1055,6 +1138,17 @@ async function switchWt(path: string) {
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
 .svc-port { justify-self: start; font-family: var(--cc-mono); }
+/* MCP rows: ONE line each — name, pill, a short detail that ellipses rather than wrapping, and the
+   row's single action. Its own grid rather than `.svc-row`'s, whose 3rd column is sized for a port
+   number (`:8080`) and wrapped anything longer onto a second line. */
+.mcp-row { display: grid; grid-template-columns: 9rem 7.5rem 1fr auto; align-items: center;
+  column-gap: 0.6rem; margin-bottom: 0.3rem; min-height: 1.7rem; }
+.mcp-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* a failed-setup note under the MCP rows — warn-toned so it can't be read as another status row */
+.svc-row-note { margin: 0 0 0.55rem; padding: 0.3rem 0.5rem; border-left: 3px solid var(--cc-sev-warn);
+  background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); }
+.svc-row-note strong { color: var(--cc-sev-warn); }
+.svc-row-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
 .save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
 .save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }

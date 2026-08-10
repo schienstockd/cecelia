@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
   entryId, decisionPrefill, isRatable, resolveImageRefs, visibleEntries,
+  hasLabArchives, labArchivesLabel, labArchivesSyncedOn, labArchivesGapText,
   type LabLogEntry,
 } from './labLog'
 
@@ -109,5 +110,62 @@ describe('labLog.unseenClaudeCount', () => {
     expect(unseenClaudeCount(entries, null)).toBe(2)     // nothing seen → both Claude entries
     expect(unseenClaudeCount(entries, 'c2')).toBe(0)     // seen the newest → none unseen
     expect(unseenClaudeCount(entries, 'u1')).toBe(1)     // only c2 is newer than u1
+  })
+})
+
+describe('LabArchives context card', () => {
+  it('shows nothing when no notebook is linked', () => {
+    expect(hasLabArchives(null)).toBe(false)
+    expect(hasLabArchives({ present: false })).toBe(false)
+    expect(hasLabArchives({ present: true })).toBe(true)
+  })
+
+  it('puts the gap count in the COLLAPSED label, so the card can stay shut and still shout', () => {
+    expect(labArchivesLabel({ present: true, notebookName: 'Ailsa' })).toBe('LabArchives · Ailsa')
+    expect(labArchivesLabel({ present: true, notebookName: 'Ailsa',
+      gaps: [{ attr: 'Treatment', value: 'WT', declared: 6, present: 0 }] }))
+      .toBe('LabArchives · Ailsa · 1 gap')
+    expect(labArchivesLabel({ present: true, gaps: [
+      { attr: 'a', value: 'b', declared: 1, present: 0 },
+      { attr: 'c', value: 'd', declared: 2, present: 0 }] })).toBe('LabArchives · 2 gaps')
+  })
+
+  it('distinguishes an unreadable sidecar from an absent one', () => {
+    expect(labArchivesLabel({ present: true, readable: false })).toBe('LabArchives · unreadable')
+  })
+
+  it('never renders an invalid date', () => {
+    expect(labArchivesSyncedOn('2026-08-10T04:31:00Z')).toBe('2026-08-10')
+    expect(labArchivesSyncedOn(undefined)).toBe('')
+    expect(labArchivesSyncedOn('')).toBe('')
+  })
+
+  it('states the absence without implying an error', () => {
+    // not-yet-imaged / failed QC / deliberately dropped are indistinguishable from here
+    const t = labArchivesGapText({ attr: 'Treatment', value: 'WT', declared: 6, present: 0 })
+    expect(t).toBe('Treatment = WT: 6 in the notebook, none here')
+    expect(t).not.toMatch(/error|missing|fail/i)
+    // a cohort with no count still reads as a sentence
+    expect(labArchivesGapText({ attr: 'Treatment', value: 'WT', declared: 0, present: 0 }))
+      .toBe('Treatment = WT: in the notebook, none here')
+  })
+})
+
+describe('LabArchives entries in the panel', () => {
+  it('gets its own author kind, not "other"', () => {
+    expect(authorKind('LabArchives')).toBe('labarchives')
+    expect(authorKind('labarchives')).toBe('labarchives')
+  })
+
+  it('is ratable — a human wrote none of it', () => {
+    expect(isRatable('LabArchives')).toBe(true)
+    expect(isRatable('Claude')).toBe(true)
+    expect(isRatable('Cecelia')).toBe(true)
+    expect(isRatable('User')).toBe(false)          // rating your own note is meaningless
+  })
+
+  it('a correction OF one is still a correction', () => {
+    expect(authorKind('User — correction')).toBe('correction')
+    expect(isRatable('User — correction')).toBe(false)
   })
 })

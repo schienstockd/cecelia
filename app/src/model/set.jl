@@ -86,6 +86,38 @@ function images(s::CciaSet)::Vector{CciaImage}
 end
 
 """
+    attr_value_counts(imgs; included_only=false) -> Vector{Pair{String,Vector{Pair{String,Int}}}}
+
+Tabulate the user-defined image ATTRIBUTES across `imgs`: for each attribute name, its distinct
+values and how many images carry each. Attribute names come back in first-appearance order and
+values sorted, so the shape is stable for both a picker and a diff. Empty values are skipped (an
+unset attribute is not a level).
+
+THE one tabulation of `img.attr` across a collection — `api_plot_attrs` (the compare-by-attribute
+picker) and `la_gaps` (LabArchives cohort-vs-project, `ai/labarchives.jl`) both read it, so "which
+levels exist" can't come out two different ways. Note what it measures: levels are derived from the
+images PRESENT, so deleting an arm deletes the evidence that it existed — which is exactly why the
+LabArchives sidecar has to carry the declared cohort separately.
+
+`included_only=true` drops excluded images (`included == false`), i.e. counts what analysis will
+actually see.
+"""
+function attr_value_counts(imgs; included_only::Bool = false)
+    names = String[]
+    vals  = Dict{String,Dict{String,Int}}()
+    for im in imgs
+        (included_only && !image_included(im)) && continue
+        for (k, v) in im.attr
+            ks, vs = string(k), string(v)
+            isempty(vs) && continue
+            haskey(vals, ks) || (push!(names, ks); vals[ks] = Dict{String,Int}())
+            vals[ks][vs] = get(vals[ks], vs, 0) + 1
+        end
+    end
+    [n => [v => vals[n][v] for v in sort(collect(keys(vals[n])))] for n in names]
+end
+
+"""
     image_by_uid(s::CciaSet; uid) -> Union{CciaImage,Nothing}
 
 Look up one image by `uid` within the set (nothing if absent).

@@ -11,12 +11,29 @@ export interface EntryPoint {
   steps: string[]   // 2-3 short how-to steps
 }
 
+/** A capability line. `needs` marks one that depends on an ACCOUNT-managed MCP connector: if the user
+ *  hid that connector in Settings → MCP connections, listing it here would advertise something they
+ *  have switched off — the same reason the chat prompt drops it (lib/chatHandoff.ts). */
+export type CapabilityItem = string | { text: string; needs: string }
+
 export interface CapabilityGroup {
   key: 'sees' | 'suggests' | 'creates' | 'cant'
   title: string
   icon: string
   tone: 'neutral' | 'good' | 'muted'   // 'muted' for the "Can't" group
-  items: string[]
+  items: CapabilityItem[]
+}
+
+/** The groups with connector-dependent lines resolved to plain strings — hidden connectors dropped,
+ *  and a group left empty by that is dropped whole rather than rendering an empty box. */
+export function claudeCapabilities(hiddenConnectors: string[] = []): {
+  key: string; title: string; icon: string; tone: string; items: string[] }[] {
+  const hidden = new Set(hiddenConnectors)
+  return CLAUDE_CAPABILITIES
+    .map(g => ({ ...g, items: g.items
+      .filter(i => typeof i === 'string' || !hidden.has(i.needs))
+      .map(i => (typeof i === 'string' ? i : i.text)) }))
+    .filter(g => g.items.length > 0)
 }
 
 // The two ways in — both live in the lab-log toolbar next to this dialog's trigger.
@@ -51,6 +68,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
       'Populations, gates & measures (speed, intensity, morphology)',
       'HMM states, clusters, QC flags & cohort outliers',
       'Task + parameter history and the lab log',
+      { text: 'Your LabArchives experiment summary, once linked', needs: 'LabArchives' },
     ],
   },
   {
@@ -69,6 +87,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
       'Pluto notebooks — runnable analysis you then own & edit',
       'CSV exports for Prism / R',
       'Lab-log notes (only when you ask)',
+      { text: 'An experiment summary pulled from your LabArchives notebook', needs: 'LabArchives' },
     ],
   },
   {

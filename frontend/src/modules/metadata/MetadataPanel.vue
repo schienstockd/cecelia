@@ -4,8 +4,8 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLogStore } from '../../stores/log'
 import { metadataWarning } from '../../lib/imageMetadataWarnings'
-import { buildFieldRegex, buildLookaroundRegex, extractWith,
-         type FieldPos, type CtxClass, type ExtractKind } from '../../utils/regexBuilder'
+import { buildFieldRegex, buildLookaroundRegex, extractWith, regexSampleFor,
+         type FieldPos, type CtxClass, type ExtractKind, type RegexSource } from '../../utils/regexBuilder'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
          splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
 import { usePanelResize } from '../../composables/usePanelResize'
@@ -122,7 +122,7 @@ async function assignSingleValue() {
 // ── Extract via regex ──────────────────────────────────────────────────────────
 
 const regexpValue  = ref('')
-const regexpSource = ref<'name' | 'filepath'>('name')
+const regexpSource = ref<RegexSource>('name')
 
 // ── Regex builder (split by a separator, take the Nth/last field) ────────────────
 // Covers the trivial "just pull the treatment/mouse/etc. out of the filename" cases people usually
@@ -130,7 +130,7 @@ const regexpSource = ref<'name' | 'filepath'>('name')
 const builderOpen      = ref(false)
 const builderMode      = ref<'field' | 'around'>('field')
 // field mode: split by a separator, take a field
-const builderSep       = ref<'-' | '_' | '.' | 'space' | 'custom'>('-')
+const builderSep       = ref<'-' | '_' | '.' | 'space' | 'folder' | 'custom'>('-')
 const builderCustomSep = ref('')
 const builderPos       = ref<FieldPos>('last')
 const builderStripExt  = ref(true)
@@ -143,7 +143,8 @@ const extractText      = ref('')
 const afterText        = ref('')
 const afterCls         = ref<CtxClass>('none')
 const effectiveSep = computed(() =>
-  builderSep.value === 'space'  ? ' ' :
+  builderSep.value === 'space'  ? ' '   :
+  builderSep.value === 'folder' ? '/\\' :   // both platforms' separators, either splits
   builderSep.value === 'custom' ? builderCustomSep.value : builderSep.value)
 // Live preview of the SINGLE regex field against the first image Apply would target. The builder
 // writes straight into `regexpValue` (below), so there's one input and one preview — never two.
@@ -151,7 +152,7 @@ const regexSample = computed(() => {
   const uid = targetUids.value[0] ?? setImages.value[0]?.uid
   const img = setImages.value.find(i => i.uid === uid)
   if (!img) return ''
-  return regexpSource.value === 'filepath' ? (img.filepath ?? img.name) : img.name
+  return regexSampleFor(img, regexpSource.value)
 })
 const regexPreview = computed(() => extractWith(regexpValue.value, regexSample.value))
 // Adjusting any builder control rebuilds the pattern into the regex field (user interaction only —
@@ -178,9 +179,8 @@ async function assignRegexp() {
   for (const uid of targetUids.value) {
     const img  = setImages.value.find(i => i.uid === uid)
     if (!img) continue
-    const src  = regexpSource.value === 'filepath' ? (img.filepath ?? img.name) : img.name
     // first capture group wins (the builder always makes one), else the whole match
-    values[uid] = extractWith(regexpValue.value, src)
+    values[uid] = extractWith(regexpValue.value, regexSampleFor(img, regexpSource.value))
   }
 
   const res = await fetch('/api/images/attr/set', {
@@ -310,10 +310,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <!-- ── Physical size & timing ───────────────────────────────── -->
     <section class="panel-section">
       <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
+      <!-- ONE tip on the button; the count folds into it. A second tip on the badge inside fired on
+           top of the button's own (docs/UI.md → nested tooltips). -->
       <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
-        v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s)'">
+        v-tooltip.bottom="flaggedCount
+          ? `Voxel size and frame interval — ${flaggedCount} image(s) flagged`
+          : 'View or fix voxel size and frame interval for the selected image(s)'">
         <i class="pi pi-ruler" /> Open editor
-        <span v-if="flaggedCount" class="warn-count" v-tooltip.bottom="`${flaggedCount} image(s) in this set are flagged`">{{ flaggedCount }}</span>
+        <span v-if="flaggedCount" class="warn-count">{{ flaggedCount }}</span>
       </button>
     </section>
     <PhysicalSizeDialog v-if="showPhysDialog && setUid && physFocusUid"
@@ -395,8 +399,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           Filename
         </label>
         <label class="radio-label">
-          <input type="radio" v-model="regexpSource" value="filepath" :disabled="attrDisabled"
-            v-tooltip.bottom="'Match against the full original path'" />
+          <input type="radio" v-model="regexpSource" value="path" :disabled="attrDisabled"
+            v-tooltip.bottom="'Match against the full path of the imported file'" />
           Original path
         </label>
       </div>
@@ -427,6 +431,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               <option value="_">_ underscore</option>
               <option value=".">. dot</option>
               <option value="space">␣ space</option>
+              <option value="folder">/ folder</option>
               <option value="custom">custom…</option>
             </select>
             <input v-if="builderSep === 'custom'" type="text" class="field-input builder-custom"
@@ -440,9 +445,12 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
               <option value="first">1st field</option>
               <option value="second">2nd field</option>
               <option value="third">3rd field</option>
+              <option value="thirdLast">3rd-last field</option>
+              <option value="secondLast">2nd-last field</option>
               <option value="last">last field</option>
             </select>
-            <CcToggle class="radio-label" label="no ext" :disabled="attrDisabled"
+            <!-- only the last field can carry the file extension — see buildFieldRegex -->
+            <CcToggle v-if="builderPos === 'last'" class="radio-label" label="no ext" :disabled="attrDisabled"
               :model-value="builderStripExt" @update:model-value="builderStripExt = $event; applyBuilder()"
               v-tooltip.bottom="'Drop a trailing .extension from the captured value'" />
           </div>

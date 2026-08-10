@@ -587,10 +587,12 @@ const pct = computed(() => {
          exactly what happened, and the `v-else` fallback above then rendered its "unsupported type"
          spinner under every param on the page. -->
     <div v-if="advisoryLoading" class="param-advisory cc-muted">checking…</div>
+    <!-- the advisory tip hangs off its MESSAGE, not the row: the data-quality flag below carries its
+         own, and a row tip fired on top of it (docs/UI.md → nested tooltips) -->
     <div v-else-if="advisory" class="param-advisory cc-muted"
-         :class="`sev-${advisory.severity}`" v-tooltip.right="advisory.tip">
+         :class="`sev-${advisory.severity}`">
       <i class="pi" :class="SEVERITY[advisory.severity].icon" />
-      {{ advisory.message }}
+      <span v-tooltip.right="advisory.tip">{{ advisory.message }}</span>
       <!-- optional second signal: how good the DATA is, as distinct from how concerning the
            recommendation is. Own colour + own tooltip; colour is never the only cue. -->
       <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"

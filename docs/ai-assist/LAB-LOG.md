@@ -29,8 +29,39 @@ The lab log complements, not duplicates:
 - **Image notes** (per-image, user-written in Cecelia UI) — quick observations about a specific image. "This section has a fold." "Channel 2 autofluorescence high."
 - **Task logs** (per-image-per-task, written by the scheduler) — what ran, parameters, output paths, errors. Machine-written.
 - **Lab log** (per-project, human and Claude) — cross-image knowledge, methodology rationale, pattern recognition, corrections. What image notes and task logs don't capture.
+- **LabArchives context** (per-project, `settings/labarchives.json`) — the EXPERIMENT as the lab's ELN records it: cohort, protocol, the question. See below; it is a sidecar, not part of the log.
 
-Claude reads all three. The lab log is the only one Claude writes to.
+Claude reads all four. It writes the lab log (append-only) and the LabArchives sidecar (replace).
+
+### The LabArchives sidecar vs the log — state vs. events
+
+The person analysing the images is often not the person who ran the experiment, so the design intent
+usually lives in an ELN and nowhere else. That context is **state** — cohort, protocol, question — and
+it changes rarely. The lab log is a record of **events**. Mixing them was the mistake worth avoiding:
+
+| | Lab log | `settings/labarchives.json` |
+|---|---|---|
+| Holds | what happened, dated | what is true now |
+| Written | append-only, never rewritten | replaced on each sync |
+| Cadence | per event | when the ELN changes |
+| Source of truth | itself | LabArchives (external, versioned) |
+
+The sidecar may be rewritten *because* it is a cache of an external system of record — nothing in it
+is primary data. That is why doing so does not weaken the append-only guarantee: the science record
+(every `[User]`/`[Claude]` block) is still never edited. A change worth remembering is appended to the
+log as a dated `[LabArchives]` block; the current state is only ever in the sidecar.
+
+**Cecelia cannot read LabArchives.** The connector is authenticated in the user's own Claude session
+(per-user permissions, institution-hosted); the backend holds no credentials and deliberately never
+will. So Claude pulls and calls `set_labarchives_context`, and cecelia stores it — after which a
+session with no LabArchives access still gets the context, because it reads the sidecar through
+`get_session_briefing`. Full design: [`docs/todo/LABARCHIVES_SYNC_PLAN.md`](../todo/LABARCHIVES_SYNC_PLAN.md).
+
+**Gaps are derived, never stored.** `la_gaps` diffs the ELN's declared cohort against the live image
+attributes. This matters more than the prose: attribute levels come from the images *present*, so
+deleting an arm deletes the evidence it was ever planned, and the ELN becomes the only record that
+the comparison was meant to exist. A gap is an absence, not an error — not-yet-imaged, failed QC and
+deliberately dropped are indistinguishable from here, so the *reason* is a human line in the log.
 
 ---
 
@@ -107,8 +138,14 @@ Only app/AI entries are ratable — you don't thumb your own `[User]` notes (the
 ## MCP tools
 
 ```
-read_lab_log       → full log content, returned newest-first for efficient context loading
-append_lab_log     → append a dated [Claude] entry, never edits, enforces append-only
+read_lab_log             → full log content, returned newest-first for efficient context loading
+append_lab_log           → append a dated entry, never edits, enforces append-only.
+                           source= is a CLOSED enum: claude → [Claude], labarchives → [LabArchives].
+                           [LabArchives] is a PROVENANCE claim the caller makes, so the server
+                           rejects it (409) on a project with no linked notebook — it can't prove a
+                           line came from the ELN, only rule out that none of them could have.
+get_labarchives_context  → the ELN context sidecar in full + derived cohort gaps
+set_labarchives_context  → REPLACE that sidecar (Claude is the sync; cecelia has no ELN access)
 ```
 
 User writes directly to the file or via the Vue panel. Claude writes only via `append_lab_log`. This keeps Claude entries identifiable and prevents overwrites.

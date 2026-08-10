@@ -33,9 +33,7 @@ _context_state_path(proj::CciaProject)::String =
 
 # recursively convert JSON3 values to native String-keyed Dicts / Vectors (avoids the Symbol-key +
 # JSON3.Object-isa-Dict gotchas when diffing a re-read snapshot).
-_native(x) = x
-_native(x::JSON3.Object) = Dict{String,Any}(String(k) => _native(v) for (k, v) in x)
-_native(x::JSON3.Array)  = Any[_native(v) for v in x]
+const _native = json_native   # the one converter lives in helpers.jl
 
 function _read_context_state(proj::CciaProject)::Dict{String,Any}
     p = _context_state_path(proj)

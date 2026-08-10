@@ -106,12 +106,14 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
                                           'controls-hidden': chromeMode === 'hidden' }"
        :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">
     <!-- title row: the WHOLE row drags (like PopulationManager); buttons stop the drag -->
-    <div class="panel-head" @mousedown.prevent="docked || startDrag($event)"
-         v-tooltip.bottom="docked ? undefined : 'Drag to move'">
+    <!-- the drag hint sits on the TITLE TEXT, not the row: the row also holds the collapse/remove
+         buttons, and a tip there fired on top of theirs (docs/UI.md → nested tooltips) -->
+    <div class="panel-head" @mousedown.prevent="docked || startDrag($event)">
       <span class="panel-title"><i v-if="!docked" class="pi pi-arrows-alt drag-icon" /><!--
         --><i v-else class="pi pi-arrows-alt drag-icon grip" draggable="true"
              v-tooltip.bottom="'Drag to move / swap'" @mousedown.stop @click.stop /><!--
-        --><span class="panel-title-txt">{{ title }}</span></span>
+        --><span class="panel-title-txt"
+                 v-tooltip.bottom="docked ? undefined : 'Drag to move'">{{ title }}</span></span>
       <span class="panel-spacer" />
       <!-- 3-state cycle: auto (default, hover to show) → always visible → always hidden. Only
            renders when there ARE controls to reveal and auto-hide is active. -->

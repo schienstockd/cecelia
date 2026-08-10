@@ -11,7 +11,7 @@ export interface LabLogEntry {
   raw: string         // the full block markdown
 }
 
-export type AuthorKind = 'claude' | 'correction' | 'cecelia' | 'user' | 'other'
+export type AuthorKind = 'claude' | 'correction' | 'cecelia' | 'labarchives' | 'user' | 'other'
 
 // A thumbs verdict on a DECISION: 👍/👎 prefills a [User] note (the recorded content is the note,
 // not the thumb). See LabLogPanel.vue.
@@ -20,7 +20,10 @@ export type Vote = 'up' | 'down'
 /** Only app/AI entries get thumbs — you don't rate your own notes. */
 export function isRatable(author: string): boolean {
   const k = authorKind(author)
-  return k === 'cecelia' || k === 'claude'
+  // [LabArchives] is rated for the same reason [Claude] is: a human wrote none of it. What it records
+  // from the ELN — which lines mattered, whether the gap reasoning holds — is the assistant's
+  // judgement, so it is exactly the kind of entry worth a thumbs down.
+  return k === 'cecelia' || k === 'claude' || k === 'labarchives'
 }
 
 /**
@@ -63,6 +66,7 @@ export const CECELIA_AUTHOR = 'Cecelia'
 export function authorKind(author: string): AuthorKind {
   const a = (author ?? '').trim().toLowerCase()
   if (a.includes('correction')) return 'correction'
+  if (a.includes('labarchives')) return 'labarchives'
   if (a.includes('cecelia')) return 'cecelia'
   if (a.includes('claude')) return 'claude'
   if (a.includes('user')) return 'user'
@@ -116,4 +120,50 @@ export function unseenClaudeCount(entries: LabLogEntry[], seenRaw: string | null
     if (authorKind(e.author) === 'claude') n++
   }
   return n
+}
+
+// ── LabArchives context card ──────────────────────────────────────────────────
+// The experiment as the lab's ELN records it, pinned above the dated entries. It is a MIRROR of an
+// external system of record, not a log entry — see docs/ai-assist/LAB-LOG.md.
+
+export interface LabArchivesGap { attr: string; value: string; declared: number; present: number }
+export interface LabArchivesCtx {
+  present?: boolean
+  readable?: boolean
+  notebookName?: string
+  url?: string
+  syncedAt?: string
+  sections?: { heading?: string; lines?: string[]; sourceDate?: string; url?: string }[]
+  gaps?: LabArchivesGap[]
+}
+
+/** Is there anything to show? An absent sidecar means nobody linked a notebook — no card at all. */
+export const hasLabArchives = (la: LabArchivesCtx | null | undefined): boolean => !!la?.present
+
+/**
+ * The collapsed header line: where it came from, and — loudly — how many declared arms have no
+ * images. The gap count rides in the LABEL so the card can sit collapsed by default and still shout
+ * when it matters; that is the whole point of the design (quiet when nothing changed).
+ */
+export function labArchivesLabel(la: LabArchivesCtx | null | undefined): string {
+  if (!la?.present) return 'LabArchives'
+  if (la.readable === false) return 'LabArchives · unreadable'
+  const bits = ['LabArchives']
+  if (la.notebookName) bits.push(la.notebookName)
+  const n = la.gaps?.length ?? 0
+  if (n) bits.push(`${n} gap${n === 1 ? '' : 's'}`)
+  return bits.join(' · ')
+}
+
+/** `2026-08-10T04:31:00Z` → `2026-08-10`. Blank stays blank — never render "Invalid Date". */
+export const labArchivesSyncedOn = (syncedAt?: string): string => (syncedAt ?? '').slice(0, 10)
+
+/**
+ * One gap, as a sentence. Deliberately states the ABSENCE only: a missing arm can mean not-yet-imaged,
+ * failed QC, or deliberately dropped, and nothing here can tell those apart — so the card must not
+ * imply an error. The reason belongs in the lab log, written by a human.
+ */
+export function labArchivesGapText(g: LabArchivesGap): string {
+  const n = g.declared > 0 ? `${g.declared} ` : ''
+  return `${g.attr} = ${g.value}: ${n}in the notebook, none here`
 }

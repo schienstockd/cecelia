@@ -5,30 +5,21 @@
   (testable, one place to edit). Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
 import BaseModal from './BaseModal.vue'
-import {
-  CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
-  CLAUDE_TERMINAL, claudeChatCommand,
-} from '../lib/claudeOverview'
-import { useObserverStore } from '../stores/observer'
-import { useCopyFlash } from '../composables/useCopyFlash'
-import { terminalCta } from '../utils/observerSetup'
+import { computed } from 'vue'
+import { CLAUDE_ENTRY_POINTS, claudeCapabilities, CLAUDE_EXAMPLES } from '../lib/claudeOverview'
+import { useSettingsStore } from '../stores/settings'
 
 defineEmits<{ (e: 'close'): void }>()
 
-// Terminal setup is ONE CLICK: the backend registers the observer MCP in the user's Claude Code
-// config, so plain `claude` picks it up. Nothing to copy — a mistyped path is the failure mode we're
-// designing out. The `--mcp-config` line only appears if that fails, and only with the real path.
-// The primary entry point for this is the lab-log toolbar (it replaces Chat to Claude until set up);
-// the same control is repeated here because this dialog is where people come to understand the flow.
-const observer = useObserverStore()
-const fallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
-const ctaMode = computed(() => terminalCta(observer.available, observer.terminalState))
+// A connector the user hid in Settings is dropped from the capability list too — the dialog must not
+// advertise what the prompt no longer offers (lib/claudeOverview.ts → claudeCapabilities).
+const settings = useSettingsStore()
+const capabilities = computed(() => claudeCapabilities(settings.hiddenMcpAccounts))
 
-// copy-to-clipboard for the fallback line — shared helper (docs/UI.md → UX-primitive catalog)
-const { isCopied: copied, copy } = useCopyFlash()
-const copyCommand = () => copy(fallbackCommand.value)
+// Terminal set-up is NOT repeated here. It lives in the lab-log toolbar — one button, in the place
+// people act from — and duplicating it in this dialog cost a whole band of chrome to say what the
+// toolbar already shows. This dialog is reference only: no live state, no controls.
 </script>
 
 <template>
@@ -44,40 +35,9 @@ const copyCommand = () => copy(fallbackCommand.value)
       </div>
     </div>
 
-    <!-- terminal hand-off: one click, Cecelia registers the MCP for the user's own claude -->
-    <div class="co-terminal">
-      <p class="co-terminal-note cc-muted cc-fs-md">{{ CLAUDE_TERMINAL.note }}</p>
-      <div class="co-terminal-row">
-        <button v-if="ctaMode !== 'chat'" class="cc-btn cc-btn-primary" :disabled="observer.registering"
-                @click="observer.registerMcp()">
-          <i class="pi pi-download" />
-          {{ observer.registering ? CLAUDE_TERMINAL.busy
-             : ctaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
-        </button>
-        <span v-else class="co-terminal-done cc-fs-sm">
-          <i class="pi pi-check" /> {{ CLAUDE_TERMINAL.done }}
-        </span>
-      </div>
-      <p v-if="ctaMode === 'resync'" class="co-terminal-err cc-fs-sm">{{ CLAUDE_TERMINAL.staleWhy }}</p>
-      <!-- failure fallback: the real resolved command, never a placeholder -->
-      <template v-if="observer.registerError">
-        <p class="co-terminal-err cc-fs-sm">{{ observer.registerError }}</p>
-        <template v-if="fallbackCommand">
-          <p class="co-terminal-note cc-muted cc-fs-sm">{{ CLAUDE_TERMINAL.failedPrefix }}</p>
-          <div class="co-cmd">
-            <code class="co-cmd-text">{{ fallbackCommand }}</code>
-            <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyCommand"
-              v-tooltip.left="copied() ? 'Copied!' : 'Copy command'">
-              <i :class="copied() ? 'pi pi-check' : 'pi pi-copy'" />
-            </button>
-          </div>
-        </template>
-      </template>
-    </div>
-
-    <!-- capability grid: sees / suggests / creates / can't -->
-    <div class="co-grid">
-      <div v-for="g in CLAUDE_CAPABILITIES" :key="g.key" class="co-cell" :class="'tone-' + g.tone">
+    <!-- capability rows: sees / suggests / creates / can't -->
+    <div class="co-rows">
+      <div v-for="g in capabilities" :key="g.key" class="co-cell" :class="'tone-' + g.tone">
         <div class="co-cell-head"><i :class="['pi', g.icon]" /> {{ g.title }}</div>
         <ul>
           <li v-for="(it, i) in g.items" :key="i">{{ it }}</li>
@@ -104,25 +64,18 @@ const copyCommand = () => copy(fallbackCommand.value)
 .co-entry-what { margin: 8px 0 10px; line-height: 1.4; }
 .co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
-.co-terminal { margin-bottom: 18px; }
-.co-terminal-note { margin: 0 0 6px; line-height: 1.4; }
-.co-terminal-row { display: flex; align-items: center; gap: 10px; }
-.co-terminal-done { color: var(--cc-sev-ok); display: inline-flex; align-items: center; gap: 4px; }
-.co-terminal-err { margin: 8px 0 4px; color: var(--cc-sev-warn); }
-.co-cmd {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md); padding: 6px 6px 6px 10px;
-}
-.co-cmd-text {
-  flex: 1; font-family: var(--cc-mono); font-size: var(--cc-fs-sm);
-  color: var(--cc-text); overflow-x: auto; white-space: nowrap;
-}
-
-.co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* One ROW per capability: the heading titles the box, the items flow beneath it in two columns. The
+   2×2 grid ran ragged once the lists grew to different lengths, and giving the heading its own
+   column just traded that for a band of empty space — so it sits on top and the full width goes to
+   the list. */
+.co-rows { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .co-cell { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg); padding: 12px 14px; }
 .co-cell-head { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.co-cell ul { margin: 0; padding-left: 18px; font-size: var(--cc-fs-md); line-height: 1.55; color: var(--cc-text); }
+.co-cell ul {
+  margin: 0; padding-left: 18px; font-size: var(--cc-fs-md); line-height: 1.55; color: var(--cc-text);
+  columns: 2; column-gap: 26px;
+}
+.co-cell li { break-inside: avoid; }
 .co-cell.tone-good .co-cell-head { color: #56d364; }
 .co-cell.tone-good .co-cell-head .pi { color: #56d364; }
 .co-cell.tone-neutral .co-cell-head .pi { color: var(--cc-accent); }

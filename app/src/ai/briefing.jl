@@ -53,6 +53,12 @@ function session_briefing(proj::CciaProject; recent_days::Int = 7, max_entries::
         length(recent) >= max_entries && break
     end
 
-    (; projectUid = proj.uid, projectName = proj.name, imageCount = length(imgs),
-       flagged = flagged, recentLabLog = recent)
+    # LabArchives context, when the project has any — headings + gaps only (ai/labarchives.jl). The
+    # key is OMITTED rather than sent empty, so "no ELN link" and "linked but nothing to say" stay
+    # distinguishable to a reading session.
+    la = la_briefing(proj)
+
+    base = (; projectUid = proj.uid, projectName = proj.name, imageCount = length(imgs),
+              flagged = flagged, recentLabLog = recent)
+    la === nothing ? base : merge(base, (; labarchives = la))
 end

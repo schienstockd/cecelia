@@ -205,7 +205,11 @@ const CONTROL = /^(?:input|select|textarea|CcToggle|SwatchSelect|RangeSlider|Chi
  * tooltip and forbidding the overlay cannot both hold; per-option tips are the coverage, and
  * `duplicateTooltips` reports the row that has both. A chip select with NEITHER is still reported.
  */
-const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect|CcToggle)$/
+// `CcCycleButton` joined this set when the nested-tooltip sweep landed: it renders ONE button whose
+// tooltip is the current option's `tip`, so per-option tips are its real hover help — and a
+// `v-tooltip` on the component would sit on top of them, which is the double this set exists to
+// catch. Same reasoning as ChipSelect, different widget.
+const HEADING_COVERED = /^(?:ChipSelect|SwatchSelect|CcToggle|CcCycleButton)$/
 
 /**
  * The tooltip EXPRESSION as written — `'Reload'`, `param.tip`, `` `${n} cells` `` — or `null`.
@@ -386,9 +390,25 @@ export const uncoveredControls = (src: string, path = ''): UncoveredControl[] =>
 export const duplicateTooltips = (src: string, path = ''): DuplicateTooltip[] =>
   scanTooltips(src, path).duplicates
 
+/**
+ * Tooltips whose HOVER AREAS nest: an element with its own `v-tooltip` inside an ancestor that also
+ * has one. Hovering the inner control fires both, and they overlap on screen.
+ *
+ * A different failure from `duplicateTooltips`, which compares TEXT — here the two tips usually say
+ * different things, so no expression comparison can see it. What makes it visible is the ancestor
+ * stack this walker already keeps: `scanTooltips` was using a tipped ancestor only to mark the child
+ * as *covered* (hover help is reachable, so don't report it as uncovered), which is exactly the
+ * arrangement that produces the double. Same fact, opposite verdict, so it is read off the same walk.
+ *
+ * SIBLINGS are fine and are not reported: two tipped elements side by side can never both be hovered.
+ * The fix is always to move the outer tip onto a leaf no control sits on top of — see `docs/UI.md`.
+ */
+export const nestedTooltips = (src: string, path = ''): DuplicateTooltip[] =>
+  scanTooltips(src, path).nested
+
 function scanTooltips(src: string, path = ''):
-    { uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[] } {
-  const none = { uncovered: [], duplicates: [] }
+    { uncovered: UncoveredControl[]; duplicates: DuplicateTooltip[]; nested: DuplicateTooltip[] } {
+  const none = { uncovered: [], duplicates: [], nested: [] }
   if (PRIMITIVE_SFC.test(path)) return none
   const tpl = src.match(/<template>([\s\S]*)<\/template>/)?.[1] ?? ''
   if (!tpl) return none
@@ -407,6 +427,7 @@ function scanTooltips(src: string, path = ''):
 
   const out: UncoveredControl[] = []
   const dupes: DuplicateTooltip[] = []
+  const nested: DuplicateTooltip[] = []
   // `tippedSibling` is per-DEPTH: a tipped <label> marks the row it opens, and the chip select that
   // follows it inside the same parent is covered by it. Reset on entering/leaving a parent so a
   // heading cannot leak coverage into an unrelated block. `siblingExpr` carries that heading's
@@ -445,6 +466,10 @@ function scanTooltips(src: string, path = ''):
       else if (perOption === true)
         dupes.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr, why: 'per-option' })
     }
+    // Hover areas that nest — read off the SAME ancestor stack `covered` uses above, with the
+    // opposite verdict. Only a real ANCESTOR counts; `tippedSibling` is deliberately not consulted.
+    if (tipped && open.some((e) => e.tipped))
+      nested.push({ tag: tag!, line: lineAt(m.index!), tooltip: expr ?? '', why: 'heading' })
     if (tipped) { tippedSibling = true; siblingExpr = expr }
     if (!selfClosing && !VOID.test(tag!)) {
       // INHERITED into the child scope, not reset: the heading is the param row's label and the
@@ -453,7 +478,7 @@ function scanTooltips(src: string, path = ''):
       open.push({ tag: tag!, tipped, tippedSibling, siblingExpr })
     }
   }
-  return { uncovered: out, duplicates: dupes }
+  return { uncovered: out, duplicates: dupes, nested }
 }
 
 // Task-JSON `tip` fields carry the same budget, but they are backend files (`app/src/tasks/**`) and

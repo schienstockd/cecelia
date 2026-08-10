@@ -20,6 +20,7 @@ export write_atomic, write_json_atomic
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
 export versioned_active, versioned_get, versioned_set!
 export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw, read_state_json
+export json_native
 export project_storage_summary, reclaim_inactive!, remove_image_version!, reclaimable_versions, image_storage
 export reset_image_analysis!, analysis_bytes_of, ANALYSIS_KEEP
 
@@ -47,6 +48,8 @@ export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
+export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
+export attr_value_counts
 export capture_context!, record_stats_event!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 export channel_index, channel_indices, ccid_channel_names
@@ -256,6 +259,7 @@ include("ai/behaviour_clusters.jl")
 include("ai/spatial.jl")
 include("ai/chains.jl")
 include("ai/repl_api.jl")
+include("ai/labarchives.jl")   # before briefing.jl — session_briefing calls la_briefing
 include("ai/briefing.jl")
 export analysis_lineage, board_summaries, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export BoardsDoc, boards_doc_path, normalise_boards, read_boards_doc, write_boards_doc, boards_doc_payload
@@ -267,7 +271,7 @@ export spatial_summary, contact_matrix
 export ClaudeAgent, agent_available, agent_bin_path, run_observer_turn, observer_mcp_config, observer_mcp_spec,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
-       read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs,
+       read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,

@@ -13,11 +13,13 @@ import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
 import CcToggle from './CcToggle.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
   visibleEntries as computeVisibleEntries,
+  hasLabArchives, labArchivesLabel, labArchivesSyncedOn, labArchivesGapText, type LabArchivesCtx,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
@@ -37,6 +39,9 @@ const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const dismissed = ref<string[]>([])            // hidden entry ids (config sidecar, NOT the log — append-only)
 const imageNames = ref<Record<string, string>>({})   // uid → current name, for the "Show names" toggle
+// LabArchives context (the experiment, from the lab's ELN). Rides along with the lab-log payload —
+// the card lives in this panel, so a second round-trip buys nothing. See utils/labLog.ts.
+const labarchives = ref<LabArchivesCtx>({ present: false })
 // AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
@@ -50,7 +55,10 @@ const { isCopied: chatCopied, copy: copyPrompt } = useCopyFlash(2500)
 // No toast — the button flashes "Prompt copied" (colour + tooltip) for a couple of seconds instead.
 async function chatToClaude() {
   if (!projectUid.value) return
-  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name))
+  // a connector the user hid in Settings → MCP connections is dropped from the prompt: it must not
+  // offer a capability they've switched off (see utils/mcpConnections.ts)
+  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name,
+    { labarchives: !settings.hiddenMcpAccounts.includes('LabArchives') }))
 }
 // Which terminal button the toolbar shows: 'setup' / 'resync' (not set up, or stale) vs 'chat'.
 const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
@@ -61,8 +69,11 @@ const observerModels = computed(() => observer.models)
 const observerSession = computed(() => observer.session)
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
 const activityOpen = ref(false)              // Claude activity <details> open state (opens after an Ask)
-// Setup guidance: availability only means `claude` is on PATH — not logged in. Show install/login
+// Set-up guidance: availability only means `claude` is on PATH — not logged in. Show install/login
 // steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
+// This is a CONDITIONAL alert at the point of use — it renders only when something is broken, and
+// vanishes the moment it works. Settings → MCP connections carries the same state as a durable row
+// (via the same `observerSetupReason`), which is where you go to check rather than to be told.
 const observerSetup = computed(() =>
   observerSetupReason(observerAvailable.value,
     (observerPasses.value[0] && !observerPasses.value[0].ok && isAuthError(observerPasses.value[0].note)) || false))
@@ -102,6 +113,7 @@ async function load() {
     entries.value = body.entries ?? []
     dismissed.value = body.dismissed ?? []
     imageNames.value = body.imageNames ?? {}
+    labarchives.value = body.labarchives ?? { present: false }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -324,7 +336,8 @@ async function dismissEntry(entry: LabLogEntry) {
     </div>
 
     <!-- Set-up guidance: the integration needs NO config — just Claude Code installed + logged in.
-         Shown when the CLI is missing, or when a run failed because it isn't authenticated. -->
+         Shown when the CLI is missing, or when a run failed because it isn't authenticated. Conditional,
+         so it costs nothing once it works; the durable status lives in Settings → MCP connections. -->
     <div v-if="observerSetup" class="ll-setup">
       <template v-if="observerSetup === 'missing'">
         <strong>Claude Code not detected.</strong> Install it, then run <code>claude</code> once to log in.
@@ -334,6 +347,48 @@ async function dismissEntry(entry: LabLogEntry) {
       </template>
       <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
     </div>
+
+    <!-- Terminal set-up FAILED: one line, so the click isn't silent. The DIAGNOSTIC (the resolved
+         command to run by hand, MCP connection states) lives in Settings → MCP connections — this
+         panel keeps the action, not the troubleshooting. Warn-toned so it doesn't merge into the
+         setup/activity bands, which share one background. -->
+    <div v-if="observer.registerError" class="ll-setup ll-setup-fail cc-row cc-row-tight">
+      <strong><i class="pi pi-exclamation-triangle" /> {{ observer.registerError }}</strong>
+      <span class="cc-muted">See Settings → MCP connections.</span>
+    </div>
+
+    <!-- LabArchives CONTEXT — the experiment as the lab notebook records it. Pinned above the dated
+         entries because it is the frame you want before reading any of them (the person analysing the
+         images often didn't run the experiment). Deliberately NOT styled as an entry: it's a mirror of
+         an external record, replaced on each sync, while everything below is append-only. Collapsed by
+         default — the gap count rides in the label, so it stays quiet until something is missing. -->
+    <CollapsibleSection v-if="hasLabArchives(labarchives)" class="ll-la"
+                        :label="labArchivesLabel(labarchives)" :default-open="false"
+                        storage-key="cc.labLogLaCardOpen" max-height="16rem">
+      <div v-if="labarchives.readable === false" class="cc-muted cc-fs-xs">
+        The LabArchives sidecar couldn't be read.
+      </div>
+      <template v-else>
+        <!-- gaps first: arms the notebook declares that no image covers. An absence, not an error -->
+        <div v-if="labarchives.gaps?.length" class="ll-la-gaps">
+          <div v-for="(g, i) in labarchives.gaps" :key="i" class="cc-fs-xs">
+            <i class="pi pi-exclamation-triangle" /> {{ labArchivesGapText(g) }}
+          </div>
+        </div>
+        <div v-for="(s, i) in labarchives.sections ?? []" :key="i" class="ll-la-sec">
+          <div class="ll-la-head cc-eyebrow">{{ s.heading }}</div>
+          <ul>
+            <li v-for="(l, j) in s.lines ?? []" :key="j" class="cc-fs-xs">{{ l }}</li>
+          </ul>
+        </div>
+        <div class="ll-la-foot cc-muted cc-fs-2xs">
+          <span v-if="labArchivesSyncedOn(labarchives.syncedAt)">
+            synced {{ labArchivesSyncedOn(labarchives.syncedAt) }}
+          </span>
+          <a v-if="labarchives.url" :href="labarchives.url" target="_blank" rel="noopener">open notebook ↗</a>
+        </div>
+      </template>
+    </CollapsibleSection>
 
     <!-- Claude activity log: every Ask-Claude pass — its verdict (note), token cost, and outcome. This
          is where an Ask-Claude result lands (no separate transient block); opens after an Ask so the
@@ -459,12 +514,16 @@ async function dismissEntry(entry: LabLogEntry) {
   background: var(--cc-surface-2); padding: 0.4rem 0.6rem;
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); line-height: 1.5;
 }
+/* the FAILED-setup variant: warn accent + a left rule so it can't be read as one slab with the
+   activity band below it (both otherwise sit on --cc-surface-2 with a bottom border) */
 .ll-setup strong { color: var(--cc-text); }
 .ll-setup code {
   font-size: var(--cc-fs-2xs); padding: 0 0.2rem; border-radius: var(--cc-radius-xs);
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
 }
 .ll-setup a { margin-left: 0.3rem; color: var(--cc-accent); white-space: nowrap; }
+.ll-setup-fail { background: var(--cc-surface-1); border-left: 3px solid var(--cc-sev-warn); }
+.ll-setup-fail strong { color: var(--cc-sev-warn); display: inline-flex; align-items: center; gap: 0.3rem; }
 /* Claude activity log — collapsible; each Ask-Claude pass with its verdict, cost + outcome */
 .ll-activity {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
@@ -483,6 +542,19 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: var(--cc-fs-xs); color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
 
+/* LabArchives context card — a MIRROR of an external record, so it must not read as one of the
+   append-only entries below. Different chrome on purpose: accent left rule, no author colour, no
+   per-entry actions. Collapsed by default; the gap count sits in the label. */
+.ll-la { flex-shrink: 0; border-top: none; border-bottom: 1px solid var(--cc-border); }
+.ll-la :deep(.cs-body) { padding: 0.35rem 0.6rem 0.5rem; background: var(--cc-surface-1); }
+.ll-la-gaps { border-left: 3px solid var(--cc-sev-warn); padding: 0.2rem 0 0.2rem 0.4rem;
+  margin-bottom: 0.45rem; color: var(--cc-sev-warn); }
+.ll-la-sec { margin-bottom: 0.4rem; }
+.ll-la-head { margin-bottom: 0.1rem; }   /* colour comes from .cc-eyebrow — don't shadow the utility */
+.ll-la-sec ul { margin: 0; padding-left: 1rem; color: var(--cc-text); line-height: 1.45; }
+.ll-la-foot { display: flex; gap: 0.5rem; align-items: center; }
+.ll-la-foot a { color: var(--cc-accent); }
+
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: var(--cc-fs-sm); }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
@@ -499,11 +571,14 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-entry.k-user { border-left-color: #3fb950; }
 .ll-entry.k-correction { border-left-color: #d29922; }
 .ll-entry.k-cecelia { border-left-color: #8b949e; }   /* app-generated → muted/ambient */
+/* sourced from the ELN, not reasoned from the data — its own colour so it doesn't read as a [Claude] note */
+.ll-entry.k-labarchives { border-left-color: #d29922; }
 .ll-entry.k-other { border-left-color: var(--cc-text-dim); }
 .k-claude .ll-author { color: var(--cc-accent); }
 .k-user .ll-author { color: #3fb950; }
 .k-correction .ll-author { color: #d29922; }
 .k-cecelia .ll-author { color: #8b949e; }
+.k-labarchives .ll-author { color: #d29922; }
 
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: var(--cc-fs-sm); }

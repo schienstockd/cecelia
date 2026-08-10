@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   COPY_MAX, normalise, isMultiSentence, isTooLong, isTitleCase,
-  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips,
+  tooltipStrings, hintStrings, attrStrings, textStrings, uncoveredControls, duplicateTooltips, nestedTooltips,
   hasPerOptionTips, unnamedToggles,
 } from './uiCopy'
 
@@ -439,6 +439,41 @@ describe('every settable control has a tooltip (docs/UI.md → Tooltips)', () =>
     for (const [path, src] of sfcs)
       for (const d of duplicateTooltips(src, path)) dupes.push(`${path}:${d.line} <${d.tag}> ${d.tooltip}`)
     expect(dupes).toEqual([])
+  })
+
+  // Tooltips whose HOVER AREAS nest — the row is tipped AND so is a control inside it, so hovering
+  // the control fires both and they overlap. Different from the duplicate check above: the two texts
+  // usually differ, which is why nothing caught this until it was noticed on screen.
+  //
+  // Was a shrinking allow-list of 29 pre-existing sites (measured 2026-08-10, 15 files); all fixed
+  // in the same change, so it is now empty and stays that way — this is a plain no-violations check.
+  const ALLOWED_NESTED: string[] = []
+
+  it('no NEW tooltip nests inside another element\'s tooltip', () => {
+    const found: string[] = []
+    for (const [path, src] of sfcs)
+      for (const n of nestedTooltips(src, path)) found.push(`${path}:${n.line} <${n.tag}>`)
+    expect(found.filter(f => !ALLOWED_NESTED.includes(f))).toEqual([])
+    // Fails on improvement too: fix one and delete its line, so the list can only shrink.
+    expect(found.sort()).toEqual([...ALLOWED_NESTED].sort())
+  })
+})
+
+describe('nestedTooltips', () => {
+  const sfc = (tpl: string) => `<template>${tpl}</template>`
+
+  it('flags a tipped control inside a tipped container', () => {
+    expect(nestedTooltips(sfc(`<div v-tooltip="'Row'"><button v-tooltip="'Hide'">x</button></div>`)))
+      .toEqual([{ tag: 'button', line: 1, tooltip: "'Hide'", why: 'heading' }])
+  })
+
+  it('does NOT flag siblings — they can never both be hovered', () => {
+    expect(nestedTooltips(sfc(`<div><span v-tooltip="'A'">a</span><button v-tooltip="'B'">b</button></div>`)))
+      .toEqual([])
+  })
+
+  it('does NOT flag a tipped container whose children carry none', () => {
+    expect(nestedTooltips(sfc(`<div v-tooltip="'Row'"><span>a</span></div>`))).toEqual([])
   })
 })
 

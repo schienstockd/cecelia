@@ -168,10 +168,12 @@ watch(segPops, () => {
           <option v-for="s in specs" :key="s.id" :value="s.id">{{ s.label }}</option>
         </select>
         <!-- compare cluster: mode + (by attribute) its attribute selects, kept tight in one group -->
-        <div v-if="canCompare" class="sc-compare"
-             v-tooltip.bottom="'How to compare across the selected images'">
+        <!-- the row's tip belongs on the mode select (the control it describes, and the only one here
+             without its own); on the container it fired over the attribute selects too -->
+        <div v-if="canCompare" class="sc-compare">
           <span class="sc-lbl">compare</span>
-          <select v-model="compareMode" class="sc-cmp">
+          <select v-model="compareMode" class="sc-cmp"
+                  v-tooltip.bottom="'How to compare across the selected images'">
             <option value="image">this image</option>
             <option value="per_image">per image</option>
             <option value="summarised">pooled</option>
@@ -192,7 +194,8 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
-        <div class="cc-btn-group" v-tooltip.bottom="'Arrange windows'">
+        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
+        <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
                   @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"

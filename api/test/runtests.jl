@@ -1182,6 +1182,24 @@ end
         @test occursin("[User]", r.content) && occursin("[Claude]", r.content)
         @test length(r.entries) == 2
 
+        # [LabArchives] is a PROVENANCE claim and the caller picks it, so the server makes the one check
+        # it honestly can: no linked notebook ⇒ no notebook provenance. 409 with an actionable message.
+        st_la, body_la = _post(api_lablog_append,
+            Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["from the ELN"]))
+        @test st_la == 409
+        @test occursin("set_labarchives_context", JSON3.read(body_la).error)
+        @test !occursin("[LabArchives]", read_ll().content)          # and nothing was written
+        # …every other author is unaffected by the guard
+        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["ok"]))[1] == 200
+
+        # once a notebook IS linked, the same append is accepted
+        write_la_doc!(load_project(uid); source = Dict("notebookName" => "Ailsa"),
+                      sections = [Dict("heading" => "Setup", "lines" => ["x"])])
+        st_ok, body_ok = _post(api_lablog_append,
+            Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["from the ELN"]))
+        @test st_ok == 200 && occursin("[LabArchives]", JSON3.read(body_ok).block)
+
+
         # ── capture (auto [Cecelia] activity digest) ──
         # no task activity yet → captured=false, nothing appended
         let cap = JSON3.read(_post(api_lablog_capture, Dict("projectUid"=>uid))[2])
@@ -3505,11 +3523,13 @@ end
         "/api/images/stores",
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
+        "/api/mcp/connections",
         "/api/movies", "/api/movies/meta",
         "/api/napari/gpu",
         "/api/napari/status", "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
+        "/api/observer/labarchives",
         "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
@@ -3570,6 +3590,7 @@ end
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
         "/api/observer/clear", "/api/observer/feedback",
+        "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
         "/api/pools/set", "/api/preview/run",
         "/api/preview/start", "/api/preview/stop",
@@ -3624,7 +3645,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 72 && length(POST_ROUTES) == 103
+    @test length(GET_ROUTES) == 74 && length(POST_ROUTES) == 104
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

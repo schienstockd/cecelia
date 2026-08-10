@@ -258,6 +258,58 @@ function read_local_observer_specs(path::AbstractString = claude_config_path()):
     out
 end
 
+"""
+    mcp_connections([path]) -> Vector{Dict{String,Any}}
+
+EVERY MCP server registered in the user's Claude config — `[{name, scope, dir, transport, ours}]`,
+sorted by (name, scope). Generic on purpose: it enumerates whatever is there rather than looking for
+names we know, so a connector added later shows up with no code change here.
+
+`scope` is `"user"` (top-level `mcpServers`) or `"local"` (`projects[<dir>].mcpServers`, which takes
+PRECEDENCE — see `read_local_observer_specs`). `ours` marks Cecelia's own observer entry.
+
+**What this can NOT see**: connectors managed by the user's claude.ai ACCOUNT rather than this
+machine (LabArchives is one — it authenticates through `/mcp` and never touches `~/.claude.json`).
+They are invisible here by construction, so a UI built on this must not render their absence as
+"disconnected" — it would read as broken for every user who is, in fact, connected.
+
+Tolerant like the readers above: it is another tool's file, and its shape must never error a route.
+"""
+function mcp_connections(path::AbstractString = claude_config_path())::Vector{Dict{String,Any}}
+    out = Dict{String,Any}[]
+    isfile(path) || return out
+    cfg = try
+        JSON3.read(read(path, String))
+    catch
+        return out
+    end
+    cfg isa AbstractDict || return out
+
+    _transport(spec) = spec isa AbstractDict ?
+        String(something(get(spec, :type, nothing), get(spec, :transport, nothing),
+                         haskey(spec, :url) ? "http" : "stdio")) : ""
+    _row(name, scope, dir, spec) = Dict{String,Any}(
+        "name" => String(name), "scope" => scope, "dir" => dir,
+        "transport" => _transport(spec), "ours" => String(name) == OBSERVER_MCP_NAME)
+
+    servers = get(cfg, :mcpServers, nothing)
+    if servers isa AbstractDict
+        for (name, spec) in servers; push!(out, _row(name, "user", "", spec)); end
+    end
+    projects = get(cfg, :projects, nothing)
+    if projects isa AbstractDict
+        for (dir, entry) in projects
+            entry isa AbstractDict || continue
+            local_servers = get(entry, :mcpServers, nothing)
+            local_servers isa AbstractDict || continue
+            for (name, spec) in local_servers
+                push!(out, _row(name, "local", String(dir), spec))
+            end
+        end
+    end
+    sort!(out; by = r -> (r["name"], r["scope"], r["dir"]))
+end
+
 # Which of those local entries would actually MISLEAD a session, i.e. shadow the user-scope entry with
 # a different endpoint. A local entry that matches `want` resolves to the same server, so it is not a
 # problem and is deliberately left alone — we only ever clear entries that would break or misdirect.

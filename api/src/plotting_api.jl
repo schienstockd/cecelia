@@ -181,16 +181,11 @@ function api_plot_attrs(req::HTTP.Request)
     want_raw = get(q, "imageUids", "")
     want = isempty(want_raw) ? Set(string.(obj.image_uids)) :
            Set(string.(split(want_raw, ","; keepempty = false)))
-    names = String[]; vals = Dict{String,Vector{String}}()           # first-appearance order; distinct values
-    for (im, uid) in zip(obj._images, obj.image_uids)
-        string(uid) in want || continue
-        for (k, v) in im.attr
-            ks = string(k); vs = string(v)
-            haskey(vals, ks) || (push!(names, ks); vals[ks] = String[])
-            (isempty(vs) || vs in vals[ks]) || push!(vals[ks], vs)
-        end
-    end
-    200, JSON3.write(Dict("attrs" => [Dict("name" => n, "values" => sort(vals[n])) for n in names]))
+    # one tabulation of img.attr for the whole app (Cecelia.attr_value_counts) — the LabArchives
+    # cohort-gap check reads the same levels, and they must not come out two different ways.
+    picked = [im for (im, uid) in zip(obj._images, obj.image_uids) if string(uid) in want]
+    200, JSON3.write(Dict("attrs" => [Dict("name" => n, "values" => String[v for (v, _) in vals])
+                                      for (n, vals) in attr_value_counts(picked)]))
 end
 
 # ── POST /api/plot_data — server-side aggregation for one summary panel ────────────
