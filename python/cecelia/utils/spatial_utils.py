@@ -125,7 +125,7 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     applies, the frame index is kept as obs `_t` so downstream nulls can shuffle WITHIN a frame."""
     import anndata as ad
     import pandas as pd
-    from cecelia.utils.label_props_utils import LabelPropsView, axis_of, physical_size_for_axis
+    from cecelia.utils.label_props_utils import LabelPropsView, scale_centroids
 
     phys = np.asarray(phys_uid, dtype=float)
     coords_list, obs_list, time_list = [], [], []
@@ -137,9 +137,9 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
         d = view.as_df(); ccols = view.centroid_columns(); tcols = view.temporal_columns(); view.close()
         if d.shape[0] == 0:
             continue
-        # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
-        scale = np.array([physical_size_for_axis(phys, axis_of(c)) for c in ccols])
-        coords = d[ccols].to_numpy(dtype=np.float64) * scale.reshape(1, -1)
+        # pixels → µm via the ONE shared conversion (per axis, by name — 2D-safe). Same helper the Julia
+        # side uses, so a graph's edge lengths cannot disagree with a task's µm threshold.
+        coords = scale_centroids(d, phys)[ccols].to_numpy(dtype=np.float64)
         coords_list.append(coords)
         obs_list.append(pd.DataFrame({"valueName": seg["valueName"], "label": d["label"].to_numpy()}))
         if per_timepoint and tcols and tcols[0] in d.columns:

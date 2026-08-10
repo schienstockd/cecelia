@@ -32,6 +32,20 @@ Each measured label set produces one AnnData file:
 > (the reader errors — run the converter, see `docs/todo/CENTROID_AXES_PLAN.md`). This avoids the
 > silent 2D mis-scaling that trailing-position alignment invites (celltrackR wants x,y,z; skimage
 > stores z,y,x).
+
+> **Centroids on disk are ALWAYS in PIXELS — and `centroid_t` is always a FRAME index.** Nothing ever
+> writes scaled coordinates back: the only writers are the producing tasks (`measure_utils._to_anndata`,
+> `branching_run.py`, `legacy_migrate`), and every write-back path appends *derived* values that are
+> already physical (`live.cell.speed` in µm/min, `…cell.min_distance#…` in µm, aggregate/cluster ids,
+> HMM states, track lineage). So reads and writes cannot disagree about units.
+>
+> Conversion to µm therefore happens on **read**, in exactly one place per language —
+> `scale_centroids!` (`app/src/label_props.jl`) and `label_props_utils.scale_centroids` (Python) —
+> reached from `pop_df(…; centroids = :physical)`. Do not re-derive `[sz, sy, sx] × centroid`: five
+> copies of that expression is how tracking ran in pixels while its own measures reported µm/min
+> (PR #491). Physical sizes come from `img_physical_sizes`, which defaults a missing axis to `1.0`, so
+> a consumer that *reports* µm must check `img_is_calibrated` first — "uncalibrated" and "calibrated at
+> 1.0 µm/px" are otherwise the same number.
 | `uns["intensity_measure"]` | `"mean"` or `"median"` — which statistic was used for channel intensities. |
 
 ### Companion per-track table — `{value_name}__tracks.h5ad`

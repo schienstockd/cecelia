@@ -5,8 +5,8 @@
 # "aggregate", kept distinct from the `clust` poptype (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 10).
 #
 # Julia-native: the legacy used the R `dbscan` package; here it's a from-scratch port onto Clustering.jl
-# (`dbscan`). Membership (`pop_df`), centroids (`view_centroid_cols`) and physical sizes are all Julia,
-# and DBSCAN on centroids is a simple density op — so this needs no Python round-trip (the celltrackR
+# (`dbscan`). Membership AND µm centroids come from ONE `pop_df(…; centroids = :physical)` call, and
+# DBSCAN on centroids is a simple density op — so this needs no Python round-trip (the celltrackR
 # track-measures precedent). Writes `<popType>.cell.is.aggregate` (0/1) + `<popType>.cell.aggregate.id`
 # back via the sanctioned label-props writer.
 
@@ -47,20 +47,18 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
     per_t      = Bool(get(params, "perTimepoint", false))
     on_progress(1, 3)
 
-    # member cells of the population, then their (physical-scaled) centroids
-    memdf = pop_df_multi(img, pops; value_name = value_name, granularity = :cell, restrict_to = value_name)
-    nrow(memdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(pops)"); return nothing)
-    labels = Int.(memdf.label)
+    # member cells of the population WITH their µm coordinates, in ONE read: `pop_df` is the accessor
+    # for population data (docs/POPULATION.md), and `centroids = :physical` pushes the coordinate columns
+    # into that same read and converts them via the shared `scale_centroids!`. This used to be two reads
+    # — membership here, then the centroids again off disk — plus its own copy of the scaling.
+    cdf = pop_df_multi(img, pops; value_name = value_name, granularity = :cell,
+                       restrict_to = value_name, centroids = :physical)
+    nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(pops)"); return nothing)
 
-    props = img_label_props_path(img, value_name)
-    lp    = label_props(props)
+    lp    = label_props(img_label_props_path(img, value_name))
     scols = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only
     tcols = temporal_columns(lp)
-    cdf   = label_props(props) |> view_centroid_cols |> filter_rows(labels) |> as_df
-    nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no centroids for the population"); return nothing)
-
-    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
-    coords = hcat((Float64.(cdf[!, c]) .* physical_size_for_axis(img, axis_of(c)) for c in scols)...)
+    coords = hcat((Float64.(cdf[!, c]) for c in scols)...)
     on_progress(2, 3)
 
     # DBSCAN — per timepoint for live (offset ids so they stay unique across t), else once

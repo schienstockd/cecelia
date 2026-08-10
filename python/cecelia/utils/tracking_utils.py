@@ -126,14 +126,12 @@ class BayesianTrackingUtils:
         labels = df["label"].to_numpy(dtype=np.int64)
         t = df[temporal_cols[0]].to_numpy(dtype=np.float64)
 
-        # select each axis BY NAME (never positionally) — z is absent for 2D; btrack still wants a z
-        # column, so fill zeros. (btrack's own frame schema is t,x,y,z,label_id.)
-        x = df["centroid_x"].to_numpy(dtype=np.float64)
-        y = df["centroid_y"].to_numpy(dtype=np.float64)
-        z = (df["centroid_z"].to_numpy(dtype=np.float64)
-             if "centroid_z" in df.columns else np.zeros_like(labels, dtype=np.float64))
-
         # ── pixels → µm ─────────────────────────────────────────────────────────────
+        # ONE shared conversion (`scale_centroids`, the mirror of Julia's `scale_centroids!`) rather than
+        # a local multiply, so the linking, the µm/min measures and the spatial tasks all convert the
+        # same way. It scales the CENTROID COLUMNS, never `centroid_t` — see below on why time is left in
+        # frames.
+        #
         # Scaling the COORDINATES, not each spatial param, for two reasons.
         #
         # 1. It makes every distance param physical at once — `maxSearchRadius`, `distThresh`,
@@ -146,10 +144,15 @@ class BayesianTrackingUtils:
         #    0.33 µm of motion when it is 2 µm — a 6x under-count, and exactly the direction that
         #    links cells at different depths. In µm the axes are commensurate by construction.
         #
-        # No sizes (an image with no calibration) → unscaled, i.e. the old pixel behaviour, rather
-        # than a silent factor of 1 pretending to be microns.
-        sz, sy, sx = (self.physical_sizes if self.physical_sizes else (1.0, 1.0, 1.0))
-        x, y, z = x * sx, y * sy, z * sz
+        scaled = label_props_utils.scale_centroids(
+            df, self.physical_sizes if self.physical_sizes else (1.0, 1.0, 1.0))
+
+        # select each axis BY NAME (never positionally) — z is absent for 2D; btrack still wants a z
+        # column, so fill zeros. (btrack's own frame schema is t,x,y,z,label_id.)
+        x = scaled["centroid_x"].to_numpy(dtype=np.float64)
+        y = scaled["centroid_y"].to_numpy(dtype=np.float64)
+        z = (scaled["centroid_z"].to_numpy(dtype=np.float64)
+             if "centroid_z" in scaled.columns else np.zeros_like(labels, dtype=np.float64))
 
         return pd.DataFrame({"t": t, "x": x, "y": y, "z": z, "label_id": labels})
 

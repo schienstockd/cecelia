@@ -15,15 +15,13 @@ using NearestNeighbors: KDTree, knn
 
 struct CellContacts <: CciaTask end
 
-# physical-scaled centroids (rows = points, cols = spatial dims) + labels for member labels of a seg
-function _scaled_centroids(img::CciaImage, vn::AbstractString, labels::AbstractVector{<:Integer})
-    props = img_label_props_path(img, vn)
-    scols = centroid_columns(label_props(props); order=[:x, :y, :z])   # explicit axes, present only
-    cdf = label_props(props) |> view_centroid_cols |> filter_rows(collect(Int, labels)) |> as_df
+# A µm point cloud (rows = points, cols = spatial dims) + labels, from a frame `pop_df` already returned
+# with `centroids = :physical`. Only the matrix assembly lives here — the read, the axis selection and
+# the pixel→µm conversion are all the accessor's (`scale_centroids!`), not this task's.
+function _centroid_matrix(img::CciaImage, vn::AbstractString, cdf::DataFrame)
+    scols = centroid_columns(label_props(img_label_props_path(img, vn)); order=[:x, :y, :z])
     nrow(cdf) == 0 && return (zeros(Float64, 0, length(scols)), Int[])
-    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
-    coords = hcat((Float64.(cdf[!, c]) .* physical_size_for_axis(img, axis_of(c)) for c in scols)...)
-    (coords, Int.(cdf.label))
+    (hcat((Float64.(cdf[!, c]) for c in scols)...), Int.(cdf.label))
 end
 
 _contact_target(pop_type_b, popsB) =
@@ -49,19 +47,22 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
     pop_type_b = pop_namespace(img, popsB)
     on_progress(1, 3)
 
-    # A cells (this segmentation) + their centroids. restrict_to = value_name: A is annotated in
-    # THIS segmentation, so drop any A pop picked from another one (its labels index this seg's props).
-    aMem = pop_df_multi(img, popsA; value_name = value_name, granularity = :cell, restrict_to = value_name)
+    # A cells (this segmentation) + their µm centroids, in ONE read (`centroids = :physical`).
+    # restrict_to = value_name: A is annotated in THIS segmentation, so drop any A pop picked from
+    # another one (its labels index this seg's props).
+    aMem = pop_df_multi(img, popsA; value_name = value_name, granularity = :cell,
+                        restrict_to = value_name, centroids = :physical)
     nrow(aMem) == 0 && (on_log("[ERROR] cellContacts: no A cells for $(popsA)"); return nothing)
-    aCoords, aLabels = _scaled_centroids(img, value_name, Int.(aMem.label))
+    aCoords, aLabels = _centroid_matrix(img, value_name, aMem)
     isempty(aLabels) && (on_log("[ERROR] cellContacts: no A centroids"); return nothing)
 
-    # B cells (may span segmentations) → one pooled point cloud + their labels
-    bMem = pop_df_multi([img], [img.uid], popsB; granularity = :cell)
+    # B cells (may span segmentations) → one pooled point cloud + their labels. Each segmentation's rows
+    # are scaled with ITS OWN image resolution by `pop_df` before we pool them here.
+    bMem = pop_df_multi([img], [img.uid], popsB; granularity = :cell, centroids = :physical)
     nrow(bMem) == 0 && (on_log("[ERROR] cellContacts: no B cells for $(popsB)"); return nothing)
     bCoordsList = Matrix{Float64}[]; bLabels = Int[]
     for g in groupby(bMem, :value_name)
-        c, l = _scaled_centroids(img, string(first(g.value_name)), Int.(g.label))
+        c, l = _centroid_matrix(img, string(first(g.value_name)), DataFrame(g))
         isempty(l) && continue
         push!(bCoordsList, c); append!(bLabels, l)
     end

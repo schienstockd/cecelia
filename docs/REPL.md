@@ -34,7 +34,8 @@ is_tracked(img)                          # does this image have tracks?
 | You want… | Use | Notes |
 |---|---|---|
 | gated / derived population cells or tracks | `pop_df` | THE main accessor — pools across pops, value_names **and** images in one call (see *Common idioms*) |
-| raw label props (measures / centroids / channels), your own column set | `label_props(img) \|> … \|> as_df` | lazy view; push the column/row selectors *in*, never read-all-then-filter |
+| a population's **coordinates** (µm or pixels) | `pop_df(…; centroids = :physical)` | don't name the centroid columns and don't convert by hand — see *Coordinates* below |
+| all cells of a segmentation regardless of membership, or your own column set | `label_props(img) \|> … \|> as_df` | the escape hatch, not the default; lazy view, push the selectors *in* |
 | per-track motility table (speed, straightness, displacement, …) | `track_props(img)` | one row per track |
 | the numbers behind an analysis-board summary plot | `plot_summary_data` | plot-ready series, not a figure |
 
@@ -67,6 +68,29 @@ df = pop_df(img, "flow", ["/nonDebris/CD4"]; raw_channel_names = true)
 df = pop_df(img, "live", ["T/_tracked"]; pop_cols = ["live.cell.speed", "Tcells-uGFP", "track_id"])
 ```
 
+#### Coordinates — ask for them, don't build them
+
+`centroids` adds the cells' position columns to the same read. You never name them (which axes exist
+differs per segmentation — a 2D image has no `centroid_z`) and you never convert units by hand.
+
+```julia
+# µm — for distances, densities, a scale bar, anything physical
+df = pop_df(img, "live", ["T/_tracked"]; pop_cols = ["live.cell.speed"], centroids = :physical)
+
+# pixels, as stored — for overlaying on the image itself (napari applies its own scale)
+df = pop_df(img, "flow", ["/nonDebris/CD4"]; centroids = :pixel)
+
+# pooling several images? still correct: each is scaled with ITS OWN pixel size before stacking
+df = pop_df(imgs, image_uids, "live", ["T/_tracked"]; centroids = :physical)
+```
+
+- `centroid_t` is always a **frame index**, never scaled. For minutes, multiply by
+  `img_physical_sizes(img)[2]` (minutes/frame).
+- On an **uncalibrated** image `:physical` warns and gives you pixels rather than pretending
+  1 px = 1 µm. If you see that warning, the image has no physical size set — fix the image, not the code.
+- Track-grained rows (`granularity = :track`) have no coordinates: a track is not at one place. Ask at
+  `:cell` grain and aggregate yourself.
+
 ### Raw label props — the fluent view
 
 Build a lazy view, refine it with column/row selectors, finish with the terminal verb `as_df`. Push
@@ -74,9 +98,13 @@ the selection *into* the view — never read the whole table and filter in memor
 
 ```julia
 df = label_props(img) |> select_cols(["area", "mean_intensity_0"]) |> as_df
-df = label_props(img) |> view_centroid_cols |> as_df
 df = label_props(img) |> view_channel_cols  |> as_df      # all intensity channels
 ```
+
+**Reach for this only when `pop_df` genuinely doesn't fit** — you want every cell of a segmentation
+regardless of population membership, or a column set `pop_cols` can't express. For a POPULATION's
+cells (coordinates included) use `pop_df`: it is the same narrow read plus membership, so there is no
+speed or memory reason to go around it.
 
 ### Tracks
 
@@ -253,7 +281,7 @@ first" instead of erroring or showing an empty plot.
 
 pop_df(img, pop_type, pops; value_name=nothing, pop_cols=nothing, include_x=false,
            include_obs=true, unique_labels=true, drop_na=false, flush_cache=false,
-           raw_channel_names=false) -> DataFrame
+           raw_channel_names=false, centroids=false) -> DataFrame
 
 Unified population accessor. Returns the cells of `pops` with a `pop` + `value_name`
 column and the requested `pop_cols` (read from the H5AD via `label_props`). Pools across
@@ -299,6 +327,22 @@ By default intensity columns are returned under their **channel names** (e.g.
 `{measure}_intensity_{i}` name — the reader resolves a channel name to its raw column, so you can
 request the name you see. (Get the channel names from `get_gating_channels`/`get_measure_summary`.)
 
+`centroids` adds the cells' **coordinates** without you having to name the columns (which axes exist
+differs per segmentation — no `centroid_z` on a 2D image):
+- `false` (default) — unchanged: present in the frame only if you asked for them (via `pop_cols`) or
+  requested no columns at all.
+- `:pixel` — the present `centroid_x`/`_y`/`_z` (+ `centroid_t`), **as stored: pixels and frames**.
+  Resolved per value_name, so pooling a 2D and a 3D segmentation in one call works.
+- `:physical` — the same columns with x/y/z scaled to **µm** (`scale_centroids!`, each axis by its own
+  resolution). Applied per image *before* pooling, so a set-level call across images with different
+  pixel sizes is correct — a pooled frame has no single physical size to apply afterwards.
+  `centroid_t` stays a FRAME index (see `scale_centroids!`).
+
+Prefer this over reading centroids through `label_props` yourself: it is the same narrow read (the
+columns are pushed into the reader, not filtered afterwards) and it resolves membership in the same
+call. On an **uncalibrated** image `:physical` warns and returns pixels — `img_physical_sizes` defaults
+a missing axis to 1.0, so there is otherwise nothing to tell "µm" and "pixels" apart.
+
 pop_df(imgs::Vector{CciaImage}, uids, pop_type, pops; kwargs...) -> DataFrame
 
 Set-level pooling: run `pop_df` on each image and stack the results with a **`uID` column** tagging
@@ -308,6 +352,10 @@ in images X/Y/Z). `uids` is parallel to `imgs` (the API passes a `CciaSet`'s `_i
 Per-image rows are already deduped within their image; the `uID` column keeps same-label cells from
 different images distinct (the `uID` is part of `pop_df`'s dedup key — see `_pop_df`). All `kwargs`
 (`value_name`/`pop_cols`/`granularity`/…) pass straight through to the per-image `pop_df`.
+
+Because the work happens per image, `centroids = :physical` is correct across images with **different
+pixel sizes**: each image's coordinates are scaled with its OWN resolution before the `vcat`. Never
+scale a pooled frame afterwards — it has no single physical size to apply.
 
 ### `label_props`
 

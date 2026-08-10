@@ -6095,6 +6095,127 @@ end
     @test Cecelia._node_dict(m, "/p/napari")["membership_sig"] != nd1["membership_sig"]
 end
 
+# ── scale_centroids!: THE one pixel→µm conversion (pure, no fixture needed) ────────
+# The Python mirror (`label_props_utils.scale_centroids`) is asserted on the SAME numbers in
+# python/cecelia/tests/test_centroid_migrate.py, so the two languages cannot drift on which axis
+# scales by what.
+@testset "scale_centroids! maps each axis by name" begin
+    phys = [3.0, 0.5, 0.25]        # [sz, sy, sx]
+    mk(; with_z=true) = begin
+        d = DataFrame("label" => [1, 2], "centroid_x" => [100.0, 200.0],
+                      "centroid_y" => [10.0, 20.0], "centroid_t" => [0.0, 1.0],
+                      "area" => [5.0, 6.0])
+        with_z && (d[!, "centroid_z"] = [4.0, 8.0])
+        d
+    end
+
+    d = scale_centroids!(mk(), phys)
+    @test d.centroid_x == [25.0, 50.0]      # ×sx
+    @test d.centroid_y == [5.0, 10.0]       # ×sy
+    @test d.centroid_z == [12.0, 24.0]      # ×sz
+    # time stays a FRAME index on purpose, and non-centroid columns are untouched
+    @test d.centroid_t == [0.0, 1.0]
+    @test d.area == [5.0, 6.0]
+    @test d.label == [1, 2]
+
+    # 2D: with no centroid_z, x must STILL use sx. A tail-aligned implementation would give x the
+    # sy value here — the silent 2D bug the by-name contract exists to prevent.
+    d2 = scale_centroids!(mk(with_z=false), phys)
+    @test d2.centroid_x == [25.0, 50.0]
+    @test d2.centroid_y == [5.0, 10.0]
+    @test !("centroid_z" in names(d2))
+
+    # a frame with no centroid columns is a no-op, not an error
+    plain = DataFrame("label" => [1], "area" => [5.0])
+    @test scale_centroids!(copy(plain), phys) == plain
+
+    # the CciaImage form reads the sizes off `meta` — same numbers, one axis at a time
+    with_meta(m) = (i = CciaImage(; uid="c1", name="cal", dir=""); i.meta = Dict{String,Any}(m); i)
+    let img = with_meta(Dict("PhysicalSizeZ" => "3.0", "PhysicalSizeY" => "0.5",
+                             "PhysicalSizeX" => "0.25"))
+        d3 = scale_centroids!(mk(), img)
+        @test d3.centroid_x == [25.0, 50.0]
+        @test d3.centroid_z == [12.0, 24.0]
+    end
+    # uncalibrated → img_physical_sizes defaults to 1.0, so the frame comes back unchanged
+    let img = with_meta(Dict{String,Any}())
+        @test scale_centroids!(mk(), img).centroid_x == [100.0, 200.0]
+        @test !img_is_calibrated(img)
+    end
+    # `_pop_df_finish` is the single conversion point every pop_df branch returns through.
+    let cal = with_meta(Dict("PhysicalSizeZ" => "3.0", "PhysicalSizeY" => "0.5",
+                             "PhysicalSizeX" => "0.25"))
+        # :pixel leaves the values alone; :physical converts
+        @test Cecelia._pop_df_finish(mk(), cal, :pixel).centroid_x == [100.0, 200.0]
+        @test Cecelia._pop_df_finish(mk(), cal, :physical).centroid_x == [25.0, 50.0]
+        @test Cecelia._pop_df_finish(mk(), cal, false).centroid_x == [100.0, 200.0]
+        # a frame with NO cell coordinates (a track-grained or branch frame) warns rather than
+        # silently ignoring the argument
+        trackish = DataFrame("label" => [1], "live.track.speed" => [3.0])
+        @test_logs (:warn, r"no centroid_x") Cecelia._pop_df_finish(trackish, cal, :physical)
+        # …and an uncalibrated image warns instead of relabelling pixels as µm
+        @test_logs (:warn, r"no physical pixel size") Cecelia._pop_df_finish(
+            mk(), with_meta(Dict{String,Any}()), :physical)
+    end
+
+    # calibrated: X/Y present and > 0 (Z not required — a 2D image legitimately has none)
+    @test img_is_calibrated(with_meta(Dict("PhysicalSizeX" => "0.25", "PhysicalSizeY" => "0.5")))
+    @test !img_is_calibrated(with_meta(Dict("PhysicalSizeX" => "0.25")))
+    @test !img_is_calibrated(with_meta(Dict("PhysicalSizeX" => "0", "PhysicalSizeY" => "0.5")))
+    @test !img_is_calibrated(with_meta(Dict("PhysicalSizeX" => "", "PhysicalSizeY" => "0.5")))
+end
+
+# ── pop_df(centroids=…): coordinates without naming the columns ────────────
+# `pop_df` is the primary accessor for population data (docs/POPULATION.md) — a caller should never
+# have to know which centroid columns exist (they differ per segmentation) or convert units by hand.
+@testset "pop_df centroids (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "pop_df centroids (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        cp(fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad"),
+           joinpath(td, "labelProps", "B__tracks.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        cent = ["centroid_z", "centroid_y", "centroid_x", "centroid_t"]
+
+        # a narrowed read (pop_cols) does NOT carry coordinates …
+        base = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"])
+        @test !any(c -> c in names(base), cent)
+        # … until `centroids` widens the PUSHDOWN to include them
+        px = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"], centroids=:pixel)
+        @test all(c -> c in names(px), cent)
+        @test "area" in names(px)                       # the requested column is still there
+        @test nrow(px) == nrow(base)
+
+        # this fixture is UNCALIBRATED, so :physical must return PIXELS rather than relabel them µm
+        @test !img_is_calibrated(img)
+        ph = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"], centroids=:physical)
+        @test ph.centroid_x == px.centroid_x
+
+        # :pixel and :physical share ONE cached read (the cache holds the frame as read, in pixels,
+        # and the unit conversion happens on the returned copy) — so a :physical call cannot leave
+        # scaled values behind for a later :pixel caller.
+        @test pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"],
+                     centroids=:pixel).centroid_x == px.centroid_x
+
+        # …and `false` is a DIFFERENT read (different columns), so it must not share their entry
+        @test !("centroid_x" in names(pop_df(img, "labels", String[]; value_name="B",
+                                             pop_cols=["area"])))
+
+        # the no-columns read already returns coordinates, so `centroids` changes nothing there
+        wide = pop_df(img, "labels", String[]; value_name="B", centroids=:pixel)
+        @test all(c -> c in names(wide), cent)
+
+        # the keyword is validated, and is advertised on the public method
+        @test_throws ErrorException pop_df(img, "labels", String[]; value_name="B", centroids=:um)
+        @test :centroids in Base.kwarg_decl(
+            only(methods(pop_df, (CciaImage, AbstractString, Any))))
+    end
+end
+
 # ── pop_df: pooling across value_names + dedup to most-specific pop ────────
 @testset "pop_df pooling + dedup" begin
     dfA = DataFrame(label=[1, 2, 3], x=[1.0, 6.0, 9.0])

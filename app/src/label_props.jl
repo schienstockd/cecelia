@@ -294,6 +294,37 @@ function temporal_columns(lp::LabelProps)::Vector{String}
     end
 end
 
+"""
+    scale_centroids!(df, img_or_sizes) -> df
+
+Scale whichever of `centroid_x`/`_y`/`_z` are present on `df` from **pixels to µm**, in place, each
+column by ITS OWN axis resolution (`physical_size_for_axis(…, axis_of(col))`) — never by tail
+position, so a 2D frame is handled correctly. A centroid column that is absent is skipped; a frame
+with none is returned untouched.
+
+THE one pixel→µm conversion for centroids. Every consumer that needs physical coordinates calls this
+(`pop_df(…; centroids = :physical)`, `track_measures`, `detectAggregates`, `cellContacts`), rather than
+re-deriving `[sz, sy, sx] × centroid` — five copies of that expression is how the two-coordinate-system
+bug in tracking (PR #491) stayed invisible. `img_or_sizes` is a `CciaImage` or the `[sz, sy, sx]` vector
+from `img_physical_sizes`. The Python mirror is `label_props_utils.scale_centroids`.
+
+`centroid_t` is deliberately NOT scaled — it stays a FRAME index (same choice as btrack in PR #491:
+scaling time silently redefines every frame-counted parameter, and it is what the column means on
+disk). Convert with `img_physical_sizes(img)[2]` (minutes/frame) if you need physical time.
+
+**Centroids are stored in pixels on disk, always** (docs/DATAMODEL.md) — this converts on READ only,
+and nothing writes scaled centroids back.
+"""
+function scale_centroids!(df::DataFrame, sizes::AbstractVector{<:Real})::DataFrame
+    for col in names(df)
+        occursin(r"^centroid_[xyz]$", col) || continue
+        df[!, col] = Float64.(df[!, col]) .* physical_size_for_axis(sizes, axis_of(col))
+    end
+    df
+end
+scale_centroids!(df::DataFrame, img::CciaImage)::DataFrame =
+    scale_centroids!(df, first(img_physical_sizes(img)))
+
 # ── uns: whole-array metadata that isn't per-row ──────────────────────────────────
 # `obs`/`X`/`obsm` are per-LABEL and belong in the DataFrame path above. `uns` is everything else a
 # producer attached to the file — for the branch sidecar, the anisotropy grid (`aniso_*`) and its
