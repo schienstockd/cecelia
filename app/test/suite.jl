@@ -885,8 +885,12 @@ end
     # the in-app agent is already oriented and does not browse notebooks.
     # (`get_available_plots` left this list when add_analysis_board landed — the in-app observer needs
     # the spec ids and each spec's chart types to author a board, so both prompts now name it.)
+    # LabArchives is CHAT-ONLY, and structurally so: the in-app agent is spawned with `--mcp-config`
+    # listing ONLY cecelia-observer, so it has no LabArchives connector and could never read an ELN.
+    # Mentioning the tools there would advertise a capability that build cannot have.
     @test setdiff(named_ts, named_jl) ==
-        Set(["get_session_briefing", "list_notebooks", "set_notebook_description"])
+        Set(["get_session_briefing", "list_notebooks", "set_notebook_description",
+             "get_labarchives_context", "set_labarchives_context"])
     # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
     # prompt, plus the observer's own bookkeeping.
     @test setdiff(tools, union(named_jl, named_ts)) ==
@@ -894,10 +898,113 @@ end
              "set_observer_active"])
     # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
     # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
+    # (set_labarchives_context is deliberately absent — see the chat-only note above.)
     for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
               "add_analysis_board")
         @test w in named_jl && w in named_ts
     end
+end
+
+@testset "MCP connections — enumerate whatever is registered" begin
+    # Generic on purpose: it lists what's in the config rather than looking for names we know, so a
+    # connector added later needs no change here. Backs Settings → MCP connections.
+    dir = mktempdir()
+    cfg = joinpath(dir, ".claude.json")
+
+    @test isempty(mcp_connections(joinpath(dir, "nope.json")))     # no config → no rows, never throws
+    write(cfg, "{not json")
+    @test isempty(mcp_connections(cfg))                            # another tool's file: tolerate junk
+
+    write(cfg, """
+    {"mcpServers": {"cecelia-observer": {"command": "py"}, "other-tool": {"url": "https://x/mcp"}},
+     "projects": {"/tmp/p1": {"mcpServers": {"cecelia-observer": {"command": "old"}}},
+                  "/tmp/p2": {}}}
+    """)
+    rows = mcp_connections(cfg)
+    @test length(rows) == 3                                        # 2 user-scope + 1 local-scope
+    names = [r["name"] for r in rows]
+    @test "other-tool" in names                                    # a server we know nothing about still lists
+    obs = [r for r in rows if r["name"] == "cecelia-observer"]
+    @test length(obs) == 2 && Set(r["scope"] for r in obs) == Set(["user", "local"])
+    @test all(r["ours"] for r in obs)                              # ours is flagged, others are not
+    @test !first(r["ours"] for r in rows if r["name"] == "other-tool")
+    # transport is inferred so an http connector doesn't render as a stdio one
+    @test first(r["transport"] for r in rows if r["name"] == "other-tool") == "http"
+    @test first(r["dir"] for r in rows if r["scope"] == "local") == "/tmp/p1"
+    @test rows == sort(rows; by = r -> (r["name"], r["scope"], r["dir"]))   # deterministic order
+end
+
+@testset "LabArchives context sidecar (round-trip, gaps, briefing)" begin
+    proj = create_project!(name = "la-$(rand(1000:9999))")
+    s = add_set!(proj; name = "s1")
+
+    # no sidecar → present=false, no gaps, and the briefing OMITS the key entirely (so "not linked"
+    # and "linked but empty" stay distinguishable).
+    d0 = read_la_doc(proj)
+    @test d0["present"] == false && d0["readable"] == true
+    @test isempty(la_gaps(proj))
+    @test la_briefing(proj) === nothing
+    @test !haskey(session_briefing(proj), :labarchives)
+
+    # two images, both Treatment=MERTK — the WT arm the ELN declares has NO images.
+    for (nm, mouse) in (("m1", "1"), ("m2", "2"))
+        img = add_image!(s; name = nm)
+        img.attr = Dict("Treatment" => "MERTK", "Mouse" => mouse)
+        save!(img)
+    end
+
+    doc = write_la_doc!(proj;
+        source   = Dict("notebookId" => "nb1", "notebookName" => "Ailsa",
+                        "pageIds" => ["p1"], "url" => "https://example/nb"),
+        sections = [Dict("heading" => "Setup", "lines" => ["LHS immunised only", "2 sites/mouse"],
+                         "sourceDate" => "2026-02-24")],
+        cohort   = [Dict("attr" => "Treatment", "value" => "WT", "n" => 6),
+                    Dict("attr" => "Treatment", "value" => "MERTK", "n" => 5)])
+    @test doc["source"]["notebookName"] == "Ailsa" && doc["source"]["pageIds"] == ["p1"]
+    @test !isempty(doc["syncedAt"])
+
+    # round-trips through disk with String keys intact (JSON3 hands back Symbols — json_native)
+    r = read_la_doc(proj)
+    @test r["present"] == true && r["readable"] == true
+    @test r["sections"][1]["heading"] == "Setup"
+    @test r["sections"][1]["lines"] == ["LHS immunised only", "2 sites/mouse"]
+
+    # THE case this feature exists for: the declared WT arm has no images, and nothing in the project
+    # would otherwise show it — attribute levels are derived from the images PRESENT.
+    @test [v for (v, _) in Dict(attr_value_counts(images(proj)))["Treatment"]] == ["MERTK"]
+    g = la_gaps(proj)
+    @test length(g) == 1
+    @test g[1]["attr"] == "Treatment" && g[1]["value"] == "WT"
+    @test g[1]["declared"] == 6 && g[1]["present"] == 0
+
+    # briefing carries HEADINGS + gaps, never the section text
+    b = la_briefing(proj)
+    @test b.sections == ["Setup"] && length(b.gaps) == 1 && b.notebookName == "Ailsa"
+    sb = session_briefing(proj)
+    @test haskey(sb, :labarchives) && sb.labarchives.sections == ["Setup"]
+
+    # a full REPLACE, not a merge — a section deleted in the ELN must not linger
+    write_la_doc!(proj; source = Dict("notebookName" => "Ailsa"),
+                  sections = [Dict("heading" => "Question", "lines" => ["nuclear vs cytoplasmic"])],
+                  cohort = [])
+    r2 = read_la_doc(proj)
+    @test [s["heading"] for s in r2["sections"]] == ["Question"]
+    @test isempty(la_gaps(proj))            # cohort cleared → nothing to be missing
+
+    # bounds are the WRITER's call, not the caller's
+    r3 = write_la_doc!(proj; sections = [Dict("heading" => "H", "lines" => ["x" for _ in 1:50])])
+    @test length(r3["sections"][1]["lines"]) == Cecelia.LA_MAX_LINES
+    r4 = write_la_doc!(proj; sections = [Dict("heading" => "H$i", "lines" => ["l"]) for i in 1:40])
+    @test length(r4["sections"]) == Cecelia.LA_MAX_SECTIONS
+
+    # a corrupt sidecar reads as present-but-UNREADABLE, never as "no context"
+    write(la_doc_path(proj), "{not json")
+    rbad = read_la_doc(proj)
+    @test rbad["present"] == true && rbad["readable"] == false
+    @test la_briefing(proj).readable == false
+
+    # the sidecar must never have touched the lab log — that stays append-only
+    @test !isfile(lab_log_path(proj)) || isempty(read_lab_log(proj))
 end
 
 @testset "AI observer session sidecar (tokens + clear)" begin

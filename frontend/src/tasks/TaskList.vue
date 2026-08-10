@@ -153,14 +153,16 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
           v-tooltip.left="TIP[t.status]" />
 
         <div class="task-info">
-          <span class="task-label" v-tooltip.right="t.label">
+          <!-- the full-label tip (for a truncated label) sits on the TEXT, not the row: the row also
+               holds the jump button and the chain badge, whose own tips it fired over -->
+          <span class="task-label">
             <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click.stop="jumpToTask(t)" v-tooltip.right="'Open in task manager'">
               <i class="pi pi-arrow-left" />
             </button>
             <span class="task-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
             <i v-if="t.chainRunId" class="pi pi-sitemap chain-badge"
                v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`" />
-            {{ t.label }}
+            <span v-tooltip.right="t.label">{{ t.label }}</span>
           </span>
           <span class="task-image cc-muted cc-fs-xs" v-tooltip.right="`UID: ${t.imageUid}`">
             <span class="task-uid">{{ t.imageUid }}</span>

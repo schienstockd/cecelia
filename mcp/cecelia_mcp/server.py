@@ -29,6 +29,12 @@ from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 # Lab-log author tag for observer-written entries. Matches the frontend's authorKind() 'claude'.
 CLAUDE_AUTHOR = "Claude"
 
+# The CLOSED set of author tags the observer may write under. A lab-log tag is a provenance claim —
+# "who says so" — so it stays an enum here rather than becoming a free-text author field: [Claude] is
+# the assistant's own reasoning, [LabArchives] is content sourced from the ELN. The tag itself is
+# still injected server-side (append_lab_log!), so neither is forgeable from the prompt.
+LAB_LOG_SOURCES = {"claude": CLAUDE_AUTHOR, "labarchives": "LabArchives"}
+
 _API_URL = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
 _client = CeceliaClient(base_url=_API_URL)
 _monitor = SessionMonitor()
@@ -455,6 +461,26 @@ def get_session_briefing(project_uid: str) -> dict:
 
 
 @mcp.tool()
+def get_labarchives_context(project_uid: str) -> dict:
+    """The project's LabArchives (ELN) context IN FULL — what the experiment is, as recorded in the
+    lab notebook. The session briefing carries only the section headings + gaps; call this when you
+    need the text.
+
+    Returns `{source: {notebookName, url, …}, syncedAt, sections: [{heading, lines, sourceDate, url}],
+    cohort: [{attr, value, n}], gaps: [{attr, value, declared, present}]}`.
+
+    `gaps` is the important part and is DERIVED live, never stored: arms the ELN says exist that the
+    project has no images for. Image attribute levels come from the images PRESENT, so a deleted arm
+    leaves no trace inside cecelia — the ELN is the only record that the comparison was ever planned.
+    Treat a gap as a real absence, but NOT as an error: it can mean not-yet-imaged, failed QC, or
+    deliberately dropped, and those are indistinguishable from here. Ask, don't assume — and when the
+    user explains it, append that reason with append_lab_log(source="labarchives").
+
+    Empty (`present: false`) simply means nobody has linked a notebook to this project yet. Read-only."""
+    return _client.get_labarchives_context(project_uid)
+
+
+@mcp.tool()
 def get_repl_api() -> dict:
     """The Cecelia REPL / notebook data-access surface — read THIS before writing any `using Cecelia`
     code (a Pluto notebook, a REPL snippet). It is the ground truth for the interface; do not guess
@@ -502,13 +528,51 @@ def get_notebook(project_uid: str, file: str) -> dict:
 
 
 @mcp.tool()
-def append_lab_log(project_uid: str, lines: list[str]) -> dict:
-    """Append a dated [Claude] entry to the lab log. Append-only — never edits existing content.
+def append_lab_log(project_uid: str, lines: list[str], source: str = "claude") -> dict:
+    """Append a dated, tagged entry to the lab log. Append-only — never edits existing content.
 
-    `lines` is one or more markdown lines. One of only three writes the observer can make (the others
-    are create_notebook and set_notebook_description); all are non-destructive to project data.
+    `lines` is one or more markdown lines. `source` picks the author tag, and is a CLOSED set:
+      - `claude` (default) → `[Claude]` — your own reasoning, observations, methodology notes.
+      - `labarchives` → `[LabArchives]` — a CHANGE sourced from the ELN. Use this only for a delta
+        (a new page, an edited protocol, a cohort that moved) or for a human's explanation of a gap.
+        The current state belongs in set_labarchives_context, NOT in a log entry: the log is the
+        dated record of what changed, the sidecar is what is true now.
+
+    One of the writes the observer can make (with set_labarchives_context, create_notebook and
+    set_notebook_description); all are non-destructive to project data.
     """
-    return _client.append_lab_log(project_uid, CLAUDE_AUTHOR, lines)
+    author = LAB_LOG_SOURCES.get(str(source).strip().lower())
+    if author is None:
+        return {"error": f"unknown source {source!r}; expected one of {sorted(LAB_LOG_SOURCES)}"}
+    return _client.append_lab_log(project_uid, author, lines)
+
+
+@mcp.tool()
+def set_labarchives_context(project_uid: str, source: dict, sections: list,
+                            cohort: list | None = None) -> dict:
+    """REPLACE the project's LabArchives context sidecar — the experimental background a future
+    session (and the app's lab-log panel) reads to get oriented.
+
+    Cecelia CANNOT read LabArchives itself: the connector is authenticated in the user's own Claude
+    session, and the backend deliberately holds no credentials. So you are the sync — read the ELN
+    with the LabArchives tools, then call this. A session with no LabArchives access still gets the
+    context, because it reads what you stored here.
+
+    - `source`: `{notebookId, notebookName, url, pageIds: [...]}` — the notebook/page(s) this came
+      from. Set it EXPLICITLY from what the user pointed you at; never guess a notebook from the
+      project name (searching one project name across a notebook returned 175 hits spanning 8 years).
+    - `sections`: `[{heading, lines: [...], sourceDate, url}]` — the orientation, in a few short
+      lines per section (Setup / Question / Protocol / Raw data). Max 12 sections, 12 lines each.
+      Summarise; do not paste notebook pages.
+    - `cohort`: `[{attr, value, n}]` — the experimental design AS THE ELN DECLARES IT, keyed to the
+      project's image attributes (e.g. `{"attr": "Treatment", "value": "WT", "n": 6}`). This is what
+      makes the gap check work, so include it whenever the notebook states a cohort — cecelia diffs
+      it against the images and derives what's missing.
+
+    This REPLACES the sidecar (it mirrors the ELN as of now; a merge would let a deleted section
+    linger). It never touches the lab log — record a CHANGE there separately with
+    append_lab_log(source="labarchives"). Confirm with the user before the first sync of a project."""
+    return _client.set_labarchives_context(project_uid, source, sections, cohort or [])
 
 
 @mcp.tool()

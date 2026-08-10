@@ -310,10 +310,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <!-- ── Physical size & timing ───────────────────────────────── -->
     <section class="panel-section">
       <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
+      <!-- ONE tip on the button; the count folds into it. A second tip on the badge inside fired on
+           top of the button's own (docs/UI.md → nested tooltips). -->
       <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
-        v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s)'">
+        v-tooltip.bottom="flaggedCount
+          ? `Voxel size and frame interval — ${flaggedCount} image(s) flagged`
+          : 'View or fix voxel size and frame interval for the selected image(s)'">
         <i class="pi pi-ruler" /> Open editor
-        <span v-if="flaggedCount" class="warn-count" v-tooltip.bottom="`${flaggedCount} image(s) in this set are flagged`">{{ flaggedCount }}</span>
+        <span v-if="flaggedCount" class="warn-count">{{ flaggedCount }}</span>
       </button>
     </section>
     <PhysicalSizeDialog v-if="showPhysDialog && setUid && physFocusUid"

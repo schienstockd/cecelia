@@ -3505,11 +3505,13 @@ end
         "/api/images/stores",
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
+        "/api/mcp/connections",
         "/api/movies", "/api/movies/meta",
         "/api/napari/gpu",
         "/api/napari/status", "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
+        "/api/observer/labarchives",
         "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
@@ -3570,6 +3572,7 @@ end
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
         "/api/optical-flow/rename",
         "/api/observer/clear", "/api/observer/feedback",
+        "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
         "/api/pools/set", "/api/preview/run",
         "/api/preview/start", "/api/preview/stop",
@@ -3624,7 +3627,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 72 && length(POST_ROUTES) == 103
+    @test length(GET_ROUTES) == 74 && length(POST_ROUTES) == 104
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

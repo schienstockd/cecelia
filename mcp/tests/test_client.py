@@ -44,11 +44,13 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(DisallowedRoute):
             self.c._request("GET", "/api/gating/save")
 
-    def test_writes_are_only_the_six_recoverable_routes(self):
+    def test_writes_are_only_the_seven_recoverable_routes(self):
         # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only), notebook
         # write (create-only), notebook describe (description text only), notebook revise (snapshots
-        # first, so it's recoverable), and chain create (create-only + validated — and a template is
-        # inert until a human presses Run). None can edit/delete cell data, images, gates, or QC.
+        # first, so it's recoverable), chain create (create-only + validated — and a template is
+        # inert until a human presses Run), and the LabArchives context set (REPLACES a sidecar that
+        # is a cache of an external, versioned system of record, so the rewrite loses nothing).
+        # None can edit/delete cell data, images, gates, or QC.
         #
         # Changing this list is the GATE on widening what Claude can do to a project. If you are here
         # to add a route, the question to answer first is whether it can destroy something.
@@ -60,7 +62,22 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/describe"),
             ("POST", "/api/notebooks/revise"),
             ("POST", "/api/notebooks/write"),
+            ("POST", "/api/observer/labarchives/set"),
         ])
+
+    def test_every_route_the_client_calls_is_on_the_allow_list(self):
+        # The gap this closes, found the hard way: `get_labarchives_context` /
+        # `set_labarchives_context` were written as client methods and wired into two MCP tools, but
+        # their routes were never added to ALLOWED_ROUTES — so every call raised DisallowedRoute
+        # before it reached the (perfectly healthy) server, and the assistant reported it as "a route
+        # that isn't enabled on this server". Nothing caught it: the tools were tested against mocks,
+        # and the allow-list was only ever asserted for routes someone remembered to name here.
+        import re
+        from pathlib import Path
+        src = Path(__file__).resolve().parents[1].joinpath("cecelia_mcp", "client.py").read_text(encoding="utf-8")
+        called = set(re.findall(r'_request\(\s*"(GET|POST)",\s*"([^"]+)"', src))
+        self.assertGreaterEqual(len(called), 20, "regex found nothing — it stopped matching the source")
+        self.assertEqual(sorted(called - set(ALLOWED_ROUTES)), [])
 
     def test_image_attributes_is_a_read_and_reuses_the_canonical_route(self):
         # Attribute discovery has ONE route (/api/plots/attrs) — the same one the summary canvas's
