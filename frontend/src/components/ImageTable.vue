@@ -509,6 +509,7 @@ const unselectableUids = computed(() =>
   <SelectionTable
     ref="tableEl"
     class="image-table"
+    fit="content"
     selection-mode="multi"
     :select-all="!singleSelect"
     :columns="COLUMNS"
@@ -673,6 +674,11 @@ const unselectableUids = computed(() =>
         <span v-if="imageModuleStatus(img) === 'running'" class="spinner" />
         {{ statusConfig[imageModuleStatus(img)!]?.label }}
       </span>
+      <!-- An `v-if`-only slot that renders nothing falls back to the table's default cell, which is
+           `row[key]` — and `row.status` is the image's OWN raw status ('done'), which showed as plain
+           lowercase text next to the real badges. A module with no task for this image has no status
+           to report, so say so explicitly. -->
+      <span v-else class="dim">—</span>
     </template>
   </SelectionTable>
   </div>
@@ -745,10 +751,12 @@ const unselectableUids = computed(() =>
    the frozen-column offsets and the resize handles all live there. `.image-table` is its ROOT, so it
    takes this component's scope id directly; anything inside it needs `:deep`.
 
-   `width: max-content` is what makes the horizontal scroll work — the shared table sizes to 100%,
-   which would compress the columns instead of letting `.table-scroll` scroll them. */
+   The horizontal scroll is `fit="content"` on the table — a PROP rather than a rule here, because
+   `.sel-table.sized`'s `width: 100%` outranks a single-class override, so setting it in this file did
+   nothing at all: the columns were squeezed to fit while the sticky offsets still used the widths as
+   specified, which is what put the frozen columns where the columns were not. */
 .table-scroll { overflow-x: auto; width: 100%; }
-.image-table { width: max-content; min-width: 100%; font-size: var(--cc-fs-md); }
+.image-table { font-size: var(--cc-fs-md); }
 
 /* Batch-fix buttons in the Name header (select-flagged, re-sync) */
 .select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */

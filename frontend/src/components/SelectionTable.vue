@@ -20,6 +20,9 @@
 //                       inside it do NOT select the row.
 //   #cell-<columnKey>   render one cell yourself — an inline edit, a badge, an icon — falling back to
 //                       the verbatim value, which is what every column was before the slot existed.
+//                       NOTE the fallback applies when your slot renders NOTHING (a `v-if` that is
+//                       false), not only when you omit it: give such a slot a `v-else` placeholder, or
+//                       `row[key]` leaks through. The image table's status column did exactly that.
 //
 // GENERIC over its row type, so `#cell-<key>`/`#actions`/`rowClass` hand the caller its OWN row type
 // rather than a bare record — without it every slot that calls a typed helper needs a cast.
