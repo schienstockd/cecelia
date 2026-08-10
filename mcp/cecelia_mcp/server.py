@@ -535,6 +535,8 @@ def append_lab_log(project_uid: str, lines: list[str], source: str = "claude") -
       - `claude` (default) → `[Claude]` — your own reasoning, observations, methodology notes.
       - `labarchives` → `[LabArchives]` — a CHANGE sourced from the ELN. Use this only for a delta
         (a new page, an edited protocol, a cohort that moved) or for a human's explanation of a gap.
+        The tag is a provenance claim, so the server REJECTS it (409) on a project with no notebook
+        linked — call set_labarchives_context first, or append as `claude`.
         The current state belongs in set_labarchives_context, NOT in a log entry: the log is the
         dated record of what changed, the sidecar is what is true now.
 

@@ -1182,6 +1182,24 @@ end
         @test occursin("[User]", r.content) && occursin("[Claude]", r.content)
         @test length(r.entries) == 2
 
+        # [LabArchives] is a PROVENANCE claim and the caller picks it, so the server makes the one check
+        # it honestly can: no linked notebook ⇒ no notebook provenance. 409 with an actionable message.
+        st_la, body_la = _post(api_lablog_append,
+            Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["from the ELN"]))
+        @test st_la == 409
+        @test occursin("set_labarchives_context", JSON3.read(body_la).error)
+        @test !occursin("[LabArchives]", read_ll().content)          # and nothing was written
+        # …every other author is unaffected by the guard
+        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["ok"]))[1] == 200
+
+        # once a notebook IS linked, the same append is accepted
+        write_la_doc!(load_project(uid); source = Dict("notebookName" => "Ailsa"),
+                      sections = [Dict("heading" => "Setup", "lines" => ["x"])])
+        st_ok, body_ok = _post(api_lablog_append,
+            Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["from the ELN"]))
+        @test st_ok == 200 && occursin("[LabArchives]", JSON3.read(body_ok).block)
+
+
         # ── capture (auto [Cecelia] activity digest) ──
         # no task activity yet → captured=false, nothing appended
         let cap = JSON3.read(_post(api_lablog_capture, Dict("projectUid"=>uid))[2])

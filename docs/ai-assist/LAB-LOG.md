@@ -140,7 +140,10 @@ Only app/AI entries are ratable — you don't thumb your own `[User]` notes (the
 ```
 read_lab_log             → full log content, returned newest-first for efficient context loading
 append_lab_log           → append a dated entry, never edits, enforces append-only.
-                           source= is a CLOSED enum: claude → [Claude], labarchives → [LabArchives]
+                           source= is a CLOSED enum: claude → [Claude], labarchives → [LabArchives].
+                           [LabArchives] is a PROVENANCE claim the caller makes, so the server
+                           rejects it (409) on a project with no linked notebook — it can't prove a
+                           line came from the ELN, only rule out that none of them could have.
 get_labarchives_context  → the ELN context sidecar in full + derived cohort gaps
 set_labarchives_context  → REPLACE that sidecar (Claude is the sync; cecelia has no ELN access)
 ```

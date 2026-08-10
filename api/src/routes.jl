@@ -2175,6 +2175,16 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     proj = try load_project(project_uid) catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
     end
+    # A `[LabArchives]` tag is a PROVENANCE claim — "this came from the lab notebook" — and the caller
+    # picks it, so nothing else verifies it. The one check the server can make honestly: you cannot
+    # claim notebook provenance on a project with no notebook linked. It does not (and cannot) prove a
+    # given line really came from the ELN; it removes the case where none of them could have.
+    if startswith(lowercase(strip(author)), "labarchives") &&
+       !get(read_la_doc(proj), "present", false)
+        return 409, JSON3.write((; error =
+            "No LabArchives notebook is linked to this project. Call set_labarchives_context first, " *
+            "or append as [Claude]."))
+    end
     block = try
         append_lab_log!(proj, author, lines)
     catch e
