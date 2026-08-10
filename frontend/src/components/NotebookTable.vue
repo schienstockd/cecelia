@@ -25,11 +25,16 @@ interface Notebook {
 const notebooks = ref<Notebook[]>([])
 // Every cell is rendered by a `#cell-` slot (an icon, an inline edit, a badge), so these name the
 // HEADERS and say what each sorts by. `versionText` is a display string; the raw `version` sorts it.
+//
+// The widths are starting points for the drag-resize path (`column-width-key` below): a version and a
+// scope badge need a fraction of what a name does, and one width for all four is what pushes a table
+// off its page. Description is given the largest share because it is the one that overflows — under
+// `table-layout: fixed` the leftover width is split across the declared ones, so it also grows most.
 const NB_COLUMNS: SelectionColumn[] = [
-  { key: 'name',        label: 'Name',        sortable: true },
-  { key: 'description', label: 'Description', sortable: true },
-  { key: 'versionText', label: 'Ver',         sortable: true, sortKey: 'version' },
-  { key: 'scope',       label: 'Source',      sortable: true },
+  { key: 'name',        label: 'Name',        sortable: true, width: 200 },
+  { key: 'description', label: 'Description', sortable: true, width: 280 },
+  { key: 'versionText', label: 'Ver',         sortable: true, sortKey: 'version', width: 60 },
+  { key: 'scope',       label: 'Source',      sortable: true, width: 90 },
 ]
 const loading = ref(false)
 const newName = ref('')
@@ -242,9 +247,16 @@ defineExpose({ refresh })
 
     <!-- The canonical table (docs/UI.md): `none` — a notebook row isn't "selected", the buttons act.
          The description cell and the version-history panel come in through `#cell-description` and
-         `#row-detail`, so this file no longer carries a <thead>/<tbody> of its own. -->
+         `#row-detail`, so this file no longer carries a <thead>/<tbody> of its own.
+
+         `column-width-key` turns on the sized path: drag a header's right edge to widen a column, and
+         the reset-widths button (beside "Name") puts them back — both are the table's, and the widths
+         persist per user. `actions-width` MUST be declared with it: fixed layout gives the trailing
+         column only what the others leave over, and this row carries five controls. -->
+    <div class="nbt-scroll">
     <SelectionTable class="nbt-table" selection-mode="none" :columns="NB_COLUMNS" :rows="notebooks"
                     id-key="file" sort-storage-key="cc.notebooks.sort" actions-label="Actions"
+                    column-width-key="cc.notebooks.colw" actions-width="11rem" fit="content"
                     :row-tooltip="nb => nb.scope === 'project' ? nb.file : `${nb.file} — shipped example, read-only`"
                     :is-expanded="nb => expandedFile === nb.file">
       <template #cell-name="{ row: nb }">
@@ -333,6 +345,7 @@ defineExpose({ refresh })
         <span v-if="!loading" class="cc-muted">No notebooks yet — add one, or duplicate an example.</span>
       </template>
     </SelectionTable>
+    </div>
   </div>
 </template>
 
@@ -341,7 +354,11 @@ defineExpose({ refresh })
 .nbt-add input { flex: 0 1 240px; }
 /* header, borders, padding, hover and the empty row are SelectionTable's now. The font size is this
    table's own — a notebook list is read, not scanned for numbers. */
-.nbt-table { width: 100%; font-size: var(--cc-fs-lg); }
+/* the sizing is the table's (`fit="content"`); the font size is this one's own */
+.nbt-table { font-size: var(--cc-fs-lg); }
+/* The TABLE scrolls, not the page: a column dragged wider than the page would otherwise push a
+   horizontal scrollbar onto the whole document (same wrapper as the movie list). */
+.nbt-scroll { overflow-x: auto; }
 .nbt-name { white-space: nowrap; }
 .nbt-desc input { width: 100%; }
 .nbt-editable { cursor: text; }

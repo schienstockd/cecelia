@@ -30,7 +30,7 @@
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch, getCurrentInstance } from 'vue'
+import { computed, ref, watch, getCurrentInstance, useSlots } from 'vue'
 import { sortRows, cycleSort, sortIconFor, type SortState, type SortValue } from '../utils/sortRows'
 import { useColumnResize } from '../composables/useColumnResize'
 import { allSelected as allChosen, someSelected as someChosen,
@@ -99,6 +99,24 @@ const props = withDefaults(defineProps<{
   /** starting px width per column when `columnWidthKey` is set. */
   defaultColumnWidth?: number
   /**
+   * How the SIZED table meets its container (`columnWidthKey` only — an unsized table is auto-layout
+   * and sizes to its content already):
+   *
+   *  - `fill`    (default) the table is the container's width; the declared column widths are starting
+   *              points and the leftover is shared out. Right for a table that fits.
+   *  - `content` the table is AT LEAST as wide as its columns declare, and a wrapper with
+   *              `overflow-x: auto` scrolls it. Right for a table with more columns than panel — and
+   *              REQUIRED for one with `sticky` columns. It still fills a container wider than that,
+   *              so a table with room to spare doesn't leave a strip of empty page beside it.
+   *
+   * It is a prop and not something the caller states in its own CSS because `.sel-table.sized`'s
+   * `width: 100%` outranks a single-class rule: ImageTable's `width: max-content` was silently dead,
+   * and under `table-layout: fixed` a table narrower than its columns scales every column down while
+   * `stickyLeft` still computes offsets from the widths as SPECIFIED — so the frozen columns sat where
+   * the columns were not and the header stopped agreeing with the rows.
+   */
+  fit?: 'fill' | 'content'
+  /**
    * Width of the trailing `#actions` column when the sized path is on.
    *
    * It MUST be declared. `table-layout: fixed` splits only what is left over between columns with no
@@ -157,6 +175,7 @@ const props = withDefaults(defineProps<{
   sortStorageKey: '',
   columnWidthKey: '',
   defaultColumnWidth: 140,
+  fit: 'fill',
   actionsWidth: '4.5rem',
   selectionMode: 'single',
   disabledIds: () => [],
@@ -180,6 +199,7 @@ const tipOf = (row: Row) =>
 // the hover highlight follow that rather than being on unconditionally — a list of read-only rows that
 // lights up under the mouse promises something it doesn't do.
 const inst = getCurrentInstance()
+const slots = useSlots()
 const rowsClickable = computed(() =>
   props.selectionMode !== 'none' || !!inst?.vnode.props?.onRowClick)
 
@@ -299,10 +319,35 @@ const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
   storageKey: props.columnWidthKey || undefined,
 })
 
+// What the columns ADD UP TO — the pick column, every column's width, the actions column. `calc()`
+// rather than a px total because `actionsWidth` is a caller-supplied CSS length (`11rem`).
+const declaredWidth = computed(() => {
+  const parts: string[] = []
+  if (props.selectionMode !== 'none') parts.push('1.75rem')          // .sel-col-pick
+  for (const c of props.columns) {
+    parts.push(c.fixed ? `${c.width ?? props.defaultColumnWidth}px` : widthOf(c.key))
+  }
+  if (slots.actions) parts.push(props.actionsWidth)
+  return `calc(${parts.join(' + ')})`
+})
+/**
+ * `fit="content"` as a MIN width, with `width: 100%` left in place — deliberately not `width:
+ * max-content`.
+ *
+ * A `table-layout: fixed` table honours its declared column widths only while its own width is
+ * DEFINITE. Under an intrinsic keyword the browser has to measure something, so it sizes from the
+ * CONTENT — and one long movie name then set the Movie column, ignoring its 190px, with no way to drag
+ * it back down because the content held it open (Dominik, 2026-08-10). Both bounds here are definite,
+ * so content never enters into it: at least what the columns declare (the wrapper scrolls the rest),
+ * and the container's width when there is room to spare.
+ */
+const tableStyle = computed(() =>
+  resizable.value && props.fit === 'content' ? { minWidth: declaredWidth.value } : undefined)
+
 </script>
 
 <template>
-  <table class="sel-table" :class="{ sized: resizable }">
+  <table class="sel-table" :class="{ sized: resizable }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="resizable">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
@@ -419,6 +464,9 @@ const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
    Only when the caller opts in. `fixed` is what makes a column obey its width instead of stretching
    to its content — and is also why the radio column needs one of its own (see the colgroup). */
 .sel-table.sized { width: 100%; table-layout: fixed; }
+/* `fit="content"` is an INLINE `min-width` (see `tableStyle`) — it has to outrank `width: 100%` here
+   without inviting a caller to try the same thing from its own stylesheet, where a single class loses
+   to `.sel-table.sized` and does nothing at all. */
 .sel-col-pick { width: 1.75rem; }
 /* dim until the header is hovered — it is a rescue, not something to reach for */
 .sel-reset-w { opacity: 0.25; margin-left: 0.3rem; vertical-align: middle; }
