@@ -58,7 +58,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
-| Standalone module page (not the image-table layout) | `components/ModulePage.vue` — title + `#controls` slot + content | a per-page `.x-page`/`.x-head` wrapper, or a descriptive subtitle paragraph |
+| Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
@@ -181,16 +181,18 @@ pages are built on `ModuleLayout` and were already consistent. The 8 standalone 
 Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
 two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under
 different names. (The h1 sizes escaped the size sweep because `findRawValues` exempts anything over 15px
-as display type.) `ModulePage` fixes title, controls and spacing; `layout="flow|scroll|fill"` is the one
+as display type.) `ModulePage` fixes controls and spacing; `layout="flow|scroll|fill"` is the one
 real axis — whether the page flows, scrolls itself, or is a full-height pane whose child scrolls. Per-page
 extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
 still applies).
 
-**Do not write a page subtitle.** All three carried a paragraph explaining the feature to a first-time
-reader — permanent noise on a screen its owner uses daily, and the clearest tell that a page was
-AI-written. `ModulePage` has no subtitle slot on purpose. The title and the controls say what the page is;
-the explanation belongs in `docs/`. Same rule as tooltips and QC findings: if you are tempted to explain
-in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
+**Do not write a page subtitle — or a page title.** All three carried a paragraph explaining the feature
+to a first-time reader: permanent noise on a screen its owner uses daily, and the clearest tell that a
+page was AI-written. The `<h1>` went the same way (Dominik, 2026-08-10) — the sidebar names the page and
+highlights it, so a heading repeating that word is chrome the daily user reads past forever. `ModulePage`
+therefore has neither, and Settings dropped its own `.page-title` to match. The controls say what the
+page is; the explanation belongs in `docs/`. Same rule as tooltips and QC findings: if you are tempted to
+explain in the UI, that text goes in the relevant `docs/<AREA>.md` instead.
 
 **Tokens live on `:root`, and that is load-bearing.** `.cc-dark` is a `<div>` inside `<body>`
 (`App.vue`'s shell), so anything a library appends to `document.body` is a *sibling* of it and inherits
@@ -219,9 +221,9 @@ to `INVENTORY.md` in the same change.
 
 ## UI copy — keep it short (mandatory)
 
-**Default to no explanatory text.** A page title plus its controls almost always says what the page
-is. Where orientation genuinely isn't self-evident, one short phrase — **under ~10 words, never two
-sentences**.
+**Default to no explanatory text.** The sidebar entry plus the page's controls almost always says what
+the page is. Where orientation genuinely isn't self-evident, one short phrase — **under ~10 words, never
+two sentences**.
 
 Why: a paragraph written to explain a feature once sits permanently on a page its owner uses daily,
 so it buys clarity once and costs noise forever. Verbose in-app prose is also the most reliable tell
@@ -230,7 +232,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 
 | Surface | Budget |
 |---|---|
-| Page / panel subtitle | none by default; a short phrase only if the page is genuinely opaque |
+| Page title / subtitle | **none** — the sidebar already names the page (`ModulePage` has no title slot) |
 | Tooltip (`v-tooltip`) | one line — what the control does, not why it exists |
 | Task-JSON `tip` | **required on every param** — one short line (see *Tooltip coverage*). Lead with a recommended value where one exists (`Start ~5 µm; …`): a tip that only names the trade-off leaves "what do I put here?" unanswered |
 | Param advisory (`tasks/paramAdvisors.ts`) | one muted line under the control + the reasoning on hover. For when the right value depends on the user's DATA rather than on wording — e.g. the grid a spacing produces and what it costs to store. See `docs/MODULES.md` → *Param advisories* |
@@ -394,7 +396,7 @@ are the template a user copies.
 **Only `v-tooltip` counts.** A native `title=` is not coverage — it renders as the browser's own
 unstyled tooltip, appears on a delay we don't control, and is invisible to the copy ratchets, so
 accepting it would let a control pass the check looking nothing like the rest of the app. (Most
-`title=` in the codebase is a component *prop* — `BaseModal`, `ModulePage`, `ConfirmDeleteButton` —
+`title=` in the codebase is a component *prop* — `BaseModal`, `ConfirmDeleteButton` —
 not a native tooltip.) **Per-option `tip`s don't count either**: `ChipSelect`/`CcCycleButton` options
 may each carry one, and they're worth having, but they explain the individual choices, not what the
 control as a whole is for — so the control still needs its own `v-tooltip`.

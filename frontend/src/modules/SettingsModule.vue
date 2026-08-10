@@ -390,8 +390,6 @@ async function switchWt(path: string) {
 
 <template>
   <div class="settings-page">
-    <h1 class="page-title">Settings</h1>
-
     <div class="settings-cols">
     <div class="settings-col">
 
@@ -924,13 +922,6 @@ async function switchWt(path: string) {
 .settings-col { min-width: 0; }
 @media (max-width: 860px) {
   .settings-cols { grid-template-columns: 1fr; gap: 0; }
-}
-
-.page-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--cc-text);
-  margin: 0 0 1.75rem;
 }
 
 .cmp-head {

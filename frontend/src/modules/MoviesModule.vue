@@ -307,7 +307,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 </script>
 
 <template>
-  <ModulePage title="Movies" layout="fill">
+  <ModulePage layout="fill">
     <template #controls>
       <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
         <i class="pi pi-forward" />
@@ -514,7 +514,9 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-eye:hover { opacity: .7; }
 .mov-eye.on { opacity: 1; color: var(--cc-accent); }
 .mov-bulk { padding: 0 0.5rem 0.4rem; }
-.mov-bulk-input { width: 100%; }
+/* the chip row and the field are two ways to say the same thing, so they need a gap between them —
+   flush, they read as one control */
+.mov-bulk-input { width: 100%; margin-top: 0.6rem; }
 .mov-danger:hover:not(:disabled) { color: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */

@@ -1,25 +1,21 @@
 <script setup lang="ts">
 // The shell for a STANDALONE module page — one that isn't built on `ModuleLayout` (the image-table
-// family). Fixes the page frame so Notebooks / Animation / Movies read as one app: title on the left,
-// page-level controls on the right, content below.
+// family). Fixes the page frame so Notebooks / Animation / Movies read as one app: page-level controls
+// on one row, content below.
 //
 // Extracted because the three had each grown their own: three h1 sizes (1.1 / 1.15 / 1.4rem), two
 // paddings, two subtitle widths, and `.nb-header` / `.anim-head` / `.mov-head` doing the same
-// flex-space-between under different names. The h1 sizes escaped the tokenisation sweep because
-// `findRawValues` exempts anything over 15px as display type, so this was the one text scale with no
-// canonical answer.
+// flex-space-between under different names.
 //
-// NO SUBTITLE SLOT, deliberately. The three pages carried a paragraph each explaining the feature to a
-// first-time reader — permanent noise on a screen its owner uses daily, and the clearest tell that a
-// page was AI-written. The page title and its controls say what the page is; the explanation lives in
-// `docs/`.
+// NO TITLE, and NO SUBTITLE SLOT — both deliberate, and the same argument twice. The three pages
+// carried a paragraph each explaining the feature to a first-time reader; those went first. The `<h1>`
+// followed (Dominik, 2026-08-10): the sidebar already says which page you are on and highlights it, so
+// a heading repeating that word is chrome the daily user reads past forever. Explanations live in
+// `docs/`, and what the page IS, its controls say.
 //
 // Per-page extras (e.g. Notebooks' reading max-width) go on the call site as a plain class: Vue puts
 // the parent's scope ID on a child component's root, so a scoped rule in the page still applies here.
 withDefaults(defineProps<{
-  title: string
-  /** PrimeIcons class for a glyph before the title, e.g. `pi pi-book`. */
-  icon?: string
   /**
    * How the page handles its own height — the one axis the three pages genuinely differed on:
    *  - `flow`   content flows, an ancestor scrolls (a document-shaped page)
@@ -27,14 +23,14 @@ withDefaults(defineProps<{
    *  - `fill`   viewport-height flex column; a CHILD owns the scrolling (a player/canvas pane)
    */
   layout?: 'flow' | 'scroll' | 'fill'
-}>(), { icon: '', layout: 'flow' })
+}>(), { layout: 'flow' })
 </script>
 
 <template>
   <div class="mp" :class="`mp-${layout}`">
-    <header class="mp-head">
-      <h1 class="mp-title"><i v-if="icon" :class="icon" />{{ title }}</h1>
-      <div v-if="$slots.controls" class="mp-ctl cc-row cc-row-loose"><slot name="controls" /></div>
+    <!-- no controls, no header: an empty bar would still take its margin -->
+    <header v-if="$slots.controls" class="mp-head">
+      <div class="mp-ctl cc-row cc-row-loose"><slot name="controls" /></div>
     </header>
     <slot />
   </div>
@@ -48,9 +44,7 @@ withDefaults(defineProps<{
 .mp-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
 .mp-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  display: flex; align-items: flex-start;
   gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem;
 }
-.mp-title { margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.5rem; }
-
 </style>
