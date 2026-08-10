@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
+import { TITLE_CARD_DEFAULT, type TitleCardCfg, type BatchMovieCfg } from '../utils/batchMovie'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 
@@ -195,6 +195,10 @@ export const useSettingsStore = defineStore('settings', () => {
     movie?: { fps?: number; sizeX?: number | null; sizeY?: number | null; suffix?: string | null
               titleCard?: TitleCardCfg; compareVersions?: string[]; compareSegmentations?: string[]
               labelContour?: number; zSlice?: number | null
+              // Which stretch of the timelapse to record, as FRAME INDICES — `tEnd` null/absent = the
+              // last frame, which is what every recording did before the control existed. Deliberately
+              // NOT the `cropT` pair above: that one is a 0-100 % crop range for making a new image.
+              tStart?: number; tEnd?: number | null
               // 3D multiscale detail: level index (0 = full resolution, higher = coarser), or null for
               // napari's own choice (its coarsest level). Per set, like the other viewer prefs.
               detail3d?: number | null
@@ -206,30 +210,11 @@ export const useSettingsStore = defineStore('settings', () => {
     cropT?: { lo?: number; hi?: number }
     // batch-movie authoring config (F1.3 "make a movie for all images"): one config applied across the
     // selected images. `channels` = {channelName → colormap} for channels to SHOW (rest hidden). Per-set.
-    batchMovie?: {
-      // Versions to record, in COLUMN order — 2+ makes every movie a side-by-side comparison
-      // (docs/todo/MOVIE_COMPARE_PLAN.md). `valueName` is what configs saved before that carried; read
-      // it through `versionsFromConfig`, never directly.
-      valueNames?: string[]
-      // Segmentation masks drawn into every movie, in order — 2+ makes them the grid's ROWS. Read
-      // through `segmentationsFromConfig`.
-      labelValueNames?: string[]
-      labelContour?: number                 // mask outline width in px (0 = filled)
-      show3D?: boolean                      // whole z stack as a 3D render…
-      zSlice?: number | null                // …or this slice in 2D (null = whatever is showing)
-      detail3d?: number | null              // 3D detail: multiscale level (0 = full res), null = auto
-      compareLayout?: CompareLayout; compareContrast?: CompareContrast
-      valueName?: string                    // image version to open ('' = active) — legacy, migrated
-      channels?: Record<string, string>     // channelName → colormap (only these shown)
-      colourBy?: string                     // colour-by measure/obs column
-      showTracks?: boolean; trackValueNames?: string[]; tailWidth?: number
-      showGatedTracks?: boolean; showTrackclust?: boolean
-      showPopulations?: boolean; popType?: string; pointsSize?: number
-      colourLabels?: boolean
-      fileAttrs?: string[]                  // attr names composing the output filename
-      tStart?: number; tEnd?: number | null
-      titleCard?: { enabled: boolean; note: string; durationSec: number }   // Phase H description slide
-    }
+    //
+    // THE type, imported — not a copy of it. This used to restate all twenty fields, in a file that
+    // already imports from `utils/batchMovie`; the two then drifted, and the copy grew three fields
+    // nothing read. What a movie config IS belongs beside the builder that consumes it.
+    batchMovie?: BatchMovieCfg
   }
   const _setPrefs = ref<Record<string, NapariSetPrefs>>(
     JSON.parse(localStorage.getItem('cc.napariSetPrefs') ?? '{}')
@@ -271,6 +256,7 @@ export const useSettingsStore = defineStore('settings', () => {
     detail3d: number | null
     compareLayout: CompareLayout; compareContrast: CompareContrast
     showTimestamp: boolean; showScaleBar: boolean
+    tStart: number; tEnd: number | null
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
@@ -295,6 +281,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // default ON — what every movie was before the toggles existed
     showTimestamp: _setPrefs.value[setUid]?.movie?.showTimestamp ?? true,
     showScaleBar: _setPrefs.value[setUid]?.movie?.showScaleBar ?? true,
+    // the whole timelapse — 0 to the last frame, `null` meaning "however long this image is"
+    tStart: _setPrefs.value[setUid]?.movie?.tStart ?? 0,
+    tEnd: _setPrefs.value[setUid]?.movie?.tEnd ?? null,
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
@@ -304,7 +293,8 @@ export const useSettingsStore = defineStore('settings', () => {
                                    detail3d?: number | null
                                    compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
-                                   showTimestamp?: boolean; showScaleBar?: boolean }) {
+                                   showTimestamp?: boolean; showScaleBar?: boolean
+                                   tStart?: number; tEnd?: number | null }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)
@@ -323,10 +313,16 @@ export const useSettingsStore = defineStore('settings', () => {
     _patchSet(setUid, { cropT: { ...(_setPrefs.value[setUid]?.cropT ?? {}), ...patch } })
   }
   // batch-movie authoring config (per set); the reactive bag the BatchMovies page drives via useViewState
-  type BatchMovieCfg = NonNullable<NapariSetPrefs['batchMovie']>
   const getBatchMovieConfig = (setUid: string): BatchMovieCfg => _setPrefs.value[setUid]?.batchMovie ?? {}
   function setBatchMovieConfig(setUid: string, patch: Partial<BatchMovieCfg>) {
     _patchSet(setUid, { batchMovie: { ...(_setPrefs.value[setUid]?.batchMovie ?? {}), ...patch } })
+  }
+  // REPLACE the whole bag, for the two operations that are about the config as a WHOLE rather than one
+  // of its fields: loading a movie's saved config into the page, and undoing that. A merge cannot do
+  // either — it has no way to remove a key, so undoing a restore would leave behind every option the
+  // restored config set and the previous one did not (docs/todo/MOVIE_MANAGEMENT_PLAN.md Phase 6).
+  function replaceBatchMovieConfig(setUid: string, cfg: BatchMovieCfg) {
+    _patchSet(setUid, { batchMovie: { ...cfg } })
   }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
@@ -355,5 +351,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })

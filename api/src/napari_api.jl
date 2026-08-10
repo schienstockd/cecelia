@@ -612,14 +612,24 @@ end
 # frontend MOVIE_CHANNELS_TOKEN (utils/batchMovie.ts); keep the two in sync.
 const MOVIE_CHANNELS_TOKEN = "__channels__"
 
-# Attr-named output filename: <attr1>_<attr2>_..._<uid>[_suffix].mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
+# Attr-named output filename: <attr1>_<attr2>_..._<uid|image name>[_suffix].mp4 (mirrors the R
+# `paste(fileAttrs...) _ uid`).
 # `file_attrs` is the ordered list of attribute keys and/or the channels token; `channel_names` are the
 # channels shown in the movie (used only where the token appears, joined by '-'). Blank/missing attrs
-# are dropped; the uid always terminates the name so batch outputs never collide. Falls back to just
-# the uid when no file_attrs are given. Pure (attr dict + uid + channels) → testable.
+# are dropped. Pure (attr dict + uid + channels) → testable.
+#
+# WHAT TERMINATES THE NAME is a choice, because the two recorders had made it differently and neither
+# was wrong (Dominik, 2026-08-10): a single viewer recording is named after the IMAGE
+# (`_movie_named_path`), a batch after the uid — so regenerating a viewer movie from its restored config
+# produced a differently-named file beside the original. Pass `name` (the image's) to terminate with it
+# instead; blank keeps the uid.
+#
+# The uid is the SAFE default and stays the default: it is unique by construction, while two images in a
+# set may well share a name and would then write over each other — the same collision the single-image
+# recorder has always had, which is what its `suffix` exists to break.
 function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Vector{String},
                          channel_names::Vector{String} = String[];
-                         suffix::AbstractString = "")::String
+                         suffix::AbstractString = "", name::AbstractString = "")::String
     parts = String[]
     for a in file_attrs
         if a == MOVIE_CHANNELS_TOKEN
@@ -630,7 +640,9 @@ function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Ve
             isempty(val) || push!(parts, val)
         end
     end
-    push!(parts, String(uid))
+    # an image with an unnameable name (punctuation only) still has to produce a file, so fall back
+    tail = _safe_name_part(name)
+    push!(parts, isempty(tail) ? String(uid) : tail)
     # the user's filename addition goes BEFORE the extension (it arrives already sanitised + `_`-led
     # from `_movie_suffix`), so the file is still an .mp4 to every listing that filters on the suffix
     _safe_name_part(join(parts, "_")) * suffix * ".mp4"
@@ -716,6 +728,24 @@ function _z_slice(src)::Union{Int,Nothing}
     raw === nothing ? nothing : max(0, _to_int(raw))
 end
 
+# Which stretch of the timelapse a movie sweeps, as FRAME INDICES — `(t_start, t_end)`, with `nothing`
+# for the end meaning "the last frame". Absent is the whole thing, which is what every recording did
+# before the control existed.
+#
+# Indices rather than a percentage (the 3D crop's choice) because that is the recorders' own contract
+# all the way down — `_t_sweep_frames` here, `record_timelapse` in the bridge, `napari_utils` in Python
+# — and every one of them CLAMPS to the image's own length. So one range applied across a batch of
+# unequal timelapses records to the end of each rather than failing on the short ones.
+#
+# One reader for both entry points: the viewer's recorder puts these on the request, the batch page
+# puts them in its authored config, and they mean the same thing in both.
+function _t_range(src)::Tuple{Int,Union{Int,Nothing}}
+    t0  = max(0, _to_int(get(src, :tStart, 0)))
+    raw = get(src, :tEnd, nothing)
+    t1  = raw === nothing ? nothing : max(t0, _to_int(raw))
+    (t0, t1)
+end
+
 # {valueName => [store files]} for `vns`, the shape `_parse_all_labels`/`_show_all_labels!` consume.
 # `nothing` (an agnostic config) and an empty list both give an empty map — the caller pairs it with a
 # `showLabels` flag, which is what distinguishes them on the wire.
@@ -756,9 +786,10 @@ end
 
 # Full attr-named output path under {proj}/movies/.
 function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[];
-                         suffix::AbstractString = "")::String
+                         suffix::AbstractString = "", by_image::Bool = false)::String
     joinpath(_movies_dir(img),
-             _movie_basename(img.attr, img.uid, file_attrs, channel_names; suffix = suffix))
+             _movie_basename(img.attr, img.uid, file_attrs, channel_names;
+                             suffix = suffix, name = by_image ? String(img.name) : ""))
 end
 
 # Apply an authored movie config to ONE image already resolvable by uid (F1.2). Opens the image (contrast
@@ -1326,9 +1357,10 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
     end
     ws_status(nothing, task_id, "running", rep; fun="movie:batch", pool="viewer")
     ws_progress(nothing, task_id, 0, n)
-    t_start = Int(get(config, :tStart, 0))
-    t_end_v = get(config, :tEnd, nothing)
-    t_end   = t_end_v === nothing ? nothing : Int(t_end_v)
+    t_start, t_end = _t_range(config)     # the same reader the viewer's recorder uses
+    # Name each file after the IMAGE rather than its uid — what a single viewer recording does, so a
+    # config restored from one regenerates a file with the same name instead of a uid-named twin.
+    by_image = Bool(get(config, :nameByImage, false))
     # What each movie shows, as a grid (versions across, masks down). More than one cell makes every
     # movie a comparison; one cell is the ordinary batch — the same path, so the batch keeps no second
     # recording loop of its own. Authored once for the whole batch, so build it once.
@@ -1355,7 +1387,8 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
             chan_names = _shown_channel_names(img, config, isempty(vn_raw) ? nothing : vn_raw)
             # same filename addition as a single record — a corrected batch and a raw batch would
             # otherwise write the same attr-named files over each other
-            path = _movie_out_path(img, file_attrs, chan_names; suffix = _movie_suffix(suffix))
+            path = _movie_out_path(img, file_attrs, chan_names; suffix = _movie_suffix(suffix),
+                                   by_image = by_image)
             ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
             # One cell per (mask, version) pair, or the one authored config. Both go through
             # `_record_grid!`, so the batch has no second recording path of its own.
@@ -1428,6 +1461,12 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                           show_3d::Bool = false, z_slice::Union{Int,Nothing} = nothing,
                           share_contrast::Bool = true, layout::String = "row",
                           show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                          # Which stretch of the timelapse to sweep — frame indices, `t_end = nothing`
+                          # meaning "to the last frame". Clamped to the image's own length downstream
+                          # (`_t_sweep_frames` / `record_timelapse`), so a range longer than this
+                          # particular image records to its end rather than failing. Ignored by an
+                          # animation: keyframes carry their own dims, so the timeline IS the range.
+                          t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
                           movie_config = nothing,
                           api_url::AbstractString = "http://localhost:8080")
     animation = keyframes !== nothing
@@ -1475,6 +1514,7 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
         resp = comparing ?
             _record_grid!(task_id, project_uid, image_uid, img, grid, path;
                              fps = fps, size_x = size_x, size_y = size_y, title_card = title_card,
+                             t_start = t_start, t_end = t_end,
                              share_contrast = share_contrast, layout = layout, api_url = api_url,
                              show_timestamp = show_timestamp, show_scale_bar = show_scale_bar) :
             _with_viewer() do
@@ -1483,6 +1523,7 @@ function run_single_movie(task_id::String, project_uid::String, image_uid::Strin
                                       title_card = title_card, task_id = task_id, api_url = api_url,
                                       show_timestamp = show_timestamp, show_scale_bar = show_scale_bar) :
                     record_timelapse!(v, path; fps = fps, size_x = size_x, size_y = size_y,
+                                      t_start = t_start, t_end = t_end,
                                       title_card = title_card, task_id = task_id, api_url = api_url,
                                       show_timestamp = show_timestamp, show_scale_bar = show_scale_bar)
             end

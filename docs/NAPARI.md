@@ -176,6 +176,28 @@ segmentations at once — falling back to the uid) and returns the frame count +
 slider in the viewer panel's Movie section. This is **F1.1**
 of the batch-movie work (see `docs/todo/ANIMATION_PLAN.md`).
 
+### Movie frame range — indices, and an OPEN end
+
+Which stretch of the timelapse a recording sweeps is `tStart`/`tEnd`, offered by
+`MovieTimeRange.vue` on the two surfaces that sweep T (the napari recorder and the Batch page). The
+Animation page deliberately has none: its keyframes carry their own dims, so the timeline already *is*
+the range.
+
+**Frame indices, not a percentage.** The 3D crop's z/t ranges are percentages because a crop is one
+image's own geometry. A recording range is the recorders' contract the whole way down — `_t_range` →
+`_t_sweep_frames` (`api/src/napari_api.jl`) → `record_timelapse!` (`app/src/napari.jl`) → the bridge →
+`napari_utils.record_timelapse` — and **every one of them clamps to the image's own length**.
+
+**`tEnd = null` means "the last frame", and is what a full-range selection stores.** That asymmetry is
+the whole point, and it lives in exactly two pure helpers (`resolveFrameRange` reads null → last,
+`storeFrameEnd` writes last → null, both in `utils/batchMovie.ts`). Pinning the index instead would
+truncate the same config the moment it ran on a longer image — which is precisely what a batch does:
+one authored range across timelapses of unequal length records to the end of each.
+
+The pair reaches the backend through **one reader**, `_t_range`, for both entry points — the viewer puts
+it on the request, the batch page puts it in its authored config, and a second parse is where the two
+would drift.
+
 ### Movie output size — two pixel fields, not a multiplier
 
 Both recorders take an explicit `size_x`/`size_y` in pixels. **Blank means the napari canvas size**,

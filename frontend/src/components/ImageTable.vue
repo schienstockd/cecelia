@@ -8,7 +8,7 @@ import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
-import { qcSummary } from '../lib/qc'
+import { qcSummary, qcState } from '../lib/qc'
 import { isExcluded, isIncluded, isImported, isStarred } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { type SortState } from '../utils/sortRows'
@@ -65,10 +65,14 @@ function warnIconFor(img: CciaImage): { tip: string } | null {
   const w = metadataWarning(img)
   return w ? { tip: w.short } : null
 }
-// QC badge — advisory "we processed this but the output looks off" (docs/todo/QC_PLAN.md). Distinct
+// QC slot — advisory "we processed this but the output looks off" (docs/todo/QC_PLAN.md). Distinct
 // from the metadata warning: any module can emit it, and it's non-blocking (hover for detail).
-function qcFor(img: CciaImage): { short: string; long: string; level: 'info' | 'warn' } | null {
-  return qcSummary(img)
+// The slot's tooltip — the findings when there are any, else what the absence MEANS. "Nothing has run"
+// and "everything that ran was fine" are different answers and the icon alone cannot say which.
+function qcTip(img: CciaImage): string {
+  const s = qcSummary(img)
+  if (s) return s.long
+  return qcState(img) === 'clean' ? 'QC passed — no findings' : 'No QC yet — nothing has been run'
 }
 function pageIconFor(): { tip: string } | null {
   if (props.module === 'metadata' || props.module === 'import')
@@ -433,7 +437,9 @@ const attrKeys = computed(() => {
 // Keyed by column id (e.g. 'name', 'ch-1', 'attr-condition')
 
 const DEFAULT_WIDTHS: Record<string, number> = {
-  name: 160,   // narrower now the per-row actions collapse into one ⋯ menu (drag-resizable)
+  // holds the eye + star gutter as well as the name (the movies table's arrangement), so it carries
+  // what used to be a separate 52px column
+  name: 210,   // drag-resizable; the gutter never shrinks, the name ellipsises
 }
 function defaultWidth(key: string): number {
   if (DEFAULT_WIDTHS[key]) return DEFAULT_WIDTHS[key]
@@ -450,7 +456,9 @@ function defaultWidth(key: string): number {
 // `attr:${k}` rather than the old `attr-${k}` width key. Widths therefore live under a new storage key;
 // the old one would have mapped the wrong column.
 const COLUMNS = computed<SelectionColumn[]>(() => [
-  { key: 'viewer', label: '', fixed: true, width: 32, sticky: true },
+  // No separate column for the eye/star gutter: a fixed-width column of its own got CLIPPED as soon as
+  // the table was rescaled (Dominik, 2026-08-10), and the movies table had already shown the answer —
+  // put them in the name cell, where they simply refuse to shrink and the name gives way instead.
   { key: 'name', label: 'Name', sortable: true, sticky: true, width: defaultWidth('name') },
   ...channelIndices.value.map(idx => ({ key: `ch:${idx}`, label: String(idx), width: 90 })),
   ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 })),
@@ -531,50 +539,59 @@ const unselectableUids = computed(() =>
       </button>
     </template>
 
-    <!-- napari eye -->
-    <template #cell-viewer="{ row: img }">
-      <button
-        class="viewer-btn"
-        :class="{ 'viewer-active': project.napariImageUid === img.uid }"
-        :disabled="napariLoading.has(img.uid) || !isImported(img)"
-        @click.stop="openInNapari(img.uid)"
-        v-tooltip.right="!isImported(img)
-          ? 'Import this image first'
-          : project.napariImageUid === img.uid
-            ? 'Currently shown in Napari — click to reload'
-            : 'Open this image in Napari viewer'"
-      >
-        <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
-        <i v-else class="pi pi-eye" />
-      </button>
-    </template>
-
-    <!-- name: three stacked rows — the name and its badges, the uid + last run, the note -->
+    <!-- The name cell: an eye + star gutter that never shrinks, then three stacked rows — the name and
+         its badges, the uid + last run, the note. Both controls are on EVERY row, so putting them in
+         front costs nothing; the conditional badges are what had to move to the other side. -->
     <template #cell-name="{ row: img }">
-      <span class="name-row">
-        <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
-          v-tooltip.right="warnIconFor(img)!.tip">
-          <i class="pi pi-exclamation-triangle" />
+      <span class="name-cell">
+      <span class="row-gutter">
+        <button
+          class="viewer-btn"
+          :class="{ 'viewer-active': project.napariImageUid === img.uid }"
+          :disabled="napariLoading.has(img.uid) || !isImported(img)"
+          @click.stop="openInNapari(img.uid)"
+          v-tooltip.right="!isImported(img)
+            ? 'Import this image first'
+            : project.napariImageUid === img.uid
+              ? 'Currently shown in Napari — click to reload'
+              : 'Open this image in Napari viewer'"
+        >
+          <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
+          <i v-else class="pi pi-eye" />
         </button>
-        <span v-if="qcFor(img)" class="qc-badge" :class="qcFor(img)!.level"
-          v-tooltip.right="qcFor(img)!.long">
-          <i class="pi pi-flag" /> QC
-        </span>
         <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
           @click.stop="toggleStarred(img)"
           v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">
           <i :class="isStarred(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
         </button>
-        <span v-if="isExcluded(img)" class="excl-badge"
-          v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
-          <i class="pi pi-ban" /> Excluded
-        </span>
+      </span>
+      <span class="name-stack">
+      <span class="name-row">
         <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
+        <!-- Everything ABOUT the image, after the name and never before it. These three used to sit to
+             the LEFT, each conditional, so the name started at a different x on nearly every row
+             (Dominik, 2026-08-10). Right-aligned they can come and go without moving anything. -->
+        <span class="name-flags">
+          <button v-if="warnIconFor(img)" class="warn-icon-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="physSizeDialogUid = img.uid"
+            v-tooltip.left="warnIconFor(img)!.tip">
+            <i class="pi pi-exclamation-triangle" />
+          </button>
+          <span v-if="isExcluded(img)" class="excl-badge"
+            v-tooltip.left="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
+            <i class="pi pi-ban" />
+          </span>
+          <!-- ALWAYS rendered, which is what makes the tick mean something: a clean image says so,
+               rather than being indistinguishable from one nothing has ever looked at. -->
+          <span class="qc-dot" :class="qcState(img)" v-tooltip.left="qcTip(img)">
+            <i :class="qcState(img) === 'clean' ? 'pi pi-check-circle'
+                     : qcState(img) === 'none' ? 'pi pi-minus' : 'pi pi-flag'" />
+          </span>
+        </span>
         <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
         <span class="runlog-cell" @click.stop>
           <button class="row-icon-btn cc-btn cc-btn-bare cc-btn-icon actions-btn" :class="{ on: actionsUid === img.uid }"
             @click.stop="toggleActions(img.uid, $event)"
-            v-tooltip.right="'Actions'"><i class="pi pi-ellipsis-h" /></button>
+            v-tooltip.left="'Actions'"><i class="pi pi-ellipsis-h" /></button>
         </span>
       </span>
       <span class="uid-row">
@@ -599,6 +616,8 @@ const unselectableUids = computed(() =>
           v-tooltip.right="'Click to edit the note'">
           <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
         </span>
+      </span>
+      </span>
       </span>
     </template>
 
@@ -776,40 +795,48 @@ const unselectableUids = computed(() =>
    no-op before the table moved, so it went with the `td-name` class rather than being ported.) */
 
 .name-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+/* The name takes the row and ellipsises; everything else is `flex-shrink: 0` and to its RIGHT. That
+   is what fixes the name's starting x — badges appearing and disappearing shorten the name rather
+   than pushing it sideways (Dominik, 2026-08-10). */
 .name-row .cell-text { flex: 1; min-width: 0; }
+.name-flags { flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.25rem; }
 
-/* always visible when flagged — impossible-to-miss, sits in front of the name */
+/* The eye + star gutter — the two controls every row has, paired as in the movies table and living
+   INSIDE the name cell rather than in a column of its own. A fixed-width column got clipped the moment
+   the table was rescaled; here the pair simply refuses to shrink and the name gives way instead.
+   `align-items: flex-start` keeps it on the name's line while the uid and note rows run under it. */
+.name-cell { display: flex; align-items: flex-start; gap: 0.25rem; min-width: 0; }
+.name-stack { flex: 1; min-width: 0; }
+.row-gutter { flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.1rem; }
+
 /* Calibration warning icon (metadata.* findings) → click to fix. Warn severity token (colour-blind
    palette); the shape-distinct triangle icon carries the meaning, colour is secondary. */
 .warn-icon-btn { color: var(--cc-sev-warn); }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .warn-icon-btn:hover { filter: brightness(1.2); }
 
 /* Star — a per-image bookmark, any number per set. Dim until hovered when unset, so a column of
-   unset stars doesn't compete with the QC and exclusion badges. */
+   unset stars doesn't compete with the name beside it. */
 .ref-star { opacity: .25; }
 .ref-star:hover { opacity: .7; }
 .ref-star.on { opacity: 1; color: var(--cc-accent); }
 
-/* QC badge — advisory "output looks off" flag (non-metadata findings; distinct from the calibration
-   warning icon). Uses the canonical severity tokens. */
-.qc-badge {
-  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.04em;
-  padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); cursor: help;
-  border: 1px solid transparent;
-}
-.qc-badge .pi { font-size: var(--cc-fs-2xs); }
-.qc-badge.warn { color: var(--cc-sev-warn); background: color-mix(in srgb, var(--cc-sev-warn) 15%, transparent); border-color: color-mix(in srgb, var(--cc-sev-warn) 40%, transparent); }
-.qc-badge.info { color: var(--cc-text-dim); background: var(--cc-surface-2); border-color: var(--cc-border); }
+/* QC slot — ALWAYS rendered, which is the point: a green tick says "checked, fine", and only a slot
+   that is always there can make a dash mean "nothing has run". A text pill ("⚑ QC") lived here and
+   was one of the three things that shifted the name, so this is an icon at a fixed size.
+   Shape carries the meaning (tick / flag / dash); colour is secondary, per the severity tokens. */
+.qc-dot { flex-shrink: 0; display: inline-flex; width: 1rem; justify-content: center; cursor: help; }
+.qc-dot .pi { font-size: var(--cc-fs-xs); }
+.qc-dot.clean { color: var(--cc-sev-ok); opacity: .55; }   /* reassurance, not an alarm */
+.qc-dot.warn  { color: var(--cc-sev-warn); }
+.qc-dot.info  { color: var(--cc-text-dim); }
+.qc-dot.none  { color: var(--cc-text-dim); opacity: .3; }
 
-/* excluded badge — persistent "this image is excluded" pill; carries the note as its tooltip */
+/* excluded — icon only, for the same no-shift reason; the note rides its tooltip */
 .excl-badge {
-  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.04em;
-  padding: 0.05rem 0.3rem; border-radius: var(--cc-radius-xs); cursor: help;
-  color: #fca5a5; background: #7f1d1d33; border: 1px solid #7f1d1d66;
+  flex-shrink: 0; display: inline-flex; align-items: center; cursor: help;
+  color: #fca5a5;
 }
-.excl-badge .pi { font-size: var(--cc-fs-2xs); }
+.excl-badge .pi { font-size: var(--cc-fs-xs); }
 
 /* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
    an excluded row so there's an obvious way back */
@@ -901,9 +928,12 @@ const unselectableUids = computed(() =>
   background: none; border: none; cursor: pointer;
   color: var(--cc-text-dim); font-size: var(--cc-fs-md);
   padding: 0.2rem 0.3rem; border-radius: var(--cc-radius-xs);
-  opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
+  /* Dim at rest rather than INVISIBLE until row hover, which is what it was: in a gutter that now
+     reserves the space either way, a hidden control just reads as a hole where the movies table shows
+     an eye. Same treatment as the star beside it and as `.mov-eye` (Dominik, 2026-08-10). */
+  opacity: 0.25; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
-.sel-row:hover .viewer-btn { opacity: 0.6; }
+.sel-row:hover .viewer-btn { opacity: 0.7; }
 .viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: #1e3a5f44; }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
 .viewer-active { opacity: 1 !important; color: #f97316; }

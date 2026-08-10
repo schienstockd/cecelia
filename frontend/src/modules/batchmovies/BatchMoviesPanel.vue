@@ -14,7 +14,7 @@
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useSettingsStore } from '../../stores/settings'
@@ -29,14 +29,19 @@ import { versionsFromConfig, compareSuffix, compareActionTip,
          type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
+import CcToggle from '../../components/CcToggle.vue'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import { usePaneExpand } from '../../composables/usePaneExpand'
 import TitleCardControls from '../../components/TitleCardControls.vue'
 import MovieOutputControls from '../../components/MovieOutputControls.vue'
+import MovieTimeRange from '../../components/MovieTimeRange.vue'
 import { movieSizeParams } from '../../utils/movieSize'
 import { useNapariStatus } from '../../composables/useNapariStatus'
+import { lookRestore, missingRefs, restoreNote, type MovieRegistryEntry } from '../../utils/movieRestore'
+import { useMovieRestore } from '../../composables/useMovieRestore'
+import RestoreNotice from '../../components/RestoreNotice.vue'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
@@ -114,6 +119,15 @@ const zDepth = computed(() => {
   const zs = imgs.value.map(i => i.sizeZ ?? 1).filter(n => n > 1)
   return zs.length ? Math.min(...zs) : 1
 })
+// Which stretch of the timelapse each movie sweeps. Unlike `zDepth` the bound here is the LONGEST, not
+// the shortest: a z INDEX outside an image simply does not exist, while a frame RANGE is clamped per
+// image by the recorder — so bounding by the shortest would make the extra frames of a longer image
+// unreachable for no benefit.
+const tStart = computed<number>({
+  get: () => cfg.value.tStart ?? 0, set: v => patch({ tStart: v }) })
+const tEnd = computed<number | null>({
+  get: () => cfg.value.tEnd ?? null, set: v => patch({ tEnd: v }) })
+const tFrames = computed(() => Math.max(1, ...imgs.value.map(i => i.sizeT ?? 1)))
 // napari's baked overlays, burnt into every frame (per set, like fps/size)
 const movieTimestamp = computed<boolean>({
   get: () => movie.value.showTimestamp,
@@ -241,9 +255,14 @@ async function fillFromView(force = false) {
 // auto-seed when the selection changes and nothing's been authored yet
 watch(() => props.selectedUids[0], () => { if (props.selectedUids.length) fillFromView(false) }, { immediate: true })
 
+// Terminate each filename with the image NAME rather than its uid — what a single viewer recording
+// does. Persisted with the config, so a restored viewer look regenerates the same file name.
+const nameByImage = computed<boolean>({
+  get: () => !!cfg.value.nameByImage, set: v => patch({ nameByImage: v }) })
 // output filename preview (mirrors the backend _movie_basename)
 const filenamePreview = computed(() =>
-  movieFilename(fileAttrs.value, imgs.value[0]?.attr ?? {}, imgs.value[0]?.uid ?? 'uid', shownChannels.value))
+  movieFilename(fileAttrs.value, imgs.value[0]?.attr ?? {}, imgs.value[0]?.uid ?? 'uid',
+                shownChannels.value, nameByImage.value ? (imgs.value[0]?.name ?? '') : ''))
 
 // ── build request + run ───────────────────────────────────────────────────────
 function buildConfig() {
@@ -288,6 +307,88 @@ async function previewOpen() {
   } catch (e) { log.warn(`Preview failed: ${e}`, { source: 'napari' }) }
 }
 
+// ── Editing a movie's saved config (Phase 6, docs/todo/MOVIE_MANAGEMENT_PLAN.md) ───────────────
+// Arriving from the Movies page with `?fromMovie=…`. Both `look` producers land here — a viewer
+// recording and a batch are the same KIND, so they edit in the same place (Decision 7).
+//
+// Everything this touches is REPLACED rather than patched, and snapshotted first: the config is being
+// swapped as a whole, and a merge could not undo it — it has no way to remove a key, so undoing would
+// leave behind every option the restored config set and the previous one did not.
+function outputSnapshot() {
+  const m = movie.value
+  return { fps: m.fps, sizeX: m.sizeX, sizeY: m.sizeY, suffix: m.suffix,
+           showTimestamp: m.showTimestamp, showScaleBar: m.showScaleBar }
+}
+
+// What the RESTORED images offer, read straight from the project store rather than from `imgs` — the
+// selection is being set in the same breath, and the prop carrying it back down has not updated yet.
+// `colourBy` is deliberately absent: `obsCols` is fetched per segmentation and is empty on arrival, so
+// checking against it would report every colour-by as dead. A colour-by that no longer exists shows as
+// a blank select instead, which is its own signal.
+function availableFor(uids: string[]) {
+  const all = project.sets.flatMap(s => s.images)
+  const found = uids.map(u => all.find(i => i.uid === u)).filter((i): i is NonNullable<typeof i> => !!i)
+  const pool = found.length ? found : imgs.value
+  if (!pool.length) return {}
+  return {
+    versions: uniq(pool.flatMap(i => Object.keys(i.filepaths ?? {}))),
+    segmentations: uniq(pool.flatMap(i => Object.keys(i.labels ?? {}))),
+    channels: uniq(pool.flatMap(i => i.channelNames ?? [])),
+  }
+}
+
+const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = useMovieRestore({
+  kind: 'look',
+  projectUid: () => projectMeta.current?.uid ?? '',
+  onError: m => log.error(m, { source: 'movies' }),
+  apply: (entry: MovieRegistryEntry) => {
+    const r = lookRestore(entry.config)
+    const set = setUid.value
+    if (!r || !set) return null
+
+    // The images the movie was recorded over — a batch reproduces its whole selection, not the one row
+    // that was clicked. Only the ones still in this set: a uid from a deleted image (or another set)
+    // would sit in the selection unselectable and invisible.
+    const known = new Set(project.sets.flatMap(s => s.images).map(i => i.uid))
+    const inSet = new Set((project.sets.find(s => s.uid === set)?.images ?? []).map(i => i.uid))
+    const wanted = r.imageUids.filter(u => inSet.has(u))
+    const gone = r.imageUids.filter(u => !known.has(u))
+    const elsewhere = r.imageUids.filter(u => known.has(u) && !inSet.has(u))
+
+    const prevCfg = { ...settings.getBatchMovieConfig(set) }
+    const prevOut = outputSnapshot()
+    const prevSel = project.getImageSelection('batchMovies', set)
+
+    settings.replaceBatchMovieConfig(set, r.cfg)
+    // `titleCard` deliberately NOT patched into the per-set `movie` bag: this page reads its card from
+    // its OWN config (`cfg.titleCard`), and that bag is the viewer recorder's card. Restoring a batch
+    // would otherwise silently rewrite the title card of the napari Record button.
+    const { titleCard: _card, ...output } = r.output
+    settings.setMovieConfig(set, output)
+    // AFTER the current tick, because arriving here is a NAVIGATION: `ImageTable` seeds its checkboxes
+    // from this same store slot `onMounted`, and on the first visit that mount can land after this
+    // callback — reading the old (empty) selection and committing it straight back over ours. On a
+    // second click the page is already mounted, which is exactly why it worked the second time
+    // (Dominik, 2026-08-10). One tick puts us unambiguously after the seed either way.
+    if (wanted.length) nextTick(() => project.setImageSelection('batchMovies', set, wanted))
+
+    const dropped = [...r.dropped]
+    if (gone.length) dropped.push(`${gone.length} image(s) that no longer exist`)
+    if (elsewhere.length) dropped.push(`${elsewhere.length} image(s) from another set`)
+    // Nothing banked WHICH image — every movie recorded before that was banked. Worth saying, because
+    // the config lands and the selection does not, which otherwise looks like the restore half-failed.
+    if (!r.imageUids.length) dropped.push('which image(s) it was recorded on — select them yourself')
+    return {
+      undo: () => {
+        settings.replaceBatchMovieConfig(set, prevCfg)
+        settings.setMovieConfig(set, prevOut)
+        if (wanted.length) project.setImageSelection('batchMovies', set, prevSel)
+      },
+      note: restoreNote(missingRefs(r.cfg, availableFor(wanted)), dropped),
+    }
+  },
+})
+
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Same arrangement as the module pages' TaskRunner: config on top, task list below. Its own storage key,
 // so this panel remembers its arrangement separately from the runner's.
@@ -296,6 +397,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 
 <template>
   <div class="bm" :class="'pane-' + pane">
+    <!-- Above the hint as well as the config: arriving here with nothing selected still means the page
+         was filled in, and the Undo has to be reachable either way. -->
+    <RestoreNotice v-if="restoreNotice" class="bm-restored" :source="restoreNotice.movie"
+                   :note="restoreNotice.note" @undo="undoRestore" @dismiss="dismissRestore" />
     <p v-if="!selectedUids.length" class="bm-hint cc-muted">Select one or more images (left) to author a batch of movies.</p>
 
     <template v-else>
@@ -386,6 +491,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                              :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice"
                              :levels="multiscaleLevels" v-model:detail3d="detail3d" />
+        <!-- Only when there is a timelapse to trim. The bound is the LONGEST in the selection — the
+             backend clamps each image to its own length, so a shorter one records to its end. -->
+        <MovieTimeRange v-if="tFrames > 1" v-model:tStart="tStart" v-model:tEnd="tEnd" :frames="tFrames" />
         <TitleCardControls v-model="titleCardModel" />
       </section>
 
@@ -396,7 +504,15 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <span class="bm-lbl cc-muted" v-tooltip.left="'Attributes joined to build each movie filename'">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
                       aria-label="Filename attributes" />
-          <span v-else class="bm-hint cc-muted">no attributes — files named by uid</span>
+          <span v-else class="bm-hint cc-muted">no attributes — files named by {{ nameByImage ? 'image name' : 'uid' }}</span>
+        </div>
+        <!-- What ENDS the filename. The two recorders had chosen differently — a single viewer
+             recording is named after the image, a batch after the uid — so a restored viewer config
+             wrote a uid-named twin beside the original. Restoring one turns this on. -->
+        <div class="bm-inset">
+          <!-- the caveat, not a restatement of the label — two images CAN share a name, uids cannot -->
+          <CcToggle v-model="nameByImage" label="name files after the image"
+                    v-tooltip.left="'Images sharing a name overwrite each other'" />
         </div>
         <p class="bm-preview cc-muted">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>
@@ -425,6 +541,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 <style scoped>
 .bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
 .bm-hint { margin: 2px 0; }
+.bm-restored { margin-bottom: 0.5rem; }
 /* Which half is showing, declared once per half — the same mechanism TaskRunner uses. Every config
    member is a direct `.bm-sec` child plus the actions row, so one rule covers the group AND a section
    added later, which a per-element guard would miss. The busy banner is in neither half on purpose:
@@ -432,7 +549,22 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 .bm.pane-bottom > .bm-sec,
 .bm.pane-bottom > .bm-actions { display: none; }
 .bm.pane-top    > .bm-tasks   { display: none; }
-.bm-tasks { display: flex; min-width: 0; }
+/* The tasks half OWNS its overflow, the way TaskRunner's `.tasks-section`/`.tasks-scroll` pair does.
+   Without a scroll container here a wide task row (a long image name, the five row buttons) made the
+   whole PANEL wider and put a horizontal scrollbar under the config — every section shifted left
+   while a task ran (Dominik, 2026-08-10). `min-height: 0` is what lets it scroll instead of growing
+   the column; `min-width: 0` the same for the cross axis. */
+.bm-tasks {
+  display: flex; flex-direction: column;
+  flex: 1 1 auto; min-width: 0;
+  /* A FLOOR, not `min-height: 0`. The config half above has no cap (TaskRunner's `.params-section` is
+     capped at 45vh), so `flex: 1` handed the list whatever was left — which on a long config was a
+     clipped sliver (Dominik, 2026-08-10). It scrolls itself from here rather than shrinking away. */
+  min-height: 14rem;
+  overflow: auto;
+}
+/* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
+.bm.pane-bottom > .bm-tasks { min-height: 0; }
 /* A resource-contention advisory — "the batch has taken over the single napari viewer" — NOT the job's
    progress (the scheduler reports that in TasksModule). It states the condition of a resource, so it is
    a severity and takes the CVD-safe amber, same as ViewerPanel's stale-bridge strip. */

@@ -1,5 +1,10 @@
 <!--
   Shows tasks for a given module, with live status, log expand, cancel, dismiss.
+
+  The HEADING and its two list-wide actions (cancel everything in flight, clear everything finished)
+  live here rather than in the host. They were hand-rolled inside `TaskRunner`, so `BatchMoviesPanel`
+  — the other place that embeds this list — had a list you could neither tidy nor cancel wholesale
+  (Dominik, 2026-08-10). A list-wide action belongs to the list, not to whoever placed it.
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
@@ -14,7 +19,11 @@ import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 import { canRerunTask } from '../utils/taskRerun'
 
-const props       = defineProps<{ module: string }>()
+const props = withDefaults(defineProps<{
+  module: string
+  /** Hide the heading row — for a host that already titles the list itself. */
+  bare?: boolean
+}>(), { bare: false })
 const tasks       = useTaskStore()
 const ws          = useWsStore()
 const router      = useRouter()
@@ -27,6 +36,28 @@ const { isCopied, copy } = useCopyFlash()
 // Scoped to the current project — otherwise switching projects leaves the previous project's
 // (e.g. cancelled) tasks visible in this module's list.
 const items = computed(() => tasks.forModule(props.module, projectMeta.current?.uid))
+
+// ── list-wide actions ────────────────────────────────────────────────────────
+const activeTasks = computed(() =>
+  items.value.filter(t => t.status === 'running' || t.status === 'queued'))
+
+// Cancel everything in flight. A CHAIN run is cancelled once for the whole run, not once per node —
+// otherwise a chain of ten sends ten cancels for one thing.
+function cancelAll() {
+  const cancelledChainRuns = new Set<string>()
+  for (const t of activeTasks.value) {
+    if (t.chainRunId) {
+      if (cancelledChainRuns.has(t.chainRunId)) continue
+      cancelledChainRuns.add(t.chainRunId)
+      tasks.cancelChainRun(t.chainRunId)
+      ws.send({ type: 'chain:cancel', runId: t.chainRunId })
+    } else {
+      tasks.cancel(t.id)
+      ws.send({ type: 'task:cancel', taskId: t.id })
+    }
+  }
+}
+const clearFinished = () => tasks.clearFinished(props.module, projectMeta.current?.uid)
 
 
 async function toggleLog(t: TaskEntry) {
@@ -92,6 +123,20 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
 
 <template>
   <div class="task-list">
+    <div v-if="!bare" class="tasks-heading">
+      <h3 class="section-heading cc-eyebrow cc-fs-2xs">Tasks</h3>
+      <div class="tasks-heading-actions">
+        <button v-if="activeTasks.length" class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
+          @click="cancelAll"
+          v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module`">
+          <i class="pi pi-times-circle" />
+        </button>
+        <button class="clear-btn cc-btn cc-btn-bare cc-btn-icon" @click="clearFinished"
+          v-tooltip.left="'Remove all completed and failed tasks from the list'">
+          <i class="pi pi-filter-slash" />
+        </button>
+      </div>
+    </div>
     <div v-if="items.length === 0" class="task-empty cc-muted">
       No tasks yet — select images and click Run.
     </div>
@@ -193,9 +238,26 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  /* Shrink to the host rather than forcing it wide. A flex item's default `min-width: auto` is the
+     min-content width of its children, and a task row's is real (a status icon, five row buttons, an
+     image name) — so in a narrow side panel this list pushed its host wider and the horizontal
+     scrollbar landed on the WHOLE panel. Hosts still decide where the overflow goes: TaskRunner
+     clips + scrolls it in `.tasks-scroll`, BatchMoviesPanel in `.bm-tasks`. */
+  min-width: 0;
 }
 
 .task-empty { padding: 1.5rem 0.5rem; }
+
+/* the heading row — sticky so the two list-wide actions stay reachable in a long list */
+.tasks-heading {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.5rem; flex-shrink: 0;
+}
+.tasks-heading .section-heading { margin-bottom: 0; }
+.tasks-heading-actions { display: flex; gap: 0.15rem; }
+/* .clear-btn → cc-btn cc-btn-bare cc-btn-icon */
+.clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+.clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
 .task-item {
   border-radius: var(--cc-radius-md);

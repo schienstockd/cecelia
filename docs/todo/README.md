@@ -126,7 +126,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   (image attributes + board read-back) is a prerequisite with a hard stop: probing `4kS67f` showed the
   metadata is good enough to plot well, but five cluster runs (three junk-named) and no exposed
   attributes mean it would currently miss the comparison that matters.
-- `MOVIE_MANAGEMENT_PLAN.md` — **in-progress** (`work/movie-management`). Movies become a managed
+- `MOVIE_MANAGEMENT_PLAN.md` — **built** (Phases 0–6). Movies become a managed
   collection: `settings/movies.json` keyed by filename (the `notebooks.json` shape), display-name
   rename that never touches the file, free-form tags + a recorder-written `producedBy`, star, delete,
   filters. The audit is the substance: there was **no per-movie record at all**, the generation config
@@ -134,8 +134,12 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   versions are the wrong shape to reuse (they reject and relaunch; saved config needs migration). Both
   generation configs already round-trip — `seedConfigFromViewState` ↔ `apply-movie-config` — so no new
   capture mechanism was needed. Also flips `napariAutoSaveLayerProps` to true, without which a saved
-  look is not reproducible. `ImageTable` deliberately does NOT merge into the shared table (Decision 9).
-  Phase 5 answered the ONE-TABLE question with counts and then did it: all eight surfaces are on `SelectionTable` bar `FileBrowser` (a stated exception — its row click is per-row semantics and its `..` row is synthetic). Phase 6 (edit/recreate) parked.
+  look is not reproducible. Phase 5 answered the ONE-TABLE question with counts and then did it: all
+  eight surfaces are on `SelectionTable` bar `FileBrowser` (a stated exception — its row click is
+  per-row semantics and its `..` row is synthetic). Phase 6 reopens a movie's config on the page that
+  authored it, prefilled, with an Undo and a line naming whatever no longer resolves — and fixed three
+  gaps the banking phase left: no image reference, an animation banking the render payload rather than
+  the editor's model, and a per-image timeline that must be replaced per image rather than wholesale.
 - `CANVAS_MANAGER_RAIL_PLAN.md` — **in-progress** (`work/manager-rail`). A plot declares **which
   manager it needs** (`rail` on the interactive/cluster registries) and the Analysis board resolves it,
   instead of hardcoding `activeIsCluster ? PopulationManager : SeriesPicker` — which is why

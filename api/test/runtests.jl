@@ -1546,6 +1546,22 @@ end
     @test _movie_basename(attr, "AbC123", [MOVIE_CHANNELS_TOKEN, "Treatment"], chans) == "CD3-CD8_CNO_AbC123.mp4"
     # token with no shown channels drops out cleanly (no dangling separator)
     @test _movie_basename(attr, "AbC123", ["Day", MOVIE_CHANNELS_TOKEN], String[]) == "3_AbC123.mp4"
+
+    # What TERMINATES the name is a choice: a single viewer recording is named after the IMAGE
+    # (`_movie_named_path`), a batch after the uid — so regenerating a restored viewer config wrote a
+    # uid-named twin beside the original (Dominik, 2026-08-10). `name` ends it with the image instead.
+    @test _movie_basename(attr, "AbC123", String[]; name = "M2b-MERTK_KAT (cropped)") ==
+          "M2b-MERTK_KAT_cropped.mp4"
+    @test _movie_basename(attr, "AbC123", ["Day"]; name = "my image") == "3_my_image.mp4"
+    # …and this is exactly what the single-image recorder produces for the same image, which is the
+    # whole point — the two namers must agree once the batch is asked to name by image
+    @test _movie_basename(Dict{String,String}(), "AbC123", String[]; name = "My Image") ==
+          basename(_movie_named_path((; name = "My Image", _dir = joinpath("p", "1", "u")), "AbC123"))
+    # a name of pure punctuation sanitises to nothing, and a file still has to be written
+    @test _movie_basename(attr, "AbC123", String[]; name = "()") == "AbC123.mp4"
+    @test _movie_basename(attr, "AbC123", String[]; name = "   ") == "AbC123.mp4"
+    # blank `name` is the default and keeps the uid — the safe one, since two images CAN share a name
+    @test _movie_basename(attr, "AbC123", String[]) == "AbC123.mp4"
 end
 
 # The single-image recorders (timelapse / animation) name by IMAGE via the shared _movies_dir +
@@ -2499,6 +2515,21 @@ end
         @test st == 200
         @test haskey(JSON3.read(body).entry, :config)
 
+        # ── the EDIT side (Phase 6): the config comes back VERBATIM, nesting and all.
+        # `frontend/src/utils/movieRestore.ts` reads it field by field, so anything this route flattens,
+        # renames or drops is a config that reopens wrong rather than one that fails to open.
+        register_movie!(uid, "b.mp4"; produced_by = "animation", config_kind = "keyframes",
+                        config = Dict("imageUid" => "img1", "fps" => 20,
+                                      "keyframes"    => [Dict("viewState" => Dict("camera" => Dict("zoom" => 2)),
+                                                              "steps" => 40)],
+                                      "keyframeMeta" => [Dict("assetId" => "a1", "duration" => 2)]))
+        st, body = api_movies_meta_get(HTTP.Request("GET", "/api/movies/meta?projectUid=$uid&name=b.mp4"))
+        cfg = JSON3.read(body).entry.config
+        @test st == 200
+        @test cfg.imageUid == "img1" && cfg.fps == 20
+        @test cfg.keyframes[1].viewState.camera.zoom == 2 && cfg.keyframes[1].steps == 40
+        @test cfg.keyframeMeta[1].assetId == "a1" && cfg.keyframeMeta[1].duration == 2
+
         # ── delete removes the file AND the entry
         @test _post(api_movies_delete, Dict("projectUid"=>uid, "name"=>"a.mp4"))[1] == 200
         @test !isfile(joinpath(mdir, "a.mp4"))
@@ -2520,6 +2551,64 @@ end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
     end
+end
+
+# ── The banked movie config is a CONTRACT with the edit page ──────────────────
+# `movie_config` is assembled in sockets.jl and read, field by field, by
+# `frontend/src/utils/movieRestore.ts`. Nothing type-checks across that boundary and nothing fails when
+# a key goes missing — the page just quietly restores less and says so in a note nobody wrote. So the
+# keys the edit path cannot work without are pinned here, at the one place that writes them.
+#
+# Source-level because the writers are two socket HANDLERS, not functions with a return value: they
+# assemble the dict and hand it straight to an `@async` recorder that needs a live napari.
+@testset "API: movie config banks what the edit page reads" begin
+    src = read(joinpath(@__DIR__, "..", "src", "sockets.jl"), String)
+    single = src[findfirst("function handle_movie_record", src)[1]:end]
+    single = single[1:findfirst("\nend", single)[1]]
+    batch  = src[findfirst("function handle_movie_batch", src)[1]:end]
+    batch  = batch[1:findfirst("\nend", batch)[1]]
+
+    # WHICH IMAGE. A movie is named after its image, but nothing can turn that name back into a uid, so
+    # without this an edited look has no idea what it was recorded on.
+    @test occursin("\"imageUid\" => image_uid", single)
+    @test occursin("\"imageUids\" => image_uids", batch)
+    # The editor's half of a keyframe — thumbnail, title, seconds. `keyframes` alone is the RENDER
+    # payload, which restores a timeline with no strip and durations rounded to whole frames.
+    @test occursin("\"keyframeMeta\"", single)
+    # The look itself, and the kinds it is filed under (MOVIE_MANAGEMENT_PLAN Decision 7).
+    @test occursin("\"look\"", single) && occursin("\"keyframes\"", single)
+    @test occursin("\"config\" => config", batch) && occursin("\"fileAttrs\"", batch)
+    # The output half both kinds share — restoring a look at the wrong size or fps is not restoring it.
+    for k in ("\"fps\"", "\"sizeX\"", "\"sizeY\"", "\"suffix\"")
+        @test occursin(k, single) && occursin(k, batch)
+    end
+    # The frame range: banked at the top level for a viewer recording, and inside the authored config
+    # for a batch (`buildBatchMovieConfig` always emits the pair). A recreate that silently records the
+    # whole timelapse is not a recreate.
+    @test occursin("\"tStart\" => t_start", single) && occursin("\"tEnd\" => t_end", single)
+    @test occursin("_t_range(data)", single)
+end
+
+# Which stretch of the timelapse a movie sweeps. ONE reader for both entry points — the viewer's
+# recorder puts the pair on the request, the batch page puts it in its authored config — because they
+# mean the same thing and a second parse is where the two would drift.
+@testset "API: movie frame range" begin
+    # absent = the whole thing, which is what every recording did before the control existed
+    @test _t_range(Dict{Symbol,Any}()) == (0, nothing)
+    # `nothing` for the end MEANS "the last frame" and must survive as `nothing` — clamping it to a
+    # number here would truncate the same config the moment it ran on a longer image, which is exactly
+    # what a batch does.
+    @test _t_range(Dict(:tStart => 10, :tEnd => nothing)) == (10, nothing)
+    @test _t_range(Dict(:tStart => 10, :tEnd => 60)) == (10, 60)
+    # a negative start is a bad value, not a request — clamp rather than fail a render
+    @test _t_range(Dict(:tStart => -5, :tEnd => 20)) == (0, 20)
+    # an inverted range would sweep nothing at all; the end gives way to the start
+    @test _t_range(Dict(:tStart => 30, :tEnd => 5)) == (30, 30)
+    # the wire carries JSON numbers, which arrive as Float64 for a fractional value
+    @test _t_range(Dict(:tStart => 2.0, :tEnd => 7.0)) == (2, 7)
+    # and it reads a JSON3 object, not only a Dict — that is what a real request is
+    @test _t_range(JSON3.read("""{"tStart":3,"tEnd":9}""")) == (3, 9)
+    @test _t_range(JSON3.read("""{"tStart":3,"tEnd":null}""")) == (3, nothing)
 end
 
 # ── Napari: branch-labels payload parsing ─────────────────────────────────────

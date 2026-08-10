@@ -71,6 +71,11 @@ export interface MovieRow {
   producedBy: string
   renamed: boolean       // a display name is set — the file name is then worth showing on hover
   configStale: boolean
+  // A saved generation config exists, and which page can edit it (Phase 6 — utils/movieRestore.ts).
+  // Carried on the row so the table can offer the action without a second lookup per row; '' means the
+  // movie predates the registry, which is most of them in an older project.
+  hasConfig: boolean
+  configKind: string
 }
 export function movieRows(movies: MovieEntry[],
                           formatSize: (bytes: number) => string,
@@ -86,6 +91,8 @@ export function movieRows(movies: MovieEntry[],
     producedBy: m.producedBy ?? '',
     renamed: !!(m.displayName ?? '').trim(),
     configStale: m.configStale === true,
+    hasConfig: m.hasConfig === true,
+    configKind: m.configKind ?? '',
   }))
 }
 

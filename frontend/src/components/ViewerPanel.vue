@@ -17,6 +17,7 @@ import { activeValueName, CELL_POP_TYPES, type CellPopType } from '../utils/napa
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
+import MovieTimeRange from './MovieTimeRange.vue'
 import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import { movieSizeParams } from '../utils/movieSize'
@@ -134,6 +135,15 @@ const zSlice = computed<number | null>({
     // render finish. Coalesced in `napariOverlays` — a drag is a burst, and each push costs a plane load.
     pushZView(show3D.value, v)
   } })
+// Which stretch of the timelapse the Record button sweeps (frame indices; null end = the last frame).
+// Persisted per set like fps/size — the same pair the Batch page authors, read by the same `_t_range`.
+const movieTStart = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).tStart : 0,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { tStart: v }) } })
+const movieTEnd = computed<number | null>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).tEnd : null,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { tEnd: v }) } })
+
 const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
@@ -368,6 +378,8 @@ async function recordTimelapse() {
       // alone", which is what the plain record has always done.
       valueNames: versions, labelContour: labelContour.value,
       show3D: show3D.value, zSlice: show3D.value ? null : zSlice.value,
+      // which stretch of the timelapse to sweep; null end = the last frame, clamped per image
+      tStart: movieTStart.value, tEnd: movieTEnd.value,
       ...(movieLabelValueNames.value.length ? { labelValueNames: movieLabelValueNames.value } : {}),
       ...(movieBranchValueNames.value.length ? { branchValueNames: movieBranchValueNames.value } : {}),
       compareLayout: compareLayout.value, compareContrast: compareContrast.value,
@@ -844,6 +856,9 @@ onUnmounted(() => {
                                  :size-z="napariImage?.sizeZ" v-model:show3D="show3D"
                                  v-model:zSlice="zSlice"
                                  :levels="multiscaleLevels" v-model:detail3d="detail3d" />
+            <!-- Only for an actual timelapse — nothing to trim on a single frame -->
+            <MovieTimeRange v-if="(napariImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
+                            v-model:tEnd="movieTEnd" :frames="napariImage?.sizeT ?? 1" />
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"

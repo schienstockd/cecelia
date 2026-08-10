@@ -3,7 +3,7 @@
 //    _apply_movie_config! consumes (api/src/napari_api.jl). Tracks are shown for ALL segmentations
 //    when `showTracks` is on (the backend skips ones without a track_id column).
 //  - movieFilename: the output filename preview, mirroring the backend `_movie_basename`
-//    (<attr1>_<attr2>_..._<uid>.mp4; blanks dropped, uid always terminates, unsafe chars → '_').
+//    (<attr1>_<attr2>_..._<uid|image name>.mp4; blanks dropped, unsafe chars → '_').
 
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
@@ -15,6 +15,16 @@ export interface TitleCardCfg {
   durationSec: number
 }
 
+/**
+ * The AUTHORED movie config — what the Batch page's controls edit and what the settings store persists
+ * per set (`NapariSetPrefs.batchMovie` is this type, not a copy of it). Distinct from
+ * `BatchMovieRequestConfig` below, which is what `buildBatchMovieConfig` turns it into for the wire:
+ * everything here is optional and means "not chosen", everything there is resolved and always present.
+ *
+ * The store used to RESTATE all twenty fields, from a file that already imports from this one — so the
+ * two drifted, and the copy accumulated three fields nothing read (`trackValueNames`, which the builder
+ * derives; `tStart`/`tEnd`, which had no control at all until the frame-range one was added).
+ */
 export interface BatchMovieCfg {
   // The image versions each movie shows, in COLUMN order (docs/todo/MOVIE_COMPARE_PLAN.md). Two or
   // more record a side-by-side comparison. `valueName` is what configs saved before that carried —
@@ -47,6 +57,21 @@ export interface BatchMovieCfg {
   tailWidth?: number
   pointsSize?: number
   titleCard?: TitleCardCfg
+  // Which stretch of the timelapse each movie sweeps, as FRAME INDICES; `tEnd` null/absent = the last
+  // frame, which is what every recording did before the control existed. Applied across a batch of
+  // unequal timelapses it CLAMPS per image (`_t_range`/`_t_sweep_frames` in api/src/napari_api.jl), so
+  // a range longer than a given image records to its end rather than failing.
+  tStart?: number
+  tEnd?: number | null
+  // Authoring-only — the ordered attribute keys (and `MOVIE_CHANNELS_TOKEN`) composing the output
+  // filename. Not part of the recorder's config: it is sent alongside it, and `movieFilename` below is
+  // what reads it.
+  fileAttrs?: string[]
+  // Terminate the filename with the IMAGE NAME instead of its uid. Off by default — the uid is unique
+  // by construction, while two images in a set can share a name and would overwrite each other. On, a
+  // batch names its files exactly the way a single viewer recording does, which is what makes a
+  // restored viewer config regenerate the SAME file rather than a uid-named twin.
+  nameByImage?: boolean
 }
 
 export interface BatchMovieRequestConfig {
@@ -59,6 +84,9 @@ export interface BatchMovieRequestConfig {
   detail3d: number | null
   compareLayout: CompareLayout
   compareContrast: CompareContrast
+  tStart: number
+  tEnd: number | null
+  nameByImage: boolean
   channels: Record<string, string>
   colourBy: string
   showTracks: boolean
@@ -109,6 +137,12 @@ export function buildBatchMovieConfig(
     detail3d: cfg.show3D ? (cfg.detail3d ?? 0) : null,
     compareLayout: cfg.compareLayout ?? COMPARE_LAYOUT_DEFAULT,
     compareContrast: cfg.compareContrast ?? COMPARE_CONTRAST_DEFAULT,
+    // The frame range, always sent — `null` for the end MEANS "to the last frame", and keeps meaning it
+    // when one config runs across timelapses of different lengths (the recorder clamps per image).
+    tStart: Math.max(0, Math.round(cfg.tStart ?? 0)),
+    tEnd: cfg.tEnd === undefined || cfg.tEnd === null ? null : Math.max(0, Math.round(cfg.tEnd)),
+    // read by `run_batch_movies` → `_movie_out_path`; the FILENAME is the only thing it changes
+    nameByImage: !!cfg.nameByImage,
     channels: cfg.channels ?? {},
     colourBy: cfg.colourBy ?? '',
     showTracks: !!cfg.showTracks,
@@ -140,6 +174,7 @@ export const MOVIE_CHANNELS_TOKEN = '__channels__'
  *  the movie (used only when the token is present, joined by '-'). Blanks drop, uid always terminates. */
 export function movieFilename(
   fileAttrs: string[], attrValues: Record<string, string>, uid: string, channelNames: string[] = [],
+  imageName = '',
 ): string {
   const parts: string[] = []
   for (const a of fileAttrs) {
@@ -151,7 +186,10 @@ export function movieFilename(
       if (val) parts.push(val)
     }
   }
-  parts.push(uid || 'uid')
+  // What TERMINATES the name: the image's, when asked for, else the uid. Mirrors `_movie_basename`'s
+  // `name` keyword — including its fallback, since a name of pure punctuation sanitises to nothing and
+  // a file still has to be written.
+  parts.push(safeNamePart(imageName) || uid || 'uid')
   return safeNamePart(parts.join('_')) + '.mp4'
 }
 
@@ -162,6 +200,30 @@ export function movieFilename(
 export function safeNamePart(raw: string): string {
   return raw.trim().replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[_.]+|[_.]+$/g, '')
 }
+
+// ── the recording frame range ─────────────────────────────────────────────────
+/**
+ * A stored `(tStart, tEnd)` resolved against an actual timelapse length — the two thumb positions plus
+ * whether that is the whole thing.
+ *
+ * The subtlety is `tEnd`: **null/absent means "the last frame", not a number**, and that is what a
+ * full-range selection stores. Pinning the index instead would truncate the same config the moment it
+ * ran on a longer image — which is exactly what a batch does. `resolveFrameRange` is where that
+ * asymmetry lives (read null → last), and `storeFrameEnd` is its inverse (write last → null), so the
+ * two surfaces that offer the control cannot disagree about it.
+ */
+export function resolveFrameRange(tStart: number | undefined, tEnd: number | null | undefined,
+                                  frames: number): { lo: number; hi: number; full: boolean } {
+  const last = Math.max(0, Math.round(frames) - 1)
+  const lo = Math.max(0, Math.min(Math.round(tStart ?? 0), last))
+  const hi = Math.max(lo, Math.min(Math.round(tEnd ?? last), last))
+  return { lo, hi, full: lo === 0 && hi >= last }
+}
+
+/** What to STORE for a chosen end frame: `null` once it reaches the last one, so it keeps meaning
+ *  "to the end" rather than freezing at this image's length. */
+export const storeFrameEnd = (hi: number, frames: number): number | null =>
+  hi >= Math.max(0, Math.round(frames) - 1) ? null : Math.max(0, Math.round(hi))
 
 // ── seeding (so the config isn't blank) ────────────────────────────────────────
 // napari view snapshot shape we read (subset of capture_view_state): per-layer colormap + visibility.

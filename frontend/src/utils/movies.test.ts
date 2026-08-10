@@ -150,9 +150,19 @@ describe('movieRows', () => {
                               // a pre-registry movie carries the registry fields at their "unset"
                               // values, so the table reads ONE row shape and never has to branch
                               starred: false, tags: [], tagText: '', producedBy: '',
-                              renamed: false, configStale: false })
+                              renamed: false, configStale: false,
+                              hasConfig: false, configKind: '' })
     expect(rows[1].size).toBe(900_000)
     expect(rows[1].mtime).toBe(9_000)
+  })
+
+  // What the edit action keys off (Phase 6): the row says whether there is a config and which page
+  // owns its kind, so the table never looks a movie up a second time to decide whether to offer it.
+  it('carries whether a generation config was banked, and of which kind', () => {
+    const [r] = movieRows([{ name: 'a.mp4', size: 1, mtime: 1, hasConfig: true, configKind: 'keyframes' }],
+                          String, String)
+    expect(r.hasConfig).toBe(true)
+    expect(r.configKind).toBe('keyframes')
   })
 
   it('keys each row by the FILE name (what the player streams), not the label', () => {
