@@ -7,6 +7,7 @@ import { useLogStore } from '../stores/log'
 import { useInlineEdit } from '../composables/useInlineEdit'
 import { useWsStore } from '../stores/ws'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 
 const props = defineProps<{
   projectUid: string
@@ -22,6 +23,14 @@ interface Notebook {
   path: string; description: string; version: number
 }
 const notebooks = ref<Notebook[]>([])
+// Every cell is rendered by a `#cell-` slot (an icon, an inline edit, a badge), so these name the
+// HEADERS and say what each sorts by. `versionText` is a display string; the raw `version` sorts it.
+const NB_COLUMNS: SelectionColumn[] = [
+  { key: 'name',        label: 'Name',        sortable: true },
+  { key: 'description', label: 'Description', sortable: true },
+  { key: 'versionText', label: 'Ver',         sortable: true, sortKey: 'version' },
+  { key: 'scope',       label: 'Source',      sortable: true },
+]
 const loading = ref(false)
 const newName = ref('')
 const busy = ref(false)
@@ -231,31 +240,37 @@ defineExpose({ refresh })
       </button>
     </div>
 
-    <table class="nbt-table">
-      <thead>
-        <tr><th>Name</th><th>Description</th><th>Ver</th><th>Source</th><th class="nbt-actions-h">Actions</th></tr>
-      </thead>
-      <tbody>
-        <template v-for="nb in notebooks" :key="`${nb.scope}/${nb.file}`">
-        <tr>
-          <td class="nbt-name"><i class="pi pi-file" /> {{ nb.name }}</td>
+    <!-- The canonical table (docs/UI.md): `none` — a notebook row isn't "selected", the buttons act.
+         The description cell and the version-history panel come in through `#cell-description` and
+         `#row-detail`, so this file no longer carries a <thead>/<tbody> of its own. -->
+    <SelectionTable class="nbt-table" selection-mode="none" :columns="NB_COLUMNS" :rows="notebooks"
+                    id-key="file" sort-storage-key="cc.notebooks.sort" actions-label="Actions"
+                    :row-tooltip="nb => nb.scope === 'project' ? nb.file : `${nb.file} — shipped example, read-only`"
+                    :is-expanded="nb => expandedFile === nb.file">
+      <template #cell-name="{ row: nb }">
+        <span class="nbt-name"><i class="pi pi-file" /> {{ nb.name }}</span>
+      </template>
 
-          <!-- Description: inline-editable for project notebooks -->
-          <td class="nbt-desc">
-            <input v-if="isEditing(nb.file)" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
-                   type="text" @blur="commitEdit(nb)" @keyup.enter="commitEdit(nb)" @keyup.esc="cancelEdit" />
-            <span v-else :class="{ 'nbt-editable': nb.scope === 'project', 'nbt-muted': !nb.description }"
-                  @click="startEdit(nb)">
-              {{ nb.description || (nb.scope === 'project' ? 'Add a description…' : '—') }}
-            </span>
-          </td>
+      <!-- Description: inline-editable for project notebooks -->
+      <template #cell-description="{ row: nb }">
+        <span class="nbt-desc">
+          <input v-if="isEditing(nb.file)" :ref="focusEditInput" v-model="editValue" v-tooltip.right="'Enter to save, Esc to cancel'"
+                 type="text" @blur="commitEdit(nb)" @keyup.enter="commitEdit(nb)" @keyup.esc="cancelEdit" />
+          <span v-else :class="{ 'nbt-editable': nb.scope === 'project', 'nbt-muted': !nb.description }"
+                @click="startEdit(nb)">
+            {{ nb.description || (nb.scope === 'project' ? 'Add a description…' : '—') }}
+          </span>
+        </span>
+      </template>
 
-          <td class="nbt-ver">{{ nb.scope === 'project' && nb.version ? `v${nb.version}` : '—' }}</td>
-          <td>
-            <span class="nb-badge" :class="`scope-${nb.scope}`">{{ nb.scope }}</span>
-          </td>
+      <template #cell-versionText="{ row: nb }">
+        <span class="nbt-ver">{{ nb.scope === 'project' && nb.version ? `v${nb.version}` : '—' }}</span>
+      </template>
+      <template #cell-scope="{ row: nb }">
+        <span class="nb-badge" :class="`scope-${nb.scope}`">{{ nb.scope }}</span>
+      </template>
 
-          <td class="nbt-actions">
+      <template #actions="{ row: nb }">
             <a v-if="serverRunning" class="cc-btn cc-btn-ghost" :href="openUrl(nb)" target="_blank"
                rel="noopener" v-tooltip.top="'Open in Pluto'"><i class="pi pi-external-link" /></a>
             <button v-else class="cc-btn cc-btn-ghost" disabled
@@ -278,13 +293,12 @@ defineExpose({ refresh })
             <ConfirmDeleteButton v-if="nb.scope === 'project'" :disabled="busy" title="Delete"
                     :armed-title="serverRunning ? 'Server running — close this notebook in Pluto first, then click to confirm' : 'Click again to confirm'"
                     @confirm="remove(nb)" />
-          </td>
-        </tr>
+      </template>
 
-        <!-- Version history / restore panel -->
-        <tr v-if="expandedFile === nb.file" class="nbt-history-row">
-          <td colspan="5">
-            <div class="nbt-history cc-row">
+      <!-- Version history / restore panel. The TABLE renders the row; WHICH notebook is open stays
+           this component's state (`expandedFile`), so nothing about expansion moved. -->
+      <template #row-detail="{ row: nb }">
+        <div class="nbt-history cc-row">
               <span v-if="snapsLoading" class="nbt-muted">Loading history…</span>
               <span v-else-if="!snapshots.length" class="nbt-muted">
                 No snapshots yet — click <i class="pi pi-camera" /> to freeze this version.
@@ -311,48 +325,35 @@ defineExpose({ refresh })
                           : `Keep only the current version (v${nb.version}) — delete older snapshots`">
                   <i class="pi pi-filter" /> {{ confirmingPrune === nb.file ? 'Confirm prune' : 'Prune' }}
                 </button>
-              </template>
-            </div>
-          </td>
-        </tr>
-        </template>
-        <tr v-if="!notebooks.length && !loading">
-          <td colspan="5" class="nbt-empty cc-muted">No notebooks yet — add one, or duplicate an example.</td>
-        </tr>
-      </tbody>
-    </table>
+          </template>
+        </div>
+      </template>
+
+      <template #empty>
+        <span v-if="!loading" class="cc-muted">No notebooks yet — add one, or duplicate an example.</span>
+      </template>
+    </SelectionTable>
   </div>
 </template>
 
 <style scoped>
 .nbt-add { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .nbt-add input { flex: 0 1 240px; }
-.nbt-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-lg); }
-/* `vertical-align: middle` is the house rule for table rows (ImageTable / ProjectPanel /
-   FileBrowser all set it). Without it cells align on the FIRST BASELINE, so as soon as one cell
-   wraps — a two-line description here — every other cell sticks to the top and the row reads as
-   broken. */
-.nbt-table th, .nbt-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--cc-border); vertical-align: middle; }
-.nbt-table th { color: var(--cc-text-dim); font-weight: 600; }
+/* header, borders, padding, hover and the empty row are SelectionTable's now. The font size is this
+   table's own — a notebook list is read, not scanned for numbers. */
+.nbt-table { width: 100%; font-size: var(--cc-fs-lg); }
 .nbt-name { white-space: nowrap; }
 .nbt-desc input { width: 100%; }
 .nbt-editable { cursor: text; }
 .nbt-muted { color: var(--cc-text-dim); font-style: italic; }
 .nbt-ver { white-space: nowrap; color: var(--cc-text-dim); }
-.nbt-actions-h { text-align: right; }
-/* A normal table CELL, right-aligned — same as ProjectPanel's `.col-actions`. It must NOT be
-   `display: flex`: that takes the <td> out of the table layout, so it stops sharing the row's
-   height and vertical-align, which is the other half of the ragged-row bug. `.cc-btn` is already
-   inline-flex, so the buttons sit in a row on their own; spacing via margin, not `gap`. */
-.nbt-actions { white-space: nowrap; text-align: right; }
-.nbt-actions .cc-btn { padding: .25rem .45rem; }
-/* spaces EVERY control, not just `.cc-btn` — the delete control's root is `.cc-del`
-   (ConfirmDeleteButton), so a `.cc-btn + .cc-btn` rule would leave the trash icon flush. */
-.nbt-actions > * + * { margin-left: .3rem; }
+/* The actions CELL is SelectionTable's `.sel-actions` now (right-aligned, nowrap, and deliberately
+   not `display:flex`, which would take the <td> out of the table layout). What stays is only the
+   denser button padding this table wants — five controls per row is more than most. */
+.nbt-table :deep(.sel-actions) .cc-btn { padding: .25rem .45rem; }
 .nbt-danger { color: #f85149; }
 .nbt-active { color: #58a6ff; }
-.nbt-empty { text-align: center; padding: 1rem; }   /* + .cc-muted */
-.nbt-history-row td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
+.nbt-table :deep(.sel-detail-row) td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
 .nbt-history { font-size: var(--cc-fs-md); }
 .nbt-hist-label { color: var(--cc-text-dim); }
 .nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */

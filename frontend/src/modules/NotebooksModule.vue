@@ -133,7 +133,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 </script>
 
 <template>
-  <ModulePage class="notebooks-page" title="Notebooks" icon="pi pi-book">
+  <ModulePage class="notebooks-page">
     <div v-if="!hasProject" class="nb-empty cc-empty-inline">
       <i class="pi pi-lock" /> Open or create a project first.
     </div>

@@ -2385,6 +2385,143 @@ end
     @test !_valid_movie_name("has space.mp4")
 end
 
+# ── Movie registry (settings/movies.json) ─────────────────────────────────────
+# The registry DECORATES the movies dir; the directory listing is the truth
+# (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 1). What is worth pinning is the reconciliation, which
+# is the part with a wrong answer available: an entry whose file is gone must disappear rather than
+# render a row that plays nothing, and an entry older than its file must be flagged rather than offer
+# a config that did not produce those bytes.
+@testset "API: movie registry" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTMOV"
+        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        write(joinpath(mdir, "a.mp4"), "a")
+        write(joinpath(mdir, "b.mp4"), "b")
+
+        # ── a project with no registry reads exactly as it did before one existed
+        ms = movies_with_meta(uid)
+        @test Set(m.name for m in ms) == Set(["a.mp4", "b.mp4"])
+        @test all(m -> m.displayName == "" && !m.starred && isempty(m.tags) &&
+                       m.producedBy == "" && !m.hasConfig && !m.configStale, ms)
+
+        # ── the user-owned fields patch INDEPENDENTLY: setting tags must not clear a star
+        @test _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"a.mp4", "starred"=>true))[1] == 200
+        @test _post(api_movies_meta_set,
+                    Dict("projectUid"=>uid, "name"=>"a.mp4", "tags"=>["figure 2", "figure 2", " "]))[1] == 200
+        a = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
+        @test a.starred && a.tags == ["figure 2"]        # deduped, blanks dropped
+
+        # a display name never touches the file
+        _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"a.mp4", "displayName"=>"  Day 3  CNO "))
+        a = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
+        @test a.displayName == "Day 3 CNO"               # trimmed, inner whitespace collapsed
+        @test isfile(joinpath(mdir, "a.mp4"))
+
+        # ── guards: traversal and a movie that doesn't exist are both "no such movie", and the
+        #    offending names come BACK, so a caller can say which of a selection it could not touch
+        st, body = _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"../x.mp4"))
+        @test st == 404 && JSON3.read(body).rejected == ["../x.mp4"]
+        @test _post(api_movies_meta_set, Dict("projectUid"=>uid, "name"=>"nope.mp4"))[1] == 404
+        @test _post(api_movies_delete,   Dict("projectUid"=>uid, "name"=>"../a.mp4"))[1] == 404
+
+        # ── BULK: one call, one read-modify-write. A client looping N requests would rewrite the
+        #    registry N times, and two in flight at once lose one side's edit.
+        write(joinpath(mdir, "c.mp4"), "c")
+        # addTags is a set operation — it must not wipe tags a movie already carries ("figure 2" on a)
+        st, body = _post(api_movies_meta_set,
+                         Dict("projectUid"=>uid, "names"=>["a.mp4", "c.mp4"], "addTags"=>["cohort 1"]))
+        @test st == 200
+        byname = Dict(m.name => m for m in movies_with_meta(uid))
+        @test byname["a.mp4"].tags == ["figure 2", "cohort 1"]
+        @test byname["c.mp4"].tags == ["cohort 1"]
+        # …and removeTags takes one back out without touching the others
+        _post(api_movies_meta_set, Dict("projectUid"=>uid, "names"=>["a.mp4"], "removeTags"=>["figure 2"]))
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).tags == ["cohort 1"]
+        # a bulk call carries the valid names through and reports the rest
+        st, body = _post(api_movies_meta_set,
+                         Dict("projectUid"=>uid, "names"=>["c.mp4", "ghost.mp4"], "starred"=>true))
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.names == ["c.mp4"] && d.rejected == ["ghost.mp4"]
+        # a display name identifies ONE movie, so it is not applied across a selection
+        _post(api_movies_meta_set, Dict("projectUid"=>uid, "names"=>["a.mp4","c.mp4"], "displayName"=>"X"))
+        @test all(m -> m.displayName != "X", movies_with_meta(uid))
+        # bulk delete removes every named file in one pass
+        st, body = _post(api_movies_delete, Dict("projectUid"=>uid, "names"=>["c.mp4", "ghost.mp4"]))
+        @test st == 200 && JSON3.read(body).deleted == ["c.mp4"]
+        @test !isfile(joinpath(mdir, "c.mp4"))
+
+        # ── config banking + the stale rule
+        register_movie!(uid, "b.mp4"; produced_by = "batch",
+                        config = Dict("fps" => 15), config_kind = "look")
+        b = only(filter(m -> m.name == "b.mp4", movies_with_meta(uid)))
+        @test b.producedBy == "batch" && b.hasConfig && b.configKind == "look" && !b.configStale
+        # Re-recording replaces the bytes under an entry that stays put, and the config then no longer
+        # describes the file. Aged by rewinding the ENTRY rather than the file's mtime — setting an
+        # mtime portably is not something Julia offers, and the rule is a comparison either way.
+        let reg = _read_movies_registry(uid)
+            reg["b.mp4"]["recordedAt"] = time() - 3600
+            _write_movies_registry!(uid, reg)
+        end
+        @test only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).configStale
+
+        # …and a stamp that is not unix seconds (absent, or an ISO string) cannot be vouched for. The
+        # units matter: `string(Dates.now())` is naive LOCAL time, which `datetime2unix` would read as
+        # UTC and put hours in the FUTURE — on UTC+10 nothing would ever read as stale.
+        for bad in (nothing, "2020-01-01T00:00:00")
+            let reg = _read_movies_registry(uid)
+                bad === nothing ? delete!(reg["b.mp4"], "recordedAt") : (reg["b.mp4"]["recordedAt"] = bad)
+                _write_movies_registry!(uid, reg)
+            end
+            @test only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).configStale
+        end
+        register_movie!(uid, "b.mp4"; produced_by = "batch",
+                        config = Dict("fps" => 15), config_kind = "look")   # re-stamp → fresh again
+        @test !only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).configStale
+
+        # a re-record MERGES: the user's name/star/tags outlive the new bytes. Asserted as SURVIVAL
+        # against whatever they are now — a literal here would just re-encode the edits made above and
+        # break every time one of them changes, which is not what this is pinning.
+        before = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
+        register_movie!(uid, "a.mp4"; produced_by = "viewer",
+                        config = Dict("look" => Dict("channels" => Dict("CD3" => "green"))),
+                        config_kind = "look")
+        a = only(filter(m -> m.name == "a.mp4", movies_with_meta(uid)))
+        @test a.displayName == before.displayName && !isempty(a.displayName)
+        @test a.starred == before.starred && a.tags == before.tags && !isempty(a.tags)
+        @test a.producedBy == "viewer" && a.configKind == "look"
+
+        # the full entry (with the config the list omits) comes from the meta GET
+        st, body = api_movies_meta_get(HTTP.Request("GET", "/api/movies/meta?projectUid=$uid&name=a.mp4"))
+        @test st == 200
+        @test haskey(JSON3.read(body).entry, :config)
+
+        # ── delete removes the file AND the entry
+        @test _post(api_movies_delete, Dict("projectUid"=>uid, "name"=>"a.mp4"))[1] == 200
+        @test !isfile(joinpath(mdir, "a.mp4"))
+        @test Set(m.name for m in movies_with_meta(uid)) == Set(["b.mp4"])
+
+        # ── an entry whose file vanished outside the app (a manual rm, a moved folder) is PRUNED by
+        #    the listing pass, not rendered as a row that plays nothing
+        write(joinpath(mdir, "ghost.mp4"), "g")
+        register_movie!(uid, "ghost.mp4"; produced_by = "batch")
+        @test haskey(_read_movies_registry(uid), "ghost.mp4")
+        rm(joinpath(mdir, "ghost.mp4"))
+        @test Set(m.name for m in movies_with_meta(uid)) == Set(["b.mp4"])
+        @test !haskey(_read_movies_registry(uid), "ghost.mp4")
+
+        # ── a corrupt registry degrades to "no metadata", never to a broken page
+        write(joinpath(tmp, uid, "settings", "movies.json"), "{not json")
+        @test Set(m.name for m in movies_with_meta(uid)) == Set(["b.mp4"])
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 # ── Napari: branch-labels payload parsing ─────────────────────────────────────
 # The napari open + show-labels handlers accept an `allBranchLabels` dict in parallel to `allLabels`
 # so skeleton labels from segment.branching are shown as a distinct layer type (`({vn}) Branches`),
@@ -3244,7 +3381,8 @@ end
         "/api/images/stores",
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
-        "/api/movies", "/api/napari/gpu",
+        "/api/movies", "/api/movies/meta",
+        "/api/napari/gpu",
         "/api/napari/status", "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
@@ -3296,7 +3434,9 @@ end
         "/api/napari/show-labels",
         "/api/napari/show-populations", "/api/napari/show-tracks",
         "/api/napari/start-selection", "/api/napari/stop-selection",
-        "/api/napari/view-state", "/api/notebooks/build-sysimage",
+        "/api/napari/view-state",
+        "/api/movies/delete", "/api/movies/meta",
+        "/api/notebooks/build-sysimage",
         "/api/notebooks/create", "/api/notebooks/delete",
         "/api/notebooks/describe", "/api/notebooks/duplicate",
         "/api/notebooks/launch", "/api/notebooks/prune",
@@ -3360,7 +3500,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 71 && length(POST_ROUTES) == 101
+    @test length(GET_ROUTES) == 72 && length(POST_ROUTES) == 103
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

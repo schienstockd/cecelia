@@ -165,7 +165,9 @@ export function safeNamePart(raw: string): string {
 
 // ── seeding (so the config isn't blank) ────────────────────────────────────────
 // napari view snapshot shape we read (subset of capture_view_state): per-layer colormap + visibility.
-interface ViewStateLike { layers?: Record<string, { colormap?: unknown; visible?: unknown }> }
+/** The part of a napari view state this reads. Exported so a caller can TYPE its fetch instead of
+ *  casting through `never` at the call site — two sites now read a live view into a config. */
+export interface ViewStateLike { layers?: Record<string, { colormap?: unknown; visible?: unknown }> }
 
 /** Seed a config from the FIRST selected image's live napari view: which channels are shown + their
  *  colormap, and which overlays are present (tracks / track-clusters / population points). Channel layers

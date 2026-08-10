@@ -233,10 +233,24 @@ function handle_movie_record(ws, data)
         ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
         return
     end
+    # What produced this movie, banked into settings/movies.json once the bytes land (Phase 4 of
+    # docs/todo/MOVIE_MANAGEMENT_PLAN.md). Assembled HERE rather than inside the recorder, so the
+    # recorder keeps knowing nothing about the request shape. `look` is the viewer's live channels +
+    # overlays, seeded frontend-side from the view state it already reads for the title card; the
+    # keyframes ARE the config for an animation.
+    movie_config = Dict{String,Any}(
+        "fps" => fps, "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix,
+        "titleCard" => tc, "valueNames" => value_names, "labelValueNames" => label_vns,
+        "branchValueNames" => branch_vns, "labelContour" => contour,
+        "show3D" => show_3d, "zSlice" => z_slice,
+        "compareLayout" => layout, "compareContrast" => get(data, :compareContrast, ""),
+        "showTimestamp" => show_ts, "showScaleBar" => show_sb,
+        "look" => get(data, :look, nothing), "keyframes" => keyframes)
     _batch_register!(task_id)
     @async try
         run_single_movie(task_id, project_uid, image_uid; fps = fps, size_x = size_x, size_y = size_y,
                          suffix = suffix, title_card = card, keyframes = keyframes,
+                         movie_config = movie_config,
                          value_names = value_names, label_value_names = label_vns,
                          branch_value_names = branch_vns,
                          label_contour = contour, show_3d = show_3d, z_slice = z_slice,
@@ -273,10 +287,14 @@ function handle_movie_batch(ws, data)
         ws_status(ws, task_id, "failed", ""; fun="movie:batch", pool="viewer")
         return
     end
+    # The authored config IS the batch's provenance — one config, one movie per image (Phase 4).
+    movie_config = Dict{String,Any}("config" => config, "fileAttrs" => file_attrs, "fps" => fps,
+                                    "sizeX" => size_x, "sizeY" => size_y, "suffix" => suffix)
     _batch_register!(task_id)
     @async try
         run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps;
-                         size_x = size_x, size_y = size_y, suffix = suffix)
+                         size_x = size_x, size_y = size_y, suffix = suffix,
+                         movie_config = movie_config)
     catch e
         @warn "batch movies crashed" exception = e
         ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")

@@ -20,7 +20,7 @@ import MovieOutputControls from './MovieOutputControls.vue'
 import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import { movieSizeParams } from '../utils/movieSize'
-import { clampContour } from '../utils/batchMovie'
+import { clampContour, seedConfigFromViewState, type ViewStateLike } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
@@ -321,22 +321,34 @@ async function recordTimelapse() {
   if (!uid || !projectUid || recording.value || recordingTask.value) return
   recording.value = true
   try {
-    // Title card (Phase H): capture the CURRENT view state (no PNG) and build the payload via the
-    // SHARED buildTitleCard — the same path the animation page uses. Channels are added by the recorder
-    // from the live viewer, so the frontend supplies only title + non-channel sections.
+    // The live view state, read ONCE and used for two things: the title card's non-channel sections,
+    // and the `look` banked with the movie so it can be remade later
+    // (docs/todo/MOVIE_MANAGEMENT_PLAN.md Decision 7). It used to be fetched only when the title card
+    // was on — but the look has to be captured whether or not the movie carries a card, and this
+    // recorder records what is ON SCREEN, so the view state is the only place that look exists.
+    let snapshot: ViewStateLike | null = null
+    try {
+      const vsr = await fetch('/api/napari/view-state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
+      if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: ViewStateLike }).viewState ?? null
+    } catch { /* best-effort — the card still renders, the look is simply not banked */ }
+
+    // Title card (Phase H): built via the SHARED buildTitleCard — the same path the animation page
+    // uses. Channels are added by the recorder from the live viewer, so the frontend supplies only
+    // title + non-channel sections.
+    const colourBy  = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''
+    const overrides = (currentSetUid.value && colourBy) ? settings.getColourOverrides(currentSetUid.value, colourBy) : {}
     let titleCard: TitleCardPayload | undefined
     if (movieTitleCard.value.enabled) {
-      const colourBy  = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''
-      const overrides = (currentSetUid.value && colourBy) ? settings.getColourOverrides(currentSetUid.value, colourBy) : {}
-      let snapshot: { layers?: Record<string, unknown> } | null = null
-      try {
-        const vsr = await fetch('/api/napari/view-state', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
-        if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: { layers?: Record<string, unknown> } }).viewState ?? null
-      } catch { /* best-effort — card still renders title + channels */ }
       titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
         { note: movieTitleCard.value.note, durationSec: movieTitleCard.value.durationSec, colourBy, colourOverrides: overrides })
     }
+    // The look, in the SAME shape the Batch page authors — one config kind, so a recorded look edits
+    // on the page built to edit looks. `seedConfigFromViewState` is the existing live-view → config
+    // reader ("fill from view" on that page); the colour-by is not in the layer names, so it rides
+    // along from the per-set setting the overlays were actually drawn with.
+    const look = { ...seedConfigFromViewState(snapshot, napariImage.value?.channelNames ?? []),
+                   ...(colourBy ? { colourBy } : {}) }
     const versions = compareVersions.value
     const shape    = compareShapeNow.value
     const t = taskStore.add({
@@ -360,6 +372,9 @@ async function recordTimelapse() {
       ...(movieBranchValueNames.value.length ? { branchValueNames: movieBranchValueNames.value } : {}),
       compareLayout: compareLayout.value, compareContrast: compareContrast.value,
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
+      // banked with the movie, not acted on by the recorder — it already records this look by
+      // recording the screen (MOVIE_MANAGEMENT_PLAN.md Phase 4)
+      look,
       ...movieSizeParams(movieSizeX.value, movieSizeY.value),
     })
   } catch (e) {

@@ -257,7 +257,7 @@ async function render() {
 </script>
 
 <template>
-  <ModulePage title="Animation" layout="scroll">
+  <ModulePage layout="scroll">
     <template #controls>
       <!-- Movie options behind the gear, the same component the viewer's recorder uses -->
       <MovieOptionsButton>

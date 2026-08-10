@@ -276,7 +276,9 @@ does **not** re-open an image that's already shown (`do_open`/`already_open`) �
 channel contrast (`add_image contrast=True`), which would wipe contrast the user set live but never saved.
 So **preview** (`do_open=false`) applies to the open image without touching contrast, and a batch skips
 re-opening its first image when that's the one already open. Other batch images take contrast from their
-saved layer props (Decision 4) — turn on layer-prop auto-save to persist contrast you tune per image. Config:
+saved layer props (Decision 4), which layer-prop auto-save writes — **on by default**, because this path
+force-loads them and with the autosave off there was never a file to load
+(`docs/todo/MOVIE_MANAGEMENT_PLAN.md` Decision 8). Config:
 `{ valueName, channels:{name→colormap}, colourBy, showTracks, trackValueNames, tailWidth,
 showGatedTracks, showTrackclust, showPopulations, popType, pointsSize, colourLabels, colourOverrides,
 tStart, tEnd }`. `POST /api/napari/apply-movie-config` previews it on the open image (no recording).

@@ -25,6 +25,7 @@ include("update_api.jl")
 include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
+include("movies_api.jl")     # movie registry; builds on routes.jl's movies-dir + name guard
 include("optical_flow_api.jl")
 include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
@@ -322,6 +323,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/tracking/motion-dims" => (req, body_bytes) -> (api_motion_dims(req)),
     "/api/storage/summary" => (req, body_bytes) -> (api_storage_summary(req)),
     "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
+    "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -380,6 +382,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/create" => (req, body_bytes) -> (api_notebooks_create(body_bytes)),
     "/api/notebooks/describe" => (req, body_bytes) -> (api_notebooks_describe(body_bytes)),
     "/api/notebooks/delete" => (req, body_bytes) -> (api_notebooks_delete(body_bytes)),
+    "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_set(body_bytes)),
+    "/api/movies/delete" => (req, body_bytes) -> (api_movies_delete(body_bytes)),
     "/api/notebooks/duplicate" => (req, body_bytes) -> (api_notebooks_duplicate(body_bytes)),
     "/api/notebooks/revise" => (req, body_bytes) -> (api_notebooks_revise(body_bytes)),
     "/api/notebooks/snapshot" => (req, body_bytes) -> (api_notebooks_snapshot(body_bytes)),

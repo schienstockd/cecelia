@@ -64,5 +64,20 @@ export function useColumnResize(opts: {
 
   onBeforeUnmount(onEnd)   // release listeners if unmounted mid-drag
 
-  return { widths, widthOf, onColumnResizeStart }
+  /**
+   * Back to the caller's defaults, and forget the stored ones.
+   *
+   * A drag can leave a column at 40px in a corner of a wide table, and the only ways back were to
+   * find that edge again or to clear localStorage by hand. It also matters after a column key
+   * CHANGES: a stored width then belongs to a column that no longer exists, and there is nothing to
+   * drag to be rid of it.
+   */
+  function resetWidths() {
+    widths.value = {}
+    if (opts.storageKey) {
+      try { localStorage.removeItem(opts.storageKey) } catch { /* ignore */ }
+    }
+  }
+
+  return { widths, widthOf, onColumnResizeStart, resetWidths }
 }

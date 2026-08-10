@@ -22,7 +22,7 @@ import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, type BatchMovieCfg, type TitleCardCfg, type ViewStateLike } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          segmentationsFromConfig, compareShape,
@@ -224,9 +224,9 @@ async function fillFromView(force = false) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }),
     })
     if (res.ok) {
-      const j = await res.json() as { viewState?: unknown; imageUid?: string }
+      const j = await res.json() as { viewState?: ViewStateLike; imageUid?: string }
       // auto: only trust the live view when the OPEN image is the first selected one
-      if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState as never, rep.channelNames ?? [])
+      if (force || j.imageUid === first) seed = seedConfigFromViewState(j.viewState, rep.channelNames ?? [])
     }
   } catch { /* fall through to the palette default */ }
   // no usable live channels → default palette so the picker isn't blank
