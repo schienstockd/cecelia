@@ -200,6 +200,24 @@ matches how figures are actually made; F2 is the advanced follow-on.
     sync napari, update-from-napari, per-keyframe reset + "edited" badge, drag-reorder, timepoint (h/min),
     fps 1–40, amber selection (`--cc-selected`). Decision (2026-07-14): **timeline, not a node graph** —
     a movie is 1-D, so the graph's branching buys nothing.
+  - **~~A module page, not a standalone one~~ — DONE (2026-08-10):** the page was built on `ModulePage`
+    and worked on whatever image napari happened to have open, so its empty state ("open an image in
+    napari to start capturing keyframes") could only be acted on by leaving. It is now `ModuleLayout`
+    like `/batch-movies`: image table (single-select) on the left, controls in the side panel
+    (`modules/animation/AnimationPanel.vue`, with this module's task list as its second half), the
+    timeline in the standard `#plots` canvas (`AnimationTimeline.vue`), and the shared reading logic in
+    `utils/animationTimeline.ts`. The `MovieOptionsButton` gear went with it — a panel can show its
+    options rather than hide them. The page's image = the selection, falling back to the napari one;
+    Capture/Update need the two to agree, and the panel offers an Open button when they don't.
+  - **~~Every cell is a toggle, and the labels resize~~ — DONE (2026-08-10):** a layer captured LATER
+    (turn on tracks, capture a fourth keyframe) has no entry in the earlier keyframes, and those cells
+    could not be clicked. A keyframe is JSON and the render applies layer props by NAME, so there is
+    nothing to forbid it — `cellToggle` writes the entry, seeded from the first keyframe that has the
+    layer so its colormap/contrast come along. **The third state is "no entry", not "hidden":**
+    `apply_view_state` skips names the snapshot doesn't carry, so at render time such a layer keeps
+    whatever the previous keyframe left it as — the matrix draws it dashed to say so. The row-label
+    column is drag-resizable and persisted (`useColumnResize`, `cc.anim.labelw`); an overlay's napari
+    name is long by construction and a fixed column ellipsised exactly the part naming which one.
 
 ## H. Movie title card (prepended description slide) — IN PROGRESS
 
@@ -291,7 +309,11 @@ newest-first) and plays the selected one in a **native `<video>`** element — d
 library. Playback **speed** (0.25–4×), **zoom** (1–8×), **autoplay-on-select** and **loop** persist
 globally in `stores/settings.ts` (`moviesPlaybackRate`/`moviesZoom`/`moviesAutoplay`/`moviesLoop`);
 `<video>` resets `playbackRate` on each new source, so it's re-applied on `loadedmetadata` (which also
-`.play()`s when autoplay is on, since the native attr only fires on first load).
+`.play()`s when autoplay is on, since the native attr only fires on first load). Those four controls
+plus Refresh live **in the side panel above the movie list**, not in a page header (Dominik,
+2026-08-10): they are what you reach for while picking a movie, and a header row of four options
+stretched across an otherwise-empty page read as stray chrome. Both empty states moved into the player
+stage in the same change, so the panel — and its Refresh — stays reachable in a project with no movies.
 
 Zoom is **layout-based**, not a CSS transform: the video gets a concrete px box (fit-to-viewport ×
 zoom, from its intrinsic size + a `ResizeObserver` on the viewport), so a zoomed movie grows the

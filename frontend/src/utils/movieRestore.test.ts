@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote,
+import { restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote, restoreTargetSet,
          RESTORE_ROUTE } from './movieRestore'
 
 describe('restoreKind', () => {
@@ -230,6 +230,29 @@ describe('missingRefs — the dangling reference, which is the failure that bite
 
   it('ignores an empty colour-by — none is a valid choice, not a dead reference', () => {
     expect(missingRefs({ colourBy: '' }, avail)).toEqual([])
+  })
+})
+
+describe('restoreTargetSet — a restore switches sets rather than asking you to', () => {
+  it('lands in the set holding the images, whatever is active', () => {
+    expect(restoreTargetSet(['setB', 'setB'], 'setA')).toBe('setB')
+  })
+
+  // Two sets have no single answer, so the page keeps the one it is on and says what it dropped.
+  it('keeps the active set when the images span two', () => {
+    expect(restoreTargetSet(['setB', 'setC'], 'setA')).toBe('setA')
+  })
+
+  // An old movie that banked no image, or one whose images have since been deleted.
+  it('keeps the active set when nothing is known', () => {
+    expect(restoreTargetSet([], 'setA')).toBe('setA')
+    expect(restoreTargetSet([null, undefined], 'setA')).toBe('setA')
+  })
+
+  // The animation page passes no fallback: one image, and if it is gone there is nowhere to land —
+  // '' is falsy, which is the caller's "say so" branch.
+  it('is empty with no fallback and no home', () => {
+    expect(restoreTargetSet([null], '')).toBe('')
   })
 })
 

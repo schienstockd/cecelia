@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The shell for a STANDALONE module page — one that isn't built on `ModuleLayout` (the image-table
-// family). Fixes the page frame so Notebooks / Animation / Movies read as one app: page-level controls
-// on one row, content below.
+// family). Fixes the page frame so Notebooks / Movies read as one app: page-level controls on one row,
+// content below. (Animation was the third and has since moved to `ModuleLayout` — a page that works on
+// one image should let you pick it; see docs/UI.md.)
 //
 // Extracted because the three had each grown their own: three h1 sizes (1.1 / 1.15 / 1.4rem), two
 // paddings, two subtitle widths, and `.nb-header` / `.anim-head` / `.mov-head` doing the same

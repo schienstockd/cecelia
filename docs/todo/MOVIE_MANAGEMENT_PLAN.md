@@ -212,6 +212,12 @@ Three things the earlier phases had not noticed, all fixed here rather than work
   `{viewState, steps}` — everything the recorder needs and none of what the timeline needs. A parallel
   `keyframeMeta` (thumbnail, title, seconds) now rides along, which costs a few hundred bytes rather
   than duplicating every view state. An animation from before this restores as bare views, and says so.
+- **A restore settles WHICH SET first, from the movie's own images** (`restoreTargetSet`), and switches
+  to it. Both pages store per set — the batch's config and output, both pages' image selection — and
+  both originally checked the ACTIVE set, so a movie recorded in another set (or a page with no set
+  active yet) restored the config, skipped the selection, and reported *"switch to its set to see it"*
+  (Dominik, 2026-08-10). One click should repair what it can. Images spanning two sets have no single
+  answer: the active set stands and the difference is reported.
 - **The timeline is per-image, so a restore replaces ONE image's keyframes**, not the store. Written to
   the animation store's refs directly rather than through `load()` — that one exists for hydrating from
   the project-open response and deliberately suppresses the autosave, which is right there and wrong

@@ -202,7 +202,7 @@ would drift.
 
 Both recorders take an explicit `size_x`/`size_y` in pixels. **Blank means the napari canvas size**,
 which is the default and what every movie was before the fields existed. The three surfaces
-(`ViewerPanel`, `BatchMoviesPanel`, `AnimationModule`) share one control, `MovieOutputControls.vue`, and
+(`ViewerPanel`, `BatchMoviesPanel`, `AnimationPanel`) share one control, `MovieOutputControls.vue`, and
 show the live canvas size as the fields' placeholder so the default is a visible number.
 
 **Why not a multiplier.** A 1–3× `res` slider used to live here, tooltipped "resolution supersample".

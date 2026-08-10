@@ -177,8 +177,8 @@ is deliberately *not* checked: `surface + border + radius` is the shape of a car
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
 
-**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 15 of the 23 module
-pages are built on `ModuleLayout` and were already consistent. The 8 standalone ones were not: Notebooks,
+**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 16 of the 23 module
+pages are built on `ModuleLayout` and were already consistent. The standalone ones were not: Notebooks,
 Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
 two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under
 different names. (The h1 sizes escaped the size sweep because `findRawValues` exempts anything over 15px
@@ -186,6 +186,16 @@ as display type.) `ModulePage` fixes controls and spacing; `layout="flow|scroll|
 real axis — whether the page flows, scrolls itself, or is a full-height pane whose child scrolls. Per-page
 extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
 still applies).
+
+**A page whose work is per-image belongs on `ModuleLayout`, however it started.** Animation moved
+across (Dominik, 2026-08-10): as a standalone page it read whichever image napari happened to have
+open, so its empty state — *"open an image in napari to start capturing keyframes"* — could only be
+acted on by navigating to some other page, picking an image there, and coming back. The image table IS
+that action, and it carries the set bar, the filters and the eye with it. Which changes what the page's
+own chrome is for: with a side panel, the render options no longer need the `MovieOptionsButton` gear
+(that exists for the viewer, which has no panel), and the timeline goes in the standard `#plots` canvas.
+The test: if the page acts on one image, the table is the picker — do not invent a second one, and do
+not make "it's open elsewhere" a precondition the page cannot satisfy.
 
 **Do not write a page subtitle — or a page title.** All three carried a paragraph explaining the feature
 to a first-time reader: permanent noise on a screen its owner uses daily, and the clearest tell that a

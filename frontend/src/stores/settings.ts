@@ -20,6 +20,13 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariUpdateImage') === 'true'    // default false
   )
 
+  // Animation page: selecting a keyframe pushes its saved view into napari, so you SEE the snapshot
+  // (and can tweak it there and Update). Off by default — it drives the shared viewer, which is not
+  // what someone only reordering a timeline wants.
+  const animationSyncNapari = ref(
+    localStorage.getItem('cc.animationSyncNapari') === 'true'  // default false
+  )
+
   // Clean capture (E1): hide napari's baked scale bar + timestamp when taking a screenshot, for a clean
   // publication still (add a vector scale bar / timestamp externally). Applies to strip + animation
   // captures. Default false (keep the on-screen annotations). See docs/todo/ANIMATION_PLAN.md → E.
@@ -328,6 +335,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
+  watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
   watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
   watch(napariLabelsCache,        v => localStorage.setItem('cc.napariLabelsCache',        String(v)))
@@ -351,5 +359,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })

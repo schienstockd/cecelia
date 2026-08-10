@@ -22,6 +22,11 @@ export interface AnimSnapshot {
 
 export const useAnimationStore = defineStore('animation', () => {
   const snapshots = ref<AnimSnapshot[]>([])
+  // Which keyframe is highlighted. Here rather than in a component because the page is two of them —
+  // the timeline matrix does the selecting and the controls panel acts on it ("Update selected").
+  // Deliberately NOT persisted and not watched by the autosave below: it is a pointer at the current
+  // edit, not part of the animation.
+  const selectedId = ref<string | null>(null)
   const fps = ref(15)                    // output frame rate (per project)
   // output size in pixels (per project); null = the napari canvas size, which is the default. A `scale`
   // supersample lived here and was removed — see MovieOutputControls.vue.
@@ -92,5 +97,5 @@ export const useAnimationStore = defineStore('animation', () => {
     snapshots.value = arr
   }
 
-  return { snapshots, fps, sizeX, sizeY, suffix, titleCard, load, add, remove, move, reorder }
+  return { snapshots, selectedId, fps, sizeX, sizeY, suffix, titleCard, load, add, remove, move, reorder }
 })
