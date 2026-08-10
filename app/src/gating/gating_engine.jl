@@ -55,6 +55,21 @@ Derive membership for every population. `fetch_cols(cols::Vector{String})` must 
 function recompute!(m::PopulationMap, fetch_cols::Function)
     df = fetch_cols(_needed_columns(m))
     "label" in names(df) || error("recompute!: fetch_cols must return a `label` column")
+    # ── spatial axes: put the DATA in the same unit as the GATE, here and nowhere else ──
+    # Gate coordinates on a `centroid_x`/`_y`/`_z` axis are stored in µm (once the map says so), while
+    # the cell table always holds pixels (docs/DATAMODEL.md). Converting here — not in each caller's
+    # fetch closure — is deliberate: `recompute!` has SIX call sites, five of which build their own
+    # closure (gating_api, _pop_df, _pop_df_tracks, resolve_pops, bayesian_tracking, branching), so a
+    # per-caller conversion would drift and a population's members would depend on which code path
+    # resolved it. See docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 3.
+    #
+    # Only when the map is stamped "um" AND its image supplied a real pixel size: a legacy (unstamped)
+    # file holds pixel coordinates and must keep comparing against pixels, and an uncalibrated image has
+    # no µm to convert to. `scale_centroids!` is the one shared conversion; it is a no-op on a frame
+    # with no centroid columns, which is every intensity-only gate.
+    if m.spatial_unit == SPATIAL_UNIT_UM && m.physical_sizes !== nothing
+        df = scale_centroids!(copy(df), m.physical_sizes)   # copy: never mutate the caller's frame
+    end
     labels = df.label
     n = length(labels)
     cols = Set(names(df))
