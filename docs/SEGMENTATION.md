@@ -219,6 +219,34 @@ Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice +
 
 ---
 
+### Skipping the padding a drift correction added
+
+A drift-corrected canvas holds each frame at its own offset and zeroes the rest, and the whole
+z-stack goes to cellpose in **one** call (it stitches across z internally) — so the padding costs
+real GPU time and produces nothing. Measured across the stores on this machine: **28.2% fewer
+plane-frames** handed to cellpose overall, **63.6%** on the worst image (8 valid planes in a 22-plane
+canvas).
+
+Per timepoint the frame is narrowed to that frame's valid z span (`docs/ARCHITECTURE.md` → *The valid
+box*); tiling, cellpose, post-processing and nuc/cyto matching all run unchanged on the reduced
+stack. Only the **write** puts it back at its z offset, so the label store keeps its full shape with
+the skipped planes zero.
+
+- **A skip, never a crop.** Each frame sits at its own offset *because* the correction aligned them
+  in a shared canvas; cropping per frame would put them back out of register.
+- **Safe by construction.** A valid box is a contiguous `[start, stop)`, so narrowing z to it can only
+  drop LEADING/TRAILING planes. Interior planes inside the span survive, and the dropped ones are
+  all-zero — no labels for `stitch_threshold` to link across, so the stitching semantics inside the
+  span are unchanged rather than assumed to be.
+- **Ambiguity widens, never narrows** (`_valid_z_span`): no box, no Z, a degenerate range, or a span
+  under two planes all fall back to the whole stack. One plane is not meaningfully 3D. Missing cells
+  is a real cost; doing the work anyway is only the status quo.
+- **The label store records the span it segmented**, so a consumer knows those planes are zero
+  because nothing *ran* there, not because nothing was *found*.
+
+Nothing changes for a store that never padded — `read_valid_box` returns `None` and the whole stack
+is segmented, which is most images.
+
 ## Parameters (cellpose.json → cellpose.jl → cellpose.py)
 
 | Param | Type | Default | Notes |
