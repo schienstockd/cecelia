@@ -76,38 +76,13 @@ Related, and a bigger decision: **`PlutoUI` is not in `pluto/Project.toml`**. Ad
 manifests. Decide that separately.
 
 ### Ship a prebuilt Notebooks sysimage in the bundle (release optimisation)
-(1) **DONE** — build-on-demand: an **Enable fast plots** button on the Notebooks page builds
-`pluto/deps.so` in a background process, notebooks stay usable (slow-first-plot until it lands), and
-it's stamped so a package/Julia update marks it stale and surfaces a **Rebuild** button
-(`build-sysimage` route, `_classify_sysimage`, `pluto/sysimage_stamp.jl`, `launch.jl` freshness gate).
-Opt-in (a ~10 min build shouldn't auto-start). Self-contained, always correct, no CI needed.
-(2) **Remaining, optional** — once the constructor/pixi packaging pins Julia per platform, build the
-`-full` variant in CI and ship it in the bundle for the primary OSes so even the *first* open is
-instant. It falls through to (1) wherever no prebuilt image is present, and the stamp means a shipped
-image that predates the user's Julia/deps self-heals. Belongs with the packaging phase; not urgent —
-the on-first-run path already gives every user a fast cache after one build.
-
-### Zarr/dask processing rework (read-frame-once + cellpose batching)
-The whole-image RAM fix landed (drift/AF/cellpose/segmentation stream per timepoint/channel via the
-`zarr_utils` streaming writers). The follow-up perf/consolidation work is parked in
-`docs/todo/ZARR_STREAMING_PLAN.md`: Phase 1 = read each timepoint once into a bounded frame and tile
-in RAM (kills the per-tile disk over-reads that `fortify`-to-whole-RAM originally worked around);
-Phase 2 = batch cellpose `dn.eval` (GPU throughput, measure first); Phase 3 = cheap cleanups
-(centralize the napari byte-order fix; maybe merge the two tilers). Guardrail: only changes with a
-real measured benefit — the plan explicitly rejects a grand `map_over_zarr`, an `as_dask` sweep, and
-intra-task thread pools (Julia resource pools already parallelize across images).
-
-### Temporal downsampling / overlapping tracklets for behaviour (deferred)
-The old framework computed track measures on the fly, so HMM could push `skipTimesteps` /
-`subtrackOverlap` into celltrackR: a way to **downsample** tracks (e.g. treat 10s/frame data like
-30s/frame to compare across acquisition rates) and to generate **overlapping tracklets**. The new
-stack precomputes `live.cell.*` at native resolution (`track_measures.jl`), so these knobs were
-dropped from `behaviour.hmm_states` (they were no-ops). To restore the capability from a different
-angle, ideas to explore: (a) a track-measures variant that recomputes speed/angle over every k-th
-position (subtrack stride + overlap) and writes `live.cell.speed@kN` style columns the HMM can
-select; (b) a resampling step that emits overlapping sub-tracks as first-class rows; (c) a
-per-image frame-interval normalisation so cross-rate comparison needs no manual skip. Settle the
-storage/UX before building. Not urgent.
+Build-on-demand already covers every user: the Notebooks page's **Enable fast plots** builds
+`pluto/deps.so` in the background and re-stamps it when Julia/deps move. What is left is the
+packaging half — once the constructor/pixi packaging pins Julia per platform, build the `-full`
+variant in CI and ship it for the primary OSes so even the *first* open is instant. It falls through
+to the on-demand path wherever no prebuilt image is present, and the freshness stamp means a shipped
+image that predates the user's Julia/deps self-heals. Belongs with the packaging phase in
+`docs/ROADMAP.md`; not urgent, since one on-demand build already gives every user a fast cache.
 
 ### Set-scope / incremental node subprocesses not killed on chain cancel
 The per-image cancel path kills running subprocesses. Set-scope (`_run_set_scope_node!`)
@@ -118,40 +93,23 @@ set-scope subprocess task exists yet (only mock/plot tasks), so impact is curren
 first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
 path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
 
-### Port `createBranching` (skeleton/branch analysis) from the old R version
-Skeletonise a segmentation into a branch/path network for fibrous non-cell structures (collagen/SHG,
-nerves, FRC reticular networks). Full plan is parked in `docs/todo/BRANCHING_PLAN.md` (audited
-2026-07-27: ILEE_CSK vendoring dropped in favour of `skimage.feature.structure_tensor`; Decision 6
-resolved via a dedicated `branch_labels` field; Decision 2 cost re-measured against the current
-`ACCEPT_TOKENS`/`POP_MAP_SUFFIX` dispatch as ~10 code sites + ~10 test assertions). In progress on
-`feat/branching-port`.
+### Segmentation still runs on the empty planes a drift correction padded in
+Drift correction expands the canvas and pads with zeros. Measured 2026-07-31 on `4kS67f`
+(201×20×544×548), **z 0–2 and z 16–20 are all-zero across every channel** — 8 of 21 planes, and the
+padding MOVES per timepoint since the shift differs per frame. A cellpose run segments all 21, so
+roughly **38% of the GPU time on that image produces nothing**, and measurement/tracking then carry
+the empty planes too.
 
-### A third of a drift-corrected stack can be empty, and every task still processes it
-Measured 2026-07-31 on `k3Tx90` (project `kSUFux`… actually `4kS67f`, 201×20×544×548): drift correction
-expands the canvas and pads with zeros, and on that image **z 0–2 and z 16–20 are all-zero across every
-channel** — 8 of 21 planes. `EaMaVq` is the same (z 0–6 empty at t=0). The padding also MOVES per
-timepoint, since the shift differs per frame.
-
-Nothing downstream knows. A cellpose run segments all 21 planes including the 8 empty ones, so on this
-image roughly **38% of the GPU time produces nothing**, and measurement/tracking then carry the empty
-planes too. Surfaced by the task preview, where aiming at a padded plane returns "0 cells" and looks
-exactly like a parameter problem (see `docs/todo/TASK_PREVIEW_PLAN.md`).
-
-**The mechanism now exists — #435 landed `zarr_utils.read_valid_box`**, so a consumer can ask which part
-of a store is data instead of re-deriving it, per timepoint, at any pyramid level, with `None` meaning
-"all valid" for every store that never padded. That replaces this item's original suggestion (record an
-empty-plane COUNT as QC): counting only made the cost visible, the box lets a task act on it. It also
-works on a store that is still staged (verified) — so a producer can write the box during its own run.
-
-What is left is the consuming decision, which the box does not make for you:
+`zarr_utils.read_valid_box` (#435) already answers *which part of a store is data*, per timepoint, at
+any pyramid level, and the preview worker and the smoothing/drift runners consume it. What is left is
+only the decision to skip that work in segmentation:
 - **Is skipping safe for stitching?** `stitch_threshold` links labels ACROSS z, so dropping interior
   planes would be wrong. The empty planes here are leading/trailing, which is the safe case — but that
-  needs to be checked rather than assumed, per image.
-- **Do NOT crop to the box.** #435 documents two traps that apply directly: the box is per timepoint and
-  each frame sits at its own offset *because* the correction aligned them in a shared canvas, so cropping
-  per frame puts them back out of register — and the intersection across timepoints is EMPTY on four of
-  the nine `kSUFux` movies (z-drift exceeded the 8-plane stack). The box is for masking statistics and
-  skipping known-empty work, not for cropping.
+  needs checking rather than assuming, per image.
+- **Do NOT crop to the box.** Each frame sits at its own offset *because* the correction aligned them
+  in a shared canvas, so cropping per frame puts them back out of register — and the intersection
+  across timepoints is EMPTY on four of the nine `kSUFux` movies (z-drift exceeded the 8-plane stack).
+  The box is for masking statistics and skipping known-empty work, never for cropping.
 - **Does the win generalise**, or is it specific to how much drift a movie has?
 
 ### `_compute_iou_matrix` is quadratic in cell count, and every nuc+cyto run pays it per frame
@@ -172,29 +130,52 @@ numbers, so the existing `match_threshold`/`removeUnmatched` behaviour is unchan
 be pinned by asserting the new implementation matches the current one on a fixture before swapping it
 (the same oracle trick #435 used for the drift refactor).
 
-### Export an image version as OME-TIFF
-Nothing in the codebase writes a TIFF today (no `tifffile.imwrite` anywhere). The need is figures:
-people render in **Imaris** rather than napari, and Imaris reads OME-TIFF, not our zarr stores. The
-`.ccbundle` export is a different thing entirely (whole-project archive, tar-per-store, for moving a
-project between machines).
+### Export an image version as OME-TIFF (so it opens in Imaris with the right voxel size) 🔹 needs-input
+Nothing in the codebase writes a TIFF today (no `tifffile.imwrite` anywhere). The need is that people
+render figures in **Imaris**, not napari, and Imaris cannot read our zarr stores. The `.ccbundle`
+export is a different thing entirely (whole-project archive, tar-per-store, for moving a project
+between machines).
 
-This is a **write** path, so it's unaffected by `open_as_zarr` dropping its TIFF *reader* — an export
-reads the store through the canonical reader and writes out.
+**The route this replaces** (Dominik, from the old framework): export OME-TIFF → open in ImageJ →
+re-export as plain TIFF → run Imaris File Converter — and the converter then **did not pick up the
+pixel sizes correctly**. That symptom has a known cause and it is the ImageJ hop: a plain TIFF has no
+place to record **Z spacing** (ImageJ smuggles `spacing=` into the ImageDescription string, which the
+converter doesn't read), so voxel size in Z is exactly what goes missing on a TIFF-series import.
+Newer Imaris (≥9.9) at least *prompts* for a missing voxel size instead of silently guessing.
 
-Worth settling when it's built:
-- **OME-TIFF, not plain TIFF** — otherwise pixel size / channel names / time increment don't survive
-  into Imaris and the figure scale bar is wrong. We already hold all of it (`ome_xml_utils`).
+So the whole point of this task is to delete both hops, and it is only worth building if the
+calibration survives. That makes the metadata the requirement, not a detail:
+- **Write OME-TIFF, and write the full `<Pixels>`** — `PhysicalSizeX/Y/Z` **with units**,
+  `TimeIncrement`, channel names. We already hold all of it (`ome_xml_utils`, and see *Calibration —
+  three copies, one stamp* in `CLAUDE.md`; `ccid.json` is the authoritative source, not the store).
+  Z is the one that breaks, so it is the one to assert in a test.
+- **The reader to satisfy is Bio-Formats, not Imaris directly.** Imaris File Converter does its
+  reading through `ImarisConvertBioformats`, an open-source CLI/plugin that wraps **Bio-Formats** and
+  writes IMS (`github.com/imaris/ImarisConvertBioformats`). So a correct OME-TIFF is the input for
+  both destinations — `.ims` needs no work from us beyond that, using a tool the user already has
+  installed with Imaris. Test against Bio-Formats' OME-TIFF reader, not against a guess.
+  **Don't shell out to that converter from cecelia.** It ships installers for Windows and macOS only;
+  Linux is a supported *build* target but needs HDF5, zlib, lz4, FreeImage, Boost, a JDK+JRE and the
+  Bio-Formats jar assembled by hand. Imaris itself is Windows/macOS, so whoever wants IMS already has
+  the converter on the machine that matters. Our deliverable stops at the OME-TIFF.
+- **Decide the metadata flavour, and verify it once in Imaris.** `tifffile` cannot write `ome=True`
+  and `imagej=True` at the same time, and some readers prefer the TIFF `XResolution`/`YResolution`
+  tags over the OME-XML when they disagree. Which combination survives end to end needs Dominik to
+  open one output in Imaris. **🔹 needs-input.**
+- **Do NOT reach for `PyImarisWriter`** to write `.ims` from Python. Checked 2026-08-11: last release
+  0.7.0 (2021-08-13), a `py3-none-any` wheel that ships **only Windows DLLs** (`bpImarisWriter96.dll`)
+  behind ctypes, classified `Operating System :: Microsoft :: Windows`. It cannot work on Linux or
+  macOS, so it fails our cross-platform requirement outright. The C++ `ImarisWriter` it wraps is alive
+  but ships no releases — building it per platform is not worth it when the bullet above makes it
+  unnecessary.
 - **What to export**: which image *version* (versioned-field picker, like every other task), which
   channels, and whether a z-MIP / single timepoint is enough — a full `201×21×4×544×548` uint16 movie
   is ~9.7 GB as one file, which needs the BigTIFF flag and may not be what anyone wants.
 - **Where it lands**: not inside the project tree (it's an artefact, not data), so it wants a
   destination picker like `default_export_dir()`. Task rail + progress, staged output.
 
-### Auto-follow in task manager
-Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
-work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener
-(`ws.on('task:status', ...)`). Likely a Pinia/Vue 3 deep reactivity edge case with array
-element property tracking.
+This is a **write** path, so it's unaffected by `open_as_zarr` dropping its TIFF *reader* — an export
+reads the store through the canonical reader and writes out.
 
 ### `testTasks.*` task fun_names/files are still camelCase
 The test tasks `testTasks.imageTask`/`testTasks.setTask`/`testTasks.incrementalPlotTask` (files
