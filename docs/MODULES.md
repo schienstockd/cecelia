@@ -464,7 +464,11 @@ Full reference (see CLAUDE.md for the concise table):
 }
 ```
 
-**`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel:
+**`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel.
+The submitted value is a list of channel **names**; the handler resolves them with
+`channel_indices(get(params, "channels", nothing), channel_names(img; value_name = value_name), …)`
+— 0-based, errors by name. Both helpers are mandatory (`CLAUDE.md` → *Channel names → indices*) and a
+suite detector fails a handler that skips them:
 ```json
 { "key": "driftChannel", "label": "Drift channel", "type": "channelSelection", "multiple": false, "default": [] }
 ```
