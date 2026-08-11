@@ -178,3 +178,15 @@ def run(params):
         'planes': int(total),
     })
     log.log(f'>> done: {out_path}')
+
+
+def main():
+    params = script_utils.script_params()
+    if params is None:
+        print('[ERROR] No params file provided (--params missing or not found)', flush=True)
+        raise SystemExit(1)
+    run(params)
+
+
+if __name__ == '__main__':
+    main()
