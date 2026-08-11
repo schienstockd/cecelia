@@ -64,7 +64,7 @@ class SkipPaddedPlanesTest(unittest.TestCase):
         zu.create_multiscales(da.from_array(self.arr, chunks=(1, 1, 1, Y, X)),
                               self.im_path, dim_utils=self.du, nscales=1)
 
-    def _run(self, with_box):
+    def _run(self, with_box, **over):
         if with_box:
             zu.write_valid_box(self.im_path, ['Z'], {t: {'Z': (Z0, Z1)} for t in range(T)})
         params = {
@@ -75,6 +75,7 @@ class SkipPaddedPlanesTest(unittest.TestCase):
             'clearTouchingBorder': False, 'clearDepth': False, 'normaliseToWhole': False,
             'models': {'0': {'matchAs': 'base', 'cellChannels': [0]}},
         }
+        params.update(over)
         seg = _StubSeg(params, self.du)
         seg.predict_from_zarr([self.arr])
         out = zarr.open_group(os.path.join(self.dir, 'labels', 'stub.zarr'), mode='r')['0'][:]
@@ -110,3 +111,29 @@ class SkipPaddedPlanesTest(unittest.TestCase):
         self.assertEqual(set(seg.seen_depths), {Z})
         self.assertTrue((out > 0).all())
         self.assertIsNone(zu.read_valid_box(os.path.join(self.dir, 'labels', 'stub.zarr')))
+
+
+class ClearDepthMeetsTheSkipTest(SkipPaddedPlanesTest):
+    """`clearDepth` clears labels touching the FIRST and LAST z slice of the array it is given.
+
+    Before the skip, that array was the whole padded canvas, so those slices were padding — all zero,
+    no labels, nothing cleared. `clearDepth` was therefore a silent NO-OP on every drift-corrected
+    image. With the skip, the array is the valid span, so the faces it clears are the real top and
+    bottom of the ACQUIRED stack — which is what the option means.
+
+    So this is a deliberate behaviour change, and it changes results for anyone running `clearDepth`
+    on drift-corrected data: cells the padding used to shield are now cleared. Pinned here so it is
+    visible rather than discovered.
+    """
+
+    def test_clear_depth_acts_on_the_real_stack_edges_not_the_padding(self):
+        _, out = self._run(with_box=True, clearDepth=True)
+        # The stub labels every voxel it is handed, so every label touches both span faces and all
+        # of them are cleared — the point is that clearing HAPPENS, at z0/z1-1 rather than 0/n_z-1.
+        self.assertFalse(out.any(),
+                         'clearDepth had no effect — it is still clearing the padding faces')
+
+    def test_without_the_skip_clear_depth_still_reaches_the_canvas_edges(self):
+        """The unboxed path is unchanged: the array edge is the canvas edge, as before."""
+        _, out = self._run(with_box=False, clearDepth=True)
+        self.assertFalse(out.any())

@@ -243,6 +243,16 @@ the skipped planes zero.
   is a real cost; doing the work anyway is only the status quo.
 - **The label store records the span it segmented**, so a consumer knows those planes are zero
   because nothing *ran* there, not because nothing was *found*.
+- **`clearDepth` changes meaning — deliberately.** It clears labels touching the first and last z
+  slice of the array it is given. Before the skip that array was the whole padded canvas, so those
+  faces were padding: all zero, nothing to clear, and `clearDepth` was a silent **no-op** on every
+  drift-corrected image. With the skip it acts on the real top and bottom of the *acquired* stack,
+  which is what the option means. Results therefore change for anyone running `clearDepth` on
+  drift-corrected data — cells the padding used to shield are now cleared. Pinned by
+  `ClearDepthMeetsTheSkipTest`.
+- **Normalisation is unaffected.** `normaliseToWhole` computes its percentile once from the full
+  store *before* the timepoint loop, and it already excludes background zeros — so the padding never
+  contributed to it and narrowing the stack cannot move it.
 
 Nothing changes for a store that never padded — `read_valid_box` returns `None` and the whole stack
 is segmented, which is most images.
