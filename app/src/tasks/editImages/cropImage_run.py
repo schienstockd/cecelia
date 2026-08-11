@@ -74,6 +74,11 @@ def run(params):
         # disagree. See zarr_utils.write_calibration.
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # VALID-BOX-EXEMPT: a crop MOVES the coordinates, so the parent's box would be a
+        # precise-looking lie about this store. Translating it by the crop offset and clamping is
+        # doable but unneeded — no box means "all valid", so a consumer skips nothing and is merely
+        # slower, never wrong. (`carry_valid_box` would refuse anyway: the shapes differ.)
+
     log.progress(3, 3)
     log.log('>> done')
 

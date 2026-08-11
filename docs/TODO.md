@@ -93,21 +93,3 @@ set-scope subprocess task exists yet (only mock/plot tasks), so impact is curren
 first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
 path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
 
-### Segmentation still runs on the empty planes a drift correction padded in
-Drift correction expands the canvas and pads with zeros. Measured 2026-07-31 on `4kS67f`
-(201×20×544×548), **z 0–2 and z 16–20 are all-zero across every channel** — 8 of 21 planes, and the
-padding MOVES per timepoint since the shift differs per frame. A cellpose run segments all 21, so
-roughly **38% of the GPU time on that image produces nothing**, and measurement/tracking then carry
-the empty planes too.
-
-`zarr_utils.read_valid_box` (#435) already answers *which part of a store is data*, per timepoint, at
-any pyramid level, and the preview worker and the smoothing/drift runners consume it. What is left is
-only the decision to skip that work in segmentation:
-- **Is skipping safe for stitching?** `stitch_threshold` links labels ACROSS z, so dropping interior
-  planes would be wrong. The empty planes here are leading/trailing, which is the safe case — but that
-  needs checking rather than assuming, per image.
-- **Do NOT crop to the box.** Each frame sits at its own offset *because* the correction aligned them
-  in a shared canvas, so cropping per frame puts them back out of register — and the intersection
-  across timepoints is EMPTY on four of the nine `kSUFux` movies (z-drift exceeded the 8-plane stack).
-  The box is for masking statistics and skipping known-empty work, never for cropping.
-- **Does the win generalise**, or is it specific to how much drift a movie has?

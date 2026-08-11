@@ -912,6 +912,68 @@ def write_valid_box(path, axes, boxes):
     return True
 
 
+def carry_valid_box(src, dst):
+    """Carry ``src``'s valid box onto a DERIVED store ``dst``, unchanged. Returns whether it did.
+
+    THE call for a task that rewrites an image without moving pixels — smoothing, AF correction,
+    cellpose restoration. Those run on a drift-corrected parent whose canvas is mostly padding, and
+    the box is the only record of where the data is; a derived store that drops it silently costs
+    every downstream consumer the geometry its own parent already knew.
+
+    **Carry, never re-derive, and never summarise.** `read_valid_box(src)` on a per-frame box returns
+    the UNION over frames, which for a window that drifts across the canvas is nearly the whole
+    canvas — writing that back is technically a valid box and practically worthless. This preserves
+    per-frame boxes AS per-frame. (That exact mistake shipped in `smooth_run`, which is why this is a
+    helper rather than four lines repeated per runner.)
+
+    **Refuses when the geometry changed.** Carrying is only meaningful if `dst` holds the same pixels
+    in the same places, so the BOXED axes are compared by size and a mismatch returns False without
+    writing. Only the boxed axes: a label store legitimately drops C, and a box on Z/Y/X still
+    describes it exactly. A crop, a resize or a Z-MIP changes one of those sizes and is refused. A
+    per-frame box additionally needs T to survive at the same length, or the frame index it is keyed
+    by means nothing.
+
+    So a caller does not branch on any of this — `carry_valid_box(im_path, staging)` is correct
+    unconditionally, and self-refuses in the modes where carrying would be a precise-looking lie
+    (e.g. `segment.branching` keeps Z in 3D and drops it when flattening; the same call is right
+    both ways). Absent is always SAFE — a consumer reads None as "all valid" and merely does more
+    work, never the wrong work.
+    """
+    try:
+        gs = zarr.open_group(series_base(src), mode='r')
+        entry = (gs.attrs.get(CECELIA_ATTR) or {}).get('validBox')
+    except Exception:
+        return False
+    if not entry or not entry.get('boxes'):
+        return False
+
+    axes = [str(a).upper() for a in entry['axes']]
+    boxes = entry['boxes']
+
+    # Same pixels in the same places on every axis the box speaks about, or it does not describe `dst`.
+    try:
+        src_ax = [str(a).upper() for a in (read_axes(src) or [])]
+        dst_ax = [str(a).upper() for a in (read_axes(dst) or [])]
+        src_shape = tuple(zarr.open_group(series_base(src), mode='r')['0'].shape)
+        dst_shape = tuple(zarr.open_group(series_base(dst), mode='r')['0'].shape)
+    except Exception:
+        return False
+    if len(src_ax) != len(src_shape) or len(dst_ax) != len(dst_shape):
+        return False
+    # A per-frame box is keyed by frame index, so T must survive unchanged for the keys to mean anything.
+    for ax in (axes + (['T'] if entry.get('perTimepoint') else [])):
+        if ax not in src_ax or ax not in dst_ax:
+            return False
+        if src_shape[src_ax.index(ax)] != dst_shape[dst_ax.index(ax)]:
+            return False
+    if entry.get('perTimepoint'):
+        payload = {t: {ax: tuple(b[i]) for i, ax in enumerate(axes)} for t, b in enumerate(boxes)}
+    else:
+        payload = {ax: tuple(boxes[0][i]) for i, ax in enumerate(axes)}
+    write_valid_box(dst, axes, payload)
+    return True
+
+
 def read_valid_box(path, level=0, timepoint=None):
     """The data region of a store as ``{axis: (start, stop)}``, or **None when the whole store is
     valid** — which is the common case, so a consumer can treat None as "no special handling".

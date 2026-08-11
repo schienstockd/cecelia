@@ -198,10 +198,14 @@ def run(params):
         # Carry the source's valid box forward. Smoothing does not move pixels, but it is normally
         # run on a DRIFT-CORRECTED store whose canvas is mostly padding — losing the box here would
         # make every downstream consumer re-derive geometry this store already knows.
-        box = zarr_utils.read_valid_box(im_path)
-        if box:
-            zarr_utils.write_valid_box(staging, list(box.keys()), box)
-            log.log(f'   carried valid box forward: {box}')
+        #
+        # Via `carry_valid_box`, NOT read+write: `read_valid_box(path)` on a per-frame box returns the
+        # UNION over frames, and this used to write that back. For a window that drifts across the
+        # canvas the union is nearly the whole canvas, so the box survived in name while losing
+        # exactly the information that makes it useful — segmentation on a smoothed store then had
+        # nothing to skip.
+        if zarr_utils.carry_valid_box(im_path, staging):
+            log.log('   carried the source valid box forward (per timepoint)')
 
     stats['zeroFracIn'] = {str(c): float(np.mean(v)) for c, v in zin.items() if v}
     stats['zeroFracOut'] = {str(c): float(np.mean(v)) for c, v in zout.items() if v}

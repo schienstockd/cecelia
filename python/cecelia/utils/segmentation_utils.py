@@ -153,12 +153,21 @@ class SegmentationUtils:
         frame_shape = [label_shape[i] for i, ax in enumerate(label_axes) if ax != 'T']
         fa_y = frame_axes.index('Y')
         fa_x = frame_axes.index('X')
+        fa_z = frame_axes.index('Z') if 'Z' in frame_axes else None
 
         # Input-image frame axes = image axes without T — KEEPS the channel axis, so its Y/X indices
         # differ from the (channel-less) label frame's. Used to tile the in-RAM input frame.
         in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
+        ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
+
+        # Which z planes actually hold data, per timepoint. `None` for every store that never padded,
+        # which is most of them — then `_valid_z_span` returns the whole stack and nothing changes.
+        store_la_z = label_axes.index('Z') if 'Z' in label_axes else None
+        n_z = im_shape[dim_utils.im_dim_order.index('Z')] if 'Z' in dim_utils.im_dim_order else 0
+        im_path_for_box = self.params.get('imPath')
+        z_spans = {}
 
         # Axis indices on the FULL input array (time axis still present) — the in-RAM frame has T
         # dropped, so its indices cannot address other timepoints. Only used for temporal context.
@@ -202,14 +211,34 @@ class SegmentationUtils:
                       for ma in match_as_list}
 
             for t in range(T):
-                # one frame's labels per type (uint32 zeros), no time axis
-                frame = {ma: np.zeros(frame_shape, dtype=self.LABEL_DTYPE) for ma in match_as_list}
-
                 # Read this timepoint's image ONCE into RAM (time axis dropped → frame_axes layout), then
                 # tile it in memory. Reading each tile from the store instead re-fetches whole chunks per
                 # tile — the over-read the old whole-level fortify() worked around. See
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
                 frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+
+                # Narrow to the planes that hold data. Everything below — tiling, cellpose, post-
+                # processing, nuc/cyto matching — then runs on the reduced stack unchanged; only the
+                # WRITE puts it back at its z offset, so the store keeps its full shape.
+                z0, z1 = 0, n_z
+                if ifa_z is not None and store_la_z is not None and im_path_for_box:
+                    box = zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
+                    z0, z1 = self._valid_z_span(box, n_z)
+                z_spans[t] = (z0, z1)
+                if (z0, z1) != (0, n_z):
+                    frame_in = frame_in[tuple(slice(z0, z1) if i == ifa_z else slice(None)
+                                              for i in range(frame_in.ndim))]
+                    if t == 0:
+                        print(f'>> skipping padded z planes: segmenting z {z0}:{z1} of {n_z}',
+                              flush=True)
+
+                # One frame's labels per type (uint32 zeros), no time axis — sized to the span we
+                # actually segment, so the buffer and the tiles agree. Allocated AFTER the span is
+                # known, not before the read.
+                frame_shape_t = list(frame_shape)
+                if fa_z is not None:
+                    frame_shape_t[fa_z] = z1 - z0
+                frame = {ma: np.zeros(frame_shape_t, dtype=self.LABEL_DTYPE) for ma in match_as_list}
 
                 for read_yx, write_yx, crop_yx in xy_tiles:
                     for model_key in sorted(models.keys()):
@@ -265,12 +294,20 @@ class SegmentationUtils:
                 # whole-stack distinct-ID count the previous code returned.
                 for ma in match_as_list:
                     _, level0, _ = stores[ma]
-                    if store_la_t is not None:
-                        sl = tuple(t if i == store_la_t else slice(None) for i in range(level0.ndim))
-                        level0[sl] = frame[ma]
-                    else:
-                        level0[:] = frame[ma]
+                    sl = tuple(t if i == store_la_t else
+                               slice(z0, z1) if i == store_la_z else
+                               slice(None) for i in range(level0.ndim))
+                    level0[sl] = frame[ma]
                     counts[ma] += count_labels(frame[ma])
+
+            # The label store inherits the same fact about itself: outside these z spans it is zero
+            # because nothing was segmented there, not because nothing was found. Recording it means
+            # a downstream consumer skips the same planes without re-deriving the geometry — the
+            # propagation rule in docs/ARCHITECTURE.md → *The valid box*.
+            if store_la_z is not None and any(sp != (0, n_z) for sp in z_spans.values()):
+                for ma in match_as_list:
+                    zarr_utils.write_valid_box(
+                        staged[ma], ['Z'], {t: {'Z': z_spans[t]} for t in sorted(z_spans)})
 
             # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
             for ma in match_as_list:
@@ -700,6 +737,41 @@ class SegmentationUtils:
                             cyto_out[cyto_out == lc] = 0
 
         return cyto_out, nuc_out
+
+    # ── Skipping the padding a drift correction added ─────────────────────────
+    #
+    # A drift-corrected canvas holds each frame at its own offset and zeroes the rest: 3-64% of the
+    # z planes across the movies on this machine, 8 valid planes in a 22-plane canvas at worst. The
+    # whole z-stack goes to cellpose in ONE call (it stitches across z internally), so those planes
+    # cost real GPU time and produce nothing.
+    #
+    # Safe because a valid box is a CONTIGUOUS [start, stop) by construction, so restricting z to it
+    # can only drop LEADING/TRAILING planes. Interior planes inside the span are kept, and the
+    # dropped ones are all-zero, so they yield no labels for `stitch_threshold` to link across —
+    # the stitching semantics inside the span are unchanged rather than merely assumed to be.
+    #
+    # Deliberately NOT a crop: the output store keeps its full shape and the skipped planes stay
+    # zero. Each frame sits at its own offset because the correction aligned them in a shared
+    # canvas; cropping per frame would put them back out of register.
+    @staticmethod
+    def _valid_z_span(box, n_z, min_span=2):
+        """`(z0, z1)` of z to segment for one timepoint, given that frame's valid `box`.
+
+        Returns the whole stack whenever there is nothing trustworthy to narrow to — no box, no Z in
+        it, a degenerate range, or a span so thin that segmenting it is not meaningfully 3D. Doing
+        MORE work is always the safe direction here: the cost of a wrong narrow span is missing
+        cells, and the cost of a wrong wide one is the status quo.
+        """
+        if not box or n_z <= 0:
+            return 0, n_z
+        rng = box.get('Z')
+        if not rng:
+            return 0, n_z
+        z0, z1 = int(rng[0]), int(rng[1])
+        z0, z1 = max(0, z0), min(int(n_z), z1)
+        if z1 - z0 < max(1, min_span) or (z0 == 0 and z1 == n_z):
+            return 0, n_z
+        return z0, z1
 
     def _compute_iou_matrix(self, a, b):
         """IoU matrix between all pairs of non-zero labels in a and b.
