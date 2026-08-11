@@ -93,6 +93,12 @@ def run(params):
         # disagree. See zarr_utils.write_calibration.
         zarr_utils.write_calibration(staging, dim_utils)
 
+        # Same for the valid box: this correction rewrites intensities without moving a pixel, and it
+        # normally runs on a DRIFT-CORRECTED store whose canvas is mostly padding. Dropping the box
+        # here made segmentation downstream process the padding it describes.
+        if zarr_utils.carry_valid_box(im_path, staging):
+            log.log('   carried the source valid box forward (per timepoint)')
+
     # Per-channel output stats for QC. The correction has no free parameter left to land badly, so the
     # objective signals are the INPUT's saturation (clipped at the sensor, unrecoverable here) and how
     # coarsely the output ends up quantised. See `af_qc_findings` in af_correct.jl.
