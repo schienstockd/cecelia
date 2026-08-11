@@ -95,6 +95,10 @@ def read_ome_meta(ome_xml: Path) -> dict:
 # ── h5ad peek (scan) + rewrite (migrate) ────────────────────────────────────────
 def _h5ad_obs_cols(path: Path):
     import anndata as ad
+    # Sanctioned bypass of LabelPropsView (CLAUDE.md -> H5AD access): this is the MIGRATION scanner,
+    # so the file is a legacy layout the view's accessors do not yet describe -- it is being read in
+    # order to decide how to rewrite it. `backed="r"` keeps it to a metadata peek: the obs column
+    # NAMES only, never the matrix.
     a = ad.read_h5ad(str(path), backed="r")
     return a, list(map(str, a.obs.columns))
 

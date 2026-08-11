@@ -10515,3 +10515,75 @@ end
         @test occursin("--", tip) || occursin("_", tip)   # a CLI flag or a zarr metadata key
     end
 end
+
+# ── Canonical-helper detectors ────────────────────────────────────────────────
+# These exist because both rules below have now cost real debugging time, and neither was enforced.
+# The pattern is the repo's existing one (`no_bare_write_h5ad`, `TextIoDeclaresEncodingTest`, the
+# store-compressor/staging conventions): scan the SOURCE, fail on a new bypass.
+
+@testset "channelSelection params resolve through channel_indices" begin
+    # A `channelSelection` param submits channel NAMES. `channel_indices` is the one resolver — it
+    # takes names OR already-resolved indices, returns 0-based values, and errors by name on a miss
+    # (with a case-difference hint). Its own comment records SIX handlers that had hand-rolled
+    # `findfirst(==(String(ch)), ch_names)` and drifted into three different wrong behaviours: an
+    # index crashed four of them, an unmatched name was silently DROPPED by five, and drift
+    # correction silently fell back to channel 0 — registering a whole timelapse against SHG.
+    #
+    # It happened again on the OME-TIFF export (`Int("SHG")` → MethodError, straight out of the task),
+    # which is why this is now a test rather than a comment.
+    function _has_channel_param(ps)::Bool
+        for p in ps
+            p isa AbstractDict || continue
+            String(get(p, "type", "")) == "channelSelection" && return true
+            inner = get(p, "params", nothing)
+            inner isa AbstractVector && _has_channel_param(inner) && return true
+        end
+        false
+    end
+
+    checked = String[]
+    for (fun, task) in Cecelia._fun_name_map()
+        spec = Cecelia._task_spec(task)
+        isnothing(spec) && continue
+        _has_channel_param(get(spec, "params", [])) || continue
+        spec_path = Cecelia._spec_path(task)
+        isnothing(spec_path) && continue
+        jl = replace(spec_path, r"\.json$" => ".jl")
+        isfile(jl) || continue        # a composite resolves nothing itself; its steps are checked
+        push!(checked, fun)
+        @test occursin("channel_indices", read(jl, String)) ||
+              error("$fun declares a channelSelection param but its handler never calls " *
+                    "`channel_indices`. Resolve names with it (0-based, errors by name) rather " *
+                    "than converting them by hand — see CLAUDE.md and channel_index's own comment.")
+    end
+    # The scan must actually find tasks; a rename that silently matched nothing would "pass".
+    @test length(checked) >= 8
+end
+
+@testset "a process exit check also checks termsignal" begin
+    # libuv reports `exitcode = 0` for a SIGNAL-KILLED child, and `task:cancel` kills by design — so
+    # `exitcode == 0` alone reads a cancelled or timed-out process as a clean success. That is how a
+    # timed-out agent run had its TRUNCATED output handed to the result parser.
+    offenders = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path  = joinpath(dir, f)
+            lines = readlines(path)
+            for (i, ln) in enumerate(lines)
+                occursin(".exitcode", ln) || continue
+                # A window, not the same line: the check is often split over two lines, or guarded by
+                # a `killed` flag derived from termsignal a few lines above.
+                lo, hi = max(1, i - 6), min(length(lines), i + 6)
+                any(occursin("termsignal", lines[j]) for j in lo:hi) && continue
+                push!(offenders, "$(basename(path)):$i  $(strip(ln))")
+            end
+        end
+    end
+    isempty(offenders) && @test true
+    isempty(offenders) || error("`.exitcode` used without a nearby `termsignal` check:\n  " *
+                                join(offenders, "\n  ") *
+                                "\nlibuv sets exitcode 0 for a signal-killed process — check " *
+                                "`proc.exitcode == 0 && proc.termsignal == 0`.")
+end

@@ -118,7 +118,12 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
 
     # register the copied zarr as `default` + carry the source channel names onto the new image's ccid.
     # Derived data is intentionally NOT carried — a copy starts clean (drop labels/pops/gating).
-    ch_names = versioned_get_field(raw, "imChannelNames", value_name)
+    #
+    # `channel_names`, not the raw versioned field: names are typically registered only under
+    # `default` while a processed version carries none of its own, so reading `value_name` directly
+    # returned `nothing` and copying a corrected version produced an image with NO channel names at
+    # all. The fallback to the active version is exactly what that helper is for.
+    ch_names = channel_names(img; value_name = value_name)
     commit_state!(new_img) do raw2
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)

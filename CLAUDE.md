@@ -237,6 +237,33 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 
 ---
 
+## Channel names → indices — always `channel_indices` (and `channel_names` for the list)
+
+**A `channelSelection` param holds channel NAMES, not indices.** Two helpers, both in
+`app/src/model/image.jl`, and a handler needs both:
+
+```julia
+names    = something(channel_names(img; value_name = value_name), String[])
+channels = channel_indices(get(params, "channels", nothing), names; what = "channels")
+```
+
+- **`channel_indices`** returns **0-based** indices (what the Python side slices with), accepts an
+  already-resolved index unchanged, and **errors by name** on a miss — with a "differs only in case"
+  hint, because two images from one experiment shipped `mem-TOM` and `mem-Tom`. Six handlers once
+  hand-rolled `findfirst(==(String(ch)), ch_names)` and drifted into three separately wrong
+  behaviours: an index crashed four of them, an unmatched name was silently **dropped** by five, and
+  drift correction silently fell back to channel 0 — registering a whole timelapse against SHG.
+- **`channel_names(img; value_name)`** is where the list comes from, because it **falls back to the
+  active version**. Names are typically registered only under `default` while a processed version
+  carries none of its own, so reading the raw versioned field (`versioned_get_field(raw,
+  "imChannelNames", value_name)` / `ccid_channel_names(raw, value_name)`) returns `nothing` and the
+  task reports "(none registered)" for an image whose channels the picker is happily listing — the
+  picker is fed by `channel_names(img)` in the image payload, so any other source disagrees with what
+  the user just clicked.
+
+Enforced by the `channelSelection params resolve through channel_indices` testset: a task whose
+resolved spec declares one and whose handler never calls `channel_indices` fails the suite.
+
 ## Spawning Python — always go through `run_py`
 
 **Never spawn a Python subprocess by hand. There is one launcher — `run_py` in `app/src/py_runner.jl`
