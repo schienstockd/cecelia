@@ -172,3 +172,23 @@ function _sha256_matches(path::AbstractString, digest_contents::AbstractString):
     occursin(r"^[0-9a-f]{64}$", expected) || return false
     _file_sha256(path) == expected
 end
+
+"""
+    safe_name_part(raw) -> String
+
+One filename-safe fragment: keep `[A-Za-z0-9._-]`, collapse every run of anything else to `_`, and
+drop the separators the collapse leaves at the EDGES.
+
+The edge strip is the whole point. An image called `"… -res (cropped)"` ends in `)`, so sanitising
+alone gives `"…-res_cropped_"` — a name ending in a separator — and a suffixed variant compounds it
+to `"…-res_cropped__animation"`. Two call sites once had the strip and the sanitise split between
+them while claiming to share "the same character rule"; they are one function so a name cannot be
+sanitised two ways.
+
+Lives in the package (not the API layer) because tasks name their own output files — the OME-TIFF
+export and the napari movie recorders must agree on what a safe name is.
+"""
+function safe_name_part(raw)::String
+    s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
+    String(strip(s, ['_', '.']))
+end

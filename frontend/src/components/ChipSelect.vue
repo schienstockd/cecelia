@@ -20,7 +20,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { toggleValue, moveItem, partitionOptions } from '../utils/chipSelect'
+import { toggleValue, moveItem, partitionOptions, selectAllState } from '../utils/chipSelect'
 
 export interface ChipOption {
   value: string
@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<{
   variant?: 'pill' | 'segmented'
   disabled?: boolean
   allowEmpty?: boolean     // single-select: re-clicking the active chip clears the selection
+  selectAll?: boolean      // multiple: prepend an All chip that fills the selection, or clears a full one
   ariaLabel?: string
 }>(), {
   multiple: false,
@@ -47,12 +48,23 @@ const props = withDefaults(defineProps<{
   variant: 'pill',
   disabled: false,
   allowEmpty: false,
+  selectAll: false,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [string | string[]] }>()
 
 const selected = computed<string[]>(() =>
   props.multiple ? ((props.modelValue as string[]) ?? []) : [])
+
+// `selectAll` — one chip that fills the selection, or empties a full one. Opt-in, and multiple-only:
+// a two-option list does not need it, and on a single-select "all" is meaningless. Logic is in
+// utils/chipSelect (unit-tested) so the partial-selection rule can't drift.
+const allToggle = computed(() => selectAllState(props.options, selected.value))
+const showSelectAll = computed(() => props.selectAll && props.multiple && allToggle.value.enabled)
+function toggleAll() {
+  if (props.disabled) return
+  emit('update:modelValue', allToggle.value.next)
+}
 
 const byValue = computed(() => {
   const m = new Map<string, ChipOption>()
@@ -113,6 +125,19 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
 <template>
   <div class="chip-select" :class="[variant, { 'is-disabled': disabled }]"
        role="group" :aria-label="ariaLabel">
+    <!-- Reads "All" and shows the current tally, so it doubles as the answer to "how many of these
+         are on?" — which is otherwise a counting exercise on a long channel list. -->
+    <button
+      v-if="showSelectAll" type="button"
+      class="chip chip-all" :class="{ on: allToggle.state === 'all', part: allToggle.state === 'some' }"
+      :disabled="disabled"
+      v-tooltip.bottom="allToggle.state === 'all' ? 'Clear the selection' : 'Select every option'"
+      @click="toggleAll"
+    >
+      <span class="chip-lbl">All</span>
+      <span class="chip-badge">{{ selected.length }}/{{ options.filter(o => !o.disabled).length }}</span>
+    </button>
+
     <button
       v-for="r in rendered" :key="r.opt.value" type="button"
       class="chip" :class="{ on: r.on, drag: r.drag, disabled: r.opt.disabled }"
@@ -146,6 +171,10 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
 .chip:hover:not(.disabled) { color: var(--cc-text); border-color: var(--cc-accent); }
 .chip.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .chip.disabled { opacity: 0.45; cursor: default; }
+/* The All chip is a control, not a member of the set — dashed so it reads as acting ON the chips
+   rather than being one, and `part` marks a partial selection (neither on nor off). */
+.chip-all { border-style: dashed; }
+.chip-all.part { color: var(--cc-text); border-color: var(--cc-accent); }
 .chip.drag { cursor: grab; }
 .chip.drag:active { cursor: grabbing; }
 .chip-badge {

@@ -105,6 +105,10 @@ function _spec_path(::CropImage)
     joinpath(@__DIR__, "editImages", "cropImage.json")
 end
 
+function _spec_path(::ExportOmeTiff)
+    joinpath(@__DIR__, "exportImages", "ome_tiff.json")
+end
+
 function _spec_path(::CopyImage)
     joinpath(@__DIR__, "editImages", "copyImage.json")
 end
@@ -170,6 +174,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),
+        "exportImages.ome_tiff"        => ExportOmeTiff(),
         "testTasks.image_task"               => TestImageTask(),
         "testTasks.set_task"                 => TestSetTask(),
         "testTasks.incremental_plot_task"     => IncrementalPlotTask(),

@@ -14,6 +14,7 @@ import { isChosenValueName, preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
+import FileBrowser from '../components/FileBrowser.vue'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -38,6 +39,9 @@ const emit = defineEmits<{
 
 // section (collapsible box) state
 const sectionOpen = ref(!props.param.collapsed)
+
+// dirPath: the folder picker modal. Opened per param row, so each destination field owns its own.
+const showDirBrowser = ref(false)
 
 const val = computed({
   get: () => props.modelValue ?? props.param.default,
@@ -478,13 +482,27 @@ const pct = computed(() => {
       v-tooltip.right="param.tip"
     />
 
+    <!-- dirPath: a folder on the machine running the server. Still typeable — a remembered path is
+         faster to paste than to browse to — but Browse opens the shared FileBrowser in dir mode, the
+         same picker the .ccbundle project export uses. A destination that has to be typed exactly is
+         a task that fails after doing all its work. -->
+    <div v-else-if="param.type === 'dirPath'" class="cc-row cc-row-tight dir-path">
+      <input type="text" class="text-input" :value="val as string" :placeholder="param.placeholder"
+        @input="val = ($event.target as HTMLInputElement).value"
+        v-tooltip.right="param.tip" />
+      <button type="button" class="cc-btn cc-btn-ghost cc-btn-sm" @click="showDirBrowser = true"
+        v-tooltip.top="'Browse for a folder'">
+        <i class="pi pi-folder-open" />
+      </button>
+    </div>
+
     <!-- chipSelect: multi-pick from a fixed set. A raw text field for something like "1,2,4,8" is a
          parse error waiting to happen and reads as unfinished; ChipSelect is the canonical primitive
          for "pick from a set" (docs/UI.md). -->
     <ChipSelect v-else-if="param.type === 'chipSelect'"
       :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
       :model-value="(Array.isArray(val) ? val : []).map(String)"
-      multiple
+      multiple select-all
       :aria-label="param.label"
       @update:model-value="v => val = v as string[]"
     />
@@ -520,7 +538,7 @@ const pct = computed(() => {
       </div>
       <div v-for="grp in popMultiGroups" v-else :key="grp.title" class="col-group">
         <div v-if="grp.title" class="col-group-title cc-eyebrow cc-fs-2xs">{{ grp.title }}</div>
-        <ChipSelect multiple :options="grp.opts"
+        <ChipSelect multiple select-all :options="grp.opts"
           :model-value="chipGroupSel(grp.opts.map(o => o.value))"
           @update:model-value="v => chipGroupUpdate(popAllValues, grp.opts.map(o => o.value), v as string[])" />
       </div>
@@ -544,7 +562,7 @@ const pct = computed(() => {
       </div>
       <div v-for="g in colGroups" :key="g.title" class="col-group">
         <div v-if="g.title" class="col-group-title cc-eyebrow cc-fs-2xs">{{ g.title }}</div>
-        <ChipSelect multiple :options="g.opts"
+        <ChipSelect multiple select-all :options="g.opts"
           :model-value="chipGroupSel(g.opts.map(o => o.value))"
           @update:model-value="v => chipGroupUpdate(colAllValues, g.opts.map(o => o.value), v as string[])" />
       </div>
@@ -569,7 +587,7 @@ const pct = computed(() => {
       <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
         No channels — select images first.
       </div>
-      <ChipSelect v-else multiple :options="channelOptions"
+      <ChipSelect v-else multiple select-all :options="channelOptions"
         :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
@@ -686,6 +704,18 @@ const pct = computed(() => {
       </div>
     </div>
   </div>
+
+  <!-- dirPath: teleported to <body>. BaseModal is `position: fixed`, which is enough at the page
+       level (ManageImagesModule mounts its browser outside ModuleLayout for exactly this reason) but
+       NOT from here: a param row sits deep inside the scrolled task form, and any ancestor with a
+       transform/filter/will-change becomes the containing block for a fixed child and traps it.
+       Teleport removes the dependency on what happens to be above this row. -->
+  <Teleport to="body">
+    <FileBrowser v-if="showDirBrowser" mode="dir"
+      @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showDirBrowser = false }"
+      @close="showDirBrowser = false" />
+  </Teleport>
+
 </template>
 
 <style scoped>
@@ -851,4 +881,12 @@ const pct = computed(() => {
   margin-left: 0.1rem;
   margin-bottom: 0.2rem;
 }
+
+/* + cc-row cc-row-tight (the flex row) — this site owns only the field/button split.
+   `.text-input` is width:100%, and cc-row wraps, so a flex-basis of `auto` made the field claim the
+   whole line and pushed the Browse button onto a second row. Basis 0 + width auto lets the field
+   take the leftover space instead; nowrap because a field and its own button are one control. */
+.dir-path { flex-wrap: nowrap; }
+.dir-path .text-input { flex: 1 1 0; width: auto; min-width: 0; }
+.dir-path .cc-btn { flex: 0 0 auto; }
 </style>

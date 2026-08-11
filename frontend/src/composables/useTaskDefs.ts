@@ -8,26 +8,35 @@ import type { TaskDef } from '../tasks/types'
 const MAX_RETRIES  = 5
 const RETRY_DELAY  = 2000
 
-export function useTaskDefs(category: string) {
+// `category` may be one name or several. A page whose subject spans categories (Manage images hosts
+// both `importImages` and `exportImages`) passes a list and gets them concatenated in the order
+// given, so the function picker reads import-then-export rather than in directory order. The route
+// already returns every category when the filter is omitted — ChainModule and the taskDefs label
+// store have always fetched it that way — so multi-category needs no server change.
+export function useTaskDefs(category: string | string[]) {
+  const cats    = Array.isArray(category) ? category : [category]
   const defs    = ref<TaskDef[]>([])
   const loading = ref(false)
 
   async function load(attempt = 0): Promise<void> {
     loading.value = true
     try {
-      const res = await fetch(`/api/tasks/definitions?category=${encodeURIComponent(category)}`)
+      // One category → let the server filter. Several → fetch all and pick, rather than firing N
+      // requests that would each retry independently and land out of order.
+      const qs  = cats.length === 1 ? `?category=${encodeURIComponent(cats[0])}` : ''
+      const res = await fetch(`/api/tasks/definitions${qs}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as Record<string, TaskDef[]>
       // `hidden` tasks stay registered and runnable (REPL, chains) but are kept out of the module
       // page's function list — their job has a purpose-built UI. Filtered HERE, not at the route:
       // ChainModule and the taskDefs label store fetch the same endpoint and must still see them.
-      defs.value = (data[category] ?? []).filter(d => !d.hidden)
+      defs.value = cats.flatMap(c => data[c] ?? []).filter(d => !d.hidden)
     } catch (e) {
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, RETRY_DELAY))
         return load(attempt + 1)
       }
-      console.warn(`[useTaskDefs] Failed to load defs for "${category}" after ${MAX_RETRIES} retries:`, e)
+      console.warn(`[useTaskDefs] Failed to load defs for "${cats.join(', ')}" after ${MAX_RETRIES} retries:`, e)
     } finally {
       loading.value = false
     }

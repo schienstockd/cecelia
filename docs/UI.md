@@ -612,6 +612,15 @@ capsules, the default) and `variant="segmented"` (a joined control). `multiple` 
 for drag-to-reorder. Per-option `icon` / `tip` / `disabled` / `badge` (a count) / `accent` (a
 semantic colour — rendered as a readable tint). Pure logic in `utils/chipSelect.ts` (tested).
 
+`select-all` (multiple only, opt-in) prepends an **All** chip that fills the selection or empties a
+full one, with an `n/total` badge so "how many are on?" stops being a counting exercise on a long
+channel list. It is dashed, because it acts *on* the set rather than being a member of it. The rule
+worth knowing: from a **partial** selection it COMPLETES rather than clears — throwing away picks is
+the one outcome nobody wants from a bulk control — and disabled options are excluded from both the
+tally and the fill, or the toggle strands at partial with no way to reach all. Every chip multi-select
+in the task-param form turns it on (`ParamRenderer`: `chipSelect`, `channelSelection`,
+`labelPropsColsSelection`, multi `popSelection`); on a grouped list each group gets its own All.
+
 Active colour is `--cc-accent`. **Don't** use it for: independent-boolean toolbars that also fire
 actions or open dropdowns (e.g. `ModuleLayout`'s filter-toggle bar, gate arrange/nav clusters),
 colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-assignment matrix
@@ -1185,7 +1194,7 @@ panel body scrolls when the sections together exceed the height.
 Emits `selectionChange(uids: string[])`. `ModuleLayout` handles this internally.
 
 **File operations live in the action bar, not in the rows.** Copy / Move / Delete act on the whole
-checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Import page's
+checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Manage images page's
 `#actions` slot — next to *Add images*, where a file manager puts them. Two rules follow:
 
 - **They are Import-only.** Creating, re-filing and removing images is import-time curation; no other
@@ -1204,7 +1213,7 @@ per-image).
 ### Deleting is one modal with four scopes
 
 **There are exactly two places that delete image data**, and that is a deliberate ceiling
-(`docs/todo/IMAGE_DELETE_PLAN.md`): the Import page's **Delete** modal (`DeleteImagesDialog.vue`) for
+(`docs/todo/IMAGE_DELETE_PLAN.md`): the Manage images page's **Delete** modal (`DeleteImagesDialog.vue`) for
 anything per-image, and **Settings → Storage** for the automatic whole-project reclaim. It used to be
 five, spread across four screens.
 

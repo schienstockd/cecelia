@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toggleValue, moveItem, partitionOptions } from './chipSelect'
+import { toggleValue, moveItem, partitionOptions, selectAllState } from './chipSelect'
 
 describe('toggleValue', () => {
   it('appends a new value at the end (pick order)', () => {
@@ -47,5 +47,49 @@ describe('partitionOptions', () => {
       selected: ['b'],
       unselected: ['a'],
     })
+  })
+})
+
+// The All chip on a chip multi-select. The rule that matters is what a PARTIAL selection does:
+// completing it is the useful move, and flipping it to empty silently throws away picks.
+describe('selectAllState', () => {
+  const opts = [{ value: 'a' }, { value: 'b' }, { value: 'c' }]
+
+  it('fills from empty', () => {
+    const r = selectAllState(opts, [])
+    expect(r.state).toBe('none')
+    expect(r.next).toEqual(['a', 'b', 'c'])
+  })
+
+  it('completes a partial selection instead of clearing it', () => {
+    const r = selectAllState(opts, ['b'])
+    expect(r.state).toBe('some')
+    expect(r.next).toEqual(['b', 'a', 'c'])   // kept first — the array is in PICK order
+  })
+
+  it('clears only when everything is already selected', () => {
+    const r = selectAllState(opts, ['a', 'b', 'c'])
+    expect(r.state).toBe('all')
+    expect(r.next).toEqual([])
+  })
+
+  it('ignores disabled options in both the tally and the fill', () => {
+    // Counting an unpickable option would strand the toggle at 'some' with no way to reach 'all',
+    // and filling it would select something the user cannot deselect one by one.
+    const withDisabled = [{ value: 'a' }, { value: 'b', disabled: true }, { value: 'c' }]
+    const r = selectAllState(withDisabled, ['a', 'c'])
+    expect(r.state).toBe('all')
+    expect(r.next).toEqual([])
+    expect(selectAllState(withDisabled, []).next).toEqual(['a', 'c'])
+  })
+
+  it('reports disabled when there is nothing pickable', () => {
+    expect(selectAllState([], []).enabled).toBe(false)
+    expect(selectAllState([{ value: 'a', disabled: true }], []).enabled).toBe(false)
+  })
+
+  it('drops stale values that are no longer options', () => {
+    // Channel lists change with the image selection; a leftover value must not survive a fill.
+    expect(selectAllState(opts, ['gone', 'b']).next).toEqual(['b', 'a', 'c'])
   })
 })

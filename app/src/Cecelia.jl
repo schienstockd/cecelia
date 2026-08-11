@@ -15,6 +15,7 @@ export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_ME
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
+export safe_name_part
 
 # ── Versioned-variable helpers ────────────────────────────────────────────────
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
@@ -122,6 +123,7 @@ export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, Smooth, CompositeTask
 export CropImage
 export CopyImage
+export ExportOmeTiff
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
@@ -211,6 +213,7 @@ include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
+include("tasks/exportImages/ome_tiff.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")

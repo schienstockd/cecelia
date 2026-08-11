@@ -38,3 +38,29 @@ export function partitionOptions(
     unselected: optionValues.filter(v => !sel.has(v)),
   }
 }
+
+/**
+ * What a select-all toggle should do next, and how it should read.
+ *
+ * `all` when every selectable option is picked, `none` when none is, `some` in between. The action
+ * is deliberately NOT a plain flip of `all`: from a partial selection the useful move is to complete
+ * it, not to throw the picks away. So only a full selection clears — every other state fills.
+ *
+ * Disabled options are excluded from both the tally and the fill: they can't be picked one by one,
+ * so a bulk control must not pick them either, and counting them would leave the toggle stuck at
+ * `some` with no way to reach `all`.
+ */
+export function selectAllState(
+  options: readonly { value: string; disabled?: boolean }[],
+  selected: readonly string[],
+): { state: 'all' | 'some' | 'none'; next: string[]; enabled: boolean } {
+  const pickable = options.filter(o => !o.disabled).map(o => o.value)
+  const chosen = new Set(selected)
+  const n = pickable.filter(v => chosen.has(v)).length
+  const state = n === 0 ? 'none' : n === pickable.length ? 'all' : 'some'
+  // Filling keeps any already-selected values in their PICK order (ChipSelect's array is ordered),
+  // then appends the rest in option order — so completing a selection never reshuffles it.
+  const kept = selected.filter(v => pickable.includes(v))
+  const next = state === 'all' ? [] : [...kept, ...pickable.filter(v => !chosen.has(v))]
+  return { state, next, enabled: pickable.length > 0 }
+}

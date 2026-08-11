@@ -139,6 +139,15 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Smoothing changed little",
         long  = "This input was not photon-limited — the extra store is likely redundant."),
 
+    # OME-TIFF export (_export_qc_findings). The write always "succeeds", so the only objective
+    # signal is whether the CALIBRATION came out with it — which is the entire point of the task.
+    "export.no_z_calibration" => (
+        short = "Export has no Z pixel size",
+        long  = "Set the Z spacing in the image metadata and export again — Imaris will otherwise ask for it or guess."),
+    "export.no_xy_calibration" => (
+        short = "Export has no XY pixel size",
+        long  = "Set the pixel size in the image metadata and export again — the scale bar will be wrong without it."),
+
     # output geometry (qc_canvas_expansion)
     "output.canvas_expansion" => (
         short = "Output canvas grew +{pct}% in XY",

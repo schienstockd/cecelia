@@ -22,12 +22,12 @@ const activeSet = computed(() => project.activeSet())
 
 async function createSet() {
   const name = newSetName.value.trim()
-  if (!name) { log.warn('Set name cannot be empty.', { source: 'import' }); return }
+  if (!name) { log.warn('Set name cannot be empty.', { source: 'manageImages' }); return }
   if (project.sets.some(s => s.name === name)) {
-    log.warn(`A set named "${name}" already exists.`, { source: 'import' }); return
+    log.warn(`A set named "${name}" already exists.`, { source: 'manageImages' }); return
   }
   if (!projectMeta.current) {
-    log.warn('No project open.', { source: 'import' }); return
+    log.warn('No project open.', { source: 'manageImages' }); return
   }
   creating.value = true
   try {
@@ -39,11 +39,11 @@ async function createSet() {
     const body = await res.json().catch(() => ({})) as { uid?: string; error?: string }
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
     project.addSetFromApi(body.uid!, name)
-    log.info(`Created set "${name}".`, { source: 'import' })
+    log.info(`Created set "${name}".`, { source: 'manageImages' })
     newSetName.value = ''
     showNewInput.value = false
   } catch (e) {
-    log.error(`Failed to create set: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to create set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   } finally {
     creating.value = false
   }
@@ -65,12 +65,12 @@ async function deleteSet() {
       const body = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
     } catch (e) {
-      log.error(`Failed to delete set: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+      log.error(`Failed to delete set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
       return
     }
   }
   project.deleteSet(setUid)
-  log.info(`Deleted set "${setName}".`, { source: 'import' })
+  log.info(`Deleted set "${setName}".`, { source: 'manageImages' })
 }
 </script>
 

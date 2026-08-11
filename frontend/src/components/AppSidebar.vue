@@ -66,7 +66,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
   {
     heading: 'Data',
     items: [
-      { to: '/import',   label: 'Import',   icon: 'pi-upload',   tip: 'Import microscopy images into your project.', requiresProject: true },
+      { to: '/manage-images', label: 'Manage images', icon: 'pi-upload', tip: 'Add, organise and export images.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
       { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },

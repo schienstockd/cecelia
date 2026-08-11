@@ -306,6 +306,17 @@ function _validate_leaf(key, value, spec::Dict{String,Any})
                 throw(ParamValidationError("'$key' contains \"$v\", not a valid option. " *
                                            "Valid: $(join(valid, ", "))"))
         end
+    elseif type_str == "dirPath"
+        # A destination FOLDER, typed or picked with the FileBrowser. Empty is legal — every consumer
+        # falls back to its own default — and a path that does not exist yet is legal too, because a
+        # destination is created on demand. The one unambiguous mistake is naming an existing FILE:
+        # nothing can write a directory's worth of output there, and catching it here costs nothing
+        # while the alternative is failing after the task has done all of its work.
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a path string, got: $value"))
+        p = strip(String(value))
+        (!isempty(p) && ispath(p) && !isdir(p)) &&
+            throw(ParamValidationError("'$key' is a file, not a folder: $p"))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end

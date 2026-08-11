@@ -79,7 +79,7 @@ async function navigate(path: string) {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     error.value = msg
-    log.error(`File browser: ${msg}`, { source: 'import' })
+    log.error(`File browser: ${msg}`, { source: 'manageImages' })
   } finally {
     loading.value = false
   }

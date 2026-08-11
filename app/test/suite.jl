@@ -1807,7 +1807,7 @@ end
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
@@ -10516,6 +10516,106 @@ end
     end
 end
 
+@testset "OME-TIFF export carries the calibration" begin
+    # The task exists because the OLD route (OME-TIFF → ImageJ → plain TIFF → Imaris File Converter)
+    # lost the pixel sizes: a plain TIFF has nowhere to record Z spacing, so the converter guessed the
+    # voxel size. Every assertion below is about the calibration surviving — that IS the feature.
+
+    meta = Dict{String,Any}("PhysicalSizeX" => 0.325, "PhysicalSizeY" => 0.325,
+                            "PhysicalSizeZ" => 2.0,   "PhysicalSizeUnit" => "µm",
+                            "TimeIncrement" => 10.0,  "TimeIncrementUnit" => "s")
+
+    cal = Cecelia._export_calibration(meta)
+    @test cal["PhysicalSizeZ"] == 2.0                     # the field the old workflow dropped
+    @test cal["PhysicalSizeZUnit"] == "µm"
+
+    # UNITS MUST BE THE OME SYMBOL, not the NGFF/UDUNITS name ccid.json stores. OME's UnitsLength and
+    # UnitsTime are ENUMERATIONS; "micrometer" is not a member, so one such attribute makes <Pixels>
+    # schema-invalid and Bio-Formats discards the ENTIRE OME block and falls back to counting IFDs —
+    # a 31x4x32 movie then opens as 3968 timepoints, one channel, no names, no voxel size. Verified
+    # against real Bio-Formats (bioformats2raw): "µm" reads back in full, "micrometer" reads nothing.
+    ngff = Dict{String,Any}("PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33,
+                            "PhysicalSizeZ" => 2.0,  "PhysicalSizeUnit" => "micrometer",
+                            "TimeIncrement" => 15.0, "TimeIncrementUnit" => "second")
+    ncal = Cecelia._export_calibration(ngff)
+    for k in ("PhysicalSizeXUnit", "PhysicalSizeYUnit", "PhysicalSizeZUnit")
+        @test ncal[k] == "µm"
+    end
+    @test ncal["TimeIncrementUnit"] == "s"
+    # An unknown unit passes through rather than being guessed at — same rule as the converter.
+    @test Cecelia._export_calibration(
+        Dict{String,Any}("PhysicalSizeX" => 1.0, "PhysicalSizeUnit" => "furlong")
+    )["PhysicalSizeXUnit"] == "furlong"
+    @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
+    @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
+
+    # A Z-MIP has no z extent left and a single frame has no interval — writing either would state a
+    # geometry the file doesn't have.
+    @test !haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeZ")
+    @test haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeX")
+    @test !haskey(Cecelia._export_calibration(meta; one_frame = true), "TimeIncrement")
+
+    # Unknown must stay unknown. Defaulting an absent/zero/garbage size to 1.0 would tell Imaris the
+    # pixel is one micron, which is a claim, not a fallback.
+    for bad in (Dict{String,Any}(), Dict{String,Any}("PhysicalSizeX" => ""),
+                Dict{String,Any}("PhysicalSizeX" => 0.0), Dict{String,Any}("PhysicalSizeX" => "abc"))
+        @test !haskey(Cecelia._export_calibration(bad), "PhysicalSizeX")
+    end
+
+    # …and that absence is exactly what QC flags, since the write itself always "succeeds".
+    codes(f) = [x["code"] for x in f]
+    @test isempty(Cecelia._export_qc_findings(cal, 21))     # fully calibrated → nothing to say
+    @test isempty(Cecelia._export_qc_findings(cal, 1))
+    # A 2D image legitimately has no Z spacing — don't cry wolf on SizeZ == 1.
+    @test isempty(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 1))
+    @test "export.no_z_calibration" in
+          codes(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 21))
+    @test "export.no_xy_calibration" in codes(Cecelia._export_qc_findings(Dict{String,Any}(), 1))
+
+    # channelSelection submits channel NAMES, not indices. Converting them by hand threw
+    # `Int("DAPI")` straight out of the task; `channel_indices` is the resolver, and it is 0-based —
+    # which is what the runner slices with, so an off-by-one here exports the wrong channel.
+    names = ["DAPI", "GFP", "mem-Tom"]
+    @test channel_indices(["GFP"], names; what = "channels") == [1]
+    @test channel_indices(["mem-Tom", "DAPI"], names; what = "channels") == [2, 0]
+    @test channel_indices(nothing, names; what = "channels") == Int[]
+    @test channel_indices(String[], names; what = "channels") == Int[]
+    # A name this version doesn't have must say so rather than silently pick something.
+    @test_throws ErrorException channel_indices(["nope"], names; what = "channels")
+
+    # …and the NAMES must come from `channel_names`, which falls back to the active version. Channel
+    # names are typically registered only under `default` while a processed version carries none, so
+    # reading the requested version's raw field returns nothing and the task reports "(none
+    # registered)" for an image whose channels the picker is listing — the picker is fed by
+    # `channel_names(img)`, so any other source disagrees with what the user just clicked.
+    proj = create_project!(name = "chan-fallback-$(rand(1000:9999))")
+    st   = add_set!(proj; name = "s")
+    im   = add_image!(st; name = "chan-fallback")
+    set_channel_names!(im, ["DAPI", "SHG"]; value_name = VERSIONED_DEFAULT_VAL, check_length = false)
+    save!(im)
+
+    @test channel_names(im) == ["DAPI", "SHG"]
+    # An explicit version with no entry of its own still resolves — this is the bug.
+    @test channel_names(im; value_name = "corrected") == ["DAPI", "SHG"]
+    @test channel_indices(["SHG"],
+                          something(channel_names(im; value_name = "corrected"), String[]);
+                          what = "channels") == [1]
+
+    # Dispatch + spec wiring
+    @test Cecelia._task_from_fun_name("exportImages.ome_tiff") isa ExportOmeTiff
+    spec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    @test String(get(spec, :fun_name, "")) == "exportImages.ome_tiff"
+    @test String(get(spec, :resource_pool, "")) == "io"
+    # The output is an ARTEFACT, not a version — nothing may register an image version from it.
+    @test !any(String(get(p, :key, "")) == "outputValueName" for p in get(spec, :params, []))
+
+    # One filename rule, shared with the movie recorders — an image called "… (cropped)" must not
+    # produce a name that ends in a separator (that bug shipped once already).
+    @test safe_name_part("A B (cropped)") == "A_B_cropped"
+    @test safe_name_part("  ") == ""
+    @test safe_name_part(nothing) == ""
+end
+
 # ── Canonical-helper detectors ────────────────────────────────────────────────
 # These exist because both rules below have now cost real debugging time, and neither was enforced.
 # The pattern is the repo's existing one (`no_bare_write_h5ad`, `TextIoDeclaresEncodingTest`, the
@@ -10586,4 +10686,90 @@ end
                                 join(offenders, "\n  ") *
                                 "\nlibuv sets exitcode 0 for a signal-killed process — check " *
                                 "`proc.exitcode == 0 && proc.termsignal == 0`.")
+end
+
+@testset "dirPath param validation" begin
+    # A destination folder, typed by hand or picked with the FileBrowser. The failure this guards is
+    # late and expensive: without it a bad destination is only discovered after the task has read,
+    # converted and tried to write the whole output.
+    spec = [Dict{String,Any}("key" => "outDir", "label" => "Destination", "type" => "dirPath")]
+
+    # Empty is legal — every consumer falls back to its own default (default_export_dir()).
+    Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => ""), spec)
+    Cecelia._validate_params_against_spec(Dict{String,Any}(), spec)
+
+    mktempdir() do dir
+        # An existing folder is the normal case.
+        Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => dir), spec)
+
+        # One that does not exist yet is fine too — a destination is created on demand, so rejecting
+        # it would stop someone naming a new subfolder, which is the obvious thing to want.
+        Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => joinpath(dir, "new_subfolder")), spec)
+
+        # An existing FILE is the one unambiguous mistake: nothing can write output into it.
+        f = joinpath(dir, "not_a_dir.txt"); write(f, "x")
+        @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => f), spec)
+    end
+
+    @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+        Dict{String,Any}("outDir" => 42), spec)
+
+    # The export's destination actually uses the type — the point of adding it.
+    ospec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    outdir = only(filter(p -> String(get(p, :key, "")) == "outDir", collect(ospec[:params])))
+    @test String(get(outdir, :type, "")) == "dirPath"
+end
+
+@testset "units written into OME-XML are schema-valid symbols" begin
+    # OME's UnitsLength / UnitsTime are ENUMERATIONS of symbols. A value outside them makes the
+    # whole <Pixels> element schema-invalid, and Bio-Formats then discards the ENTIRE OME block and
+    # falls back to counting IFDs — a 31x4x32 movie opened as 3968 timepoints, one channel, no
+    # names, no voxel size. Verified against real Bio-Formats (bioformats2raw): "µm" round-trips in
+    # full, "micrometer" yields nothing.
+    #
+    # The trap is that "micrometer" is CORRECT in the two places it comes from: NGFF `.zattrs` axes
+    # use UDUNITS-2 names, and `ccid.json` mirrors them because the importer reads the unit from the
+    # axes. Only the OME-XML boundary needs the symbol — which is what `ome_xml_unit_name` is for.
+    valid_length = Set(["Ym","Zm","Em","Pm","Tm","Gm","Mm","km","hm","dam","m","dm","cm","mm",
+                        "µm","nm","pm","fm","am","zm","ym","Å","thou","li","in","ft","yd","mi",
+                        "ua","ly","pc","pt","pixel","reference frame"])
+    valid_time   = Set(["Ys","Zs","Es","Ps","Ts","Gs","Ms","ks","hs","das","s","ds","cs","ms",
+                        "µs","ns","ps","fs","as","zs","ys","min","h","d"])
+    valid = union(valid_length, valid_time)
+
+    # Every output of the converter is a member — including for inputs already in symbol form.
+    for (ngff, sym) in Cecelia._OME_XML_UNIT
+        @test sym in valid
+        @test Cecelia.ome_xml_unit_name(ngff) == sym
+        @test Cecelia.ome_xml_unit_name(sym) in valid    # idempotent: a symbol stays valid
+    end
+    # The vocabularies the importer actually stores in ccid.json must all convert.
+    for ngff in ("micrometer", "nanometer", "millimeter", "second", "minute")
+        @test Cecelia.ome_xml_unit_name(ngff) in valid
+    end
+    # An unknown unit passes through — we do not guess a conversion — so it is the CALLER's job not
+    # to invent one, and the scan below is what keeps a caller from skipping the converter entirely.
+    @test Cecelia.ome_xml_unit_name("furlong") == "furlong"
+
+    # Anything that ASSIGNS an OME unit attribute must route through the converter. This is the
+    # bypass that shipped: the OME-TIFF export copied ccid.json's "micrometer" straight into
+    # PhysicalSizeXUnit, while every other writer converted.
+    offenders = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f); src = read(path, String)
+            occursin(r"\"(PhysicalSize[XYZ]Unit|TimeIncrementUnit)\"\s*(=>|\]\s*=)", src) || continue
+            occursin("ome_xml_unit_name", src) && continue
+            push!(offenders, basename(path))
+        end
+    end
+    isempty(offenders) && @test true
+    isempty(offenders) || error("these assign an OME-XML unit attribute without calling " *
+                                "`ome_xml_unit_name`:\n  " * join(offenders, "\n  ") *
+                                "\nccid.json/NGFF store UDUNITS names ('micrometer'); OME-XML " *
+                                "needs the symbol ('µm'), and an invalid one voids the whole block.")
 end

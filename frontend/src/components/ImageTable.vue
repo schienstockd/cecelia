@@ -75,7 +75,7 @@ function qcTip(img: CciaImage): string {
   return qcState(img) === 'clean' ? 'QC passed — no findings' : 'No QC yet — nothing has been run'
 }
 function pageIconFor(): { tip: string } | null {
-  if (props.module === 'metadata' || props.module === 'import')
+  if (props.module === 'metadata' || props.module === 'manageImages')
     return { tip: 'View or edit physical size & timing' }
   return null
 }
@@ -121,7 +121,7 @@ async function saveAttr(img: CciaImage, key: string, val: string) {
     const stored = await res.json().catch(() => ({})) as { values?: Record<string, string> }
     project.setAttrValues(key, stored.values ?? { [img.uid]: val })
   } catch (e) {
-    log.error(`Failed to set ${key}: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to set ${key}: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 // Channel names are one list per image; editing a single column replaces that index (1-based) and
@@ -143,7 +143,7 @@ async function saveChannel(img: CciaImage, idx: number, val: string) {
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
     project.updateImageMeta(img.uid, { channelNames: names })     // reflect immediately
   } catch (e) {
-    log.error(`Failed to set channel ${idx}: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to set channel ${idx}: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 async function saveNote(img: CciaImage, val: string) {
@@ -159,7 +159,7 @@ async function saveNote(img: CciaImage, val: string) {
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
   } catch (e) {
     project.setInclusion(img.uid, { note: prev })                // revert on failure
-    log.error(`Failed to save note: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to save note: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 
@@ -180,7 +180,7 @@ async function toggleStarred(img: CciaImage) {
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
   } catch (e) {
     project.setInclusion(img.uid, { starred: !starred })      // revert on failure
-    log.error(`Failed to star image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to star image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 
@@ -254,7 +254,7 @@ async function setIncluded(img: CciaImage, included: boolean) {
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
   } catch (e) {
     project.setInclusion(img.uid, { included: !included })     // revert on failure
-    log.error(`Failed to ${included ? 'include' : 'exclude'} image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to ${included ? 'include' : 'exclude'} image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 
@@ -309,7 +309,7 @@ watch(() => project.getImageSelection(scope.value, props.setUid).join(','), (csv
 
 // On the import + metadata pages excluded images ARE selectable (you curate/edit metadata there,
 // incl. on excluded ones); everywhere else selection is the runnable (included) subset only.
-const canSelectExcluded = computed(() => props.module === 'import' || props.module === 'metadata')
+const canSelectExcluded = computed(() => props.module === 'manageImages' || props.module === 'metadata')
 
 // Select-all and its tri-state header box are SelectionTable's; which rows it may reach is stated
 // here, as `unselectableUids`.
@@ -357,9 +357,9 @@ async function resyncFlagged() {
         timeIncrementUnit: img.timeIncrementUnit,
       })
     }
-    log.info(`Re-read physical size & timing from file for ${uids.length} image(s).`, { source: 'import' })
+    log.info(`Re-read physical size & timing from file for ${uids.length} image(s).`, { source: 'manageImages' })
   } catch (e) {
-    log.error(`Failed to resync metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+    log.error(`Failed to resync metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   } finally {
     resyncing.value = false
   }
@@ -385,7 +385,7 @@ function imageModuleStatus(img: CciaImage): TaskStatus | 'pending' | null {
   if (!props.module) return null
   const t = taskStore.forModule(props.module, projectMeta.current?.uid).find(t => t.imageUid === img.uid)
   if (t) return t.status
-  if (props.module === 'import') {
+  if (props.module === 'manageImages') {
     const s = img.status as string
     if (s === 'converting') return 'running'
     if (s === 'done')       return 'done'
@@ -499,7 +499,7 @@ const unselectableUids = computed(() =>
     <p class="empty-title">No images yet</p>
     <p class="empty-hint">Import your first image to get started.<br>
       Cecelia reads OME-ZARR, CZI, LIF, ND2 and most microscopy formats (anything bioformats2raw can read).</p>
-    <button v-if="route.path !== '/import'" class="cc-btn cc-btn-primary empty-cta" @click="router.push('/import')">
+    <button v-if="route.path !== '/manage-images'" class="cc-btn cc-btn-primary empty-cta" @click="router.push('/manage-images')">
       <i class="pi pi-plus" /> Import image
     </button>
   </div>
@@ -531,7 +531,7 @@ const unselectableUids = computed(() =>
         v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
         <i class="pi pi-exclamation-triangle" />
       </button>
-      <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
+      <button v-if="flaggedUids.length && (module === 'metadata' || module === 'manageImages')"
         class="select-flagged-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing"
         @click.stop="resyncFlagged"
         v-tooltip.bottom="`Re-read size & timing from file for ${flaggedUids.length} flagged image(s)`">
@@ -712,7 +712,7 @@ const unselectableUids = computed(() =>
         <i class="pi pi-info-circle" /> Metadata
       </button>
       <!-- crop CREATES an image → Import page only, like copy/move/remove in the action bar -->
-      <button v-if="module === 'import'" class="actions-item" :disabled="!isImported(actionsImg)"
+      <button v-if="module === 'manageImages'" class="actions-item" :disabled="!isImported(actionsImg)"
         @click.stop="isImported(actionsImg) && runAction(() => cropDialogUid = actionsImg!.uid)">
         <i class="pi pi-image" /> Crop to new image…
       </button>
