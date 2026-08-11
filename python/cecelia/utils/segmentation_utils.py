@@ -702,23 +702,40 @@ class SegmentationUtils:
         return cyto_out, nuc_out
 
     def _compute_iou_matrix(self, a, b):
-        """IoU matrix between all pairs of non-zero labels in a and b."""
+        """IoU matrix between all pairs of non-zero labels in a and b.
+
+        ONE co-occurrence histogram over the paired label maps, not a full-plane boolean op per
+        label pair — O(pixels) instead of O(labels²) array comparisons. `_match_nuc_cyto` calls
+        this once per timepoint, so the old form cost ~27 s/frame at 400×400 labels (≈90 min on a
+        201-frame two-model movie) purely to re-assign label IDs.
+
+        The IoU values are identical to the pairwise form; `IouMatrixOracleTest` pins the two
+        against each other, so `match_threshold`/`removeUnmatched` behaviour is unchanged.
+        """
         labels_a = np.unique(a[a > 0])
         labels_b = np.unique(b[b > 0])
-        if len(labels_a) == 0 or len(labels_b) == 0:
-            return np.zeros((len(labels_a), len(labels_b))), labels_a, labels_b
+        na, nb = len(labels_a), len(labels_b)
+        if na == 0 or nb == 0:
+            return np.zeros((na, nb), dtype=np.float32), labels_a, labels_b
 
-        a_counts = {int(la): int(np.sum(a == la)) for la in labels_a}
-        b_counts = {int(lb): int(np.sum(b == lb)) for lb in labels_b}
-        iou_mat = np.zeros((len(labels_a), len(labels_b)), dtype=np.float32)
+        # Label VALUES are arbitrary and non-contiguous (cellpose leaves gaps), so histogram over
+        # dense 0..n-1 indices rather than the raw ids — searchsorted is exact here because
+        # np.unique returns sorted values and every pixel below is drawn from that same set.
+        both = (a > 0) & (b > 0)
+        ia = np.searchsorted(labels_a, a[both]).astype(np.int64)
+        ib = np.searchsorted(labels_b, b[both]).astype(np.int64)
+        inter = np.bincount(ia * nb + ib, minlength=na * nb).reshape(na, nb)
 
-        for i, la in enumerate(labels_a):
-            a_mask = a == la
-            for j, lb in enumerate(labels_b):
-                inter = int(np.sum(a_mask & (b == lb)))
-                if inter > 0:
-                    union = a_counts[int(la)] + b_counts[int(lb)] - inter
-                    iou_mat[i, j] = inter / union
+        # Union needs no second pass over the volume: |A| + |B| - |A∩B| from the per-label totals.
+        counts_a = np.bincount(np.searchsorted(labels_a, a[a > 0]), minlength=na)
+        counts_b = np.bincount(np.searchsorted(labels_b, b[b > 0]), minlength=nb)
+
+        # Only pairs that actually co-occur can have IoU > 0, and there are O(labels) of those, not
+        # O(labels²) — so index them rather than building a second dense matrix for the union.
+        iou_mat = np.zeros((na, nb), dtype=np.float32)
+        ii, jj = np.nonzero(inter)
+        overlap = inter[ii, jj]
+        iou_mat[ii, jj] = overlap / (counts_a[ii] + counts_b[jj] - overlap)
 
         return iou_mat, labels_a, labels_b
 

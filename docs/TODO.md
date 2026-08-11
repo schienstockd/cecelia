@@ -112,24 +112,6 @@ only the decision to skip that work in segmentation:
   The box is for masking statistics and skipping known-empty work, never for cropping.
 - **Does the win generalise**, or is it specific to how much drift a movie has?
 
-### `_compute_iou_matrix` is quadratic in cell count, and every nuc+cyto run pays it per frame
-`SegmentationUtils._compute_iou_matrix` (`python/cecelia/utils/segmentation_utils.py`) compares every
-cyto label against every nuc label with a **full-plane boolean op per pair** — `len(a) × len(b)` array
-comparisons. Measured 2026-07-31 on one 590×590 plane: **1.8 s at 100×100 labels, 26.9 s at 400×400**.
-It's called from `_match_nuc_cyto` once **per timepoint**, so a 201-frame two-model movie with ~400
-cells/frame spends on the order of **90 minutes** just re-assigning label IDs.
-
-Found while deciding whether the task preview could afford to run the matching step (it can't — that is
-why the preview is base-model-only and says so; `docs/todo/TASK_PREVIEW_PLAN.md`). But the cost is paid
-by the real pipeline too, which is the part worth fixing.
-
-The fix is standard and O(pixels) rather than O(labels²): one co-occurrence histogram over the paired
-label maps — `np.bincount(a.ravel() * (b.max() + 1) + b.ravel())` (or `scipy.sparse.coo_matrix`) gives
-every pairwise intersection in a single pass, and the union follows from per-label totals. Same IoU
-numbers, so the existing `match_threshold`/`removeUnmatched` behaviour is unchanged — which means it can
-be pinned by asserting the new implementation matches the current one on a fixture before swapping it
-(the same oracle trick #435 used for the drift refactor).
-
 ### Export an image version as OME-TIFF (so it opens in Imaris with the right voxel size) 🔹 needs-input
 Nothing in the codebase writes a TIFF today (no `tifffile.imwrite` anywhere). The need is that people
 render figures in **Imaris**, not napari, and Imaris cannot read our zarr stores. The `.ccbundle`
