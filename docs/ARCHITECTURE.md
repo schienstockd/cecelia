@@ -175,7 +175,16 @@ emit **advisory** findings about the output it produced.
   `qc = read_all_qc(img)`; `frontend/src/lib/qc.ts` aggregates into a badge (ImageTable; MetadataPanel +
   whiteboard are later phases).
 - **First producer:** `cleanupImages.driftCorrect` — persists the applied per-frame drift and flags a
-  large inter-frame jump (`drift.jump`) or abnormal XY canvas growth (`drift.canvas_expansion`).
+  registration whose own measurements contradict each other (`drift.unreliable`), frames it could not
+  register at all (`drift.unregistered_frames`), a large inter-frame jump (`drift.jump`) or abnormal
+  XY canvas growth (`drift.canvas_expansion`).
+- **A finding is worth more when it can't be fooled by the thing it is checking.** The first three
+  drift findings above read the *trajectory*, so they can only compare it against an expectation of
+  how much drift is normal — which is why a movie that genuinely moves a lot looks like a broken one.
+  `drift.unreliable` instead compares the registration against **itself** (`shift(a→b) + shift(b→c)`
+  must equal `shift(a→c)`), needs no ground truth, and separated every movie on this machine that
+  registered (0.13–0.39 px RMS) from the one that did not (24 px) by ~60×. Prefer a self-consistency
+  check over a threshold on the answer whenever the task can produce one.
 
 (Where the data *is*, as opposed to how good it is, is not a QC concern — see
 *Valid box* below.)

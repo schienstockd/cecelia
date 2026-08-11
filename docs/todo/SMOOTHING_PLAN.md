@@ -326,11 +326,17 @@ jitter: Y sd **1.86 → 0.93 px**, X 0.98 → 0.46, 5-frame window spread max 4.
 
 The shifts are still noise-dominated afterwards though (lag-1 autocorr of the deltas −0.32, sign-flip
 55%; real sample drift is smooth, so differencing a *noisy position estimate* is what gives ≈−0.5).
-Two follow-ups, neither done:
+Two follow-ups:
 - estimate drift on the **denoised** store, now that one exists — and note the composite order above
-  puts `denoise` first, so this comes free
-- **smooth the shift trajectory** before applying it; a real drift curve is smooth, so regularising is
-  free accuracy and one fewer resampling of noise
+  puts `denoise` first, so this comes free. **Still open.**
+- ~~**smooth the shift trajectory** before applying it~~ — **done**, as a prior rather than a filter.
+  `correction_utils.estimate_drift` now measures every frame pair up to `driftMaxLag` apart and
+  solves the whole trajectory in one robust least squares, with a second-difference penalty
+  expressing "real drift is smooth". Regularising a *fit over redundant measurements* beats
+  smoothing the finished curve: the same redundancy that suppresses the noise also yields a
+  reliability number (cycle residual → the `drift.unreliable` QC finding), which a post-hoc filter
+  cannot produce. Measured on `4kS67f/fHqhyb`: XY excursion 242 px → 37 px, output store 9.26× the
+  input → 3.51×. The two clean movies moved under a pixel.
 
 ## Open
 

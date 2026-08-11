@@ -1,17 +1,18 @@
 """
 Drift correction task.
 
-Reads an OME-ZARR image, computes per-timepoint phase cross-correlation shifts
-on a reference channel, applies the shifts to all channels, and writes the
-drift-corrected image as a new OME-ZARR multiscale store.  The output array
-may be spatially larger than the input to accommodate the cumulative drift.
-Called by the Julia DriftCorrect task handler.
+Reads an OME-ZARR image, estimates per-timepoint shifts by phase cross-correlation on a reference
+channel, applies them to all channels, and writes the drift-corrected image as a new OME-ZARR
+multiscale store.  The output array may be spatially larger than the input to accommodate the
+cumulative drift.  Called by the Julia DriftCorrect task handler.
 
 Parameter contract (JSON written by Julia):
   imPath             - absolute path to input .ome.zarr
   imCorrectionPath   - absolute path to write corrected .ome.zarr
   driftChannel       - int, 0-based channel index used as phase-correlation reference
   driftNormalisation - "phase" | "none"  (passed to skimage phase_cross_correlation)
+  driftEstimator     - "multiLag" | "chain"  (see correction_utils.estimate_drift)
+  driftMaxLag        - int, how far apart two frames may be and still be compared (multiLag only)
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -32,8 +33,9 @@ def run(params):
         params.get('driftChannel'), 'driftChannel', 'drift_correct.jl')
     normalisation_raw  = params.get('driftNormalisation', 'none')
     normalisation      = normalisation_raw if normalisation_raw != 'none' else None
+    estimator          = params.get('driftEstimator', 'multiLag')
+    max_lag            = int(params.get('driftMaxLag', correction_utils.DRIFT_DEFAULT_MAX_LAG))
 
-    log.progress(0, 4)
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
     # dask handle only ever added graph overhead. Measured on a real store (zolIMa/ldYr8J, 0.78 GB):
@@ -46,17 +48,33 @@ def run(params):
     dim_utils.calc_image_dimensions(im_dat[0].shape)
 
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim}')
-    log.log(f'>> drift channel: {drift_channel}, normalisation: {normalisation_raw}')
+    log.log(f'>> drift channel: {drift_channel}, normalisation: {normalisation_raw}, '
+            f'estimator: {estimator}' + (f' (max lag {max_lag})' if estimator == 'multiLag' else ''))
 
-    log.progress(1, 4)
-    log.log('>> compute shifts')
-    shifts = correction_utils.drift_correction_shifts(
+    # One progress scale across the whole run rather than a 4-step one, because both loops below
+    # are minutes long on a real movie and the old scale stood still through each of them:
+    # T frames estimated, T frames written, then the pyramid + metadata.
+    n_t = dim_utils.dim_val('T')
+    total = 2 * n_t + 1
+    log.progress(0, total)
+
+    log.log('>> estimate drift')
+    est = correction_utils.estimate_drift(
         im_dat[0], drift_channel, dim_utils,
-        normalisation=normalisation,
+        normalisation=normalisation, estimator=estimator, max_lag=max_lag,
+        on_progress=lambda n, _t: log.progress(n, total),
     )
+    shifts = est.shifts
+    log.log(f'>> {est.n_pairs} pair measurements, {est.n_rejected} outvoted; ' + (
+        f'consistency {est.residual_rms:.2f} px RMS / {est.residual_p90:.2f} px p90'
+        if est.residual_rms is not None
+        else 'consistency not measurable (neighbour pairs only)'))
+    if est.interpolated:
+        log.log(f'[WARN] {len(est.interpolated)} frame(s) could not be registered — position '
+                f'predicted from neighbours: {est.interpolated[:12]}'
+                + ('…' if len(est.interpolated) > 12 else ''))
     log.log(f'shifts: {shifts}')
 
-    log.progress(2, 4)
     log.log('>> apply shifts (streaming to disk)')
     # Stream each corrected timepoint straight into the on-disk output store — the expanded
     # corrected image never lives in RAM (was the OOM on large time-lapses). Create level 0 up
@@ -71,9 +89,9 @@ def run(params):
             staging, out_shape, out_dtype, dim_utils, nscales=len(im_dat),
             reference_zarr=im_path)   # inherit the source's zarr format (ZARR_V3_PLAN D9)
         correction_utils.drift_correct_im(
-            im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0)
+            im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0,
+            on_progress=lambda n, _t: log.progress(n_t + n, total))
 
-        log.progress(3, 4)
         log.log(f'>> build pyramid + save: {im_correction_path}')
         zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
 
@@ -93,7 +111,8 @@ def run(params):
         # its own offset, so most of this store is padding (8 z-planes in a 22-plane canvas on the
         # worst movie here). Recorded on the STORE so any consumer asks one question —
         # `read_valid_box` — instead of knowing drift produced it and re-deriving the geometry. The
-        # numbers come from the same call that placed the pixels.
+        # numbers come from the same call that placed the pixels, so this stays exact even when the
+        # SHIFTS are poor: it describes where the pixels went, not where they should have gone.
         zarr_utils.write_valid_box(
             staging, dim_utils.spatial_axis(),
             correction_utils.drift_frame_origins(im_dat[0].shape, dim_utils, shifts))
@@ -103,18 +122,28 @@ def run(params):
     # or Y,X (2D). See docs/todo/QC_PLAN.md.
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
-        n_axes = int(shifts.shape[1]) if shifts.ndim == 2 else len(shifts)
-        axes = ['Z', 'Y', 'X'] if n_axes == 3 else ['Y', 'X']
-        write_json_atomic(qc_out_path, {
-            'dimOrder':    ''.join(dim_utils.im_dim_order),
-            'sourceShape': [int(x) for x in im_dat[0].shape],
-            'outputShape': [int(x) for x in out_shape],
-            'shiftAxes':   axes,
-            'shifts':      [[float(v) for v in row] for row in shifts],
-        })
+        doc = {
+            'dimOrder':     ''.join(dim_utils.im_dim_order),
+            'sourceShape':  [int(x) for x in im_dat[0].shape],
+            'outputShape':  [int(x) for x in out_shape],
+            'shiftAxes':    list(est.axes),
+            'shifts':       [[float(v) for v in row] for row in shifts],
+            'estimator':    est.estimator,
+            'maxLag':       int(est.max_lag),
+            'nPairs':       int(est.n_pairs),
+            'nRejected':    int(est.n_rejected),
+            'interpolated': [int(t) for t in est.interpolated],
+        }
+        # How much the estimate can be trusted — see correction_utils.drift_residuals. OMITTED
+        # rather than zeroed when the estimator had no redundancy to measure it from, so the
+        # Julia side reads "not measured" instead of "measured as perfect".
+        if est.residual_rms is not None:
+            doc['residualRms'] = est.residual_rms
+            doc['residualP90'] = est.residual_p90
+        write_json_atomic(qc_out_path, doc)
         log.log(f'>> saved drift/QC trajectory: {qc_out_path}')
 
-    log.progress(4, 4)
+    log.progress(total, total)
     log.log('>> done')
 
 
