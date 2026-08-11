@@ -716,7 +716,7 @@ make_chain(proj, "my-pipeline", [
     chain_node("importImages.omezarr"),
     chain_node("cleanupImages.cellposeCorrect"; resource_pool="gpu",
                params=Dict("model" => "cyto2")),
-    chain_node("testTasks.setTask"),                # picnic node — "set" comes from its spec
+    chain_node("testTasks.set_task"),                # picnic node — "set" comes from its spec
 ])
 
 # Or build manually (identical result, more control over node IDs)
@@ -753,9 +753,9 @@ run = load_chain_run(proj, run_id)
 | `app/src/tasks/scheduler.jl` | Resource pools + dispatchers, `TaskRecord`/`_TASKS`, `run_task`, cancel registry |
 | `app/src/tasks/chain.jl` | Chain data model, executor, barriers, resume logic, `chain_node`/`make_chain` REPL helpers |
 | `app/src/events.jl` | Package-level pub/sub event bus |
-| `app/src/tasks/testTasks/imageTask.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
-| `app/src/tasks/testTasks/setTask.jl` | Mock set-scope task |
-| `app/src/tasks/testTasks/incrementalPlotTask.jl` | Mock incremental plot task |
+| `app/src/tasks/testTasks/image_task.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
+| `app/src/tasks/testTasks/set_task.jl` | Mock set-scope task |
+| `app/src/tasks/testTasks/incremental_plot_task.jl` | Mock incremental plot task |
 | `app/test/runtests.jl` | Pool, chain-run, resume, barrier-policy and job-completion testsets |
 | `api/src/routes.jl` | `api_chains_list`, `api_chains_get`, `api_chains_save` — chain CRUD over HTTP |
 | `frontend/src/modules/ChainModule.vue` | Whiteboard page: Edit tab (palette, VueFlow canvas, node config) + Live tab (real-time task grid) |

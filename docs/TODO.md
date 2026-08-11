@@ -158,13 +158,3 @@ calibration survives. That makes the metadata the requirement, not a detail:
 
 This is a **write** path, so it's unaffected by `open_as_zarr` dropping its TIFF *reader* — an export
 reads the store through the canonical reader and writes out.
-
-### `testTasks.*` task fun_names/files are still camelCase
-The test tasks `testTasks.imageTask`/`testTasks.setTask`/`testTasks.incrementalPlotTask` (files
-`tasks/testTasks/{imageTask,setTask,incrementalPlotTask}.{jl,json}`, structs `TestImageTask`/
-`TestSetTask`/`IncrementalPlotTask`) predate the snake_case convention (see
-`docs/DEV.md` and the Julia naming rule in `CLAUDE.md`). Rename to snake_case `fun_name`s + files (e.g. `testTasks.image_task`,
-`tasks/test_tasks/image_task.{jl,json}`) — structs stay PascalCase. Touches `_spec_path`/
-`_fun_name_map` in `task_registry.jl`, the `Cecelia.jl` includes, and any test references. Not
-important (test-only scaffolding, no user-facing impact) but should be fixed for consistency;
-batch it rather than churn standalone.

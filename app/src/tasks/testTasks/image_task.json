@@ -1,8 +1,7 @@
 {
-  "fun_name": "testTasks.setTask",
-  "task": "setTask",
-  "label": "Test set task",
-  "scope": "set",
+  "fun_name": "testTasks.image_task",
+  "task": "imageTask",
+  "label": "Test image task",
   "resource_pool": "cpu",
   "params": [
     {
@@ -18,7 +17,7 @@
       "key": "message",
       "label": "Log message",
       "type": "text",
-      "default": "setTask ran",
+      "default": "imageTask ran",
       "tip": "Text written to the task log"
     }
   ]

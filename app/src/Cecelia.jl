@@ -199,9 +199,9 @@ include("tasks/task.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
 include("segmentation.jl")
-include("tasks/testTasks/imageTask.jl")
-include("tasks/testTasks/setTask.jl")
-include("tasks/testTasks/incrementalPlotTask.jl")
+include("tasks/testTasks/image_task.jl")
+include("tasks/testTasks/set_task.jl")
+include("tasks/testTasks/incremental_plot_task.jl")
 include("tasks/importImages/omezarr.jl")
 include("tasks/importImages/remove.jl")
 include("tasks/importImages/migrateLegacy.jl")

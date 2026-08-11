@@ -110,15 +110,15 @@ function _spec_path(::CopyImage)
 end
 
 function _spec_path(::TestImageTask)
-    joinpath(@__DIR__, "testTasks", "imageTask.json")
+    joinpath(@__DIR__, "testTasks", "image_task.json")
 end
 
 function _spec_path(::TestSetTask)
-    joinpath(@__DIR__, "testTasks", "setTask.json")
+    joinpath(@__DIR__, "testTasks", "set_task.json")
 end
 
 function _spec_path(::IncrementalPlotTask)
-    joinpath(@__DIR__, "testTasks", "incrementalPlotTask.json")
+    joinpath(@__DIR__, "testTasks", "incremental_plot_task.json")
 end
 
 _COMPOSITE_SPEC_PATHS["cleanupImages.afDriftCorrect"] =
@@ -170,8 +170,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
         "editImages.cropImage"              => CropImage(),
         "editImages.copyImage"              => CopyImage(),
-        "testTasks.imageTask"               => TestImageTask(),
-        "testTasks.setTask"                 => TestSetTask(),
-        "testTasks.incrementalPlotTask"     => IncrementalPlotTask(),
+        "testTasks.image_task"               => TestImageTask(),
+        "testTasks.set_task"                 => TestSetTask(),
+        "testTasks.incremental_plot_task"     => IncrementalPlotTask(),
     )
 end
