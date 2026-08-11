@@ -2,7 +2,7 @@
   Generic task runner panel used by every module page.
   Props:
     - defs: TaskDef[]       — available functions for this module (from JSON)
-    - module: string        — module key ('import' | 'segment' | ...)
+    - module: string        — module key ('manageImages' | 'segment' | ...)
     - selectedUids: string[] — image UIDs to run on (from the module's image table)
     - selectedNames: string[] — matching display names (for task labels)
 

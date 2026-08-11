@@ -25,6 +25,8 @@
 // (`/api/chains/run`), which has the whole graph rather than just what is in flight. This is the task
 // list's copy of the same work.
 
+import { moduleKeyFromFun } from './taskModule'
+
 /** One row of `GET /api/tasks` (snake_case, like `/api/tasks/recent`). Shaped by `list_tasks()`. */
 export interface InFlightTaskRow {
   id: string
@@ -79,15 +81,12 @@ export interface AdoptedTask {
 const ACTIVE = new Set(['queued', 'running'])
 
 /**
- * Which module page a `fun_name` belongs to — `'importImages.omezarr'` → `'import'`.
+ * Which module page a `fun_name` belongs to — `'importImages.omezarr'` → `'manageImages'`.
  *
- * Same derivation `addFromChainEvent` uses for a chain node, because both are answering the same question
- * about the same string.
+ * The shared derivation (`utils/taskModule`), which `addFromChainEvent` also uses: both answer the
+ * same question about the same string, and used to answer it with their own copy of the rule.
  */
-function moduleFromFun(fun: string): string {
-  const category = fun.split('.')[0] ?? ''
-  return category.replace(/Images$/i, '').replace(/Tasks$/i, '').toLowerCase() || 'chain'
-}
+const moduleFromFun = moduleKeyFromFun
 
 /**
  * Snapshot rows → task-list entries, dropping what this tab can't or shouldn't show.

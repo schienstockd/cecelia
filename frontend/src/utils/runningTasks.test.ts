@@ -70,7 +70,7 @@ describe('adoptableTasks', () => {
   })
 
   it('derives the module page from the fun category', () => {
-    expect(adoptableTasks([row({ fun_name: 'importImages.omezarr' })], ctx, none)[0].module).toBe('import')
+    expect(adoptableTasks([row({ fun_name: 'importImages.omezarr' })], ctx, none)[0].module).toBe('manageImages')
     expect(adoptableTasks([row({ fun_name: 'segment.cellpose' })], ctx, none)[0].module).toBe('segment')
   })
 

@@ -56,7 +56,7 @@ async function submit() {
       restarting.value = true
       await waitForBackend()
     }
-    router.replace('/import')
+    router.replace('/manage-images')
   } catch (e) {
     log.error(e instanceof Error ? e.message : String(e), { source: 'setup' })
     submitting.value = false

@@ -5,7 +5,7 @@
   These are file-manager operations, not analysis: they belong on the page where images are curated, and
   they apply to every checked image at once. They used to be per-row — a Move item and a Copy item in the
   ⋯ menu plus a delete ✕ at the far end of each row — which meant crowding that menu and doing one image
-  at a time. Mount this ONLY from the Import page (`ImportModule.vue`); other module pages deliberately
+  at a time. Mount this ONLY from the Manage images page (`ManageImagesModule.vue`); other module pages deliberately
   have no way to delete or re-file an image.
 
   Props: `setUid` (the source set) + `uids` (the current selection). Emits `done` after any operation so
@@ -75,7 +75,7 @@ function openMove() {
 async function doMove() {
   if (moving.value) return
   const dest = resolveSetDestination(project.sets, moveTargetUid.value, moveNewName.value)
-  if (!dest.ok) { log.warn(dest.error, { source: 'import' }); return }
+  if (!dest.ok) { log.warn(dest.error, { source: 'manageImages' }); return }
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
   moving.value = true
@@ -107,12 +107,12 @@ async function doMove() {
       moved++
       busy.value = { verb: 'Moving', done: moved, total: targets.length }
     }
-    log.info(`Moved ${moved} image(s) to "${toName}".`, { source: 'import' })
+    log.info(`Moved ${moved} image(s) to "${toName}".`, { source: 'manageImages' })
     toast.add({ severity: 'success', summary: 'Moved', life: 2500,
                 detail: `${moved} image(s) → ${toName}` })
   } catch (e) {
     log.error(`Failed to move image (${moved} moved): ${e instanceof Error ? e.message : String(e)}`,
-      { source: 'import' })
+      { source: 'manageImages' })
     toast.add({ severity: 'error', summary: 'Move failed', life: 4000,
                 detail: `${moved} of ${targets.length} moved — see the log` })
   } finally {
@@ -156,12 +156,12 @@ async function runPerImage(verb: string, summary: string,
       done++
       busy.value = { verb, done, total: targets.length }
     }
-    log.info(`${summary} for ${done} image(s).`, { source: 'import' })
+    log.info(`${summary} for ${done} image(s).`, { source: 'manageImages' })
     toast.add({ severity: 'success', summary: 'Deleted', life: 2500,
                 detail: `${summary} — ${done} image(s)` })
   } catch (e) {
     log.error(`${verb} failed after ${done} image(s): ${e instanceof Error ? e.message : String(e)}`,
-      { source: 'import' })
+      { source: 'manageImages' })
     toast.add({ severity: 'error', summary: 'Delete failed', life: 4000,
                 detail: `${done} of ${targets.length} done — see the log` })
   } finally {
@@ -227,12 +227,12 @@ async function runPlan(plan: DeletePlan) {
       project.updateImageMeta(uid, image as Partial<CciaImage>)
     }
     busy.value = { verb: 'Deleting analysis', done: targets.length, total: targets.length }
-    log.info(`Deleted the analysis of ${targets.length} image(s).`, { source: 'import' })
+    log.info(`Deleted the analysis of ${targets.length} image(s).`, { source: 'manageImages' })
     toast.add({ severity: 'success', summary: 'Deleted', life: 2500,
                 detail: `Analysis of ${targets.length} image(s)` })
   } catch (e) {
     log.error(`Failed to delete analysis: ${e instanceof Error ? e.message : String(e)}`,
-      { source: 'import' })
+      { source: 'manageImages' })
     toast.add({ severity: 'error', summary: 'Delete failed', life: 4000, detail: 'See the log' })
   } finally {
     busy.value = null

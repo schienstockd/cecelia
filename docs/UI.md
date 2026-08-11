@@ -1185,7 +1185,7 @@ panel body scrolls when the sections together exceed the height.
 Emits `selectionChange(uids: string[])`. `ModuleLayout` handles this internally.
 
 **File operations live in the action bar, not in the rows.** Copy / Move / Delete act on the whole
-checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Import page's
+checkbox **selection** and are rendered by `components/ImageFileActions.vue` in the Manage images page's
 `#actions` slot — next to *Add images*, where a file manager puts them. Two rules follow:
 
 - **They are Import-only.** Creating, re-filing and removing images is import-time curation; no other
@@ -1204,7 +1204,7 @@ per-image).
 ### Deleting is one modal with four scopes
 
 **There are exactly two places that delete image data**, and that is a deliberate ceiling
-(`docs/todo/IMAGE_DELETE_PLAN.md`): the Import page's **Delete** modal (`DeleteImagesDialog.vue`) for
+(`docs/todo/IMAGE_DELETE_PLAN.md`): the Manage images page's **Delete** modal (`DeleteImagesDialog.vue`) for
 anything per-image, and **Settings → Storage** for the automatic whole-project reclaim. It used to be
 five, spread across four screens.
 

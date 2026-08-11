@@ -8,7 +8,7 @@ export interface LogEntry {
   level: LogLevel
   message: string
   detail?: string   // stack trace, server response body, etc.
-  source?: string   // 'ws' | 'api' | 'import' | 'metadata' | ...
+  source?: string   // 'ws' | 'api' | 'manageImages' | 'metadata' | ...
   timestamp: Date
 }
 

@@ -10516,6 +10516,58 @@ end
     end
 end
 
+@testset "OME-TIFF export carries the calibration" begin
+    # The task exists because the OLD route (OME-TIFF → ImageJ → plain TIFF → Imaris File Converter)
+    # lost the pixel sizes: a plain TIFF has nowhere to record Z spacing, so the converter guessed the
+    # voxel size. Every assertion below is about the calibration surviving — that IS the feature.
+
+    meta = Dict{String,Any}("PhysicalSizeX" => 0.325, "PhysicalSizeY" => 0.325,
+                            "PhysicalSizeZ" => 2.0,   "PhysicalSizeUnit" => "µm",
+                            "TimeIncrement" => 10.0,  "TimeIncrementUnit" => "s")
+
+    cal = Cecelia._export_calibration(meta)
+    @test cal["PhysicalSizeZ"] == 2.0                     # the field the old workflow dropped
+    @test cal["PhysicalSizeZUnit"] == "µm"
+    @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
+    @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
+
+    # A Z-MIP has no z extent left and a single frame has no interval — writing either would state a
+    # geometry the file doesn't have.
+    @test !haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeZ")
+    @test haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeX")
+    @test !haskey(Cecelia._export_calibration(meta; one_frame = true), "TimeIncrement")
+
+    # Unknown must stay unknown. Defaulting an absent/zero/garbage size to 1.0 would tell Imaris the
+    # pixel is one micron, which is a claim, not a fallback.
+    for bad in (Dict{String,Any}(), Dict{String,Any}("PhysicalSizeX" => ""),
+                Dict{String,Any}("PhysicalSizeX" => 0.0), Dict{String,Any}("PhysicalSizeX" => "abc"))
+        @test !haskey(Cecelia._export_calibration(bad), "PhysicalSizeX")
+    end
+
+    # …and that absence is exactly what QC flags, since the write itself always "succeeds".
+    codes(f) = [x["code"] for x in f]
+    @test isempty(Cecelia._export_qc_findings(cal, 21))     # fully calibrated → nothing to say
+    @test isempty(Cecelia._export_qc_findings(cal, 1))
+    # A 2D image legitimately has no Z spacing — don't cry wolf on SizeZ == 1.
+    @test isempty(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 1))
+    @test "export.no_z_calibration" in
+          codes(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 21))
+    @test "export.no_xy_calibration" in codes(Cecelia._export_qc_findings(Dict{String,Any}(), 1))
+
+    # Dispatch + spec wiring
+    @test Cecelia._task_from_fun_name("exportImages.ome_tiff") isa ExportOmeTiff
+    spec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    @test String(get(spec, :fun_name, "")) == "exportImages.ome_tiff"
+    @test String(get(spec, :resource_pool, "")) == "io"
+    # The output is an ARTEFACT, not a version — nothing may register an image version from it.
+    @test !any(String(get(p, :key, "")) == "outputValueName" for p in get(spec, :params, []))
+
+    # One filename rule, shared with the movie recorders — an image called "… (cropped)" must not
+    # produce a name that ends in a separator (that bug shipped once already).
+    @test safe_name_part("A B (cropped)") == "A_B_cropped"
+    @test safe_name_part("  ") == ""
+    @test safe_name_part(nothing) == ""
+
 # ── Canonical-helper detectors ────────────────────────────────────────────────
 # These exist because both rules below have now cost real debugging time, and neither was enforced.
 # The pattern is the repo's existing one (`no_bare_write_h5ad`, `TextIoDeclaresEncodingTest`, the

@@ -56,8 +56,8 @@ describe('rowFilters', () => {
   })
 
   it('keeps the pre-refactor localStorage keys so existing toggle state survives', () => {
-    expect(rowFilterKey('excluded', 'import')).toBe('cc-hide-excluded:import')
-    expect(rowFilterKey('unimported', 'import')).toBe('cc-hide-unimported:import')
+    expect(rowFilterKey('excluded', 'manageImages')).toBe('cc-hide-excluded:manageImages')
+    expect(rowFilterKey('unimported', 'manageImages')).toBe('cc-hide-unimported:manageImages')
     expect(rowFilterKey('excluded', undefined)).toBe('cc-hide-excluded:default')
   })
 

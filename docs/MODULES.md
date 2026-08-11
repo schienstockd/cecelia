@@ -386,7 +386,7 @@ Keeps the task **out of the module page's function list** while leaving it fully
 from the REPL via `run_task`, dispatchable over the WS rail, and available as a **chain node**. Use it
 when a purpose-built UI now does the task's job better, but the task itself still earns its place.
 
-The one user today is `importImages.remove` ("Remove image data"): the Import page's Delete modal owns
+The one user today is `importImages.remove` ("Remove image data"): the Manage images page's Delete modal owns
 that interaction now (`docs/UI.md` → *Deleting is one modal with four scopes*), but the task is still a
 legitimate chain step — correct an image, then free the original — and it is the package suite's
 real-task workhorse for chain end-to-end, fault-isolation and scope tests, which is why it was hidden
@@ -902,7 +902,7 @@ To add a button above the table (e.g. "Add images"):
 ```
 
 The slot also receives `{ setUid, selectedUids, selectUids }`, so a bar item can act on the current
-selection — that is where the Import page's Copy / Move / Delete live (`ImageFileActions.vue`; see
+selection — that is where the Manage images page's Copy / Move / Delete live (`ImageFileActions.vue`; see
 `docs/UI.md` → *File operations*). Per-image actions go in the row's ⋯ menu instead.
 
 ### Below-table content

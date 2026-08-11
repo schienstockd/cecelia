@@ -10,7 +10,11 @@ import ImageFileActions from '../components/ImageFileActions.vue'
 import LegacyMigrateDialog from '../components/LegacyMigrateDialog.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
-const { defs: importDefs, reload: reloadDefs } = useTaskDefs('importImages')
+// The page is 'Manage images', not 'Import': it hosts add/copy/move/delete alongside the import
+// tasks, and now the export ones too. Two categories rather than one — `exportImages` is its own
+// category because an export produces an ARTEFACT outside the project, unlike `editImages` (copy,
+// crop), which produces new images inside it. Import first, so the picker reads in workflow order.
+const { defs: importDefs, reload: reloadDefs } = useTaskDefs(['importImages', 'exportImages'])
 const project     = useProjectStore()
 const log         = useLogStore()
 const projectMeta = useProjectMetaStore()
@@ -21,7 +25,7 @@ const showMigrate = ref(false)
 
 function openFilePicker() {
   if (!activeSet.value) {
-    log.warn('Create or select a set before adding images.', { source: 'import' })
+    log.warn('Create or select a set before adding images.', { source: 'manageImages' })
     return
   }
   showBrowser.value = true
@@ -29,7 +33,7 @@ function openFilePicker() {
 
 function openMigrate() {
   if (!activeSet.value) {
-    log.warn('Create or select a set before migrating a legacy project.', { source: 'import' })
+    log.warn('Create or select a set before migrating a legacy project.', { source: 'manageImages' })
     return
   }
   showMigrate.value = true
@@ -44,7 +48,7 @@ function onLegacyImported(images: unknown[]) {
   log.info(
     `Added ${n} legacy image${n !== 1 ? 's' : ''} to "${set.name}". ` +
     `Run the "Migrate legacy image" task to transfer the data.`,
-    { source: 'import' },
+    { source: 'manageImages' },
   )
 }
 
@@ -68,12 +72,12 @@ async function onFilesSelected(paths: string[]) {
     project.addImagesFromApi(set.uid, imgs)
     log.info(
       `Added ${imgs.length} image${imgs.length !== 1 ? 's' : ''} to "${set.name}".`,
-      { source: 'import' }
+      { source: 'manageImages' }
     )
   } catch (e) {
     log.error(
       `Failed to register images: ${e instanceof Error ? e.message : String(e)}`,
-      { source: 'import' }
+      { source: 'manageImages' }
     )
   }
 }
@@ -96,7 +100,7 @@ async function onFilesSelected(paths: string[]) {
   />
 
   <ModuleLayout
-    module="import"
+    module="manageImages"
     :allow-manage="true"
     :show-filter="false"
     no-set-hint="Create a set to get started."
@@ -133,7 +137,7 @@ async function onFilesSelected(paths: string[]) {
       <TaskRunner
         :defs="importDefs"
         :on-reload-defs="reloadDefs"
-        module="import"
+        module="manageImages"
         :selected-uids="selectedUids"
         :selected-names="selectedNames"
       />
