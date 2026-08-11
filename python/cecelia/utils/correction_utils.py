@@ -9,10 +9,12 @@ returned as a dask array so create_multiscales can use it directly.
 
 import collections
 from copy import copy
+import os
 import numpy as np
 import shutil
 
 import dask.array as da
+import scipy.fft
 import scipy.ndimage
 import skimage.restoration
 import skimage.morphology
@@ -26,39 +28,278 @@ import cecelia.utils.script_utils as script_utils
 
 
 # ── Drift correction ──────────────────────────────────────────────────────────
+#
+# Estimating the drift is by far the expensive half of the task (95 s of a 122 s run on
+# `4kS67f/fHqhyb`), and all of it is FFTs. Three properties of THIS problem make the obvious loop
+# several times slower than it needs to be, all measured on `zolIMa/ldYr8J` (181×4×31×1024×1024),
+# 20 frame pairs:
+#
+#   as written, float64, one pair at a time                     57.7 s
+#   + float32                                                   26.6 s   (2.2x)
+#   + reuse each frame's FFT instead of recomputing it           ^ included above
+#   + multithreaded FFT (scipy.fft workers)                      16.5 s   (3.5x)
+#
+# float32 is free accuracy-wise: the resulting trajectory differs by 0.02 px cumulative over 20
+# frames, and the writer rounds placements to whole pixels anyway. The FFT reuse matters because
+# every frame is BOTH the moving image of one pair and the reference of the next — the old loop
+# read it from the store twice and transformed it twice. `upsample_factor` is NOT worth tuning
+# (2.38 s/pair at 1x vs 2.79 at 100x on the same data); the transform dominates, not the peak
+# refinement.
 
-def drift_correction_shifts(
-        image_array, phase_shift_channel, dim_utils,
-        timepoints=None, upsample_factor=100,
-        normalisation=None, time_idx=None, channel_idx=None):
-    shifts = []
+# How many threads scipy.fft may use. Deliberately not `cpu_count()`: this runs inside a `cpu` pool
+# slot alongside other tasks, and the win is most of the way there by 8 (16.5 s at 32 workers vs
+# 18.9 s at 8 on the benchmark above).
+_FFT_WORKERS = max(1, min(8, os.cpu_count() or 1))
+
+# Per-frame position measurements are taken not only between neighbours but across short gaps, and
+# the whole trajectory is then solved at once. See `estimate_drift`.
+DRIFT_DEFAULT_MAX_LAG = 3
+DRIFT_DEFAULT_SMOOTHNESS = 0.5
+
+DriftEstimate = collections.namedtuple('DriftEstimate', [
+    'shifts',        # (T-1, D) per-frame deltas — what the writer applies. The historic return value.
+    'positions',     # (T, D) absolute position of each frame, positions[0] == 0
+    'axes',          # ['Z','Y','X'] or ['Y','X'] — what the D columns mean
+    'estimator',     # 'multiLag' | 'chain'
+    'max_lag',
+    'n_pairs',       # how many pairwise measurements went in
+    'n_rejected',    # …and how many the robust fit outvoted
+    'interpolated',  # frame indices with no surviving measurement — position predicted, not measured
+    # px, cycle consistency (see `drift_residuals`) — the reliability number, and **None when there
+    # was no redundancy to measure it from** (max_lag 1, i.e. the `chain` estimator). Not 0.0: with
+    # only neighbour measurements the residual is identically zero by construction, so banking it
+    # would report a flawless registration for the one estimator that cannot check itself.
+    'residual_rms',
+    'residual_p90',
+])
+
+
+def _drift_frame(image_array, dim_utils, phase_shift_channel, t,
+                 time_idx=None, channel_idx=None):
+    """One timepoint of the reference channel as a float32 spatial array."""
     if channel_idx is None:
         channel_idx = dim_utils.dim_idx('C')
     if time_idx is None:
         time_idx = dim_utils.dim_idx('T')
-
-    slices = [slice(None)] * len(image_array.shape)
+    sl = [slice(None)] * len(image_array.shape)
     if channel_idx is not None:
-        slices[channel_idx] = slice(phase_shift_channel, phase_shift_channel + 1, 1)
+        sl[channel_idx] = slice(phase_shift_channel, phase_shift_channel + 1, 1)
+    sl[time_idx] = slice(t, t + 1, 1)
+    return np.squeeze(zarr_utils.fortify(image_array[tuple(sl)])).astype(np.float32)
 
-    if timepoints is None:
-        timepoints = range(1, dim_utils.dim_val('T'))
 
-    for x in timepoints:
-        if x % 10 == 0:
-            print(x)
-        slices_a = slices.copy()
-        slices_b = slices.copy()
-        slices_a[time_idx] = slice(x - 1, x, 1)
-        slices_b[time_idx] = slice(x, x + 1, 1)
-        shift, error, diffphase = phase_cross_correlation(
-            np.squeeze(zarr_utils.fortify(image_array[tuple(slices_a)])),
-            np.squeeze(zarr_utils.fortify(image_array[tuple(slices_b)])),
-            upsample_factor=upsample_factor,
-            normalization=normalisation,
-        )
-        shifts.append(shift)
-    return np.vstack(shifts)
+def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, max_lag,
+                             upsample_factor=100, normalisation=None,
+                             time_idx=None, channel_idx=None, on_progress=None):
+    """``[(i, j, shift)]`` for every frame pair with ``0 < j - i <= max_lag``.
+
+    One read and one FFT per frame, held in a ring buffer of ``max_lag + 1`` — so raising the lag
+    buys redundancy at the cost of extra *correlations*, not extra transforms (the expensive part).
+    Memory is bounded by the ring, which matters: a 31×1024×1024 frame's spectrum is 260 MB.
+    """
+    out, ring = [], {}
+    with scipy.fft.set_workers(_FFT_WORKERS):
+        for t in range(n_t):
+            ring[t] = scipy.fft.fftn(_drift_frame(
+                image_array, dim_utils, phase_shift_channel, t,
+                time_idx=time_idx, channel_idx=channel_idx))
+            for k in range(1, max_lag + 1):
+                if t - k < 0:
+                    continue
+                # space='fourier' is why the transforms can be cached at all — skimage otherwise
+                # re-transforms both images on every call.
+                shift, _, _ = phase_cross_correlation(
+                    ring[t - k], ring[t], upsample_factor=upsample_factor,
+                    normalization=normalisation, space='fourier')
+                out.append((t - k, t, np.asarray(shift, dtype=float)))
+            ring.pop(t - max_lag, None)
+            if on_progress is not None:
+                on_progress(t + 1, n_t)
+    return out
+
+
+def _solve_drift_trajectory(pairs, n_t, n_dim, smoothness=DRIFT_DEFAULT_SMOOTHNESS,
+                            robust=True, n_iter=8):
+    """Absolute per-frame positions from redundant pairwise measurements.
+
+    Each measurement is one linear equation, ``pos[j] - pos[i] = shift``, and with more than one lag
+    the system is overdetermined — so the pairs can disagree, and how much they disagree is a
+    reliability signal the pairwise chain simply does not have.
+
+    **What this actually protects against.** Not a single bad *frame*: phase correlation still
+    assigns that frame some best-fit position `p`, and a chain uses it twice with opposite signs
+    (`p − pos[t-1]`, then `pos[t+1] − p`), so `p` cancels and the tail is unharmed — pinned in
+    `test_drift_estimate.py`, which caught this being asserted the wrong way round. The failure that
+    does accumulate is a set of measurements that NO assignment of per-frame positions can satisfy,
+    which is what a movie whose frames barely correlate produces. A chain has no way to notice that
+    — it believes each measurement in turn — while a least-squares fit over redundant measurements
+    both resists it and, through the residual, measures it.
+
+    Two additions to a plain least squares:
+
+    * **Robust reweighting** (IRLS, Huber-style). The residual scale is estimated from the inlier
+      bulk (MAD), so the threshold adapts to a movie's own noise rather than a constant that would
+      be far too tight on a clean movie and far too loose on a shaky one. Floored, so a movie whose
+      pairs agree to 0.1 px is not trimmed for the sake of it.
+    * **A second-difference penalty** weighted by ``smoothness``. Real stage/thermal drift is
+      smooth, so this is prior knowledge rather than cosmetic filtering — and it is what makes the
+      system solvable for a frame every measurement rejected (its position is then predicted from
+      its neighbours, which is the best available answer for a frame that cannot be registered).
+      This is the "smooth the shift trajectory" follow-up recorded in
+      `docs/todo/SMOOTHING_PLAN.md` → *Also worth changing*, done as a prior rather than as a filter
+      applied after the fact.
+
+    Returns ``(positions, weights)`` — ``positions[0]`` is the origin by construction.
+    """
+    n = len(pairs)
+    A = np.zeros((n, n_t))
+    b = np.zeros((n, n_dim))
+    for r, (i, j, s) in enumerate(pairs):
+        A[r, j] = 1.0
+        A[r, i] = -1.0
+        b[r] = s
+
+    if smoothness > 0 and n_t > 2:
+        S = np.zeros((n_t - 2, n_t))
+        for t in range(1, n_t - 1):
+            S[t - 1, t - 1] = 1.0
+            S[t - 1, t] = -2.0
+            S[t - 1, t + 1] = 1.0
+        S = S * float(smoothness)
+        sb = np.zeros((n_t - 2, n_dim))
+    else:
+        S = np.zeros((0, n_t))
+        sb = np.zeros((0, n_dim))
+
+    w = np.ones(n)
+    positions = np.zeros((n_t, n_dim))
+    for _ in range(n_iter if robust else 1):
+        # pos[0] is pinned to the origin by dropping its column — the measurements only ever
+        # constrain differences, so without a pin the system is rank-deficient.
+        M = np.vstack([A * w[:, None], S])[:, 1:]
+        y = np.vstack([b * w[:, None], sb])
+        sol, *_ = np.linalg.lstsq(M, y, rcond=None)
+        positions = np.vstack([np.zeros(n_dim), sol])
+        if not robust:
+            break
+        res = np.linalg.norm(A @ positions - b, axis=1)
+        scale = max(1.4826 * np.median(np.abs(res - np.median(res))), 0.25)
+        w = np.clip(2.5 * scale / np.maximum(res, 1e-9), 0.0, 1.0)
+    return positions, w
+
+
+def drift_residuals(pairs, positions):
+    """Per-measurement disagreement with a fitted trajectory, in pixels.
+
+    This is *cycle consistency*: ``shift(a→b) + shift(b→c)`` has to equal ``shift(a→c)``, and the
+    gap needs no ground truth to compute — three measurements of the same geometry either agree or
+    they do not. Measured across this machine's movies it separates the two cases by ~60x (RMS
+    0.13–0.39 px where registration works, 24 px on `4kS67f/fHqhyb`, where it does not), which is
+    why the task banks it as QC rather than leaving "did that register?" to the eye.
+
+    Note what it does NOT claim: the residual is zero for any self-consistent set of measurements,
+    however wrong the drift they describe. It answers "are these measurements OF something", not
+    "is that something the right answer" — which is the honest limit of a check with no ground
+    truth, and still enough to separate every good movie here from the broken one.
+    """
+    if not len(pairs):
+        return np.zeros(0)
+    A = np.zeros((len(pairs), positions.shape[0]))
+    b = np.zeros((len(pairs), positions.shape[1]))
+    for r, (i, j, s) in enumerate(pairs):
+        A[r, j] = 1.0
+        A[r, i] = -1.0
+        b[r] = s
+    return np.linalg.norm(A @ positions - b, axis=1)
+
+
+def estimate_drift(image_array, phase_shift_channel, dim_utils,
+                   upsample_factor=100, normalisation=None,
+                   estimator='multiLag', max_lag=DRIFT_DEFAULT_MAX_LAG,
+                   smoothness=DRIFT_DEFAULT_SMOOTHNESS, robust=True,
+                   time_idx=None, channel_idx=None, on_progress=None):
+    """Per-frame drift of ``image_array`` on ``phase_shift_channel``, as a `DriftEstimate`.
+
+    ``estimator``:
+
+    * ``'multiLag'`` (default) — measure every pair up to ``max_lag`` apart and solve the whole
+      trajectory at once, robustly. Measured on `4kS67f/fHqhyb`, whose frames barely correlate
+      (pairwise measurements disagreeing by 24 px RMS): the XY excursion the chain reports
+      collapses from 242 px to 37 px and the output store from 9.26x the input to 3.55x, while the
+      two movies that register cleanly (`kSUFux/mkh3Tu`, `zolIMa/fXgbTl`) move by under a pixel.
+      It does not rescue such a movie — `fHqhyb` still reports 7 px p90 against ~0.5 px on a good
+      one, and still trips `drift.unreliable` — it stops the estimate running away.
+    * ``'chain'`` — neighbours only, integrated in order. What the task did before, kept so a
+      banked trajectory can be reproduced. Note it is not bit-identical to pre-2026-08 runs: the
+      transforms are float32 now (≤0.02 px cumulative, below the whole-pixel placement grid).
+
+    ``on_progress(n, total)`` is called once per frame transformed.
+    """
+    if estimator not in ('multiLag', 'chain'):
+        raise ValueError(f"unknown drift estimator '{estimator}' (multiLag | chain)")
+
+    n_t = dim_utils.dim_val('T')
+    axes = ['Z', 'Y', 'X'] if dim_utils.is_3D() else ['Y', 'X']
+    lag = 1 if estimator == 'chain' else max(1, int(max_lag))
+
+    pairs = _drift_pair_measurements(
+        image_array, dim_utils, phase_shift_channel, n_t, lag,
+        upsample_factor=upsample_factor, normalisation=normalisation,
+        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+
+    n_dim = len(axes)
+    if estimator == 'chain':
+        deltas = np.vstack([s for i, j, s in pairs]) if pairs else np.zeros((0, n_dim))
+        positions = np.vstack([np.zeros(n_dim), np.cumsum(deltas, axis=0)]) if len(deltas) \
+            else np.zeros((n_t, n_dim))
+        weights = np.ones(len(pairs))
+    else:
+        positions, weights = _solve_drift_trajectory(
+            pairs, n_t, n_dim, smoothness=smoothness, robust=robust)
+
+    # Only meaningful with overlapping measurements to compare — see the field comment above.
+    res = drift_residuals(pairs, positions) if lag > 1 else np.zeros(0)
+    rejected = weights < 0.5
+    # A frame nothing survived for is placed where its neighbours say it should be — flagged so a
+    # reader of the QC sidecar knows that position was predicted rather than measured.
+    measured = set()
+    for keep, (i, j, _) in zip(~rejected, pairs):
+        if keep:
+            measured.add(i)
+            measured.add(j)
+    interpolated = [t for t in range(n_t) if t not in measured]
+
+    return DriftEstimate(
+        shifts=np.diff(positions, axis=0),
+        positions=positions,
+        axes=axes,
+        estimator=estimator,
+        max_lag=lag,
+        n_pairs=len(pairs),
+        n_rejected=int(rejected.sum()),
+        interpolated=interpolated,
+        residual_rms=float(np.sqrt(np.mean(res ** 2))) if len(res) else None,
+        residual_p90=float(np.percentile(res, 90)) if len(res) else None,
+    )
+
+
+def drift_correction_shifts(
+        image_array, phase_shift_channel, dim_utils,
+        timepoints=None, upsample_factor=100,
+        normalisation=None, time_idx=None, channel_idx=None,
+        estimator='multiLag', max_lag=DRIFT_DEFAULT_MAX_LAG):
+    """Just the per-frame deltas — `estimate_drift` without the diagnostics.
+
+    Kept because it is the historic entry point and an external consumer may call it; the task
+    itself uses `estimate_drift`, which carries the numbers QC needs. ``timepoints`` is accepted
+    for signature compatibility and ignored: the estimator needs a consecutive run from frame 0
+    (positions accumulate), which is the constraint the writer has always had too.
+    """
+    return estimate_drift(
+        image_array, phase_shift_channel, dim_utils,
+        upsample_factor=upsample_factor, normalisation=normalisation,
+        estimator=estimator, max_lag=max_lag,
+        time_idx=time_idx, channel_idx=channel_idx).shifts
 
 
 def shifts_summary(shifts, cumulative=True, is_3D=True):
@@ -198,14 +439,14 @@ def drift_frame_origins(input_array, dim_utils, shifts, timepoints=None):
 def drift_correct_im(
         input_array, dim_utils, phase_shift_channel,
         timepoints=None, drift_corrected_path=None,
-        upsample_factor=100, shifts=None, chunk_size=None, out=None):
+        upsample_factor=100, shifts=None, chunk_size=None, out=None,
+        on_progress=None):
     if timepoints is None:
         timepoints = range(dim_utils.dim_val('T'))
 
     if shifts is None:
         shifts = drift_correction_shifts(
             input_array, phase_shift_channel, dim_utils,
-            timepoints=range(1, dim_utils.dim_val('T')),
             upsample_factor=upsample_factor,
         )
 
@@ -221,28 +462,30 @@ def drift_correct_im(
     # it fills one timepoint at a time, so the streaming and in-RAM results are byte-identical.
     result = out if out is not None else np.zeros(drift_im_shape_round, dtype=result_dtype)
 
-    tp_shape = list(drift_im_shape_round)
-    tp_shape[dim_utils.dim_idx('T')] = 1
-    tp_shape = tuple(tp_shape)
-
     # Where each frame lands. Shape arithmetic only, so it is computed up front and shared with
     # every other consumer of this store (the QC sidecar records it) instead of living inline here
     # — see drift_frame_slices.
     frame_slices = drift_frame_slices(input_array, dim_utils, shifts, timepoints)
 
-    for i in timepoints:
-        new_slices = frame_slices[i]
+    t_idx = dim_utils.dim_idx('T')
+    # Assign the frame straight into its destination window rather than building a full canvas
+    # frame around it and writing that. The canvas is mostly padding — 1.03–9.26x the input across
+    # the movies on this machine — and the padding is already what an unwritten chunk reads as, so
+    # materialising and compressing it was work with no output. Pixels are identical either way
+    # (asserted in `test_drift_geometry.py`); on `4kS67f/fHqhyb` the write phase goes 22.2 s → 19.1 s
+    # and the untouched padding chunks are never created at all.
+    timepoints = list(timepoints)
+    for n, i in enumerate(timepoints):
         im_slices = [slice(None)] * len(drift_im_shape_round)
-        im_slices[dim_utils.dim_idx('T')] = slice(i, i + 1, 1)
-        im_slices = tuple(im_slices)
+        im_slices[t_idx] = slice(i, i + 1, 1)
+        src = zarr_utils.fortify(input_array[tuple(im_slices)])
 
-        if i % 10 == 0:
-            print(i)
+        dest = list(frame_slices[i])
+        dest[t_idx] = slice(i, i + 1, 1)
+        result[tuple(dest)] = src
 
-        src = zarr_utils.fortify(input_array[im_slices])
-        new_image = np.zeros(tp_shape, dtype=result_dtype)
-        new_image[new_slices] = src
-        result[im_slices] = new_image
+        if on_progress is not None:
+            on_progress(n + 1, len(timepoints))
 
     return result
 

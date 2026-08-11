@@ -153,6 +153,19 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Output canvas grew +{pct}% in XY",
         long  = "Larger than a clean correction — check the output and re-run this step if it looks wrong."),
 
+    # drift correction (_drift_qc_findings). `drift.unreliable` is the primary one: it is measured
+    # from the registration disagreeing with ITSELF, so unlike the other two it does not depend on
+    # what the drift happens to look like. See correction_utils.drift_residuals.
+    "drift.unreliable" => (
+        short = "Frames did not register ({value} px disagreement)",
+        long  = "Pick a structural reference channel and re-run — nothing downstream of this store is aligned."),
+    "drift.jump" => (
+        short = "Drift jumped sharply at T={value}",
+        long  = "The reference channel likely lost tracking — re-run drift with a clearer/structural channel."),
+    "drift.unregistered_frames" => (
+        short = "{value} frame(s) could not be registered",
+        long  = "Their position was predicted from neighbours — check those timepoints before measuring on them."),
+
     # cohort comparison (qc_cohort.jl `_cohort_finding`)
     "cohort.outlier" => (
         short = "{metric} is a cohort outlier",

@@ -8279,6 +8279,52 @@ end
                                    "outputShape" => [20, 4, 19, 541, 527], "shifts" => smooth))
         fo, _, _ = Cecelia._drift_qc_findings(meta_ok)
         @test isempty(fo)
+
+        # A sidecar written before the residual existed carries no `residualRms`. It must not be
+        # read as a perfect registration — no finding, and no metric either (a banked 0 would drag
+        # the cohort median toward "everything registered").
+        @test !haskey(Cecelia._drift_qc_metrics(meta_ok, [20, 4, 13, 512, 512],
+                                                [20, 4, 19, 541, 527]), "residualPx")
+    end
+
+    @testset "drift reliability findings" begin
+        # The registration disagreeing with ITSELF. This is the one check that can tell a broken
+        # registration from a movie that genuinely moved a lot — the other two read the trajectory
+        # and cannot. Numbers are the measured ones: every movie that registered on this machine
+        # sat at 0.13–0.39 px, `4kS67f/fHqhyb` at 24 px.
+        base = Dict{String,Any}("dimOrder" => "TCZYX", "shiftAxes" => ["Z", "Y", "X"],
+                                "sourceShape" => [20, 4, 13, 512, 512],
+                                "outputShape" => [20, 4, 19, 541, 527],
+                                "shifts" => [[0.0, 1.0, 1.0] for _ in 1:20])
+
+        good = merge(base, Dict("residualRms" => 0.39, "residualP90" => 0.5,
+                                "nPairs" => 57, "nRejected" => 0))
+        @test isempty(Cecelia._drift_qc_findings(good)[1])
+
+        bad = merge(base, Dict("residualRms" => 24.3, "residualP90" => 12.6,
+                               "nPairs" => 57, "nRejected" => 8))
+        fb = Cecelia._drift_qc_findings(bad)[1]
+        unrel = first(f for f in fb if f["code"] == "drift.unreliable")
+        @test unrel["level"] == "warn"
+        @test unrel["detail"]["nRejected"] == 8
+        @test occursin("24.3", unrel["short"])
+
+        # Frames no measurement survived for: their position is predicted, and the sidecar says so.
+        gappy = merge(good, Dict("interpolated" => [4, 9]))
+        fg = Cecelia._drift_qc_findings(gappy)[1]
+        interp = first(f for f in fg if f["code"] == "drift.unregistered_frames")
+        @test interp["detail"]["frames"] == [4, 9]
+        @test occursin("2 frame", interp["short"])
+
+        # Metrics: the cohort-comparable numbers, and only the ones actually measured.
+        m = Cecelia._drift_qc_metrics(bad, [20, 4, 13, 512, 512], [20, 4, 19, 541, 527])
+        @test m["residualPx"] == 24.3
+        @test m["canvasExpansion"] > 1.0
+        @test m["framesInterpolated"] == 0
+        # everything the cohort pass is told to aggregate must actually be banked
+        for k in Cecelia.COHORT_METRICS["cleanupImages.driftCorrect"]
+            @test haskey(m, k)
+        end
     end
 
     @testset "OIR companion-file staging" begin
