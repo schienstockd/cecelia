@@ -42,8 +42,9 @@
     {
       "key": "outDir",
       "label": "Destination",
-      "type": "text",
+      "type": "dirPath",
       "default": "",
+      "placeholder": "Default export folder",
       "tip": "Folder to write into; empty uses the default export folder"
     }
   ]

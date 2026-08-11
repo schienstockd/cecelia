@@ -452,6 +452,21 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "outputName", "label": "Output name", "type": "text", "default": "result" }
 ```
 
+**`dirPath`** — a destination **folder**: a text field plus a Browse button opening the shared
+`FileBrowser` in `mode="dir"` (the same picker the `.ccbundle` project export uses). Still typeable,
+since pasting a remembered path beats browsing to it. `placeholder` describes what an empty value
+falls back to.
+```json
+{ "key": "outDir", "label": "Destination", "type": "dirPath", "default": "",
+  "placeholder": "Default export folder", "tip": "Folder to write into" }
+```
+It browses the filesystem of the machine running the **server** — for a normal local install, the
+user's own machine. A native OS folder dialog is not available to us: browsers never expose real
+paths, and `showDirectoryPicker()` is Chromium-only and hands back an opaque handle the Julia side
+could not write to. Validation accepts empty (the consumer's default) and a folder that does not
+exist yet (destinations are created on demand), and rejects an existing **file** — the one
+unambiguous mistake, caught before the task does its work rather than after.
+
 **`select`** — dropdown. Use `options` array; `multiple: true` for multi-select:
 ```json
 {

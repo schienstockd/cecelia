@@ -82,8 +82,29 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     end
 
     z_mip     = get(params, "zMip", false) === true
-    timepoint = Int(something(tryparse_f64(string(get(params, "timepoint", -1))), -1.0))
-    channels  = Int[Int(c) for c in get(params, "channels", Int[])]
+    timepoint = round(Int, something(tryparse_f64(string(get(params, "timepoint", -1))), -1.0))
+
+    # `channelSelection` submits channel NAMES, not indices — resolving them is `channel_indices`'
+    # job (0-based, which is what the Python runner slices with). Converting here by hand is what
+    # broke this: `Int("DAPI")` threw a MethodError out of the task with a Julia stacktrace.
+    #
+    # Names come from `channel_names`, which falls back to the ACTIVE version when the requested one
+    # has no entry of its own — names are typically registered only under `default` while processed
+    # versions carry none. That fallback is the whole point of the helper, and reading the raw
+    # versioned field instead (`ccid_channel_names(raw, value_name)`) is what made this report
+    # "(none registered)" for an image whose channels the picker was happily listing: the picker is
+    # fed by `channel_names(img)` in the image payload, so anything else disagrees with the UI.
+    all_names = something(channel_names(img; value_name = value_name), String[])
+    local channels::Vector{Int}
+    try
+        channels = channel_indices(get(params, "channels", nothing), all_names; what = "channels")
+    catch e
+        # A name this version doesn't have is a parameter problem, not a crash — say which, and stop
+        # before doing any work. (Channel names are per image VERSION, so a chain built on one image
+        # can name a channel another one lacks.)
+        on_log("[ERROR] $(e isa ErrorException ? e.msg : sprint(showerror, e))")
+        return nothing
+    end
 
     # Destination: an artefact, so never inside the project tree. Empty → the same shared folder the
     # `.ccbundle` project export writes to, so exports of both kinds land in one place.
@@ -107,10 +128,8 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     out_path = joinpath(out_dir, stem * ".ome.tif")
 
     # Channel names for the OME-XML, restricted to the exported subset (and in that order).
-    all_names = versioned_get_field(raw, "imChannelNames", value_name)
-    all_names = isnothing(all_names) ? String[] : String[string(n) for n in all_names]
-    ch_names  = isempty(channels) ? all_names :
-                String[1 <= c + 1 <= length(all_names) ? all_names[c + 1] : "Channel $c" for c in channels]
+    ch_names = isempty(channels) ? all_names :
+               String[1 <= c + 1 <= length(all_names) ? all_names[c + 1] : "Channel $c" for c in channels]
 
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     cal  = _export_calibration(meta; z_mip = z_mip, one_frame = timepoint >= 0)

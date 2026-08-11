@@ -1807,7 +1807,7 @@ end
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
@@ -10554,6 +10554,35 @@ end
           codes(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 21))
     @test "export.no_xy_calibration" in codes(Cecelia._export_qc_findings(Dict{String,Any}(), 1))
 
+    # channelSelection submits channel NAMES, not indices. Converting them by hand threw
+    # `Int("DAPI")` straight out of the task; `channel_indices` is the resolver, and it is 0-based —
+    # which is what the runner slices with, so an off-by-one here exports the wrong channel.
+    names = ["DAPI", "GFP", "mem-Tom"]
+    @test channel_indices(["GFP"], names; what = "channels") == [1]
+    @test channel_indices(["mem-Tom", "DAPI"], names; what = "channels") == [2, 0]
+    @test channel_indices(nothing, names; what = "channels") == Int[]
+    @test channel_indices(String[], names; what = "channels") == Int[]
+    # A name this version doesn't have must say so rather than silently pick something.
+    @test_throws ErrorException channel_indices(["nope"], names; what = "channels")
+
+    # …and the NAMES must come from `channel_names`, which falls back to the active version. Channel
+    # names are typically registered only under `default` while a processed version carries none, so
+    # reading the requested version's raw field returns nothing and the task reports "(none
+    # registered)" for an image whose channels the picker is listing — the picker is fed by
+    # `channel_names(img)`, so any other source disagrees with what the user just clicked.
+    proj = create_project!(name = "chan-fallback-$(rand(1000:9999))")
+    st   = add_set!(proj; name = "s")
+    im   = add_image!(st; name = "chan-fallback")
+    set_channel_names!(im, ["DAPI", "SHG"]; value_name = VERSIONED_DEFAULT_VAL, check_length = false)
+    save!(im)
+
+    @test channel_names(im) == ["DAPI", "SHG"]
+    # An explicit version with no entry of its own still resolves — this is the bug.
+    @test channel_names(im; value_name = "corrected") == ["DAPI", "SHG"]
+    @test channel_indices(["SHG"],
+                          something(channel_names(im; value_name = "corrected"), String[]);
+                          what = "channels") == [1]
+
     # Dispatch + spec wiring
     @test Cecelia._task_from_fun_name("exportImages.ome_tiff") isa ExportOmeTiff
     spec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
@@ -10567,6 +10596,7 @@ end
     @test safe_name_part("A B (cropped)") == "A_B_cropped"
     @test safe_name_part("  ") == ""
     @test safe_name_part(nothing) == ""
+end
 
 # ── Canonical-helper detectors ────────────────────────────────────────────────
 # These exist because both rules below have now cost real debugging time, and neither was enforced.
@@ -10638,4 +10668,38 @@ end
                                 join(offenders, "\n  ") *
                                 "\nlibuv sets exitcode 0 for a signal-killed process — check " *
                                 "`proc.exitcode == 0 && proc.termsignal == 0`.")
+end
+
+@testset "dirPath param validation" begin
+    # A destination folder, typed by hand or picked with the FileBrowser. The failure this guards is
+    # late and expensive: without it a bad destination is only discovered after the task has read,
+    # converted and tried to write the whole output.
+    spec = [Dict{String,Any}("key" => "outDir", "label" => "Destination", "type" => "dirPath")]
+
+    # Empty is legal — every consumer falls back to its own default (default_export_dir()).
+    Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => ""), spec)
+    Cecelia._validate_params_against_spec(Dict{String,Any}(), spec)
+
+    mktempdir() do dir
+        # An existing folder is the normal case.
+        Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => dir), spec)
+
+        # One that does not exist yet is fine too — a destination is created on demand, so rejecting
+        # it would stop someone naming a new subfolder, which is the obvious thing to want.
+        Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => joinpath(dir, "new_subfolder")), spec)
+
+        # An existing FILE is the one unambiguous mistake: nothing can write output into it.
+        f = joinpath(dir, "not_a_dir.txt"); write(f, "x")
+        @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => f), spec)
+    end
+
+    @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+        Dict{String,Any}("outDir" => 42), spec)
+
+    # The export's destination actually uses the type — the point of adding it.
+    ospec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    outdir = only(filter(p -> String(get(p, :key, "")) == "outDir", collect(ospec[:params])))
+    @test String(get(outdir, :type, "")) == "dirPath"
 end

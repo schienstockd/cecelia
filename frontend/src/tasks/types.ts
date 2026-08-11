@@ -1,12 +1,13 @@
 export interface ParamDef {
   key: string
   label: string
-  type: 'int' | 'float' | 'bool' | 'text' | 'select' | 'chipSelect'
+  type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'select' | 'chipSelect'
        | 'channelSelection' | 'valueNameSelection'
        | 'popSelection' | 'labelPropsSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'group' | 'section'
   tip?: string
+  placeholder?: string  // text / dirPath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
