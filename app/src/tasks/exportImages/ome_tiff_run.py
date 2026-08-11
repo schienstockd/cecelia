@@ -42,6 +42,18 @@ from cecelia.utils.atomic_io import write_json_atomic
 # well below the limit — the estimate is the raw pixel count and ignores tags/metadata overhead.
 _BIGTIFF_BYTES = 3_500_000_000
 
+# OME length units → how many of them make a centimetre, for the TIFF resolution tags (which are
+# pixels-per-unit and only understand INCH/CENTIMETER). Both the OME spelling and the symbol, since
+# `ccid.json` carries whatever the importer read. A unit absent from here is left unconverted rather
+# than guessed — see where this is used.
+_PER_CM = {
+    'micrometer': 1e4, 'µm': 1e4, 'um': 1e4,
+    'nanometer':  1e7, 'nm': 1e7,
+    'millimeter': 10.0, 'mm': 10.0,
+    'centimeter': 1.0,  'cm': 1.0,
+    'meter':      0.01, 'm':  0.01,
+}
+
 
 def _remaining_axes(dim_order, fixed):
     """Axis names left, in source order, once `fixed` axes are indexed away with plain ints."""
@@ -121,6 +133,30 @@ def run(params):
     if not any(k.startswith('PhysicalSize') for k in cal):
         log.log('[WARN] no physical pixel size to write — the export will have no scale')
 
+    # The TIFF resolution TAGS, in addition to the OME-XML. Bio-Formats (so Imaris, via
+    # ImarisConvertBioformats) reads the OME-XML and gets the full geometry — but a reader that only
+    # looks at TIFF tags, notably ImageJ's own native TIFF opener, ignores OME entirely and reports
+    # an uncalibrated image. Writing both costs nothing and makes XY self-describing everywhere.
+    #
+    # Derived from the SAME `cal` the OME-XML is written from, never a second source — the two copies
+    # must agree (CLAUDE.md → *Calibration — three copies, one stamp*).
+    #
+    # Z spacing has NO plain-TIFF tag. That is the whole reason this task exists rather than exporting
+    # a plain TIFF, so it stays OME-only and a tag-reader legitimately sees no Z.
+    tiff_kwargs = {}
+    px_per_cm = _PER_CM.get(str(cal.get('PhysicalSizeXUnit', '')).lower())
+    sx, sy = cal.get('PhysicalSizeX'), cal.get('PhysicalSizeY')
+    if px_per_cm and sx and sy:
+        # RESOLUTION is pixels per unit, so it is the RECIPROCAL of the pixel size.
+        tiff_kwargs = {'resolution': (px_per_cm / float(sx), px_per_cm / float(sy)),
+                       'resolutionunit': 'CENTIMETER'}
+        log.log(f'>> resolution tags: {float(sx):g}x{float(sy):g} '
+                f'{cal.get("PhysicalSizeXUnit")}/px')
+    elif sx:
+        # Don't guess a conversion for a unit we don't know — a wrong scale bar is worse than none.
+        log.log(f'[WARN] unit {cal.get("PhysicalSizeXUnit")!r} not convertible to TIFF resolution '
+                f'tags — OME-XML still carries the pixel size')
+
     # ── stream planes ───────────────────────────────────────────────────────────────────────────
     def _plane(frame, c, z):
         """One YX plane out of an in-RAM timepoint, with C/Z indexed (or Z projected) away."""
@@ -163,7 +199,8 @@ def run(params):
     log.progress(0, total)
     try:
         with tifffile.TiffWriter(tmp_path, bigtiff=big, ome=True) as tw:
-            tw.write(planes(), shape=tuple(shape_out), dtype=arr.dtype, metadata=meta)
+            tw.write(planes(), shape=tuple(shape_out), dtype=arr.dtype, metadata=meta,
+                     **tiff_kwargs)
         os.replace(tmp_path, out_path)
     except BaseException:
         if os.path.exists(tmp_path):

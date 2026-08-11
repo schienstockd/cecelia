@@ -10528,6 +10528,24 @@ end
     cal = Cecelia._export_calibration(meta)
     @test cal["PhysicalSizeZ"] == 2.0                     # the field the old workflow dropped
     @test cal["PhysicalSizeZUnit"] == "µm"
+
+    # UNITS MUST BE THE OME SYMBOL, not the NGFF/UDUNITS name ccid.json stores. OME's UnitsLength and
+    # UnitsTime are ENUMERATIONS; "micrometer" is not a member, so one such attribute makes <Pixels>
+    # schema-invalid and Bio-Formats discards the ENTIRE OME block and falls back to counting IFDs —
+    # a 31x4x32 movie then opens as 3968 timepoints, one channel, no names, no voxel size. Verified
+    # against real Bio-Formats (bioformats2raw): "µm" reads back in full, "micrometer" reads nothing.
+    ngff = Dict{String,Any}("PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33,
+                            "PhysicalSizeZ" => 2.0,  "PhysicalSizeUnit" => "micrometer",
+                            "TimeIncrement" => 15.0, "TimeIncrementUnit" => "second")
+    ncal = Cecelia._export_calibration(ngff)
+    for k in ("PhysicalSizeXUnit", "PhysicalSizeYUnit", "PhysicalSizeZUnit")
+        @test ncal[k] == "µm"
+    end
+    @test ncal["TimeIncrementUnit"] == "s"
+    # An unknown unit passes through rather than being guessed at — same rule as the converter.
+    @test Cecelia._export_calibration(
+        Dict{String,Any}("PhysicalSizeX" => 1.0, "PhysicalSizeUnit" => "furlong")
+    )["PhysicalSizeXUnit"] == "furlong"
     @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
     @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
 
@@ -10702,4 +10720,56 @@ end
     ospec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
     outdir = only(filter(p -> String(get(p, :key, "")) == "outDir", collect(ospec[:params])))
     @test String(get(outdir, :type, "")) == "dirPath"
+end
+
+@testset "units written into OME-XML are schema-valid symbols" begin
+    # OME's UnitsLength / UnitsTime are ENUMERATIONS of symbols. A value outside them makes the
+    # whole <Pixels> element schema-invalid, and Bio-Formats then discards the ENTIRE OME block and
+    # falls back to counting IFDs — a 31x4x32 movie opened as 3968 timepoints, one channel, no
+    # names, no voxel size. Verified against real Bio-Formats (bioformats2raw): "µm" round-trips in
+    # full, "micrometer" yields nothing.
+    #
+    # The trap is that "micrometer" is CORRECT in the two places it comes from: NGFF `.zattrs` axes
+    # use UDUNITS-2 names, and `ccid.json` mirrors them because the importer reads the unit from the
+    # axes. Only the OME-XML boundary needs the symbol — which is what `ome_xml_unit_name` is for.
+    valid_length = Set(["Ym","Zm","Em","Pm","Tm","Gm","Mm","km","hm","dam","m","dm","cm","mm",
+                        "µm","nm","pm","fm","am","zm","ym","Å","thou","li","in","ft","yd","mi",
+                        "ua","ly","pc","pt","pixel","reference frame"])
+    valid_time   = Set(["Ys","Zs","Es","Ps","Ts","Gs","Ms","ks","hs","das","s","ds","cs","ms",
+                        "µs","ns","ps","fs","as","zs","ys","min","h","d"])
+    valid = union(valid_length, valid_time)
+
+    # Every output of the converter is a member — including for inputs already in symbol form.
+    for (ngff, sym) in Cecelia._OME_XML_UNIT
+        @test sym in valid
+        @test Cecelia.ome_xml_unit_name(ngff) == sym
+        @test Cecelia.ome_xml_unit_name(sym) in valid    # idempotent: a symbol stays valid
+    end
+    # The vocabularies the importer actually stores in ccid.json must all convert.
+    for ngff in ("micrometer", "nanometer", "millimeter", "second", "minute")
+        @test Cecelia.ome_xml_unit_name(ngff) in valid
+    end
+    # An unknown unit passes through — we do not guess a conversion — so it is the CALLER's job not
+    # to invent one, and the scan below is what keeps a caller from skipping the converter entirely.
+    @test Cecelia.ome_xml_unit_name("furlong") == "furlong"
+
+    # Anything that ASSIGNS an OME unit attribute must route through the converter. This is the
+    # bypass that shipped: the OME-TIFF export copied ccid.json's "micrometer" straight into
+    # PhysicalSizeXUnit, while every other writer converted.
+    offenders = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f); src = read(path, String)
+            occursin(r"\"(PhysicalSize[XYZ]Unit|TimeIncrementUnit)\"\s*(=>|\]\s*=)", src) || continue
+            occursin("ome_xml_unit_name", src) && continue
+            push!(offenders, basename(path))
+        end
+    end
+    isempty(offenders) && @test true
+    isempty(offenders) || error("these assign an OME-XML unit attribute without calling " *
+                                "`ome_xml_unit_name`:\n  " * join(offenders, "\n  ") *
+                                "\nccid.json/NGFF store UDUNITS names ('micrometer'); OME-XML " *
+                                "needs the symbol ('µm'), and an invalid one voids the whole block.")
 end

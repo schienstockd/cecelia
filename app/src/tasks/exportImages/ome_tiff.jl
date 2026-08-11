@@ -10,7 +10,16 @@ struct ExportOmeTiff <: CciaTask end
 # single-timepoint export has no interval between frames, so TimeIncrement goes too.
 function _export_calibration(meta::AbstractDict; z_mip::Bool = false, one_frame::Bool = false)
     out = Dict{String,Any}()
+    # `ccid.json` stores the NGFF/UDUNITS spelling ("micrometer", "second"); OME-XML's UnitsLength /
+    # UnitsTime are ENUMERATIONS of symbols ("µm", "s"). `ome_xml_unit_name` is the one converter
+    # (mirrored in `zarr_utils._OME_XML_UNIT`, kept equal by the cross-language golden test).
+    #
+    # This is not cosmetic. A value outside the enumeration makes the whole `<Pixels>` element
+    # schema-invalid, and Bio-Formats then DISCARDS the entire OME block and falls back to counting
+    # IFDs — so a 31x4x32 movie opened as 3968 timepoints, one channel, no names and no voxel size.
+    # Writing "micrometer" is exactly the bug this task exists to prevent, one layer down.
     unit = get(meta, "PhysicalSizeUnit", nothing)
+    unit = unit isa AbstractString ? ome_xml_unit_name(unit) : unit
     for (k, ax) in (("PhysicalSizeX", "X"), ("PhysicalSizeY", "Y"), ("PhysicalSizeZ", "Z"))
         (ax == "Z" && z_mip) && continue
         v = get(meta, k, nothing)
@@ -26,7 +35,8 @@ function _export_calibration(meta::AbstractDict; z_mip::Bool = false, one_frame:
             tv = tryparse_f64(ti)
             if !isnothing(tv) && tv > 0
                 out["TimeIncrement"]     = tv
-                out["TimeIncrementUnit"] = string(get(meta, "TimeIncrementUnit", "s"))
+                out["TimeIncrementUnit"] = ome_xml_unit_name(
+                    string(get(meta, "TimeIncrementUnit", "s")))
             end
         end
     end
