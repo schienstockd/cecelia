@@ -1800,7 +1800,7 @@ end
 # something task-specific (Branching's µm key rename, NeighbourStats/ClustRegions' moved keys).
 #
 # Two rules that only a whole-registry sweep can enforce, both of which caught a real defect when
-# this landed: `params` must be a JSON ARRAY (testTasks.incrementalPlotTask declared an object, so
+# this landed: `params` must be a JSON ARRAY (testTasks.incremental_plot_task declared an object, so
 # `validate_params` threw MethodError instead of validating), and every `type` must be one the
 # validator knows (migrateLegacy said "string", which is not a case in `_validate_leaf`, so the
 # param silently skipped validation).
@@ -3583,8 +3583,8 @@ end
     # EVERY set-scope task declares it in its own spec — including the mock, which used to rely on
     # each chain node passing scope="set" (the one task that contradicted "the spec is the single
     # source of truth", and it's the fixture the barrier tests are built on).
-    @test Cecelia._task_default_scope("testTasks.setTask")    == "set"
-    @test chain_node("testTasks.setTask").scope               == "set"
+    @test Cecelia._task_default_scope("testTasks.set_task")    == "set"
+    @test chain_node("testTasks.set_task").scope               == "set"
 
     # chain_node / ChainNode with no scope kwarg resolve from the spec …
     @test chain_node("clustTracks.cluster").scope == "set"
@@ -3815,12 +3815,12 @@ end
 @testset "Chain start dot — prune to reachable subgraph" begin
     tpl = ChainTemplate(
         "start-chain",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="x", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="y", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="b", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="d", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="x", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="y", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d"), ChainEdge("x","y")],
         ["c"],                                          # start dot → c (mid-chain)
     )
@@ -3849,9 +3849,9 @@ end
     # n1 (image) → n2 (set-scope) → n3 (image)
     tpl = ChainTemplate(
         "picnic-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)
@@ -3893,9 +3893,9 @@ end
     # n1(image) → n2(set) → n3(image); start dot → n2, so n1 is an upstream draft (excluded)
     tpl = ChainTemplate(
         "startrun-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
         ["n2"],                                        # start dot → n2 (a set-scope node)
     )
@@ -3928,9 +3928,9 @@ end
 
     # a → { b (fails), c (ok) } — c is independent of b, must still run
     save_chain_template!(proj, ChainTemplate("fanout",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st = run_chain(proj, [img.uid]; chain="fanout").image_states[img.uid]
     @test st["a"].status == :done
@@ -3940,8 +3940,8 @@ end
     # a (fails) → { b, c } — the shared ancestor failing skips BOTH branches
     save_chain_template!(proj, ChainTemplate("fanout-root-fail",
         [ChainNode(id="a", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="b", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st2 = run_chain(proj, [img.uid]; chain="fanout-root-fail").image_states[img.uid]
     @test st2["a"].status == :failed
@@ -3950,10 +3950,10 @@ end
 
     # transitive: a → b(fail) → c → d — skip propagates down the branch via :skipped
     save_chain_template!(proj, ChainTemplate("chain-transitive",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="d", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d")]))
     st3 = run_chain(proj, [img.uid]; chain="chain-transitive").image_states[img.uid]
     @test st3["a"].status == :done
@@ -3975,7 +3975,7 @@ end
     tpl = ChainTemplate(
         "req-chain",
         [ChainNode(id="n1", fn="nonexistent.task", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="require_all")],
         [ChainEdge("n1","n2")],
     )
@@ -4001,7 +4001,7 @@ end
     tpl = ChainTemplate(
         "ok-chain",
         [ChainNode(id="n1", fn="nonexistent.task", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="successful_only")],
         [ChainEdge("n1","n2")],
     )
@@ -4026,8 +4026,8 @@ end
     # n1: always succeeds → both images eligible → task runs with all 2
     tpl = ChainTemplate(
         "pass-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="successful_only")],
         [ChainEdge("n1","n2")],
     )
@@ -4088,7 +4088,7 @@ end
 
     tpl = ChainTemplate(
         "resume-rt-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         ChainEdge[],
     )
     save_chain_template!(proj, tpl)
@@ -4123,7 +4123,7 @@ end
 
     tpl = ChainTemplate(
         "skip-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         ChainEdge[],
     )
     save_chain_template!(proj, tpl)
@@ -4157,7 +4157,7 @@ end
 
     tpl = ChainTemplate(
         "rerun-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("message" => "first"))],
         ChainEdge[],
     )
@@ -4188,10 +4188,10 @@ end
     # n1 → n2 → n3(bad) → n4(skipped)
     tpl = ChainTemplate(
         "fail-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="n3", fn="nonexistent.task",   scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n4", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="n4", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3"), ChainEdge("n3","n4")],
     )
     save_chain_template!(proj, tpl)
@@ -4237,11 +4237,11 @@ end
 
     tpl = ChainTemplate(
         "p4-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n4", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n5", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n4", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n5", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3"), ChainEdge("n3","n4"), ChainEdge("n4","n5")],
     )
     save_chain_template!(proj, tpl)
@@ -4282,9 +4282,9 @@ end
     # n1(image) → n2(set) → n3(image)
     tpl = ChainTemplate(
         "picnic-resume-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)
@@ -4331,9 +4331,9 @@ end
     # debounce_ms=10 so it fires quickly in the test
     tpl = ChainTemplate(
         "incr-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask",          scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.incrementalPlotTask", scope="incremental",
+         ChainNode(id="n2", fn="testTasks.incremental_plot_task", scope="incremental",
                    params=Dict{String,Any}("debounce_ms" => 10))],
         [ChainEdge("n1", "n2")],
     )
@@ -4370,11 +4370,11 @@ end
     # (incremental nodes don't gate downstream per-image nodes)
     tpl = ChainTemplate(
         "incr-pass-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask",          scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask",          scope="image",
+         ChainNode(id="n3", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.incrementalPlotTask", scope="incremental",
+         ChainNode(id="n2", fn="testTasks.incremental_plot_task", scope="incremental",
                    params=Dict{String,Any}("debounce_ms" => 10))],
         [ChainEdge("n1", "n2"), ChainEdge("n1", "n3")],
     )
@@ -4400,7 +4400,7 @@ end
 
     tpl = ChainTemplate(
         "evbus-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         ChainEdge[],
     )
@@ -4451,10 +4451,10 @@ end
 
     tpl = ChainTemplate(
         "pool-limit-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 40),
                    resource_pool="slow_pool"),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         [ChainEdge("n1","n2")],
     )
@@ -4486,7 +4486,7 @@ end
 
     tpl = ChainTemplate(
         "pool-par-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 40),
                    resource_pool="par_pool")],
         ChainEdge[],
@@ -4530,7 +4530,7 @@ end
     s    = add_set!(proj; name="s")
     imgs = map(("a", "b", "c", "d")) do nm; add_image!(s; name=nm) end
     tpl = ChainTemplate("pool-grow-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 300), resource_pool="dyngrow")],
         ChainEdge[])
     save_chain_template!(proj, tpl)
@@ -4571,7 +4571,7 @@ end
     s    = add_set!(proj; name="s")
     imgs = map(i -> add_image!(s; name="img-$i"), 1:8)
     tpl = ChainTemplate("pool-shrink-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 150), resource_pool="dynshrink")],
         ChainEdge[])
     save_chain_template!(proj, tpl)
@@ -4600,10 +4600,10 @@ end
 
     tpl = ChainTemplate(
         "pipeline-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 80),
                    resource_pool="serial_pool"),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 0))],
         [ChainEdge("n1","n2")],
     )
@@ -4639,7 +4639,7 @@ end
 #
 # We make n1 = RemoveImage, which requires a registered zarr to succeed.
 # img_b and img_c have a real zarr; img_a does not → img_a fails at n1.
-# n2 = testTasks.imageTask (always succeeds).
+# n2 = testTasks.image_task (always succeeds).
 # Expected: img_a fails n1, skips n2. img_b and img_c succeed both nodes.
 @testset "Cross-image fault isolation" begin
     proj = create_project!(name="xiso-$(rand(1000:9999))")
@@ -4661,7 +4661,7 @@ end
         "xiso-chain",
         [ChainNode(id="n1", fn="importImages.remove", scope="image",
                    params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default")),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         [ChainEdge("n1","n2")],
     )
@@ -4694,9 +4694,9 @@ end
 
     tpl = ChainTemplate(
         "headless-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)

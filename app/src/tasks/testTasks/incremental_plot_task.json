@@ -1,5 +1,5 @@
 {
-  "fun_name": "testTasks.incrementalPlotTask",
+  "fun_name": "testTasks.incremental_plot_task",
   "task": "incrementalPlotTask",
   "label": "Test incremental plot task",
   "resource_pool": "cpu",

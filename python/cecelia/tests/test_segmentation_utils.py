@@ -369,3 +369,134 @@ class PhysicalUnitsTest(unittest.TestCase):
 
         seg = _Stub({'taskDir': '/tmp', 'labelExpansion': 3.0}, None)
         self.assertEqual(seg.label_expansion, 3)
+
+
+class IouMatrixOracleTest(unittest.TestCase):
+    """`_compute_iou_matrix` — the O(pixels) histogram must agree EXACTLY with the O(labels²)
+    pairwise form it replaced.
+
+    The rewrite is a pure performance change (the old form spent ~27 s on one 590×590 plane at
+    400×400 labels, and `_match_nuc_cyto` calls it once per timepoint), so the thing worth pinning
+    is that nothing about the RESULT moved: identical IoU values mean identical `match_threshold`
+    decisions and an identical `removeUnmatched` set. The previous implementation is kept here
+    verbatim as the oracle — that is the entire point of this testset, so do not "simplify" it to
+    call the new code.
+    """
+
+    @staticmethod
+    def _oracle(a, b):
+        """The previous pairwise implementation, verbatim. The reference, not a reimplementation."""
+        labels_a = np.unique(a[a > 0])
+        labels_b = np.unique(b[b > 0])
+        if len(labels_a) == 0 or len(labels_b) == 0:
+            return np.zeros((len(labels_a), len(labels_b))), labels_a, labels_b
+
+        a_counts = {int(la): int(np.sum(a == la)) for la in labels_a}
+        b_counts = {int(lb): int(np.sum(b == lb)) for lb in labels_b}
+        iou_mat = np.zeros((len(labels_a), len(labels_b)), dtype=np.float32)
+
+        for i, la in enumerate(labels_a):
+            a_mask = a == la
+            for j, lb in enumerate(labels_b):
+                inter = int(np.sum(a_mask & (b == lb)))
+                if inter > 0:
+                    union = a_counts[int(la)] + b_counts[int(lb)] - inter
+                    iou_mat[i, j] = inter / union
+
+        return iou_mat, labels_a, labels_b
+
+    @staticmethod
+    def _actual(a, b):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        # Reads nothing off self, so bind it to nothing rather than build a whole SegmentationUtils.
+        return SegmentationUtils._compute_iou_matrix(None, a, b)
+
+    def _assert_matches_oracle(self, a, b, msg=''):
+        exp, la_e, lb_e = self._oracle(a, b)
+        got, la_g, lb_g = self._actual(a, b)
+        np.testing.assert_array_equal(la_g, la_e, err_msg=f'labels_a differ {msg}')
+        np.testing.assert_array_equal(lb_g, lb_e, err_msg=f'labels_b differ {msg}')
+        self.assertEqual(got.shape, exp.shape, msg)
+        np.testing.assert_allclose(got, exp, rtol=0, atol=1e-6, err_msg=f'IoU differ {msg}')
+        return got
+
+    @staticmethod
+    def _blobs(shape, n_side, first_label=1, step=1):
+        """A grid of square blobs — n_side² compact labels, the shape a segmented field really has.
+
+        `first_label`/`step` make the ids non-contiguous on purpose: cellpose leaves gaps, and an
+        implementation that indexes by raw label value instead of by rank breaks on exactly that.
+        """
+        h, w = shape
+        yy, xx = np.mgrid[0:h, 0:w]
+        cell = (yy * n_side // h) * n_side + (xx * n_side // w)
+        return (first_label + cell * step).astype(np.int32)
+
+    def test_partial_overlap_is_identical(self):
+        """The real case: cyto and nuc labels covering the same field at a small offset."""
+        a = self._blobs((64, 64), 4)
+        b = np.roll(a, (3, 5), axis=(0, 1))
+        self._assert_matches_oracle(a, b, 'partial overlap')
+
+    def test_non_contiguous_label_ids(self):
+        """Label ids with gaps (5, 12, 19, …) must index by rank, not by value."""
+        a = self._blobs((48, 48), 4, first_label=5, step=7)
+        b = np.roll(self._blobs((48, 48), 4, first_label=101, step=13), 2, axis=0)
+        got = self._assert_matches_oracle(a, b, 'non-contiguous ids')
+        self.assertTrue((got > 0).any(), 'fixture should overlap, else it proves nothing')
+
+    def test_background_is_excluded_from_both_maps(self):
+        """Zero is background in both maps, never a label — and it is most of a real plane."""
+        a = self._blobs((40, 40), 4)
+        b = np.roll(a, 4, axis=1)
+        a[:, :12] = 0
+        b[20:, :] = 0
+        self._assert_matches_oracle(a, b, 'with background')
+
+    def test_identical_maps_give_a_unit_diagonal(self):
+        """A label against itself is IoU 1.0 exactly — no floating-point drift from the new form."""
+        a = self._blobs((32, 32), 4)
+        got = self._assert_matches_oracle(a, a, 'identity')
+        np.testing.assert_array_equal(np.diag(got), np.ones(16, dtype=np.float32))
+
+    def test_disjoint_maps_are_all_zero(self):
+        """Nothing co-occurs — every pair must be 0, not NaN from a zero union."""
+        a = np.zeros((20, 20), dtype=np.int32)
+        b = np.zeros((20, 20), dtype=np.int32)
+        a[:8, :8] = 1
+        a[:8, 12:] = 2
+        b[12:, :8] = 3
+        got = self._assert_matches_oracle(a, b, 'disjoint')
+        self.assertEqual(got.shape, (2, 1))
+        self.assertFalse(np.isnan(got).any())
+        self.assertEqual(got.sum(), 0.0)
+
+    def test_empty_maps(self):
+        """No labels on one or both sides — shape must still be (na, nb) so the caller can index."""
+        empty = np.zeros((10, 10), dtype=np.int32)
+        full = self._blobs((10, 10), 2)
+        for a, b, shape in ((empty, full, (0, 4)), (full, empty, (4, 0)), (empty, empty, (0, 0))):
+            got, la, lb = self._actual(a, b)
+            self.assertEqual(got.shape, shape)
+            self.assertEqual((len(la), len(lb)), shape)
+
+    def test_three_dimensional_volume(self):
+        """`_match_nuc_cyto` hands whole z-stacks in, not planes."""
+        a = np.stack([self._blobs((24, 24), 3) for _ in range(5)])
+        b = np.roll(a, (1, 2), axis=(1, 2))
+        self._assert_matches_oracle(a, b, '3D')
+
+    def test_is_not_quadratic_in_label_count(self):
+        """The complexity itself, which is the whole point of the change.
+
+        400×400 labels took ~27 s pairwise. The budget below is ~250× the expected runtime and
+        ~5× under the OLD one, so it flags a regression to quadratic without being a timing race.
+        """
+        import time
+        a = self._blobs((512, 512), 20)          # 400 labels
+        b = np.roll(a, (3, 5), axis=(0, 1))      # 400 labels, partial overlap
+        t0 = time.perf_counter()
+        got, la, lb = self._actual(a, b)
+        elapsed = time.perf_counter() - t0
+        self.assertEqual(got.shape, (400, 400))
+        self.assertLess(elapsed, 5.0, f'400x400 labels took {elapsed:.2f}s — quadratic again?')

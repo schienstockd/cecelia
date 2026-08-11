@@ -303,6 +303,38 @@ then: detection + metrics on every import, a finding only for unmistakable damag
 
 ---
 
+## Temporal downsampling / overlapping tracklets for behaviour
+
+**What.** Two celltrackR knobs the old R framework exposed on HMM: `skipTimesteps` (treat 10 s/frame
+data as if it were 30 s/frame, so movies acquired at different rates can be compared) and
+`subtrackOverlap` (generate overlapping tracklets rather than disjoint ones). The old stack could
+offer them for free because it computed track measures **on the fly**, so the knobs were just
+arguments passed down into celltrackR at analysis time.
+
+**Why deferred.** The new stack precomputes `live.cell.*` at native resolution
+(`app/src/tasks/behaviour/track_measures.jl`), so there is nothing left to push the arguments into —
+they were silent no-ops on `behaviour.hmm_states` and were dropped rather than left as controls that
+did nothing. Restoring the capability is therefore not a parameter, it is a storage decision, and
+none of the three ways in is obviously right:
+- a track-measures variant that recomputes speed/angle over every k-th position (subtrack stride +
+  overlap) and writes `live.cell.speed@kN`-style columns the HMM can select;
+- a resampling step that emits overlapping sub-tracks as first-class rows;
+- a per-image frame-interval normalisation, so cross-rate comparison needs no manual skip at all.
+
+Each multiplies either the column count or the row count of every tracked image, which is why the
+storage/UX has to be settled before anything is built.
+
+**Revisit when.** Someone actually needs to compare behaviour across acquisitions taken at different
+frame intervals — that is the case the knobs existed for, and it is the one that picks between the
+three options above. (Option (c) is the only one that solves it without asking the user to guess a
+stride.) Nobody has hit it on current data.
+
+**Reference:** `docs/TRACKING.md`, `app/src/tasks/behaviour/track_measures.jl`. Old implementation:
+`old-R-shiny-version/R/trackHelpers.R` (`celltrackR::subtracks(x, steps.subtracks, steps.overlap)`),
+called from `inst/modules/sources/behaviourAnalysis/hmmStates.R:42-43`.
+
+---
+
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a

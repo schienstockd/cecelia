@@ -1,6 +1,10 @@
 # Branching (skeleton) analysis — port plan
 
-**Status:** audited 2026-07-27, ready to implement. No branch yet, no code written.
+**Status: SHIPPED** — `segment.branching` is built and registered (`app/src/tasks/segment/branching.{jl,json}`
++ `branching_run.py`, `task_registry.jl`). Kept as history for the rationale + locked decisions; the
+durable documentation was promoted to `docs/SEGMENTATION.md` → *Branching (skeleton analysis)* and
+`docs/POPULATION.md` → the `branch` pop type. Known UI gap: `docs/FUTURE.md` → *Branch populations in
+the UI*. Audited 2026-07-27 before implementation.
 **Ports:** `old-R-shiny-version/inst/modules/sources/segment/createBranching.R` (+ its
 `py/create_branching.py` and `inst/app/modules/inputDefinitions/segment/createBranching.json`).
 
