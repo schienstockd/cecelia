@@ -24,15 +24,16 @@ fighting for cache rather than working.
 The cause is the *shape* of the work, not its size: phase correlation's sub-pixel refinement is many
 SMALL matmuls, and OpenBLAS spends more on fanning threads out and syncing them than on arithmetic.
 
-**This is opt-in per call site, and that is a WEAKNESS, not the design.** One helper with no single
-point of application is the shape this codebase treats as a bug elsewhere: the next runner silently
-gets the unbounded default and nothing catches it. The structurally right home is `run_py`, the one
-place a Python task's environment is built — and the only layer that *can* set it, since
-`OPENBLAS_NUM_THREADS` is read before numpy imports. It is not there yet only because the right
-number is a property of the workload and just this one has been measured; a task doing one genuinely
-large matmul (scanpy PCA/UMAP) plausibly wants every core, and a blanket cap would trade one
-unmeasured default for another. See `docs/TODO.md` → *BLAS threads are bounded per call site, not
-per task*. Until then: MEASURE, then wrap the small-matmul region.
+**The DEFAULT lives in the launcher, not here.** `run_py` sets `OPENBLAS_NUM_THREADS`
+(`BLAS_THREADS_PER_TASK`) on every Python task it spawns — that is the only layer that can, since the
+variable is read when the child imports numpy, and it has no hole this context manager does: a
+`threadpool_limits` block only bounds the pools already LOADED when it is entered, and clustering
+loads a second BLAS after the first is capped. See `docs/SCHEDULER.md` → *Thread budgets*.
+
+**So use this only to DEVIATE**, in two situations: code running outside `run_py` (a REPL session, a
+test, an external consumer importing `cecelia` directly — none of which get the launcher's env), or a
+region that has been MEASURED to want a different number. Do not raise it on a hunch; the table above
+is what "obviously wants all cores" actually looks like when measured.
 """
 
 import contextlib
