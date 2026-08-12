@@ -761,12 +761,14 @@ onUnmounted(() => {
                 v-tooltip.right="branchVns[row.valueName] ? 'Hide this segmentation\'s branches' : 'Show this segmentation\'s branches'"
               ><i class="pi pi-wave-pulse" /></button>
               <button
-                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[row.valueName] }"
+                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" data-guide="viewer.toggleTracks"
+                :class="{ 'cc-btn-on cc-btn-on-tint': trackVns[row.valueName] }"
                 @click="toggleTrack(row.valueName)"
                 v-tooltip.right="trackVns[row.valueName] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
               ><i class="pi pi-share-alt" /></button>
               <button
-                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
+                class="opt-btn cc-btn cc-btn-ghost cc-btn-icon row-act" data-guide="viewer.toggleLabels"
+                :class="{ 'cc-btn-on cc-btn-on-tint': visibleLabels[row.valueName] }"
                 @click="toggleLabel(row.valueName)"
                 v-tooltip.right="visibleLabels[row.valueName] ? 'Hide labels in Napari' : 'Show labels in Napari'"
               ><i class="pi pi-eye" /></button>

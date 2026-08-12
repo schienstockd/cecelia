@@ -99,6 +99,24 @@ see *The guides*). Changes made while building, each for a reason found in the c
   their input: one row per cell vs one per track, with cell measures aggregated per track. A user who
   has only segmented cannot use the track one, so collapsing them would have made the prereq a lie.
   Both param lists now come from their specs rather than from memory.
+- **Tracking teaches its composite too** (`tracking.bayesian_track_measures`, "Bayesian track +
+  measures"), for the same reason as segment: bare tracks carry no per-track measures, and speed /
+  displacement / angle are exactly what the HMM fits and what track clustering and track gating read.
+  The downstream guides' selection steps now say the tracking must have measured.
+- **A finished run draws nothing on the image until you toggle it.** The napari steps implied the
+  overlay appears with the image; it does not — each segmentation has its own row in the Viewer panel
+  with per-overlay switches, and until you flip one napari shows the raw channels and the run looks like
+  it did nothing (Dominik, 2026-08-12). Segment and track now walk open-in-napari → open the Viewer
+  panel → **switch the overlay on** → judge it, with `viewer.toggleLabels` / `viewer.toggleTracks`.
+- **Both cluster guides end by defining populations from the result.** Clustering leaves numbered
+  clusters, which are not populations: you open the population manager, create a population and tick
+  cluster IDs into it (no gate to draw). That is the step that makes the result usable anywhere a gated
+  population is, so stopping at the UMAP left the guide short of the point (Dominik, 2026-08-12).
+- **One anchor id can match several live elements**, and taking the first in DOM order was wrong: each
+  floating gating plot carries its own axis controls, so the ring landed on plot 1 while the user worked
+  in plot 2 — and because the ring sits above the app, it drew straight across the panel in front.
+  `rankAnchorCandidates` (pure, tested) prefers visible → inside the active panel (`.panel.active`) →
+  unoccluded, keeping DOM order on a tie so a per-row anchor still points at the first row.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

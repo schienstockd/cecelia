@@ -33,13 +33,56 @@ export function anchorSelector(id: string): string {
   return `[data-guide="${q(id)}"]`
 }
 
+// One anchor id can match SEVERAL live elements: each floating gating plot carries its own axis
+// controls, each table row its own eye. Which one to point at, as a pure ranking so it can be tested
+// (the DOM half below is a thin adapter; this project's vitest has no DOM by design).
+//
+// The rule, in order:
+//   1. a visible candidate beats a hidden one — never ring something you can't see;
+//   2. one inside the ACTIVE panel wins — with two gating plots open, the controls the user is working
+//      in are the ones on the panel the canvas has marked active (`.panel.active`). Taking the first in
+//      DOM order instead rang plot 1 while the user worked in plot 2, and since the ring sits above the
+//      app it drew straight across the panel in front (Dominik, 2026-08-12);
+//   3. an unoccluded candidate beats a covered one — a control under another panel is not the one being
+//      pointed at.
+export interface AnchorCandidate { reachable: boolean; inActive: boolean; occluded: boolean }
+
+export function rankAnchorCandidates(cands: AnchorCandidate[]): number {
+  if (cands.length === 0) return -1
+  const score = (c: AnchorCandidate) =>
+    (c.reachable ? 4 : 0) + (c.inActive ? 2 : 0) + (c.occluded ? 0 : 1)
+  let best = 0
+  for (let i = 1; i < cands.length; i++) if (score(cands[i]) > score(cands[best])) best = i
+  return best                                // ties keep the earliest, i.e. DOM order
+}
+
+// Is something else drawn on top of this element's centre? The guide's own bubble does not count —
+// it is deliberately placed beside the anchor, but a tooltip or its shadow can clip the midpoint.
+function isOccluded(el: HTMLElement): boolean {
+  const r = el.getBoundingClientRect()
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+  if (!hit) return true
+  if (hit.closest('.guide-bubble')) return false
+  return !(el === hit || el.contains(hit) || hit.contains(el))
+}
+
 export function resolveAnchor(id: string | undefined, root: ParentNode = document): HTMLElement | null {
   if (!id) return null
+  let all: HTMLElement[]
   try {
-    return root.querySelector<HTMLElement>(anchorSelector(id))
+    all = Array.from(root.querySelectorAll<HTMLElement>(anchorSelector(id)))
   } catch {
     return null                              // a malformed id must not take the guide down
   }
+  if (all.length <= 1) return all[0] ?? null
+
+  const idx = rankAnchorCandidates(all.map(el => ({
+    reachable: isReachable(el),
+    // `.panel.active` is CanvasPanel's active marker; `.closest` walks the floating-panel ancestry
+    inActive: el.closest('.panel.active') !== null,
+    occluded: isOccluded(el),
+  })))
+  return all[idx] ?? all[0]
 }
 
 // Is the element actually on screen and pointable? `offsetParent === null` catches `display: none`

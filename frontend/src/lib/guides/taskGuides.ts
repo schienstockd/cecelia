@@ -8,7 +8,12 @@
 //
 // Parameter bullets are checked against the task JSON specs, not invented: `driftEstimator`/
 // `driftMaxLag` (cleanupImages/drift_correct.json), `models`/`cellDiameter` (segment/cellpose.json),
-// `maxSearchRadius`/`minTimepoints` (tracking/bayesian_tracking.json).
+// `maxSearchRadius`/`minTimepoints` (tracking/bayesian_tracking.json) + `dims`
+// (tracking/track_measures.json, merged in by the composite).
+//
+// Both segment and track teach the COMPOSITE (`…cellposeMeasure`, `…bayesian_track_measures`) rather
+// than the bare task beside it in the dropdown. Labels without measures, or tracks without measures,
+// leave every downstream page with nothing to read — which the guides' own endings promised.
 
 import { moduleTaskGuide } from './moduleTask'
 import { PREREQ } from './prereqs'
@@ -17,20 +22,53 @@ import type { GuideStep } from './types'
 // Where segmentation and tracking both end up: the mask/tracks are only trustworthy once you have
 // LOOKED at them, and looking happens in napari — a separate window this guide cannot point into
 // (plan R1). So we point at the control that puts them on screen and say what to look for.
-const napariCheck = (what: string, lookFor: string[]): GuideStep[] => [
+const napariCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
   {
     anchor: 'images.viewerBtn',
     placement: 'right',
-    title: `Look at the ${what}`,
-    text: `The eye opens the image in napari with its ${what} on top.`,
-    bullets: lookFor,
+    title: 'Open it in napari',
+    text: 'The eye opens the image itself — the overlay is a separate switch.',
+    bullets: ['napari is its own window, so bring it to the front.'],
+    when: c => c.napariImageUid !== null,
   },
   {
     anchor: 'sidebar.viewerCta',
     placement: 'right',
-    title: 'Viewer panel',
+    title: 'Open the Viewer panel',
     text: 'This panel drives the napari window — overlays, contrast, 3D, recording.',
-    bullets: ['napari is its own window, so bring it to the front to see the result.'],
+    reveal: {
+      needed: c => !c.viewerPanelOpen,
+      anchor: 'sidebar.viewerCta',
+      text: 'The Viewer panel is closed — open it here.',
+      placement: 'right',
+    },
+    when: c => c.viewerPanelOpen,
+  },
+  {
+    // The step users get stuck on: a finished run puts nothing on the image by itself. Each
+    // segmentation has its own row here with a per-overlay switch, and until you flip it napari shows
+    // the raw channels and it looks like the run did nothing (Dominik, 2026-08-12).
+    anchor: toggleAnchor,
+    placement: 'left',
+    title: `Switch the ${what} on`,
+    text: `Nothing is drawn on the image until you toggle the ${what} for that segmentation.`,
+    bullets: [
+      'One row per segmentation, each with its own switches.',
+      'The choice is remembered, so it comes back next time you open the image.',
+    ],
+    reveal: {
+      needed: c => !c.viewerPanelOpen,
+      anchor: 'sidebar.viewerCta',
+      text: 'The Viewer panel is closed — open it to reach the overlay switches.',
+      placement: 'right',
+    },
+  },
+  {
+    anchor: toggleAnchor,
+    placement: 'left',
+    title: `Now judge the ${what}`,
+    text: 'With it on screen, this is what to look for.',
+    bullets: lookFor,
   },
 ]
 
@@ -122,7 +160,7 @@ export const segmentGuide = moduleTaskGuide({
         'A weird size distribution almost always means the diameter was off.',
       ],
     },
-    ...napariCheck('mask', [
+    ...napariCheck('mask', 'viewer.toggleLabels', [
       'Are single cells one label, or is a clump merged into one?',
       'Are the outlines on the cells, or offset from them?',
     ]),
@@ -145,11 +183,18 @@ export const trackCellsGuide = moduleTaskGuide({
   summary: 'Link segmented cells across frames into tracks, with speed and direction for free.',
   route: '/track',
   navLabel: 'Track',
-  taskKey: 'bayesianTracking',
-  funName: 'tracking.bayesian_tracking',
-  funLabel: 'Bayesian tracking',
+  // The COMPOSITE (tracking.bayesian_tracking + tracking.track_measures), for the same reason segment
+  // uses its composite: bare tracks carry no per-track measures, and speed/angle are what the HMM fits
+  // and what track clustering and track gating read (Dominik, 2026-08-12).
+  taskKey: 'bayesianTrackMeasures',
+  funName: 'tracking.bayesian_track_measures',
+  funLabel: 'Bayesian track + measures',
   selectionModule: 'tracking',
   waitLabel: 'Tracking',
+  funHint: [
+    'Plain "Bayesian tracking" links cells but computes no per-track measures.',
+    'This one measures too — speed, displacement, angle — which is what you gate and cluster on.',
+  ],
   prereqs: [PREREQ.projectOpen, PREREQ.timeSeries, PREREQ.segmented],
   intro: 'Tracking links labels across frames — so segment every timepoint before you come here.',
   selectHint: [
@@ -159,11 +204,11 @@ export const trackCellsGuide = moduleTaskGuide({
   params: [
     'Segmentation — which label set to track; a gated population narrows it.',
     'Max search radius (µm) — the furthest a cell may move between frames (~20 for T cells).',
-    'Allowed gaps — frames a track may go unobserved and still be joined.',
-    'Minimum timepoints — drops tracks too short to mean anything.',
+    'Allowed gaps and minimum timepoints — how forgiving linking is, and what counts as a real track.',
+    'Motion dimensions — 2D or 3D for the measures; it detects and recommends one.',
   ],
   after: [
-    ...napariCheck('tracks', [
+    ...napariCheck('tracks', 'viewer.toggleTracks', [
       'Do the trails follow single cells, or jump between neighbours?',
       'Jumping usually means the search radius is too generous.',
     ]),
@@ -179,11 +224,11 @@ export const trackCellsGuide = moduleTaskGuide({
       ],
     },
     {
-      text: 'Tracks are in — behaviour states are the usual next step.',
+      text: 'Tracks are in, and measured — speed, displacement and angle came with them.',
       title: 'What you now have',
       bullets: [
         'Every cell has a track_id and a position at each timepoint.',
-        'Behaviour → HMM classifies track movement into states.',
+        'Behaviour → HMM fits states to those measures; Cluster tracks groups on them.',
       ],
     },
   ],

@@ -10,7 +10,7 @@
 //
 // Two of the four are one `moduleTaskGuide` call each, which is the point of that builder (plan D8).
 
-import type { GuideDef } from './types'
+import type { GuideDef, GuideStep } from './types'
 import { PREREQ } from './prereqs'
 import { moduleTaskGuide } from './moduleTask'
 
@@ -114,7 +114,10 @@ export const behaviourStatesGuide = moduleTaskGuide({
   waitLabel: 'Fitting states',
   prereqs: [PREREQ.projectOpen, PREREQ.tracked],
   intro: 'A Gaussian HMM turns raw track movement into a small set of named behaviour states.',
-  selectHint: ['Only tracked images qualify — the states are fitted to track measures.'],
+  selectHint: [
+    'Only tracked images qualify — the states are fitted to track measures.',
+    'The tracking must have MEASURED — the Track guide\'s function does both.',
+  ],
   params: [
     'Number of states — 3 is the usual starting point (arrested / meandering / directed).',
     'Which track measures to fit on — speed and angle are the standard pair.',
@@ -140,6 +143,53 @@ export const behaviourStatesGuide = moduleTaskGuide({
     },
   ],
 })
+
+// Clustering ends with numbered clusters, which are not yet populations. Turning them into named
+// populations is a distinct move with its own UI — no gate to draw, you create a population and tick
+// cluster IDs into it — and it is the step that makes the result usable downstream, so both cluster
+// guides end here (Dominik, 2026-08-12).
+const clusterToPops = (route: string, what: string): GuideStep[] => [
+  {
+    anchor: 'cluster.popManager',
+    route,
+    placement: 'bottom-end',
+    title: 'Clusters are numbers, not populations yet',
+    text: 'Open the population manager — this is where numbered clusters become named groups.',
+    clickAnchor: true,
+  },
+  {
+    anchor: 'popmanager.addClusterPop',
+    route,
+    placement: 'left',
+    title: 'Add a population',
+    text: 'There is no gate to draw here — you create the population first, then fill it.',
+    bullets: ['Name it for what it is: "patrolling", "CD4 T cell".'],
+    // The chip row only exists once a population does, so its appearance is the signal.
+    when: c => c.anchorExists('popmanager.clusterChips'),
+  },
+  {
+    anchor: 'popmanager.clusterChips',
+    route,
+    placement: 'left',
+    title: 'Tick clusters into it',
+    text: `Each chip is one cluster — click to put it in this population.`,
+    bullets: [
+      'A cluster belongs to at most one population; ticking it elsewhere moves it.',
+      'The heatmap is how you decide which clusters belong together.',
+    ],
+  },
+  {
+    anchor: 'popmanager.row',
+    route,
+    placement: 'left',
+    title: 'Now it behaves like any population',
+    text: `Your ${what} populations are usable everywhere a gated one is.`,
+    bullets: [
+      'Plot them on the analysis board, show them in napari, use them as an input.',
+      'Populations are per clustering run — they follow that run\'s suffix.',
+    ],
+  },
+]
 
 // ── Cluster cells: a plain task run ──────────────────────────────────────────────────────────────
 export const clusterCellsGuide = moduleTaskGuide({
@@ -174,9 +224,10 @@ export const clusterCellsGuide = moduleTaskGuide({
       text: 'The UMAP shows how clusters separate; the heatmap says what each one actually expresses.',
       bullets: [
         'The heatmap is what turns "cluster 4" into "CD4 T cell".',
-        'Clusters can be collected into named populations, same as gates.',
+        'Read it before naming anything — it says what each cluster expresses.',
       ],
     },
+    ...clusterToPops('/clust-cells', 'phenotype'),
   ],
 })
 
@@ -200,7 +251,10 @@ export const clusterTracksGuide = moduleTaskGuide({
   prereqs: [PREREQ.projectOpen, PREREQ.tracked],
   intro: 'One row per track instead of per cell — so this needs tracking, not just segmentation.',
   funHint: ['Cell measures are aggregated per track for you; you pick the base measures.'],
-  selectHint: ['Select every image to cluster TOGETHER — the run pools across them.'],
+  selectHint: [
+    'Select every image to cluster TOGETHER — the run pools across them.',
+    'Needs measured tracks — the Track guide\'s function does both.',
+  ],
   params: [
     'Track populations — which tracks to cluster; every selection is clustered jointly.',
     'Cluster on — base measures; cell measures are aggregated per track automatically.',
@@ -219,6 +273,7 @@ export const clusterTracksGuide = moduleTaskGuide({
         'HMM states are the supervised alternative — fixed states, fitted per timepoint.',
       ],
     },
+    ...clusterToPops('/clust-tracks', 'behaviour'),
   ],
 })
 

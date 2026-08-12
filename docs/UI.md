@@ -1127,7 +1127,10 @@ step, which is how segment+measure qualifies). Every call registers itself in `T
 the selection-scope ratchet iterates.
 
 **Anchors are `data-guide="<area>.<control>"` attributes**, namespaced, added to the markup at the
-control. Two schemes:
+control. **One id may match several live elements** — every gating plot panel carries its own axis
+controls, every table row its own eye — so `resolveAnchor` ranks them via `rankAnchorCandidates`
+(visible → inside `.panel.active` → unoccluded, DOM order on a tie) instead of taking the first. Two
+schemes:
 
 - `data-guide="task.run"` → `[data-guide="task.run"]`
 - `nav:/segment` → `a[href="#/segment"]` — the sidebar is data-driven, so **nav items need no attribute**

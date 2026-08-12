@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { routePathFromHash, anchorSelector, NAV_PREFIX } from './guideAnchor'
+import { routePathFromHash, anchorSelector, rankAnchorCandidates, NAV_PREFIX } from './guideAnchor'
 
 // The pure halves of guide anchoring. `routePathFromHash` is here because of a real bug: the guide
 // runtime compares a step's declared `route` against the hash, and it must re-READ that value rather
@@ -42,5 +42,38 @@ describe('anchorSelector', () => {
 
   it('escapes a quote rather than producing an invalid selector', () => {
     expect(anchorSelector('a"b')).toBe('[data-guide="a\\"b"]')
+  })
+})
+
+// Which of several matching elements to point at. The case that forced this: two floating gating plots,
+// each with its own axis controls under the same anchor id — the resolver took the first in DOM order,
+// so it ringed plot 1 while the user worked in plot 2, and the ring (which sits above the app) drew
+// across the panel in front.
+describe('rankAnchorCandidates', () => {
+  const c = (reachable: boolean, inActive: boolean, occluded: boolean) => ({ reachable, inActive, occluded })
+
+  it('returns -1 for nothing to choose from', () => {
+    expect(rankAnchorCandidates([])).toBe(-1)
+  })
+
+  it('prefers a visible candidate over a hidden one', () => {
+    expect(rankAnchorCandidates([c(false, true, false), c(true, false, false)])).toBe(1)
+  })
+
+  it('prefers the one in the ACTIVE panel — the plot the user is working in', () => {
+    expect(rankAnchorCandidates([c(true, false, false), c(true, true, false)])).toBe(1)
+  })
+
+  it('prefers an unoccluded candidate when neither is active', () => {
+    expect(rankAnchorCandidates([c(true, false, true), c(true, false, false)])).toBe(1)
+  })
+
+  it('keeps the active one even when something covers its midpoint', () => {
+    // being active is the stronger signal: a tooltip over the control does not make it the wrong one
+    expect(rankAnchorCandidates([c(true, false, false), c(true, true, true)])).toBe(1)
+  })
+
+  it('keeps DOM order on a tie, so a row list still points at the first row', () => {
+    expect(rankAnchorCandidates([c(true, false, false), c(true, false, false)])).toBe(0)
   })
 })
