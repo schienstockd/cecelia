@@ -335,7 +335,7 @@ export const runChainGuide: GuideDef = {
       title: 'Watch it live',
       text: 'The Live tab shows the graph filling in per image, with QC as it lands.',
       bullets: [
-        'A failed node stops that image, not the run.',
+        'A failure skips only what depends on it — other images and parallel branches carry on.',
         'You can resume a run from a chosen node rather than starting over.',
       ],
     },

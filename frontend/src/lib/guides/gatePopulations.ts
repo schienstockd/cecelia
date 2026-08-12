@@ -75,7 +75,10 @@ export const gatePopulationsGuide: GuideDef = {
       placement: 'top-start',
       title: 'Name it',
       text: 'A population is just a named gate — the name is how everything downstream refers to it.',
-      bullets: ['Names must be unique among siblings, and cannot start with an underscore.'],
+      bullets: [
+        'Names are case-insensitively unique across the whole tree, not just among siblings.',
+        'A leading underscore is reserved for tracked / clustering populations.',
+      ],
     },
     {
       anchor: 'gate.popManager',

@@ -87,6 +87,13 @@ export const driftCorrectGuide = moduleTaskGuide({
   waitLabel: 'Drift correcting',
   prereqs: [PREREQ.projectOpen, PREREQ.imageImported, PREREQ.timeSeries],
   intro: 'Cleanup holds the corrections you apply before segmenting — drift, autofluorescence, noise.',
+  // Deliberately the BARE task, unlike segment and track: the composite beside it in the dropdown
+  // ("AF + drift correction") adds autofluorescence removal, a separate scientific decision rather
+  // than the missing half of this one. Declared in the Julia ratchet so it stays a choice.
+  funHint: [
+    'Drift correction on its own — this is the whole operation, not half of one.',
+    '"AF + drift correction" also removes autofluorescence, if you need that in the same pass.',
+  ],
   selectHint: ['Only time series are worth correcting — a single frame cannot drift.'],
   params: [
     'Drift reference channel — pick a stable, bright structure, not a motile cell.',

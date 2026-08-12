@@ -117,6 +117,29 @@ see *The guides*). Changes made while building, each for a reason found in the c
   in plot 2 — and because the ring sits above the app, it drew straight across the panel in front.
   `rankAnchorCandidates` (pure, tested) prefers visible → inside the active panel (`.panel.active`) →
   unoccluded, keeping DOM order on a tie so a per-row anchor still points at the first row.
+- **Four claims audited against the code; three were wrong** (the pattern below finally forced a
+  systematic pass rather than another one-at-a-time correction):
+  - *gating* — "gates are definitions, not a frozen cell list" is TRUE (`docs/POPULATION.md`: membership
+    is derived at read time by `recompute!`, never written into the H5AD). But "unique among siblings"
+    was wrong: `popNameError` checks case-insensitively across the WHOLE tree.
+  - *plots* — "the list is derived from what has actually been run, so it never offers a dead plot" was
+    FALSE. `specs` is the module's whole registry (`GET /api/plots/definitions`); only the CLUSTER panels
+    filter on what exists (`needsCols`/`trackOnly` in `LayoutCanvas`). A summary plot with no run behind
+    it is offered and renders empty, which is now what the guide says.
+  - *chain* — "a failed node stops that image, not the run" was imprecise. Fault isolation is
+    **per-predecessor** (`docs/SCHEDULER.md`): a node is skipped only when a DIRECT predecessor failed,
+    so parallel branches of a fan-out stay independent. (Set-scope picnic nodes add barrier policies on
+    top — `all` / `require_all` / `successful_only` — which is more than a bubble should carry.)
+  - *notebooks* — "the project is loaded for you" was wrong. `pluto/notebook_template.jl` activates the
+    env and imports the stack, but `proj_uid` / `uid` are commented-out placeholders you fill in.
+- **A guide teaching the bare half of a composite must now be DECLARED** (`app/test/suite.jl` → *a guide
+  teaching a composite's bare half is declared*). This is the ratchet for the two worst bugs of the
+  build. It cross-references every taught `funName` against the constituent steps of every registered
+  composite; a hit must appear in `bare_by_design` with a reason, and the list is checked for staleness
+  both ways. Drift correction is the legitimate entry — its composite adds AF correction, a separate
+  scientific step rather than drift's missing half — and that is exactly the judgement a human has to
+  make and a test cannot. Verified by reverting the segment guide to `segment.cellpose`: both this and
+  the fun-name pair check fail.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

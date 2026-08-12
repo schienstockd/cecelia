@@ -1174,6 +1174,15 @@ belongs in the guide's prose instead — **and must reuse the canonical predicat
 hand-rolled `status === 'done'` reported "no imported images" for a project full of them, because
 `status` is the transient conversion-job state and not the record of the outcome.
 
+**A guide's prose is an ASSERTION about the app, and the ratchets cannot check it.** They verify that
+anchors and routes and fun names exist, that scopes match and that copy fits the budget — not that a
+sentence is true. Every content bug in this system so far has been an invented fact (conversion is
+automatic; cellpose measures; `status` means imported; there is one kind of clustering). So: **look up
+each claim before writing it**, and prefer the canonical predicate (`isImported`, `funsRun`) over a
+plausible-looking one. Two structural halves of that discipline are enforced — `funName`/`taskKey` must
+be a real matching pair, and teaching the bare half of a composite must be declared in
+`app/test/suite.jl` with a reason (see *a guide teaching a composite's bare half is declared*).
+
 **Two boundaries to keep in mind when writing steps:**
 
 - **napari is a separate window** — no bubble can point into it. Guides stop at the `ViewerPanel`

@@ -432,6 +432,57 @@ end
     end
 end
 
+# ── Guides teaching a task a COMPOSITE wraps ─────────────────────────────────
+# The bug this closes, twice over: the Segment guide taught `segment.cellpose` and the Track guide
+# `tracking.bayesian_tracking` — the BARE halves of `…cellposeMeasure` / `…bayesian_track_measures`.
+# Labels without measures and tracks without measures leave gating, clustering and the HMM with nothing
+# to read, so each guide's own closing promise ("now gate on these") could not be kept. Nothing failed:
+# the tasks ran, the guides completed, the next page was just empty.
+#
+# So whenever a guide teaches a task that some composite CONTAINS, that has to be a decision on record.
+# Drift correction is the legitimate case — its composite adds autofluorescence removal, a separate
+# scientific step, not the missing half of drift — which is exactly the distinction a human has to make
+# and a test cannot. This is the inventory that forces the question, in the same spirit as the
+# frontend's DECLARED_TIMERS list.
+@testset "a guide teaching a composite's bare half is declared" begin
+    dir = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "guides")
+    if !isdir(dir)
+        @test_skip "frontend guides catalogue not found"
+    else
+        src = join([read(joinpath(dir, f), String)
+                    for f in readdir(dir) if endswith(f, ".ts") && !endswith(f, ".test.ts")], "\n")
+        taught = unique([String(m.captures[1]) for m in eachmatch(r"funName:\s*'([^']+)'", src)])
+        @test !isempty(taught)
+
+        # fun_name => why teaching the bare task is right even though a composite wraps it
+        bare_by_design = Dict(
+            "cleanupImages.driftCorrect" =>
+                "its composite adds AF correction — a separate scientific step, not drift's missing half",
+        )
+
+        # every composite's constituent steps, from the registry
+        wrapped_by = Dict{String,Vector{String}}()
+        for (fun, task) in Cecelia._fun_name_map()
+            spec = Cecelia._task_spec(task)
+            steps = get(spec, "composite", nothing)
+            steps isa AbstractVector || continue
+            for st in steps
+                push!(get!(wrapped_by, String(st), String[]), fun)
+            end
+        end
+
+        undeclared = [t for t in taught
+                      if haskey(wrapped_by, t) && !haskey(bare_by_design, t)]
+        @test isempty(undeclared)
+
+        # …and the list stays honest: an entry whose composite is gone, or that no guide teaches
+        # any more, is stale rather than protective.
+        stale = [k for k in keys(bare_by_design)
+                 if !(k in taught) || !haskey(wrapped_by, k)]
+        @test isempty(stale)
+    end
+end
+
 # ── Optical-flow training (opticalFlow.train) ────────────────────────────────
 # The scales are the single most consequential parameter of the pipeline AND the one that fails
 # silently: the set a model is trained on must be the set inference feeds it, and coastal does not

@@ -40,9 +40,10 @@ export const notebooksGuide: GuideDef = {
       route: '/notebooks',
       placement: 'bottom-start',
       title: 'Add a notebook',
-      text: 'Name it and add it — you get a notebook already pointed at this project.',
+      text: 'Name it and add it — you get a notebook with the whole stack already loaded.',
       bullets: [
-        'The project is loaded for you; no paths to wire up.',
+        'Cecelia and the plotting packages are imported and configured for you.',
+        'Fill in the project and image uid in the template\'s first cell and go.',
         'Shipped examples are listed below, read-only — duplicate one to edit it.',
       ],
     },

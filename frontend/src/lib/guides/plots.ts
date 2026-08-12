@@ -36,8 +36,11 @@ export const plotsGuide: GuideDef = {
       route: '/analysis',
       placement: 'right',
       title: 'Fill a slot',
-      text: 'Each empty slot offers every plot your data supports — summary, interactive, clustering.',
-      bullets: ['The list is derived from what has actually been run, so it never offers a dead plot.'],
+      text: 'Each empty slot offers every plot this page has — summary, interactive, clustering.',
+      bullets: [
+        'A plot whose run has not happened yet renders empty rather than being hidden.',
+        'The clustering ones DO hide until a run of that kind exists.',
+      ],
     },
     {
       anchor: 'board.rail',
