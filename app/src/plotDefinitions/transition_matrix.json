@@ -11,9 +11,8 @@
       { "popType": "track",      "granularity": "cell" },
       { "popType": "trackclust", "granularity": "cell" }
     ],
-    "measure": "live.cell.hmm.transitions.movement",
-    "measureOptions": [
-      "live.cell.hmm.transitions.movement"
+    "obsMeasurePatterns": [
+      { "match": "hmm.transitions.", "label": "HMM transitions" }
     ],
     "matrix": { "mode": "crosstab", "category": "live.cell.hmm.transitions.movement" }
   },
