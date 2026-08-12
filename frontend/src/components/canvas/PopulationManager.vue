@@ -282,7 +282,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
       </div>
 
       <template v-for="p in visiblePops" :key="p.path">
-        <div class="pm-row" :class="{ active: p.path === props.selected, transient: p.transient }"
+        <div class="pm-row" data-guide="popmanager.row"
+             :class="{ active: p.path === props.selected, transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">
           <i v-if="p.transient" class="pi pi-map-marker pm-napari"

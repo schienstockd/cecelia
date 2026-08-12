@@ -30,6 +30,11 @@ export interface WhatNewCard {
   publishedAt?: string      // ISO date on update cards
   sketchAnimation?: { id: string }   // feijoa sketch id; WhatNewCard resolves via `sketches[id]`
   statsAnnotation?: unknown           // slot for STATS_ANNOTATIONS_PLAN
+  // An in-app guide covering this card's topic (`lib/guides` id). Renders a "Show me" button that
+  // starts the bubble walkthrough and closes this dialog. This is why guide steps do NOT restate a
+  // tip's prose: the tip is the summary, the guide is the click-through, and the topic is described
+  // in exactly one place (docs/todo/GUIDE_SYSTEM_PLAN.md → D7).
+  guideId?: string
 }
 
 export const CECELIA_ISSUES_URL = 'https://github.com/schienstockd/cecelia/issues/new'

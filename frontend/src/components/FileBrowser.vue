@@ -169,7 +169,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           <button class="cc-btn cc-btn-ghost" @click="navigate('')">Back to home</button>
         </div>
 
-        <table v-else class="fb-table">
+        <table v-else class="fb-table" data-guide="filebrowser.table">
           <thead>
             <tr>
               <th class="col-chk">
@@ -261,7 +261,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           v-tooltip.top="'Use this folder'">
           <i class="pi pi-check" /> Use this folder
         </button>
-        <button v-else class="cc-btn cc-btn-primary"
+        <button v-else class="cc-btn cc-btn-primary" data-guide="filebrowser.confirm"
           :disabled="selected.size === 0" @click="confirm"
           v-tooltip.top="mode === 'bundle'
             ? 'Import the selected bundle'

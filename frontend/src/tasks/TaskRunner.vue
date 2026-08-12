@@ -344,6 +344,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
       <select
         class="fn-select"
+        data-guide="task.fun"
         v-model="selectedTask"
         v-tooltip.left="'Select which analysis function to run on the selected images'"
       >
@@ -376,7 +377,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     <!-- ── Parameters ── -->
     <section class="runner-section params-section" v-if="taskDef">
       <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
-      <div class="params-list">
+      <div class="params-list" data-guide="task.params">
         <ParamRenderer
           v-for="p in taskDef.params"
           :key="p.key"
@@ -395,6 +396,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <div class="run-row">
         <button
           class="run-btn"
+          data-guide="task.run"
           :disabled="!canRun"
           @click="run"
           v-tooltip.left="canRun
@@ -437,7 +439,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Task list ── (its heading + the two list-wide actions belong to TaskList itself, so the
          other host of this list — BatchMoviesPanel — gets them too) -->
-    <section class="runner-section tasks-section">
+    <section class="runner-section tasks-section" data-guide="task.list">
       <div class="tasks-scroll">
         <TaskList :module="module" />
       </div>

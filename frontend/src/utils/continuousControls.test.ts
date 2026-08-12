@@ -166,6 +166,8 @@ const DECLARED_TIMERS: Record<string, string> = {
     'coalesces terminal WS frames over an 8 s window — no result, no restore; the canonical helper for that job (INVENTORY)',
   'components/ConfirmButton.vue':     'disarms a confirm button after a grace period',
   'stores/taskPreview.ts':            'a POLL loop while the preview worker warms up — each tick arms the next',
+  'stores/guide.ts':
+    'two, both deliberate: a POLL that re-reads DOM-derived gate state while a guide is open (Vue cannot track a <select>\'s value), and a one-shot delay before advancing a satisfied step so the user sees it acknowledged',
 }
 
 describe('nobody hand-rolls a fourth debounce', () => {

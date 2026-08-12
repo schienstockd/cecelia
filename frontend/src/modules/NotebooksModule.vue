@@ -152,12 +152,13 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
           </span>
 
           <button v-if="server !== 'running'" class="cc-btn cc-btn-primary"
+                  data-guide="notebooks.startServer"
                   :disabled="server === 'starting'" @click="launch">
             <i class="pi pi-play" /> Start server
           </button>
 
           <template v-else>
-            <a class="cc-btn cc-btn-primary" :href="homeUrl" target="_blank" rel="noopener">
+            <a class="cc-btn cc-btn-primary" data-guide="notebooks.openHome" :href="homeUrl" target="_blank" rel="noopener">
               <i class="pi pi-external-link" /> Open Notebooks
             </a>
             <button class="cc-btn cc-btn-ghost" @click="restart" v-tooltip.top="'Stop and relaunch the notebook server'">

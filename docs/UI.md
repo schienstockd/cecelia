@@ -71,6 +71,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Right-hand panel that folds away and can be dragged wider | `components/CollapsiblePanel.vue` (`storageKey` + `label`; drag-to-resize via `composables/usePanelResize.ts`) — see *Collapsible side panels* | an inline handle + `v-show` + its own mousemove drag |
 | Draggable / detached panel | `components/FloatingPanel.vue` | a bespoke `position:fixed` panel |
 | Dismissible first-use hint | `components/HintCallout.vue` | a one-off info box |
+| Teaching a multi-step workflow | a `GuideDef` in `lib/guides/` (a `moduleTaskGuide({…})` call when the page is ModuleLayout + TaskRunner) — see *Guides* | a page full of explanatory prose, a bespoke tour component, or hand-writing the five standard task-runner steps a fourth time |
+| Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover` and `GuideBubble` both call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
@@ -252,6 +254,7 @@ explanation belongs in `docs/`, which is where it actually gets looked up.
 | Data-patch `description` (`app/src/maintenance.jl`) | title = what it does, description = one line + the one caveat that matters. Capped at 160 chars by `app/test/suite.jl`. Never restate Dry-run/Apply (both are buttons) and never explain HOW it detects — that belongs in the runner |
 | Empty state (`.cc-empty`) | one line; a following action, not a rationale. **Exception:** the two *first-run* states (no projects / no images) get title + ≤2 lines + one CTA — bounded in *Onboarding*, which is the rule for them |
 | First-use hint (`HintCallout`) | one line, by construction |
+| Guide step (`lib/guides/*.ts`) | **the second carve-out**, and bounded the same way: an optional short `title`, **one** sentence of `text` (≤140 chars), plus **at most four** imperative `bullets` (≤110 chars each). Enforced by `lib/guides/guides.test.ts`. Same reasoning as the first-run states — a guide step is read once, by someone who does not yet know the app, and then never again; it is not sitting on a page they use daily. Anything past the shape is what the budget exists to stop. See *Guides* |
 
 Rewriting long copy short is always in scope — it does not need its own task. When you catch yourself
 explaining, put it in the relevant `docs/<AREA>.md` and leave the UI silent.
@@ -1081,6 +1084,77 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   gets the one-line budget.
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
+
+## Guides — bubble walkthroughs (the compass in the header)
+
+The in-app answer to "can you send me a screencast": a **compass button beside the brand mark** opens
+`GuidesDialog.vue`, and starting a guide puts a bubble beside the real control, on the user's own data.
+Design + locked decisions: `docs/todo/GUIDE_SYSTEM_PLAN.md`.
+
+**The one rule: a guide POINTS AND OBSERVES.** It never clicks, selects, navigates or runs anything.
+There is no action field in the step type, so a guide cannot start a 12-minute segmentation on the
+wrong image. A step that needs another page anchors to the *sidebar nav item* and waits for the click —
+which is how navigating gets taught rather than done for you.
+
+| Piece | Where |
+|---|---|
+| Catalogue (register a new guide here) | `frontend/src/lib/guides/index.ts` |
+| Step / prereq / gate types | `lib/guides/types.ts` |
+| Prerequisite registry | `lib/guides/prereqs.ts` |
+| **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` |
+| Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
+| Bubble + ring | `components/GuideBubble.vue` |
+| Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
+| Anchor resolution / reachability | `utils/guideAnchor.ts` |
+| Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
+
+**Adding a guide.** If the page is a `ModuleLayout` + `TaskRunner` one, it is a
+`moduleTaskGuide({…})` call — **do not hand-write the five standard steps** (pick set → tick images →
+choose function → set params → Run → watch the rail). Those steps live in two shared files and five
+anchors, so drift correct / segment / track / cluster / behaviour are ~15 lines each. Writing the
+fourth by hand is how a pattern becomes four variants. A page with a genuinely different shape (the
+gating canvas, the notebook server, the chain whiteboard) gets its own `GuideDef` file.
+
+**Anchors are `data-guide="<area>.<control>"` attributes**, namespaced, added to the markup at the
+control. Two schemes:
+
+- `data-guide="task.run"` → `[data-guide="task.run"]`
+- `nav:/segment` → `a[href="#/segment"]` — the sidebar is data-driven, so **nav items need no attribute**
+
+`lib/guides/guides.test.ts` asserts **every anchor id in the catalogue exists in the source**, and that
+every `nav:`/`route` names a real route in `main.ts`. That ratchet is the point: a renamed button
+otherwise breaks a guide silently, for the one user being onboarded, who will not report it. A missing
+anchor at runtime degrades to a centred card with the same copy — never a dead-end.
+
+**How a step completes** (`Next` is always available regardless — a gate makes the bubble confirm the
+action, it never traps anyone):
+
+| Gate | Use it for |
+|---|---|
+| `when(ctx)` | anything observable in a store — an image is selected, this image has labels. **Prefer this.** |
+| `clickAnchor` | a control with no observable end state. Fragile by nature (a `v-for` re-render swaps the node), so only when `when` can't answer |
+| `awaitTask({fun, label})` | park on a long run: the bubble becomes a spinner on the task rail and picks up on `done`; `failed`/`cancelled` gets its own state |
+| `reveal({needed, anchor, text})` | the target exists but is unreachable (collapsed panel, closed `FloatingPanel`) — inserts a "open this first" bubble ahead of the step |
+
+Predicates see a flat `GuideCtx` snapshot, never a store directly — a step that imports a store is a
+step that can mutate one. `ctx.anchorValue(id)` covers controls that report to no store (`TaskRunner`'s
+function `<select>`); those are DOM reads, so the store runs a ~250ms poll while a guide is open.
+
+**Prerequisites are shown, never enforced.** Each guide declares them from `PREREQ`; the picker checks
+them live and offers the guide that fixes a miss. Start stays enabled — the user may know something we
+can't see. Every predicate must be answerable from `CciaImage` + its `runLog` with **no request**, or it
+belongs in the guide's prose instead.
+
+**Two boundaries to keep in mind when writing steps:**
+
+- **napari is a separate window** — no bubble can point into it. Guides stop at the `ViewerPanel`
+  control that puts something on screen and then *describe* what to look for. This is the one place a
+  screencast genuinely beats the system.
+- **No demo data.** Guides run on real projects, which is what the prerequisite system makes honest.
+  Guides are not a substitute for the first-launch wizard and shouldn't grow into one.
+
+A What's New tip card can carry `guideId` to render a **"Show me"** button that starts the matching
+guide — so a topic is described once (tip = the summary, guide = the click-through) instead of twice.
 
 ## Explainer sketches + tips (What's New modal)
 
