@@ -422,6 +422,11 @@ Plus four **obvious candidates** added in the same pass, each answering a questi
     relationship between them. Animation is a different job (a keyframed camera move) and earns its own
     guide rather than a coda here. Neither route is a TaskRunner function, so it is hand-written.
 
+14. **Lab log and Claude** — two steps, deliberately the shortest in the catalogue. Its job is
+    DISCOVERY, not instruction: nobody finds these two surfaces on their own, and Claude already has a
+    good in-app explainer behind its `?` (`ClaudeOverviewDialog`). Restating that content here would be
+    a second copy to keep in step, so the guide points at it and stops.
+
 Still-obvious candidates NOT built: **animation / keyframed movies**, **spatial neighbour analysis**,
 and **export/share a project**.
 

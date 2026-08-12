@@ -293,7 +293,8 @@ async function dismissEntry(entry: LabLogEntry) {
 
       <!-- Claude: the AI assistant (in-app one-shot + external chat handoff) -->
       <div class="ll-tb-group">
-        <button class="ll-help cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="showClaudeOverview = true"
+        <button class="ll-help cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" data-guide="lablog.claudeHelp"
+                @click="showClaudeOverview = true"
                 v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
           <i class="pi pi-question-circle" />
         </button>

@@ -223,7 +223,8 @@ function isNavDisabled(item: NavItem): boolean {
     <!-- ── Lab log ──────────────────────────────────────────────────────────
          Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
          toggled here (see App.vue / LabLogPanel). -->
-    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
+    <button class="viewer-cta lablog-cta" data-guide="sidebar.labLogCta"
+            :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
             style="margin-top: 0.4rem"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen
