@@ -57,12 +57,15 @@ export const importImagesGuide: GuideDef = {
       clickAnchor: true,
     },
     {
-      anchor: 'filebrowser.table',
+      // The select-all checkbox, NOT the whole table: ringing a large scrolling container drags the
+      // highlight around as you scroll it, and says "somewhere in here" rather than pointing at a
+      // control (Dominik, 2026-08-12).
+      anchor: 'filebrowser.selectAll',
       route: '/manage-images',
       placement: 'right',
       title: 'Choose the files',
       text: 'Tick the images you want; unsupported file types are greyed out.',
-      bullets: ['The header checkbox takes every image in the folder.'],
+      bullets: ['This header checkbox takes every image in the folder at once.'],
     },
     {
       anchor: 'filebrowser.confirm',

@@ -31,7 +31,10 @@ function anchorIds(): { id: string; where: string }[] {
     g.steps.forEach((s, i) => {
       const where = `${g.id} step ${i + 1}`
       if (s.anchor) out.push({ id: s.anchor, where })
-      if (s.reveal?.anchor) out.push({ id: s.reveal.anchor, where: `${where} (reveal)` })
+      // a step may declare several reveal causes (plan D5) — every one of their anchors counts
+      for (const r of s.reveal ? (Array.isArray(s.reveal) ? s.reveal : [s.reveal]) : []) {
+        if (r.anchor) out.push({ id: r.anchor, where: `${where} (reveal)` })
+      }
     })
   }
   return out
@@ -181,6 +184,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     viewerPanelOpen: false,
     anchorValue: () => null,
     anchorExists: () => false,
+    anchorReachable: () => false,
     ...over,
   })
   const img = (over: Record<string, unknown> = {}) =>

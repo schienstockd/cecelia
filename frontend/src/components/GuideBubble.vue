@@ -43,6 +43,8 @@ const activeAnchorId = computed(() => offRouteAnchor.value ?? step.value?.anchor
 const isLast = computed(() => guide.index >= guide.total - 1)
 
 // ── placement ───────────────────────────────────────────────────────────────────────────────────
+const RING_PAD = 4          // px the ring sits outside the control it surrounds
+
 function reposition() {
   const el = anchorEl.value
   const box = boxEl.value
@@ -65,7 +67,15 @@ function reposition() {
   })
   placed.value = p
   arrowAt.value = arrowOffset(p, anchor, size, 14)
-  ringRect.value = anchor
+
+  // The ring is the inflated anchor box, CLAMPED to the viewport. Without the clamp, an anchor that is
+  // partly scrolled out (or simply taller than the window) draws a ring whose edges sit off-screen, so
+  // you see two stray lines instead of a box round the control.
+  const rt = Math.max(anchor.top - RING_PAD, 0)
+  const rl = Math.max(anchor.left - RING_PAD, 0)
+  const rb = Math.min(anchor.top + anchor.height + RING_PAD, vp.height)
+  const rr = Math.min(anchor.left + anchor.width + RING_PAD, vp.width)
+  ringRect.value = { top: rt, left: rl, width: Math.max(0, rr - rl), height: Math.max(0, rb - rt) }
 }
 
 const boxStyle = computed(() => placed.value
@@ -73,10 +83,11 @@ const boxStyle = computed(() => placed.value
   // centred fallback — a step with no reachable anchor still reads
   : { position: 'fixed' as const, top: '50%', left: '50%', transform: 'translate(-50%, -50%)' })
 
+// ringRect is already inflated and clamped by reposition() — render it as-is.
 const ringStyle = computed(() => ringRect.value
   ? {
-      top: `${ringRect.value.top - 4}px`, left: `${ringRect.value.left - 4}px`,
-      width: `${ringRect.value.width + 8}px`, height: `${ringRect.value.height + 8}px`,
+      top: `${ringRect.value.top}px`, left: `${ringRect.value.left}px`,
+      width: `${ringRect.value.width}px`, height: `${ringRect.value.height}px`,
     }
   : undefined)
 
@@ -219,7 +230,11 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
         <ul v-if="step.bullets?.length" class="gb-bullets cc-muted cc-fs-xs">
           <li v-for="(b, i) in step.bullets" :key="i">{{ b }}</li>
         </ul>
-        <p v-if="!anchorEl && step.anchor" class="gb-text cc-muted cc-fs-xs">
+        <!-- The centred fallback. The anchor id goes in the TOOLTIP, not the prose: it keeps the copy
+             short, and it means a "the guide didn't highlight anything" report can name which anchor
+             failed instead of us guessing. -->
+        <p v-if="!anchorEl && step.anchor" class="gb-text cc-muted cc-fs-xs"
+           v-tooltip.top="`Guide anchor not found: ${step.anchor}`">
           <i class="pi pi-info-circle" /> That control isn't on screen right now.
         </p>
       </template>

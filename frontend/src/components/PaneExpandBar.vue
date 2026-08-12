@@ -32,7 +32,7 @@ const tip = (half: PaneHalf) => props.pane === half
 </script>
 
 <template>
-  <div class="pane-bar">
+  <div class="pane-bar" data-guide="layout.paneBar">
     <span class="pane-note"><slot /></span>
     <button
       class="pane-btn cc-btn cc-btn-bare cc-btn-icon"

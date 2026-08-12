@@ -32,6 +32,10 @@ export interface GuideCtx {
   // using these updates without the control having to report to a store.
   anchorValue: (anchorId: string) => string | null
   anchorExists: (anchorId: string) => boolean
+  // In the DOM *and* on screen. The distinction is what separates "this control doesn't exist yet"
+  // (pick a function and its parameters appear) from "it exists but something is hiding it" (a
+  // collapsed panel, a collapsed pane half) — two different fixes, so two different bubbles.
+  anchorReachable: (anchorId: string) => boolean
 }
 
 export type GatePredicate = (c: GuideCtx) => boolean
@@ -44,9 +48,14 @@ export interface AwaitTask {
   label: string         // what to call it while waiting: "Segmenting"
 }
 
-// A step whose target is present but HIDDEN (a collapsed right panel, a closed FloatingPanel, a
-// folded section) gets this bubble inserted ahead of it — pointing at whatever opens the thing.
-// See plan D5; without it a guide cheerfully points at a `display: none` button.
+// A step whose target is not usable yet gets this bubble inserted ahead of it, pointing at whatever
+// gets you there. See plan D5; without it a guide cheerfully points at a `display: none` button.
+//
+// A step may declare SEVERAL causes and the runtime shows the first whose `needed` is true — because
+// one control can be unusable for unrelated reasons that need different advice. `TaskRunner`'s Run
+// button is hidden both when the whole right panel is folded (fix: the panel handle) and when the
+// runner's own pane half is collapsed (fix: the pane toggles), and pointing at the panel handle in the
+// second case actively makes it worse.
 export interface Reveal {
   needed: GatePredicate       // true ⇒ the target is currently unreachable, show this first
   text: string
@@ -68,7 +77,7 @@ export interface GuideStep {
   when?: GatePredicate
   clickAnchor?: boolean       // advance when the anchor element is clicked
   awaitTask?: AwaitTask
-  reveal?: Reveal
+  reveal?: Reveal | Reveal[]      // several causes ⇒ first match wins
 }
 
 export interface Prereq {

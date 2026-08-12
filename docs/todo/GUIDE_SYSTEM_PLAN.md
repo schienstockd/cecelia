@@ -41,6 +41,24 @@ see *The guides*). Changes made while building, each for a reason found in the c
   its widest sibling and the right edge zigzagged; met prerequisites were listed as chips, which was
   pure wrapping for no information. Now: fixed-width action column, readiness + step count in one
   right-aligned meta slot, and only *missing* prerequisites get a line with the fix inline on it.
+- **The FileBrowser grew a horizontal scrollbar** (pre-existing, surfaced by the import guide): the
+  table was `width: 100%` with the default `table-layout: auto`, where 100% is only a MINIMUM, so one
+  long filename widened it past the modal. Beside it sat a dead `.col-name { flex: 1 }` — `flex` does
+  nothing on a table cell, which is why the intended flexible sizing never happened. Now
+  `table-layout: fixed` + `overflow-wrap: anywhere` on the name cell. The horizontal scroll also made
+  the ring visibly track the scroll, so the guide now points at the select-all checkbox rather than
+  ringing the whole table, and the ring is clamped to the viewport.
+- **The task steps pointed at the wrong control when the panel was collapsed a different way.** A
+  control in the functions panel can be unusable three ways, each needing different advice, and the
+  first version knew about one: `.task-runner.pane-bottom` hides the function select, the parameters
+  AND the Run button (fix: the pane toggles, `layout.paneBar`), `.pane-top` hides the task list, and
+  the parameters block does not exist at all until a function is chosen (`v-if="taskDef"` — fix: point
+  back at the dropdown). Pointing at the right-panel handle in the pane case is worse than useless:
+  clicking it hides everything. `reveal` now takes a LIST of causes, first match wins, with the last as
+  the fallback for an unforeseen way of hiding something. Needed `anchorReachable` in `GuideCtx` — "in
+  the DOM" and "on screen" are different questions with different fixes.
+- **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
+  anything" is a precise report next time rather than a guess.
 - **The bubble and ring are `--cc-guide` (whitish), matching the lab-log panel** — a new token, which
   also gave the lab log's hardcoded `rgba(255,255,255,0.6)` a home.
 - **Three house ratchets rejected the first version of the new components** (an undeclared re-armed

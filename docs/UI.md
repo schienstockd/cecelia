@@ -1103,7 +1103,7 @@ which is how navigating gets taught rather than done for you.
 | Prerequisite registry | `lib/guides/prereqs.ts` |
 | **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
-| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
+| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel; the ring is clamped to the viewport so a large or part-scrolled anchor can't draw edges off-screen. The compass MARK (header button + dialog title) is `--cc-viewer`, the app's one green. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
 | Anchor resolution / reachability | `utils/guideAnchor.ts` |
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
@@ -1134,7 +1134,7 @@ action, it never traps anyone):
 | `when(ctx)` | anything observable in a store — an image is selected, this image has labels. **Prefer this.** |
 | `clickAnchor` | a control with no observable end state. Fragile by nature (a `v-for` re-render swaps the node), so only when `when` can't answer |
 | `awaitTask({fun, label})` | park on a long run: the bubble becomes a spinner on the task rail and picks up on `done`; `failed`/`cancelled` gets its own state |
-| `reveal({needed, anchor, text})` | the target is unreachable OR does not apply yet — a collapsed panel, a closed `FloatingPanel`, **or a "pick a set" step when the project has no sets to pick**. Inserts a "do this first" bubble ahead of the step, pointing at whatever gets you there |
+| `reveal({needed, anchor, text})` | the target is unreachable OR does not apply yet. **Pass an ARRAY when a control can be unusable for unrelated reasons** — the runtime shows the first cause whose `needed` is true, so each gets its own advice. `TaskRunner`'s Run button has three: the right panel is folded (→ panel handle), the runner's pane half is collapsed (→ pane toggles), the control isn't in the DOM yet (→ whatever creates it). A step with no cause matching but a present-yet-hidden anchor falls back to the last declared cause, so an unforeseen way of hiding a control still gives advice |
 
 **The route is polled, not just listened for.** vue-router navigates a hash history with
 `history.pushState`, which fires no `hashchange` — a listener-only version sits at the boot path
@@ -1148,7 +1148,9 @@ the guide walk itself through everything the user had already done.
 
 Predicates see a flat `GuideCtx` snapshot, never a store directly — a step that imports a store is a
 step that can mutate one. `ctx.anchorValue(id)` covers controls that report to no store (`TaskRunner`'s
-function `<select>`); those are DOM reads, so the store runs a ~250ms poll while a guide is open.
+function `<select>`); `anchorExists` / `anchorReachable` separate "not in the DOM yet" from "hidden by
+something", which need different advice. All three are DOM reads, so the store runs a ~250ms poll while
+a guide is open.
 
 **Prerequisites are shown, never enforced.** Each guide declares them from `PREREQ`; the picker checks
 them live and offers the guide that fixes a miss. Start stays enabled — the user may know something we

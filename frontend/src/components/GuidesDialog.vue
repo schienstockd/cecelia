@@ -60,8 +60,11 @@ function firstFixable(g: GuideDef) {
 </script>
 
 <template>
-  <BaseModal title="Guides" icon="pi-compass" width="660px" @close="closeGuides()">
-    <p class="gd-intro cc-muted">
+  <BaseModal width="660px" @close="closeGuides()">
+    <!-- own #title so the compass carries the green mark, matching the header button it was opened
+         from. BaseModal's plain `icon` prop would inherit the title's text colour. -->
+    <template #title><i class="pi pi-compass gd-mark" /> Guides</template>
+    <p class="gd-intro cc-muted cc-fs-md">
       Bubbles appear beside the control to use, on your own data, and step forward as you go.
     </p>
 
@@ -121,7 +124,11 @@ function firstFixable(g: GuideDef) {
 </template>
 
 <style scoped>
-.gd-intro { margin: 0 0 0.7rem; line-height: 1.4; font-size: var(--cc-fs-md); }
+.gd-mark { color: var(--cc-viewer); }
+
+/* size comes from `cc-fs-md` in the markup — a scoped font-size here would shadow `cc-muted`'s own
+   and make the utility a no-op (docs/UI.md → pick a scenario, then a size) */
+.gd-intro { margin: 0 0 0.7rem; line-height: 1.4; }
 
 .gd-group { margin-bottom: 0.7rem; }
 /* no `color` — `cc-eyebrow` owns it; shadowing a utility's own property makes it a no-op

@@ -169,11 +169,12 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           <button class="cc-btn cc-btn-ghost" @click="navigate('')">Back to home</button>
         </div>
 
-        <table v-else class="fb-table" data-guide="filebrowser.table">
+        <table v-else class="fb-table">
           <thead>
             <tr>
               <th class="col-chk">
                 <input v-if="mode === 'image'" type="checkbox"
+                  data-guide="filebrowser.selectAll"
                   :checked="allSelected"
                   :indeterminate="someSelected"
                   @change="selectAll"
@@ -302,8 +303,12 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .fb-state { display: flex; align-items: center; gap: 0.5rem; padding: 2rem; }
 .fb-state.error { color: #fca5a5; flex-direction: column; align-items: flex-start; }
 
-/* table */
-.fb-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); }
+/* table
+   `table-layout: fixed` is load-bearing: with the default `auto`, `width: 100%` is only a MINIMUM and
+   the table grows to the min-content width of its widest cell — so one long filename pushed the table
+   past the modal and the body grew a horizontal scrollbar (Dominik, 2026-08-12). Fixed layout honours
+   the three explicit column widths below and gives the name column whatever is left. */
+.fb-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--cc-fs-md); }
 .fb-table thead th {
   text-align: left; font-size: var(--cc-fs-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
@@ -314,7 +319,11 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
   background: var(--cc-surface-1);
 }
 .col-chk  { width: 36px; }
-.col-name { flex: 1; }
+/* no `flex` here — it was dead (a table cell is not a flex item), which is why the intended flexible
+   sizing never happened. Under fixed layout the name column simply takes the remainder.
+   `overflow-wrap: anywhere` is what stops a long unbroken name (no spaces or hyphens to break at)
+   from widening the table: unlike `break-word`, it also shrinks the cell's min-content width. */
+.col-name { overflow-wrap: anywhere; }
 .col-type { width: 70px; }
 .col-size { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
 

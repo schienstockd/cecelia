@@ -10,7 +10,7 @@
 // What a caller supplies is only what is genuinely per-guide: which page, which function, what its
 // parameters mean, and what to do with the output afterwards.
 
-import type { GuideDef, GuideStep, Prereq } from './types'
+import type { GuideDef, GuideStep, Prereq, Reveal } from './types'
 import { PREREQ } from './prereqs'
 
 export interface ModuleTaskGuideOpts {
@@ -49,14 +49,43 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
     id: o.id, route: o.route, selectionModule: o.selectionModule, taskKey: o.taskKey,
   })
 
-  // Every module page hides its functions panel behind one shared flag, so every one of these steps
-  // needs the same reveal (plan D5) — declared once here rather than per guide.
-  const revealPanel = {
-    needed: (c: { rightPanelCollapsed: boolean }) => c.rightPanelCollapsed,
-    anchor: 'layout.rightPanelHandle',
-    text: 'The functions panel is folded away — open it with this handle.',
-    placement: 'left' as const,
-  }
+  // A control in the functions panel can be unusable three different ways, each needing DIFFERENT
+  // advice — which is why this is a list of causes rather than one reveal (plan D5):
+  //
+  //   1. the whole right panel is folded away        → the panel handle
+  //   2. the control isn't in the DOM at all         → whatever creates it (see `revealParams`)
+  //   3. TaskRunner's own pane half is collapsed     → the pane toggles
+  //
+  // (3) is easy to miss and was: `.task-runner.pane-bottom` hides the function select, the parameters
+  // AND the Run button, while `.pane-top` hides the task list. Pointing at the panel handle in that
+  // state is worse than useless — clicking it hides everything (Dominik, 2026-08-12).
+  const revealsFor = (anchorId: string): Reveal[] => [
+    {
+      needed: c => c.rightPanelCollapsed,
+      anchor: 'layout.rightPanelHandle',
+      text: 'The functions panel is folded away — open it with this handle.',
+      placement: 'left',
+    },
+    {
+      needed: c => c.anchorExists(anchorId) && !c.anchorReachable(anchorId),
+      anchor: 'layout.paneBar',
+      text: 'That half of the panel is collapsed — these toggles bring it back.',
+      placement: 'left',
+    },
+  ]
+
+  // The parameters block only exists once a function is chosen (`v-if="taskDef"` in TaskRunner), so
+  // "not on screen" there means "nothing selected yet" — point back at the dropdown, not at a panel.
+  const revealParams: Reveal[] = [
+    revealsFor('task.params')[0],
+    {
+      needed: c => !c.anchorExists('task.params'),
+      anchor: 'task.fun',
+      text: 'Choose a function first — its parameters appear here once you do.',
+      placement: 'left',
+    },
+    revealsFor('task.params')[1],
+  ]
 
   const steps: GuideStep[] = [
     {
@@ -96,7 +125,7 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       placement: 'left',
       title: 'Choose the function',
       text: `Pick "${o.funLabel}" from the dropdown.`,
-      reveal: revealPanel,
+      reveal: revealsFor('task.fun'),
       when: c => c.anchorValue('task.fun') === o.taskKey,
     },
     {
@@ -106,14 +135,14 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       title: 'Set the parameters',
       text: 'These are the settings worth getting right before you run.',
       bullets: o.params,
-      reveal: revealPanel,
+      reveal: revealParams,
     },
     {
       anchor: 'task.run',
       route: o.route,
       placement: 'left',
       text: 'Run it — this queues one task per selected image.',
-      reveal: revealPanel,
+      reveal: revealsFor('task.run'),
       clickAnchor: true,
     },
     {
@@ -126,7 +155,7 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
         'You can leave the page — runs are server-side, not tab-side.',
         'Click a row to read its log.',
       ],
-      reveal: revealPanel,
+      reveal: revealsFor('task.list'),
       awaitTask: { fun: o.funName, label: o.waitLabel },
     },
     ...(o.after ?? []),

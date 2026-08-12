@@ -23,7 +23,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
 import { useTaskStore, type TaskEntry } from './tasks'
 import { GUIDES, guideById } from '../lib/guides'
-import type { GuideCtx, GuideDef, GuideStep } from '../lib/guides/types'
+import type { GuideCtx, GuideDef, GuideStep, Reveal } from '../lib/guides/types'
 import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
 
 const doneKey = (id: string) => `cc.guide.${id}.done`
@@ -96,6 +96,7 @@ export const useGuideStore = defineStore('guide', () => {
       viewerPanelOpen: settings.viewerPanelOpen,
       anchorValue: readAnchorValue,
       anchorExists: (id: string) => resolveAnchor(id) !== null,
+      anchorReachable: (id: string) => isReachable(resolveAnchor(id)),
     }
   })
 
@@ -110,27 +111,31 @@ export const useGuideStore = defineStore('guide', () => {
     return !!s?.route && currentPath.value !== s.route
   })
 
-  // A step's target is unreachable when its `reveal.needed` says so, or when the anchor is in the DOM
-  // but hidden. The first is declared (a collapsed panel the step knows about); the second is the
-  // catch-all, so a step never points at something invisible.
-  const needsReveal = computed(() => {
+  // Which of the step's declared reveal causes applies, if any. First match wins; a step with none
+  // matching but whose anchor is present-yet-hidden falls back to the LAST declared cause, so an
+  // unforeseen way of hiding a control still produces advice rather than a bubble pointing at nothing.
+  const activeReveal = computed<Reveal | null>(() => {
     const s = currentStep.value
-    if (!s?.reveal || offRoute.value) return false
+    if (!s?.reveal || offRoute.value) return null
     void domTick.value
-    if (s.reveal.needed(ctx.value)) return true
+    const causes = Array.isArray(s.reveal) ? s.reveal : [s.reveal]
+    for (const r of causes) if (r.needed(ctx.value)) return r
     const el = resolveAnchor(s.anchor)
-    return el !== null && !isReachable(el)
+    if (el && !isReachable(el)) return causes[causes.length - 1] ?? null
+    return null
   })
+  const needsReveal = computed(() => activeReveal.value !== null)
 
   // What the bubble actually renders: the reveal stand-in, or the step itself.
   const step = computed<GuideStep | null>(() => {
     const s = currentStep.value
     if (!s) return null
-    if (needsReveal.value && s.reveal) {
+    const r = activeReveal.value
+    if (r) {
       return {
-        anchor: s.reveal.anchor ?? s.anchor,
-        text: s.reveal.text,
-        placement: s.reveal.placement ?? s.placement,
+        anchor: r.anchor ?? s.anchor,
+        text: r.text,
+        placement: r.placement ?? s.placement,
         route: s.route,
       }
     }
