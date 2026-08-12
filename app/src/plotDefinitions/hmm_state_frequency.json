@@ -11,11 +11,10 @@
       { "popType": "track",      "granularity": "cell" },
       { "popType": "trackclust", "granularity": "cell" }
     ],
-    "measure": "live.cell.hmm.state.movement",
-    "measureOptions": [
-      "live.cell.hmm.state.movement",
-      "track_generation",
-      "track_state"
+    "obsMeasurePatterns": [
+      { "match": "hmm.state.",      "label": "HMM state" },
+      { "match": "track_generation" },
+      { "match": "track_state" }
     ]
   },
   "scopeModes": ["per_image", "summarised"],
