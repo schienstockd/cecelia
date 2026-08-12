@@ -263,6 +263,15 @@ or carry a `VALID-BOX-EXEMPT: <why>` comment. Enforced by
 `python/cecelia/tests/test_valid_box_propagation.py`, which also fails the read-without-timepoint
 union pattern outright.
 
+### Consuming it
+
+Narrowing to the box belongs at the boundary the work goes through, once, not in each algorithm
+behind it — segmentation does it in `SegmentationUtils.predict_from_zarr`, so every backend gets it
+by implementing nothing (`docs/SEGMENTATION.md` → *Skipping the padding a drift correction added*).
+The rule that boundary has to hold: **if it hands out several arrays for the same unit of work, all
+of them narrow together.** Segmentation hands a temporal backend both a tile and a window through
+time, read from different places, and narrowing one of them was enough to break it.
+
 ---
 
 ## Napari
