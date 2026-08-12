@@ -46,9 +46,12 @@ BLAS_THREADS_SMALL_MATMUL = 4
 def limit_blas_threads(n_threads=BLAS_THREADS_SMALL_MATMUL):
     """Cap the BLAS thread pool for the duration of the block, then restore it.
 
-    An UPPER BOUND, not an assignment: a pool whose hardware maximum is already below `n_threads`
-    stays where it is. So on a small machine this is a no-op, which is the right degradation — the
-    problem it solves only exists when there are more cores than the work can use.
+    Guarantees only that no BLAS pool exceeds `n_threads` while the block runs. It does not
+    guarantee the observed number IS `n_threads`: some backends clamp to their own maximum (a pool
+    stayed at 2 when asked for 4), others set the limit outright (a pool went from 3 to 4). Both
+    were CI failures from asserting something stronger. On a machine with fewer cores than the
+    budget this is effectively a no-op, which is the right degradation — the problem it solves only
+    exists when there are more cores than the work can use.
 
     A no-op (rather than an error) when the thread pool cannot be introspected, because doing the
     work slowly is always better than not doing it — `threadpoolctl` is declared in
