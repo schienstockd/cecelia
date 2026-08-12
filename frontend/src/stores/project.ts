@@ -35,6 +35,10 @@ export interface CciaImage {
   // across segmentations, so it is not a value_name). Feeds `valueNameSelection` with
   // `field: "spatialGraphs"` on the analyses that consume a graph.
   spatialGraphs?: Record<string, string>
+  // Segmentations with MEASURED tracks — the `{vn}__tracks.h5ad` sidecars found on disk (see
+  // img_track_value_names). THE local answer to "is this image tracked": the run log is not (a
+  // migrated project carries tracks with no `tracking.*` entry), and `labels` reads the same either way.
+  trackValueNames?: string[]
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)

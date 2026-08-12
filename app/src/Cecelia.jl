@@ -34,7 +34,7 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, img_is_calibrated,
        image_included
 export img_axes, img_has_time
-export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name, resolve_value_name
+export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path

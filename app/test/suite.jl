@@ -7112,6 +7112,30 @@ end
     @test img_branch_props_path(img, "SHG") == joinpath(dir, "SHG__branch.h5ad")
 end
 
+# The same question for tracks, and the reason it needs its own answer: "is this image tracked" was
+# being asked of the RUN LOG (does a `tracking.*` entry exist), which a project migrated from the R
+# version answers "no" for while its `{vn}__tracks.h5ad` sits on disk — so the guide picker declared
+# "needs a tracked image" over a project whose tracks had already been clustered. The sidecar is the
+# state; the run log is only the provenance of runs this app happened to execute.
+@testset "track value_names come from the sidecars" begin
+    proj = create_project!(name="tvn-$(rand(1000:9999))")
+    s = add_set!(proj; name="set-A")
+    # Explicit uid: `@testset` reseeds the RNG, so `gen_uid` would hand this image the SAME uid — and
+    # the same directory — as the branch testset above, whose sidecars are already sitting in it
+    # (docs/DEV.md → the `@testset` reseeds the global RNG trap; this test hit it on the first run).
+    img = add_image!(s; name="img-a", uid="tvnImgA")
+    dir = img_label_props_dir(img); mkpath(dir)
+    @test img_track_value_names(img) == String[]           # nothing banked yet
+    for f in ("B__tracks.h5ad", "T__tracks.h5ad", "B.h5ad", "T.h5ad", "SHG__branch.h5ad")
+        touch(joinpath(dir, f))
+    end
+    # only the __tracks sidecars, and NOT the cell/branch tables that sit beside them
+    @test img_track_value_names(img) == ["B", "T"]
+    @test img_track_props_path(img, "B") == joinpath(dir, "B__tracks.h5ad")
+    # and it does NOT consult the run log: no tracking entry was ever written above
+    @test isempty(read_run_log(img))
+end
+
 @testset "plot groupBy (generic categorical sub-axis)" begin
     # split a numeric measure by a categorical column (the hmmPlotParams port): each (pop × level)
     # becomes its own series tagged with `group`. Deterministic synthetic frame — no fixture.

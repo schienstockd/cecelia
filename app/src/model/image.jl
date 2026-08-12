@@ -190,6 +190,28 @@ Absolute path to the per-track labelProps `.h5ad` for a value_name:
 img_track_props_path(img::CciaImage, value_name::AbstractString="default")::String =
     joinpath(img_label_props_dir(img), "$(value_name)$(TRACK_PROPS_SUFFIX).h5ad")
 
+"""
+    img_track_value_names(img) -> Vector{String}
+
+The value_names that have a per-track table, from the `{vn}__tracks.h5ad` sidecars on disk. Sorted;
+empty when tracking never measured. The exact twin of `img_branch_value_names` — same directory, same
+reserved-suffix convention.
+
+**The sidecar is the source, not the run log.** "Has this image been tracked" cannot be answered from
+`runLog` (a project migrated from the R version, or tracked before the run log existed, carries no
+`tracking.*` entry at all while its tracks sit right there on disk), and `label_props` holds only the
+per-CELL tables so it looks identical whether or not tracking ran. This is also STRICTLY stronger than
+`is_tracked` (which only asks whether `track_id` reached obs): the sidecar means the track measures
+landed, which is what every track-grained consumer — `track_props`, `clustTracks.cluster`, the
+behaviour HMM — actually needs. Cheap enough for a payload: one `readdir`, no HDF5 open.
+"""
+function img_track_value_names(img::CciaImage)::Vector{String}
+    dir = img_label_props_dir(img)
+    isdir(dir) || return String[]
+    suffix = TRACK_PROPS_SUFFIX * ".h5ad"
+    sort!(String[f[1:end-length(suffix)] for f in readdir(dir) if endswith(f, suffix)])
+end
+
 # Per-branch (skeleton) table suffix. A skeletonised segmentation gets a companion `.h5ad` holding
 # ONE row per branch path (branch measures in X/var — length, tortuosity, branch-type; endpoints
 # in obs). Lives beside the per-cell labelProps. Same double-underscore convention as tracks; the
