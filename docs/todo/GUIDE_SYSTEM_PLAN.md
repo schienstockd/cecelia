@@ -140,6 +140,12 @@ see *The guides*). Changes made while building, each for a reason found in the c
   scientific step rather than drift's missing half — and that is exactly the judgement a human has to
   make and a test cannot. Verified by reverting the segment guide to `segment.cellpose`: both this and
   the fun-name pair check fail.
+- **The ring outlived what it was pointing at.** Clicking a control that opens a dialog leaves the
+  control underneath it, and a ring at z-1499 then floated on top of the dialog, framing something the
+  user could no longer see (the lab log's `?` → the Claude overview; Dominik, 2026-08-12). The ring is
+  now suppressed when the anchor is occluded, and when the guide has finished. The bubble keeps its
+  placement — it sits above the dialog and stays readable. `isOccluded` was already there for
+  multi-candidate resolution; the ring needed it too.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

@@ -58,7 +58,11 @@ export function rankAnchorCandidates(cands: AnchorCandidate[]): number {
 
 // Is something else drawn on top of this element's centre? The guide's own bubble does not count —
 // it is deliberately placed beside the anchor, but a tooltip or its shadow can clip the midpoint.
-function isOccluded(el: HTMLElement): boolean {
+//
+// Exported because the RING needs it too, not just the multi-candidate resolver: clicking a control
+// that opens a dialog leaves the control underneath it, and a ring at z-1499 then floats on top of the
+// dialog, framing something the user can no longer see (Dominik, 2026-08-12 — the lab log's `?`).
+export function isOccluded(el: HTMLElement): boolean {
   const r = el.getBoundingClientRect()
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
   if (!hit) return true

@@ -39,6 +39,7 @@ export const labLogGuide: GuideDef = {
         'On-demand only: it does nothing until you ask.',
         'Worth one read; nothing else in this guide.',
       ],
+      clickAnchor: true,
       reveal: {
         // The panel is `v-if`'d in App.vue, so the toolbar does not exist until it is open.
         needed: c => !c.anchorExists('lablog.claudeHelp'),

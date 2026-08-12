@@ -23,7 +23,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useGuideStore } from '../stores/guide'
 import { openGuides } from '../lib/guideOpen'
 import { placeBox, arrowOffset, type Placed } from '../utils/anchorPosition'
-import { resolveAnchor, isReachable, visibleRect, scrollAnchorIntoView, NAV_PREFIX } from '../utils/guideAnchor'
+import { resolveAnchor, isReachable, isOccluded, visibleRect, scrollAnchorIntoView,
+         NAV_PREFIX } from '../utils/guideAnchor'
 
 const guide = useGuideStore()
 
@@ -52,12 +53,11 @@ function reposition() {
   const size = { width: box.offsetWidth, height: box.offsetHeight }
   const vp = { width: window.innerWidth, height: window.innerHeight }
 
-  // The VISIBLE part of the anchor, not its full rect: a tall control inside a scrolling panel
-  // reports a height the panel never shows, and both the ring and the placement have to follow what
-  // the user can see. `null` ⇒ nothing of it is on screen.
-  const anchor = isReachable(el) ? visibleRect(el) : null
-  if (!anchor) {
-    // No anchor (or it's hidden): degrade to a centred card rather than dead-ending (plan D4).
+  // No anchor, or it's hidden: degrade to a centred card rather than dead-ending (plan D4).
+  // The VISIBLE part of the anchor, not its full rect: a tall control inside a scrolling panel reports
+  // a height the panel never shows, and both the ring and the placement follow what the user can see.
+  const anchor = el && isReachable(el) ? visibleRect(el) : null
+  if (!el || !anchor) {
     placed.value = null
     ringRect.value = null
     return
@@ -69,6 +69,11 @@ function reposition() {
   })
   placed.value = p
   arrowAt.value = arrowOffset(p, anchor, size, 14)
+
+  // No ring when there is nothing useful to ring: the guide has finished, or something is now drawn
+  // OVER the control (a dialog the step just told the user to open). The bubble keeps its placement —
+  // it is above the dialog and still readable — but a frame around a hidden control is pure confusion.
+  if (guide.phase === 'done' || isOccluded(el)) { ringRect.value = null; return }
 
   // The ring is the inflated visible box, clamped again so the padding itself can't leave the screen.
   const rt = Math.max(anchor.top - RING_PAD, 0)
