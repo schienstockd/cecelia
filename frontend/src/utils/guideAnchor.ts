@@ -68,6 +68,38 @@ export function readAnchorValue(id: string | undefined): string | null {
   return el.getAttribute('data-guide-value') ?? el.textContent?.trim() ?? null
 }
 
+export interface VisibleRect { top: number; left: number; width: number; height: number }
+
+// The part of an element you can ACTUALLY see: its rect intersected with every ancestor that clips
+// its overflow, then with the viewport. `null` when nothing of it is visible.
+//
+// This exists because `getBoundingClientRect()` ignores clipping. `TaskRunner`'s parameters block is
+// taller than the panel that scrolls it, so its rect reported the full height and the highlight ring
+// drawn from it framed a region mostly outside the panel — a frame around nothing (Dominik,
+// 2026-08-12). Same trap for any anchor inside a scroll container: the image table, the file list.
+export function visibleRect(el: HTMLElement | null): VisibleRect | null {
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  let top = r.top, left = r.left, right = r.right, bottom = r.bottom
+
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const cs = getComputedStyle(p)
+    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+    const pr = p.getBoundingClientRect()
+    top = Math.max(top, pr.top)
+    left = Math.max(left, pr.left)
+    right = Math.min(right, pr.right)
+    bottom = Math.min(bottom, pr.bottom)
+  }
+  top = Math.max(top, 0)
+  left = Math.max(left, 0)
+  right = Math.min(right, window.innerWidth)
+  bottom = Math.min(bottom, window.innerHeight)
+
+  if (right - left < 1 || bottom - top < 1) return null
+  return { top, left, width: right - left, height: bottom - top }
+}
+
 // Bring the target into view before the bubble is placed beside it — a step is useless if its control
 // is scrolled out of the panel. `nearest` rather than `center` for the block axis would leave a row
 // half under a sticky header, so centre it and accept the jump.

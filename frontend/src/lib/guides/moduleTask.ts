@@ -10,7 +10,7 @@
 // What a caller supplies is only what is genuinely per-guide: which page, which function, what its
 // parameters mean, and what to do with the output afterwards.
 
-import type { GuideDef, GuideStep, Prereq, Reveal } from './types'
+import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from './types'
 import { PREREQ } from './prereqs'
 
 // The reusable half: the steps that drive `ModuleLayout` + `TaskRunner`. Exported on its own because
@@ -30,11 +30,18 @@ export interface TaskRunStepsOpts {
   // `guides.test.ts` against the page's own SFC.
   selectionModule: string
   waitLabel: string                // gerund for the parked bubble: 'Segmenting'
+  funHint?: string[]               // bullets on the function-choice step — why THIS one, when the
+                                   // dropdown holds a near-identically named neighbour
   selectHint?: string[]            // bullets for the image-selection step
   selectTitle?: string             // override the image-selection step's heading
   selectText?: string              // …and its sentence
   params?: string[]                // bullets naming the parameters that matter
   withSet?: boolean                // include the "check the active set" step (default true)
+  // Insert a "preview it first" step before Run. Only for a task the backend declares previewable
+  // (`task_previewable`) — a composite inherits it from any step, which is how segment+measure
+  // qualifies. The control is `v-if`'d out unless exactly ONE image is selected, so the step carries a
+  // reveal for that case rather than pointing at a button that isn't there.
+  withPreview?: boolean
 }
 
 export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
@@ -132,6 +139,7 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       placement: 'left',
       title: 'Choose the function',
       text: `Pick "${o.funLabel}" from the dropdown.`,
+      bullets: o.funHint,
       reveal: revealsFor('task.fun'),
       when: c => c.anchorValue('task.fun') === o.taskKey,
     },
@@ -144,11 +152,32 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
       bullets: o.params,
       reveal: revealParams,
     },
+    ...(o.withPreview ? [{
+      anchor: 'task.preview',
+      route: o.route,
+      placement: 'left' as const,
+      title: 'Preview before you commit',
+      text: 'This runs the real compute over just the region napari is showing.',
+      bullets: [
+        'Seconds instead of minutes — the way to judge the diameter and channels.',
+        'Open the image in napari first; the preview follows what it shows.',
+      ],
+      reveal: [
+        revealsFor('task.preview')[0],
+        {
+          needed: (c: GuideCtx) => !c.anchorExists('task.preview'),
+          anchor: 'images.table',
+          text: 'Preview needs exactly one image selected — tick a single row.',
+          placement: 'top-start' as const,
+        },
+        revealsFor('task.preview')[1],
+      ],
+    }] : []),
     {
       anchor: 'task.run',
       route: o.route,
       placement: 'left',
-      text: 'Run it — this queues one task per selected image.',
+      text: 'Happy with the preview? Run it — one task per selected image.',
       reveal: revealsFor('task.run'),
       clickAnchor: true,
     },

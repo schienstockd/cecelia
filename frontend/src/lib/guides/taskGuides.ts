@@ -89,12 +89,21 @@ export const segmentGuide = moduleTaskGuide({
   summary: 'Turn fluorescence into per-cell labels — the entry point for everything else.',
   route: '/segment',
   navLabel: 'Segment',
-  taskKey: 'cellposeSegment',
-  funName: 'segment.cellpose',
-  funLabel: 'Cellpose segmentation',
+  // The COMPOSITE (segment.cellpose + segment.measureLabels), not plain `segment.cellpose`. Labels on
+  // their own carry no measures, so gating/tracking/clustering would have nothing to read and the QC
+  // plots — declared on the measure step — would be empty. The guide's whole downstream story depends
+  // on measuring, so it teaches the function that does both (Dominik, 2026-08-12).
+  taskKey: 'cellposeMeasure',
+  funName: 'segment.cellposeMeasure',
+  funLabel: 'Cellpose segment + measure',
   selectionModule: 'segment',
   waitLabel: 'Segmenting',
+  withPreview: true,
   intro: 'Segmentation is the entry point: gating, tracking and clustering all read its output.',
+  funHint: [
+    'Plain "Cellpose segmentation" makes labels only — no measures to gate or cluster on.',
+    'This one measures too, so everything downstream has something to read.',
+  ],
   params: [
     'Cell channels — the channels carrying the cell signal; they are merged by maximum.',
     'Cell diameter (µm) — the single setting that most decides whether this works.',
@@ -118,7 +127,7 @@ export const segmentGuide = moduleTaskGuide({
       'Are the outlines on the cells, or offset from them?',
     ]),
     {
-      text: 'Labels are in — every measure came with them.',
+      text: 'Labels are in, and measured — which is what makes them useful.',
       title: 'What you now have',
       bullets: [
         'Each cell has an id, a centroid and its regionprops + intensity measures.',
@@ -143,7 +152,10 @@ export const trackCellsGuide = moduleTaskGuide({
   waitLabel: 'Tracking',
   prereqs: [PREREQ.projectOpen, PREREQ.timeSeries, PREREQ.segmented],
   intro: 'Tracking links labels across frames — so segment every timepoint before you come here.',
-  selectHint: ['Each image needs a segmentation covering all of its frames.'],
+  selectHint: [
+    'Each image needs a segmentation covering all of its frames.',
+    'It must be a MEASURED segmentation — the Segment guide\'s function does both.',
+  ],
   params: [
     'Segmentation — which label set to track; a gated population narrows it.',
     'Max search radius (µm) — the furthest a cell may move between frames (~20 for T cells).',

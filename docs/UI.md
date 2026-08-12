@@ -1103,7 +1103,7 @@ which is how navigating gets taught rather than done for you.
 | Prerequisite registry | `lib/guides/prereqs.ts` |
 | **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` — `moduleTaskGuide()` for a whole page guide, `taskRunSteps()` for just the run-a-task block when a guide needs it mid-sequence (the import guide's convert phase) |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
-| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel; the ring is clamped to the viewport so a large or part-scrolled anchor can't draw edges off-screen. The compass MARK (header button + dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
+| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel. Both the ring and the placement use `visibleRect()`, the anchor intersected with every clipping ancestor: `getBoundingClientRect()` ignores clipping, so a control taller than the panel scrolling it would otherwise be framed mostly off-panel. The compass MARK (header button + dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
 | Anchor resolution / reachability | `utils/guideAnchor.ts` |
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
@@ -1120,7 +1120,10 @@ steps. The import guide is the case: "Add images" only registers rows (`POST /ap
 converting them to OME-Zarr is an ordinary task run (`importImages.omezarr`) the user dispatches through
 the same furniture — so the guide is file-picking, then the shared block, then "now it says done".
 `withSet: false` drops the set step when the guide has already covered it; `selectTitle`/`selectText`
-reword the selection step for the context. Every call registers itself in `TASK_RUN_USES`, which is what
+reword the selection step for the context; `funHint` explains why THIS function and not the
+near-identically named neighbour in the dropdown; `withPreview` inserts a "preview it first" step
+before Run (only for a task the backend declares `task_previewable` — a composite inherits it from any
+step, which is how segment+measure qualifies). Every call registers itself in `TASK_RUN_USES`, which is what
 the selection-scope ratchet iterates.
 
 **Anchors are `data-guide="<area>.<control>"` attributes**, namespaced, added to the markup at the

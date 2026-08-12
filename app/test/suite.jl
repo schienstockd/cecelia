@@ -395,6 +395,43 @@ end
     end
 end
 
+# ── Guide catalogue (frontend) vs the task registry (Julia) ──────────────────
+# A guide that teaches "run this function" names the task two ways: `taskKey` (what TaskRunner's
+# <select> holds, i.e. the spec's `task`) and `funName` (what the task rail reports, i.e. `fun_name`).
+# Nothing in the frontend can check either — the specs live here — so a rename or a mismatched pair
+# would leave the guide waiting forever on a function that does not exist, with no error anywhere.
+#
+# This is the structural half of a real bug: the Segment guide taught plain `segment.cellpose`, which
+# produces labels with NO measures, so its own "now gate on these" ending could not work. Choosing the
+# wrong function is a judgement no test can make; naming one that isn't real is, and that's this.
+@testset "guide catalogue names real tasks" begin
+    dir = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "guides")
+    if !isdir(dir)
+        @test_skip "frontend guides catalogue not found"
+    else
+        src = join([read(joinpath(dir, f), String)
+                    for f in readdir(dir) if endswith(f, ".ts") && !endswith(f, ".test.ts")], "\n")
+        funs = [String(m.captures[1]) for m in eachmatch(r"funName:\s*'([^']+)'", src)]
+        keys_ = [String(m.captures[1]) for m in eachmatch(r"taskKey:\s*'([^']+)'", src)]
+        @test !isempty(funs)
+        @test length(funs) == length(keys_)      # every task-run block names both
+
+        registry = Cecelia._fun_name_map()
+        @test isempty([f for f in funs if !haskey(registry, f)])
+
+        # …and the pair must describe the SAME task: spec(funName).task == taskKey. A half-applied
+        # rename that leaves the two pointing at different functions passes every other check —
+        # the dropdown gate would never match while the rail happily parked on something else.
+        mismatched = String[]
+        for (f, k) in zip(funs, keys_)
+            haskey(registry, f) || continue
+            spec = Cecelia._task_spec(registry[f])
+            String(get(spec, "task", "")) == k || push!(mismatched, "$f => $k")
+        end
+        @test isempty(mismatched)
+    end
+end
+
 # ── Optical-flow training (opticalFlow.train) ────────────────────────────────
 # The scales are the single most consequential parameter of the pipeline AND the one that fails
 # silently: the set a model is trained on must be the set inference feeds it, and coastal does not

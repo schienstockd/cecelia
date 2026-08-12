@@ -66,6 +66,26 @@ see *The guides*). Changes made while building, each for a reason found in the c
   SHARED task-run block — `taskRunSteps()`, extracted out of `moduleTaskGuide` so the import guide
   splices it in mid-sequence rather than becoming a seventh hand-written copy — and the ratchet
   registration moved into that block, so the import guide's selection scope is checked too.
+- **The Segment guide taught the wrong function** — the same invented-flow error as import, one layer
+  down. It picked plain `segment.cellpose`, which produces labels with **no measures**, then ended with
+  "now gate on these" and a QC step; but gating/tracking/clustering all read labelProps, and the
+  `segmentation_qc` plot is declared on the MEASURE step. So its own ending could not work. It now
+  teaches the composite `segment.cellposeMeasure` ("Cellpose segment + measure"), with a `funHint`
+  saying why not the plain one beside it in the dropdown. A composite reports to the task rail under its
+  own `fun_name` (the frontend stamps the selected def's), so the park step still resolves.
+  **Ratchet:** `app/test/suite.jl` → *guide catalogue names real tasks* — every `funName` a guide names
+  must be in `_fun_name_map()`, and its `taskKey` must equal that spec's `task`. Julia-side because the
+  specs live there and the frontend holds no copy (the same reasoning as the task-spec `tip` check).
+  Choosing the *wrong* function is a judgement no test can make; naming an unreal one is.
+- **Segmentation previews before it runs.** `withPreview` adds a step at the preview control — real
+  compute over just the region napari is showing, seconds instead of minutes, which is how you judge
+  the diameter and channels. The control is `v-if`'d out unless exactly one image is selected, so the
+  step reveals "tick a single row" rather than pointing at a button that isn't rendered.
+- **The ring framed the wrong region for a tall control.** `getBoundingClientRect()` ignores clipping,
+  so `TaskRunner`'s parameters block reported the full height it has inside a shorter scrolling panel
+  and the ring was drawn mostly outside the panel (Dominik, 2026-08-12). `visibleRect()` intersects the
+  anchor with every clipping ancestor and the viewport; the ring AND the bubble placement now follow
+  what is actually on screen.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

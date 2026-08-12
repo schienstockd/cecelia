@@ -47,6 +47,7 @@ const label = computed(() => {
   <div v-if="previewable !== false" class="tp">
     <button
       class="tp-btn cc-btn cc-btn-ghost cc-btn-icon"
+      data-guide="task.preview"
       :class="{ 'cc-btn-on cc-btn-on-tint': preview.enabled }"
       :disabled="preview.busy && !preview.enabled"
       @click="preview.toggle()"
