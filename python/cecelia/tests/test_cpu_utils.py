@@ -29,12 +29,24 @@ class LimitBlasThreadsTest(unittest.TestCase):
         if not _blas_limits():
             self.skipTest('no introspectable BLAS pool in this environment')
 
+    def assertCappedAt(self, budget):
+        """Every pool at OR BELOW the budget — the cap is an upper bound, not an assignment.
+
+        A pool whose hardware maximum is under the budget simply stays there, so asserting exact
+        equality is over-specified: it passed on a 32-core dev box and failed CI on Windows with
+        `[4, 4, 2] != [4, 4, 4]`. Bounded is the property that actually matters.
+        """
+        got = _blas_limits()
+        self.assertTrue(got, 'no BLAS pool to check')
+        for n in got:
+            self.assertLessEqual(n, budget, f'pool above the budget: {got}')
+
     def test_caps_inside_and_restores_after(self):
         """Restoring matters as much as capping: this wraps one phase of a long-lived runner, and
         leaking a 4-thread cap onto whatever it does next would be a silent slowdown elsewhere."""
         before = _blas_limits()
         with cpu_utils.limit_blas_threads(2):
-            self.assertEqual(_blas_limits(), [2] * len(before))
+            self.assertCappedAt(2)
         self.assertEqual(_blas_limits(), before)
 
     def test_restores_even_when_the_block_raises(self):
@@ -46,14 +58,20 @@ class LimitBlasThreadsTest(unittest.TestCase):
 
     def test_default_is_the_measured_small_matmul_budget(self):
         with cpu_utils.limit_blas_threads():
-            self.assertEqual(_blas_limits(),
-                             [cpu_utils.BLAS_THREADS_SMALL_MATMUL] * len(_blas_limits()))
+            self.assertCappedAt(cpu_utils.BLAS_THREADS_SMALL_MATMUL)
+
+    def test_it_lowers_rather_than_raises(self):
+        """The point of a budget: entering it must never hand a pool MORE threads than it had."""
+        before = _blas_limits()
+        with cpu_utils.limit_blas_threads(cpu_utils.BLAS_THREADS_SMALL_MATMUL):
+            for was, now in zip(before, _blas_limits()):
+                self.assertLessEqual(now, was)
 
     def test_nests(self):
         with cpu_utils.limit_blas_threads(8):
             outer = _blas_limits()
             with cpu_utils.limit_blas_threads(2):
-                self.assertEqual(_blas_limits(), [2] * len(outer))
+                self.assertCappedAt(2)
             self.assertEqual(_blas_limits(), outer)
 
     def test_the_budget_is_a_small_positive_number(self):

@@ -46,6 +46,10 @@ BLAS_THREADS_SMALL_MATMUL = 4
 def limit_blas_threads(n_threads=BLAS_THREADS_SMALL_MATMUL):
     """Cap the BLAS thread pool for the duration of the block, then restore it.
 
+    An UPPER BOUND, not an assignment: a pool whose hardware maximum is already below `n_threads`
+    stays where it is. So on a small machine this is a no-op, which is the right degradation — the
+    problem it solves only exists when there are more cores than the work can use.
+
     A no-op (rather than an error) when the thread pool cannot be introspected, because doing the
     work slowly is always better than not doing it — `threadpoolctl` is declared in
     `python/pyproject.toml`, but an external consumer with an unusual BLAS build should still run.
