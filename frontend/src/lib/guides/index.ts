@@ -18,6 +18,7 @@ import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
 import { recordMovieGuide } from './movies'
+import { animationGuide } from './animation'
 import { labLogGuide } from './labLog'
 import {
   fixMetadataGuide, behaviourStatesGuide, clusterCellsGuide, clusterTracksGuide, runChainGuide,
@@ -39,6 +40,7 @@ export const GUIDES: GuideDef[] = [
   // Analysis — free-form surfaces
   plotsGuide,
   recordMovieGuide,
+  animationGuide,
   notebooksGuide,
   labLogGuide,
   // Pipeline — do it at scale

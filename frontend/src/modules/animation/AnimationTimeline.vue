@@ -109,7 +109,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
   <p v-else-if="!frames.length" class="cc-empty">No keyframes yet — set up the view in napari and
     <strong>Capture view</strong>.</p>
 
-  <div v-else class="anim-timeline">
+  <div v-else class="anim-timeline" data-guide="animation.timeline">
     <table class="tl" :style="{ '--tl-label-w': widthOf(LABEL_KEY) }">
       <thead>
         <tr>

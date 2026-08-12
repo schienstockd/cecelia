@@ -433,8 +433,15 @@ Plus four **obvious candidates** added in the same pass, each answering a questi
     good in-app explainer behind its `?` (`ClaudeOverviewDialog`). Restating that content here would be
     a second copy to keep in step, so the guide points at it and stops.
 
-Still-obvious candidates NOT built: **animation / keyframed movies**, **spatial neighbour analysis**,
-and **export/share a project**.
+15. **Build an animation** — the third route to a movie, and the one that is a genuinely different job,
+    which is why it was held back from *Record a movie* rather than tacked on as a coda. The distinction
+    the guide has to land: the recorder and Batch movies SWEEP the time axis with a fixed look, while an
+    animation TWEENS between views captured by hand. A keyframe is a whole napari view — camera,
+    channels, populations, timepoint — so it can pan, fade a channel in and travel through time at once.
+    It therefore does NOT need a time series (a keyframed move over a z-stack is valid), which is why its
+    prereqs stop at an imported image.
+
+Still-obvious candidates NOT built: **spatial neighbour analysis** and **export/share a project**.
 
 Copy budget per step: **one sentence, plus at most 2–4 imperative lines** — the same shape as a tip
 card (see R4). The control is right there; the bubble is not the place for prose.
