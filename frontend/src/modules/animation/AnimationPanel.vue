@@ -291,18 +291,21 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
         <h4>Keyframes <span class="ap-sub cc-muted">{{ frames.length }}</span></h4>
         <div class="ap-img cc-row cc-row-tight">
           <span class="ap-name" :title="activeImage?.name">{{ activeImage?.name ?? activeUid }}</span>
-          <button v-if="!isOpen" class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="opening" @click="openActive"
+          <button v-if="!isOpen" class="cc-btn cc-btn-ghost cc-btn-micro" data-guide="animation.open"
+                  :disabled="opening" @click="openActive"
                   v-tooltip.left="'Open this image in napari'">
             <i :class="['pi', opening ? 'pi-spin pi-spinner' : 'pi-eye']" /> Open
           </button>
         </div>
         <div class="ap-btns">
-          <button class="cc-btn cc-btn-ghost" :disabled="capturing || !isOpen" @click="capture"
+          <button class="cc-btn cc-btn-ghost" data-guide="animation.capture"
+                  :disabled="capturing || !isOpen" @click="capture"
                   v-tooltip.left="isOpen ? 'Capture the current napari view as a keyframe (a base look)'
                                          : 'Open this image in napari first'">
             <i :class="['pi', capturing ? 'pi-spin pi-spinner' : 'pi-camera']" /> Capture view
           </button>
-          <button class="cc-btn cc-btn-ghost" :disabled="!frames.length" @click="addKeyframe"
+          <button class="cc-btn cc-btn-ghost" data-guide="animation.addKeyframe"
+                  :disabled="!frames.length" @click="addKeyframe"
                   v-tooltip.left="'Duplicate the last keyframe to vary it via the rows'">
             <i class="pi pi-plus" /> Add keyframe
           </button>
@@ -325,7 +328,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       </section>
 
       <div class="ap-actions cc-row">
-        <button class="cc-btn cc-btn-primary" :disabled="!canRender" @click="render"
+        <button class="cc-btn cc-btn-primary" data-guide="animation.render" :disabled="!canRender" @click="render"
                 v-tooltip.top="canRender ? 'Render the timeline to an mp4' : 'Needs 2 or more keyframes'">
           <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
         </button>

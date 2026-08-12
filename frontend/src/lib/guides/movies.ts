@@ -118,8 +118,8 @@ export const recordMovieGuide: GuideDef = {
       title: 'Two more things worth knowing',
       text: 'Movies are rendered by napari, so they cost real time on long timelapses.',
       bullets: [
-        'The Animation page is the third route — a keyframed camera move rather than a straight sweep.',
         'Everything lands in movies/ and is playable on the Movies page.',
+        'Want a camera move instead of a straight sweep? See the "Build an animation" guide.',
       ],
     },
   ],
