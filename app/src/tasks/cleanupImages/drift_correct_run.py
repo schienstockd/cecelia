@@ -108,7 +108,7 @@ def run(params):
         zarr_utils.write_calibration(staging, dim_utils)
 
         # Which part of the expanded canvas is data. Drift drops each frame into a ZEROED canvas at
-        # its own offset, so most of this store is padding (8 z-planes in a 22-plane canvas on the
+        # its own offset, so much of this store is padding (8 z-planes in an 18-plane canvas on the
         # worst movie here). Recorded on the STORE so any consumer asks one question —
         # `read_valid_box` — instead of knowing drift produced it and re-deriving the geometry. The
         # numbers come from the same call that placed the pixels, so this stays exact even when the

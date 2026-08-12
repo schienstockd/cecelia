@@ -1,7 +1,7 @@
 """A derived store must make a DECISION about the valid box — carry it, write its own, or say why not.
 
 The box records which part of a canvas is data (`docs/ARCHITECTURE.md` → *The valid box*). Drift
-correction writes it; everything downstream inherits a canvas that is 3–64% padding on real movies
+correction writes it; everything downstream inherits a canvas that is 3–56% padding on real movies
 here. But a box only helps if it SURVIVES the pipeline, and it did not: `af_correct` and
 `cellpose_correct` dropped it silently, and `smooth` carried it through `read_valid_box(path)`, which
 on a per-frame box returns the UNION over frames — nearly the whole canvas once the window drifts.

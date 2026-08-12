@@ -86,3 +86,50 @@ good movie. It stops the estimate running away; it does not make an unregisterab
 | after, `multiLag` (default) | 56.1 s | 3.51× |
 
 **1.9× faster and 2.6× less canvas** on the default path, on the movie that needed it most.
+
+---
+
+## Addendum — 2026-08-12: re-measuring the padding after the estimator changed
+
+Two follow-ups from the audit above, both done in `work/drift-followups`.
+
+### The documented padding figures were measured on the old estimator
+
+Method validated first by reproducing the banked numbers from the valid boxes already on disk:
+worst image came out at exactly the documented 63.6%, overall at 28.3% against the documented 28.2%.
+Re-measuring with `multiLag` (shifts re-estimated, geometry derived through `drift_frame_slices` —
+no stores written):
+
+| | old | new |
+|---|---|---|
+| plane-frames saved, across the 17 stores carrying a box | 28.3% | **24.0%** |
+| worst image (`kSUFux/PsD5Xc`) | 63.6% (8 in 22) | **55.6% (8 in 18)** |
+| range | 3.1–63.6% | **3.1–55.6%** |
+
+Padding fell on 14 of 17, held on 3, rose on one (`4kS67f/Y1IAZU`, a 7-frame image, 13.3% → 18.8%).
+A better trajectory needs less canvas, so the feature that skips the padding has less to skip —
+these numbers are a property of this machine's data, not of the skip.
+
+### 8 of 25 corrected stores have no valid box at all
+
+Every `4kS67f` one, all dated 2026-07-06/07 — before #435 added `write_valid_box` on 07-31.
+`read_valid_box` returns `None`, so the skip is a no-op there and 20,493 plane-frames still reach
+cellpose as padding. **Machine-wide the saving is 21.6%, not 24.0%**; the documented figure was the
+per-boxed-store one presented as if it were the machine-wide one. Only one of the eight still has a
+`drift_shifts.json`, so a sidecar backfill would repair one store; the rest would need the box
+derived from pixels. Re-correcting is the better route — they gain the box and the new estimator
+together.
+
+Those seven also recorded no `driftChannel` in `funParams`, so they **cannot** be re-measured
+honestly: the reference channel used in July is unknown. An initial pass silently fell back to
+channel 0 and produced 30 px residuals on them — the exact trap `channel_indices` exists to prevent,
+reproduced in a throwaway measurement script. They are excluded rather than guessed at.
+
+### `_valid_z_span`'s thin-span guard never fires
+
+Suspected in the audit above of switching the skip off on the frames with the most padding. It does
+not, and cannot: drift places each frame **whole**, so a valid box is always the source depth — 8,
+13 or 31 planes across every store here, minimum 8, never near the `min_span` of 2. The guard is a
+safety net for a malformed box. The invariant behind it is now pinned by
+`test_drift_geometry.py::test_every_frames_z_span_is_the_source_depth`, so a future producer emitting
+thin boxes fails a test instead of quietly disabling the skip. No behaviour change.

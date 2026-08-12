@@ -1,6 +1,6 @@
 """`SegmentationUtils._valid_z_span` — how much of a padded z-stack is worth segmenting.
 
-A drift-corrected canvas holds each frame at its own offset and zeroes the rest — 3-64% of the z
+A drift-corrected canvas holds each frame at its own offset and zeroes the rest — 3-56% of the z
 planes across the movies on this machine. The whole stack goes to cellpose in ONE call (it stitches
 across z internally), so those planes cost GPU time and produce nothing.
 
@@ -49,7 +49,7 @@ class ValidZSpanTest(unittest.TestCase):
         self.assertEqual(SU._valid_z_span({'Z': (0, 1)}, 1), (0, 1))
 
     def test_the_real_measured_cases(self):
-        """kSUFux: 8 valid planes in canvases of 12-22 — the case that motivated this."""
+        """kSUFux: 8 valid planes in canvases of 11-18 — the case that motivated this."""
         self.assertEqual(SU._valid_z_span({'Z': (7, 15)}, 22), (7, 15))     # 64% skipped
         self.assertEqual(SU._valid_z_span({'Z': (0, 8)}, 12), (0, 8))       # leading-only
         self.assertEqual(SU._valid_z_span({'Z': (4, 12)}, 12), (4, 12))     # trailing-only
