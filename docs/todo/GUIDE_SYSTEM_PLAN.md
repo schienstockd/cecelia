@@ -392,9 +392,15 @@ Plus four **obvious candidates** added in the same pass, each answering a questi
 11. **Run a pipeline over a whole set** — `/chain`. "I have forty images, am I really doing this one at
     a time?" The difference between a demo and a working pipeline.
 
-Still-obvious candidates NOT built, deliberately: **record a movie** (three surfaces — animation, batch
-movies, movies — so it needs its own scoping pass, and it is the most-requested *output*, which makes it
-the best next one), **spatial neighbour analysis**, and **export/share a project**.
+12. **Cluster tracks** — see the clustering note in the log above; two pages, two prerequisites.
+13. **Record a movie** — the most-requested *output*, and the one result the app reaches three ways
+    (the Viewer panel's napari recorder, Batch movies, Animation). The guide teaches the first two in
+    order — get one movie's look right, then apply that look across a selection — because that IS the
+    relationship between them. Animation is a different job (a keyframed camera move) and earns its own
+    guide rather than a coda here. Neither route is a TaskRunner function, so it is hand-written.
+
+Still-obvious candidates NOT built: **animation / keyframed movies**, **spatial neighbour analysis**,
+and **export/share a project**.
 
 Copy budget per step: **one sentence, plus at most 2–4 imperative lines** — the same shape as a tip
 card (see R4). The control is right there; the bubble is not the place for prose.

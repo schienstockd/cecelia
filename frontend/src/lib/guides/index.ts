@@ -17,6 +17,7 @@ import { driftCorrectGuide, segmentGuide, trackCellsGuide } from './taskGuides'
 import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
+import { recordMovieGuide } from './movies'
 import {
   fixMetadataGuide, behaviourStatesGuide, clusterCellsGuide, clusterTracksGuide, runChainGuide,
 } from './extraGuides'
@@ -36,6 +37,7 @@ export const GUIDES: GuideDef[] = [
   behaviourStatesGuide,
   // Analysis — free-form surfaces
   plotsGuide,
+  recordMovieGuide,
   notebooksGuide,
   // Pipeline — do it at scale
   runChainGuide,
