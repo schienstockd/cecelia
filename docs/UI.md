@@ -1101,7 +1101,7 @@ which is how navigating gets taught rather than done for you.
 | Catalogue (register a new guide here) | `frontend/src/lib/guides/index.ts` |
 | Step / prereq / gate types | `lib/guides/types.ts` |
 | Prerequisite registry | `lib/guides/prereqs.ts` |
-| **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` |
+| **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` — `moduleTaskGuide()` for a whole page guide, `taskRunSteps()` for just the run-a-task block when a guide needs it mid-sequence (the import guide's convert phase) |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
 | Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel; the ring is clamped to the viewport so a large or part-scrolled anchor can't draw edges off-screen. The compass MARK (header button + dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
@@ -1109,11 +1109,19 @@ which is how navigating gets taught rather than done for you.
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
 
 **Adding a guide.** If the page is a `ModuleLayout` + `TaskRunner` one, it is a
-`moduleTaskGuide({…})` call — **do not hand-write the five standard steps** (pick set → tick images →
-choose function → set params → Run → watch the rail). Those steps live in two shared files and five
-anchors, so drift correct / segment / track / cluster / behaviour are ~15 lines each. Writing the
+`moduleTaskGuide({…})` call — **do not hand-write the standard steps** (pick set → tick images →
+choose function → set params → Run → watch the rail). Those steps live in two shared components and
+five anchors, so drift correct / segment / track / cluster / behaviour are ~15 lines each. Writing the
 fourth by hand is how a pattern becomes four variants. A page with a genuinely different shape (the
 gating canvas, the notebook server, the chain whiteboard) gets its own `GuideDef` file.
+
+**A guide that runs a task PART-WAY through splices in `taskRunSteps()`** rather than restating those
+steps. The import guide is the case: "Add images" only registers rows (`POST /api/images/register`), and
+converting them to OME-Zarr is an ordinary task run (`importImages.omezarr`) the user dispatches through
+the same furniture — so the guide is file-picking, then the shared block, then "now it says done".
+`withSet: false` drops the set step when the guide has already covered it; `selectTitle`/`selectText`
+reword the selection step for the context. Every call registers itself in `TASK_RUN_USES`, which is what
+the selection-scope ratchet iterates.
 
 **Anchors are `data-guide="<area>.<control>"` attributes**, namespaced, added to the markup at the
 control. Two schemes:

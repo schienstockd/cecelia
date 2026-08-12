@@ -57,6 +57,15 @@ see *The guides*). Changes made while building, each for a reason found in the c
   clicking it hides everything. `reveal` now takes a LIST of causes, first match wins, with the last as
   the fallback for an unforeseen way of hiding something. Needed `anchorReachable` in `GuideCtx` — "in
   the DOM" and "on screen" are different questions with different fixes.
+- **The import guide described a flow that does not exist.** It said adding files starts conversion
+  "straight away" and then sent the user to open the image in napari — which cannot work, because the
+  eye is disabled until the image reads `done`. In reality **"Add images" only registers rows**
+  (`POST /api/images/register`); converting to OME-Zarr is an ordinary task run
+  (`importImages.omezarr`) the user dispatches through the normal TaskRunner. This was an invented
+  flow, not a UI bug: the guide asserted behaviour nobody had checked. The convert phase is now the
+  SHARED task-run block — `taskRunSteps()`, extracted out of `moduleTaskGuide` so the import guide
+  splices it in mid-sequence rather than becoming a seventh hand-written copy — and the ratchet
+  registration moved into that block, so the import guide's selection scope is checked too.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

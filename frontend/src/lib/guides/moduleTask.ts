@@ -13,14 +13,12 @@
 import type { GuideDef, GuideStep, Prereq, Reveal } from './types'
 import { PREREQ } from './prereqs'
 
-export interface ModuleTaskGuideOpts {
-  id: string
-  title: string
-  group: string
-  icon: string
-  summary: string
+// The reusable half: the steps that drive `ModuleLayout` + `TaskRunner`. Exported on its own because
+// the IMPORT guide needs it too — "Add images" only registers rows, and converting them to OME-Zarr is
+// an ordinary task run (`importImages.omezarr`) through this same furniture. Six module-task guides plus
+// import is well past the point of hand-writing a seventh copy.
+export interface TaskRunStepsOpts {
   route: string
-  navLabel: string                 // the sidebar entry's wording, so the bubble can name it
   taskKey: string                  // the `task` key in the JSON spec — what the <select> holds
   funName: string                  // 'segment.cellpose' — what a task in the rail reports
   funLabel: string                 // 'Cellpose segmentation' — the dropdown's own wording
@@ -32,22 +30,34 @@ export interface ModuleTaskGuideOpts {
   // `guides.test.ts` against the page's own SFC.
   selectionModule: string
   waitLabel: string                // gerund for the parked bubble: 'Segmenting'
+  selectHint?: string[]            // bullets for the image-selection step
+  selectTitle?: string             // override the image-selection step's heading
+  selectText?: string              // …and its sentence
+  params?: string[]                // bullets naming the parameters that matter
+  withSet?: boolean                // include the "check the active set" step (default true)
+}
+
+export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
+  id: string
+  title: string
+  group: string
+  icon: string
+  summary: string
+  navLabel: string                 // the sidebar entry's wording, so the bubble can name it
   prereqs?: Prereq[]
   intro?: string                   // one sentence on what this function is FOR
-  selectHint?: string[]            // bullets for the image-selection step
-  params?: string[]                // bullets naming the parameters that matter
   after?: GuideStep[]              // what to do with the output (QC, napari, the next page)
 }
 
-// Every guide the builder has produced, for the ratchet in `guides.test.ts` — it checks each one's
-// `selectionModule` against the `<ModuleLayout module="…">` in the page's own SFC. Populated as a side
-// effect of building, so a new guide is covered without registering it anywhere.
-export const MODULE_TASK_GUIDES: { id: string; route: string; selectionModule: string; taskKey: string }[] = []
+// Every use of the task-run block, for the ratchet in `guides.test.ts` — it checks each one's
+// `selectionModule` against the `<ModuleLayout module="…">` in that route's own SFC. Registered HERE
+// rather than in `moduleTaskGuide` so a guide that splices the block in directly (the import guide's
+// convert phase) is covered too; a new caller is checked without registering it anywhere.
+export const TASK_RUN_USES: { route: string; selectionModule: string; taskKey: string }[] = []
 
-export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
-  MODULE_TASK_GUIDES.push({
-    id: o.id, route: o.route, selectionModule: o.selectionModule, taskKey: o.taskKey,
-  })
+export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
+  TASK_RUN_USES.push({ route: o.route, selectionModule: o.selectionModule, taskKey: o.taskKey })
+
 
   // A control in the functions panel can be unusable three different ways, each needing DIFFERENT
   // advice — which is why this is a list of causes rather than one reveal (plan D5):
@@ -87,14 +97,7 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
     revealsFor('task.params')[1],
   ]
 
-  const steps: GuideStep[] = [
-    {
-      anchor: `nav:${o.route}`,
-      placement: 'right',
-      title: o.navLabel,
-      text: o.intro ?? `Open the ${o.navLabel} page.`,
-      clickAnchor: true,
-    },
+  const setStep: GuideStep[] = o.withSet === false ? [] : [
     {
       anchor: 'set.select',
       route: o.route,
@@ -110,12 +113,16 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       },
       when: c => c.setUid !== null,
     },
+  ]
+
+  return [
+    ...setStep,
     {
       anchor: 'images.table',
       route: o.route,
       placement: 'top-start',
-      title: 'Tick the images to run on',
-      text: 'Selection is per page, and it is remembered when you navigate away.',
+      title: o.selectTitle ?? 'Tick the images to run on',
+      text: o.selectText ?? 'Selection is per page, and it is remembered when you navigate away.',
       bullets: o.selectHint ?? ['Tick as many as you like — one task is queued per image.'],
       when: c => c.selection(o.selectionModule).length > 0,
     },
@@ -158,9 +165,11 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       reveal: revealsFor('task.list'),
       awaitTask: { fun: o.funName, label: o.waitLabel },
     },
-    ...(o.after ?? []),
   ]
+}
 
+// A whole guide for a module page: get there, then run the task, then look at what came out.
+export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
   return {
     id: o.id,
     title: o.title,
@@ -168,6 +177,16 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
     icon: o.icon,
     summary: o.summary,
     prereqs: o.prereqs ?? [PREREQ.projectOpen, PREREQ.imageImported],
-    steps,
+    steps: [
+      {
+        anchor: `nav:${o.route}`,
+        placement: 'right',
+        title: o.navLabel,
+        text: o.intro ?? `Open the ${o.navLabel} page.`,
+        clickAnchor: true,
+      },
+      ...taskRunSteps(o),
+      ...(o.after ?? []),
+    ],
   }
 }

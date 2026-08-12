@@ -1,18 +1,23 @@
 // "Import images" — the cold-start guide. The only one whose sole prerequisite is an open project,
 // so it is what the picker offers when nothing else can run yet (plan D6).
 //
-// It also teaches the two things every later guide assumes: that work is scoped to a SET, and that
-// import converts to OME-Zarr in the background rather than instantly.
+// It teaches the two things every later guide assumes: that work is scoped to a SET, and that importing
+// is TWO steps — "Add images" registers rows (`POST /api/images/register`), and converting them to
+// OME-Zarr is an ordinary task run (`importImages.omezarr`) you dispatch yourself. The first version of
+// this guide claimed conversion "starts straight away" and then sent the user to open the image in
+// napari, which cannot work: the eye is disabled until the image reads `done` (Dominik, 2026-08-12).
+// That convert phase is the shared `taskRunSteps` block, the same furniture every module page uses.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { taskRunSteps } from './moduleTask'
 
 export const importImagesGuide: GuideDef = {
   id: 'import-images',
   title: 'Import images',
   group: 'Data',
   icon: 'pi-upload',
-  summary: 'Get microscopy files into a project as OME-Zarr, ready to analyse.',
+  summary: 'Register microscopy files and convert them to OME-Zarr, ready to analyse.',
   prereqs: [PREREQ.projectOpen],
 
   steps: [
@@ -57,9 +62,6 @@ export const importImagesGuide: GuideDef = {
       clickAnchor: true,
     },
     {
-      // The select-all checkbox, NOT the whole table: ringing a large scrolling container drags the
-      // highlight around as you scroll it, and says "somewhere in here" rather than pointing at a
-      // control (Dominik, 2026-08-12).
       anchor: 'filebrowser.selectAll',
       route: '/manage-images',
       placement: 'right',
@@ -71,30 +73,63 @@ export const importImagesGuide: GuideDef = {
       anchor: 'filebrowser.confirm',
       route: '/manage-images',
       placement: 'top-end',
-      text: 'Add them to the set — conversion starts straight away.',
+      text: 'Add them to the set.',
       clickAnchor: true,
     },
     {
       anchor: 'images.table',
       route: '/manage-images',
       placement: 'top-start',
-      title: 'Conversion runs in the background',
-      text: 'Each image is converted to OME-Zarr, which is what everything downstream reads.',
+      title: 'Added, but not converted yet',
+      text: 'Adding files registers a row per image — it does not read the pixels.',
       bullets: [
-        'A row appears immediately; it is only usable once it reads "done".',
-        'Big time series take a while — you can keep working.',
+        'The Status column reads "pending" until you convert.',
+        'Nothing downstream can use a pending image.',
       ],
       when: c => c.images.length > 0,
+    },
+
+    // The convert phase IS a task run, through the same ModuleLayout + TaskRunner furniture as every
+    // module page — so it is the shared block, not a seventh hand-written copy of those five steps.
+    ...taskRunSteps({
+      route: '/manage-images',
+      taskKey: 'omezarr',
+      funName: 'importImages.omezarr',
+      funLabel: 'Convert to OME-ZARR',
+      selectionModule: 'manageImages',
+      waitLabel: 'Converting',
+      withSet: false,                       // the set was chosen four steps ago
+      selectTitle: 'Tick what to convert',
+      selectText: 'Select the images you just added — one conversion is queued per image.',
+      selectHint: ['The flag icon in the Name header selects everything that needs attention.'],
+      params: [
+        'Pyramid scale — downscaled copies for fast zoomed-out viewing; 2-3 suits a 512-1024 px frame.',
+        'Copy to local scratch first — much faster when the source is on a network share.',
+        'The defaults are right for most files; you can leave Advanced alone.',
+      ],
+    }),
+
+    {
+      anchor: 'images.table',
+      route: '/manage-images',
+      placement: 'top-start',
+      title: 'Now it says done',
+      text: 'A converted image reads "done" in Status, and everything downstream reads that OME-Zarr.',
+      bullets: [
+        'Big time series take a while — you can keep working while they run.',
+        'Failed instead? Its log in the task rail says why.',
+      ],
+      when: c => c.images.some(i => i.status === 'done'),
     },
     {
       anchor: 'images.viewerBtn',
       route: '/manage-images',
       placement: 'right',
       title: 'Check it opened correctly',
-      text: 'The eye opens an image in the napari viewer — worth doing once per new file type.',
+      text: 'The eye opens an image in napari — worth doing once per new file type.',
       bullets: [
+        'It stays disabled until that image has converted.',
         'Wrong channel count or pixel size means the metadata needs a look.',
-        'Fix those on the Metadata page before segmenting.',
       ],
     },
     {

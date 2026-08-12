@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { GUIDES, GROUP_ORDER, guideById, guidesByGroup } from './index'
 import { PREREQ } from './prereqs'
-import { MODULE_TASK_GUIDES } from './moduleTask'
+import { TASK_RUN_USES } from './moduleTask'
 import { anchorSelector, NAV_PREFIX } from '../../utils/guideAnchor'
 import type { GuideCtx } from './types'
 
@@ -81,21 +81,22 @@ describe('guide anchors exist in the source', () => {
 // the runner's key gets a permanently EMPTY selection — the "tick the images" gate never fires and the
 // user has to click past a step that looks broken. Nothing else would catch it: both strings exist in
 // the codebase, the types are satisfied, and the guide otherwise works.
-describe('a builder guide reads the selection scope its page actually uses', () => {
+describe('the task-run block reads the selection scope its page actually uses', () => {
   it('matches <ModuleLayout module="…"> in the page SFC for every route', () => {
     const wrong: string[] = []
-    for (const g of MODULE_TASK_GUIDES) {
+    expect(TASK_RUN_USES.length).toBeGreaterThan(0)     // the loop below must not pass vacuously
+    for (const g of TASK_RUN_USES) {
       // route → component path, from the one route table
       const routeRe = new RegExp(`path:\\s*'${g.route}'[^}]*?import\\('\\.(/modules/[^']+)'\\)`)
       const m = mainTs.match(routeRe)
-      if (!m) { wrong.push(`${g.id}: no route ${g.route} in main.ts`); continue }
+      if (!m) { wrong.push(`${g.taskKey}: no route ${g.route} in main.ts`); continue }
       const src = SFC[`/src${m[1]}`]
-      if (!src) { wrong.push(`${g.id}: no SFC at /src${m[1]}`); continue }
+      if (!src) { wrong.push(`${g.taskKey}: no SFC at /src${m[1]}`); continue }
       // the FIRST ModuleLayout module= on the page is the one that scopes the selection
       const layout = src.match(/<ModuleLayout[^>]*?\bmodule="([^"]+)"/)
-      if (!layout) { wrong.push(`${g.id}: page has no <ModuleLayout module="…">`); continue }
+      if (!layout) { wrong.push(`${g.taskKey}: page has no <ModuleLayout module="…">`); continue }
       if (layout[1] !== g.selectionModule) {
-        wrong.push(`${g.id}: selectionModule '${g.selectionModule}' but page uses '${layout[1]}'`)
+        wrong.push(`${g.taskKey} on ${g.route}: selectionModule '${g.selectionModule}' but page uses '${layout[1]}'`)
       }
     }
     expect(wrong).toEqual([])
