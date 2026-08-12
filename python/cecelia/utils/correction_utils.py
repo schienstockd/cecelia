@@ -22,6 +22,7 @@ import skimage.filters
 from skimage.registration import phase_cross_correlation
 
 import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.cpu_utils as cpu_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.intensity_utils as intensity_utils
 import cecelia.utils.script_utils as script_utils
@@ -96,9 +97,15 @@ def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, m
     One read and one FFT per frame, held in a ring buffer of ``max_lag + 1`` — so raising the lag
     buys redundancy at the cost of extra *correlations*, not extra transforms (the expensive part).
     Memory is bounded by the ring, which matters: a 31×1024×1024 frame's spectrum is 260 MB.
+
+    Two thread budgets, because two different libraries do the work and `_FFT_WORKERS` only bounds
+    one of them. The sub-pixel refinement inside `phase_cross_correlation` is a matmul, so it goes
+    to BLAS — which takes every core regardless, and is *slower* for it here: many small matmuls
+    spend more on thread fan-out than on arithmetic. 1.8x alone, 4.4x with four tasks running.
+    Numbers and the reasoning: `cpu_utils.limit_blas_threads`.
     """
     out, ring = [], {}
-    with scipy.fft.set_workers(_FFT_WORKERS):
+    with cpu_utils.limit_blas_threads(), scipy.fft.set_workers(_FFT_WORKERS):
         for t in range(n_t):
             ring[t] = scipy.fft.fftn(_drift_frame(
                 image_array, dim_utils, phase_shift_channel, t,
