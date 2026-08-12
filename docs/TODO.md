@@ -43,35 +43,6 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
-### BLAS threads are bounded per call site, not per task — `run_py` should set the default
-
-`cpu_utils.limit_blas_threads` is the one helper, but a task only benefits if someone **remembers to
-wrap the right block**. That is the shape this codebase treats as a bug everywhere else: a
-cross-cutting concern with one implementation and no single point of application, so the next runner
-silently gets the bad behaviour and nothing catches it.
-
-The bad behaviour is measured, not theoretical. Every Python task runs inside one pool slot, and any
-numpy/scipy call that lands in BLAS takes ALL cores regardless — so `n` concurrent tasks ask for
-`n × cores`. On drift estimation (32-core box, `kSUFux/mkh3Tu`) uncapped is **slower even solo**:
-56.3 s vs 31.8 s at 4 threads, and 309.7 s vs 70.7 s with four running — worse than doing them one
-after another. Only `correction_utils._drift_pair_measurements` is wrapped today; AF, smoothing,
-clustering, tracking and measure are all unbounded.
-
-**The structurally right place is `run_py`** (`app/src/py_runner.jl`) — the one place a Python task's
-environment is built, and already where `PYTHONPATH` and `CECELIA_IMAGE_COMPRESSOR` are set.
-`OPENBLAS_NUM_THREADS`/`OMP_NUM_THREADS`/`MKL_NUM_THREADS` must be set before the child imports
-numpy, so the launcher is the only layer that *can* set them. A task wanting more would then raise it
-locally with the existing helper, which inverts the default from "unbounded unless someone
-remembered" to "bounded unless someone measured".
-
-**Why it is not done yet:** the right number is a property of the workload, and only drift has been
-measured. A single large matmul — scanpy PCA/UMAP in `clustPops.cluster`, `measure_labels` — plausibly
-wants every core, and a blanket cap would slow it silently, trading one unmeasured default for
-another. Needed first: the same solo/contended curve for the BLAS-heavy task families (clustering,
-measure, tracking, AF), then pick the launcher default from data. Note the naive `cores ÷ pool_limit`
-budget is wrong — 1 thread measured *slower* than 4 (51.3 s vs 31.8 s), and pool limits size task
-concurrency, not thread budgets.
-
 ### Per-notebook reset (re-run a notebook on new data without killing the Pluto server)
 Pluto has no filesystem watcher, so a notebook keeps rendering **stale data with no visible sign**
 after a pipeline task rewrites its inputs. The `DATA_STAMP` convention

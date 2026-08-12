@@ -549,6 +549,40 @@ end
     @test endswith(Cecelia._custom_modules_pydir(), "modules")
 end
 
+# ── Every Python task inherits a BLAS thread budget ─────────────────────────
+#
+# A pool limit caps concurrent TASKS, not threads: any numpy/scipy call reaching BLAS takes every
+# core, so `cpu` at its default 20 means twenty tasks each asking for 32 threads. `run_py` is the
+# only layer that can bound it — `OPENBLAS_NUM_THREADS` is read when the child imports numpy.
+#
+# Asserted on the SOURCE rather than by spawning, because the value has to be in the env `addenv`
+# builds, and a helper nobody is forced to call is exactly how this gets dropped again. See
+# docs/SCHEDULER.md → *Thread budgets*.
+@testset "run_py bounds the BLAS thread pool" begin
+    env = Dict(Cecelia._py_task_env("/tmp/py"))
+    @test env["OPENBLAS_NUM_THREADS"] == string(Cecelia.BLAS_THREADS_PER_TASK)
+    # A small positive budget: 1 measured SLOWER than 4 (the work is parallel, just not 32-ways),
+    # and anything large defeats the point.
+    @test 2 <= Cecelia.BLAS_THREADS_PER_TASK <= 8
+
+    # NOT OMP_NUM_THREADS. That also throttles torch's intra-op parallelism, and torch on CPU is
+    # the one measured workload that genuinely wants the cores (a cellpose-shaped conv stack goes
+    # 0.19s -> 0.34s at 4 threads). Capping OpenBLAS alone leaves torch untouched.
+    @test !haskey(env, "OMP_NUM_THREADS")
+    @test !haskey(env, "MKL_NUM_THREADS")
+
+    # the rest of the contract this env carries, so a refactor cannot silently drop one
+    @test env["PYTHONPATH"] == "/tmp/py"
+    @test haskey(env, "CECELIA_PY_CONTRACT") && haskey(env, "CECELIA_IMAGE_COMPRESSOR")
+
+    # The preview worker runs the tasks' OWN compute, so it inherits the same budget. Napari
+    # deliberately does not — un-pooled interactive viewer, not BLAS-bound, unmeasured.
+    prev = read(joinpath(Cecelia._app_dir(), "src", "preview.jl"), String)
+    @test occursin("OPENBLAS_NUM_THREADS", prev)
+    @test !occursin("OPENBLAS_NUM_THREADS",
+                    read(joinpath(Cecelia._app_dir(), "src", "napari.jl"), String))
+end
+
 # ── First-launch setup wizard (isolated temp config dir) ────────────────────
 # Uses its own CECELIA_DEV_DIR tempdir so it never touches the real dev/prod config; restores
 # global config afterwards. Exercises setup_required + set_projects_dir! (merge + reload).
