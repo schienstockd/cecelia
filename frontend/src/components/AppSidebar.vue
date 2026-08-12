@@ -150,7 +150,7 @@ function isNavDisabled(item: NavItem): boolean {
   <nav class="sidebar" v-show="!settings.sidebarCollapsed">
 
     <!-- ── Project block ───────────────────────────────────────────────── -->
-    <div class="project-block">
+    <div class="project-block" data-guide="sidebar.projectBlock">
       <template v-if="projectMeta.current">
         <div class="proj-info">
           <i class="pi pi-folder proj-icon" />
@@ -212,7 +212,7 @@ function isNavDisabled(item: NavItem): boolean {
          The viewer controls are a floating dockable panel (see App.vue / FloatingPanel), not a
          sidebar section. This is a prominent call-to-action button (it drives most napari controls —
          populations, tracks, colour-by — so it must be noticeable), not a dim group heading. -->
-    <button class="viewer-cta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
+    <button class="viewer-cta" data-guide="sidebar.viewerCta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
             @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
             v-tooltip.right="'Napari viewer controls: populations, tracks, colour-by'">
       <i class="pi pi-sliders-h viewer-cta-icon" />
@@ -223,7 +223,8 @@ function isNavDisabled(item: NavItem): boolean {
     <!-- ── Lab log ──────────────────────────────────────────────────────────
          Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
          toggled here (see App.vue / LabLogPanel). -->
-    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
+    <button class="viewer-cta lablog-cta" data-guide="sidebar.labLogCta"
+            :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
             style="margin-top: 0.4rem"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen

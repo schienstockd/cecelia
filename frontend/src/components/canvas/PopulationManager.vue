@@ -228,7 +228,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
       <div v-if="clusterMode && !readonly" class="pm-add">
-        <button class="pm-add-btn" @click="addClusterPopulation"
+        <button class="pm-add-btn" data-guide="popmanager.addClusterPop" @click="addClusterPopulation"
                 v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
           <i class="pi pi-plus" /> Add population
         </button>
@@ -282,7 +282,8 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
       </div>
 
       <template v-for="p in visiblePops" :key="p.path">
-        <div class="pm-row" :class="{ active: p.path === props.selected, transient: p.transient }"
+        <div class="pm-row" data-guide="popmanager.row"
+             :class="{ active: p.path === props.selected, transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">
           <i v-if="p.transient" class="pi pi-map-marker pm-napari"
@@ -339,6 +340,7 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         <!-- cluster-ID toggles: tick a cluster into this pop (filled = assigned; a cluster lives in
              at most one pop). Tooltip names the owner if it's assigned elsewhere. -->
         <div v-if="clusterMode && p.filter" class="pm-clusters cc-row cc-row-tight"
+             data-guide="popmanager.clusterChips"
              :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
                   :class="{ on: popClusterIds(p).includes(id), ro: readonly }" :disabled="readonly"

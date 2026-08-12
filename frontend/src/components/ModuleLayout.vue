@@ -367,6 +367,7 @@ const visibleUids = computed<string[]>(() =>
           <!-- Plot canvas — ONE consistent, collapse-persisted section for every module page.
                ModuleLayout owns the wrapper so no module can forget it or diverge. -->
           <CollapsibleSection v-if="$slots.plots && activeSet"
+            data-guide="layout.plotsSection"
             :label="plotsLabel" max-height="none"
             :storage-key="`cc-plots-open:${module ?? 'default'}`">
             <slot name="plots"

@@ -222,11 +222,11 @@ function exportBoard(kind: string) {
           </ConfirmButton>
         </template>
       </div>
-      <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
+      <button class="tab-add" data-guide="board.newBoard" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
         <i class="pi pi-plus" />
       </button>
       <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
-      <select class="tab-pdf" :disabled="exporting" v-tooltip.bottom="'Export each board — figure, data, or both'"
+      <select class="tab-pdf" data-guide="board.export" :disabled="exporting" v-tooltip.bottom="'Export each board — figure, data, or both'"
               @change="exportBoard(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
         <option value="pdf">PDF (raster)</option>

@@ -510,6 +510,7 @@ const unselectableUids = computed(() =>
        is this component's, through a `#cell-` slot. -->
   <SelectionTable
     class="image-table"
+    data-guide="images.table"
     fit="content"
     selection-mode="multi"
     :select-all="!singleSelect"
@@ -547,6 +548,7 @@ const unselectableUids = computed(() =>
       <span class="row-gutter">
         <button
           class="viewer-btn"
+          data-guide="images.viewerBtn"
           :class="{ 'viewer-active': project.napariImageUid === img.uid }"
           :disabled="napariLoading.has(img.uid) || !isImported(img)"
           @click.stop="openInNapari(img.uid)"
@@ -582,7 +584,7 @@ const unselectableUids = computed(() =>
           </span>
           <!-- ALWAYS rendered, which is what makes the tick mean something: a clean image says so,
                rather than being indistinguishable from one nothing has ever looked at. -->
-          <span class="qc-dot" :class="qcState(img)" v-tooltip.left="qcTip(img)">
+          <span class="qc-dot" data-guide="images.qcDot" :class="qcState(img)" v-tooltip.left="qcTip(img)">
             <i :class="qcState(img) === 'clean' ? 'pi pi-check-circle'
                      : qcState(img) === 'none' ? 'pi pi-minus' : 'pi pi-flag'" />
           </span>

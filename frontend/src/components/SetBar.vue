@@ -83,6 +83,7 @@ async function deleteSet() {
       </label>
       <select
         class="set-select"
+        data-guide="set.select"
         :value="project.activeSetUid ?? ''"
         @change="project.activeSetUid = ($event.target as HTMLSelectElement).value || null"
         v-tooltip.bottom="'Switch between image sets in this project'"
@@ -120,7 +121,7 @@ async function deleteSet() {
           v-tooltip.bottom="'Cancel'">Cancel</button>
       </template>
       <template v-else>
-        <button class="cc-btn cc-btn-ghost" @click="showNewInput = true"
+        <button class="cc-btn cc-btn-ghost" data-guide="set.new" @click="showNewInput = true"
           v-tooltip.bottom="'Create a new image set to group related images together'">
           <i class="pi pi-plus" /> New set
         </button>

@@ -209,7 +209,8 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                   @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
         <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+          <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="cluster.popManager"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
                   @click="showManager = !showManager"
                   v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
             <i class="pi pi-sitemap" />

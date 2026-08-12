@@ -3,6 +3,7 @@ import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
+import { openGuides } from '../lib/guideOpen'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -46,6 +47,17 @@ const statusTip: Record<string, string> = {
             @click="openTips">
       <img class="logo-mark" src="/feijoa.svg" alt="" aria-hidden="true" width="18" height="18" />
       Cecelia
+    </button>
+
+    <!-- Guides — click-through walkthroughs of the basics (docs/todo/GUIDE_SYSTEM_PLAN.md). A COMPASS,
+         deliberately not a `?`: the brand mark beside it already opens What's New + tips, and `?`
+         already means "what is this Claude panel" in the lab-log toolbar. Three different `?`s in one
+         app is worse than one new icon. -->
+    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon"
+            v-tooltip.bottom="'Guides — walk through the basics'"
+            aria-label="Open guides"
+            @click="openGuides">
+      <i class="pi pi-compass" />
     </button>
 
     <span class="spacer" />
@@ -107,6 +119,11 @@ const statusTip: Record<string, string> = {
 }
 .logo-mark { display: block; flex: none; }
 .logo:hover { color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
+
+/* .guides-btn → cc-btn cc-btn-bare cc-btn-icon — sits immediately right of the brand mark, so the
+   two "how does this work?" entry points read as a pair. */
+.guides-btn { margin-left: -0.35rem; color: var(--cc-guide); }
+.guides-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .spacer { flex: 1; }
 

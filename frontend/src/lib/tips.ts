@@ -22,6 +22,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-segmentation',
+    guideId: 'segment-an-image',
     kind: 'tip',
     title: 'Segmentation is the entry point',
     description: 'Cellpose turns fluorescence into per-cell labels — each with an id, centroid, and every regionprops/intensity measure. Everything downstream (tracking, gating, clustering, HMM) reads from the segmentation.',
@@ -34,6 +35,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-tracking',
+    guideId: 'track-cells',
     kind: 'tip',
     title: 'Cell tracking',
     description: 'btrack links segmentation labels across frames into tracks — each cell gets a track_id and its position at every timepoint. Speed / angle measures pop out for free.',
@@ -46,6 +48,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-hmm-behaviour',
+    guideId: 'behaviour-states',
     kind: 'tip',
     title: 'HMM behaviour states',
     description: 'Track movement gets classified into hidden states (arrested, directed, meandering) via a Gaussian HMM. States land as a categorical measure on each track.',
@@ -58,6 +61,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-gate-then-napari',
+    guideId: 'gate-populations',
     kind: 'tip',
     title: 'Gate a population, view it in napari',
     description: 'Populations from the Gate module can be shown as coloured cell centroids in napari — great for cross-referencing gating decisions against the raw image.',
@@ -70,6 +74,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-population-hierarchy',
+    guideId: 'gate-populations',
     kind: 'tip',
     title: 'Populations form a tree',
     description: 'A gate is applied INSIDE its parent population — so populations form a tree (root/CD4+/effector). Any child pop can itself be gated further; the address is the "/-separated" path.',
@@ -82,6 +87,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-cluster-to-pop',
+    guideId: 'cluster-cells',
     kind: 'tip',
     title: 'Cluster labels → populations',
     description: 'Leiden clusters aren\'t populations by default — but you can promote any cluster (or a set of them) into a named population that behaves like any other.',
@@ -130,6 +136,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-analysis-board',
+    guideId: 'build-plots',
     kind: 'tip',
     title: 'Analysis boards',
     description: 'The Analysis board arranges plots into A4 "comic plates" — cross-image summary, gating strategy, cluster heatmaps, image tiles. Publish-ready. Export the whole board as PDF or SVG, individual plots as CSV.',
@@ -142,6 +149,7 @@ export const TIPS: WhatNewCard[] = [
   },
   {
     id: 'tip-notebooks',
+    guideId: 'create-a-notebook',
     kind: 'tip',
     title: 'Notebooks Playground',
     description: 'Every project gets its own Pluto notebook workspace for pure-Julia downstream analysis. Use CeceliaNb helpers to load pop_df / clusters, then DataFrames + Plots or AlgebraOfGraphics — versioned per project.',

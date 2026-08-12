@@ -312,7 +312,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
       <!-- ONE tip on the button; the count folds into it. A second tip on the badge inside fired on
            top of the button's own (docs/UI.md → nested tooltips). -->
-      <button class="cc-btn cc-btn-ghost" :disabled="!physFocusUid" @click="showPhysDialog = true"
+      <button class="cc-btn cc-btn-ghost" data-guide="metadata.physEditor" :disabled="!physFocusUid" @click="showPhysDialog = true"
         v-tooltip.bottom="flaggedCount
           ? `Voxel size and frame interval — ${flaggedCount} image(s) flagged`
           : 'View or fix voxel size and frame interval for the selected image(s)'">
@@ -325,7 +325,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       @close="showPhysDialog = false" />
 
     <!-- ── Attribute management ─────────────────────────────────── -->
-    <section class="panel-section">
+    <section class="panel-section" data-guide="metadata.attributes">
       <div class="section-title cc-eyebrow">Attributes</div>
 
       <!-- create -->
@@ -522,7 +522,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     </section>
 
     <!-- ── Channel names ──────────────────────────────────────── -->
-    <section class="panel-section">
+    <section class="panel-section" data-guide="metadata.channels">
       <div class="section-title cc-eyebrow">Channel names</div>
 
       <div class="field-col">

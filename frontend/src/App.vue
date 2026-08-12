@@ -18,7 +18,11 @@ import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
+import GuidesDialog from './components/GuidesDialog.vue'
+import GuideBubble from './components/GuideBubble.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
+import { isGuidesOpen } from './lib/guideOpen'
+import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useNapariAutoShow } from './composables/useNapariAutoShow'
 
@@ -28,6 +32,9 @@ const appCtl = useAppControlStore()
 // Observer state lives in a store (not the v-if'd lab-log panel) so it survives the panel closing.
 // Claude is on-demand only (Ask Claude); refresh its status/session whenever the open project changes.
 const observer = useObserverStore()
+// The guide runtime, instantiated here so its poll/lifecycle belongs to the shell rather than to the
+// v-if'd bubble — a guide has to survive route changes (docs/todo/GUIDE_SYSTEM_PLAN.md).
+const guide = useGuideStore()
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 
@@ -119,7 +126,7 @@ const bare = computed(() => route.meta.bare === true)
     </FloatingPanel>
     <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->
     <FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
-                   accent="rgba(255, 255, 255, 0.6)"
+                   accent="var(--cc-guide)"
                    :default-x="300" :default-y="96" :default-w="340" :default-h="520"
                    @close="settings.labLogPanelOpen = false">
       <LabLogPanel />
@@ -129,6 +136,10 @@ const bare = computed(() => route.meta.bare === true)
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
          State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
     <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />
+    <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
+         The bubble renders only while a guide is running — see stores/guide.ts. -->
+    <GuidesDialog v-if="isGuidesOpen" />
+    <GuideBubble v-if="guide.active" />
   </div>
 </template>
 

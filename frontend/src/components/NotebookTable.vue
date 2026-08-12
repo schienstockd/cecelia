@@ -234,7 +234,7 @@ defineExpose({ refresh })
 
 <template>
   <div class="nbt">
-    <div class="nbt-add">
+    <div class="nbt-add" data-guide="notebooks.addRow">
       <input v-model="newName" type="text" placeholder="New notebook name…"
              v-tooltip.right="'Name for the new notebook'" @keyup.enter="createNotebook" :disabled="busy" />
       <button class="cc-btn cc-btn-primary" :disabled="busy || !newName.trim()" @click="createNotebook">
@@ -254,7 +254,7 @@ defineExpose({ refresh })
          persist per user. `actions-width` MUST be declared with it: fixed layout gives the trailing
          column only what the others leave over, and this row carries five controls. -->
     <div class="nbt-scroll">
-    <SelectionTable class="nbt-table" selection-mode="none" :columns="NB_COLUMNS" :rows="notebooks"
+    <SelectionTable class="nbt-table" data-guide="notebooks.table" selection-mode="none" :columns="NB_COLUMNS" :rows="notebooks"
                     id-key="file" sort-storage-key="cc.notebooks.sort" actions-label="Actions"
                     column-width-key="cc.notebooks.colw" actions-width="11rem" fit="content"
                     :row-tooltip="nb => nb.scope === 'project' ? nb.file : `${nb.file} — shipped example, read-only`"

@@ -108,6 +108,7 @@ async function onFilesSelected(paths: string[]) {
     <template #actions="{ hasSet, setUid, selectedUids, selectUids }">
       <button
         class="cc-btn cc-btn-primary"
+        data-guide="manageImages.addImages"
         :disabled="!hasSet"
         @click="openFilePicker"
         v-tooltip.bottom="hasSet
