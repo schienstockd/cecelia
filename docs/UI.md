@@ -1179,7 +1179,14 @@ anchors and routes and fun names exist, that scopes match and that copy fits the
 sentence is true. Every content bug in this system so far has been an invented fact (conversion is
 automatic; cellpose measures; `status` means imported; there is one kind of clustering). So: **look up
 each claim before writing it**, and prefer the canonical predicate (`isImported`, `funsRun`) over a
-plausible-looking one. Two structural halves of that discipline are enforced — `funName`/`taskKey` must
+plausible-looking one.
+
+**A prereq asks about STATE, so never answer it from provenance.** The run log
+(`funsRun`) says which runs *this app executed*; it is silent about data that arrived any other way.
+`tracked` shipped as a scan for `tracking.*` and told a project migrated from the R version — tracks on
+disk, already clustered — that it "needs a tracked image". Prereqs now read what exists
+(`trackValueNames`, `labels`, `filepaths` via `isImported`); `runLog` is for showing history, not for
+gating. Second time this substitution bit, after `status` for imported. Two structural halves of that discipline are enforced — `funName`/`taskKey` must
 be a real matching pair, and teaching the bare half of a composite must be declared in
 `app/test/suite.jl` with a reason (see *a guide teaching a composite's bare half is declared*).
 

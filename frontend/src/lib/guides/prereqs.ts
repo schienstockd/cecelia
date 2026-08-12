@@ -10,7 +10,6 @@
 // out a row is a picker that hangs.
 
 import type { Prereq } from './types'
-import { funsRun } from '../../utils/runLog'
 import { isImported } from '../../utils/inclusion'
 
 // A short label reads as the tail of "This guide needs …" — so no leading capital, no full stop.
@@ -62,12 +61,20 @@ export const PREREQ = {
     fixGuide: 'segment-an-image',
   },
 
-  // Tracks are not a field on the image — the run log is the single source of truth for "what has
-  // been done to this image" (utils/runLog.ts), so ask it rather than adding a status attribute.
+  // Ask whether the TRACKS EXIST, not whether a tracking task was recorded. `trackValueNames` is the
+  // `{vn}__tracks.h5ad` sidecars on disk (backend: img_track_value_names), which is exactly what the
+  // track-grained consumers downstream read.
+  //
+  // This shipped as a run-log scan for `tracking.*` and was wrong on real data: a project migrated
+  // from the R version — or tracked before the run log existed — has no `tracking.*` entry at all, so
+  // the picker declared "needs a tracked image" over a project whose tracks were sitting on disk and
+  // already clustered (Dominik, project 4kS67f). The run log records PROVENANCE; a prereq is asking
+  // about STATE, and the two are not interchangeable for data that predates the log. Second time this
+  // exact substitution bit — see `imageImported` above.
   tracked: {
     id: 'tracked',
     label: 'a tracked image',
-    ok: c => c.images.some(i => [...funsRun(i.runLog)].some(f => f.startsWith('tracking.'))),
+    ok: c => c.images.some(i => (i.trackValueNames ?? []).length > 0),
     fixGuide: 'track-cells',
   },
 } satisfies Record<string, Prereq>

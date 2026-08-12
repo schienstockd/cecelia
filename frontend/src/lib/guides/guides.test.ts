@@ -226,14 +226,20 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     expect(PREREQ.segmented.ok(ctx({ images: [img({ labels: { default: ['x.zarr'] } })] }))).toBe(true)
   })
 
-  it('tracked reads the run log, and ignores a FAILED tracking run', () => {
-    const ran = (fun: string, status?: string) => ({ fun, status, at: '2026-01-01T00:00:00' })
-    expect(PREREQ.tracked.ok(ctx({ images: [img({ runLog: [ran('segment.cellpose')] })] }))).toBe(false)
+  // The regression this encodes: the prereq used to scan the run log for `tracking.*`, so a project
+  // migrated from the R version — tracks on disk, no `tracking.*` entry ever recorded — was told it
+  // "needs a tracked image" (Dominik, 4kS67f). Provenance is not state.
+  it('tracked reads the tracks on disk, NOT the run log', () => {
+    const ran = (fun: string) => ({ fun, at: '2026-01-01T00:00:00' })
+    expect(PREREQ.tracked.ok(ctx({ images: [img({ trackValueNames: [] })] }))).toBe(false)
+    expect(PREREQ.tracked.ok(ctx({ images: [img({ trackValueNames: ['B', 'T'] })] }))).toBe(true)
+    // migrated data: sidecars present, run log has no tracking entry at all
     expect(PREREQ.tracked.ok(ctx({
-      images: [img({ runLog: [ran('tracking.bayesian_tracking', 'failed')] })],
-    }))).toBe(false)
-    expect(PREREQ.tracked.ok(ctx({
-      images: [img({ runLog: [ran('tracking.bayesian_tracking')] })],
+      images: [img({ trackValueNames: ['B'], runLog: [ran('clustTracks.cluster')] })],
     }))).toBe(true)
+    // and the converse — a run log saying tracking ran, with no track table to show for it
+    expect(PREREQ.tracked.ok(ctx({
+      images: [img({ trackValueNames: [], runLog: [ran('tracking.bayesian_tracking')] })],
+    }))).toBe(false)
   })
 })
