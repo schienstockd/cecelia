@@ -18,7 +18,7 @@ import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
 import {
-  fixMetadataGuide, behaviourStatesGuide, clusterCellsGuide, runChainGuide,
+  fixMetadataGuide, behaviourStatesGuide, clusterCellsGuide, clusterTracksGuide, runChainGuide,
 } from './extraGuides'
 
 export const GUIDES: GuideDef[] = [
@@ -31,6 +31,7 @@ export const GUIDES: GuideDef[] = [
   gatePopulationsGuide,
   trackCellsGuide,
   clusterCellsGuide,
+  clusterTracksGuide,
   // Explore — use those populations
   behaviourStatesGuide,
   // Analysis — free-form surfaces

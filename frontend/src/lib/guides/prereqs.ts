@@ -11,6 +11,7 @@
 
 import type { Prereq } from './types'
 import { funsRun } from '../../utils/runLog'
+import { isImported } from '../../utils/inclusion'
 
 // A short label reads as the tail of "This guide needs …" — so no leading capital, no full stop.
 export const PREREQ = {
@@ -30,12 +31,19 @@ export const PREREQ = {
     fixGuide: 'import-images',
   },
 
-  // Import converts to OME-Zarr in the background; until that lands the image can't be read, so
-  // "there is a row in the table" is not the same as "there is something to work on".
+  // "There is a row in the table" is not "there is something to work on": adding files registers a
+  // row, and converting to OME-Zarr is a separate run.
+  //
+  // Uses the canonical `isImported` (does the image HAVE a converted file) rather than the hand-rolled
+  // `status === 'done'` this shipped with. `status` is the transient conversion-job state and is not a
+  // reliable record of the outcome — the image table's Status column shows the per-MODULE task status
+  // and reads "—" for an image with none, and `isImported` is what the table itself uses to decide
+  // whether the napari eye is enabled. A second definition of "imported" meant the picker declared this
+  // missing for a project full of perfectly good images (Dominik, 2026-08-12).
   imageImported: {
     id: 'imageImported',
     label: 'an image that finished importing',
-    ok: c => c.images.some(i => i.status === 'done'),
+    ok: c => c.images.some(isImported),
     fixGuide: 'import-images',
   },
 

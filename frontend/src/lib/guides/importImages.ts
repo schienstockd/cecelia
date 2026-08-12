@@ -5,11 +5,13 @@
 // is TWO steps — "Add images" registers rows (`POST /api/images/register`), and converting them to
 // OME-Zarr is an ordinary task run (`importImages.omezarr`) you dispatch yourself. The first version of
 // this guide claimed conversion "starts straight away" and then sent the user to open the image in
-// napari, which cannot work: the eye is disabled until the image reads `done` (Dominik, 2026-08-12).
+// napari, which cannot work: the eye is disabled until the image HAS a converted file (Dominik,
+// 2026-08-12) — `isImported`, which is what the table itself uses.
 // That convert phase is the shared `taskRunSteps` block, the same furniture every module page uses.
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { isImported } from '../../utils/inclusion'
 import { taskRunSteps } from './moduleTask'
 
 export const importImagesGuide: GuideDef = {
@@ -83,8 +85,8 @@ export const importImagesGuide: GuideDef = {
       title: 'Added, but not converted yet',
       text: 'Adding files registers a row per image — it does not read the pixels.',
       bullets: [
-        'The Status column reads "pending" until you convert.',
-        'Nothing downstream can use a pending image.',
+        'Nothing downstream can use an image until it is converted.',
+        'The eye on the left of each row stays disabled until then.',
       ],
       when: c => c.images.length > 0,
     },
@@ -113,13 +115,14 @@ export const importImagesGuide: GuideDef = {
       anchor: 'images.table',
       route: '/manage-images',
       placement: 'top-start',
-      title: 'Now it says done',
-      text: 'A converted image reads "done" in Status, and everything downstream reads that OME-Zarr.',
+      title: 'Converted',
+      text: 'The image now has an OME-Zarr, which is what everything downstream reads.',
       bullets: [
+        'The eye is enabled once an image has one.',
         'Big time series take a while — you can keep working while they run.',
-        'Failed instead? Its log in the task rail says why.',
+        'Nothing appeared? The run\'s log in the task rail says why.',
       ],
-      when: c => c.images.some(i => i.status === 'done'),
+      when: c => c.images.some(isImported),
     },
     {
       anchor: 'images.viewerBtn',

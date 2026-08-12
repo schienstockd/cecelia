@@ -202,9 +202,18 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     expect(PREREQ.projectOpen.ok(ctx({ hasProject: true }))).toBe(true)
   })
 
-  it('imageImported needs a CONVERTED image, not merely a row', () => {
-    expect(PREREQ.imageImported.ok(ctx({ images: [img({ status: 'converting' })] }))).toBe(false)
-    expect(PREREQ.imageImported.ok(ctx({ images: [img()] }))).toBe(true)
+  // The bug this pins: it read `status === 'done'`, a hand-rolled second definition of "imported".
+  // `status` is the transient conversion-job state, so a project full of long-since-converted images
+  // reported the prereq as MISSING and every guide looked blocked. The canonical answer is
+  // `isImported` — does the image HAVE a converted file — which is what the image table uses to decide
+  // whether the napari eye is enabled.
+  it('imageImported asks whether a CONVERTED file exists, not what status says', () => {
+    expect(PREREQ.imageImported.ok(ctx({ images: [img()] }))).toBe(false)          // registered only
+    expect(PREREQ.imageImported.ok(ctx({ images: [img({ filepaths: {} })] }))).toBe(false)
+    // converted → has a filepath, regardless of what `status` happens to hold
+    expect(PREREQ.imageImported.ok(ctx({
+      images: [img({ status: 'pending', filepaths: { default: 'ccidImage.ome.zarr' } })],
+    }))).toBe(true)
   })
 
   it('timeSeries needs more than one frame', () => {

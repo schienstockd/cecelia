@@ -1166,7 +1166,10 @@ a guide is open.
 **Prerequisites are shown, never enforced.** Each guide declares them from `PREREQ`; the picker checks
 them live and offers the guide that fixes a miss. Start stays enabled — the user may know something we
 can't see. Every predicate must be answerable from `CciaImage` + its `runLog` with **no request**, or it
-belongs in the guide's prose instead.
+belongs in the guide's prose instead — **and must reuse the canonical predicate** (`isImported` from
+`utils/inclusion.ts`, `funsRun` from `utils/runLog.ts`), never a second answer to the same question. A
+hand-rolled `status === 'done'` reported "no imported images" for a project full of them, because
+`status` is the transient conversion-job state and not the record of the outcome.
 
 **Two boundaries to keep in mind when writing steps:**
 

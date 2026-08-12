@@ -86,6 +86,19 @@ see *The guides*). Changes made while building, each for a reason found in the c
   and the ring was drawn mostly outside the panel (Dominik, 2026-08-12). `visibleRect()` intersects the
   anchor with every clipping ancestor and the viewport; the ring AND the bubble placement now follow
   what is actually on screen.
+- **`PREREQ.imageImported` hand-rolled a second definition of "imported"** (`status === 'done'`), so a
+  project full of long-since-converted images reported it MISSING and every guide read as blocked
+  (Dominik, 2026-08-12). `status` is the transient conversion-job state; the canonical answer is
+  `isImported` (`utils/inclusion.ts` — does the image HAVE a converted file), which is what the image
+  table uses to decide whether the napari eye is enabled. The import guide's own gates and copy went
+  the same way: they referenced a "Status column reads done", but that column shows the per-MODULE task
+  status and reads "—" for an image with none. Third instance in this build of the same failure — a
+  predicate invented instead of looked up.
+- **Clustering is TWO guides, because it is two pages.** Cells (`clustPops.cluster`, needs a
+  segmentation) and tracks (`clustTracks.cluster`, needs TRACKING) share the Leiden/UMAP engine but not
+  their input: one row per cell vs one per track, with cell measures aggregated per track. A user who
+  has only segmented cannot use the track one, so collapsing them would have made the prereq a lie.
+  Both param lists now come from their specs rather than from memory.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
 - **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble

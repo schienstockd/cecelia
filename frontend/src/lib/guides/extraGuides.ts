@@ -148,6 +148,7 @@ export const clusterCellsGuide = moduleTaskGuide({
   group: 'Populations',
   icon: 'pi-share-alt',
   summary: 'Group cells by their whole measure profile instead of gating two channels at a time.',
+  funHint: ['Clustering CELLS — the track counterpart is its own page, and needs tracking first.'],
   route: '/clust-cells',
   navLabel: 'Cluster cells',
   taskKey: 'clusterCells',
@@ -159,9 +160,10 @@ export const clusterCellsGuide = moduleTaskGuide({
   intro: 'Clustering finds cell types from all measures at once — the unsupervised counterpart to gating.',
   selectHint: ['Select every image you want clustered TOGETHER — the run pools across them.'],
   params: [
-    'Which measures to cluster on — channel intensities, usually.',
-    'Resolution — higher splits into more, smaller clusters.',
-    'Population to cluster within, if you want to sub-phenotype a gate.',
+    'Populations — which cells to cluster; every selection is clustered jointly.',
+    'Cluster on — the feature columns, usually the channel intensities.',
+    'Resolution — the Leiden resolution; higher gives more, smaller clusters.',
+    'Calculate UMAP — leave on, it is what the embedding plot draws.',
   ],
   after: [
     {
@@ -173,6 +175,48 @@ export const clusterCellsGuide = moduleTaskGuide({
       bullets: [
         'The heatmap is what turns "cluster 4" into "CD4 T cell".',
         'Clusters can be collected into named populations, same as gates.',
+      ],
+    },
+  ],
+})
+
+// ── Cluster TRACKS: the same engine, a different table ────────────────────────────────────────────
+// Clustering comes in two kinds and they are separate pages: cells (above, needs a segmentation) and
+// tracks (here, needs TRACKING). Same Leiden/UMAP machinery, but the rows are tracks and the features
+// are per-track aggregates, so a user who has only segmented cannot use this one (Dominik, 2026-08-12).
+export const clusterTracksGuide = moduleTaskGuide({
+  id: 'cluster-tracks',
+  title: 'Cluster tracks into behaviours',
+  group: 'Populations',
+  icon: 'pi-share-alt',
+  summary: 'Group whole tracks by how they move, rather than grouping cells by what they express.',
+  route: '/clust-tracks',
+  navLabel: 'Cluster tracks',
+  taskKey: 'clusterTracks',
+  funName: 'clustTracks.cluster',
+  funLabel: 'Cluster tracks',
+  selectionModule: 'clustTracks',
+  waitLabel: 'Clustering tracks',
+  prereqs: [PREREQ.projectOpen, PREREQ.tracked],
+  intro: 'One row per track instead of per cell — so this needs tracking, not just segmentation.',
+  funHint: ['Cell measures are aggregated per track for you; you pick the base measures.'],
+  selectHint: ['Select every image to cluster TOGETHER — the run pools across them.'],
+  params: [
+    'Track populations — which tracks to cluster; every selection is clustered jointly.',
+    'Cluster on — base measures; cell measures are aggregated per track automatically.',
+    'Minimum track length — drop tracks too short to characterise.',
+    'Resolution — the Leiden resolution; higher gives more, smaller clusters.',
+  ],
+  after: [
+    {
+      anchor: 'layout.plotsSection',
+      route: '/clust-tracks',
+      placement: 'top-start',
+      title: 'Clusters of movement',
+      text: 'The UMAP separates behaviours; the heatmap says which measures define each one.',
+      bullets: [
+        'This answers "how many kinds of movement are in here", without naming them first.',
+        'HMM states are the supervised alternative — fixed states, fitted per timepoint.',
       ],
     },
   ],
