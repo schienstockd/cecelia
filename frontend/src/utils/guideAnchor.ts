@@ -13,6 +13,14 @@
 
 export const NAV_PREFIX = 'nav:'
 
+// `location.hash` → the router path a step's `route` is compared against. Pure so it can be tested
+// (the app tsconfig/vitest have no DOM), and because the value has to be RE-READ rather than only
+// listened for: vue-router navigates a hash history with `history.pushState`, which fires no
+// `hashchange`. See stores/guide.ts.
+export function routePathFromHash(hash: string): string {
+  return hash.replace(/^#/, '').split('?')[0] || '/'
+}
+
 // Only `"` and `\` need escaping inside a quoted attribute selector — deliberately not `CSS.escape`,
 // which would mangle the `/` in a route path into `\/` and isn't available outside a browser.
 const q = (s: string) => s.replace(/["\\]/g, '\\$&')

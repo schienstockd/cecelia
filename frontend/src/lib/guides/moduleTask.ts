@@ -71,6 +71,14 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       route: o.route,
       placement: 'bottom-start',
       text: 'Check the active set is the one you mean — functions only see this set.',
+      reveal: {
+        // With no sets there is nothing to select — a "pick a set" bubble pointing at an empty
+        // dropdown is a dead end, so point at "New set" until one exists (Dominik, 2026-08-12).
+        needed: c => c.setCount === 0,
+        anchor: 'set.new',
+        text: 'No sets yet — create one first. A set groups the images you treat together.',
+        placement: 'bottom-start',
+      },
       when: c => c.setUid !== null,
     },
     {

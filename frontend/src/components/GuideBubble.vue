@@ -258,7 +258,7 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
   width: 20rem;
   max-width: calc(100vw - 1rem);
   background: var(--cc-surface-1);
-  border: 1px solid var(--cc-accent);
+  border: 1px solid var(--cc-guide);
   border-radius: var(--cc-radius-md);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   color: var(--cc-text);
@@ -272,9 +272,9 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
   position: fixed;
   z-index: 1499;
   pointer-events: none;
-  border: 2px solid var(--cc-accent);
+  border: 2px solid var(--cc-guide);
   border-radius: var(--cc-radius-sm);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cc-accent) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cc-guide) 25%, transparent);
   transition: top 0.12s, left 0.12s, width 0.12s, height 0.12s;
 }
 
@@ -282,8 +282,8 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
   position: absolute;
   width: 9px; height: 9px;
   background: var(--cc-surface-1);
-  border-left: 1px solid var(--cc-accent);
-  border-top: 1px solid var(--cc-accent);
+  border-left: 1px solid var(--cc-guide);
+  border-top: 1px solid var(--cc-guide);
 }
 /* the arrow sits on the edge FACING the anchor: a bubble placed below points up, and so on */
 .guide-arrow.side-bottom { top: -5px; transform: rotate(45deg); }

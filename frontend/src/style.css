@@ -54,6 +54,10 @@
   /* viewer accent (green) — the napari viewer controls button + its floating panel border, so the
      viewer stands out distinctly from the purple form/accent chrome and amber selection boxes. */
   --cc-viewer:     #22c55e;
+  /* "this is the app talking to you" (whitish) — the lab-log panel border and the guide bubble +
+     its highlight ring. Deliberately NOT --cc-accent: purple is form/control chrome, so a guide
+     ringing a purple button in purple reads as part of the control rather than as a pointer at it. */
+  --cc-guide:      rgba(255, 255, 255, 0.6);
   /* "active / in-progress" (blue) — the running-task light. NOT a severity (ok/warn/fail); it's the
      4th task-status tone alongside neutral (queued/cancelled). See lib/taskStatus.ts. */
   --cc-active:     #93c5fd;

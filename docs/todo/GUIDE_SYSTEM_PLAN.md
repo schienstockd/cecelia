@@ -13,8 +13,10 @@ see *The guides*). Changes made while building, each for a reason found in the c
 - **A `~250ms` poll while a guide is open** — not in the plan, and unavoidable: two gate kinds are DOM
   reads (`anchorValue` over `TaskRunner`'s `<select>`; "is the anchor on screen yet"), which Vue cannot
   track. One interval beats teaching six components to publish their local state.
-- **Auto-advance fires only on a false→true transition.** Advancing when a step's gate was *already*
-  satisfied on entry would let a guide fast-forward through steps nobody read.
+- **Auto-advance is armed per step**, on entry, and only when the gate starts out unsatisfied — so a
+  step already satisfied when you arrive shows a tick and waits for `Next`. (The first attempt watched
+  for a false→true transition on the gate alone; see the browser findings below for why that isn't the
+  same thing.)
 - **`images.qcDot` replaced a `layout.plotsSection` step in the drift guide** — Cleanup has no `#plots`
   slot, so the planned "did it work?" step would have pointed at nothing and claimed something false.
   The drift QC is real (`drift.unreliable`/`drift.jump`, `app/src/qc.jl`); it surfaces on the row.
@@ -23,6 +25,24 @@ see *The guides*). Changes made while building, each for a reason found in the c
 - **No "show me the run" button on the parked bubble.** It would have had to un-collapse the functions
   panel and scroll the task list — the guide reaching into app state, which D1 forbids. It says where to
   look instead.
+- **Found in the browser, by Dominik, within minutes of first use — all three now covered:**
+  1. *The route never updated.* `createWebHashHistory` navigates by `pushState`, which fires no
+     `hashchange`, so `currentPath` sat at the boot path and every routed step said "back to
+     /manage-images". Now polled + re-read on start; the parsing half is `routePathFromHash` (tested).
+  2. *The guide fast-forwarded to the last step on its own.* Auto-advance watched for a false→true
+     gate transition, which across a step change compares the new step's gate to the OLD step's — so
+     landing on an already-satisfied step read as "just satisfied". Now armed per step, on entry.
+  3. *"Pick a set" was a dead end with no sets.* Nothing to select, so the gate could never pass. Now
+     a `reveal` pointing at **New set** — the D5 mechanism, no new machinery, and it applies to the
+     shared builder too, so every module-task guide inherits it. Needed one new `GuideCtx` field
+     (`setCount`): "which set is active" and "are there any" are different questions.
+- **Layout reworked after first sight** (Dominik): the picker is divided rows, not 11 boxed cards. The
+  action column was a stretch column that also held the "X first" button, so `Start` took the width of
+  its widest sibling and the right edge zigzagged; met prerequisites were listed as chips, which was
+  pure wrapping for no information. Now: fixed-width action column, readiness + step count in one
+  right-aligned meta slot, and only *missing* prerequisites get a line with the fix inline on it.
+- **The bubble and ring are `--cc-guide` (whitish), matching the lab-log panel** — a new token, which
+  also gave the lab log's hardcoded `rgba(255,255,255,0.6)` a home.
 - **Three house ratchets rejected the first version of the new components** (an undeclared re-armed
   timer, a hand-rolled `.cc-row`, two `cc-eyebrow` colour overrides). All three were fixed at the
   source rather than allow-listed.

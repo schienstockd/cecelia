@@ -7,9 +7,21 @@
   `ClaudeOverviewDialog.vue`: static content from a lib module, no store of its own beyond the shared
   open flag in `lib/guideOpen.ts`.
 
-  Prerequisites are shown, never enforced (plan D6). Start is always enabled — a miss is a warning
-  plus a pointer at the guide that fixes it, because the user may know something we can't see (they
-  are about to open a project; the data is on a drive we haven't listed yet).
+  LAYOUT — divided rows inside each group heading, not eleven boxed cards (Dominik, 2026-08-12). Three
+  rules, all of them fixing something the first version got wrong:
+
+    1. The action column is a FIXED width and holds exactly one button. It used to be a stretch column
+       that also held the "X first" button, so Start took the width of its widest sibling — narrow on
+       most rows, wide on the ones with a fix — and the right edge zigzagged down the dialog.
+    2. Readiness and step count share ONE right-aligned meta slot, so they line up across every row
+       instead of starting wherever the title happened to end.
+    3. Only MISSING prerequisites get a line, with the fix as an inline link on that line. Listing the
+       met ones as chips too was the main source of wrapping, which made every row a different height
+       for no information — "needs an open project ✓" tells you nothing you wanted to know.
+
+  Prerequisites are shown, never enforced (plan D6). Start is always enabled — a miss is a warning plus
+  a pointer at the guide that fixes it, because the user may know something we can't see (they are
+  about to open a project; the data is on a drive we haven't listed yet).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -28,11 +40,19 @@ function start(g: GuideDef) {
 }
 
 const isDone = (g: GuideDef) => guide.completed.has(g.id)
+const misses = (g: GuideDef) => guide.prereqState(g).filter(p => !p.met)
 
-// A missing prerequisite that names a fix gets a "start that one instead" affordance. First miss only:
-// listing three redirects for a guide the user can't run yet is noise.
+// The one-line readiness readout. Counting the misses beats naming them here — the names go on their
+// own line directly below, where there is room for them.
+function readiness(g: GuideDef) {
+  const n = misses(g).length
+  return n === 0 ? 'Ready' : `${n} missing`
+}
+
+// A missing prerequisite that names a fix gets a "start that one instead" link. First miss only:
+// three redirects for a guide you can't run yet is noise.
 function firstFixable(g: GuideDef) {
-  const miss = guide.prereqState(g).find(p => !p.met && p.fixGuide)
+  const miss = misses(g).find(p => p.fixGuide)
   if (!miss?.fixGuide) return null
   const target = guideById(miss.fixGuide)
   return target && target.id !== g.id ? target : null
@@ -40,60 +60,57 @@ function firstFixable(g: GuideDef) {
 </script>
 
 <template>
-  <BaseModal title="Guides" icon="pi-compass" width="620px" @close="closeGuides()">
+  <BaseModal title="Guides" icon="pi-compass" width="660px" @close="closeGuides()">
     <p class="gd-intro cc-muted">
-      Each guide walks you through the real controls on your own data — bubbles appear beside the
-      button to press, and step forward as you go.
+      Bubbles appear beside the control to use, on your own data, and step forward as you go.
     </p>
 
     <section v-for="grp in groups" :key="grp.group" class="gd-group">
       <h3 class="gd-group-head cc-eyebrow cc-fs-2xs">{{ grp.group }}</h3>
 
-      <div v-for="g in grp.guides" :key="g.id" class="gd-card cc-card cc-card-2">
-        <div class="gd-row">
-          <i :class="['pi', g.icon, 'gd-icon']" />
-          <div class="gd-main">
-            <div class="gd-title-row">
-              <span class="gd-title">{{ g.title }}</span>
-              <span v-if="isDone(g)" class="gd-done" v-tooltip.top="'You have finished this guide'">
-                <i class="pi pi-check" />
+      <div class="gd-row" v-for="g in grp.guides" :key="g.id">
+        <i :class="['pi', g.icon, 'gd-icon']" />
+
+        <div class="gd-main">
+          <div class="gd-head">
+            <span class="gd-title">{{ g.title }}</span>
+            <span v-if="isDone(g)" class="gd-done" v-tooltip.top="'You have finished this guide'">
+              <i class="pi pi-check" />
+            </span>
+            <span class="gd-meta cc-readout cc-fs-2xs">
+              <!-- colour is never the only cue (docs/UI.md → Severity): the icon and the word both change -->
+              <span :class="misses(g).length ? 'gd-warn' : 'gd-ok'">
+                <i :class="['pi', misses(g).length ? 'pi-exclamation-circle' : 'pi-check-circle']" />
+                {{ readiness(g) }}
               </span>
-              <span class="gd-steps cc-readout cc-fs-2xs">{{ g.steps.length }} steps</span>
-            </div>
-            <p class="gd-summary cc-muted cc-fs-xs">{{ g.summary }}</p>
-
-            <!-- prerequisites: ✓ / ✗ per row, with the icon never the only cue (docs/UI.md → severity).
-                 `cc-row cc-row-tight` is the shared wrapping-row scenario — the list keeps only its own
-                 list-reset chrome. -->
-            <ul class="gd-prereqs cc-row cc-row-tight cc-fs-2xs">
-              <li v-for="p in guide.prereqState(g)" :key="p.id" :class="{ miss: !p.met }">
-                <i :class="['pi', p.met ? 'pi-check-circle' : 'pi-exclamation-circle']" />
-                <span>needs {{ p.label }}</span>
-              </li>
-            </ul>
+              · {{ g.steps.length }} steps
+            </span>
           </div>
 
-          <div class="gd-actions">
-            <button class="cc-btn cc-btn-primary cc-btn-dense cc-fs-xs" @click="start(g)"
-                    v-tooltip.left="guide.prereqsMet(g)
-                      ? `Start: ${g.title}`
-                      : 'Start anyway — the missing pieces are only a warning'">
-              {{ isDone(g) ? 'Again' : 'Start' }}
+          <p class="gd-summary cc-muted cc-fs-xs">{{ g.summary }}</p>
+
+          <p v-if="misses(g).length" class="gd-miss cc-fs-2xs">
+            <i class="pi pi-exclamation-circle" />
+            needs {{ misses(g).map(p => p.label).join(', ') }}
+            <button v-if="firstFixable(g)" class="gd-fix" @click="start(firstFixable(g)!)"
+                    v-tooltip.top="`Start '${firstFixable(g)!.title}' — it gets you what this one needs`">
+              → {{ firstFixable(g)!.title }} first
             </button>
-            <button v-if="firstFixable(g)" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs"
-                    @click="start(firstFixable(g)!)"
-                    v-tooltip.left="`Start '${firstFixable(g)!.title}' — it gets you what this one needs`">
-              {{ firstFixable(g)!.title }} first
-            </button>
-          </div>
+          </p>
+        </div>
+
+        <div class="gd-act">
+          <button class="cc-btn cc-btn-primary cc-btn-dense cc-fs-xs" @click="start(g)"
+                  v-tooltip.left="guide.prereqsMet(g)
+                    ? `Start: ${g.title}`
+                    : 'Start anyway — the missing pieces are only a warning'">
+            {{ isDone(g) ? 'Again' : 'Start' }}
+          </button>
         </div>
       </div>
     </section>
 
     <template #footer>
-      <span class="cc-muted cc-fs-xs gd-foot-note">
-        napari opens in its own window, so guides describe what appears there rather than pointing at it.
-      </span>
       <span class="gd-spacer" />
       <button v-if="guide.completed.size" class="cc-btn cc-btn-ghost cc-fs-xs" @click="guide.clearCompleted()"
               v-tooltip.top="'Clear the finished ticks so the list reads fresh again'">
@@ -106,28 +123,44 @@ function firstFixable(g: GuideDef) {
 <style scoped>
 .gd-intro { margin: 0 0 0.7rem; line-height: 1.4; font-size: var(--cc-fs-md); }
 
-.gd-group { margin-bottom: 0.8rem; }
-/* no `color` — `cc-eyebrow` owns it (see GuideBubble's .gb-guide for the same rule) */
-.gd-group-head { margin: 0 0 0.3rem; }
+.gd-group { margin-bottom: 0.7rem; }
+/* no `color` — `cc-eyebrow` owns it; shadowing a utility's own property makes it a no-op
+   (enforced by cssScenarios.test.ts) */
+.gd-group-head { margin: 0 0 0.15rem; }
 
-.gd-card { padding: 0.5rem 0.6rem; margin-bottom: 0.35rem; }
-.gd-row { display: flex; align-items: flex-start; gap: 0.6rem; }
-.gd-icon { color: var(--cc-accent); font-size: 1rem; margin-top: 0.15rem; flex: none; }
+.gd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.4rem 0.2rem;
+  border-top: 1px solid var(--cc-border);
+}
+.gd-row:hover { background: var(--cc-surface-2); }
+
+.gd-icon { color: var(--cc-accent); font-size: 0.95rem; margin-top: 0.1rem; flex: none; width: 1rem; text-align: center; }
 .gd-main { flex: 1; min-width: 0; }
 
-.gd-title-row { display: flex; align-items: center; gap: 0.4rem; }
+.gd-head { display: flex; align-items: baseline; gap: 0.35rem; }
 .gd-title { font-weight: 600; font-size: var(--cc-fs-md); }
-.gd-done { color: var(--cc-sev-ok); display: inline-flex; }
-.gd-summary { margin: 0.1rem 0 0.25rem; line-height: 1.35; }
+.gd-done { color: var(--cc-sev-ok); }
+/* pushed right so readiness + step count line up down the list, whatever the title's length */
+.gd-meta { margin-left: auto; white-space: nowrap; flex: none; }
+.gd-ok { color: var(--cc-sev-ok); }
+/* amber, not red: a missing prerequisite is a warning about fit, not a failure — Start still works */
+.gd-warn { color: var(--cc-sev-warn); }
 
-/* + cc-row cc-row-tight — the row scenario supplies flex/wrap/gap; this is the list reset only */
-.gd-prereqs { list-style: none; margin: 0; padding: 0; }
-.gd-prereqs li { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--cc-sev-ok); }
-/* amber, not red: a missing prerequisite is a warning about fit, not a failure (Start still works) */
-.gd-prereqs li.miss { color: var(--cc-sev-warn); }
+.gd-summary { margin: 0.05rem 0 0; line-height: 1.35; }
 
-.gd-actions { display: flex; flex-direction: column; align-items: stretch; gap: 0.2rem; flex: none; }
+.gd-miss { margin: 0.15rem 0 0; line-height: 1.35; color: var(--cc-sev-warn); }
+/* a link, not a button: it sits mid-sentence, where a second filled button would compete with Start */
+.gd-fix {
+  background: none; border: none; padding: 0; margin-left: 0.25rem;
+  font: inherit; color: var(--cc-accent-soft); cursor: pointer; text-decoration: underline;
+}
+.gd-fix:hover { color: var(--cc-accent); }
 
-.gd-foot-note { flex: 0 1 auto; line-height: 1.3; }
+/* FIXED width, one button — this is what keeps the right edge straight (see the header note) */
+.gd-act { flex: none; width: 4.2rem; display: flex; justify-content: flex-end; }
+
 .gd-spacer { flex: 1; }
 </style>

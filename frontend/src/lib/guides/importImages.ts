@@ -37,10 +37,15 @@ export const importImagesGuide: GuideDef = {
       placement: 'bottom-start',
       title: 'Pick a set first',
       text: 'A set groups images you want to treat together — a condition, a day, an experiment.',
-      bullets: [
-        'Every function runs against the active set.',
-        'No set yet? Use "New set" to the right.',
-      ],
+      bullets: ['Every function runs against the active set.'],
+      reveal: {
+        // With no sets there is nothing to select — a "pick a set" bubble pointing at an empty
+        // dropdown is a dead end, so point at "New set" until one exists (Dominik, 2026-08-12).
+        needed: c => c.setCount === 0,
+        anchor: 'set.new',
+        text: 'No sets yet — create one first. A set groups the images you treat together.',
+        placement: 'bottom-start',
+      },
       when: c => c.setUid !== null,
     },
     {

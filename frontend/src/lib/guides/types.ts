@@ -18,7 +18,10 @@ import type { CciaImage } from '../../stores/project'
 export interface GuideCtx {
   route: string                              // current path, e.g. '/segment'
   hasProject: boolean
-  setUid: string | null
+  setUid: string | null                      // the ACTIVE set, or null
+  // How many sets the project has AT ALL. Distinct from `setUid`, and the distinction matters: with no
+  // sets there is nothing to select, so a step saying "pick a set" has to point at "New set" instead.
+  setCount: number
   images: CciaImage[]                        // images in the ACTIVE set (the ones a page shows)
   napariImageUid: string | null              // image currently open in the napari window, if any
   selection: (module: string) => string[]    // checkbox selection for a module page

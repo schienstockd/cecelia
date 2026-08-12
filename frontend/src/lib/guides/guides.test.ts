@@ -173,6 +173,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     route: '/manage-images',
     hasProject: false,
     setUid: null,
+    setCount: 0,
     images: [],
     napariImageUid: null,
     selection: () => [],

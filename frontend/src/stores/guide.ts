@@ -17,14 +17,14 @@
 // touches vue-router — this one shouldn't be the first to require it).
 
 import { defineStore } from 'pinia'
-import { ref, computed, watch, onScopeDispose } from 'vue'
+import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
 import { useTaskStore, type TaskEntry } from './tasks'
 import { GUIDES, guideById } from '../lib/guides'
 import type { GuideCtx, GuideDef, GuideStep } from '../lib/guides/types'
-import { readAnchorValue, resolveAnchor, isReachable } from '../utils/guideAnchor'
+import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
 
 const doneKey = (id: string) => `cc.guide.${id}.done`
 const POLL_MS = 250
@@ -33,11 +33,6 @@ const POLL_MS = 250
 const ADVANCE_DELAY_MS = 450
 
 export type GuidePhase = 'step' | 'waiting' | 'failed' | 'done'
-
-function pathFromHash(): string {
-  const h = window.location.hash.replace(/^#/, '')
-  return h.split('?')[0] || '/'
-}
 
 export const useGuideStore = defineStore('guide', () => {
   const project = useProjectStore()
@@ -55,9 +50,16 @@ export const useGuideStore = defineStore('guide', () => {
   // Bumped by the poll; anything DOM-derived reads this so it re-evaluates. See the header comment.
   const domTick = ref(0)
 
-  const currentPath = ref(pathFromHash())
-  const onHash = () => { currentPath.value = pathFromHash() }
-  window.addEventListener('hashchange', onHash)
+  // The route, re-read from the hash. It MUST be polled rather than only listened for: vue-router
+  // navigates a hash history with `history.pushState`, which does **not** fire `hashchange` — so a
+  // listener-only version sat at whatever the path was when this store was constructed (`/`, before
+  // the boot redirect resolved) and every step declaring a `route` read as off-route forever.
+  // `hashchange`/`popstate` still cover a manual URL edit and back/forward, which the poll would only
+  // catch up with on its next tick.
+  const currentPath = ref(routePathFromHash(window.location.hash))
+  const syncPath = () => { currentPath.value = routePathFromHash(window.location.hash) }
+  window.addEventListener('hashchange', syncPath)
+  window.addEventListener('popstate', syncPath)
 
   // ── completion memory ────────────────────────────────────────────────────────────────────────
   function loadCompleted() {
@@ -86,6 +88,7 @@ export const useGuideStore = defineStore('guide', () => {
       route: currentPath.value,
       hasProject: meta.current !== null,
       setUid: set?.uid ?? null,
+      setCount: project.sets.length,
       images: set?.images ?? [],
       napariImageUid: project.napariImageUid,
       selection: (module: string) => (set ? project.getImageSelection(module, set.uid) : []),
@@ -163,6 +166,7 @@ export const useGuideStore = defineStore('guide', () => {
   function start(id: string) {
     const g = guideById(id)
     if (!g) return
+    syncPath()                                 // never start a guide against a stale route
     active.value = g
     index.value = 0
     resetStepState()
@@ -199,12 +203,25 @@ export const useGuideStore = defineStore('guide', () => {
     phase.value = 'done'
   }
 
-  // Auto-advance only on a false→true TRANSITION, so a step that was already satisfied when you
-  // arrived just shows a tick and waits for Next. Advancing on entry instead would let a guide
-  // fast-forward through steps the user never read.
-  watch(gateSatisfied, (ok, was) => {
+  // Auto-advance fires only when the gate becomes satisfied WHILE THIS STEP IS SHOWING. A step whose
+  // gate was already satisfied when you arrived shows a tick and waits for Next instead.
+  //
+  // `armed` is per step, and it has to be: watching for a false→true transition on `gateSatisfied`
+  // alone compares the NEW step's gate against the OLD step's, which is meaningless across a step
+  // change — pressing Next onto an already-satisfied step read as "just satisfied" and advanced again,
+  // so the guide walked itself through every step the user had already done. Arm on entry only when
+  // the gate starts out unsatisfied.
+  const armed = ref(false)
+  watch([() => active.value?.id, () => index.value], () => {
+    armed.value = false
+    const at = index.value
+    // one tick, so a step's anchors/derived state have settled before we judge "already satisfied"
+    nextTick(() => { if (index.value === at) armed.value = !gateSatisfied.value })
+  }, { immediate: true, flush: 'post' })
+
+  watch(gateSatisfied, ok => {
     cancelAdvance()
-    if (ok && was === false) advanceTimer = setTimeout(() => { advanceTimer = null; next() }, ADVANCE_DELAY_MS)
+    if (ok && armed.value) advanceTimer = setTimeout(() => { advanceTimer = null; next() }, ADVANCE_DELAY_MS)
   }, { flush: 'post' })
 
   // ── parking on a long task (plan D3) ────────────────────────────────────────────────────────
@@ -249,13 +266,14 @@ export const useGuideStore = defineStore('guide', () => {
   // ── the poll ────────────────────────────────────────────────────────────────────────────────
   let poll: ReturnType<typeof setInterval> | null = null
   watch(active, g => {
-    if (g && !poll) poll = setInterval(() => { domTick.value++ }, POLL_MS)
+    if (g && !poll) poll = setInterval(() => { syncPath(); domTick.value++ }, POLL_MS)
     else if (!g && poll) { clearInterval(poll); poll = null }
   })
   onScopeDispose(() => {
     if (poll) clearInterval(poll)
     cancelAdvance()
-    window.removeEventListener('hashchange', onHash)
+    window.removeEventListener('hashchange', syncPath)
+    window.removeEventListener('popstate', syncPath)
   })
 
   // ── prerequisites (plan D6) ─────────────────────────────────────────────────────────────────

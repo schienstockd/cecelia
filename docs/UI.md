@@ -1103,7 +1103,7 @@ which is how navigating gets taught rather than done for you.
 | Prerequisite registry | `lib/guides/prereqs.ts` |
 | **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
-| Bubble + ring | `components/GuideBubble.vue` |
+| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
 | Anchor resolution / reachability | `utils/guideAnchor.ts` |
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
@@ -1134,7 +1134,17 @@ action, it never traps anyone):
 | `when(ctx)` | anything observable in a store — an image is selected, this image has labels. **Prefer this.** |
 | `clickAnchor` | a control with no observable end state. Fragile by nature (a `v-for` re-render swaps the node), so only when `when` can't answer |
 | `awaitTask({fun, label})` | park on a long run: the bubble becomes a spinner on the task rail and picks up on `done`; `failed`/`cancelled` gets its own state |
-| `reveal({needed, anchor, text})` | the target exists but is unreachable (collapsed panel, closed `FloatingPanel`) — inserts a "open this first" bubble ahead of the step |
+| `reveal({needed, anchor, text})` | the target is unreachable OR does not apply yet — a collapsed panel, a closed `FloatingPanel`, **or a "pick a set" step when the project has no sets to pick**. Inserts a "do this first" bubble ahead of the step, pointing at whatever gets you there |
+
+**The route is polled, not just listened for.** vue-router navigates a hash history with
+`history.pushState`, which fires no `hashchange` — a listener-only version sits at the boot path
+forever and every routed step reports "you are on another page". `routePathFromHash` is re-read on the
+poll (and on `hashchange`/`popstate`, and when a guide starts).
+
+**Auto-advance is armed per step.** It fires only when a gate becomes satisfied *while its step is
+showing*; a step already satisfied on arrival shows a tick and waits for `Next`. Watching for a
+false→true transition on the gate alone compares the new step's gate against the old step's, which let
+the guide walk itself through everything the user had already done.
 
 Predicates see a flat `GuideCtx` snapshot, never a store directly — a step that imports a store is a
 step that can mutate one. `ctx.anchorValue(id)` covers controls that report to no store (`TaskRunner`'s

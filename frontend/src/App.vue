@@ -126,7 +126,7 @@ const bare = computed(() => route.meta.bare === true)
     </FloatingPanel>
     <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->
     <FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
-                   accent="rgba(255, 255, 255, 0.6)"
+                   accent="var(--cc-guide)"
                    :default-x="300" :default-y="96" :default-w="340" :default-h="520"
                    @close="settings.labLogPanelOpen = false">
       <LabLogPanel />
