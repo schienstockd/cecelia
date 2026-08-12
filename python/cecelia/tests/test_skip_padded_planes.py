@@ -50,6 +50,23 @@ class _StubSeg(SegmentationUtils):
         return np.ones(zyx, dtype=np.uint32)
 
 
+class _TemporalStubSeg(SegmentationUtils):
+    """A TEMPORAL subclass, shaped like `CoastalUtils`: the mask comes from the temporal WINDOW.
+
+    That is the contract that matters here — coastal's `predict_slice` documents the tile as
+    "present for the base's contract; the pixels used come from `context[context_index]`" — so a
+    window the base forgot to narrow is not a cosmetic mismatch, it decides the output's depth.
+    """
+    TEMPORAL_RADIUS = 1
+
+    def predict_slice(self, tile, model_params, norm_params=None,
+                      context=None, context_index=None):
+        self.seen = getattr(self, 'seen', [])
+        self.seen.append((tile.shape[-3], context[context_index].shape[-3], context.shape[0],
+                          np.array_equal(context[context_index], tile)))
+        return np.ones(context[context_index].shape[-3:], dtype=np.uint32)
+
+
 class SkipPaddedPlanesTest(unittest.TestCase):
 
     def setUp(self):
@@ -64,7 +81,7 @@ class SkipPaddedPlanesTest(unittest.TestCase):
         zu.create_multiscales(da.from_array(self.arr, chunks=(1, 1, 1, Y, X)),
                               self.im_path, dim_utils=self.du, nscales=1)
 
-    def _run(self, with_box, **over):
+    def _run(self, with_box, cls=_StubSeg, **over):
         if with_box:
             zu.write_valid_box(self.im_path, ['Z'], {t: {'Z': (Z0, Z1)} for t in range(T)})
         params = {
@@ -76,7 +93,7 @@ class SkipPaddedPlanesTest(unittest.TestCase):
             'models': {'0': {'matchAs': 'base', 'cellChannels': [0]}},
         }
         params.update(over)
-        seg = _StubSeg(params, self.du)
+        seg = cls(params, self.du)
         seg.predict_from_zarr([self.arr])
         out = zarr.open_group(os.path.join(self.dir, 'labels', 'stub.zarr'), mode='r')['0'][:]
         return seg, out
@@ -111,6 +128,41 @@ class SkipPaddedPlanesTest(unittest.TestCase):
         self.assertEqual(set(seg.seen_depths), {Z})
         self.assertTrue((out > 0).all())
         self.assertIsNone(zu.read_valid_box(os.path.join(self.dir, 'labels', 'stub.zarr')))
+
+
+class TemporalWindowMatchesTheTileTest(SkipPaddedPlanesTest):
+    """The skip belongs to the BASE, so it must narrow everything it hands one `predict_slice` call.
+
+    The tile comes from the timepoint already in RAM; the temporal window is read separately, from
+    the full store, because it needs OTHER timepoints. So the narrowing has to be applied twice, and
+    it was applied once — the tile arrived 4 planes deep and the window 10, which a subclass that
+    predicts from the window turns into a mask of the wrong depth. Not silent: the write into the
+    frame buffer then raises `operands could not be broadcast together`.
+
+    `test_segmentation_streaming.TemporalContextTest` already asserts `context[context_index]` IS
+    the tile — the same invariant, on an image with no valid box, which is why the skip could break
+    it unnoticed. This is that assertion with a box in play.
+    """
+
+    def test_the_window_is_narrowed_with_the_tile(self):
+        seg, out = self._run(with_box=True, cls=_TemporalStubSeg)
+        self.assertTrue(seg.seen, 'stub was never called')
+        for tile_z, ctx_z, w, same in seg.seen:
+            self.assertEqual(tile_z, Z1 - Z0, 'the tile was not narrowed')
+            self.assertEqual(ctx_z, tile_z,
+                             f'the temporal window is {ctx_z} planes deep, the tile {tile_z}')
+            self.assertTrue(same, 'context[context_index] is no longer the tile')
+            self.assertGreater(w, 1, 'no temporal window was built at all')
+        # and the labels still land where the non-temporal path puts them
+        for z in range(Z):
+            self.assertEqual(bool(out[:, z].any()), Z0 <= z < Z1, f'z={z}')
+
+    def test_without_a_box_the_window_is_the_whole_stack(self):
+        seg, _ = self._run(with_box=False, cls=_TemporalStubSeg)
+        self.assertTrue(seg.seen)
+        for tile_z, ctx_z, _, same in seg.seen:
+            self.assertEqual((tile_z, ctx_z), (Z, Z))
+            self.assertTrue(same)
 
 
 class ClearDepthMeetsTheSkipTest(SkipPaddedPlanesTest):

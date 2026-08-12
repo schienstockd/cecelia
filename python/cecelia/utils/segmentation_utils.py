@@ -111,6 +111,11 @@ class SegmentationUtils:
                        the window is TRUNCATED at the start and end of the movie rather than
                        reflected or edge-padded, because repeating a frame invents zero motion and
                        mirroring invents motion outright.
+
+        `context` matches `tile` on every axis they share — including z when the valid-box skip has
+        narrowed this timepoint (see *Skipping the padding a drift correction added* below). A
+        subclass that takes its pixels from the window therefore never has to ask which of the two
+        was narrowed.
         """
         raise NotImplementedError
 
@@ -174,6 +179,7 @@ class SegmentationUtils:
         ia_t = dim_utils.im_dim_order.index('T') if 'T' in dim_utils.im_dim_order else None
         ia_y = dim_utils.im_dim_order.index('Y')
         ia_x = dim_utils.im_dim_order.index('X')
+        ia_z = dim_utils.im_dim_order.index('Z') if 'Z' in dim_utils.im_dim_order else None
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -225,9 +231,9 @@ class SegmentationUtils:
                     box = zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
                     z0, z1 = self._valid_z_span(box, n_z)
                 z_spans[t] = (z0, z1)
-                if (z0, z1) != (0, n_z):
-                    frame_in = frame_in[tuple(slice(z0, z1) if i == ifa_z else slice(None)
-                                              for i in range(frame_in.ndim))]
+                narrowed = (z0, z1) != (0, n_z)
+                if narrowed:
+                    frame_in = self._narrow_z(frame_in, ifa_z, z0, z1)
                     if t == 0:
                         print(f'>> skipping padded z planes: segmenting z {z0}:{z1} of {n_z}',
                               flush=True)
@@ -254,8 +260,17 @@ class SegmentationUtils:
                             # edges, never reflected or edge-padded (see predict_slice docstring)
                             lo = max(0, t - self.TEMPORAL_RADIUS)
                             hi = min(T - 1, t + self.TEMPORAL_RADIUS)
+                            # Narrowed to THIS timepoint's span, like the tile — the window is the
+                            # tile through time and must match it on every axis. These frames are
+                            # read from the full store rather than from `frame_in` (which holds only
+                            # t), so the narrowing has to be re-applied here; a subclass takes its
+                            # pixels from the window, so a full-depth one silently re-segments the
+                            # padding. Each frame's OWN span may differ — drift moves the stack — but
+                            # the window is one array with one z extent, and t's span is the one the
+                            # output is written back at.
                             context = np.stack([
-                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx)
+                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx,
+                                                   z_idx=ia_z if narrowed else None, z=(z0, z1))
                                 for t2 in range(lo, hi + 1)])
                             masks = self.predict_slice(tile, model_params, norm_p,
                                                        context=context, context_index=t - lo)
@@ -350,13 +365,20 @@ class SegmentationUtils:
             y = y1
         return tiles
 
-    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx):
-        """Extract one XY tile for timepoint t. Returns numpy array."""
+    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx, z_idx=None, z=None):
+        """Extract one XY tile for timepoint t. Returns numpy array.
+
+        `z_idx`/`z` narrow the read to the `(z0, z1)` planes that hold data — pushed into the index
+        rather than sliced off afterwards, so the padded planes are never read at all. `z_idx=None`
+        (the default) reads the whole stack, which is every caller that is not the valid-box skip.
+        """
         idx = [slice(None)] * len(im_data.shape)
         if t_idx is not None:
             idx[t_idx] = t
         idx[y_idx] = read_yx[0]
         idx[x_idx] = read_yx[1]
+        if z_idx is not None and z is not None:
+            idx[z_idx] = slice(int(z[0]), int(z[1]))
         return np.asarray(im_data[tuple(idx)])
 
     def _crop_masks(self, masks, crop_yx, is_3d):
@@ -753,6 +775,23 @@ class SegmentationUtils:
     # Deliberately NOT a crop: the output store keeps its full shape and the skipped planes stay
     # zero. Each frame sits at its own offset because the correction aligned them in a shared
     # canvas; cropping per frame would put them back out of register.
+    #
+    # The skip is a property of the BASE, not of any one algorithm: `predict_from_zarr` narrows what
+    # it hands `predict_slice` and puts the labels back at the offset, so every subclass gets it by
+    # implementing nothing. What a subclass must be able to rely on is that EVERY array it is handed
+    # for one timepoint — the tile and, when `TEMPORAL_RADIUS > 0`, the temporal window — is narrowed
+    # to the same span. It was not: the window was read from the full store and came back full depth
+    # while the tile was narrowed, which broke coastal on any drift-corrected 3D image.
+    @staticmethod
+    def _narrow_z(arr, axis, z0, z1):
+        """`arr` restricted to z planes `[z0, z1)` — for an array already in RAM.
+
+        The window frames are narrowed by `_extract_tile`'s `z_idx=`/`z=` instead, which is the same
+        restriction pushed into the store index so the padded planes are never read at all. That is
+        only possible where the read has not happened yet, which is why there are two spellings.
+        """
+        return arr[tuple(slice(z0, z1) if i == axis else slice(None) for i in range(arr.ndim))]
+
     @staticmethod
     def _valid_z_span(box, n_z, min_span=2):
         """`(z0, z1)` of z to segment for one timepoint, given that frame's valid `box`.
