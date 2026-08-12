@@ -122,8 +122,8 @@ const statusTip: Record<string, string> = {
 
 /* .guides-btn → cc-btn cc-btn-bare cc-btn-icon — sits immediately right of the brand mark, so the
    two "how does this work?" entry points read as a pair. */
-.guides-btn { margin-left: -0.35rem; color: var(--cc-viewer); }
-.guides-btn:hover { background: color-mix(in srgb, var(--cc-viewer) 12%, transparent); color: var(--cc-viewer); }
+.guides-btn { margin-left: -0.35rem; color: var(--cc-guide); }
+.guides-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .spacer { flex: 1; }
 

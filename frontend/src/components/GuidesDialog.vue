@@ -124,7 +124,9 @@ function firstFixable(g: GuideDef) {
 </template>
 
 <style scoped>
-.gd-mark { color: var(--cc-viewer); }
+/* the same whitish token as the bubble and ring, so the compass mark and the surface it opens read as
+   one thing (and it is brighter than a bare button's default dim grey, so it still stands out) */
+.gd-mark { color: var(--cc-guide); }
 
 /* size comes from `cc-fs-md` in the markup — a scoped font-size here would shadow `cc-muted`'s own
    and make the utility a no-op (docs/UI.md → pick a scenario, then a size) */

@@ -1103,7 +1103,7 @@ which is how navigating gets taught rather than done for you.
 | Prerequisite registry | `lib/guides/prereqs.ts` |
 | **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
-| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel; the ring is clamped to the viewport so a large or part-scrolled anchor can't draw edges off-screen. The compass MARK (header button + dialog title) is `--cc-viewer`, the app's one green. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
+| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel; the ring is clamped to the viewport so a large or part-scrolled anchor can't draw edges off-screen. The compass MARK (header button + dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
 | Anchor resolution / reachability | `utils/guideAnchor.ts` |
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |

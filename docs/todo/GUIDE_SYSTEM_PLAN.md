@@ -59,8 +59,11 @@ see *The guides*). Changes made while building, each for a reason found in the c
   the DOM" and "on screen" are different questions with different fixes.
 - **The unanchored fallback names the failing anchor in its tooltip**, so "it didn't highlight
   anything" is a precise report next time rather than a guess.
-- **The bubble and ring are `--cc-guide` (whitish), matching the lab-log panel** — a new token, which
-  also gave the lab log's hardcoded `rgba(255,255,255,0.6)` a home.
+- **The whole guide surface is `--cc-guide` (whitish), matching the lab-log panel** — the bubble
+  border, the ring, and the compass mark in the header and dialog title. A new token, which also gave
+  the lab log's hardcoded `rgba(255,255,255,0.6)` a home. (The compass was briefly green, reusing
+  `--cc-viewer`; white won because the mark and the surface it opens then read as one thing, and
+  against a bare button's dim grey a soft white still stands out.)
 - **Three house ratchets rejected the first version of the new components** (an undeclared re-armed
   timer, a hand-rolled `.cc-row`, two `cc-eyebrow` colour overrides). All three were fixed at the
   source rather than allow-listed.
