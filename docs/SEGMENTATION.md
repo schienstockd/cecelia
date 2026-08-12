@@ -223,9 +223,23 @@ Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice +
 
 A drift-corrected canvas holds each frame at its own offset and zeroes the rest, and the whole
 z-stack goes to cellpose in **one** call (it stitches across z internally) — so the padding costs
-real GPU time and produces nothing. Measured across the stores on this machine: **28.2% fewer
-plane-frames** handed to cellpose overall, **63.6%** on the worst image (8 valid planes in a 22-plane
-canvas).
+real GPU time and produces nothing. Measured 2026-08-12 across the stores on this machine that carry
+a valid box: **24.0% fewer plane-frames** handed to cellpose overall, **55.6%** on the worst image
+(8 valid planes in an 18-plane canvas, `kSUFux/PsD5Xc`).
+
+Two qualifications on those numbers, both of which cost more than the difference between them:
+
+- **They are per-store, and 8 of the 25 corrected stores here have no valid box** — every `4kS67f`
+  one, all corrected before the box existed. `read_valid_box` returns `None` for them, so the skip
+  is a no-op and 20,493 plane-frames still go to cellpose as padding. Across *all* corrected stores
+  the saving is therefore **21.6%**, not 24.0%. A store gets the box by being re-corrected; there is
+  no backfill (only one of the eight still has its `drift_shifts.json`, and recovering the rest
+  would mean deriving the box from pixels).
+- **They moved when the drift estimator improved, and will move again.** The figures above were
+  28.2% / 63.6% before `multiLag` landed (#524) — a better trajectory needs less canvas, so the
+  padding it leaves behind shrinks and the skip has less to skip. Padding fell on 14 of the 17
+  boxed stores, held on 3, and rose on one 7-frame image. **Treat these as a snapshot of this
+  machine's data, not a property of the feature.**
 
 Per timepoint the frame is narrowed to that frame's valid z span (`docs/ARCHITECTURE.md` → *The valid
 box*); tiling, cellpose, post-processing and nuc/cyto matching all run unchanged on the reduced

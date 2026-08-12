@@ -740,8 +740,8 @@ class SegmentationUtils:
 
     # ── Skipping the padding a drift correction added ─────────────────────────
     #
-    # A drift-corrected canvas holds each frame at its own offset and zeroes the rest: 3-64% of the
-    # z planes across the movies on this machine, 8 valid planes in a 22-plane canvas at worst. The
+    # A drift-corrected canvas holds each frame at its own offset and zeroes the rest: 3-56% of the
+    # z planes across the movies on this machine, 8 valid planes in an 18-plane canvas at worst. The
     # whole z-stack goes to cellpose in ONE call (it stitches across z internally), so those planes
     # cost real GPU time and produce nothing.
     #
@@ -761,6 +761,13 @@ class SegmentationUtils:
         it, a degenerate range, or a span so thin that segmenting it is not meaningfully 3D. Doing
         MORE work is always the safe direction here: the cost of a wrong narrow span is missing
         cells, and the cost of a wrong wide one is the status quo.
+
+        The thin-span branch is a **safety net, not a live path**: drift places each frame whole, so
+        a real box is always the SOURCE depth (8, 13 or 31 planes across the stores on this machine
+        — never below 2). Measured 2026-08-12; the invariant behind it is pinned by
+        `test_drift_geometry.py::test_every_frames_z_span_is_the_source_depth`, so if a future
+        producer starts emitting thin boxes that test fails rather than this guard quietly
+        switching the skip off.
         """
         if not box or n_z <= 0:
             return 0, n_z

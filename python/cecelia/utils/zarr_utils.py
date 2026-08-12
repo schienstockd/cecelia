@@ -870,7 +870,7 @@ DOWNSAMPLED_AXES = ('X', 'Y')
 # ── Valid box: which part of a store is data, and which is padding ────────────────────────────
 # A task may write a canvas bigger than its data — drift correction expands to hold the whole
 # trajectory and drops each frame into a ZEROED canvas at its own offset, which on real movies
-# leaves 38–64% padding (one went from 8 z-planes to 22). Nothing in NGFF says where the data is,
+# leaves 3–56% padding (one goes from 8 z-planes to 18). Nothing in NGFF says where the data is,
 # so a consumer either reads the padding as if it were background, or hunts down whichever task
 # produced the store and re-derives its geometry.
 #

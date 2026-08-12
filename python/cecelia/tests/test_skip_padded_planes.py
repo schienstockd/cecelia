@@ -1,7 +1,7 @@
 """Segmentation must not spend GPU time on the z planes a drift correction padded in.
 
 The whole z-stack goes to cellpose in ONE call (it stitches across z internally), so padding is not
-free: 3-64% of the planes across the movies on this machine, worst 8 valid in a 22-plane canvas.
+free: 3-56% of the planes across the movies on this machine, worst 8 valid in an 18-plane canvas.
 
 This tests the WIRING, not the arithmetic — `test_valid_z_span` covers the span rule. What can go
 wrong here is an axis mix-up: narrowing the wrong array, sizing the frame buffer wrong, or writing

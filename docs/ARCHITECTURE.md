@@ -197,7 +197,7 @@ Full design + phased plan: [`docs/todo/QC_PLAN.md`](todo/QC_PLAN.md).
 
 A task may write a canvas larger than its data. Drift correction expands the canvas to hold the
 whole trajectory and drops each frame into a **zeroed** canvas at that frame's own offset, so the
-rest is padding — 38–64% on real movies here, one going from 8 z-planes to 22. NGFF has no way to
+rest is padding — 3–56% of the z planes on real movies here, one going from 8 to 18. NGFF has no way to
 say where the data is, so without this a consumer either treats padding as background (it will skew
 any background estimate, and it borders real signal) or pays to process it.
 
