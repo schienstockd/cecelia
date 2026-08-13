@@ -35,10 +35,21 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # `_set_status!` reads back its own (earlier, exact) value rather than being overwritten by this one.
 # `finishedAt` comes from the banked outcome row so the live frame and the replayable row cannot disagree
 # about when the task ended.
-function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="")
-    string(status) == "running" && note_task_started!(task_id)
+# `started_at`/`finished_at` are for a frame this process did NOT produce — the detached task runner
+# relaying one it stamped itself. Empty (the normal case) means "derive them here", exactly as before.
+# They exist because re-deriving a relayed task's times is the elapsed-timer bug one process boundary
+# out: a task the runner has been running for twenty minutes would be stamped as starting when the
+# relay first saw it, and a restarted API server would restart every timer on reconnect. Seeding
+# `note_task_started!` with the runner's value is safe because it is first-write-wins.
+function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
+                   started_at="", finished_at="")
+    if string(status) == "running"
+        seed = parse_iso_utc(started_at)
+        isnothing(seed) ? note_task_started!(task_id) : note_task_started!(task_id, seed)
+    end
     row = record_task_outcome!(task_id, status;
-                               image_uid=uid, image_uids=image_uids, fun=fun, pool=pool)
+                               image_uid=uid, image_uids=image_uids, fun=fun, pool=pool,
+                               started_at=started_at, finished_at=finished_at)
     _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid,
                        imageUids=image_uids, fun=fun, pool=pool,
                        startedAt  = isnothing(row) ? iso_utc(task_started_at(task_id)) : row.started_at,
@@ -74,7 +85,11 @@ function handle_message(ws, raw::AbstractString)
         # tells the bridge to stop the frame loop it is in), and background jobs (cancel_job!, kills the
         # subprocess(es) — data patches + project export/import).
         # So the Task-Manager Cancel button works on all of them, not just scheduler tasks.
-        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_job!(task_id))
+        # …and the detached runner, where a scheduler task most likely actually IS. All of these are
+        # no-ops for an unknown id, so asking all four is free; asking fewer is a Cancel button that
+        # silently does nothing depending on where the task happens to be running.
+        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id);
+                             cancel_job!(task_id); _cancel_on_runner(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)
     elseif type == "movie:record"
@@ -465,6 +480,13 @@ function handle_task_run(ws, data)
     # detached runner executes the identical code rather than a second copy of it.
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
     req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params)
+
+    # Hand it to the detached runner if there is one — then this server can restart without taking the
+    # run with it, and its frames arrive back through the relay into these same sinks. `false` means
+    # "not handled there" (disabled, still precompiling, stopped), and we execute in-process below:
+    # the status quo, not a regression.
+    _submit_to_runner(req) && return
+
     Threads.@spawn execute_task(req;
         on_log      = line -> ws_log(ws, task_id, line),
         on_progress = (n, t) -> ws_progress(ws, task_id, n, t),

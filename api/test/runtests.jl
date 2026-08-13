@@ -237,7 +237,7 @@ end
     # Source-level on purpose: actually exercising it would kill the developer's own running napari
     # and preview worker, since the ports are fixed and these tests share the machine.
     src  = read(joinpath(@__DIR__, "..", "src", "app_api.jl"), String)
-    body = src[findfirst("function _stop_children_for_exit()", src)[1]:end]
+    body = src[findfirst("function _stop_children_for_exit(", src)[1]:end]
     body = body[1:findfirst("\nend", body)[1]]
 
     # `api_diagnostics` is the de-facto registry of resident children — it reports one `*Port` per
@@ -245,12 +245,34 @@ end
     # diagnostics without adding it here fails this test rather than shipping another zombie.
     diag  = JSON3.read(api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))[2])
     child = [k for k in keys(diag) if endswith(String(k), "Port") && String(k) != "port"]
-    @test length(child) == 3            # napari, preview, notebooks — update deliberately, not silently
-    @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child)
+    @test length(child) == 4            # napari, preview, notebooks, runner — deliberately, not silently
+    # The runner is reported by diagnostics but is NOT freed by an unconditional
+    # `_kill_listeners_on_port` — it is stopped through `runner_stop!`, and only when `stop_runner` is
+    # true. So the count covers the other three and the runner is asserted on its own below.
+    @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child) - 1
 
     for c in ("NAPARI_PORT", "PREVIEW_PORT", "NOTEBOOKS_PORT")
         @test occursin(c, body)
     end
+
+    # ── The runner's asymmetry, which is the whole point of it ──────────────────
+    # Quit stops it; Restart and the worktree switch must NOT — that is what stops a backend restart
+    # costing a running segmentation. Source-level like the rest of this testset: the alternative is
+    # killing a runner that may be mid-task on the developer's own machine.
+    @test occursin("stop_runner::Bool = true", src)          # Quit gets the stop by DEFAULT…
+    @test occursin("stop_runner && try; Cecelia.runner_stop!", body)
+    # …and both restart paths opt out. Two call sites, asserted separately: a single count would pass
+    # if one of them were changed to stop it.
+    restart = src[findfirst("function api_app_restart(", src)[1]:end]
+    @test occursin("_stop_children_for_exit(; stop_runner = false)",
+                   restart[1:findfirst("\nend", restart)[1]])
+    switch = src[findfirst("function api_app_switch_worktree(", src)[1]:end]
+    @test occursin("_stop_children_for_exit(; stop_runner = false)",
+                   switch[1:findfirst("\nend", switch)[1]])
+    # Quit itself must NOT opt out — the failure this guards is a copy-paste that quietly leaves an
+    # unreachable runner holding the GPU after the user asked for everything to stop.
+    shutdown = src[findfirst("function api_app_shutdown(", src)[1]:end]
+    @test !occursin("stop_runner = false", shutdown[1:findfirst("\nend", shutdown)[1]])
     # and the graceful stop, not only the port-level kill, for each child that has a handle
     @test occursin("close!(v)", body)
     @test occursin("_shutdown_notebook_server!()", body)
@@ -269,7 +291,7 @@ end
     m   = match(r"const CHILD_PORTS = \(([^)]*)\)", dev)
     @test m !== nothing
     dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
-    @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, NOTEBOOKS_PORT])
+    @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
     @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
 
     # PROD's supervisor (`app.py`) had the same hole: `proc.terminate()` kills the Julia server and
@@ -3568,7 +3590,7 @@ end
         "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
-        "/api/plots/umap", "/api/pools",
+        "/api/plots/umap", "/api/pools", "/api/runner/status",
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
@@ -3627,7 +3649,7 @@ end
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
-        "/api/pools/set", "/api/preview/run",
+        "/api/pools/set", "/api/preview/run", "/api/runner/restart",
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
         "/api/projects/canvases", "/api/projects/create",
@@ -3680,7 +3702,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 74 && length(POST_ROUTES) == 104
+    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 105
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

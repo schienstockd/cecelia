@@ -24,6 +24,7 @@ include("tracking_api.jl")
 include("update_api.jl")
 include("maintenance_api.jl")
 include("repl_api.jl")
+include("runner_api.jl")     # detached task runner; uses repl_api.jl's _GIT_COMMIT for staleness
 include("notebooks_api.jl")
 include("movies_api.jl")     # movie registry; builds on routes.jl's movies-dir + name guard
 include("optical_flow_api.jl")
@@ -290,6 +291,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/tasks/custom-modules" => (req, body_bytes) -> (api_custom_modules_status(req)),
     "/api/tasks/funparams" => (req, body_bytes) -> (api_task_fun_params(req)),
     "/api/pools" => (req, body_bytes) -> (api_pools_list(req)),
+    "/api/runner/status" => (req, body_bytes) -> (api_runner_status(req)),
     "/api/storage/compressor" => (req, body_bytes) -> (api_compressor_get(req)),
     "/api/storage/layout" => (req, body_bytes) -> (api_store_layout_get(req)),
     "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
@@ -332,6 +334,7 @@ const _GET_ROUTES = Dict{String, Function}(
 const _POST_ROUTES = Dict{String, Function}(
     "/api/projects/list" => (req, body_bytes) -> (api_projects_list(req)),
     "/api/pools/set" => (req, body_bytes) -> (api_pool_set(body_bytes)),
+    "/api/runner/restart" => (req, body_bytes) -> (api_runner_restart(body_bytes)),
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
@@ -675,6 +678,7 @@ const _BOUND_HOST = Ref{String}("")
 function start(; host=HOST, port=PORT)
     _BOUND_HOST[] = string(host)
     _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
+    _start_runner!()      # launch or ADOPT the detached task runner (no-op unless CECELIA_RUNNER=1)
     @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end

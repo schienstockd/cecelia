@@ -172,7 +172,7 @@ interface Diag {
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean; dev: boolean
-  napariPort: number; previewPort: number; notebooksPort: number
+  napariPort: number; previewPort: number; notebooksPort: number; runnerPort: number
 }
 const diag = ref<Diag | null>(null)
 const diagBusy = ref(false)
@@ -234,6 +234,15 @@ const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
 // toggle that starts it lives on the task page — reachable only while you are there with a previewable
 // task selected. Without this row, a preview left running has no off switch.
 const previewRaw = ref<{ alive?: boolean; starting?: boolean; imageUid?: string | null } | null>(null)
+// The detached task runner. It gets a row for a reason none of the others have: it deliberately
+// SURVIVES a backend restart, so it can be running code you have already changed. `commit`/`stale`
+// are the only way to tell "my fix isn't working" from "my fix isn't loaded".
+interface RunnerStatus {
+  enabled?: boolean; running?: boolean; port?: number; pid?: number; adopted?: boolean
+  commit?: string; stale?: boolean; protocolMismatch?: boolean; uptimeSeconds?: number; busy?: boolean
+}
+const runnerRaw = ref<RunnerStatus | null>(null)
+const runnerSt = computed<ServiceState>(() => runnerRaw.value?.running ? 'running' : 'stopped')
 const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
 const previewSt = computed<ServiceState>(() => previewState(previewRaw.value))
@@ -323,6 +332,7 @@ async function pollServices() {
   try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
   try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
   try { previewRaw.value = await previewApi.status() } catch { previewRaw.value = null }
+  try { runnerRaw.value = await (await fetch('/api/runner/status')).json() } catch { runnerRaw.value = null }
 }
 let svcTimer: number | undefined
 onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
@@ -377,6 +387,22 @@ async function previewStop() {
     await previewApi.stop()
     svcMsg.value = 'Preview stopped — GPU memory released.'
   } catch { svcMsg.value = 'Could not stop the preview worker.' }
+  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
+}
+// Restart REFUSES while the runner is busy, and that refusal is the feature: the runner holds work
+// this app does not, so discarding it silently is the one thing this button must never do. The second
+// press is the user overriding, with the count in front of them.
+async function runnerRestart(force = false) {
+  svcBusy.value = 'runner'; svcMsg.value = ''
+  try {
+    const res = await fetch('/api/runner/restart', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    })
+    const d = await res.json()
+    svcMsg.value = res.ok ? 'Task runner restarting…'
+      : `${d.error ?? 'Could not restart the task runner.'} Press Restart again to stop them anyway.`
+  } catch { svcMsg.value = 'Could not restart the task runner.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }
 async function notebooksAction(kind: 'start' | 'stop' | 'restart') {
@@ -832,6 +858,28 @@ async function switchWt(path: string) {
             <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-cog' : 'pi-stop']" /> Stop
           </button>
           <span v-else class="cc-muted cc-fs-xs">Starts from a task's preview toggle</span>
+        </span>
+      </div>
+
+      <!-- Task runner. Only shown when enabled (CECELIA_RUNNER=1) — an always-visible row for a
+           process most installs don't run would be noise. -->
+      <div class="svc-row" v-if="runnerRaw?.enabled">
+        <span class="svc-name">Task runner</span>
+        <span class="svc-pill" :class="stateInfo(runnerSt).tone"><span class="dot" /> {{ stateInfo(runnerSt).label }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
+        <span class="svc-actions">
+          <span v-if="runnerRaw?.stale" class="diag-stale-note"
+                v-tooltip.bottom="'Still running ' + runnerRaw.commit">
+            <i class="pi pi-exclamation-triangle" /> old code
+          </span>
+          <span v-else-if="runnerRaw?.adopted" class="cc-muted cc-fs-xs"
+                v-tooltip.bottom="'This runner was already going when the backend started — it outlived a restart'">adopted</span>
+          <button v-if="runnerSt !== 'stopped'" class="save-btn" :disabled="svcBusy === 'runner'"
+                  @click="runnerRestart(!!runnerRaw?.busy && svcMsg.includes('again'))"
+                  v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
+            <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+          </button>
+          <span v-else class="cc-muted cc-fs-xs">Starts with the backend</span>
         </span>
       </div>
 

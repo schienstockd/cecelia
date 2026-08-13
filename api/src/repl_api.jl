@@ -122,6 +122,7 @@ function api_diagnostics(::HTTP.Request)
         napariPort    = Cecelia.NAPARI_PORT,  # child-service ports, surfaced so the panel shows which
         previewPort   = Cecelia.PREVIEW_PORT, # ports Cecelia occupies (backend `port` is above), so the
         notebooksPort = NOTEBOOKS_PORT,       # "don't bind other services here" list stays complete
+        runnerPort    = Cecelia.RUNNER_PORT,  # the detached task runner (see /api/runner/status)
     ))
 end
 

@@ -543,9 +543,16 @@ end
 
 # Each pool as {name, limit, running, queued} — the throttle sliders use `limit`, the occupancy
 # readout uses `running`/`queued`. Poll this for a live view (there is no pool:* WS event).
+# Pools are the RUNNER's when it is executing tasks — its process owns them, so its numbers are the
+# real ones and this server's are an idle copy of the same config. Report the runner's when there is
+# one; fall back to local so the panel is never blank (and is correct for the in-process path).
+# NOT a merge: two schedulers cannot share one GPU, so exactly one set of numbers is ever the truth
+# (docs/todo/TASK_RUNNER_PLAN.md → Decision 1). Adding them up would invent a budget nobody enforces.
 function api_pools_list(_req)
-    pools = sort(pool_status(), by=p->p.name)
-    200, JSON3.write(pools)
+    remote = try; _runner_enabled() ? Cecelia.runner_pools(_RUNNER) : nothing; catch; nothing; end
+    isnothing(remote) || isempty(remote) ||
+        return 200, JSON3.write(sort(remote, by = p -> String(get(p, "name", ""))))
+    200, JSON3.write(sort(pool_status(), by=p->p.name))
 end
 
 # Set a pool's concurrency limit live (Settings sliders): resize now + persist to custom.toml.
@@ -618,14 +625,29 @@ function api_pool_set(body_bytes)
     known = Set(p.name for p in list_pools())
     name in known || return 400, JSON3.write((; error = "unknown pool '$name'"))
     applied = set_pool_limit!(name, limit)
+    # The throttle has to reach the process that actually rations the slots, or the sliders move a
+    # budget nothing enforces. Applied locally too (above), so the in-process fallback path stays
+    # governed by the same numbers. Best-effort: a runner that is down must not fail the control.
+    if _runner_enabled()
+        try; Cecelia.runner_set_pool_limit(_RUNNER, name, applied)
+        catch e; @warn "Could not apply the pool limit on the runner" name limit exception = e; end
+    end
     200, JSON3.write((; name = name, limit = applied))
 end
 
 # Point-in-time snapshot of queued/running tasks (reporting only — no control).
 # The WS `task:*` / `chain:node:*` stream is the live feed; this fills in what is
 # already in-flight when a console first connects.
+# Merged, unlike pools: work genuinely lives in BOTH processes. Chains, background jobs and the
+# in-process fallback are here; module-page tasks are on the runner. A snapshot missing either half
+# is a quit/export busy-check that reads idle, and a browser that adopts only some running rows.
+# De-duplicated by id (runner wins) so a task that somehow appears in both is one row, not two.
 function api_tasks_list(_req)
-    200, JSON3.write(list_tasks())
+    local_tasks = list_tasks()
+    remote = try; _runner_enabled() ? Cecelia.runner_tasks(_RUNNER) : Any[]; catch; Any[]; end
+    isempty(remote) && return 200, JSON3.write(local_tasks)
+    seen = Set(String(get(t, "id", "")) for t in remote)
+    200, JSON3.write(vcat(remote, [t for t in local_tasks if !(t.id in seen)]))
 end
 
 # Terminal outcomes of recently finished tasks (reporting only). The companion to /api/tasks: that

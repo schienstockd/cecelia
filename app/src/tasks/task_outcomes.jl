@@ -53,6 +53,19 @@ const TASK_TS_FORMAT = dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"
 iso_utc(dt::DateTime)  = Dates.format(dt, TASK_TS_FORMAT)
 iso_utc(::Nothing)     = ""
 
+"""
+    parse_iso_utc(s) -> DateTime | nothing
+
+The inverse of `iso_utc`, for a timestamp that arrives already stamped by **another process** — the
+detached task runner relaying a frame the API server did not produce. `nothing` for `""` or anything
+unparseable, so a malformed timestamp degrades to "unknown" (and the receiver falls back to its own
+clock) rather than throwing on the relay path.
+"""
+function parse_iso_utc(s::AbstractString)::Union{DateTime,Nothing}
+    isempty(s) && return nothing
+    try; DateTime(String(s), TASK_TS_FORMAT); catch; nothing; end
+end
+
 # ── When a unit of work started RUNNING ───────────────────────────────────────
 #
 # The other fact a client needs and cannot derive, kept here for the same reason as the terminal log: the
@@ -140,7 +153,9 @@ function record_task_outcome!(task_id::AbstractString, status;
                               image_uid::AbstractString = "",
                               image_uids::AbstractVector = String[],
                               fun::AbstractString = "",
-                              pool::AbstractString = "")
+                              pool::AbstractString = "",
+                              started_at::AbstractString = "",
+                              finished_at::AbstractString = "")
     st = string(status)
     (st in TASK_TERMINAL_STATUSES && !isempty(task_id)) || return nothing
     row = (; id          = String(task_id),
@@ -151,12 +166,18 @@ function record_task_outcome!(task_id::AbstractString, status;
              # when it began running ("" if it never did, or nobody noted it) — the row is where the start
              # OUTLIVES the scheduler record, so a client that missed the live frame still gets a real
              # duration instead of timing from when it noticed the task was gone.
-             started_at  = iso_utc(task_started_at(task_id)),
+             # `started_at`/`finished_at` are normally derived here, from this process's own clock and
+             # start note. They are overridable ONLY for a frame this process did not produce: the
+             # detached task runner stamps a task's real times, and an API server relaying that frame
+             # must bank what the runner said, not when the relay happened. Re-deriving them is the
+             # elapsed-timer bug (`note_task_started!`) one process boundary further out — a task that
+             # ran for twenty minutes would be banked as having started when the relay saw it.
+             started_at  = isempty(started_at) ? iso_utc(task_started_at(task_id)) : String(started_at),
              # every image the unit touched — a set-scope task's full member list, which only ever
              # existed on this frame. A replayed frame without it under-invalidates: only the
              # representative image's plots refresh, not every member's.
              image_uids  = String[String(u) for u in image_uids],
-             finished_at = iso_utc(Dates.now(UTC)))
+             finished_at = isempty(finished_at) ? iso_utc(Dates.now(UTC)) : String(finished_at))
     lock(_OUTCOMES_LOCK) do
         i = findfirst(r -> r.id == row.id, _OUTCOMES)
         isnothing(i) || deleteat!(_OUTCOMES, i)       # re-append so the log stays in time order
