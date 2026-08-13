@@ -481,6 +481,25 @@ shows. The probability plot defaults to the version the MODEL was trained on, re
 "not trained input". Both hardcoded `default` until 2026-08-07, which fed a model trained on a denoised
 movie the raw import — a different photometric world, with nothing on screen saying so.
 
+**Both show a CENTRED CROP of the frame, not the frame.** Default 512 px per axis, chips for
+256/512/768, and a readout of the extent actually rendered beside them (a small image is shown whole,
+so the chip and the picture can legitimately differ). Measured on `zolIMa/VJy1Nx` driftCorrected
+(1044×1102), the 16-plane sheet costs **36.3 MB and 8.2 s for the whole frame against 9.2 MB and 2.4 s
+at 512 px** — per scrub of the t slider, for a picture that lands in a ~180 px grid cell. The whole
+frame also did not fit in one websocket frame, so until 2026-08-13 the panel died with
+`websocket closed with status 1009: message too large` on every image except the 418×434 one it was
+built against (see `docs/ARCHITECTURE.md` → *both ends of a resident-Python socket carry the same frame
+cap*, which is the other half of that fix).
+
+A crop rather than a downsample, and not a lower pyramid level: the panel's claim is that these are the
+planes a run is fed, a run reads level 0, and a resampled plane would answer the question about pixels
+no model ever sees. Photometry is unaffected either way — `normaliseToWhole` derives the percentiles
+over the whole level and caches them per image, so a crop renders on the same scale the full frame
+would. Centred rather than at the origin because the corner of an intravital frame is routinely outside
+the specimen. The rationale and the numbers live on `FLOW_INSPECT_MAX_PX`
+(`api/src/optical_flow_api.jl`); the offered sizes live in `frontend/src/utils/flowRegion.ts`, and their
+top is bounded by the frame cap rather than by taste.
+
 Neither shows instances: those are segmentation output, the Segment page previews them through the
 normal path, and a threshold plus a growing step hides exactly what the probability map is for.
 `predict_frame` returns `(prob_map, instances, props)` and a run discards the first

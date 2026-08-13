@@ -161,6 +161,11 @@ def _cellpose_imports():
 #:    need the bump for the reason the header gives: an adopted older worker ignores what it has
 #:    never heard of and fails with "no preview backend", which reads as a broken button rather than
 #:    a stale process.
+#:
+#: NOT bumped for the flow-inspect region crop or the websocket frame cap below. The crop lives
+#: entirely in the REQUEST (`api/src/optical_flow_api.jl` sends narrower bounds); a worker of any
+#: version answers whatever region it is handed, so an adopted protocol-10 worker answers identically.
+#: The cap is on messages the worker RECEIVES, and requests are a few hundred bytes.
 PROTOCOL = 10
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
@@ -170,6 +175,13 @@ _CELLPOSE_TRANSLATOR = 'cellpose_models_for_python (cellpose.jl)'
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
+
+# Frame cap, set explicitly on both resident-Python legs rather than left implicit — same number and
+# same reason as `WS_MAX_SIZE` in napari_bridge.py and `WS_MAX_FRAME_SIZE` in app/src/utils.jl, which
+# is where the measurement and the failure mode are written down. Only inbound requests pass through
+# this one (they are tiny); it is here so the two workers cannot disagree about the number.
+WS_MAX_SIZE = 64 * 1024 * 1024
+
 _AXES = ("X", "Y", "Z", "T")
 
 
@@ -823,7 +835,7 @@ async def handle(ws):
 
 async def main():
     import websockets
-    async with websockets.serve(handle, HOST, PORT):
+    async with websockets.serve(handle, HOST, PORT, max_size=WS_MAX_SIZE):
         print(f"preview worker ready on ws://{HOST}:{PORT}", flush=True)
         await asyncio.Future()
 

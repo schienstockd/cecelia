@@ -8,6 +8,27 @@ const UID_CHARS  = collect("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 gen_uid(n::Int=UID_LENGTH) = String(rand(UID_CHARS, n))
 
+# ── The websocket frame cap on both resident-Python legs — ONE number ─────────
+# Every message to/from the napari bridge and the preview worker is ONE JSON frame carrying a whole
+# payload: a label block, a set of AF-corrected channels, a contact sheet of PNGs. Both ends cap the
+# size of a frame they will accept, and the two caps are independent — which is how they drifted.
+#
+# The Python side was raised to 64 MiB long ago (`WS_MAX_SIZE`, napari_bridge.py) with a comment saying
+# the 1 MiB default "is not a graceful degradation — the server rejects the frame and closes the
+# connection, so the preview would fail on big images only". Every word of that is true of the JULIA
+# side too, and nobody set it: HTTP.jl's client default is 16 MiB, so the backend was quietly the
+# narrow leg. Measured on `zolIMa/VJy1Nx` driftCorrected (1044x1102): a whole-frame flow-metrics sheet
+# is 16 colour-mapped PNGs, 36.3 MB of JSON in ONE frame, and the read died with
+# `websocket closed with status 1009: message too large`. On the 418x434 image it had been developed
+# against the same reply is ~1.5 MB — so it worked on exactly one image, and looked broken everywhere.
+#
+# So: one constant, both directions, asserted equal to the Python one by the
+# "resident python legs agree on their frame cap" testset. This is a TRANSPORT cap, not a budget —
+# a producer that can emit tens of MB should still bound what it sends (see
+# `FLOW_INSPECT_MAX_PX` in `api/src/optical_flow_api.jl`); the cap is what turns a payload nobody
+# bounded into a clean failure instead of a silent one.
+const WS_MAX_FRAME_SIZE = 64 * 1024 * 1024
+
 # ── Durable state writes — ONE mechanism ──────────────────────────────────────
 # `write_atomic` is THE way to write any durable state file — ccid.json, project.json, the
 # gating/QC/spatial/board sidecars, chain templates + run.json, custom.toml, the lab log, a Pluto

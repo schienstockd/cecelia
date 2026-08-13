@@ -13,6 +13,7 @@
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import { debouncedLatest, type RunState } from '../utils/debouncedLatest'
+import { flowRegionLabel, type FlowRegion } from '../utils/flowRegion'
 import { PREVIEW_DEBOUNCE_MS } from '../utils/taskPreview'
 import { useDelayedLoading } from './useDelayedLoading'
 
@@ -27,6 +28,8 @@ export interface FlowPlaneState {
   t?: number
   z?: number | null
   colormap?: string
+  /** XY pixels per axis, centred — see `FLOW_REGION_OPTIONS`. */
+  regionSize?: number
 }
 
 export interface FlowRequest {
@@ -37,6 +40,8 @@ export interface FlowRequest {
   t: number
   z: number | null
   colormap: string
+  /** XY pixels per axis, centred on the frame. Always sent, so what is on screen says what it is. */
+  regionSize: number
   /** Temporal scales — the metric sheet's own choice; omitted for a model, which carries its own. */
   temporalScales?: number[]
   /** A vault `.pt` name. Present ⇒ the route answers with the probability map instead. */
@@ -57,6 +62,9 @@ export function useFlowPlanes(
 ) {
   const planes = ref<Plane[]>([])
   const extent = ref({ t: 1, z: 1 })     // slider bounds, from the image's own geometry
+  // The crop the worker rendered, echoed back in the reply. Held here rather than derived from the
+  // request because the server clamps it to the axis length — see `flowRegionLabel`.
+  const region = ref<FlowRegion>(null)
   const runState = ref<RunState>('idle')
   const loading = computed(() => runState.value !== 'idle')
   const starting = ref(false)
@@ -84,6 +92,7 @@ export function useFlowPlanes(
       if (!d.starting) {
         starting.value = false
         planes.value = d.planes ?? []
+        region.value = d.region ?? null
         return
       }
       if (waited >= MAX_WAIT_MS) throw new Error('Preview worker did not start.')
@@ -147,5 +156,8 @@ export function useFlowPlanes(
   // appearing before the user concludes the control is dead.
   const showSpinner = useDelayedLoading(loading)
 
-  return { planes, extent, runState, loading, showSpinner, starting, error, load }
+  /** `"512 × 512"` — the crop on screen, so the panel never implies it is showing the whole frame. */
+  const regionLabel = computed(() => flowRegionLabel(region.value))
+
+  return { planes, extent, regionLabel, runState, loading, showSpinner, starting, error, load }
 }

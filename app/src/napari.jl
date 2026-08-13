@@ -30,7 +30,9 @@ NapariViewer(; port::Int=NAPARI_PORT) = NapariViewer(port, nothing)
 
 function send(v::NapariViewer, msg::Dict)::Dict{String,Any}
     result = Dict{String,Any}()
-    HTTP.WebSockets.open("ws://localhost:$(v.port)") do ws
+    # `maxframesize` is the bridge's `WS_MAX_SIZE` in the other direction — see `WS_MAX_FRAME_SIZE`
+    # (utils.jl) for why both ends need it set and what the default silently did.
+    HTTP.WebSockets.open("ws://localhost:$(v.port)"; maxframesize = WS_MAX_FRAME_SIZE) do ws
         HTTP.WebSockets.send(ws, JSON3.write(msg))
         result = JSON3.read(HTTP.WebSockets.receive(ws), Dict{String,Any})
     end
