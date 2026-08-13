@@ -34,6 +34,27 @@
         { "label": "Phase", "value": "phase" }
       ],
       "tip": "Normalisation of the phase cross-correlation"
+    },
+    {
+      "key": "driftEstimator",
+      "label": "Estimator",
+      "type": "select",
+      "default": "multiLag",
+      "options": [
+        { "label": "Multi-lag", "value": "multiLag" },
+        { "label": "Chain",     "value": "chain" }
+      ],
+      "tip": "Multi-lag compares non-adjacent frames too, so one bad frame cannot offset the rest"
+    },
+    {
+      "key": "driftMaxLag",
+      "label": "Max frame gap",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 8,
+      "step": 1,
+      "tip": "How far apart two frames may be and still be compared — higher is more robust but slower"
     }
   ]
 }

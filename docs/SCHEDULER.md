@@ -136,6 +136,42 @@ locks (`_POOLS_LOCK`, `_TASKS_LOCK`) and merged outside both — never nest them
 `pool_status()`; the `PoolThrottle` popover polls it (~1.5 s) for the "running / limit" readout + bar
 under each slider. There is no `pool:*` WS event — occupancy is poll-only.
 
+### Thread budgets — a pool slot is not a core budget
+
+A pool limit caps how many tasks run at once. It says nothing about how many **threads** each one
+takes, and the default answer is "all of them": any numpy/scipy call reaching BLAS grabs every core,
+so `cpu` at its default limit of 20 means twenty tasks each asking for 32 threads on a 32-core box.
+
+`run_py` therefore sets **`OPENBLAS_NUM_THREADS`** (`BLAS_THREADS_PER_TASK`, currently 4) on every
+Python task it launches. That is the only layer that can: the variable is read when the child imports
+numpy, so nothing inside Python can change it afterwards — and a `threadpoolctl` context manager only
+bounds the pools already *loaded* when it is entered, which is a genuine hole (clustering loads a
+second BLAS after the first is capped).
+
+**Bounded is the default because unbounded is not neutral.** Measured on a 32-core box, nothing gets
+faster with all cores and one thing gets much slower:
+
+| workload | 32 threads | 4 threads |
+|---|---|---|
+| drift estimation (`kSUFux/mkh3Tu`) | 56.3 s (309.7 s ×4 concurrent) | **31.8 s (70.7 s ×4)** |
+| scanpy neighbors + leiden + umap | 44.6 s | 44.0 s — flat, not BLAS-bound |
+| spatial KDTree neighbour graph | 0.14 s | 0.14 s — not BLAS at all |
+| dense SVD 20000×400 | 2.30 s | **1.28 s** |
+| dense GEMM 4000² | 1.04 s | 0.91 s — memory-bound at this size |
+
+Four concurrent drift tasks *uncapped* (309.7 s) are slower than running them one after another
+(4 × 56.3 = 225 s) — past a point the threads fight for cache rather than work.
+
+**`OPENBLAS_NUM_THREADS` only — deliberately not `OMP_NUM_THREADS`.** That one also throttles torch's
+intra-op parallelism, and torch on CPU is the one workload measured that genuinely wants the cores: a
+cellpose-shaped conv stack goes 0.19 s → 0.34 s at 4 threads. Capping OpenBLAS alone leaves torch
+untouched while drift keeps the full win. An MKL-backed numpy is unaffected by this variable and
+simply keeps the old behaviour — no regression, no benefit.
+
+A task that has **measured** a need for more raises it locally with
+`cecelia.utils.cpu_utils.limit_blas_threads`. Do not raise it on a hunch; the table above is what
+"obviously wants all cores" actually looks like when measured.
+
 ### Queue visibility — :queued vs :running
 
 A node that is waiting for a pool slot and a node actively executing are **different states**, and
@@ -716,7 +752,7 @@ make_chain(proj, "my-pipeline", [
     chain_node("importImages.omezarr"),
     chain_node("cleanupImages.cellposeCorrect"; resource_pool="gpu",
                params=Dict("model" => "cyto2")),
-    chain_node("testTasks.setTask"),                # picnic node — "set" comes from its spec
+    chain_node("testTasks.set_task"),                # picnic node — "set" comes from its spec
 ])
 
 # Or build manually (identical result, more control over node IDs)
@@ -753,9 +789,9 @@ run = load_chain_run(proj, run_id)
 | `app/src/tasks/scheduler.jl` | Resource pools + dispatchers, `TaskRecord`/`_TASKS`, `run_task`, cancel registry |
 | `app/src/tasks/chain.jl` | Chain data model, executor, barriers, resume logic, `chain_node`/`make_chain` REPL helpers |
 | `app/src/events.jl` | Package-level pub/sub event bus |
-| `app/src/tasks/testTasks/imageTask.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
-| `app/src/tasks/testTasks/setTask.jl` | Mock set-scope task |
-| `app/src/tasks/testTasks/incrementalPlotTask.jl` | Mock incremental plot task |
+| `app/src/tasks/testTasks/image_task.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
+| `app/src/tasks/testTasks/set_task.jl` | Mock set-scope task |
+| `app/src/tasks/testTasks/incremental_plot_task.jl` | Mock incremental plot task |
 | `app/test/runtests.jl` | Pool, chain-run, resume, barrier-policy and job-completion testsets |
 | `api/src/routes.jl` | `api_chains_list`, `api_chains_get`, `api_chains_save` — chain CRUD over HTTP |
 | `frontend/src/modules/ChainModule.vue` | Whiteboard page: Edit tab (palette, VueFlow canvas, node config) + Live tab (real-time task grid) |

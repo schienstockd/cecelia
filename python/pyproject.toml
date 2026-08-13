@@ -36,6 +36,10 @@ dependencies = [
     "scipy>=1.17",
     "scikit-image>=0.24",
     "tqdm",
+    # cecelia.utils.cpu_utils bounds the BLAS thread pool with it. Was transitive-only, which
+    # is the same trap tifffile/tqdm were in: it works here and breaks for a consumer who
+    # happens not to pull it in.
+    "threadpoolctl",
 ]
 
 # The installable `cecelia` package is the IO LIBRARY only: `cecelia` + `cecelia.utils` (+ writers,

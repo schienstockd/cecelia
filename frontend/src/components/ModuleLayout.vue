@@ -69,6 +69,11 @@ const props = withDefaults(defineProps<{
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
   plotsLabel?:  string
   noSetHint?:   string
+  // NO PAGE USES THESE TODAY, and that is the intended state — see docs/UI.md → First-use hints. The
+  // four that existed were pipeline ordering and prerequisites, which the guide prereqs answer LIVE;
+  // a static sentence asserting "segment first" is wrong for the user who already did. The mechanism
+  // stays so the next real case reuses it instead of hand-rolling a callout. The bar: an interaction
+  // affordance with no other surface, that no live check could answer.
   hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
   hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
   rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
@@ -367,6 +372,7 @@ const visibleUids = computed<string[]>(() =>
           <!-- Plot canvas — ONE consistent, collapse-persisted section for every module page.
                ModuleLayout owns the wrapper so no module can forget it or diverge. -->
           <CollapsibleSection v-if="$slots.plots && activeSet"
+            data-guide="layout.plotsSection"
             :label="plotsLabel" max-height="none"
             :storage-key="`cc-plots-open:${module ?? 'default'}`">
             <slot name="plots"

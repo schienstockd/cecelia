@@ -30,9 +30,17 @@ export interface WhatNewCard {
   publishedAt?: string      // ISO date on update cards
   sketchAnimation?: { id: string }   // feijoa sketch id; WhatNewCard resolves via `sketches[id]`
   statsAnnotation?: unknown           // slot for STATS_ANNOTATIONS_PLAN
+  // An in-app guide covering this card's topic (`lib/guides` id). Renders a "Show me" button that
+  // starts the bubble walkthrough and closes this dialog. This is why guide steps do NOT restate a
+  // tip's prose: the tip is the summary, the guide is the click-through, and the topic is described
+  // in exactly one place (docs/todo/GUIDE_SYSTEM_PLAN.md → D7).
+  guideId?: string
 }
 
-export const CECELIA_ISSUES_URL = 'https://github.com/schienstockd/cecelia/issues/new'
+// Moved to `lib/links.ts` — there are five of these literals now (here, the dialog footer, and the
+// header's two) and a repo rename is pending (docs/SHIPPING.md → Repo swap). Re-exported so the
+// card's import does not have to know which module a URL lives in.
+export { CECELIA_NEW_ISSUE_URL, CECELIA_RELEASES_URL } from './links'
 
 // Shared modal state — one dialog mounted in App.vue reads this. GitHub Flavored Markdown is on
 // by default in marked ≥5, so task lists, tables, strikethrough all work. Source is trusted (our

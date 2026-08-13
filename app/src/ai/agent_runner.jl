@@ -441,9 +441,17 @@ function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_p
     output = read(out, String)
     wait(proc)
     close(timer)
-    if proc.exitcode != 0 && !occursin("\"result\"", output)
-        return AgentResult(false, "", 0, 0, "",
-                           isempty(strip(output)) ? "agent exited $(proc.exitcode)" : output)
+    # `exitcode != 0` alone misses the case this function most needs to catch: the timeout above kills
+    # the process, and libuv reports exitcode 0 for a signal-killed child — so a timed-out agent looked
+    # like a clean exit and its TRUNCATED output was handed to the parser. Check the signal too (the
+    # same rule as `run_py`; see CLAUDE.md → *Task system*).
+    killed = proc.termsignal != 0
+    if (proc.exitcode != 0 || killed) && !occursin("\"result\"", output)
+        # Name the signal rather than the exit code when it was killed — "agent exited 0" for a
+        # timeout is the same misreport in the error string that the check above just fixed.
+        why = killed ? "agent killed (signal $(proc.termsignal); timeout was $(timeout_s)s)" :
+                       "agent exited $(proc.exitcode)"
+        return AgentResult(false, "", 0, 0, "", isempty(strip(output)) ? why : output)
     end
     _parse_claude_result(output)
 end

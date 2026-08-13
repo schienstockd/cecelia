@@ -175,7 +175,16 @@ emit **advisory** findings about the output it produced.
   `qc = read_all_qc(img)`; `frontend/src/lib/qc.ts` aggregates into a badge (ImageTable; MetadataPanel +
   whiteboard are later phases).
 - **First producer:** `cleanupImages.driftCorrect` — persists the applied per-frame drift and flags a
-  large inter-frame jump (`drift.jump`) or abnormal XY canvas growth (`drift.canvas_expansion`).
+  registration whose own measurements contradict each other (`drift.unreliable`), frames it could not
+  register at all (`drift.unregistered_frames`), a large inter-frame jump (`drift.jump`) or abnormal
+  XY canvas growth (`drift.canvas_expansion`).
+- **A finding is worth more when it can't be fooled by the thing it is checking.** The first three
+  drift findings above read the *trajectory*, so they can only compare it against an expectation of
+  how much drift is normal — which is why a movie that genuinely moves a lot looks like a broken one.
+  `drift.unreliable` instead compares the registration against **itself** (`shift(a→b) + shift(b→c)`
+  must equal `shift(a→c)`), needs no ground truth, and separated every movie on this machine that
+  registered (0.13–0.39 px RMS) from the one that did not (24 px) by ~60×. Prefer a self-consistency
+  check over a threshold on the answer whenever the task can produce one.
 
 (Where the data *is*, as opposed to how good it is, is not a QC concern — see
 *Valid box* below.)
@@ -188,7 +197,7 @@ Full design + phased plan: [`docs/todo/QC_PLAN.md`](todo/QC_PLAN.md).
 
 A task may write a canvas larger than its data. Drift correction expands the canvas to hold the
 whole trajectory and drops each frame into a **zeroed** canvas at that frame's own offset, so the
-rest is padding — 38–64% on real movies here, one going from 8 z-planes to 22. NGFF has no way to
+rest is padding — 3–56% of the z planes on real movies here, one going from 8 to 18. NGFF has no way to
 say where the data is, so without this a consumer either treats padding as background (it will skew
 any background estimate, and it borders real signal) or pays to process it.
 
@@ -213,15 +222,55 @@ Design points, each of which was a candidate mistake:
   that can disagree. (Same discipline as *Calibration — three copies, one stamp* in `CLAUDE.md`.)
 - **Level-0 coordinates,** rescaled on read by the same `DOWNSAMPLED_AXES` rule the NGFF scale uses;
   start floors and stop ceils so a level never crops real data.
-- **Only drift correction writes one today.** Deliberately not a plugin framework: the generality
-  that pays is on the *read* side, where every consumer benefits, not the write side, where there
-  is one producer.
+- **One producer, but every derived store must carry it.** Drift correction is the only task that
+  *computes* a box. It is not the only one that has to think about one — see the propagation rule
+  below.
 
 **Two traps.** The box is per timepoint, and each frame sits at its own offset *because* the
 correction aligned them in the shared canvas — cropping each frame to its own box puts them back out
 of register. Crop to a common region or not at all. And the intersection across all timepoints can
 be **empty**, which is not hypothetical: it is true for 4 of the 9 movies in `kSUFux`, where the
 z-drift exceeded the 8-plane stack depth.
+
+### Propagating it — the rule for anyone writing a derived store
+
+**A box that does not survive the pipeline buys nothing.** Drift correction writes one; what people
+then segment is a *smoothed* or *AF-corrected* version of that store. If the box stops there, every
+consumer sees "all valid" and the padding is processed anyway — which is exactly what happened:
+`af_correct` and `cellpose_correct` dropped it silently, and `smooth` carried it via
+`read_valid_box(path)`, which on a per-frame box returns the **union over frames** — nearly the whole
+canvas once the window drifts. The box survived in name while losing the only thing that made it
+useful.
+
+So there is **one call**, and it is unconditional:
+
+```python
+zarr_utils.carry_valid_box(src, staging)      # after the store exists; returns whether it carried
+```
+
+Never `read_valid_box` + `write_valid_box` — that is the union bug. `carry_valid_box` preserves
+per-frame boxes as per-frame, and **self-refuses when the geometry moved**: it compares only the
+axes the box speaks about, so a label store that legitimately dropped C still carries, while a crop,
+a resize or a Z-MIP does not. A per-frame box additionally needs T at the same length, or the frame
+index it is keyed by means nothing. That is why the caller never branches on its own mode —
+`segment.branching` makes the same call whether it keeps Z in 3D or flattens it, and gets the right
+answer both times.
+
+**Absent is always safe.** A consumer reads `None` as "all valid" and merely does more work, never
+the wrong work. The failure mode this guards against is not danger, it is *silence* — so silence is
+what is forbidden: a runner that opens a `staged_store` must call `carry_valid_box`/`write_valid_box`
+or carry a `VALID-BOX-EXEMPT: <why>` comment. Enforced by
+`python/cecelia/tests/test_valid_box_propagation.py`, which also fails the read-without-timepoint
+union pattern outright.
+
+### Consuming it
+
+Narrowing to the box belongs at the boundary the work goes through, once, not in each algorithm
+behind it — segmentation does it in `SegmentationUtils.predict_from_zarr`, so every backend gets it
+by implementing nothing (`docs/SEGMENTATION.md` → *Skipping the padding a drift correction added*).
+The rule that boundary has to hold: **if it hands out several arrays for the same unit of work, all
+of them narrow together.** Segmentation hands a temporal backend both a tile and a window through
+time, read from different places, and narrowing one of them was enough to break it.
 
 ---
 

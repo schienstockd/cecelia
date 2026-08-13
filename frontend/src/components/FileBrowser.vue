@@ -79,7 +79,7 @@ async function navigate(path: string) {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     error.value = msg
-    log.error(`File browser: ${msg}`, { source: 'import' })
+    log.error(`File browser: ${msg}`, { source: 'manageImages' })
   } finally {
     loading.value = false
   }
@@ -174,6 +174,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
             <tr>
               <th class="col-chk">
                 <input v-if="mode === 'image'" type="checkbox"
+                  data-guide="filebrowser.selectAll"
                   :checked="allSelected"
                   :indeterminate="someSelected"
                   @change="selectAll"
@@ -261,7 +262,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           v-tooltip.top="'Use this folder'">
           <i class="pi pi-check" /> Use this folder
         </button>
-        <button v-else class="cc-btn cc-btn-primary"
+        <button v-else class="cc-btn cc-btn-primary" data-guide="filebrowser.confirm"
           :disabled="selected.size === 0" @click="confirm"
           v-tooltip.top="mode === 'bundle'
             ? 'Import the selected bundle'
@@ -302,8 +303,12 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .fb-state { display: flex; align-items: center; gap: 0.5rem; padding: 2rem; }
 .fb-state.error { color: #fca5a5; flex-direction: column; align-items: flex-start; }
 
-/* table */
-.fb-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-md); }
+/* table
+   `table-layout: fixed` is load-bearing: with the default `auto`, `width: 100%` is only a MINIMUM and
+   the table grows to the min-content width of its widest cell — so one long filename pushed the table
+   past the modal and the body grew a horizontal scrollbar (Dominik, 2026-08-12). Fixed layout honours
+   the three explicit column widths below and gives the name column whatever is left. */
+.fb-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--cc-fs-md); }
 .fb-table thead th {
   text-align: left; font-size: var(--cc-fs-xs); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
@@ -314,7 +319,11 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
   background: var(--cc-surface-1);
 }
 .col-chk  { width: 36px; }
-.col-name { flex: 1; }
+/* no `flex` here — it was dead (a table cell is not a flex item), which is why the intended flexible
+   sizing never happened. Under fixed layout the name column simply takes the remainder.
+   `overflow-wrap: anywhere` is what stops a long unbroken name (no spaces or hyphens to break at)
+   from widening the table: unlike `break-word`, it also shrinks the cell's min-content width. */
+.col-name { overflow-wrap: anywhere; }
 .col-type { width: 70px; }
 .col-size { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
 

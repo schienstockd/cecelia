@@ -219,6 +219,70 @@ Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice +
 
 ---
 
+### Skipping the padding a drift correction added
+
+A drift-corrected canvas holds each frame at its own offset and zeroes the rest, and the whole
+z-stack goes to the model in **one** call (cellpose stitches across z internally) — so the padding
+costs real GPU time and produces nothing. Measured 2026-08-12 across the stores on this machine that
+carry a valid box: **24.0% fewer plane-frames** segmented overall, **55.6%** on the worst image
+(8 valid planes in an 18-plane canvas, `kSUFux/PsD5Xc`).
+
+Two qualifications on those numbers, both of which cost more than the difference between them:
+
+- **They are per-store, and 8 of the 25 corrected stores here have no valid box** — every `4kS67f`
+  one, all corrected before the box existed. `read_valid_box` returns `None` for them, so the skip
+  is a no-op and 20,493 plane-frames are still segmented as padding. Across *all* corrected stores
+  the saving is therefore **21.6%**, not 24.0%. A store gets the box by being re-corrected; there is
+  no backfill (only one of the eight still has its `drift_shifts.json`, and recovering the rest
+  would mean deriving the box from pixels).
+- **They moved when the drift estimator improved, and will move again.** The figures above were
+  28.2% / 63.6% before `multiLag` landed (#524) — a better trajectory needs less canvas, so the
+  padding it leaves behind shrinks and the skip has less to skip. Padding fell on 14 of the 17
+  boxed stores, held on 3, and rose on one 7-frame image. **Treat these as a snapshot of this
+  machine's data, not a property of the feature.**
+
+Per timepoint the frame is narrowed to that frame's valid z span (`docs/ARCHITECTURE.md` → *The valid
+box*); tiling, inference, post-processing and nuc/cyto matching all run unchanged on the reduced
+stack. Only the **write** puts it back at its z offset, so the label store keeps its full shape with
+the skipped planes zero.
+
+**This is a property of the base class, not of cellpose.** It lives in
+`SegmentationUtils.predict_from_zarr` — the one entry point every backend goes through — so a
+subclass gets the skip by implementing `predict_slice` and nothing else. `CellposeUtils` and
+`CoastalUtils` both do; so does any custom module that subclasses the base.
+
+- **A skip, never a crop.** Each frame sits at its own offset *because* the correction aligned them
+  in a shared canvas; cropping per frame would put them back out of register.
+- **Safe by construction.** A valid box is a contiguous `[start, stop)`, so narrowing z to it can only
+  drop LEADING/TRAILING planes. Interior planes inside the span survive, and the dropped ones are
+  all-zero — no labels for `stitch_threshold` to link across, so the stitching semantics inside the
+  span are unchanged rather than assumed to be.
+- **Ambiguity widens, never narrows** (`_valid_z_span`): no box, no Z, a degenerate range, or a span
+  under two planes all fall back to the whole stack. One plane is not meaningfully 3D. Missing cells
+  is a real cost; doing the work anyway is only the status quo.
+- **The label store records the span it segmented**, so a consumer knows those planes are zero
+  because nothing *ran* there, not because nothing was *found*.
+- **Every array for one `predict_slice` call is narrowed together.** A temporal backend
+  (`TEMPORAL_RADIUS > 0`, i.e. coastal) is also handed the tile through time, and that window is read
+  from the full store rather than from the timepoint already in RAM — so the narrowing has to be
+  applied to it as well. It was not, at first: the tile arrived at the valid span and the window at
+  full depth, and since coastal predicts *from the window*, its mask came back the wrong depth and
+  the write raised a broadcast error. So coastal was broken on any drift-corrected 3D image between
+  the skip landing and this fix. Pinned by `TemporalWindowMatchesTheTileTest`.
+- **`clearDepth` changes meaning — deliberately.** It clears labels touching the first and last z
+  slice of the array it is given. Before the skip that array was the whole padded canvas, so those
+  faces were padding: all zero, nothing to clear, and `clearDepth` was a silent **no-op** on every
+  drift-corrected image. With the skip it acts on the real top and bottom of the *acquired* stack,
+  which is what the option means. Results therefore change for anyone running `clearDepth` on
+  drift-corrected data — cells the padding used to shield are now cleared. Pinned by
+  `ClearDepthMeetsTheSkipTest`.
+- **Normalisation is unaffected.** `normaliseToWhole` computes its percentile once from the full
+  store *before* the timepoint loop, and it already excludes background zeros — so the padding never
+  contributed to it and narrowing the stack cannot move it.
+
+Nothing changes for a store that never padded — `read_valid_box` returns `None` and the whole stack
+is segmented, which is most images.
+
 ## Parameters (cellpose.json → cellpose.jl → cellpose.py)
 
 | Param | Type | Default | Notes |

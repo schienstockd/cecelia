@@ -1,0 +1,221 @@
+// The shared shape behind every "run a function on some images" guide — drift correct, segment,
+// track, and whatever module page comes next (plan D8).
+//
+// These pages are the SAME five moves: pick the set → tick the images → choose the function in
+// `TaskRunner`'s dropdown → set the parameters → Run → watch the task rail. That skeleton lives in
+// `ModuleLayout` + `TaskRunner`, i.e. two files and five anchors, shared by every module page. So the
+// guide is a builder, not three hand-written step lists — writing the fourth by hand is how a pattern
+// becomes four diverging variants (docs/UI.md → generalise by scenario, not per widget).
+//
+// What a caller supplies is only what is genuinely per-guide: which page, which function, what its
+// parameters mean, and what to do with the output afterwards.
+
+import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from './types'
+import { PREREQ } from './prereqs'
+
+// The reusable half: the steps that drive `ModuleLayout` + `TaskRunner`. Exported on its own because
+// the IMPORT guide needs it too — "Add images" only registers rows, and converting them to OME-Zarr is
+// an ordinary task run (`importImages.omezarr`) through this same furniture. Six module-task guides plus
+// import is well past the point of hand-writing a seventh copy.
+export interface TaskRunStepsOpts {
+  route: string
+  taskKey: string                  // the `task` key in the JSON spec — what the <select> holds
+  funName: string                  // 'segment.cellpose' — what a task in the rail reports
+  funLabel: string                 // 'Cellpose segmentation' — the dropdown's own wording
+  // ModuleLayout's `module=` prop, which is what scopes the image-table SELECTION
+  // (`getImageSelection(scope, setUid)`). Deliberately NOT called `module`: a page may pass a
+  // different key to ModuleLayout than to TaskRunner — BehaviourModule uses `behaviourAnalysis` for the
+  // layout and `behaviour` for the runner — and reading the wrong one gives a permanently empty
+  // selection, i.e. a gate that never fires and a step the user must click past. Pinned per guide by
+  // `guides.test.ts` against the page's own SFC.
+  selectionModule: string
+  waitLabel: string                // gerund for the parked bubble: 'Segmenting'
+  funHint?: string[]               // bullets on the function-choice step — why THIS one, when the
+                                   // dropdown holds a near-identically named neighbour
+  selectHint?: string[]            // bullets for the image-selection step
+  selectTitle?: string             // override the image-selection step's heading
+  selectText?: string              // …and its sentence
+  params?: string[]                // bullets naming the parameters that matter
+  withSet?: boolean                // include the "check the active set" step (default true)
+  // Insert a "preview it first" step before Run. Only for a task the backend declares previewable
+  // (`task_previewable`) — a composite inherits it from any step, which is how segment+measure
+  // qualifies. The control is `v-if`'d out unless exactly ONE image is selected, so the step carries a
+  // reveal for that case rather than pointing at a button that isn't there.
+  withPreview?: boolean
+}
+
+export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
+  id: string
+  title: string
+  group: string
+  icon: string
+  summary: string
+  navLabel: string                 // the sidebar entry's wording, so the bubble can name it
+  prereqs?: Prereq[]
+  intro?: string                   // one sentence on what this function is FOR
+  after?: GuideStep[]              // what to do with the output (QC, napari, the next page)
+}
+
+// Every use of the task-run block, for the ratchet in `guides.test.ts` — it checks each one's
+// `selectionModule` against the `<ModuleLayout module="…">` in that route's own SFC. Registered HERE
+// rather than in `moduleTaskGuide` so a guide that splices the block in directly (the import guide's
+// convert phase) is covered too; a new caller is checked without registering it anywhere.
+export const TASK_RUN_USES: { route: string; selectionModule: string; taskKey: string }[] = []
+
+export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
+  TASK_RUN_USES.push({ route: o.route, selectionModule: o.selectionModule, taskKey: o.taskKey })
+
+
+  // A control in the functions panel can be unusable three different ways, each needing DIFFERENT
+  // advice — which is why this is a list of causes rather than one reveal (plan D5):
+  //
+  //   1. the whole right panel is folded away        → the panel handle
+  //   2. the control isn't in the DOM at all         → whatever creates it (see `revealParams`)
+  //   3. TaskRunner's own pane half is collapsed     → the pane toggles
+  //
+  // (3) is easy to miss and was: `.task-runner.pane-bottom` hides the function select, the parameters
+  // AND the Run button, while `.pane-top` hides the task list. Pointing at the panel handle in that
+  // state is worse than useless — clicking it hides everything (Dominik, 2026-08-12).
+  const revealsFor = (anchorId: string): Reveal[] => [
+    {
+      needed: c => c.rightPanelCollapsed,
+      anchor: 'layout.rightPanelHandle',
+      text: 'The functions panel is folded away — open it with this handle.',
+      placement: 'left',
+    },
+    {
+      needed: c => c.anchorExists(anchorId) && !c.anchorReachable(anchorId),
+      anchor: 'layout.paneBar',
+      text: 'That half of the panel is collapsed — these toggles bring it back.',
+      placement: 'left',
+    },
+  ]
+
+  // The parameters block only exists once a function is chosen (`v-if="taskDef"` in TaskRunner), so
+  // "not on screen" there means "nothing selected yet" — point back at the dropdown, not at a panel.
+  const revealParams: Reveal[] = [
+    revealsFor('task.params')[0],
+    {
+      needed: c => !c.anchorExists('task.params'),
+      anchor: 'task.fun',
+      text: 'Choose a function first — its parameters appear here once you do.',
+      placement: 'left',
+    },
+    revealsFor('task.params')[1],
+  ]
+
+  const setStep: GuideStep[] = o.withSet === false ? [] : [
+    {
+      anchor: 'set.select',
+      route: o.route,
+      placement: 'bottom-start',
+      text: 'Check the active set is the one you mean — functions only see this set.',
+      reveal: {
+        // With no sets there is nothing to select — a "pick a set" bubble pointing at an empty
+        // dropdown is a dead end, so point at "New set" until one exists (Dominik, 2026-08-12).
+        needed: c => c.setCount === 0,
+        anchor: 'set.new',
+        text: 'No sets yet — create one first. A set groups the images you treat together.',
+        placement: 'bottom-start',
+      },
+      when: c => c.setUid !== null,
+    },
+  ]
+
+  return [
+    ...setStep,
+    {
+      anchor: 'images.table',
+      route: o.route,
+      placement: 'top-start',
+      title: o.selectTitle ?? 'Tick the images to run on',
+      text: o.selectText ?? 'Selection is per page, and it is remembered when you navigate away.',
+      bullets: o.selectHint ?? ['Tick as many as you like — one task is queued per image.'],
+      when: c => c.selection(o.selectionModule).length > 0,
+    },
+    {
+      anchor: 'task.fun',
+      route: o.route,
+      placement: 'left',
+      title: 'Choose the function',
+      text: `Pick "${o.funLabel}" from the dropdown.`,
+      bullets: o.funHint,
+      reveal: revealsFor('task.fun'),
+      when: c => c.anchorValue('task.fun') === o.taskKey,
+    },
+    {
+      anchor: 'task.params',
+      route: o.route,
+      placement: 'left',
+      title: 'Set the parameters',
+      text: 'These are the settings worth getting right before you run.',
+      bullets: o.params,
+      reveal: revealParams,
+    },
+    ...(o.withPreview ? [{
+      anchor: 'task.preview',
+      route: o.route,
+      placement: 'left' as const,
+      title: 'Preview before you commit',
+      text: 'This runs the real compute over just the region napari is showing.',
+      bullets: [
+        'Seconds instead of minutes — the way to judge the diameter and channels.',
+        'Open the image in napari first; the preview follows what it shows.',
+      ],
+      reveal: [
+        revealsFor('task.preview')[0],
+        {
+          needed: (c: GuideCtx) => !c.anchorExists('task.preview'),
+          anchor: 'images.table',
+          text: 'Preview needs exactly one image selected — tick a single row.',
+          placement: 'top-start' as const,
+        },
+        revealsFor('task.preview')[1],
+      ],
+    }] : []),
+    {
+      anchor: 'task.run',
+      route: o.route,
+      placement: 'left',
+      text: 'Happy with the preview? Run it — one task per selected image.',
+      reveal: revealsFor('task.run'),
+      clickAnchor: true,
+    },
+    {
+      anchor: 'task.list',
+      route: o.route,
+      placement: 'left',
+      title: 'Watch it here',
+      text: 'Every run appears in this rail with its live log, progress and a cancel button.',
+      bullets: [
+        'You can leave the page — runs are server-side, not tab-side.',
+        'Click a row to read its log.',
+      ],
+      reveal: revealsFor('task.list'),
+      awaitTask: { fun: o.funName, label: o.waitLabel },
+    },
+  ]
+}
+
+// A whole guide for a module page: get there, then run the task, then look at what came out.
+export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
+  return {
+    id: o.id,
+    title: o.title,
+    group: o.group,
+    icon: o.icon,
+    summary: o.summary,
+    prereqs: o.prereqs ?? [PREREQ.projectOpen, PREREQ.imageImported],
+    steps: [
+      {
+        anchor: `nav:${o.route}`,
+        placement: 'right',
+        title: o.navLabel,
+        text: o.intro ?? `Open the ${o.navLabel} page.`,
+        clickAnchor: true,
+      },
+      ...taskRunSteps(o),
+      ...(o.after ?? []),
+    ],
+  }
+}

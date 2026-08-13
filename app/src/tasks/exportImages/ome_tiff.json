@@ -1,0 +1,51 @@
+{
+  "task": "exportOmeTiff",
+  "fun_name": "exportImages.ome_tiff",
+  "label": "Export as OME-TIFF",
+  "category": "Export",
+  "env": ["local"],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Version",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "filepaths",
+      "required": true,
+      "tip": "Which image version to export"
+    },
+    {
+      "key": "channels",
+      "label": "Channels",
+      "type": "channelSelection",
+      "multiple": true,
+      "default": [],
+      "tip": "Channels to write; none selected exports all"
+    },
+    {
+      "key": "zMip",
+      "label": "Max-project Z",
+      "type": "bool",
+      "default": false,
+      "tip": "Collapse z to one plane"
+    },
+    {
+      "key": "timepoint",
+      "label": "Timepoint",
+      "type": "int",
+      "default": -1,
+      "min": -1,
+      "tip": "Single frame to export; -1 exports all"
+    },
+    {
+      "key": "outDir",
+      "label": "Destination",
+      "type": "dirPath",
+      "default": "",
+      "placeholder": "Default export folder",
+      "tip": "Folder to write into; empty uses the default export folder"
+    }
+  ]
+}

@@ -66,7 +66,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
   {
     heading: 'Data',
     items: [
-      { to: '/import',   label: 'Import',   icon: 'pi-upload',   tip: 'Import microscopy images into your project.', requiresProject: true },
+      { to: '/manage-images', label: 'Manage images', icon: 'pi-upload', tip: 'Add, organise and export images.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
       { to: '/optical-flow', label: 'Optical flow', icon: 'pi-sync', tip: 'Train and manage optical-flow segmentation models.', requiresProject: true },
@@ -150,7 +150,7 @@ function isNavDisabled(item: NavItem): boolean {
   <nav class="sidebar" v-show="!settings.sidebarCollapsed">
 
     <!-- ── Project block ───────────────────────────────────────────────── -->
-    <div class="project-block">
+    <div class="project-block" data-guide="sidebar.projectBlock">
       <template v-if="projectMeta.current">
         <div class="proj-info">
           <i class="pi pi-folder proj-icon" />
@@ -212,7 +212,7 @@ function isNavDisabled(item: NavItem): boolean {
          The viewer controls are a floating dockable panel (see App.vue / FloatingPanel), not a
          sidebar section. This is a prominent call-to-action button (it drives most napari controls —
          populations, tracks, colour-by — so it must be noticeable), not a dim group heading. -->
-    <button class="viewer-cta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
+    <button class="viewer-cta" data-guide="sidebar.viewerCta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
             @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
             v-tooltip.right="'Napari viewer controls: populations, tracks, colour-by'">
       <i class="pi pi-sliders-h viewer-cta-icon" />
@@ -223,7 +223,8 @@ function isNavDisabled(item: NavItem): boolean {
     <!-- ── Lab log ──────────────────────────────────────────────────────────
          Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
          toggled here (see App.vue / LabLogPanel). -->
-    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
+    <button class="viewer-cta lablog-cta" data-guide="sidebar.labLogCta"
+            :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
             style="margin-top: 0.4rem"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen
@@ -243,13 +244,23 @@ function isNavDisabled(item: NavItem): boolean {
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
          and opposite the destructive/lifecycle controls. -->
     <div class="sidebar-footer">
+      <!-- An explicit `data-guide`, NOT the `nav:/settings` scheme. That scheme exists because the nav
+           groups above are data-driven and so carry no attributes of their own; this is hand-written
+           markup and can just say what it is. Addressing it by href made the one guide that points here
+           the only one resolving a `nav:` anchor outside `.nav-scroll`. -->
       <RouterLink to="/settings" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
+                  data-guide="sidebar.settings"
                   v-tooltip.right="'Settings — project name, ID, and interface preferences'">
         <i class="pi pi-sliders-h" />
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="armQuit(arm)"
+          <!-- Anchored for the orientation tour, which points here to say "close the tab and the
+               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. Only the
+               UNARMED button takes the anchor: arming swaps the node, and a tour step must never
+               invite this particular click. -->
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" data-guide="sidebar.quit"
+                  :disabled="appCtl.busy" @click="armQuit(arm)"
                   v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>

@@ -3289,7 +3289,7 @@ end
         # client correlates its (synthetically-keyed) chain row against.
         save_chain_template!(proj, ChainTemplate(
             "e2e-chain",
-            [ChainNode(id="n1", fn="testTasks.imageTask",
+            [ChainNode(id="n1", fn="testTasks.image_task",
                        params=Dict{String,Any}("message"=>"e2e"))],
             ChainEdge[]))
         frames()
@@ -3299,7 +3299,7 @@ end
         @test all(!isnothing, node_ids) && all(!isempty, node_ids)
         for tid in node_ids
             @test only(banked(tid)).status   == "done"      # ← was empty: nothing fed the bank
-            @test only(banked(tid)).fun_name == "testTasks.imageTask"
+            @test only(banked(tid)).fun_name == "testTasks.image_task"
         end
         let fs = frames()
             @test count(f -> String(f.type) == "chain:node:done", fs) == 2   # …and still broadcast
@@ -3317,7 +3317,7 @@ end
         empty!(Cecelia._OUTCOMES); frames()
         tid = "e2e-image-task"
         handle_task_run(nothing, JSON3.read(JSON3.write((;
-            taskId=tid, funName="testTasks.imageTask", params=Dict("message"=>"e2e"),
+            taskId=tid, funName="testTasks.image_task", params=Dict("message"=>"e2e"),
             imageUid=imgs[1].uid, projectUid=proj.uid, setUid=s.uid, poolName=""))))
         @test timedwait(() -> !isempty(banked(tid)), 30.0) === :ok
         @test only(banked(tid)).status    == "done"
@@ -3334,7 +3334,7 @@ end
         empty!(Cecelia._OUTCOMES); frames()
         stid = "e2e-set-task"
         handle_task_run(nothing, JSON3.read(JSON3.write((;
-            taskId=stid, funName="testTasks.setTask", params=Dict("message"=>"e2e-set"),
+            taskId=stid, funName="testTasks.set_task", params=Dict("message"=>"e2e-set"),
             imageUid="", imageUids=[i.uid for i in imgs], projectUid=proj.uid,
             setUid=s.uid, poolName=""))))
         @test timedwait(() -> !isempty(banked(stid)), 30.0) === :ok

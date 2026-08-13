@@ -55,6 +55,16 @@ per track** (written by `tracking.track_measures`, see `docs/TRACKING.md`). Doub
 suffix keeps it distinct from a segmentation named `{x}_tracks` and is reserved
 (`is_reserved_value_name`); path helper `img_track_props_path(img, value_name)`.
 
+**This sidecar is how you ask "is this image tracked".** `img_track_value_names(img)` lists the
+value_names that have one (a `readdir`, no HDF5 open — the twin of `img_branch_value_names`), and it
+rides on the image payload as `trackValueNames` so the frontend can answer locally. Do **not** answer
+it from the run log: a project migrated from the R version — or tracked before the run log existed —
+has no `tracking.*` entry while its tracks sit on disk, which is exactly how the guide picker came to
+tell a fully tracked project it "needs a tracked image". The run log records *which runs this app
+executed*; the sidecar records *what the image has*. It is also stricter than `is_tracked` (which only
+asks whether `track_id` reached the cell table's obs): the sidecar means the track MEASURES landed,
+which is what `track_props`, `clustTracks.cluster` and the behaviour HMM actually consume.
+
 | Slot | Content |
 |---|---|
 | `obs` | One row per track. Index = `track_id` (string). Per-track lineage: `track_root`, `track_parent`, `track_state`, `track_generation`. |

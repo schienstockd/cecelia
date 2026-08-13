@@ -19,6 +19,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
+import { placeBox } from '../utils/anchorPosition'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -35,19 +36,19 @@ const pos = ref<{ top: number; left: number }>({ top: 0, left: 0 })
 // re-measure from the anchor rect, then clamp to the viewport and flip above when there's no room
 // below — so the popover is never clipped or off-screen regardless of where the (draggable) anchor
 // sits. bottom-end right-aligns to the anchor's right edge (width known post-render); bottom-start
-// left-aligns.
+// left-aligns. The arithmetic is the shared `utils/anchorPosition.ts` (extracted FROM here, and
+// covered by its own test) — `GuideBubble` uses the same positioner, so a clamping fix lands in both.
 function reposition() {
   const a = props.anchor
   if (!a) return
   const r = a.getBoundingClientRect()
-  const w = popEl.value?.offsetWidth ?? 0
-  const h = popEl.value?.offsetHeight ?? 0
-  const vw = window.innerWidth, vh = window.innerHeight
-  let left = props.placement === 'bottom-end' ? r.right - w : r.left
-  left = Math.max(4, Math.min(left, vw - w - 4))
-  let top = r.bottom + props.gap
-  if (top + h > vh - 4) top = Math.max(4, r.top - h - props.gap)   // open above if it would overflow below
-  pos.value = { top: Math.round(top), left: Math.round(left) }
+  pos.value = placeBox({
+    anchor: { top: r.top, left: r.left, width: r.width, height: r.height },
+    box: { width: popEl.value?.offsetWidth ?? 0, height: popEl.value?.offsetHeight ?? 0 },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    placement: props.placement,
+    gap: props.gap,
+  })
 }
 
 const style = computed(() => ({ position: 'fixed' as const, top: `${pos.value.top}px`, left: `${pos.value.left}px` }))

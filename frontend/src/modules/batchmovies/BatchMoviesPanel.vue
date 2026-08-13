@@ -536,7 +536,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                 title="Apply this config to the currently open napari image (no recording)">
           <i class="pi pi-eye" /> Preview on open image
         </button>
-        <button class="cc-btn cc-btn-primary" :disabled="!canRun" @click="generate"
+        <button class="cc-btn cc-btn-primary" data-guide="batchMovies.generate" :disabled="!canRun" @click="generate"
                 v-tooltip.top="compareActionTip(compareShapeNow, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
         </button>

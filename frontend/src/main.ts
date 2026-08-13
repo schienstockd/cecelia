@@ -18,8 +18,8 @@ const pinia = createPinia()
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/',          redirect: '/import' },
-    { path: '/import',    component: () => import('./modules/ImportModule.vue'),        meta: { label: 'Import' } },
+    { path: '/',          redirect: '/manage-images' },
+    { path: '/manage-images', component: () => import('./modules/ManageImagesModule.vue'), meta: { label: 'Manage images' } },
     { path: '/metadata',  component: () => import('./modules/MetadataModule.vue'),      meta: { label: 'Metadata' } },
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
     { path: '/optical-flow', component: () => import('./modules/OpticalFlowModule.vue'), meta: { label: 'Optical flow' } },
@@ -61,7 +61,7 @@ router.beforeEach(async (to) => {
     await appCtl.refreshStartup()
   }
   if (appCtl.setupRequired === true && to.path !== '/setup') return '/setup'
-  if (appCtl.setupRequired === false && to.path === '/setup') return '/import'
+  if (appCtl.setupRequired === false && to.path === '/setup') return '/manage-images'
   return true
 })
 

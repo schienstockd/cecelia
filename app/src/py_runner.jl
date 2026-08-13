@@ -50,6 +50,43 @@ end
 # that shadow silently made `config_dir()` call the task-dir string, breaking EVERY Python task.
 _custom_modules_pydir()::String = joinpath(config_dir(), "modules")
 
+# ── The BLAS thread budget every Python task inherits ─────────────────────────────────────────────
+#
+# A numpy/scipy call that lands in BLAS takes ALL cores by default, and every runner holds one
+# resource-pool slot — so `n` concurrent tasks ask for `n × cores`. This is the ONLY layer that can
+# fix that: `OPENBLAS_NUM_THREADS` is read when the child imports numpy, so nothing inside Python can
+# set it after the fact (a `threadpoolctl` context manager only bounds the pools already LOADED when
+# it is entered, which is a real hole — clustering loads a second BLAS after the first is capped).
+#
+# Bounded is the right DEFAULT, not a special case, because uncapped is not neutral — measured on a
+# 32-core box, nothing gets faster with all cores and one thing gets dramatically slower:
+#
+#   drift estimation (kSUFux/mkh3Tu)   56.3 s @32  ->  31.8 s @4     (309.7 s -> 70.7 s, 4 at once)
+#   scanpy neighbors+leiden+umap       44.6 s @32  ->  44.0 s @4     (flat — not BLAS-bound)
+#   spatial KDTree neighbour graph      0.14 s      ->   0.14 s      (flat — not BLAS at all)
+#   dense SVD 20000x400                 2.30 s @32  ->   1.28 s @4
+#   dense GEMM 4000^2                   1.04 s @32  ->   0.91 s @4   (memory-bound at this size)
+#
+# **`OPENBLAS_NUM_THREADS` only — deliberately NOT `OMP_NUM_THREADS`.** That one also throttles
+# torch's intra-op parallelism, and torch on CPU is the one workload measured that genuinely wants
+# the cores: a cellpose-shaped conv stack goes 0.19 s -> 0.34 s at 4 threads. Capping OpenBLAS alone
+# leaves torch untouched (0.22 s, 24 threads) while still giving drift the full win.
+#
+# A task that has MEASURED a need for more raises it locally via
+# `cecelia.utils.cpu_utils.limit_blas_threads`. See `docs/SCHEDULER.md` → *Thread budgets*.
+const BLAS_THREADS_PER_TASK = 4
+
+# The environment every Python task runs under, as pairs. Standalone so it can be ASSERTED rather
+# than grepped for — `run_py` builds and spawns in one call, so there is otherwise no seam to test
+# what a task actually inherits, and "is OMP_NUM_THREADS absent?" cannot be answered by reading the
+# source (the comment above names it).
+_py_task_env(pythonpath::AbstractString) = [
+    "PYTHONPATH" => String(pythonpath),
+    "CECELIA_IMAGE_COMPRESSOR" => image_compressor(),
+    "CECELIA_PY_CONTRACT" => string(PY_CONTRACT_VERSION),
+    "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
+]
+
 """
     run_py(script_rel, params, task_dir; on_log, on_progress, on_process) -> Bool
 
@@ -110,10 +147,7 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     # An ENV VAR rather than a params field, on purpose: the params payload stays exactly the shape each
     # runner documents, and a developer replaying a saved params file by hand simply has no variable set,
     # which `script_utils` treats as "skip the check" rather than as a failure.
-    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`,
-                  "PYTHONPATH" => pythonpath,
-                  "CECELIA_IMAGE_COMPRESSOR" => image_compressor(),
-                  "CECELIA_PY_CONTRACT" => string(PY_CONTRACT_VERSION))
+    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, _py_task_env(pythonpath)...)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

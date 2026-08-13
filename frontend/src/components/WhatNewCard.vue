@@ -10,8 +10,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { SketchCanvas, sketches, type SketchDefinition } from 'feijoa'
-import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_ISSUES_URL } from '../lib/whatsNew'
+import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_NEW_ISSUE_URL, closeWhatsNew } from '../lib/whatsNew'
 import { useSettingsStore } from '../stores/settings'
+import { useGuideStore } from '../stores/guide'
+import { guideById } from '../lib/guides'
 import CcToggle from './CcToggle.vue'
 
 const props = defineProps<{ card: WhatNewCard; navigable?: boolean }>()
@@ -25,9 +27,22 @@ const kindLabel = computed(() => (
 ))
 const kindTone = computed(() => 'wn-kind-' + props.card.kind)
 const dateLabel = computed(() => formatCardDate(props.card.publishedAt))
-const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_ISSUES_URL)
+// Straight to the form, not the issues list: the user is on a card about a specific thing, so they
+// already know what they would be reporting. The header's GitHub icon is the browse-first one.
+const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_NEW_ISSUE_URL)
 const bodyHtml = computed(() => renderMarkdown(props.card.bodyMd))
 const isTip = computed(() => props.card.kind === 'tip')
+
+// "Show me" — hand this card's topic to the interactive guide (plan D7). Only offered when the id
+// actually resolves, so a card naming a guide that has been removed degrades to no button rather than
+// a dead one.
+const guide = useGuideStore()
+const cardGuide = computed(() => (props.card.guideId ? guideById(props.card.guideId) ?? null : null))
+function showMe() {
+  if (!cardGuide.value) return
+  guide.start(cardGuide.value.id)
+  closeWhatsNew()
+}
 
 // Resolve `sketchAnimation.id` → feijoa's catalogue; unknown id (or none) → null → placeholder.
 const sketch = computed<SketchDefinition | null>(() => {
@@ -84,6 +99,10 @@ const tipsOptOut = computed({
     </div>
 
     <footer class="wn-foot">
+      <button v-if="cardGuide" class="cc-btn cc-btn-primary cc-btn-dense cc-fs-xs" @click="showMe"
+              v-tooltip.top="`Walk through this in the app — ${cardGuide.steps.length} steps`">
+        <i class="pi pi-compass" /> Show me
+      </button>
       <a v-if="card.releaseUrl" :href="card.releaseUrl" target="_blank" rel="noopener" class="wn-link cc-muted">
         View on GitHub <i class="pi pi-external-link" />
       </a>

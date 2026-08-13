@@ -15,6 +15,7 @@ export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_ME
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
+export safe_name_part
 
 # ── Versioned-variable helpers ────────────────────────────────────────────────
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
@@ -33,7 +34,7 @@ export delete_image!, delete_set!, move_image!
 export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, img_is_calibrated,
        image_included
 export img_axes, img_has_time
-export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name, resolve_value_name
+export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
@@ -122,6 +123,7 @@ export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, Smooth, CompositeTask
 export CropImage
 export CopyImage
+export ExportOmeTiff
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
@@ -199,9 +201,9 @@ include("tasks/task.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
 include("segmentation.jl")
-include("tasks/testTasks/imageTask.jl")
-include("tasks/testTasks/setTask.jl")
-include("tasks/testTasks/incrementalPlotTask.jl")
+include("tasks/testTasks/image_task.jl")
+include("tasks/testTasks/set_task.jl")
+include("tasks/testTasks/incremental_plot_task.jl")
 include("tasks/importImages/omezarr.jl")
 include("tasks/importImages/remove.jl")
 include("tasks/importImages/migrateLegacy.jl")
@@ -211,6 +213,7 @@ include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
+include("tasks/exportImages/ome_tiff.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/opticalFlow/train.jl")
 include("tasks/segment/coastal.jl")

@@ -111,6 +111,11 @@ class SegmentationUtils:
                        the window is TRUNCATED at the start and end of the movie rather than
                        reflected or edge-padded, because repeating a frame invents zero motion and
                        mirroring invents motion outright.
+
+        `context` matches `tile` on every axis they share — including z when the valid-box skip has
+        narrowed this timepoint (see *Skipping the padding a drift correction added* below). A
+        subclass that takes its pixels from the window therefore never has to ask which of the two
+        was narrowed.
         """
         raise NotImplementedError
 
@@ -153,18 +158,28 @@ class SegmentationUtils:
         frame_shape = [label_shape[i] for i, ax in enumerate(label_axes) if ax != 'T']
         fa_y = frame_axes.index('Y')
         fa_x = frame_axes.index('X')
+        fa_z = frame_axes.index('Z') if 'Z' in frame_axes else None
 
         # Input-image frame axes = image axes without T — KEEPS the channel axis, so its Y/X indices
         # differ from the (channel-less) label frame's. Used to tile the in-RAM input frame.
         in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
+        ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
+
+        # Which z planes actually hold data, per timepoint. `None` for every store that never padded,
+        # which is most of them — then `_valid_z_span` returns the whole stack and nothing changes.
+        store_la_z = label_axes.index('Z') if 'Z' in label_axes else None
+        n_z = im_shape[dim_utils.im_dim_order.index('Z')] if 'Z' in dim_utils.im_dim_order else 0
+        im_path_for_box = self.params.get('imPath')
+        z_spans = {}
 
         # Axis indices on the FULL input array (time axis still present) — the in-RAM frame has T
         # dropped, so its indices cannot address other timepoints. Only used for temporal context.
         ia_t = dim_utils.im_dim_order.index('T') if 'T' in dim_utils.im_dim_order else None
         ia_y = dim_utils.im_dim_order.index('Y')
         ia_x = dim_utils.im_dim_order.index('X')
+        ia_z = dim_utils.im_dim_order.index('Z') if 'Z' in dim_utils.im_dim_order else None
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -202,14 +217,34 @@ class SegmentationUtils:
                       for ma in match_as_list}
 
             for t in range(T):
-                # one frame's labels per type (uint32 zeros), no time axis
-                frame = {ma: np.zeros(frame_shape, dtype=self.LABEL_DTYPE) for ma in match_as_list}
-
                 # Read this timepoint's image ONCE into RAM (time axis dropped → frame_axes layout), then
                 # tile it in memory. Reading each tile from the store instead re-fetches whole chunks per
                 # tile — the over-read the old whole-level fortify() worked around. See
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
                 frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+
+                # Narrow to the planes that hold data. Everything below — tiling, cellpose, post-
+                # processing, nuc/cyto matching — then runs on the reduced stack unchanged; only the
+                # WRITE puts it back at its z offset, so the store keeps its full shape.
+                z0, z1 = 0, n_z
+                if ifa_z is not None and store_la_z is not None and im_path_for_box:
+                    box = zarr_utils.read_valid_box(im_path_for_box, timepoint=t)
+                    z0, z1 = self._valid_z_span(box, n_z)
+                z_spans[t] = (z0, z1)
+                narrowed = (z0, z1) != (0, n_z)
+                if narrowed:
+                    frame_in = self._narrow_z(frame_in, ifa_z, z0, z1)
+                    if t == 0:
+                        print(f'>> skipping padded z planes: segmenting z {z0}:{z1} of {n_z}',
+                              flush=True)
+
+                # One frame's labels per type (uint32 zeros), no time axis — sized to the span we
+                # actually segment, so the buffer and the tiles agree. Allocated AFTER the span is
+                # known, not before the read.
+                frame_shape_t = list(frame_shape)
+                if fa_z is not None:
+                    frame_shape_t[fa_z] = z1 - z0
+                frame = {ma: np.zeros(frame_shape_t, dtype=self.LABEL_DTYPE) for ma in match_as_list}
 
                 for read_yx, write_yx, crop_yx in xy_tiles:
                     for model_key in sorted(models.keys()):
@@ -225,8 +260,17 @@ class SegmentationUtils:
                             # edges, never reflected or edge-padded (see predict_slice docstring)
                             lo = max(0, t - self.TEMPORAL_RADIUS)
                             hi = min(T - 1, t + self.TEMPORAL_RADIUS)
+                            # Narrowed to THIS timepoint's span, like the tile — the window is the
+                            # tile through time and must match it on every axis. These frames are
+                            # read from the full store rather than from `frame_in` (which holds only
+                            # t), so the narrowing has to be re-applied here; a subclass takes its
+                            # pixels from the window, so a full-depth one silently re-segments the
+                            # padding. Each frame's OWN span may differ — drift moves the stack — but
+                            # the window is one array with one z extent, and t's span is the one the
+                            # output is written back at.
                             context = np.stack([
-                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx)
+                                self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx,
+                                                   z_idx=ia_z if narrowed else None, z=(z0, z1))
                                 for t2 in range(lo, hi + 1)])
                             masks = self.predict_slice(tile, model_params, norm_p,
                                                        context=context, context_index=t - lo)
@@ -265,12 +309,20 @@ class SegmentationUtils:
                 # whole-stack distinct-ID count the previous code returned.
                 for ma in match_as_list:
                     _, level0, _ = stores[ma]
-                    if store_la_t is not None:
-                        sl = tuple(t if i == store_la_t else slice(None) for i in range(level0.ndim))
-                        level0[sl] = frame[ma]
-                    else:
-                        level0[:] = frame[ma]
+                    sl = tuple(t if i == store_la_t else
+                               slice(z0, z1) if i == store_la_z else
+                               slice(None) for i in range(level0.ndim))
+                    level0[sl] = frame[ma]
                     counts[ma] += count_labels(frame[ma])
+
+            # The label store inherits the same fact about itself: outside these z spans it is zero
+            # because nothing was segmented there, not because nothing was found. Recording it means
+            # a downstream consumer skips the same planes without re-deriving the geometry — the
+            # propagation rule in docs/ARCHITECTURE.md → *The valid box*.
+            if store_la_z is not None and any(sp != (0, n_z) for sp in z_spans.values()):
+                for ma in match_as_list:
+                    zarr_utils.write_valid_box(
+                        staged[ma], ['Z'], {t: {'Z': z_spans[t]} for t in sorted(z_spans)})
 
             # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
             for ma in match_as_list:
@@ -313,13 +365,20 @@ class SegmentationUtils:
             y = y1
         return tiles
 
-    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx):
-        """Extract one XY tile for timepoint t. Returns numpy array."""
+    def _extract_tile(self, im_data, t, t_idx, y_idx, x_idx, read_yx, z_idx=None, z=None):
+        """Extract one XY tile for timepoint t. Returns numpy array.
+
+        `z_idx`/`z` narrow the read to the `(z0, z1)` planes that hold data — pushed into the index
+        rather than sliced off afterwards, so the padded planes are never read at all. `z_idx=None`
+        (the default) reads the whole stack, which is every caller that is not the valid-box skip.
+        """
         idx = [slice(None)] * len(im_data.shape)
         if t_idx is not None:
             idx[t_idx] = t
         idx[y_idx] = read_yx[0]
         idx[x_idx] = read_yx[1]
+        if z_idx is not None and z is not None:
+            idx[z_idx] = slice(int(z[0]), int(z[1]))
         return np.asarray(im_data[tuple(idx)])
 
     def _crop_masks(self, masks, crop_yx, is_3d):
@@ -701,24 +760,100 @@ class SegmentationUtils:
 
         return cyto_out, nuc_out
 
+    # ── Skipping the padding a drift correction added ─────────────────────────
+    #
+    # A drift-corrected canvas holds each frame at its own offset and zeroes the rest: 3-56% of the
+    # z planes across the movies on this machine, 8 valid planes in an 18-plane canvas at worst. The
+    # whole z-stack goes to cellpose in ONE call (it stitches across z internally), so those planes
+    # cost real GPU time and produce nothing.
+    #
+    # Safe because a valid box is a CONTIGUOUS [start, stop) by construction, so restricting z to it
+    # can only drop LEADING/TRAILING planes. Interior planes inside the span are kept, and the
+    # dropped ones are all-zero, so they yield no labels for `stitch_threshold` to link across —
+    # the stitching semantics inside the span are unchanged rather than merely assumed to be.
+    #
+    # Deliberately NOT a crop: the output store keeps its full shape and the skipped planes stay
+    # zero. Each frame sits at its own offset because the correction aligned them in a shared
+    # canvas; cropping per frame would put them back out of register.
+    #
+    # The skip is a property of the BASE, not of any one algorithm: `predict_from_zarr` narrows what
+    # it hands `predict_slice` and puts the labels back at the offset, so every subclass gets it by
+    # implementing nothing. What a subclass must be able to rely on is that EVERY array it is handed
+    # for one timepoint — the tile and, when `TEMPORAL_RADIUS > 0`, the temporal window — is narrowed
+    # to the same span. It was not: the window was read from the full store and came back full depth
+    # while the tile was narrowed, which broke coastal on any drift-corrected 3D image.
+    @staticmethod
+    def _narrow_z(arr, axis, z0, z1):
+        """`arr` restricted to z planes `[z0, z1)` — for an array already in RAM.
+
+        The window frames are narrowed by `_extract_tile`'s `z_idx=`/`z=` instead, which is the same
+        restriction pushed into the store index so the padded planes are never read at all. That is
+        only possible where the read has not happened yet, which is why there are two spellings.
+        """
+        return arr[tuple(slice(z0, z1) if i == axis else slice(None) for i in range(arr.ndim))]
+
+    @staticmethod
+    def _valid_z_span(box, n_z, min_span=2):
+        """`(z0, z1)` of z to segment for one timepoint, given that frame's valid `box`.
+
+        Returns the whole stack whenever there is nothing trustworthy to narrow to — no box, no Z in
+        it, a degenerate range, or a span so thin that segmenting it is not meaningfully 3D. Doing
+        MORE work is always the safe direction here: the cost of a wrong narrow span is missing
+        cells, and the cost of a wrong wide one is the status quo.
+
+        The thin-span branch is a **safety net, not a live path**: drift places each frame whole, so
+        a real box is always the SOURCE depth (8, 13 or 31 planes across the stores on this machine
+        — never below 2). Measured 2026-08-12; the invariant behind it is pinned by
+        `test_drift_geometry.py::test_every_frames_z_span_is_the_source_depth`, so if a future
+        producer starts emitting thin boxes that test fails rather than this guard quietly
+        switching the skip off.
+        """
+        if not box or n_z <= 0:
+            return 0, n_z
+        rng = box.get('Z')
+        if not rng:
+            return 0, n_z
+        z0, z1 = int(rng[0]), int(rng[1])
+        z0, z1 = max(0, z0), min(int(n_z), z1)
+        if z1 - z0 < max(1, min_span) or (z0 == 0 and z1 == n_z):
+            return 0, n_z
+        return z0, z1
+
     def _compute_iou_matrix(self, a, b):
-        """IoU matrix between all pairs of non-zero labels in a and b."""
+        """IoU matrix between all pairs of non-zero labels in a and b.
+
+        ONE co-occurrence histogram over the paired label maps, not a full-plane boolean op per
+        label pair — O(pixels) instead of O(labels²) array comparisons. `_match_nuc_cyto` calls
+        this once per timepoint, so the old form cost ~27 s/frame at 400×400 labels (≈90 min on a
+        201-frame two-model movie) purely to re-assign label IDs.
+
+        The IoU values are identical to the pairwise form; `IouMatrixOracleTest` pins the two
+        against each other, so `match_threshold`/`removeUnmatched` behaviour is unchanged.
+        """
         labels_a = np.unique(a[a > 0])
         labels_b = np.unique(b[b > 0])
-        if len(labels_a) == 0 or len(labels_b) == 0:
-            return np.zeros((len(labels_a), len(labels_b))), labels_a, labels_b
+        na, nb = len(labels_a), len(labels_b)
+        if na == 0 or nb == 0:
+            return np.zeros((na, nb), dtype=np.float32), labels_a, labels_b
 
-        a_counts = {int(la): int(np.sum(a == la)) for la in labels_a}
-        b_counts = {int(lb): int(np.sum(b == lb)) for lb in labels_b}
-        iou_mat = np.zeros((len(labels_a), len(labels_b)), dtype=np.float32)
+        # Label VALUES are arbitrary and non-contiguous (cellpose leaves gaps), so histogram over
+        # dense 0..n-1 indices rather than the raw ids — searchsorted is exact here because
+        # np.unique returns sorted values and every pixel below is drawn from that same set.
+        both = (a > 0) & (b > 0)
+        ia = np.searchsorted(labels_a, a[both]).astype(np.int64)
+        ib = np.searchsorted(labels_b, b[both]).astype(np.int64)
+        inter = np.bincount(ia * nb + ib, minlength=na * nb).reshape(na, nb)
 
-        for i, la in enumerate(labels_a):
-            a_mask = a == la
-            for j, lb in enumerate(labels_b):
-                inter = int(np.sum(a_mask & (b == lb)))
-                if inter > 0:
-                    union = a_counts[int(la)] + b_counts[int(lb)] - inter
-                    iou_mat[i, j] = inter / union
+        # Union needs no second pass over the volume: |A| + |B| - |A∩B| from the per-label totals.
+        counts_a = np.bincount(np.searchsorted(labels_a, a[a > 0]), minlength=na)
+        counts_b = np.bincount(np.searchsorted(labels_b, b[b > 0]), minlength=nb)
+
+        # Only pairs that actually co-occur can have IoU > 0, and there are O(labels) of those, not
+        # O(labels²) — so index them rather than building a second dense matrix for the union.
+        iou_mat = np.zeros((na, nb), dtype=np.float32)
+        ii, jj = np.nonzero(inter)
+        overlap = inter[ii, jj]
+        iou_mat[ii, jj] = overlap / (counts_a[ii] + counts_b[jj] - overlap)
 
         return iou_mat, labels_a, labels_b
 

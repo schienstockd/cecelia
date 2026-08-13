@@ -9,7 +9,6 @@ import { useLabCaptureStore } from './stores/labCapture'
 import { useProjectMetaStore } from './stores/projectMeta'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
-import HintCallout from './components/HintCallout.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
@@ -18,7 +17,11 @@ import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
+import GuidesDialog from './components/GuidesDialog.vue'
+import GuideBubble from './components/GuideBubble.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
+import { isGuidesOpen } from './lib/guideOpen'
+import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useNapariAutoShow } from './composables/useNapariAutoShow'
 
@@ -28,6 +31,34 @@ const appCtl = useAppControlStore()
 // Observer state lives in a store (not the v-if'd lab-log panel) so it survives the panel closing.
 // Claude is on-demand only (Ask Claude); refresh its status/session whenever the open project changes.
 const observer = useObserverStore()
+// The guide runtime, instantiated here so its poll/lifecycle belongs to the shell rather than to the
+// v-if'd bubble — a guide has to survive route changes (docs/todo/GUIDE_SYSTEM_PLAN.md).
+const guide = useGuideStore()
+
+// Set in onMounted when the launch tip fires for the FIRST time ever; consumed once, on close. Not a
+// ref — nothing renders from it.
+let firstEverTips = false
+
+// The orientation tour starts by itself the first time a user closes the welcome dialog, and only
+// that time: reading the cards tells you what Cecelia does, and this says where the buttons are.
+// Afterwards it is opt-in — the "Show me" button on the about card, or the compass.
+//
+// Watches the shared flag rather than the dialog's `@close` emit, because the emit is not the only
+// way it shuts: `WhatNewCard`'s "Show me" calls `closeWhatsNew()` itself. Hanging this off @close
+// would leave `firstEverTips` unconsumed in that case, and the tour would then ambush the user the
+// next time they closed What's New from the header — days later.
+//
+// Two guards, both load-bearing:
+//  - `setupRequired` — /setup is a `bare` route with no header or sidebar (main.ts), and App.vue's
+//    onMounted runs there too, so on a genuinely fresh install the dialog opens over the setup wizard.
+//    Touring chrome that is not rendered would be worse than not touring at all.
+//  - `guide.active` — "Show me" starts a guide and *then* closes the dialog, so by the time this runs
+//    a guide the user explicitly asked for may already be going. Do not replace it.
+watch(isWhatsNewOpen, (open) => {
+  if (open || !firstEverTips) return
+  firstEverTips = false
+  if (appCtl.setupRequired === false && !guide.active) guide.start('find-your-way-around')
+})
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 
@@ -60,6 +91,9 @@ onMounted(async () => {
   // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
   const today = todayKey()
   if (settings.tipsOnLaunch && settings.tipsLastShown !== today) {
+    // `tipsLastShown` is '' until this branch has run ONCE, ever — so reading it before the stamp is
+    // the first-launch signal, and no second flag has to be persisted to get it. See onWhatsNewClose.
+    firstEverTips = settings.tipsLastShown === ''
     settings.tipsLastShown = today
     openWhatsNew({ withTip: true })
   }
@@ -99,9 +133,8 @@ const bare = computed(() => route.meta.bare === true)
     <div class="cc-content">
       <AppSidebar />
       <main class="cc-main">
-        <!-- first-launch only: browsers don't stop the server on tab close -->
-        <HintCallout hint-key="shutdown"
-          text="When you're done, use the Quit button (bottom-left) — not the browser tab — to stop Cecelia cleanly." />
+        <!-- The "closing the tab does not stop the backend" hint that used to sit here is now a step in
+             the orientation tour, beside the Quit button it is about (lib/guides/tour.ts). -->
         <RouterView v-slot="{ Component, route }">
           <!-- key custom-category pages by path so /custom/:category remounts (fresh task defs)
                when the category changes; other pages keep default (keyless) reuse -->
@@ -119,7 +152,7 @@ const bare = computed(() => route.meta.bare === true)
     </FloatingPanel>
     <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->
     <FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
-                   accent="rgba(255, 255, 255, 0.6)"
+                   accent="var(--cc-guide)"
                    :default-x="300" :default-y="96" :default-w="340" :default-h="520"
                    @close="settings.labLogPanelOpen = false">
       <LabLogPanel />
@@ -129,6 +162,10 @@ const bare = computed(() => route.meta.bare === true)
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
          State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
     <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />
+    <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
+         The bubble renders only while a guide is running — see stores/guide.ts. -->
+    <GuidesDialog v-if="isGuidesOpen" />
+    <GuideBubble v-if="guide.active" />
   </div>
 </template>
 

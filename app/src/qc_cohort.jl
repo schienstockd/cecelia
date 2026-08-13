@@ -31,6 +31,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # legacy images migrated together should carry comparable segmentation counts — one that came
     # across with far fewer is a migration that half-failed rather than a biological difference.
     "importImages.migrateLegacy" => ["nSegmentations"],
+    # drift correction: movies acquired in one session on one stage should register comparably, so
+    # the image whose registration disagreed with itself (`residualPx`) or whose canvas had to grow
+    # far more than its peers (`canvasExpansion`) is exactly what a cohort check should surface —
+    # neither is visible from the image alone without knowing what normal looks like for that set.
+    "cleanupImages.driftCorrect" => ["residualPx", "canvasExpansion", "maxDriftPx"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.measureLabels"      => ["nCells"],

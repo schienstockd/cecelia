@@ -395,6 +395,94 @@ end
     end
 end
 
+# ── Guide catalogue (frontend) vs the task registry (Julia) ──────────────────
+# A guide that teaches "run this function" names the task two ways: `taskKey` (what TaskRunner's
+# <select> holds, i.e. the spec's `task`) and `funName` (what the task rail reports, i.e. `fun_name`).
+# Nothing in the frontend can check either — the specs live here — so a rename or a mismatched pair
+# would leave the guide waiting forever on a function that does not exist, with no error anywhere.
+#
+# This is the structural half of a real bug: the Segment guide taught plain `segment.cellpose`, which
+# produces labels with NO measures, so its own "now gate on these" ending could not work. Choosing the
+# wrong function is a judgement no test can make; naming one that isn't real is, and that's this.
+@testset "guide catalogue names real tasks" begin
+    dir = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "guides")
+    if !isdir(dir)
+        @test_skip "frontend guides catalogue not found"
+    else
+        src = join([read(joinpath(dir, f), String)
+                    for f in readdir(dir) if endswith(f, ".ts") && !endswith(f, ".test.ts")], "\n")
+        funs = [String(m.captures[1]) for m in eachmatch(r"funName:\s*'([^']+)'", src)]
+        keys_ = [String(m.captures[1]) for m in eachmatch(r"taskKey:\s*'([^']+)'", src)]
+        @test !isempty(funs)
+        @test length(funs) == length(keys_)      # every task-run block names both
+
+        registry = Cecelia._fun_name_map()
+        @test isempty([f for f in funs if !haskey(registry, f)])
+
+        # …and the pair must describe the SAME task: spec(funName).task == taskKey. A half-applied
+        # rename that leaves the two pointing at different functions passes every other check —
+        # the dropdown gate would never match while the rail happily parked on something else.
+        mismatched = String[]
+        for (f, k) in zip(funs, keys_)
+            haskey(registry, f) || continue
+            spec = Cecelia._task_spec(registry[f])
+            String(get(spec, "task", "")) == k || push!(mismatched, "$f => $k")
+        end
+        @test isempty(mismatched)
+    end
+end
+
+# ── Guides teaching a task a COMPOSITE wraps ─────────────────────────────────
+# The bug this closes, twice over: the Segment guide taught `segment.cellpose` and the Track guide
+# `tracking.bayesian_tracking` — the BARE halves of `…cellposeMeasure` / `…bayesian_track_measures`.
+# Labels without measures and tracks without measures leave gating, clustering and the HMM with nothing
+# to read, so each guide's own closing promise ("now gate on these") could not be kept. Nothing failed:
+# the tasks ran, the guides completed, the next page was just empty.
+#
+# So whenever a guide teaches a task that some composite CONTAINS, that has to be a decision on record.
+# Drift correction is the legitimate case — its composite adds autofluorescence removal, a separate
+# scientific step, not the missing half of drift — which is exactly the distinction a human has to make
+# and a test cannot. This is the inventory that forces the question, in the same spirit as the
+# frontend's DECLARED_TIMERS list.
+@testset "a guide teaching a composite's bare half is declared" begin
+    dir = joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "guides")
+    if !isdir(dir)
+        @test_skip "frontend guides catalogue not found"
+    else
+        src = join([read(joinpath(dir, f), String)
+                    for f in readdir(dir) if endswith(f, ".ts") && !endswith(f, ".test.ts")], "\n")
+        taught = unique([String(m.captures[1]) for m in eachmatch(r"funName:\s*'([^']+)'", src)])
+        @test !isempty(taught)
+
+        # fun_name => why teaching the bare task is right even though a composite wraps it
+        bare_by_design = Dict(
+            "cleanupImages.driftCorrect" =>
+                "its composite adds AF correction — a separate scientific step, not drift's missing half",
+        )
+
+        # every composite's constituent steps, from the registry
+        wrapped_by = Dict{String,Vector{String}}()
+        for (fun, task) in Cecelia._fun_name_map()
+            spec = Cecelia._task_spec(task)
+            steps = get(spec, "composite", nothing)
+            steps isa AbstractVector || continue
+            for st in steps
+                push!(get!(wrapped_by, String(st), String[]), fun)
+            end
+        end
+
+        undeclared = [t for t in taught
+                      if haskey(wrapped_by, t) && !haskey(bare_by_design, t)]
+        @test isempty(undeclared)
+
+        # …and the list stays honest: an entry whose composite is gone, or that no guide teaches
+        # any more, is stale rather than protective.
+        stale = [k for k in keys(bare_by_design)
+                 if !(k in taught) || !haskey(wrapped_by, k)]
+        @test isempty(stale)
+    end
+end
+
 # ── Optical-flow training (opticalFlow.train) ────────────────────────────────
 # The scales are the single most consequential parameter of the pipeline AND the one that fails
 # silently: the set a model is trained on must be the set inference feeds it, and coastal does not
@@ -547,6 +635,40 @@ end
     # the wider tree importable) — not the old shared modules/python. See py_runner.jl:_custom_modules_pydir.
     @test Cecelia._custom_modules_pydir() == joinpath(config_dir(), "modules")
     @test endswith(Cecelia._custom_modules_pydir(), "modules")
+end
+
+# ── Every Python task inherits a BLAS thread budget ─────────────────────────
+#
+# A pool limit caps concurrent TASKS, not threads: any numpy/scipy call reaching BLAS takes every
+# core, so `cpu` at its default 20 means twenty tasks each asking for 32 threads. `run_py` is the
+# only layer that can bound it — `OPENBLAS_NUM_THREADS` is read when the child imports numpy.
+#
+# Asserted on the SOURCE rather than by spawning, because the value has to be in the env `addenv`
+# builds, and a helper nobody is forced to call is exactly how this gets dropped again. See
+# docs/SCHEDULER.md → *Thread budgets*.
+@testset "run_py bounds the BLAS thread pool" begin
+    env = Dict(Cecelia._py_task_env("/tmp/py"))
+    @test env["OPENBLAS_NUM_THREADS"] == string(Cecelia.BLAS_THREADS_PER_TASK)
+    # A small positive budget: 1 measured SLOWER than 4 (the work is parallel, just not 32-ways),
+    # and anything large defeats the point.
+    @test 2 <= Cecelia.BLAS_THREADS_PER_TASK <= 8
+
+    # NOT OMP_NUM_THREADS. That also throttles torch's intra-op parallelism, and torch on CPU is
+    # the one measured workload that genuinely wants the cores (a cellpose-shaped conv stack goes
+    # 0.19s -> 0.34s at 4 threads). Capping OpenBLAS alone leaves torch untouched.
+    @test !haskey(env, "OMP_NUM_THREADS")
+    @test !haskey(env, "MKL_NUM_THREADS")
+
+    # the rest of the contract this env carries, so a refactor cannot silently drop one
+    @test env["PYTHONPATH"] == "/tmp/py"
+    @test haskey(env, "CECELIA_PY_CONTRACT") && haskey(env, "CECELIA_IMAGE_COMPRESSOR")
+
+    # The preview worker runs the tasks' OWN compute, so it inherits the same budget. Napari
+    # deliberately does not — un-pooled interactive viewer, not BLAS-bound, unmeasured.
+    prev = read(joinpath(Cecelia._app_dir(), "src", "preview.jl"), String)
+    @test occursin("OPENBLAS_NUM_THREADS", prev)
+    @test !occursin("OPENBLAS_NUM_THREADS",
+                    read(joinpath(Cecelia._app_dir(), "src", "napari.jl"), String))
 end
 
 # ── First-launch setup wizard (isolated temp config dir) ────────────────────
@@ -1800,14 +1922,14 @@ end
 # something task-specific (Branching's µm key rename, NeighbourStats/ClustRegions' moved keys).
 #
 # Two rules that only a whole-registry sweep can enforce, both of which caught a real defect when
-# this landed: `params` must be a JSON ARRAY (testTasks.incrementalPlotTask declared an object, so
+# this landed: `params` must be a JSON ARRAY (testTasks.incremental_plot_task declared an object, so
 # `validate_params` threw MethodError instead of validating), and every `type` must be one the
 # validator knows (migrateLegacy said "string", which is not a case in `_validate_leaf`, so the
 # param silently skipped validation).
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
                        "channelSelection", "valueNameSelection", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection"])
 
@@ -3583,8 +3705,8 @@ end
     # EVERY set-scope task declares it in its own spec — including the mock, which used to rely on
     # each chain node passing scope="set" (the one task that contradicted "the spec is the single
     # source of truth", and it's the fixture the barrier tests are built on).
-    @test Cecelia._task_default_scope("testTasks.setTask")    == "set"
-    @test chain_node("testTasks.setTask").scope               == "set"
+    @test Cecelia._task_default_scope("testTasks.set_task")    == "set"
+    @test chain_node("testTasks.set_task").scope               == "set"
 
     # chain_node / ChainNode with no scope kwarg resolve from the spec …
     @test chain_node("clustTracks.cluster").scope == "set"
@@ -3815,12 +3937,12 @@ end
 @testset "Chain start dot — prune to reachable subgraph" begin
     tpl = ChainTemplate(
         "start-chain",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="x", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="y", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="b", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="d", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="x", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="y", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d"), ChainEdge("x","y")],
         ["c"],                                          # start dot → c (mid-chain)
     )
@@ -3849,9 +3971,9 @@ end
     # n1 (image) → n2 (set-scope) → n3 (image)
     tpl = ChainTemplate(
         "picnic-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)
@@ -3893,9 +4015,9 @@ end
     # n1(image) → n2(set) → n3(image); start dot → n2, so n1 is an upstream draft (excluded)
     tpl = ChainTemplate(
         "startrun-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
         ["n2"],                                        # start dot → n2 (a set-scope node)
     )
@@ -3928,9 +4050,9 @@ end
 
     # a → { b (fails), c (ok) } — c is independent of b, must still run
     save_chain_template!(proj, ChainTemplate("fanout",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st = run_chain(proj, [img.uid]; chain="fanout").image_states[img.uid]
     @test st["a"].status == :done
@@ -3940,8 +4062,8 @@ end
     # a (fails) → { b, c } — the shared ancestor failing skips BOTH branches
     save_chain_template!(proj, ChainTemplate("fanout-root-fail",
         [ChainNode(id="a", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="b", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("a","c")]))
     st2 = run_chain(proj, [img.uid]; chain="fanout-root-fail").image_states[img.uid]
     @test st2["a"].status == :failed
@@ -3950,10 +4072,10 @@ end
 
     # transitive: a → b(fail) → c → d — skip propagates down the branch via :skipped
     save_chain_template!(proj, ChainTemplate("chain-transitive",
-        [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="a", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
-         ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="c", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="d", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d")]))
     st3 = run_chain(proj, [img.uid]; chain="chain-transitive").image_states[img.uid]
     @test st3["a"].status == :done
@@ -3975,7 +4097,7 @@ end
     tpl = ChainTemplate(
         "req-chain",
         [ChainNode(id="n1", fn="nonexistent.task", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="require_all")],
         [ChainEdge("n1","n2")],
     )
@@ -4001,7 +4123,7 @@ end
     tpl = ChainTemplate(
         "ok-chain",
         [ChainNode(id="n1", fn="nonexistent.task", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="successful_only")],
         [ChainEdge("n1","n2")],
     )
@@ -4026,8 +4148,8 @@ end
     # n1: always succeeds → both images eligible → task runs with all 2
     tpl = ChainTemplate(
         "pass-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask", scope="set",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task", scope="set",
                    params=Dict{String,Any}(), barrier_policy="successful_only")],
         [ChainEdge("n1","n2")],
     )
@@ -4088,7 +4210,7 @@ end
 
     tpl = ChainTemplate(
         "resume-rt-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         ChainEdge[],
     )
     save_chain_template!(proj, tpl)
@@ -4123,7 +4245,7 @@ end
 
     tpl = ChainTemplate(
         "skip-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         ChainEdge[],
     )
     save_chain_template!(proj, tpl)
@@ -4157,7 +4279,7 @@ end
 
     tpl = ChainTemplate(
         "rerun-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("message" => "first"))],
         ChainEdge[],
     )
@@ -4188,10 +4310,10 @@ end
     # n1 → n2 → n3(bad) → n4(skipped)
     tpl = ChainTemplate(
         "fail-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
          ChainNode(id="n3", fn="nonexistent.task",   scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n4", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+         ChainNode(id="n4", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3"), ChainEdge("n3","n4")],
     )
     save_chain_template!(proj, tpl)
@@ -4237,11 +4359,11 @@ end
 
     tpl = ChainTemplate(
         "p4-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n4", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n5", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n4", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n5", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3"), ChainEdge("n3","n4"), ChainEdge("n4","n5")],
     )
     save_chain_template!(proj, tpl)
@@ -4282,9 +4404,9 @@ end
     # n1(image) → n2(set) → n3(image)
     tpl = ChainTemplate(
         "picnic-resume-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)
@@ -4331,9 +4453,9 @@ end
     # debounce_ms=10 so it fires quickly in the test
     tpl = ChainTemplate(
         "incr-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask",          scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.incrementalPlotTask", scope="incremental",
+         ChainNode(id="n2", fn="testTasks.incremental_plot_task", scope="incremental",
                    params=Dict{String,Any}("debounce_ms" => 10))],
         [ChainEdge("n1", "n2")],
     )
@@ -4370,11 +4492,11 @@ end
     # (incremental nodes don't gate downstream per-image nodes)
     tpl = ChainTemplate(
         "incr-pass-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask",          scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask",          scope="image",
+         ChainNode(id="n3", fn="testTasks.image_task",          scope="image",
                    params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.incrementalPlotTask", scope="incremental",
+         ChainNode(id="n2", fn="testTasks.incremental_plot_task", scope="incremental",
                    params=Dict{String,Any}("debounce_ms" => 10))],
         [ChainEdge("n1", "n2"), ChainEdge("n1", "n3")],
     )
@@ -4400,7 +4522,7 @@ end
 
     tpl = ChainTemplate(
         "evbus-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         ChainEdge[],
     )
@@ -4451,10 +4573,10 @@ end
 
     tpl = ChainTemplate(
         "pool-limit-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 40),
                    resource_pool="slow_pool"),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         [ChainEdge("n1","n2")],
     )
@@ -4486,7 +4608,7 @@ end
 
     tpl = ChainTemplate(
         "pool-par-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 40),
                    resource_pool="par_pool")],
         ChainEdge[],
@@ -4530,7 +4652,7 @@ end
     s    = add_set!(proj; name="s")
     imgs = map(("a", "b", "c", "d")) do nm; add_image!(s; name=nm) end
     tpl = ChainTemplate("pool-grow-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 300), resource_pool="dyngrow")],
         ChainEdge[])
     save_chain_template!(proj, tpl)
@@ -4571,7 +4693,7 @@ end
     s    = add_set!(proj; name="s")
     imgs = map(i -> add_image!(s; name="img-$i"), 1:8)
     tpl = ChainTemplate("pool-shrink-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 150), resource_pool="dynshrink")],
         ChainEdge[])
     save_chain_template!(proj, tpl)
@@ -4600,10 +4722,10 @@ end
 
     tpl = ChainTemplate(
         "pipeline-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 80),
                    resource_pool="serial_pool"),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}("waitMs" => 0))],
         [ChainEdge("n1","n2")],
     )
@@ -4639,7 +4761,7 @@ end
 #
 # We make n1 = RemoveImage, which requires a registered zarr to succeed.
 # img_b and img_c have a real zarr; img_a does not → img_a fails at n1.
-# n2 = testTasks.imageTask (always succeeds).
+# n2 = testTasks.image_task (always succeeds).
 # Expected: img_a fails n1, skips n2. img_b and img_c succeed both nodes.
 @testset "Cross-image fault isolation" begin
     proj = create_project!(name="xiso-$(rand(1000:9999))")
@@ -4661,7 +4783,7 @@ end
         "xiso-chain",
         [ChainNode(id="n1", fn="importImages.remove", scope="image",
                    params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default")),
-         ChainNode(id="n2", fn="testTasks.imageTask", scope="image",
+         ChainNode(id="n2", fn="testTasks.image_task", scope="image",
                    params=Dict{String,Any}())],
         [ChainEdge("n1","n2")],
     )
@@ -4694,9 +4816,9 @@ end
 
     tpl = ChainTemplate(
         "headless-chain",
-        [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
-         ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
-         ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="n2", fn="testTasks.set_task",   scope="set",   params=Dict{String,Any}()),
+         ChainNode(id="n3", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
         [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
     )
     save_chain_template!(proj, tpl)
@@ -6990,6 +7112,30 @@ end
     @test img_branch_props_path(img, "SHG") == joinpath(dir, "SHG__branch.h5ad")
 end
 
+# The same question for tracks, and the reason it needs its own answer: "is this image tracked" was
+# being asked of the RUN LOG (does a `tracking.*` entry exist), which a project migrated from the R
+# version answers "no" for while its `{vn}__tracks.h5ad` sits on disk — so the guide picker declared
+# "needs a tracked image" over a project whose tracks had already been clustered. The sidecar is the
+# state; the run log is only the provenance of runs this app happened to execute.
+@testset "track value_names come from the sidecars" begin
+    proj = create_project!(name="tvn-$(rand(1000:9999))")
+    s = add_set!(proj; name="set-A")
+    # Explicit uid: `@testset` reseeds the RNG, so `gen_uid` would hand this image the SAME uid — and
+    # the same directory — as the branch testset above, whose sidecars are already sitting in it
+    # (docs/DEV.md → the `@testset` reseeds the global RNG trap; this test hit it on the first run).
+    img = add_image!(s; name="img-a", uid="tvnImgA")
+    dir = img_label_props_dir(img); mkpath(dir)
+    @test img_track_value_names(img) == String[]           # nothing banked yet
+    for f in ("B__tracks.h5ad", "T__tracks.h5ad", "B.h5ad", "T.h5ad", "SHG__branch.h5ad")
+        touch(joinpath(dir, f))
+    end
+    # only the __tracks sidecars, and NOT the cell/branch tables that sit beside them
+    @test img_track_value_names(img) == ["B", "T"]
+    @test img_track_props_path(img, "B") == joinpath(dir, "B__tracks.h5ad")
+    # and it does NOT consult the run log: no tracking entry was ever written above
+    @test isempty(read_run_log(img))
+end
+
 @testset "plot groupBy (generic categorical sub-axis)" begin
     # split a numeric measure by a categorical column (the hmmPlotParams port): each (pop × level)
     # becomes its own series tagged with `group`. Deterministic synthetic frame — no fixture.
@@ -8279,6 +8425,52 @@ end
                                    "outputShape" => [20, 4, 19, 541, 527], "shifts" => smooth))
         fo, _, _ = Cecelia._drift_qc_findings(meta_ok)
         @test isempty(fo)
+
+        # A sidecar written before the residual existed carries no `residualRms`. It must not be
+        # read as a perfect registration — no finding, and no metric either (a banked 0 would drag
+        # the cohort median toward "everything registered").
+        @test !haskey(Cecelia._drift_qc_metrics(meta_ok, [20, 4, 13, 512, 512],
+                                                [20, 4, 19, 541, 527]), "residualPx")
+    end
+
+    @testset "drift reliability findings" begin
+        # The registration disagreeing with ITSELF. This is the one check that can tell a broken
+        # registration from a movie that genuinely moved a lot — the other two read the trajectory
+        # and cannot. Numbers are the measured ones: every movie that registered on this machine
+        # sat at 0.13–0.39 px, `4kS67f/fHqhyb` at 24 px.
+        base = Dict{String,Any}("dimOrder" => "TCZYX", "shiftAxes" => ["Z", "Y", "X"],
+                                "sourceShape" => [20, 4, 13, 512, 512],
+                                "outputShape" => [20, 4, 19, 541, 527],
+                                "shifts" => [[0.0, 1.0, 1.0] for _ in 1:20])
+
+        good = merge(base, Dict("residualRms" => 0.39, "residualP90" => 0.5,
+                                "nPairs" => 57, "nRejected" => 0))
+        @test isempty(Cecelia._drift_qc_findings(good)[1])
+
+        bad = merge(base, Dict("residualRms" => 24.3, "residualP90" => 12.6,
+                               "nPairs" => 57, "nRejected" => 8))
+        fb = Cecelia._drift_qc_findings(bad)[1]
+        unrel = first(f for f in fb if f["code"] == "drift.unreliable")
+        @test unrel["level"] == "warn"
+        @test unrel["detail"]["nRejected"] == 8
+        @test occursin("24.3", unrel["short"])
+
+        # Frames no measurement survived for: their position is predicted, and the sidecar says so.
+        gappy = merge(good, Dict("interpolated" => [4, 9]))
+        fg = Cecelia._drift_qc_findings(gappy)[1]
+        interp = first(f for f in fg if f["code"] == "drift.unregistered_frames")
+        @test interp["detail"]["frames"] == [4, 9]
+        @test occursin("2 frame", interp["short"])
+
+        # Metrics: the cohort-comparable numbers, and only the ones actually measured.
+        m = Cecelia._drift_qc_metrics(bad, [20, 4, 13, 512, 512], [20, 4, 19, 541, 527])
+        @test m["residualPx"] == 24.3
+        @test m["canvasExpansion"] > 1.0
+        @test m["framesInterpolated"] == 0
+        # everything the cohort pass is told to aggregate must actually be banked
+        for k in Cecelia.COHORT_METRICS["cleanupImages.driftCorrect"]
+            @test haskey(m, k)
+        end
     end
 
     @testset "OIR companion-file staging" begin
@@ -10514,4 +10706,262 @@ end
         tip = String(get(prm, :tip, ""))
         @test occursin("--", tip) || occursin("_", tip)   # a CLI flag or a zarr metadata key
     end
+end
+
+@testset "OME-TIFF export carries the calibration" begin
+    # The task exists because the OLD route (OME-TIFF → ImageJ → plain TIFF → Imaris File Converter)
+    # lost the pixel sizes: a plain TIFF has nowhere to record Z spacing, so the converter guessed the
+    # voxel size. Every assertion below is about the calibration surviving — that IS the feature.
+
+    meta = Dict{String,Any}("PhysicalSizeX" => 0.325, "PhysicalSizeY" => 0.325,
+                            "PhysicalSizeZ" => 2.0,   "PhysicalSizeUnit" => "µm",
+                            "TimeIncrement" => 10.0,  "TimeIncrementUnit" => "s")
+
+    cal = Cecelia._export_calibration(meta)
+    @test cal["PhysicalSizeZ"] == 2.0                     # the field the old workflow dropped
+    @test cal["PhysicalSizeZUnit"] == "µm"
+
+    # UNITS MUST BE THE OME SYMBOL, not the NGFF/UDUNITS name ccid.json stores. OME's UnitsLength and
+    # UnitsTime are ENUMERATIONS; "micrometer" is not a member, so one such attribute makes <Pixels>
+    # schema-invalid and Bio-Formats discards the ENTIRE OME block and falls back to counting IFDs —
+    # a 31x4x32 movie then opens as 3968 timepoints, one channel, no names, no voxel size. Verified
+    # against real Bio-Formats (bioformats2raw): "µm" reads back in full, "micrometer" reads nothing.
+    ngff = Dict{String,Any}("PhysicalSizeX" => 0.33, "PhysicalSizeY" => 0.33,
+                            "PhysicalSizeZ" => 2.0,  "PhysicalSizeUnit" => "micrometer",
+                            "TimeIncrement" => 15.0, "TimeIncrementUnit" => "second")
+    ncal = Cecelia._export_calibration(ngff)
+    for k in ("PhysicalSizeXUnit", "PhysicalSizeYUnit", "PhysicalSizeZUnit")
+        @test ncal[k] == "µm"
+    end
+    @test ncal["TimeIncrementUnit"] == "s"
+    # An unknown unit passes through rather than being guessed at — same rule as the converter.
+    @test Cecelia._export_calibration(
+        Dict{String,Any}("PhysicalSizeX" => 1.0, "PhysicalSizeUnit" => "furlong")
+    )["PhysicalSizeXUnit"] == "furlong"
+    @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
+    @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
+
+    # A Z-MIP has no z extent left and a single frame has no interval — writing either would state a
+    # geometry the file doesn't have.
+    @test !haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeZ")
+    @test haskey(Cecelia._export_calibration(meta; z_mip = true), "PhysicalSizeX")
+    @test !haskey(Cecelia._export_calibration(meta; one_frame = true), "TimeIncrement")
+
+    # Unknown must stay unknown. Defaulting an absent/zero/garbage size to 1.0 would tell Imaris the
+    # pixel is one micron, which is a claim, not a fallback.
+    for bad in (Dict{String,Any}(), Dict{String,Any}("PhysicalSizeX" => ""),
+                Dict{String,Any}("PhysicalSizeX" => 0.0), Dict{String,Any}("PhysicalSizeX" => "abc"))
+        @test !haskey(Cecelia._export_calibration(bad), "PhysicalSizeX")
+    end
+
+    # …and that absence is exactly what QC flags, since the write itself always "succeeds".
+    codes(f) = [x["code"] for x in f]
+    @test isempty(Cecelia._export_qc_findings(cal, 21))     # fully calibrated → nothing to say
+    @test isempty(Cecelia._export_qc_findings(cal, 1))
+    # A 2D image legitimately has no Z spacing — don't cry wolf on SizeZ == 1.
+    @test isempty(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 1))
+    @test "export.no_z_calibration" in
+          codes(Cecelia._export_qc_findings(Cecelia._export_calibration(meta; z_mip = true), 21))
+    @test "export.no_xy_calibration" in codes(Cecelia._export_qc_findings(Dict{String,Any}(), 1))
+
+    # channelSelection submits channel NAMES, not indices. Converting them by hand threw
+    # `Int("DAPI")` straight out of the task; `channel_indices` is the resolver, and it is 0-based —
+    # which is what the runner slices with, so an off-by-one here exports the wrong channel.
+    names = ["DAPI", "GFP", "mem-Tom"]
+    @test channel_indices(["GFP"], names; what = "channels") == [1]
+    @test channel_indices(["mem-Tom", "DAPI"], names; what = "channels") == [2, 0]
+    @test channel_indices(nothing, names; what = "channels") == Int[]
+    @test channel_indices(String[], names; what = "channels") == Int[]
+    # A name this version doesn't have must say so rather than silently pick something.
+    @test_throws ErrorException channel_indices(["nope"], names; what = "channels")
+
+    # …and the NAMES must come from `channel_names`, which falls back to the active version. Channel
+    # names are typically registered only under `default` while a processed version carries none, so
+    # reading the requested version's raw field returns nothing and the task reports "(none
+    # registered)" for an image whose channels the picker is listing — the picker is fed by
+    # `channel_names(img)`, so any other source disagrees with what the user just clicked.
+    proj = create_project!(name = "chan-fallback-$(rand(1000:9999))")
+    st   = add_set!(proj; name = "s")
+    im   = add_image!(st; name = "chan-fallback")
+    set_channel_names!(im, ["DAPI", "SHG"]; value_name = VERSIONED_DEFAULT_VAL, check_length = false)
+    save!(im)
+
+    @test channel_names(im) == ["DAPI", "SHG"]
+    # An explicit version with no entry of its own still resolves — this is the bug.
+    @test channel_names(im; value_name = "corrected") == ["DAPI", "SHG"]
+    @test channel_indices(["SHG"],
+                          something(channel_names(im; value_name = "corrected"), String[]);
+                          what = "channels") == [1]
+
+    # Dispatch + spec wiring
+    @test Cecelia._task_from_fun_name("exportImages.ome_tiff") isa ExportOmeTiff
+    spec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    @test String(get(spec, :fun_name, "")) == "exportImages.ome_tiff"
+    @test String(get(spec, :resource_pool, "")) == "io"
+    # The output is an ARTEFACT, not a version — nothing may register an image version from it.
+    @test !any(String(get(p, :key, "")) == "outputValueName" for p in get(spec, :params, []))
+
+    # One filename rule, shared with the movie recorders — an image called "… (cropped)" must not
+    # produce a name that ends in a separator (that bug shipped once already).
+    @test safe_name_part("A B (cropped)") == "A_B_cropped"
+    @test safe_name_part("  ") == ""
+    @test safe_name_part(nothing) == ""
+end
+
+# ── Canonical-helper detectors ────────────────────────────────────────────────
+# These exist because both rules below have now cost real debugging time, and neither was enforced.
+# The pattern is the repo's existing one (`no_bare_write_h5ad`, `TextIoDeclaresEncodingTest`, the
+# store-compressor/staging conventions): scan the SOURCE, fail on a new bypass.
+
+@testset "channelSelection params resolve through channel_indices" begin
+    # A `channelSelection` param submits channel NAMES. `channel_indices` is the one resolver — it
+    # takes names OR already-resolved indices, returns 0-based values, and errors by name on a miss
+    # (with a case-difference hint). Its own comment records SIX handlers that had hand-rolled
+    # `findfirst(==(String(ch)), ch_names)` and drifted into three different wrong behaviours: an
+    # index crashed four of them, an unmatched name was silently DROPPED by five, and drift
+    # correction silently fell back to channel 0 — registering a whole timelapse against SHG.
+    #
+    # It happened again on the OME-TIFF export (`Int("SHG")` → MethodError, straight out of the task),
+    # which is why this is now a test rather than a comment.
+    function _has_channel_param(ps)::Bool
+        for p in ps
+            p isa AbstractDict || continue
+            String(get(p, "type", "")) == "channelSelection" && return true
+            inner = get(p, "params", nothing)
+            inner isa AbstractVector && _has_channel_param(inner) && return true
+        end
+        false
+    end
+
+    checked = String[]
+    for (fun, task) in Cecelia._fun_name_map()
+        spec = Cecelia._task_spec(task)
+        isnothing(spec) && continue
+        _has_channel_param(get(spec, "params", [])) || continue
+        spec_path = Cecelia._spec_path(task)
+        isnothing(spec_path) && continue
+        jl = replace(spec_path, r"\.json$" => ".jl")
+        isfile(jl) || continue        # a composite resolves nothing itself; its steps are checked
+        push!(checked, fun)
+        @test occursin("channel_indices", read(jl, String)) ||
+              error("$fun declares a channelSelection param but its handler never calls " *
+                    "`channel_indices`. Resolve names with it (0-based, errors by name) rather " *
+                    "than converting them by hand — see CLAUDE.md and channel_index's own comment.")
+    end
+    # The scan must actually find tasks; a rename that silently matched nothing would "pass".
+    @test length(checked) >= 8
+end
+
+@testset "a process exit check also checks termsignal" begin
+    # libuv reports `exitcode = 0` for a SIGNAL-KILLED child, and `task:cancel` kills by design — so
+    # `exitcode == 0` alone reads a cancelled or timed-out process as a clean success. That is how a
+    # timed-out agent run had its TRUNCATED output handed to the result parser.
+    offenders = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path  = joinpath(dir, f)
+            lines = readlines(path)
+            for (i, ln) in enumerate(lines)
+                occursin(".exitcode", ln) || continue
+                # A window, not the same line: the check is often split over two lines, or guarded by
+                # a `killed` flag derived from termsignal a few lines above.
+                lo, hi = max(1, i - 6), min(length(lines), i + 6)
+                any(occursin("termsignal", lines[j]) for j in lo:hi) && continue
+                push!(offenders, "$(basename(path)):$i  $(strip(ln))")
+            end
+        end
+    end
+    isempty(offenders) && @test true
+    isempty(offenders) || error("`.exitcode` used without a nearby `termsignal` check:\n  " *
+                                join(offenders, "\n  ") *
+                                "\nlibuv sets exitcode 0 for a signal-killed process — check " *
+                                "`proc.exitcode == 0 && proc.termsignal == 0`.")
+end
+
+@testset "dirPath param validation" begin
+    # A destination folder, typed by hand or picked with the FileBrowser. The failure this guards is
+    # late and expensive: without it a bad destination is only discovered after the task has read,
+    # converted and tried to write the whole output.
+    spec = [Dict{String,Any}("key" => "outDir", "label" => "Destination", "type" => "dirPath")]
+
+    # Empty is legal — every consumer falls back to its own default (default_export_dir()).
+    Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => ""), spec)
+    Cecelia._validate_params_against_spec(Dict{String,Any}(), spec)
+
+    mktempdir() do dir
+        # An existing folder is the normal case.
+        Cecelia._validate_params_against_spec(Dict{String,Any}("outDir" => dir), spec)
+
+        # One that does not exist yet is fine too — a destination is created on demand, so rejecting
+        # it would stop someone naming a new subfolder, which is the obvious thing to want.
+        Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => joinpath(dir, "new_subfolder")), spec)
+
+        # An existing FILE is the one unambiguous mistake: nothing can write output into it.
+        f = joinpath(dir, "not_a_dir.txt"); write(f, "x")
+        @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+            Dict{String,Any}("outDir" => f), spec)
+    end
+
+    @test_throws Cecelia.ParamValidationError Cecelia._validate_params_against_spec(
+        Dict{String,Any}("outDir" => 42), spec)
+
+    # The export's destination actually uses the type — the point of adding it.
+    ospec = JSON3.read(read(Cecelia._spec_path(ExportOmeTiff()), String))
+    outdir = only(filter(p -> String(get(p, :key, "")) == "outDir", collect(ospec[:params])))
+    @test String(get(outdir, :type, "")) == "dirPath"
+end
+
+@testset "units written into OME-XML are schema-valid symbols" begin
+    # OME's UnitsLength / UnitsTime are ENUMERATIONS of symbols. A value outside them makes the
+    # whole <Pixels> element schema-invalid, and Bio-Formats then discards the ENTIRE OME block and
+    # falls back to counting IFDs — a 31x4x32 movie opened as 3968 timepoints, one channel, no
+    # names, no voxel size. Verified against real Bio-Formats (bioformats2raw): "µm" round-trips in
+    # full, "micrometer" yields nothing.
+    #
+    # The trap is that "micrometer" is CORRECT in the two places it comes from: NGFF `.zattrs` axes
+    # use UDUNITS-2 names, and `ccid.json` mirrors them because the importer reads the unit from the
+    # axes. Only the OME-XML boundary needs the symbol — which is what `ome_xml_unit_name` is for.
+    valid_length = Set(["Ym","Zm","Em","Pm","Tm","Gm","Mm","km","hm","dam","m","dm","cm","mm",
+                        "µm","nm","pm","fm","am","zm","ym","Å","thou","li","in","ft","yd","mi",
+                        "ua","ly","pc","pt","pixel","reference frame"])
+    valid_time   = Set(["Ys","Zs","Es","Ps","Ts","Gs","Ms","ks","hs","das","s","ds","cs","ms",
+                        "µs","ns","ps","fs","as","zs","ys","min","h","d"])
+    valid = union(valid_length, valid_time)
+
+    # Every output of the converter is a member — including for inputs already in symbol form.
+    for (ngff, sym) in Cecelia._OME_XML_UNIT
+        @test sym in valid
+        @test Cecelia.ome_xml_unit_name(ngff) == sym
+        @test Cecelia.ome_xml_unit_name(sym) in valid    # idempotent: a symbol stays valid
+    end
+    # The vocabularies the importer actually stores in ccid.json must all convert.
+    for ngff in ("micrometer", "nanometer", "millimeter", "second", "minute")
+        @test Cecelia.ome_xml_unit_name(ngff) in valid
+    end
+    # An unknown unit passes through — we do not guess a conversion — so it is the CALLER's job not
+    # to invent one, and the scan below is what keeps a caller from skipping the converter entirely.
+    @test Cecelia.ome_xml_unit_name("furlong") == "furlong"
+
+    # Anything that ASSIGNS an OME unit attribute must route through the converter. This is the
+    # bypass that shipped: the OME-TIFF export copied ccid.json's "micrometer" straight into
+    # PhysicalSizeXUnit, while every other writer converted.
+    offenders = String[]
+    for root in (joinpath(@__DIR__, "..", "src"), joinpath(@__DIR__, "..", "..", "api", "src"))
+        isdir(root) || continue
+        for (dir, _, files) in walkdir(root), f in files
+            endswith(f, ".jl") || continue
+            path = joinpath(dir, f); src = read(path, String)
+            occursin(r"\"(PhysicalSize[XYZ]Unit|TimeIncrementUnit)\"\s*(=>|\]\s*=)", src) || continue
+            occursin("ome_xml_unit_name", src) && continue
+            push!(offenders, basename(path))
+        end
+    end
+    isempty(offenders) && @test true
+    isempty(offenders) || error("these assign an OME-XML unit attribute without calling " *
+                                "`ome_xml_unit_name`:\n  " * join(offenders, "\n  ") *
+                                "\nccid.json/NGFF store UDUNITS names ('micrometer'); OME-XML " *
+                                "needs the symbol ('µm'), and an invalid one voids the whole block.")
 end

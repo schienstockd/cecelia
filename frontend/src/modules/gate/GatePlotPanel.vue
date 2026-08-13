@@ -350,11 +350,11 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
     <template #actions>
       <RenderModeToggle v-model="renderMode" />
       <span class="ctrl-sep" />
-      <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES"
+      <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
-      <div class="panel-ctrl">
+      <div class="panel-ctrl" data-guide="gate.axes">
         <label class="ax-row cc-muted"><span class="ax-lbl">X</span>
           <select class="ax-chan" v-model="xChan" v-tooltip.bottom="'Measure on the X axis'">
             <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
@@ -408,7 +408,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
         <i class="pi pi-share-alt" />
         <span>Not tracked yet — run tracking on this segmentation first.</span>
       </div>
-      <div v-if="pending" class="panel-name">
+      <div v-if="pending" class="panel-name" data-guide="gate.name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus v-tooltip.top="'Name for the new gate'"
                :class="{ 'name-invalid': !!nameError && !!newName.trim() }"

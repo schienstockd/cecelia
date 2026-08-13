@@ -1,3 +1,4 @@
+import { moduleKeyFromFun } from '../utils/taskModule'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { shortId } from '../utils/id'
@@ -7,7 +8,7 @@ export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 export interface TaskEntry {
   id: string
   seq: number             // monotonically increasing task number (#1, #2, …)
-  module: string          // 'import' | 'segment' | ...
+  module: string          // 'manageImages' | 'segment' | … — matches a page's `module=` prop
   label: string           // human-readable description
   imageUid: string
   imageName: string
@@ -223,9 +224,8 @@ export const useTaskStore = defineStore('tasks', () => {
       setStatus(syntheticId, opts.status, { startedAt: opts.startedAt, finishedAt: opts.finishedAt })
       return existing
     }
-    // Derive module from fn category: 'cleanupImages' → 'cleanup', 'importImages' → 'import'
-    const fnCategory = opts.fn.split('.')[0] ?? ''
-    const module = fnCategory.replace(/Images$/i, '').replace(/Tasks$/i, '').toLowerCase() || 'chain'
+    // The shared derivation (`utils/taskModule`) — this was a third inline copy of the same rule.
+    const module = moduleKeyFromFun(opts.fn)
     const entry: TaskEntry = {
       id:          syntheticId,
       seq:         ++_seqRef.value,

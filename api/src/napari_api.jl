@@ -573,18 +573,10 @@ function _movies_dir(img)::String
     d
 end
 
-# One filename-safe fragment: keep [A-Za-z0-9._-], collapse every run of anything else to `_`, and
-# drop the separators the collapse leaves at the EDGES.
-#
-# The edge strip is the whole point. An image called "… -res (cropped)" ends in `)`, so sanitising
-# alone gave "…-res_cropped_" — a name ending in a separator, which is what the movies list showed —
-# and the animation variant compounded it to "…-res_cropped__animation.mp4". `_movie_suffix` had the
-# strip and the image-name path did not, while claiming in a comment to use "the same character rule";
-# they are now the same function, so a movie name cannot be sanitised two ways.
-function _safe_name_part(raw)::String
-    s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
-    String(strip(s, ['_', '.']))
-end
+# The filename rule now lives in the package (`Cecelia.safe_name_part`) so tasks that name their
+# own output files — the OME-TIFF export — and the movie recorders cannot disagree about what a
+# safe name is. Kept as a local alias so the movie call sites read unchanged.
+_safe_name_part(raw)::String = safe_name_part(raw)
 
 # Movie output path named by the IMAGE (not attrs) — used by the single-image recorders. Sanitises
 # img.name, falls back to the uid when blank/unsafe. `suffix` distinguishes timelapse ("") from

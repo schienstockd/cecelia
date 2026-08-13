@@ -84,7 +84,13 @@ function launch!(w::PreviewWorker)::PreviewWorker
     # The two then silently disagree: a helper added here raised `module 'cecelia.utils.correction_utils'
     # has no attribute ...` in a worker that was, by its own path, running the new code. Harmless in the
     # main checkout, where both resolve to the same directory, which is why it hid until a worktree.
-    w.proc = run(addenv(`$(python_bin_path()) $PREVIEW_WORKER`, "PYTHONPATH" => _python_dir()),
+    # Same BLAS budget as a real task (`BLAS_THREADS_PER_TASK`, py_runner.jl): this worker runs the
+    # tasks' OWN compute, so it hits the same many-small-matmuls slowness — uncapped drift
+    # estimation is ~1.8x slower even with the machine to itself. Not applied to the napari bridge:
+    # that is an un-pooled interactive viewer, not BLAS-bound, and unmeasured.
+    w.proc = run(addenv(`$(python_bin_path()) $PREVIEW_WORKER`,
+                        "PYTHONPATH" => _python_dir(),
+                        "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK)),
                  wait=false)
     deadline = time() + 90
     squatter = nothing

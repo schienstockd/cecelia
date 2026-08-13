@@ -139,10 +139,32 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Smoothing changed little",
         long  = "This input was not photon-limited — the extra store is likely redundant."),
 
+    # OME-TIFF export (_export_qc_findings). The write always "succeeds", so the only objective
+    # signal is whether the CALIBRATION came out with it — which is the entire point of the task.
+    "export.no_z_calibration" => (
+        short = "Export has no Z pixel size",
+        long  = "Set the Z spacing in the image metadata and export again — Imaris will otherwise ask for it or guess."),
+    "export.no_xy_calibration" => (
+        short = "Export has no XY pixel size",
+        long  = "Set the pixel size in the image metadata and export again — the scale bar will be wrong without it."),
+
     # output geometry (qc_canvas_expansion)
     "output.canvas_expansion" => (
         short = "Output canvas grew +{pct}% in XY",
         long  = "Larger than a clean correction — check the output and re-run this step if it looks wrong."),
+
+    # drift correction (_drift_qc_findings). `drift.unreliable` is the primary one: it is measured
+    # from the registration disagreeing with ITSELF, so unlike the other two it does not depend on
+    # what the drift happens to look like. See correction_utils.drift_residuals.
+    "drift.unreliable" => (
+        short = "Frames did not register ({value} px disagreement)",
+        long  = "Pick a structural reference channel and re-run — nothing downstream of this store is aligned."),
+    "drift.jump" => (
+        short = "Drift jumped sharply at T={value}",
+        long  = "The reference channel likely lost tracking — re-run drift with a clearer/structural channel."),
+    "drift.unregistered_frames" => (
+        short = "{value} frame(s) could not be registered",
+        long  = "Their position was predicted from neighbours — check those timepoints before measuring on them."),
 
     # cohort comparison (qc_cohort.jl `_cohort_finding`)
     "cohort.outlier" => (

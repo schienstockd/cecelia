@@ -386,7 +386,7 @@ Keeps the task **out of the module page's function list** while leaving it fully
 from the REPL via `run_task`, dispatchable over the WS rail, and available as a **chain node**. Use it
 when a purpose-built UI now does the task's job better, but the task itself still earns its place.
 
-The one user today is `importImages.remove` ("Remove image data"): the Import page's Delete modal owns
+The one user today is `importImages.remove` ("Remove image data"): the Manage images page's Delete modal owns
 that interaction now (`docs/UI.md` → *Deleting is one modal with four scopes*), but the task is still a
 legitimate chain step — correct an image, then free the original — and it is the package suite's
 real-task workhorse for chain end-to-end, fault-isolation and scope tests, which is why it was hidden
@@ -452,6 +452,21 @@ Full reference (see CLAUDE.md for the concise table):
 { "key": "outputName", "label": "Output name", "type": "text", "default": "result" }
 ```
 
+**`dirPath`** — a destination **folder**: a text field plus a Browse button opening the shared
+`FileBrowser` in `mode="dir"` (the same picker the `.ccbundle` project export uses). Still typeable,
+since pasting a remembered path beats browsing to it. `placeholder` describes what an empty value
+falls back to.
+```json
+{ "key": "outDir", "label": "Destination", "type": "dirPath", "default": "",
+  "placeholder": "Default export folder", "tip": "Folder to write into" }
+```
+It browses the filesystem of the machine running the **server** — for a normal local install, the
+user's own machine. A native OS folder dialog is not available to us: browsers never expose real
+paths, and `showDirectoryPicker()` is Chromium-only and hands back an opaque handle the Julia side
+could not write to. Validation accepts empty (the consumer's default) and a folder that does not
+exist yet (destinations are created on demand), and rejects an existing **file** — the one
+unambiguous mistake, caught before the task does its work rather than after.
+
 **`select`** — dropdown. Use `options` array; `multiple: true` for multi-select:
 ```json
 {
@@ -464,7 +479,11 @@ Full reference (see CLAUDE.md for the concise table):
 }
 ```
 
-**`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel:
+**`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel.
+The submitted value is a list of channel **names**; the handler resolves them with
+`channel_indices(get(params, "channels", nothing), channel_names(img; value_name = value_name), …)`
+— 0-based, errors by name. Both helpers are mandatory (`CLAUDE.md` → *Channel names → indices*) and a
+suite detector fails a handler that skips them:
 ```json
 { "key": "driftChannel", "label": "Drift channel", "type": "channelSelection", "multiple": false, "default": [] }
 ```
@@ -898,7 +917,7 @@ To add a button above the table (e.g. "Add images"):
 ```
 
 The slot also receives `{ setUid, selectedUids, selectUids }`, so a bar item can act on the current
-selection — that is where the Import page's Copy / Move / Delete live (`ImageFileActions.vue`; see
+selection — that is where the Manage images page's Copy / Move / Delete live (`ImageFileActions.vue`; see
 `docs/UI.md` → *File operations*). Per-image actions go in the row's ⋯ menu instead.
 
 ### Below-table content

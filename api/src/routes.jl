@@ -2378,6 +2378,12 @@ function _image_payload(img::CciaImage)
         # offers the graphs present on ALL selected images — which is exactly the set a pooled analysis
         # can run over. Discovered by listing spatialGraph/, not registered in ccid.json.
         spatialGraphs   = Dict{String,Any}(s => "$(s).h5ad" for s in img_spatial_graph_suffixes(img)),
+        # Which segmentations have MEASURED tracks, from the `{vn}__tracks.h5ad` sidecars on disk —
+        # the same listing convention as spatialGraphs, not a ccid.json registration. Surfaced so the
+        # client can answer "is this image tracked" from data it already holds: the run log cannot (a
+        # migrated project has tracks and no `tracking.*` entry), and `labels`/`label_props` look
+        # identical tracked or not. One readdir per image, no HDF5 open.
+        trackValueNames = img_track_value_names(img),
         attr            = img.attr,
         # Include/exclude in further processing (default true). Excluded images are greyed in the
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.

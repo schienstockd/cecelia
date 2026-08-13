@@ -479,7 +479,7 @@ defineExpose({ capturePage, collectCsvs })
                       @update:model-value="v => applyPreset(UNIFORM_PRESETS, v as string)" />
           <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
           <div class="lc-opts">
-            <button ref="optsBtn" class="lc-gear cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
+            <button ref="optsBtn" class="lc-gear cc-btn cc-btn-ghost cc-btn-icon" data-guide="board.options" :class="{ 'cc-btn-on': optsOpen }" @click="optsOpen = !optsOpen"
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
             <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
               <div class="lc-pop">
@@ -611,7 +611,7 @@ defineExpose({ capturePage, collectCsvs })
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->
             <div v-else class="lc-add">
-              <select v-tooltip.bottom="'Add a plot to this slot'"
+              <select data-guide="board.addPlot" v-tooltip.bottom="'Add a plot to this slot'"
                       @change="addPlot(i, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
                 <option value="">+ Plot…</option>
                 <optgroup label="Summary">
@@ -639,7 +639,7 @@ defineExpose({ capturePage, collectCsvs })
              WHICH manager comes from that plot's registry `rail` — never a key list here. `'none'`
              still renders the picker for its styling block + scope footer, with the (dead) population
              list suppressed. -->
-        <div class="lc-rail">
+        <div class="lc-rail" data-guide="board.rail">
           <FlowModelVault v-if="activeRail === 'flowModels'" :docked="true"
                           :selected="activeFlowModel" :scope="scope"
                           @update:selected="setFlowModel" @update:scope="scope = $event" />

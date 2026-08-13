@@ -1185,7 +1185,7 @@ onActivated(async () => {
   <div class="chain-module">
 
     <!-- ── Tab bar ─────────────────────────────────────────────────────────── -->
-    <div class="chain-tabs">
+    <div class="chain-tabs" data-guide="chain.tabs">
       <ChipSelect
         variant="segmented"
         :options="tabOptions"
@@ -1311,7 +1311,7 @@ onActivated(async () => {
     <aside class="wb-palette">
 
       <!-- Chain selector -->
-      <div class="chain-bar">
+      <div class="chain-bar" data-guide="chain.bar">
         <div class="chain-bar-select">
           <select
             v-if="chainNames.length"
@@ -1422,7 +1422,7 @@ onActivated(async () => {
       <!-- Task palette -->
       <template v-else>
         <!-- Module functions (collapsible) — drag onto the canvas to add nodes -->
-        <CollapsibleSection label="Module functions" max-height="50vh">
+        <CollapsibleSection label="Module functions" max-height="50vh" data-guide="chain.palette">
           <div class="palette-scroll">
             <div
               v-for="cat in paletteCategories"
@@ -1480,7 +1480,7 @@ onActivated(async () => {
           <span v-else class="palette-hint cc-muted">No sets in project.</span>
 
           <!-- Image list -->
-          <div v-if="runImages.length" class="run-image-list">
+          <div v-if="runImages.length" class="run-image-list" data-guide="chain.runImages">
             <!-- select-all row -->
             <div
               class="run-row run-row-all"
@@ -1516,6 +1516,7 @@ onActivated(async () => {
 
           <button
             class="run-chain-btn"
+            data-guide="chain.run"
             :disabled="!activeChain || !runSelectedUids.length || chainRunning"
             @click="runChain"
             v-tooltip.right="runChainTip"

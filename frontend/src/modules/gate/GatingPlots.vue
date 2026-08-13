@@ -211,12 +211,12 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
     <template v-else>
       <div class="gp-bar">
         <label>segmentation
-          <select v-model="g.valueName" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
+          <select data-guide="gate.segmentation" v-model="g.valueName" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
                   @change="g.selectImage(props.imageUid!, g.valueName, props.popType)">
             <option v-for="v in g.valueNames" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
-        <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a plot'" @click="add">
+        <button class="cc-btn cc-btn-primary" data-guide="gate.addPlot" v-tooltip.bottom="'Add a plot'" @click="add">
           <i class="pi pi-plus" /> Plot
         </button>
         <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a read-only channel-pairs matrix'"
@@ -253,7 +253,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                   @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
         <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
+          <button class="cc-btn cc-btn-bare cc-btn-icon" data-guide="gate.popManager"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
                   @click="showManager = !showManager"
                   v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
             <i class="pi pi-sitemap" />

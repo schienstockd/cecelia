@@ -615,6 +615,13 @@ def run(params: dict):
             kind='labels',
         )
 
+        # Carry the IMAGE's valid box when this store still shares its geometry. Unconditional on
+        # purpose: `carry_valid_box` compares only the BOXED axes, so a 3D run (which keeps Z)
+        # carries, while a flattened (Z-MIP) or time-collapsed one refuses — the runner never has to
+        # branch on its own mode. Must come after the store exists, since the guard reads its axes.
+        if zarr_utils.carry_valid_box(im_path, staging):
+            log.log('   carried the image valid box onto the branch labels')
+
     aniso_uns = None
     image_anisotropy = 0.0
     anisotropy_series = []

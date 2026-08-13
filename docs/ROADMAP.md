@@ -43,7 +43,7 @@ smoothing). States written as **numeric integer codes** (fast to gate/filter, au
 categorical); transitions as **categorical strings**. Set-scope wiring (`task_scope`,
 `run_task(imgs)`, `task:run` `imageUids`, `BehaviourModule` TaskRunner + `labelPropsColsSelection`
 widget) landed too and is reused by Phase 2. **Dropped** (no-ops): `skipTimesteps`/`subtrackOverlap`
-+ `seed` → `docs/TODO.md` → *Temporal downsampling / overlapping tracklets for behaviour*. **Not yet:** `hmmHybrid` standalone (transitions already does cross-model
++ `seed` → `docs/FUTURE.md` → *Temporal downsampling / overlapping tracklets for behaviour*. **Not yet:** `hmmHybrid` standalone (transitions already does cross-model
 hybrid), `createPseudotime` (stretch), interpretive state relabelling (deferred to clustering).
 
 Original design notes (kept for reference):

@@ -1,7 +1,7 @@
 """Drift-correction geometry: where each timepoint lands in the expanded canvas.
 
 `drift_correct_im` writes every frame into a ZEROED canvas at a per-frame offset, so the canvas is
-mostly padding — 38–64% on the movies this was written for, one of which went from 8 z-planes to 22.
+mostly padding — 3–56% on the movies this was written for, one of which goes from 8 z-planes to 18.
 `drift_frame_slices` is that placement as a pure function, so a consumer can skip the padding
 without re-deriving the geometry or reading a voxel, and — the point — WITHOUT a second
 implementation that can disagree with the writer.
@@ -134,6 +134,25 @@ class DriftFrameSlicesTest(unittest.TestCase):
                                     f"{name} t={t}: non-zero data OUTSIDE the reported box")
                     self.assertTrue(np.all(frame[inside] != 0),
                                     f"{name} t={t}: padding INSIDE the reported box")
+
+    def test_every_frames_z_span_is_the_source_depth(self):
+        """Why `_valid_z_span`'s thin-span guard never fires on real data.
+
+        A frame is placed whole — the canvas grows to hold the trajectory, but each frame keeps its
+        own depth — so the valid box is always `source_z` planes deep, wherever it sits. Measured
+        across the 17 corrected stores on this machine that carry a box: span is 8, 13 or 31 planes
+        and NEVER below 2, so `SegmentationUtils._valid_z_span`'s `min_span` widening is a safety
+        net for a malformed box, not a live path. Pinned here because if this stops holding, that
+        guard starts silently disabling the skip instead of erroring.
+        """
+        for name, make in _PATTERNS.items():
+            with self.subTest(pattern=name):
+                arr, du = _fixture()
+                shifts = make(du.dim_val('T') - 1)
+                src_z = arr.shape[du.dim_idx('Z')]
+                for t, box in cu.drift_frame_origins(arr.shape, du, shifts).items():
+                    self.assertEqual(box['Z'][1] - box['Z'][0], src_z,
+                                     f'{name} t={t}: frame is not its own depth')
 
     def test_origins_need_no_array_only_a_shape(self):
         """Replayable from a QC sidecar: same answer from the plain shape as from the array, so a

@@ -4546,6 +4546,7 @@ packages:
   - scipy>=1.17
   - scikit-image>=0.24
   - tqdm
+  - threadpoolctl
   requires_python: '>=3.11'
 - pypi: git+https://github.com/schienstockd/coastal.git?rev=cbd56bf266c65f02acaeb13d14c5003b6bc95f3a#cbd56bf266c65f02acaeb13d14c5003b6bc95f3a
   name: coastal
