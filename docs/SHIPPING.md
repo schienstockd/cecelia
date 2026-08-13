@@ -129,12 +129,39 @@ Juliaup, download the release bundle, provision the env, and create the desktop 
 `.github/workflows/release.yml` runs on a `v*` tag — one `ubuntu-latest` job, because the bundle is
 OS-independent:
 1. `npm ci && npm run build` → prebuilt `frontend/dist`.
-2. `tar` a portable bundle `cecelia.tar.gz` (api, app, **python** (the `cecelia` helper package),
-   app.py, pixi.toml, pixi.lock, napari/napari_bridge.py, frontend/dist, install scripts, README,
-   docs). It excludes `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the
-   user's machine. **Note:** `python/` must ship — `run_py` resolves task scripts under
-   `python/cecelia/` and the editable `cecelia` dep points there; omitting it breaks every Python
-   task on the installed app. The bundle is **~6 MB** (frontend/dist dominates).
+2. `tar` a portable bundle `cecelia.tar.gz` (api, app, **pluto**, **preview**, **mcp**, **python**
+   (the `cecelia` helper package), scripts, app.py, pixi.toml, pixi.lock, napari/napari_bridge.py,
+   frontend/dist, install scripts, README, LICENSE, THIRD_PARTY.md, docs). It excludes
+   `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
+   The bundle is **~6 MB** (frontend/dist dominates).
+
+   **The list is an allow-list, and that is the trap.** A directory the running app needs is absent
+   from every stable install the moment nobody names it here — while the `dev` channel, which ships a
+   whole branch archive, keeps working, so nothing in development shows the gap. It has bitten once
+   already (#540: `pluto/` was missing, `api/src/notebooks_api.jl` includes `pluto/sysimage_stamp.jl`
+   at server load, and every v0.1.1 install died on first launch; `preview/` and `mcp/` were missing
+   too and fail quieter — no preview worker to spawn, an observer registered against a directory that
+   isn't there). What must ship and why:
+
+   | Path | Needed for |
+   |---|---|
+   | `python/` | `run_py` resolves helper modules under `python/cecelia/`, and the editable `cecelia` dep points there — without it every Python task fails |
+   | `pluto/` | `api/src/notebooks_api.jl` includes `pluto/sysimage_stamp.jl` **at server load** — without it the API does not start at all |
+   | `preview/` | the resident task-preview worker the backend spawns (`PREVIEW_WORKER`, :7656) |
+   | `mcp/` | the observer MCP server, registered as `python -m cecelia_mcp.server` with `PYTHONPATH=<install>/mcp` |
+   | `scripts/` | the `pixi run models-fetch` / `ui-copy` tasks shipped in `pixi.toml` |
+   | `LICENSE`, `THIRD_PARTY.md` | GPL-3 conveys with its license text and attributions |
+
+   The load-bearing entries live in **`scripts/bundle_required_paths.txt`**, and two checkers read
+   that one list:
+
+   - `app/test/suite.jl` → `release bundle ships every runtime path` asserts each entry is covered by
+     the tar list in the workflow, on every CI run — so a dropped path fails on the PR;
+   - **`pixi run bundle-check`** packs the bundle the workflow describes, extracts it to a temp dir,
+     and checks the entries are really in it. `bash scripts/bundle_check.sh --launch` goes further and
+     **boots the API server from the extracted tree** (isolated config dir, `:8099`, never `:8080`),
+     waiting for `/api/health` — ~20 s, and the only check that catches a load-time `include` of a
+     file the bundle forgot, which is exactly how #540 reached users. Worth running before a tag.
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
 
 **bioformats2raw is NOT in the bundle.** The image-import binary (its `lib/` of Bio-Formats JARs +

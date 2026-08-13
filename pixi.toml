@@ -212,6 +212,13 @@ models-fetch = "python scripts/models_fetch.py"
 # app/test/runtests.jl. Parsing lives in frontend/src/utils/uiCopy.ts. See docs/UI.md → UI copy.
 ui-copy = "node scripts/ui_copy_inventory.mjs"
 
+# Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
+# everything the running app loads is in there. `--launch` also boots the API server from the
+# extracted tree (isolated config dir, :8099 — never 8080) and waits for /api/health, which is the
+# check that catches a load-time `include` of a file the bundle forgot (#540). Unix only; the
+# Windows equivalent is running the same steps by hand. See docs/SHIPPING.md → Building & releasing.
+bundle-check = "bash scripts/bundle_check.sh"
+
 # Update the env to the latest versions allowed by pixi.toml (console update path; the in-app
 # "Update" button hits /api/update, which runs the same). Refreshes pixi.lock.
 update = "pixi update"
