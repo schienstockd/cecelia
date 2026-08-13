@@ -15,11 +15,14 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
-## [0.1.1] — 2026-08-10
+## [0.1.1] — 2026-08-13
 
-45 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
+59 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
 and it is still finding its shape, so the minor bump waits for it to settle rather than for the next
 substantial change.
+
+Two sections lead because they are the only parts a user can act on wrongly: the **store format**, and
+**how images are corrected and segmented**. Everything else is additive.
 
 ### Changed — store format (read this first)
 
@@ -34,6 +37,27 @@ substantial change.
 - **The NGFF version is now stamped** on the stores we write. Anything written before this has none,
   which is why the metadata modal reports it per stored version.
 - Chunk-key separator and shard depth are import settings, inherited by derived stores like the format.
+
+### Changed — drift correction and segmentation (read this second)
+
+- **Drift correction has a new default estimator, `multiLag`, and it produces a different trajectory
+  than `v0.1.0` did.** It estimates from redundant frame pairs rather than chaining frame-to-frame, so
+  an error in one pair no longer propagates through the rest of the movie. Re-running a correction you
+  already ran will not reproduce the old result — it should be a better one, but it is not the same
+  one. On the drifting test movie: 105.0 s → 56.1 s and the padded canvas 9.21× → 3.51×. On a clean
+  movie the difference is small (42.4 s → 39.8 s, 1.05× → 1.02×). The previous chain algorithm remains
+  selectable.
+- **Segmentation now skips the empty z planes a drift correction padded in**, and the valid box
+  survives smoothing and correction rather than being dropped or widened to the union over frames — so
+  the saving is reachable from the version people actually segment. Measured across 17 corrected
+  stores here: ~24% of plane-frames skipped, range 3.1–55.6%. Those figures describe **this machine's
+  data**, not the feature.
+- **Every Python task now runs with a bounded BLAS thread pool** (4 threads, set by the launcher).
+  Uncapped, a single drift task took every core on a 32-core box, so concurrent tasks fought each
+  other: four together went 309.7 s → 70.7 s, and one alone 56.3 s → 31.8 s, with an **identical**
+  residual at every setting. This is pure overhead removed, not accuracy traded.
+- **The Import page is now Manage images.** It hosts add/copy/move/delete and export alongside the
+  import tasks, so the old name described a third of it.
 
 ### Added
 
@@ -53,7 +77,20 @@ substantial change.
   in a lab notebook nothing here could see. Cecelia never talks to LabArchives and deliberately never
   learns how: Claude reads it through the user's own authenticated session and hands over a summary,
   which is cached beside the data and carried into the next session's briefing and the GUI.
-- **Optical-flow segmentation** — a training task, a model vault page, and a preview backend.
+- **Export an image version as OME-TIFF**, for the people who render figures in Imaris and cannot read
+  a zarr store. The point is the calibration, not the file: `PhysicalSizeX/Y/Z` with units,
+  `TimeIncrement` and channel names are written from `ccid.json` — the authoritative copy — and an
+  unknown size is **omitted rather than defaulted to 1.0**. The old route (OME-TIFF → ImageJ → plain
+  TIFF → converter) silently lost Z spacing, because a plain TIFF has nowhere to record it.
+- **In-app guides** — bubble walkthroughs of the basics, on your own data, from a compass in the
+  header. A guide points and observes; it never clicks, selects or runs anything. Prerequisites are
+  checked live and shown before you start, never enforced. There is also an orientation tour of the app
+  itself, which starts once on a first launch, and GitHub / Zulip links beside the compass.
+- **Optical-flow segmentation** — a training task, a model vault page, and a preview backend. **Early
+  and still moving**: it ships here because the import and correction changes above should not wait
+  for it, not because it is finished.
+- The HMM state-frequency and transition-matrix plots **discover their measures from the data** instead
+  of offering a hardcoded `movement` suffix.
 - **The MCP observer can author analysis boards** (add-only; the user keeps them) and **design chain
   templates it cannot run**, and it can see image attributes and existing boards.
 - Chain whiteboard: automatic layout for a DAG with no saved positions, plus a Tidy button.
@@ -80,6 +117,16 @@ substantial change.
 - Column widths in `SelectionTable` were squeezed below what was specified while the frozen-column
   offsets were computed from the specified values, so sticky columns sat misaligned — visible on the
   Movies table once the Details columns ran past the panel.
+- **Copying a corrected image version could lose every channel name.** Channel names are usually
+  registered only under `default` while a processed version carries none of its own, and the copy read
+  the version's own field with no fallback — so the copy came out with no names at all.
+- **`segment.coastal` died at the first timepoint** on any drift-corrected image once the padded-plane
+  skip landed: the tile was narrowed to the valid z range but the temporal window was still read at
+  full depth, and the mask came back the wrong shape.
+- The guide picker declared "needs a tracked image" for projects migrated from the R version — it
+  scanned the run log, which records what *this app executed*, instead of asking what tracks are on
+  disk. Same substitution as the earlier "no imported images" report.
+- The IoU hot path in the label-matching code, and a `testTasks` name that no longer described it.
 
 ### Infrastructure
 
@@ -89,6 +136,11 @@ substantial change.
 - The notebook table takes the shared resize path (drag-to-resize, persisted widths, a reset).
 - One write-behind autosave helper for the three stores that each had their own, `rafCoalesce` for
   paint-rate work, and a written-down coalescing rule with detectors for the two ways it breaks.
+- Three more canonical-helper bypasses fixed, with detectors for the two that keep recurring: reading a
+  versioned field without its active-version fallback, and treating `exitcode == 0` as success for a
+  process that was signal-killed.
+- The first-use hint callouts on module pages are gone. Three of them asserted a prerequisite, which is
+  a question the app can answer live and a static sentence gets wrong for the user who already met it.
 
 ## [0.1.0] — 2026-08-05
 
