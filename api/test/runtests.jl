@@ -3649,7 +3649,7 @@ end
         "/api/observer/clear", "/api/observer/feedback",
         "/api/observer/labarchives/set",
         "/api/observer/register", "/api/plot_data",
-        "/api/pools/set", "/api/preview/run", "/api/runner/restart",
+        "/api/pools/set", "/api/preview/run", "/api/runner/restart", "/api/runner/enabled",
         "/api/preview/start", "/api/preview/stop",
         "/api/projects/animations", "/api/projects/boards",
         "/api/projects/canvases", "/api/projects/create",
@@ -3702,7 +3702,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 105
+    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 106
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

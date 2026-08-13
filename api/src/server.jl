@@ -335,6 +335,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/projects/list" => (req, body_bytes) -> (api_projects_list(req)),
     "/api/pools/set" => (req, body_bytes) -> (api_pool_set(body_bytes)),
     "/api/runner/restart" => (req, body_bytes) -> (api_runner_restart(body_bytes)),
+    "/api/runner/enabled" => (req, body_bytes) -> (api_runner_set_enabled(body_bytes)),
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),

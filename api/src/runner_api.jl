@@ -12,11 +12,14 @@
 const _RUNNER      = Cecelia.RunnerHandle()
 const _RUNNER_SUB  = Ref{Union{Task,Nothing}}(nothing)
 
-# Off by default while the runner is being built out: with it off, tasks execute in-process exactly as
-# before, so a bug here cannot cost anyone a run. Flip with CECELIA_RUNNER=1 (`pixi run dev-runner`).
-# This is a BUILD-OUT switch, not a permanent setting — Decision 1 says there is one scheduler, and two
-# places tasks can run means `gpu = 1` is silently `gpu = 2`. It comes out when Phase 1 is verified.
-_runner_enabled() = lowercase(strip(get(ENV, "CECELIA_RUNNER", ""))) in ("1", "true", "yes", "on")
+# A user SETTING (`[runner].enabled`, Settings → System), overridable by CECELIA_RUNNER for dev/CI —
+# see `runner_enabled` in config.jl for why it is not just the env var. Default off while the design
+# has known gaps (no spool; chains and background jobs still in-process).
+#
+# Read through this alias rather than calling `Cecelia.runner_enabled()` directly at each site: it is
+# consulted on the request path (submit, cancel, /api/tasks, /api/pools), and having one name here is
+# what makes "where does this decision get made" answerable.
+_runner_enabled() = Cecelia.runner_enabled()
 
 # ── Frame relay ───────────────────────────────────────────────────────────────
 
@@ -146,13 +149,17 @@ running the code it started with. `stale` compares that to the backend's own com
 tell "my fix isn't working" from "my fix isn't loaded" (Decision 5).
 """
 function api_runner_status(::HTTP.Request)
-    _runner_enabled() || return 200, JSON3.write((; enabled = false, running = false))
+    _runner_enabled() || return 200, JSON3.write((;
+        enabled = false, running = false, port = _RUNNER.port,
+        settable = !haskey(ENV, "CECELIA_RUNNER")))
     id = Cecelia.runner_ping(_RUNNER)
     isnothing(id) && return 200, JSON3.write((;
-        enabled = true, running = false, port = _RUNNER.port))
+        enabled = true, running = false, port = _RUNNER.port,
+        settable = !haskey(ENV, "CECELIA_RUNNER")))
     commit = String(get(id, "commit", ""))
     200, JSON3.write((;
         enabled  = true,
+        settable = !haskey(ENV, "CECELIA_RUNNER"),   # false = the env var is forcing it; the toggle would lie
         running  = true,
         port     = _RUNNER.port,
         pid      = get(id, "pid", 0),
@@ -183,4 +190,23 @@ function api_runner_restart(body_bytes::Vector{UInt8})
         @error "Task runner failed to relaunch" exception = (e, catch_backtrace())
     end
     200, JSON3.write((; ok = true, message = "Restarting the task runner"))
+end
+
+# POST /api/runner/enabled {enabled} — the Settings toggle. Persists `[runner].enabled`.
+#
+# Turning it ON starts the runner immediately; turning it OFF does NOT kill one that is busy. Those
+# are deliberately asymmetric: "off" means new tasks run in-process, and killing a runner mid-cellpose
+# because someone flipped a switch would destroy exactly what it exists to protect. The row keeps
+# showing it until it drains, which is the truth.
+function api_runner_set_enabled(body_bytes::Vector{UInt8})
+    body = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch
+        return 400, JSON3.write((; error = "invalid JSON body")); end
+    haskey(ENV, "CECELIA_RUNNER") && return 409, JSON3.write((;
+        error = "CECELIA_RUNNER is set for this session — it overrides the setting."))
+    want = get(body, "enabled", false) === true
+    now  = Cecelia.set_runner_enabled!(want)
+    now && _start_runner!()      # idempotent: adopts an already-running one rather than relaunching
+    200, JSON3.write((; enabled = now,
+                        message = now ? "Tasks will run in the task runner." :
+                                        "New tasks will run in the backend."))
 end

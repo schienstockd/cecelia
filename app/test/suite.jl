@@ -3947,6 +3947,39 @@ end
     @test runner_emit(Dict{String,Any}("type" => "task:log", "taskId" => "x", "line" => "hi")) === nothing
 end
 
+# The opt-in is a SETTING, not just an env var — a packaged install has no way to set an env var, so
+# "opt-in" would have meant "dev-only". The override still wins, which is what `pixi run dev-runner`
+# and CI use; the test pins that precedence, because getting it backwards makes the toggle a lie.
+@testset "runner opt-in: setting, with an env override" begin
+    # `init_cecelia!()` mutates PROCESS-WIDE config, so this testset must put it back — leaving it
+    # pointed at a throwaway config dir broke 37 later testsets (every one that touches
+    # projects_dir()) the first time this was written, while passing itself.
+    cfg = mktempdir()
+    try
+    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => nothing) do
+        init_cecelia!()
+        @test runner_enabled() == false                    # default off — known gaps remain
+        @test set_runner_enabled!(true) == true
+        @test runner_enabled() == true                     # …and it survives a config reload
+        init_cecelia!()
+        @test runner_enabled() == true
+        @test occursin("[runner]", read(custom_toml_path(), String))
+        # merged write: an unrelated key must survive, like every other setting writer
+        @test set_runner_enabled!(false) == false
+    end
+    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => "1") do
+        init_cecelia!()
+        @test runner_enabled() == true                     # env wins over a file that says false
+    end
+    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => "0") do
+        init_cecelia!()
+        @test runner_enabled() == false                    # …in both directions
+    end
+    finally
+        init_cecelia!()                                    # restore the suite's own config
+    end
+end
+
 @testset "runner client refuses a dead port cleanly" begin
     # Every one of these runs on the API server's request path. A runner that is simply not there must
     # read as absent — never a throw that takes a route down, and never a hang.

@@ -6,6 +6,7 @@ export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
+export runner_enabled, set_runner_enabled!
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON
 export ngff_version, chunk_separator, set_store_layout!

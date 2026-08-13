@@ -240,6 +240,7 @@ const previewRaw = ref<{ alive?: boolean; starting?: boolean; imageUid?: string 
 interface RunnerStatus {
   enabled?: boolean; running?: boolean; port?: number; pid?: number; adopted?: boolean
   commit?: string; stale?: boolean; protocolMismatch?: boolean; uptimeSeconds?: number; busy?: boolean
+  settable?: boolean
 }
 const runnerRaw = ref<RunnerStatus | null>(null)
 const runnerSt = computed<ServiceState>(() => runnerRaw.value?.running ? 'running' : 'stopped')
@@ -392,6 +393,20 @@ async function previewStop() {
 // Restart REFUSES while the runner is busy, and that refusal is the feature: the runner holds work
 // this app does not, so discarding it silently is the one thing this button must never do. The second
 // press is the user overriding, with the count in front of them.
+// The opt-in itself. Off does NOT stop a busy runner — see the endpoint; the row keeps showing it
+// until it drains, which is the truth rather than a tidier lie.
+async function runnerToggle(on: boolean) {
+  svcBusy.value = 'runner'; svcMsg.value = ''
+  try {
+    const res = await fetch('/api/runner/enabled', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: on }),
+    })
+    const d = await res.json()
+    svcMsg.value = res.ok ? d.message : (d.error ?? 'Could not change the task runner setting.')
+  } catch { svcMsg.value = 'Could not change the task runner setting.' }
+  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
+}
 async function runnerRestart(force = false) {
   svcBusy.value = 'runner'; svcMsg.value = ''
   try {
@@ -863,7 +878,7 @@ async function switchWt(path: string) {
 
       <!-- Task runner. Only shown when enabled (CECELIA_RUNNER=1) — an always-visible row for a
            process most installs don't run would be noise. -->
-      <div class="svc-row" v-if="runnerRaw?.enabled">
+      <div class="svc-row" v-if="runnerRaw">
         <span class="svc-name">Task runner</span>
         <span class="svc-pill" :class="stateInfo(runnerSt).tone"><span class="dot" /> {{ stateInfo(runnerSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
@@ -879,7 +894,20 @@ async function switchWt(path: string) {
                   v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
             <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
           </button>
-          <span v-else class="cc-muted cc-fs-xs">Starts with the backend</span>
+          <span v-else-if="runnerRaw?.enabled" class="cc-muted cc-fs-xs">Starts with the backend</span>
+          <span v-else class="cc-muted cc-fs-xs">Off — tasks run in the backend</span>
+        </span>
+      </div>
+
+      <div class="field" style="margin: 0.2rem 0 0.6rem;">
+        <CcToggle class="toggle-row" :disabled="svcBusy === 'runner' || runnerRaw?.settable === false"
+               :model-value="!!runnerRaw?.enabled"
+               @update:model-value="runnerToggle($event)"
+               v-tooltip.right="'Run tasks in a separate process so a backend restart does not stop them'">
+          Run tasks in a separate process
+        </CcToggle>
+        <span v-if="runnerRaw?.settable === false" class="field-hint cc-muted cc-fs-xs">
+          CECELIA_RUNNER is set for this session, so it overrides this setting.
         </span>
       </div>
 
