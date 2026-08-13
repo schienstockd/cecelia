@@ -17,7 +17,7 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ## [0.1.1] — 2026-08-13
 
-59 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
+60 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
 and it is still finding its shape, so the minor bump waits for it to settle rather than for the next
 substantial change.
 
@@ -123,6 +123,13 @@ Two sections lead because they are the only parts a user can act on wrongly: the
 - **`segment.coastal` died at the first timepoint** on any drift-corrected image once the padded-plane
   skip landed: the tile was narrowed to the valid z range but the temporal window was still read at
   full depth, and the mask came back the wrong shape.
+- **The flow-metrics panel worked on exactly one image** and failed everywhere else with `message too
+  large`. Not the image — a websocket frame cap nobody had set on the Julia side, where the default is
+  16 MiB and a whole-frame reply is ~36 MB. One cap now covers all four ends of the napari and preview
+  legs, which removes the same latent failure from the AF and segmentation previews over a large view.
+  The panel also renders a **centred crop** (512 px by default, 256/512/768 selectable) rather than the
+  whole frame — a crop, not a downsample, because the panel's claim is that these are the planes a run
+  is actually fed.
 - The guide picker declared "needs a tracked image" for projects migrated from the R version — it
   scanned the run log, which records what *this app executed*, instead of asking what tracks are on
   disk. Same substitution as the earlier "no imported images" report.
