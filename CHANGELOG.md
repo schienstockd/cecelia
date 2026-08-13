@@ -15,6 +15,140 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.1] — 2026-08-13
+
+60 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
+and it is still finding its shape, so the minor bump waits for it to settle rather than for the next
+substantial change.
+
+Two sections lead because they are the only parts a user can act on wrongly: the **store format**, and
+**how images are corrected and segmented**. Everything else is additive.
+
+### Changed — store format (read this first)
+
+- **Zarr v3 / OME-NGFF 0.5 stores can now be written.** Opt-in and **not** the default: the default
+  stays flat-key v2, chosen from a measured storage-vs-access table in Settings → Storage (v3 costs
+  ~14% less on disk and reads ~40% slower). Import picks the format and **every derived store inherits
+  it**; there is no converter.
+- **A store written as v3 cannot be opened by `v0.1.0`.** v3 *reading* landed in this same cycle, so an
+  older install has no reader for it. Nothing forces the choice, but it is a one-way door per store.
+- **New imports are little-endian** (`<u2` rather than `>u2`), following bioformats2raw 0.12 — which
+  retires the byte-order class of bug entirely. Existing stores are untouched and still read correctly.
+- **The NGFF version is now stamped** on the stores we write. Anything written before this has none,
+  which is why the metadata modal reports it per stored version.
+- Chunk-key separator and shard depth are import settings, inherited by derived stores like the format.
+
+### Changed — drift correction and segmentation (read this second)
+
+- **Drift correction has a new default estimator, `multiLag`, and it produces a different trajectory
+  than `v0.1.0` did.** It estimates from redundant frame pairs rather than chaining frame-to-frame, so
+  an error in one pair no longer propagates through the rest of the movie. Re-running a correction you
+  already ran will not reproduce the old result — it should be a better one, but it is not the same
+  one. On the drifting test movie: 105.0 s → 56.1 s and the padded canvas 9.21× → 3.51×. On a clean
+  movie the difference is small (42.4 s → 39.8 s, 1.05× → 1.02×). The previous chain algorithm remains
+  selectable.
+- **Segmentation now skips the empty z planes a drift correction padded in**, and the valid box
+  survives smoothing and correction rather than being dropped or widened to the union over frames — so
+  the saving is reachable from the version people actually segment. Measured across 17 corrected
+  stores here: ~24% of plane-frames skipped, range 3.1–55.6%. Those figures describe **this machine's
+  data**, not the feature.
+- **Every Python task now runs with a bounded BLAS thread pool** (4 threads, set by the launcher).
+  Uncapped, a single drift task took every core on a 32-core box, so concurrent tasks fought each
+  other: four together went 309.7 s → 70.7 s, and one alone 56.3 s → 31.8 s, with an **identical**
+  residual at every setting. This is pure overhead removed, not accuracy traded.
+- **The Import page is now Manage images.** It hosts add/copy/move/delete and export alongside the
+  import tasks, so the old name described a third of it.
+
+### Added
+
+- **Movies are a managed collection, not a directory listing** — a per-project registry under
+  `settings/` (so it travels with a `.ccbundle`), an in-app player, star / tags / rename / delete and
+  bulk actions on a checked selection, and a sortable, resizable, collapsible list. A movie banks the
+  config that produced it, so it can be **reopened for editing on the page that made it**.
+- **The movie list shows its source image** — channel and attribute columns behind a Details toggle,
+  with the image table's attribute filter (now one shared control, `AttrFilterPanel`).
+- **Side-by-side comparison movies** — image versions across the columns × segmentation masks down the
+  rows, recorded one pass per cell and composed into one file.
+- Movie options throughout: explicit output size, frame range, title cards, mask outline width,
+  filename suffix and attribute-based naming, and recording on the task rail with progress + cancel.
+- **The Animation page picks its own image**, having become a proper module page.
+- **A LabArchives notebook can be linked to a project.** The person analysing the images is often not
+  the one who ran the experiment, and the design — cohort, protocol, the question being asked — lives
+  in a lab notebook nothing here could see. Cecelia never talks to LabArchives and deliberately never
+  learns how: Claude reads it through the user's own authenticated session and hands over a summary,
+  which is cached beside the data and carried into the next session's briefing and the GUI.
+- **Export an image version as OME-TIFF**, for the people who render figures in Imaris and cannot read
+  a zarr store. The point is the calibration, not the file: `PhysicalSizeX/Y/Z` with units,
+  `TimeIncrement` and channel names are written from `ccid.json` — the authoritative copy — and an
+  unknown size is **omitted rather than defaulted to 1.0**. The old route (OME-TIFF → ImageJ → plain
+  TIFF → converter) silently lost Z spacing, because a plain TIFF has nowhere to record it.
+- **In-app guides** — bubble walkthroughs of the basics, on your own data, from a compass in the
+  header. A guide points and observes; it never clicks, selects or runs anything. Prerequisites are
+  checked live and shown before you start, never enforced. There is also an orientation tour of the app
+  itself, which starts once on a first launch, and GitHub / Zulip links beside the compass.
+- **Optical-flow segmentation** — a training task, a model vault page, and a preview backend. **Early
+  and still moving**: it ships here because the import and correction changes above should not wait
+  for it, not because it is finished.
+- The HMM state-frequency and transition-matrix plots **discover their measures from the data** instead
+  of offering a hardcoded `movement` suffix.
+- **The MCP observer can author analysis boards** (add-only; the user keeps them) and **design chain
+  templates it cannot run**, and it can see image attributes and existing boards.
+- Chain whiteboard: automatic layout for a DAG with no saved positions, plus a Tidy button.
+- Gates are positioned in µm, through one pixel scale.
+
+### Fixed
+
+- The Movies page rendered blank (a temporal-dead-zone throw in setup), and the detector gap that let
+  it through is closed.
+- The analysis board re-rendered itself to Vue's recursion limit; a client reloaded its own write on
+  every autosave; the read-back could not tell two boards apart. Boards are now versioned so two tabs
+  stop clobbering each other.
+- Skeletons vanished from a recording exactly like masks did, and a mask's outline width did not reach
+  napari — so recordings came out filled.
+- The mp4 writer leaked a staged `.tmp.mp4` on a failed or cancelled render.
+- Movie title cards rendered every non-ASCII character as a box.
+- A re-import reverted renamed channels; the import chunk-size parameter was wired to nothing.
+- **The Metadata panel's "Original path" regex read the wrong path** — it fed the *converted* store
+  name (`ccidImage.ome.zarr`), identical on every image, so the option could never do what it exists
+  for. It now reads the recorded source location, and the builder gained a `/ folder` separator,
+  2nd/3rd-last field positions (an absolute path has a variable number of leading folders, so counting
+  from the start is useless), and a `strip extension` that applies only to the last field — applied to
+  a `2026.07.16` date folder it had matched nothing at all.
+- Column widths in `SelectionTable` were squeezed below what was specified while the frozen-column
+  offsets were computed from the specified values, so sticky columns sat misaligned — visible on the
+  Movies table once the Details columns ran past the panel.
+- **Copying a corrected image version could lose every channel name.** Channel names are usually
+  registered only under `default` while a processed version carries none of its own, and the copy read
+  the version's own field with no fallback — so the copy came out with no names at all.
+- **`segment.coastal` died at the first timepoint** on any drift-corrected image once the padded-plane
+  skip landed: the tile was narrowed to the valid z range but the temporal window was still read at
+  full depth, and the mask came back the wrong shape.
+- **The flow-metrics panel worked on exactly one image** and failed everywhere else with `message too
+  large`. Not the image — a websocket frame cap nobody had set on the Julia side, where the default is
+  16 MiB and a whole-frame reply is ~36 MB. One cap now covers all four ends of the napari and preview
+  legs, which removes the same latent failure from the AF and segmentation previews over a large view.
+  The panel also renders a **centred crop** (512 px by default, 256/512/768 selectable) rather than the
+  whole frame — a crop, not a downsample, because the panel's claim is that these are the planes a run
+  is actually fed.
+- The guide picker declared "needs a tracked image" for projects migrated from the R version — it
+  scanned the run log, which records what *this app executed*, instead of asking what tracks are on
+  disk. Same substitution as the earlier "no imported images" report.
+- The IoU hot path in the label-matching code, and a `testTasks` name that no longer described it.
+
+### Infrastructure
+
+- **Release notes now come from `CHANGELOG.md`.** They used to be GitHub's auto-generated pull-request
+  list — which is also what the in-app What's New modal rendered, so the app's answer to "what
+  changed" was a list of branch names. This section is what you are reading in both places.
+- The notebook table takes the shared resize path (drag-to-resize, persisted widths, a reset).
+- One write-behind autosave helper for the three stores that each had their own, `rafCoalesce` for
+  paint-rate work, and a written-down coalescing rule with detectors for the two ways it breaks.
+- Three more canonical-helper bypasses fixed, with detectors for the two that keep recurring: reading a
+  versioned field without its active-version fallback, and treating `exitcode == 0` as success for a
+  process that was signal-killed.
+- The first-use hint callouts on module pages are gone. Three of them asserted a prerequisite, which is
+  a question the app can answer live and a static sentence gets wrong for the user who already met it.
+
 ## [0.1.0] — 2026-08-05
 
 **The first plain release.** Everything before this was an `-rcN` snapshot; nine of them never
@@ -238,7 +372,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/schienstockd/cecelia/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...v0.1.0
 [0.1.0-rc9]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...v0.1.0-rc9
 [0.1.0-rc8]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc7...v0.1.0-rc8

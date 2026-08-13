@@ -154,10 +154,18 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
 
 1. CI matrix green on `main` (all three OSes).
 2. Decide the version (heartbeat patch vs substantial minor; `-rcN` if you'll soak before announcing).
-3. Draft release notes (features / fixes / infra since the last tag — `git log <lasttag>..HEAD`).
-   The same log feeds **`CHANGELOG.md`**: rename its `[Unreleased]` block to the new version + date
-   and paste the notes in (see snippet below). Don't hand-maintain `[Unreleased]` between releases —
-   it's generated here, so it can't silently drift from what actually shipped.
+3. **Write the `CHANGELOG.md` section — this IS the release body, so it must land before the tag.**
+   Rename `[Unreleased]` to the new version + date and write the notes in (see snippet below).
+   `release.yml` extracts that section (`scripts/changelogSection.mjs`) and publishes it as the
+   GitHub Release body; a **missing section fails the release build** rather than shipping an empty
+   one. Don't hand-maintain `[Unreleased]` between releases — it's written here, so it can't silently
+   drift from what actually shipped.
+
+   > This used to be `generate_release_notes: true` — GitHub's auto PR list. That list is also what
+   > the in-app **What's New** modal renders, since the update check passes the release body through
+   > as markdown, and 450 lines of `* title by @user in #N` told a user nothing they could act on
+   > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
+   > they now have to decide. The commit log is one click away on the compare link appended below.
 4. Bump the `version:` + `date-released:` in **`CITATION.cff`** to this tag.
 5. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
 6. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
@@ -175,8 +183,19 @@ git log $(git describe --tags --abbrev=0)..HEAD --oneline --no-merges
 
 Rename `## [Unreleased]` to `## [<version>] — <YYYY-MM-DD>`, drop the grouped notes under it
 (Added / Changed / Fixed), add a fresh empty `## [Unreleased]` above it, and update the compare
-links at the bottom of the file. This is the same content as the GitHub Release — the CHANGELOG is
-just its offline-readable, in-repo mirror.
+links at the bottom of the file.
+
+The CHANGELOG is no longer a *mirror* of the GitHub Release — it is the **source**. `release.yml`
+runs `node scripts/changelogSection.mjs "$TAG"` and publishes what comes out, so the two cannot drift.
+Check it renders before you tag:
+
+```sh
+node scripts/changelogSection.mjs v0.1.1        # exactly what the release (and the modal) will show
+```
+
+**Lead with what a user can act on wrongly.** A format change, a default that moved, a one-way door —
+those go first and in full. Feature bullets can be discovered by using the app; a store written in a
+format the previous version cannot read cannot.
 
 ## Overdue check
 

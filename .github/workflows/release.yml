@@ -23,6 +23,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          # `git describe` needs the tag history to find the PREVIOUS tag for the compare link
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -51,6 +54,23 @@ jobs:
           cat out/cecelia.tar.gz.sha256
           ls -lh out/
 
+      # The release body is the CHANGELOG section for this tag, NOT GitHub's auto-generated PR list.
+      # That list is also what the in-app What's New modal renders (the update check passes the body
+      # through as markdown), and 450 lines of `* title by @user in #N` told a user nothing they could
+      # act on. A missing section FAILS here rather than publishing an empty release — see
+      # docs/RELEASING.md, and scripts/changelogSection.mjs for the extractor + why.
+      - name: Release notes from CHANGELOG
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # the tag before this one, for the compare link; empty on the very first release
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || true)
+          echo "previous tag: ${PREVIOUS_TAG:-<none>}"
+          PREVIOUS_TAG="$PREVIOUS_TAG" node scripts/changelogSection.mjs "${{ github.ref_name }}" \
+            > RELEASE_NOTES.md
+          echo "--- release body ---"
+          cat RELEASE_NOTES.md
+
       - name: Publish GitHub Release
         # v3 = the same action on the Node 24 runtime (v3.0.0 was runtime-only; `v2` is pinned to
         # the 2.x line and still declares node20, which GitHub now force-runs on 24 with a
@@ -62,7 +82,10 @@ jobs:
             out/cecelia.tar.gz.sha256
             install.sh
             install.ps1
-          generate_release_notes: true
+          # The CHANGELOG section is the body (see the step above). `generate_release_notes` would
+          # APPEND the PR list underneath it, which is the thing being removed.
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           fail_on_unmatched_files: true
           # Tags with a pre-release suffix (e.g. v0.1.0-rc1) publish as a GitHub prerelease;
           # clean vX.Y.Z tags publish as a full release (and become the `latest` the one-liner uses).
