@@ -12,6 +12,7 @@ import BaseModal from './BaseModal.vue'
 import WhatNewCard from './WhatNewCard.vue'
 import { useAppControlStore } from '../stores/appControl'
 import { useUpdateCard, openWithTip, viewedTipIndex, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
+import { CECELIA_RELEASES_URL } from '../lib/links'
 import { TIPS, todayTipIndex } from '../lib/tips'
 
 const props = withDefaults(defineProps<{
@@ -82,7 +83,7 @@ const canInstall = computed(() =>
     </div>
 
     <template #footer>
-      <a href="https://github.com/schienstockd/cecelia/releases" target="_blank" rel="noopener" class="wn-foot-link cc-muted">
+      <a :href="CECELIA_RELEASES_URL" target="_blank" rel="noopener" class="wn-foot-link cc-muted">
         All releases <i class="pi pi-external-link" />
       </a>
       <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>

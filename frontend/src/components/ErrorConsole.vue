@@ -68,8 +68,12 @@ const filterOptions = computed<ChipOption[]>(() =>
 </script>
 
 <template>
-  <!-- collapsed bar (never in fill/window mode) -->
-  <div v-if="!fill && !log.consoleOpen" class="console-bar" @click="log.openConsole()">
+  <!-- collapsed bar (never in fill/window mode).
+       `data-guide="console.bar"` is on BOTH this and the open panel below. The two are mutually
+       exclusive `v-if`s, so exactly one is ever in the DOM and the guide's `querySelector` cannot
+       pick the wrong one — whereas anchoring only the collapsed bar would leave the tour pointing at
+       nothing for anyone who already had the console open. -->
+  <div v-if="!fill && !log.consoleOpen" class="console-bar" data-guide="console.bar" @click="log.openConsole()">
     <span class="bar-toggle" v-tooltip.top="'Open error console'">
       <i class="pi pi-angle-up" />
       Console
@@ -96,7 +100,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 
   <!-- open panel (always shown in fill/window mode) -->
   <div v-if="fill || log.consoleOpen" class="console-panel" :class="{ fill }">
-    <div class="console-toolbar">
+    <div class="console-toolbar" data-guide="console.bar">
       <button
         v-if="!fill"
         class="bar-toggle"

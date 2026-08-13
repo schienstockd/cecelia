@@ -491,7 +491,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
-    <section class="settings-section">
+    <section class="settings-section" data-guide="settings.updates">
       <h2 class="section-title">Software updates</h2>
 
       <div class="field">
@@ -537,7 +537,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
-    <section class="settings-section">
+    <section class="settings-section" data-guide="settings.storage">
       <h2 class="section-title">Storage</h2>
 
       <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
@@ -576,7 +576,12 @@ async function switchWt(path: string) {
 
       <div class="field">
         <div class="field-row">
-          <button class="save-btn" :disabled="storageScan || !projectMeta.current" @click="scanStorage"
+          <!-- The tour anchors HERE rather than on the "Free up space" button: that one is behind
+               `v-if="storage.reclaimable.length"`, so it does not exist until a scan has run and never
+               exists on a project with nothing to reclaim — an anchor the guide could point at only
+               sometimes. Scan is always present, and it is the first click either way. -->
+          <button class="save-btn" data-guide="settings.storageScan"
+                  :disabled="storageScan || !projectMeta.current" @click="scanStorage"
                   v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
             <i :class="['pi', storageScan ? 'pi-spin pi-cog' : 'pi-search']" />
             {{ storage ? 'Re-scan' : 'Scan storage' }}

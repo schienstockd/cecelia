@@ -244,13 +244,23 @@ function isNavDisabled(item: NavItem): boolean {
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
          and opposite the destructive/lifecycle controls. -->
     <div class="sidebar-footer">
+      <!-- An explicit `data-guide`, NOT the `nav:/settings` scheme. That scheme exists because the nav
+           groups above are data-driven and so carry no attributes of their own; this is hand-written
+           markup and can just say what it is. Addressing it by href made the one guide that points here
+           the only one resolving a `nav:` anchor outside `.nav-scroll`. -->
       <RouterLink to="/settings" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
+                  data-guide="sidebar.settings"
                   v-tooltip.right="'Settings — project name, ID, and interface preferences'">
         <i class="pi pi-sliders-h" />
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="armQuit(arm)"
+          <!-- Anchored for the orientation tour, which points here to say "close the tab and the
+               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. Only the
+               UNARMED button takes the anchor: arming swaps the node, and a tour step must never
+               invite this particular click. -->
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" data-guide="sidebar.quit"
+                  :disabled="appCtl.busy" @click="armQuit(arm)"
                   v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>

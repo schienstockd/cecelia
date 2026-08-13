@@ -1066,8 +1066,28 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   /api/setup/init`); the backend writes `custom.toml` (`Cecelia.set_projects_dir!`).
 - **First-use hints** — `frontend/src/components/HintCallout.vue`: a one-line, dismiss-permanently
   callout keyed by id in `localStorage` (`cc.hint.<id>`). Module pages declare one via `ModuleLayout`'s
-  `hint` + `hint-key` props (don't hand-roll it per page); the global "use the bottom-left Quit button,
-  not the browser tab" hint is in `App.vue`.
+  `hint` + `hint-key` props (don't hand-roll it per page).
+
+  **There are currently none, and that is the intended state.** `ONBOARDING_PLAN.md` P4 specified four
+  and a fifth arrived later; on review they were doing three unrelated jobs and only one of them was a
+  job nothing else could do. The bar for adding one:
+
+  > An **interaction affordance with no other surface** — something invisible in the markup that no
+  > live check could answer. Never pipeline ordering, and never a prerequisite.
+
+  Ordering and prerequisites are **state** questions, and `lib/guides/prereqs.ts` answers them live in
+  the guide picker while QC answers them per image after a run. A static sentence cannot: "Segment all
+  timepoints first" is wrong for exactly the user who already segmented, and they are the ones who see
+  it, because it fires on first visit regardless of state. That is the same substitution written up
+  twice in `prereqs.ts` — `status === 'done'` for "imported", a run-log scan for "tracked" — a static
+  answer to a state question, in a third costume.
+
+  Where the four went: the gating draw affordance (the one that met the bar) folded into the gating
+  guide's *Pick a shape* step, which is now the only place either half of it is stated; segment,
+  tracking and optical flow were dropped as already covered by the sidebar order, the guide prereqs and
+  the orientation tour; and the global "closing the tab does not stop the backend" hint became the
+  tour's closing step, beside the Quit button it is about. A fact about a button belongs next to the
+  button.
 - **Empty states** — exactly two, and they already exist: `ProjectPanel.vue` (`.pp-empty.cc-empty`,
   no projects) and `ImageTable.vue` (`.cc-empty.cc-empty-lg`, no images). Extend the copy there;
   don't add a parallel component. These are the ONE carve-out from *UI copy — keep it short*: that
@@ -1197,6 +1217,58 @@ be a real matching pair, and teaching the bare half of a composite must be decla
   screencast genuinely beats the system.
 - **No demo data.** Guides run on real projects, which is what the prerequisite system makes honest.
   Guides are not a substitute for the first-launch wizard and shouldn't grow into one.
+
+### The orientation tour — the one guide with no prerequisites
+
+`lib/guides/tour.ts` (**Find your way around**, group `Start`, first in the picker) is the exception to
+everything above, on purpose. Every other guide teaches a pipeline step and therefore needs data; this
+one points **only at chrome** — the header, the sidebar CTAs, the console, three panels in Settings —
+so it works on a first launch with an empty project, which is exactly when it runs. `prereqs: []`, and
+`guides.test.ts` pins both that and the absence of any data-dependent anchor family (`images.`, `set.`,
+`board.`, `popmanager.`, `viewer.`, …) in its steps. **Do not add a step to it that points at an image
+table, a set or a plot** — the moment one does, the tour breaks for the person it was written for.
+
+It has three ways in, and they are deliberately not three implementations:
+
+| Entry | Where | Behaviour |
+|---|---|---|
+| The compass, like any guide | `AppHeader.vue` | listed first in the picker |
+| "Show me" on the **about Cecelia** card | `lib/tips.ts` → `guideId` | the existing tip↔guide link (D7); no new plumbing |
+| **Automatic, once ever** | `App.vue` | starts when the What's New dialog is closed for the first time |
+
+The first-launch trigger needs no new persisted flag: `settings.tipsLastShown` is `''` until the daily
+launch tip has fired once, ever, so reading it *before* the date stamp is the first-launch signal.
+App.vue watches `isWhatsNewOpen` rather than the dialog's `@close` emit, because `WhatNewCard`'s
+"Show me" closes the dialog itself — hanging off the emit would leave the flag unconsumed and the tour
+would ambush the user days later, the next time they closed What's New from the header. Two guards:
+`setupRequired === false` (the `/setup` route is `bare` — no header or sidebar to tour) and
+`!guide.active` (don't replace a guide the user explicitly asked for).
+
+**Pointing at a control that only sometimes exists is an anchor bug, not a `reveal` case.** The Settings
+storage step anchors on **Scan storage**, not on "Free up space": the latter is behind
+`v-if="storage.reclaimable.length"`, so it does not exist until a scan has run and never exists on a
+project with nothing to reclaim. `reveal` is for a target that is unreachable *right now*; a target
+that may never render needs a different anchor.
+
+**Two mutually-exclusive elements may share one anchor id.** `console.bar` is on both the collapsed
+`.console-bar` and the open `.console-panel` toolbar in `ErrorConsole.vue`. Only one is ever in the DOM,
+so resolution cannot pick wrong — and anchoring only the collapsed bar would leave the tour pointing at
+nothing for anyone who already had the console open.
+
+### The header's outward links
+
+The compass sits in a row of three: **guides → GitHub issues → Zulip chat**, reading left to right as
+"walk me through it" → "this is broken" → "does anyone know?". The two links are `<a target="_blank">`
+and take `cc-btn-bare`'s muted colour rather than `--cc-guide`, so they sit a step quieter than the
+compass instead of competing with it for the same glance.
+
+Every outward URL lives in **`lib/links.ts`** — `CECELIA_REPO_URL`, `CECELIA_ISSUES_URL` (the list, for
+a browse-first entry point), `CECELIA_NEW_ISSUE_URL` (the form, for a "report this" action),
+`CECELIA_RELEASES_URL`, `CECELIA_CHAT_URL`. There were three hardcoded `github.com/schienstockd/cecelia`
+literals across the frontend before it and the header was about to add two more; a repo rename is
+pending (`docs/SHIPPING.md` → *Repo swap*) and should be one edit, not a grep. `lib/links.ts` is string
+constants only — anything that *asks* GitHub something (the update check) stays in
+`stores/appControl.ts`.
 
 A What's New tip card can carry `guideId` to render a **"Show me"** button that starts the matching
 guide — so a topic is described once (tip = the summary, guide = the click-through) instead of twice.

@@ -294,6 +294,37 @@ grows a **"Show me" button** when it is set → starts the guide, closes the mod
 one-paragraph summary + sketch; the guide is the click-through. Content lives in one place per topic,
 and the What's New modal becomes a second discovery surface for free.
 
+### D11 — An orientation tour, with no prerequisites, started once on first launch
+
+*(added after the initial build — Dominik, 2026-08-13)*
+
+The catalogue as shipped had a hole at the front: every guide taught a pipeline step, so every guide
+needed data, so a first-time user with an empty project opened the picker and found a wall of amber
+"needs an imported image" warnings. And the picker itself was only reachable from a compass nobody had
+a reason to click.
+
+**`find-your-way-around` (`lib/guides/tour.ts`, group `Start`, first in the picker)** fills it, and is
+the one guide that **points only at app chrome** — header, sidebar CTAs, error console, and three
+panels in Settings. That constraint is what lets it declare `prereqs: []` honestly rather than as a
+lie, and `guides.test.ts` pins it from both ends: no prereqs, and no anchor from a data-dependent
+family. It is not an exception to D6; it is the guide D6 has nothing to say about.
+
+**Three entries, one implementation.** The compass (as any guide), `guideId` on the *about Cecelia*
+card (the D7 link, no new plumbing), and — new — **automatic on the first-ever close of the What's New
+dialog**. That last one needs no new persisted flag: `settings.tipsLastShown` is `''` until the daily
+launch tip fires once ever, so reading it before the date stamp *is* the first-launch signal.
+
+Rejected: a first-time highlight ring on the compass (the original ask). A ring is a passive hint that
+still requires the user to work out what the icon is for; the tour answers that directly, and adding
+both means two competing first-run affordances pointing at the same button. Rejected too: a welcome-page
+CTA — there is no welcome page (`/` redirects to `/manage-images`; `/setup` is the bare first-launch
+wizard), and the What's New dialog is already the de-facto welcome surface.
+
+Two anchor rules fell out of writing it, both now in `docs/UI.md`: a control behind a `v-if` that may
+*never* render (Settings' "Free up space") needs a **different anchor**, not a `reveal` — so the step
+points at *Scan storage*; and two mutually-exclusive elements may share one anchor id (`console.bar` on
+both the collapsed bar and the open panel), since only one is ever in the DOM.
+
 ### D8 — Three of the guides are one parameterised builder, not three step lists
 
 Drift correct, segment and track are the *same* five moves — pick set → select image(s) → choose the
