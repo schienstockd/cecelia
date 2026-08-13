@@ -111,13 +111,18 @@ not hold.
 **Adopt when:**
 - Every compute task has ported to Julia and Napari is demonstrably the *only* remaining Python
   dependency (until then the Pixi Python env exists regardless, so the viewer buys no env removal)
+  — **this first condition is now known to be unreachable** (Dominik, 2026-08-13): the Julia port was
+  judged not feasible, since the load-bearing tasks are published algorithms (Cellpose, btrack,
+  scanpy/Leiden) and porting those means reimplementing them. So this entry is parked behind a gate
+  that will not open, which is what `FUTURE.md` is for — but read it as settled, not pending. The
+  near-term half (strip Napari to a display-only embed) does **not** depend on the port and stands.
 - A GLMakie pyramidal-LOD tile scheduler exists (prototype it in isolation first — it is the
   load-bearing unknown; everything else is comparatively mechanical)
 - There is appetite for a multi-month focused build, not an incremental side-task
 
 **Reference:** `docs/NAPARI.md` (bridge process model, layer props, OME-Zarr layouts),
 `napari/napari_bridge.py`, `api/src/napari_api.jl`; footprint + shrinkage buckets in
-`docs/prompts/python-audit-report.md`. Julia candidates: `GLMakie.jl`, `Mousetrap.jl`, `Zarr.jl`.
+`docs/archive/python-audit-report.md`. Julia candidates: `GLMakie.jl`, `Mousetrap.jl`, `Zarr.jl`.
 
 ---
 

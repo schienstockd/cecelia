@@ -93,9 +93,11 @@ and use the canonical component/utility (`CcToggle`, `.cc-btn*`, `ChipSelect`, `
 new variant of a primitive that already has a canonical form is a bug — same rule as H5AD/zarr/`run_py`.
 Unification status + what's not-yet-extracted lives in [`docs/todo/UX_PRIMITIVES_PLAN.md`](docs/todo/UX_PRIMITIVES_PLAN.md).
 
-## Prompts (`docs/prompts/`)
+## Archive (`docs/archive/`) — do not act on anything in here
 
-Feature briefs and one-off audits stay where they are written — `docs/prompts/`, in the repo — including once the work has shipped. They are a **frozen record, reference only**: what was asked and investigated, never instructions to re-run. Convention + how they differ from `docs/todo/`: [`docs/prompts/README.md`](docs/prompts/README.md).
+Feature briefs and one-off audits are kept in the repo once the work has shipped, as a record of what was asked and investigated (the project is openly AI-assisted; the asking is part of how it was built). **They are not documentation and nothing in them is authoritative** — a brief reads like a confident spec long after the design it describes has moved, been rejected, or shipped differently. Every file carries an `ARCHIVED` banner on line 1, since a grep hit shows a path and the top of the file is the only place a warning reliably lands. If a grep leads you here, go find the current answer in `docs/<AREA>.md` or `docs/todo/*_PLAN.md` instead.
+
+The folder was `docs/prompts/` until 2026-08-13 — a name that said where the files came from and left their status to be inferred. **When a brief's work lands, add an outcome note under the banner in the same PR** — what shipped, where the design lives, and any premise that turned out wrong. Convention + how this differs from `docs/todo/`: [`docs/archive/README.md`](docs/archive/README.md).
 
 ## TODO.md
 

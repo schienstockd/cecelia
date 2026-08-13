@@ -34,7 +34,7 @@ that can't move. So the remaining Python is a deliberate, permanent rim, not unf
 the `.h5ad` files aren't the lock-in people assume: that format is the one both Julia and Python read
 natively, which is *why* it stays — what keeps Python in the loop is the clustering algorithm, not
 the file format. Full breakdown in
-[`docs/prompts/python-audit-report.md`](docs/prompts/python-audit-report.md).
+[`docs/archive/python-audit-report.md`](docs/archive/python-audit-report.md).
 
 **Julia is fast — so why did the server take a minute to answer its first request?**
 It wasn't running anything; it was *compiling*. Two separate slowdowns turned out to be the same

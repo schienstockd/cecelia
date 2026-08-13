@@ -88,7 +88,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   is the fibre direction, so the docs invited a silent 90° error), the σ/box defaults gave a
   near-random field, `flattenBranching` dropped the time axis, and the branch labels zarr declared
   the wrong axes so Y inherited the Z step. Worktree `spatial-anisotropy`, branch
-  `feat/spatial-anisotropy`. Supersedes `docs/prompts/spatial-anisotropy-quiver-prompt.md`.
+  `feat/spatial-anisotropy`. Supersedes `docs/archive/spatial-anisotropy-quiver-prompt.md`.
 - `SPATIAL_REGIONS_PLAN.md` — spatial analysis port + region clustering + CytoMAP parity + live
   behaviour-region extension. New `region` poptype (reuses cluster machinery), squidpy re-added,
   per-cell neighbourhoods primary, cross-poptype query in Julia. Status: planning, no branch.
@@ -99,12 +99,12 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 - `WHATS_NEW_PLAN.md` — surface release notes + tips inside the app; reuses the existing
   `/api/update/check` plumbing (only the release-notes `body` field is new). No new notification
   surface, no in-app feedback capture (GitHub issue link instead). Supersedes
-  `docs/prompts/update-modal-prompt.md`.
+  `docs/archive/update-modal-prompt.md`.
 - `STATS_ANNOTATIONS_PLAN.md` — server-side hypothesis tests (Mann-Whitney / Kruskal-Wallis
   defaults, t/ANOVA opt-in) rendered as marks inside existing Observable Plot summary charts;
   extends `PlotDataResponse` with `comparisons?` — no new route. Sets the `StatsResult` contract
   reused by `WHATS_NEW_PLAN.md` and `SKETCH_ENGINE_PLAN.md`. Supersedes
-  `docs/prompts/stats-on-plots-prompt.md`.
+  `docs/archive/stats-on-plots-prompt.md`.
 - `IMAGE_DELETE_PLAN.md` — **BUILT** (2026-08-04; kept as the rationale record). Collapsed the five image-deletion entry points to **two**: a structured
   delete modal on the Import page (whole images / versions + new active / label sets / all analysis)
   and Settings for automatic whole-project reclaim. Unlists the `importImages.remove` task rather than
@@ -115,7 +115,7 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   cecelia's tip cards. Not yet wired into cecelia — the plan documents the git-dep + conditional
   Vite alias to add at the first commit that swaps a WhatNewCard's grey placeholder for
   `<SketchCanvas>`. Rough.js + animejs; sketches are JSON; R Cecelia logo is the smoke-test port.
-  Supersedes `docs/prompts/sketch-engine-prompt.md`.
+  Supersedes `docs/archive/sketch-engine-prompt.md`.
 - `MCP_BOARD_AUTHORING_PLAN.md` — **planning** (`work/mcp-boards`). Let Claude ADD an Analysis board
   (one per call, create-only, never modify/delete) — the third artefact after notebooks and chains,
   same design-but-don't-run split. The naive version (allowlist the existing autosave route) is wrong
