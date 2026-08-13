@@ -255,7 +255,12 @@ function isNavDisabled(item: NavItem): boolean {
       </RouterLink>
       <div class="footer-ctl">
         <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" :disabled="appCtl.busy" @click="armQuit(arm)"
+          <!-- Anchored for the orientation tour, which points here to say "close the tab and the
+               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. Only the
+               UNARMED button takes the anchor: arming swaps the node, and a tour step must never
+               invite this particular click. -->
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" data-guide="sidebar.quit"
+                  :disabled="appCtl.busy" @click="armQuit(arm)"
                   v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
             <i class="pi pi-power-off" />
           </button>

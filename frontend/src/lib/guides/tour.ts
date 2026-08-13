@@ -127,5 +127,22 @@ export const tourGuide: GuideDef = {
         'Worth a look before a big run.',
       ],
     },
+    // Last, and deliberately the one step that does NOT invite its click — every other step describes
+    // something to try, and this one points at the button that quits the app. No `clickAnchor`, and
+    // the copy says when to use it rather than to use it now. The button is a `ConfirmButton`, so a
+    // stray click arms rather than quits; that is the safety net, not the plan.
+    //
+    // This carries what the `cc.hint.shutdown` first-use callout used to say. It moved here because
+    // the fact is about a button, and a bubble beside the button beats a sentence on an unrelated page.
+    {
+      anchor: 'sidebar.quit',
+      placement: 'right',
+      title: 'Leaving',
+      text: 'Closing the browser tab does not stop Cecelia — the backend keeps running until you quit here.',
+      bullets: [
+        'Not now — this is for when you are done for the day.',
+        'It stops napari and the notebook server too.',
+      ],
+    },
   ],
 }

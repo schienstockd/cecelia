@@ -147,7 +147,15 @@ text + validate. The mockup must not imply an OS file dialog.
   supports OME-ZARR, CZI, LIF, ND2, and most microscopy formats (anything bioformats2raw reads)."
   `[ + Import image ]`.
 
-### P4 — Contextual hints (first-use only)
+### P4 — Contextual hints (first-use only) — BUILT, THEN RETIRED
+
+> **Superseded (2026-08-13).** All four shipped, a fifth (optical flow) arrived later, and the set was
+> then removed. The guide system did not exist when this was written; it does now, and three of the
+> four were pipeline ordering or prerequisites — **state** questions the guide prereqs answer live and
+> a static sentence cannot. The gating one (the only genuine interaction affordance) folded into the
+> gating guide; the shutdown one became the orientation tour's closing step, beside the Quit button.
+> `HintCallout` and `ModuleLayout`'s `hint`/`hint-key` props remain for a case that meets the bar —
+> criterion in `docs/UI.md` → *First-use hints*. Nothing here is left to build.
 
 One-line callouts on first visit to each major section; dismiss permanently on click; stored in
 `localStorage` per hint ID. Not a tour, not a modal.
@@ -169,6 +177,11 @@ server running.
 
 So P5 is just the first-use hint (P4): "When you're done, use the Quit button (bottom-left) — not the
 browser tab — to stop Cecelia cleanly." No new shutdown UI.
+
+> **Where that education lives now (2026-08-13):** the orientation tour's closing step, anchored on
+> the Quit button (`lib/guides/tour.ts`). The P5 conclusion is unchanged and still binding — this is
+> education, not a third button. The trade made in moving it: the hint was unconditional, the tour is
+> skippable, so delivery is better targeted but no longer guaranteed.
 
 *Update badge is reserved but not built here — see D5.*
 

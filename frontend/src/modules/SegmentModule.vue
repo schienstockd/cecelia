@@ -8,8 +8,7 @@ const { defs: segmentDefs, reload: reloadDefs } = useTaskDefs('segment')
 </script>
 
 <template>
-  <ModuleLayout module="segment" :show-attrs="true" :show-filter="true"
-    hint-key="segment" hint="Detect cells here before gating or tracking.">
+  <ModuleLayout module="segment" :show-attrs="true" :show-filter="true">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="segmentDefs"

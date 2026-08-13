@@ -1066,8 +1066,28 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   /api/setup/init`); the backend writes `custom.toml` (`Cecelia.set_projects_dir!`).
 - **First-use hints** — `frontend/src/components/HintCallout.vue`: a one-line, dismiss-permanently
   callout keyed by id in `localStorage` (`cc.hint.<id>`). Module pages declare one via `ModuleLayout`'s
-  `hint` + `hint-key` props (don't hand-roll it per page); the global "use the bottom-left Quit button,
-  not the browser tab" hint is in `App.vue`.
+  `hint` + `hint-key` props (don't hand-roll it per page).
+
+  **There are currently none, and that is the intended state.** `ONBOARDING_PLAN.md` P4 specified four
+  and a fifth arrived later; on review they were doing three unrelated jobs and only one of them was a
+  job nothing else could do. The bar for adding one:
+
+  > An **interaction affordance with no other surface** — something invisible in the markup that no
+  > live check could answer. Never pipeline ordering, and never a prerequisite.
+
+  Ordering and prerequisites are **state** questions, and `lib/guides/prereqs.ts` answers them live in
+  the guide picker while QC answers them per image after a run. A static sentence cannot: "Segment all
+  timepoints first" is wrong for exactly the user who already segmented, and they are the ones who see
+  it, because it fires on first visit regardless of state. That is the same substitution written up
+  twice in `prereqs.ts` — `status === 'done'` for "imported", a run-log scan for "tracked" — a static
+  answer to a state question, in a third costume.
+
+  Where the four went: the gating draw affordance (the one that met the bar) folded into the gating
+  guide's *Pick a shape* step, which is now the only place either half of it is stated; segment,
+  tracking and optical flow were dropped as already covered by the sidebar order, the guide prereqs and
+  the orientation tour; and the global "closing the tab does not stop the backend" hint became the
+  tour's closing step, beside the Quit button it is about. A fact about a button belongs next to the
+  button.
 - **Empty states** — exactly two, and they already exist: `ProjectPanel.vue` (`.pp-empty.cc-empty`,
   no projects) and `ImageTable.vue` (`.cc-empty.cc-empty-lg`, no images). Extend the copy there;
   don't add a parallel component. These are the ONE carve-out from *UI copy — keep it short*: that

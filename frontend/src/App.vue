@@ -9,7 +9,6 @@ import { useLabCaptureStore } from './stores/labCapture'
 import { useProjectMetaStore } from './stores/projectMeta'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
-import HintCallout from './components/HintCallout.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
@@ -134,9 +133,8 @@ const bare = computed(() => route.meta.bare === true)
     <div class="cc-content">
       <AppSidebar />
       <main class="cc-main">
-        <!-- first-launch only: browsers don't stop the server on tab close -->
-        <HintCallout hint-key="shutdown"
-          text="When you're done, use the Quit button (bottom-left) — not the browser tab — to stop Cecelia cleanly." />
+        <!-- The "closing the tab does not stop the backend" hint that used to sit here is now a step in
+             the orientation tour, beside the Quit button it is about (lib/guides/tour.ts). -->
         <RouterView v-slot="{ Component, route }">
           <!-- key custom-category pages by path so /custom/:category remounts (fresh task defs)
                when the category changes; other pages keep default (keyless) reuse -->
