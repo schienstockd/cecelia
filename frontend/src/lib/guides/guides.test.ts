@@ -130,6 +130,36 @@ describe('the catalogue is well formed', () => {
     expect(grouped.flatMap(x => x.guides).length).toBe(GUIDES.length)
   })
 
+  // The orientation tour is the one guide that runs BEFORE the user has anything, and it is started
+  // automatically on first launch (App.vue) — on an empty project, with no images and often no
+  // project at all. A prereq on it would make the picker declare the welcome tour blocked for exactly
+  // the person it was written for, and the "Show me" button on the about card would open a row of
+  // amber warnings. So: no prereqs, and no step may point at data-dependent chrome.
+  it('the orientation tour needs nothing and points only at app chrome', () => {
+    const tour = guideById('find-your-way-around')
+    expect(tour, 'the tour the about card and App.vue both name must exist').toBeTruthy()
+    expect(tour!.prereqs).toEqual([])
+
+    // Anchors whose element only renders once there is data. `nav:` and the header/sidebar/console
+    // anchors are always in the shell, so anything in these families is the failure being pinned.
+    const DATA_DEPENDENT = ['images.', 'popmanager.', 'board.', 'set.', 'task.', 'notebooks.', 'viewer.']
+    const bad: string[] = []
+    tour!.steps.forEach((s, i) => {
+      for (const a of [s.anchor, ...(s.reveal ? (Array.isArray(s.reveal) ? s.reveal : [s.reveal]) : []).map(r => r.anchor)]) {
+        if (a && DATA_DEPENDENT.some(p => a.startsWith(p))) bad.push(`step ${i + 1}: ${a}`)
+      }
+    })
+    expect(bad).toEqual([])
+  })
+
+  // 'Start' has no sidebar counterpart, so nothing else would notice it being dropped from
+  // GROUP_ORDER — and a group not in that list renders unlabelled at the BOTTOM of the picker, which
+  // is the worst possible place for the orientation tour.
+  it('puts the Start group first, so the tour is the first thing in the picker', () => {
+    expect(GROUP_ORDER[0]).toBe('Start')
+    expect(guidesByGroup()[0]?.guides[0]?.id).toBe('find-your-way-around')
+  })
+
   it('every fixGuide points at a guide that exists and is not itself', () => {
     for (const g of GUIDES) {
       for (const p of g.prereqs) {

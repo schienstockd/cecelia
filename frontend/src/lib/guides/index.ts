@@ -12,6 +12,7 @@
 //   4. Anchor ids must exist in the markup as `data-guide` attributes — `guides.test.ts` fails if not.
 
 import type { GuideDef } from './types'
+import { tourGuide } from './tour'
 import { importImagesGuide } from './importImages'
 import { driftCorrectGuide, segmentGuide, trackCellsGuide } from './taskGuides'
 import { gatePopulationsGuide } from './gatePopulations'
@@ -25,6 +26,8 @@ import {
 } from './extraGuides'
 
 export const GUIDES: GuideDef[] = [
+  // Start — the app itself, before any data
+  tourGuide,
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,
@@ -47,8 +50,10 @@ export const GUIDES: GuideDef[] = [
   runChainGuide,
 ]
 
-// The sidebar's own grouping, so the picker's sections match the nav's.
-export const GROUP_ORDER = ['Data', 'Populations', 'Explore', 'Analysis', 'Pipeline'] as const
+// The sidebar's own grouping, so the picker's sections match the nav's — plus 'Start' at the front,
+// which has no sidebar counterpart on purpose: the orientation tour is about the chrome AROUND the
+// nav, so it belongs above the pipeline arc rather than inside it.
+export const GROUP_ORDER = ['Start', 'Data', 'Populations', 'Explore', 'Analysis', 'Pipeline'] as const
 
 export function guideById(id: string): GuideDef | undefined {
   return GUIDES.find(g => g.id === id)

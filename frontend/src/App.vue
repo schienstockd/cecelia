@@ -35,6 +35,31 @@ const observer = useObserverStore()
 // The guide runtime, instantiated here so its poll/lifecycle belongs to the shell rather than to the
 // v-if'd bubble — a guide has to survive route changes (docs/todo/GUIDE_SYSTEM_PLAN.md).
 const guide = useGuideStore()
+
+// Set in onMounted when the launch tip fires for the FIRST time ever; consumed once, on close. Not a
+// ref — nothing renders from it.
+let firstEverTips = false
+
+// The orientation tour starts by itself the first time a user closes the welcome dialog, and only
+// that time: reading the cards tells you what Cecelia does, and this says where the buttons are.
+// Afterwards it is opt-in — the "Show me" button on the about card, or the compass.
+//
+// Watches the shared flag rather than the dialog's `@close` emit, because the emit is not the only
+// way it shuts: `WhatNewCard`'s "Show me" calls `closeWhatsNew()` itself. Hanging this off @close
+// would leave `firstEverTips` unconsumed in that case, and the tour would then ambush the user the
+// next time they closed What's New from the header — days later.
+//
+// Two guards, both load-bearing:
+//  - `setupRequired` — /setup is a `bare` route with no header or sidebar (main.ts), and App.vue's
+//    onMounted runs there too, so on a genuinely fresh install the dialog opens over the setup wizard.
+//    Touring chrome that is not rendered would be worse than not touring at all.
+//  - `guide.active` — "Show me" starts a guide and *then* closes the dialog, so by the time this runs
+//    a guide the user explicitly asked for may already be going. Do not replace it.
+watch(isWhatsNewOpen, (open) => {
+  if (open || !firstEverTips) return
+  firstEverTips = false
+  if (appCtl.setupRequired === false && !guide.active) guide.start('find-your-way-around')
+})
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 
@@ -67,6 +92,9 @@ onMounted(async () => {
   // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
   const today = todayKey()
   if (settings.tipsOnLaunch && settings.tipsLastShown !== today) {
+    // `tipsLastShown` is '' until this branch has run ONCE, ever — so reading it before the stamp is
+    // the first-launch signal, and no second flag has to be persisted to get it. See onWhatsNewClose.
+    firstEverTips = settings.tipsLastShown === ''
     settings.tipsLastShown = today
     openWhatsNew({ withTip: true })
   }

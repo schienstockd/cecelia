@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
+import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -36,12 +37,13 @@ const statusTip: Record<string, string> = {
 
 <template>
   <header class="app-header">
-    <button class="nav-toggle cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
+    <button class="nav-toggle cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" data-guide="header.navToggle"
+      @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
       v-tooltip.bottom="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'"
       :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
       <i class="pi pi-bars" />
     </button>
-    <button type="button" class="logo cc-btn cc-btn-bare cc-btn-dense"
+    <button type="button" class="logo cc-btn cc-btn-bare cc-btn-dense" data-guide="header.brand"
             v-tooltip.bottom="'What\'s new + browse tips'"
             aria-label="Open What's New with tips"
             @click="openTips">
@@ -53,12 +55,31 @@ const statusTip: Record<string, string> = {
          deliberately not a `?`: the brand mark beside it already opens What's New + tips, and `?`
          already means "what is this Claude panel" in the lab-log toolbar. Three different `?`s in one
          app is worse than one new icon. -->
-    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon"
+    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.guides"
             v-tooltip.bottom="'Guides — walk through the basics'"
             aria-label="Open guides"
             @click="openGuides">
       <i class="pi pi-compass" />
     </button>
+
+    <!-- Where to go when the app is not the answer: report a problem, or ask someone. Next to the
+         compass on purpose — the three of them are the whole "I am stuck" row, so the escalation from
+         "walk me through it" to "this is broken" to "does anyone know?" reads left to right. Plain
+         `<a target="_blank">`, not a router link: both leave the app. -->
+    <span class="help-links" data-guide="header.help">
+      <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_ISSUES_URL"
+         target="_blank" rel="noopener"
+         v-tooltip.bottom="'Report a problem or browse known issues'"
+         aria-label="Cecelia issues on GitHub">
+        <i class="pi pi-github" />
+      </a>
+      <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_CHAT_URL"
+         target="_blank" rel="noopener"
+         v-tooltip.bottom="'Ask a question in the Cecelia chat'"
+         aria-label="Cecelia chat on Zulip">
+        <i class="pi pi-comments" />
+      </a>
+    </span>
 
     <span class="spacer" />
 
@@ -81,6 +102,7 @@ const statusTip: Record<string, string> = {
 
     <span
       class="ws-badge"
+      data-guide="header.wsBadge"
       :class="ws.status"
       v-tooltip.bottom="statusTip[ws.status] ?? ws.status"
     >
@@ -124,6 +146,12 @@ const statusTip: Record<string, string> = {
    two "how does this work?" entry points read as a pair. */
 .guides-btn { margin-left: -0.35rem; color: var(--cc-guide); }
 .guides-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+
+/* .help-link → cc-btn cc-btn-bare cc-btn-icon, which already carries the muted/hover colours. These
+   deliberately do NOT take `--cc-guide` like the compass: they leave the app, so they sit a step
+   quieter rather than competing with it for the same glance. Layout only here. */
+.help-links { display: inline-flex; align-items: center; gap: 0.1rem; margin-left: -0.35rem; }
+.help-link:hover { background: var(--cc-surface-2); }
 
 .spacer { flex: 1; }
 

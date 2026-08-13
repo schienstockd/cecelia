@@ -10,7 +10,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { SketchCanvas, sketches, type SketchDefinition } from 'feijoa'
-import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_ISSUES_URL, closeWhatsNew } from '../lib/whatsNew'
+import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_NEW_ISSUE_URL, closeWhatsNew } from '../lib/whatsNew'
 import { useSettingsStore } from '../stores/settings'
 import { useGuideStore } from '../stores/guide'
 import { guideById } from '../lib/guides'
@@ -27,7 +27,9 @@ const kindLabel = computed(() => (
 ))
 const kindTone = computed(() => 'wn-kind-' + props.card.kind)
 const dateLabel = computed(() => formatCardDate(props.card.publishedAt))
-const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_ISSUES_URL)
+// Straight to the form, not the issues list: the user is on a card about a specific thing, so they
+// already know what they would be reporting. The header's GitHub icon is the browse-first one.
+const issueUrl = computed(() => props.card.issueUrl ?? CECELIA_NEW_ISSUE_URL)
 const bodyHtml = computed(() => renderMarkdown(props.card.bodyMd))
 const isTip = computed(() => props.card.kind === 'tip')
 

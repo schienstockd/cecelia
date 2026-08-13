@@ -37,7 +37,10 @@ export interface WhatNewCard {
   guideId?: string
 }
 
-export const CECELIA_ISSUES_URL = 'https://github.com/schienstockd/cecelia/issues/new'
+// Moved to `lib/links.ts` — there are five of these literals now (here, the dialog footer, and the
+// header's two) and a repo rename is pending (docs/SHIPPING.md → Repo swap). Re-exported so the
+// card's import does not have to know which module a URL lives in.
+export { CECELIA_NEW_ISSUE_URL, CECELIA_RELEASES_URL } from './links'
 
 // Shared modal state — one dialog mounted in App.vue reads this. GitHub Flavored Markdown is on
 // by default in marked ≥5, so task lists, tables, strikethrough all work. Source is trusted (our

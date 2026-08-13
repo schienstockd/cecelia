@@ -19,6 +19,11 @@ export const TIPS: WhatNewCard[] = [
     title: 'Cecelia',
     description: 'Immunological image analysis: segment cells, track them, gate populations, cluster phenotypes, and measure fibrous networks — all from a single project. Cycle through the sketches to see what it does.',
     sketchAnimation: { id: 'logo' },
+    // The welcome card gets the orientation tour, so "Show me" on the first card a new user sees
+    // leads somewhere. Every other card's guide teaches a pipeline step and needs data; this one
+    // points at chrome only and runs on an empty project. App.vue also starts it unprompted the
+    // first time this dialog is closed — the button is for everyone who skipped that.
+    guideId: 'find-your-way-around',
   },
   {
     id: 'tip-segmentation',
