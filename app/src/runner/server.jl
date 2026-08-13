@@ -94,6 +94,10 @@ end
 # edit will keep running the bug you just fixed; the only defence is that it says so.
 const _RUNNER_STARTED_AT = Ref(0.0)
 const _RUNNER_COMMIT     = Ref("")
+# The port ACTUALLY bound, not the constant. `api/runner.jl` honours CECELIA_RUNNER_PORT, so reporting
+# `RUNNER_PORT` was a lie whenever it was overridden — /ping answered on 7697 and said 7657, which is
+# precisely the field a client would use to find it.
+const _RUNNER_BOUND_PORT = Ref(RUNNER_PORT)
 
 # Through `git_probe`, not a hand-rolled shell-out: a `git` call gets ONE spelling here, with the
 # stderr redirect in it by construction. The four inline copies this replaces were what printed
@@ -105,7 +109,7 @@ _runner_git_short() = git_probe("rev-parse", "--short", "HEAD"; dir = _runner_re
 runner_identity()::Dict{String,Any} = Dict{String,Any}(
     "protocol"      => RUNNER_PROTOCOL,
     "pid"           => getpid(),
-    "port"          => RUNNER_PORT,
+    "port"          => _RUNNER_BOUND_PORT[],
     "commit"        => _RUNNER_COMMIT[],
     "startedAt"     => _RUNNER_STARTED_AT[],
     "uptimeSeconds" => round(Int, time() - _RUNNER_STARTED_AT[]),
@@ -253,8 +257,9 @@ than a constant so a remote target has somewhere to land (Phase 4) — but a non
 ship without authentication. See docs/todo/TASK_RUNNER_PLAN.md → *HPC*, constraint 2.
 """
 function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0.1")
-    _RUNNER_STARTED_AT[] = time()
-    _RUNNER_COMMIT[]     = _runner_git_short()
+    _RUNNER_STARTED_AT[]  = time()
+    _RUNNER_COMMIT[]      = _runner_git_short()
+    _RUNNER_BOUND_PORT[]  = port
     @info "Cecelia task runner starting" host port pid=getpid() threads=Threads.nthreads() commit=_RUNNER_COMMIT[] projects_dir=projects_dir()
     HTTP.listen(_runner_stream, host, port)
 end

@@ -149,12 +149,12 @@ function api_runner_status(::HTTP.Request)
     _runner_enabled() || return 200, JSON3.write((; enabled = false, running = false))
     id = Cecelia.runner_ping(_RUNNER)
     isnothing(id) && return 200, JSON3.write((;
-        enabled = true, running = false, port = Cecelia.RUNNER_PORT))
+        enabled = true, running = false, port = _RUNNER.port))
     commit = String(get(id, "commit", ""))
     200, JSON3.write((;
         enabled  = true,
         running  = true,
-        port     = Cecelia.RUNNER_PORT,
+        port     = _RUNNER.port,
         pid      = get(id, "pid", 0),
         adopted  = _RUNNER.adopted,          # true = it outlived something; we did not start it
         commit   = commit,

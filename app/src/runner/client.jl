@@ -18,7 +18,14 @@ mutable struct RunnerHandle
     adopted::Bool
 end
 
-RunnerHandle(; port::Int = RUNNER_PORT) = RunnerHandle(port, nothing, false)
+# Both halves read the SAME override, or they disagree about where the runner is: `api/runner.jl`
+# binds `CECELIA_RUNNER_PORT`, so a client defaulting to the constant would ping a port nothing is on
+# and silently fall back to in-process forever. It also makes a second, isolated backend+runner pair
+# possible alongside a real one — which is how the restart-mid-run path gets exercised without
+# stopping somebody's actual session.
+runner_port_default()::Int = parse(Int, get(ENV, "CECELIA_RUNNER_PORT", string(RUNNER_PORT)))
+
+RunnerHandle(; port::Int = runner_port_default()) = RunnerHandle(port, nothing, false)
 
 _runner_url(h::RunnerHandle, path::AbstractString) = "http://127.0.0.1:$(h.port)$path"
 
@@ -87,8 +94,12 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
     # `detach = true` gives it its OWN process group. That is the point: a Ctrl-C or a signal aimed at
     # the API server's group must not reach a process whose whole job is to outlive it. The deliberate
     # teardown routes reach it by port instead (`pixi run stop`, dev.jl's CHILD_PORTS, Quit).
-    h.proc = run(Cmd(`$julia --project -t auto runner.jl`; dir = dirname(script), detach = true);
-                 wait = false)
+    # Pass the port explicitly rather than relying on the child inheriting our env: the handle may have
+    # been built with an explicit port, and a child that binds a different one than we then ping is a
+    # launch that "succeeds" and never answers.
+    h.proc = run(Cmd(addenv(`$julia --project -t auto runner.jl`,
+                            "CECELIA_RUNNER_PORT" => string(h.port));
+                     dir = dirname(script), detach = true); wait = false)
     h.adopted = false
 
     deadline = time() + wait_seconds
