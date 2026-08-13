@@ -1,7 +1,7 @@
 # Movie management
 
 **Status:** BUILT — Phases 0–6. All eight table surfaces are on `SelectionTable` bar `FileBrowser`, a
-stated exception (see Phase 5). Supersedes `docs/prompts/movie-management-component-prompt.md`.
+stated exception (see Phase 5). Supersedes `docs/archive/movie-management-component-prompt.md`.
 
 ## Goal
 

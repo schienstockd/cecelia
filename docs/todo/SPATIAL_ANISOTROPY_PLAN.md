@@ -1,7 +1,7 @@
 # Structure anisotropy — branching-port audit + the notebook readouts
 
 **Status:** 2026-07-29 — **done, uncommitted.** Worktree `spatial-anisotropy`, branch
-`feat/spatial-anisotropy`. Supersedes `docs/prompts/spatial-anisotropy-quiver-prompt.md`.
+`feat/spatial-anisotropy`. Supersedes `docs/archive/spatial-anisotropy-quiver-prompt.md`.
 **Depends on:** `docs/todo/BRANCHING_PLAN.md` (Phases 0–3 shipped, PRs #387 + #396).
 
 ## What this is
@@ -383,7 +383,7 @@ observer is read-only summary-first by design.
 ## References
 
 - **Target figure:** `~/Downloads/Figure 4.pdf` (3P behaviour paper) — panels B and D
-- Prompt this supersedes: `docs/prompts/spatial-anisotropy-quiver-prompt.md`
+- Prompt this supersedes: `docs/archive/spatial-anisotropy-quiver-prompt.md`
 - Prerequisite: `docs/todo/BRANCHING_PLAN.md` (Decision 4 needed the A1 correction)
 - Legacy anisotropy: `old-R-shiny-version/inst/py/ILEE_CSK/functions.py:757-860`
   (`anisotropy_2d_internal`, `analyze_anisotropy_2d` — note `weighting_method='by_length'`)

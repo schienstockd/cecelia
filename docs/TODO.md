@@ -28,7 +28,7 @@ table exists to stop: something worth knowing turns up, has no obvious home, and
 > referenced. `#00087` ended up meaning two different things; `#00003` was a known duplicate. Meanwhile
 > `docs/FUTURE.md` (keyed by title) and `docs/todo/*_PLAN.md` (cited by path) never collided once.
 >
-> Every citation in the docs and the code was repointed at the same time. `docs/prompts/` is left as
+> Every citation in the docs and the code was repointed at the same time. `docs/archive/` is left as
 > written — those are frozen records of finished work, so a retired number there is history, not a
 > broken pointer.
 

@@ -1,6 +1,6 @@
 # Stats annotations on summary plots
 
-Status: planning · no branch yet · supersedes `docs/prompts/stats-on-plots-prompt.md`
+Status: planning · no branch yet · supersedes `docs/archive/stats-on-plots-prompt.md`
 
 ## Goal
 

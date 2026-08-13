@@ -95,7 +95,7 @@ JSON-serialisable. Sketches live in `~/cc-workspace/feijoa/src/sketches/*.ts`.
 
 ## References
 
-- `docs/prompts/sketch-engine-prompt.md` — the original Sonnet draft (superseded).
+- `docs/archive/sketch-engine-prompt.md` — the original Sonnet draft (superseded).
 - `frontend/src/lib/whatsNew.ts` — the `WhatNewCard.sketchAnimation?` slot (unused today).
 - `frontend/src/components/WhatNewCard.vue` — where the grey placeholder currently renders.
 - `WHATS_NEW_PLAN.md` — the consumer (tip-of-the-day + release notes).

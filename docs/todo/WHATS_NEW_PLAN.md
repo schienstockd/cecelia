@@ -1,6 +1,6 @@
 # What's New — release notes modal + tips
 
-Status: planning · no branch yet · supersedes `docs/prompts/update-modal-prompt.md`
+Status: planning · no branch yet · supersedes `docs/archive/update-modal-prompt.md`
 
 ## Goal
 
