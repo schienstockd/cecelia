@@ -95,10 +95,12 @@ end
 const _RUNNER_STARTED_AT = Ref(0.0)
 const _RUNNER_COMMIT     = Ref("")
 
+# Through `git_probe`, not a hand-rolled shell-out: a `git` call gets ONE spelling here, with the
+# stderr redirect in it by construction. The four inline copies this replaces were what printed
+# "fatal: not a git repository" into a packaged app's launch console on every start (#540) — and a
+# runner is spawned by that same packaged app, so a fifth copy would have reintroduced it.
 _runner_repo_root() = dirname(dirname(dirname(@__DIR__)))   # app/src/runner → repo root
-_runner_git_short() = try
-    String(strip(read(`git -C $(_runner_repo_root()) rev-parse --short HEAD`, String)))
-catch; ""; end
+_runner_git_short() = git_probe("rev-parse", "--short", "HEAD"; dir = _runner_repo_root())
 
 runner_identity()::Dict{String,Any} = Dict{String,Any}(
     "protocol"      => RUNNER_PROTOCOL,
