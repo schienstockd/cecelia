@@ -153,13 +153,14 @@ const _MAX_DIGEST_DETAILS = 8   # cap the per-module finding-detail lines so a b
 
 # Per-module run summary for the runs whose `at` falls on `day` ("yyyy-mm-dd"). Returns
 # `(items_by_module, severity_by_module, details_by_module)`: severity is the worst outcome across
-# that module's runs that day — `fail` (a run failed), else `warn` (a run produced a warn QC finding),
-# else `ok` — driving the digest line's ✅/⚠️/❌ symbol. Regenerating from the run logs each capture
+# that module's runs that day — `fail` (a run's LAST attempt on an image failed), else `warn` (a run
+# produced a warn QC finding), else `ok` — driving the digest line's ✅/⚠️/❌ symbol. Regenerating from the run logs each capture
 # (rather than diffing since a cutoff) is what makes the block a stable DAILY aggregate: N tasks that
 # finished hours apart all land in the one block regardless of when capture fired.
 function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},Dict{String,Vector{String}}}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image uids
-    fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
+    fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => images left failed
+    retry_imgs = Dict{Tuple{String,String},Int}()          # (module, fun-display) => images that failed then succeeded
     warn_imgs  = Dict{Tuple{String,String},Set{String}}()  # (module, fun-display) => images with a warn QC finding
     # module => (code, base-short) => (channels, image uids) — grouped so per-channel/per-image
     # repetition of the SAME finding collapses to one "base — ch a-b (N images)" detail line.
@@ -168,18 +169,37 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
     bump(mod, sev) = (get(_SEV_RANK, sev, 0) > get(_SEV_RANK, get(mod_sev, mod, "ok"), 0)) &&
                      (mod_sev[mod] = sev)
     for img in images(proj)
+        # THE LAST RUN WINS, per (image, fun, valueName). The run log is a trail of attempts, and a task
+        # that failed and was then re-run successfully is not a failure any more — the digest describes
+        # where the day LEFT the image, not every attempt it took to get there. Counting every attempt
+        # made 2026-08-13 read "❌ Cleanup — driftCorrect on 6 images — 4 failed" when all six had a
+        # successful drift correction on disk: four failed at 11:29 and all four succeeded on the re-run.
+        # The retry is still worth one word (it says the day was bumpy), so it is counted separately and
+        # never raises the module's severity.
+        last_run = Dict{Tuple{String,String},Any}()   # (fun, valueName) => this day's newest entry
+        n_failed = Dict{Tuple{String,String},Int}()   # (fun, valueName) => failed attempts that day
+        order    = Tuple{String,String}[]             # first-seen order, so the walk stays deterministic
         for e in read_run_log(img)
             startswith(String(get(e, "at", "")), day) || continue   # this day's runs only (local date)
-            fun  = String(get(e, "fun", "?"))
+            k = (String(get(e, "fun", "?")), String(get(e, "valueName", "")))
+            haskey(last_run, k) || push!(order, k)
+            String(get(e, "status", "done")) == "failed" && (n_failed[k] = get(n_failed, k, 0) + 1)
+            last_run[k] = e     # entries are appended oldest→newest, so the last one seen is the outcome
+        end
+        for k in order
+            e    = last_run[k]
+            fun, vn = k
             disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
             mod  = _category_of_fun(fun)
-            vn   = String(get(e, "valueName", ""))
             push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.uid)
             get!(mod_sev, mod, "ok")
             if String(get(e, "status", "done")) == "failed"
-                fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
+                fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # still failed at day's end
                 bump(mod, "fail")
             else
+                # recovered: earlier attempts failed, the one that stands succeeded
+                get(n_failed, k, 0) > 0 &&
+                    (retry_imgs[(mod, disp)] = get(retry_imgs, (mod, disp), 0) + 1)
                 findings = _warn_findings(img, fun, vn)
                 if !isempty(findings)
                     push!(get!(warn_imgs, (mod, disp), Set{String}()), img.uid)   # count the flagged images
@@ -204,8 +224,10 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             item = "$disp on $n image$(n == 1 ? "" : "s")"
             n <= 2 && (item *= " ($(join(sort(collect(uids)), ", ")))")   # list uids when few; for more, the count says it
             w  = length(get(warn_imgs, (mod, disp), Set{String}()))
+            rc = get(retry_imgs, (mod, disp), 0)
             fc = get(fail_count, (mod, disp), 0)
             w  > 0 && (item *= " — $w flagged")   # how many banked a warn QC finding (not just that one did)
+            rc > 0 && (item *= " — $rc re-run after a failure")
             fc > 0 && (item *= " — $fc failed")
             push!(items, item)
         end
