@@ -135,6 +135,13 @@ export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance
 export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
 export resize_pool!, set_pool_limit!
+# Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
+# by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
+export TaskRequest, execute_task, task_request, task_request_dict
+# The detached task runner (runner/server.jl + runner/client.jl)
+export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
+export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
+export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_pools, runner_set_pool_limit
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
@@ -238,10 +245,19 @@ include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
+# Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
+# detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
+include("runner/execute.jl")
 include("napari.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
 # `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).
 include("preview.jl")
+# The detached task runner: `server.jl` is the process that owns the pools and executes tasks,
+# `client.jl` is the API server's side of it. After napari.jl/preview.jl — same resident-child
+# lifecycle — and after jobs.jl, whose `_kill_listeners_on_port` is how a runner we only ADOPTED gets
+# stopped. See docs/todo/TASK_RUNNER_PLAN.md.
+include("runner/server.jl")
+include("runner/client.jl")
 # Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)
 # + py_runner.jl (run_py/task_run_dir).
 include("maintenance.jl")

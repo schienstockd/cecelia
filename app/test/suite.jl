@@ -3723,6 +3723,142 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Sink-agnostic task execution (runner/execute.jl) ──────────────────────────
+# `execute_task` is the body `handle_task_run` used to inline. It is tested HERE, in the package, with
+# no server and no socket — which is the whole point: the API server and the detached runner drive the
+# same function, so its contract (scope dispatch, terminal frame on every path, result-before-status)
+# must hold without either of them. See docs/todo/TASK_RUNNER_PLAN.md.
+
+# Collect every announcement in call order, so ORDERING can be asserted and not just membership.
+function _collect_exec(req)
+    logs, sts, res = String[], Tuple{String,String,Vector{String}}[], Any[]
+    final = execute_task(req;
+        on_log      = l -> push!(logs, l),
+        on_status   = (s, uid, uids) -> push!(sts, (s, uid, uids)),
+        on_result   = (uid, meta) -> push!(res, (uid, meta)))
+    (; final, logs, statuses = sts, results = res)
+end
+
+@testset "execute_task — image scope" begin
+    proj = create_project!(name="exec-img-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    r = _collect_exec(TaskRequest(; task_id = "exec$(rand(1000:9999))",
+                                   fun_name = "testTasks.image_task",
+                                   project_uid = proj.uid, image_uid = img.uid,
+                                   params = Dict{String,Any}("message" => "hello runner")))
+
+    @test r.final == :done
+    @test any(l -> occursin("hello runner", l), r.logs)          # on_log reached the caller
+    @test last(r.statuses) == ("done", img.uid, String[])        # terminal frame, image-scope shape
+    @test "running" in [s for (s, _, _) in r.statuses]           # live transitions forwarded
+    @test length(r.results) == 1                                 # ...and the result arrived
+    # ORDERING: the result must precede the terminal status — the frontend keys off that, and
+    # reversing them silently drops the result.
+    @test r.statuses[end][1] == "done" && !isempty(r.results)
+    rm(proj.root; recursive=true)
+end
+
+@testset "execute_task — set scope names every member" begin
+    proj = create_project!(name="exec-set-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    a, b = add_image!(s; name="a"), add_image!(s; name="b")
+
+    r = _collect_exec(TaskRequest(; task_id = "execset$(rand(1000:9999))",
+                                   fun_name = "testTasks.set_task",
+                                   project_uid = proj.uid,
+                                   image_uids = [a.uid, b.uid]))
+
+    @test r.final == :done
+    st, uid, uids = last(r.statuses)
+    @test st == "done"
+    @test uid == a.uid                       # representative = first image
+    # The terminal frame carries ALL members. The representative alone leaves the other members'
+    # plots stale — the non-rep-member gap this list closes.
+    @test Set(uids) == Set([a.uid, b.uid])
+    rm(proj.root; recursive=true)
+end
+
+# Every exit path must emit a terminal status, including the ones that never reach the scheduler.
+# A failure that logs nothing and announces nothing is how a task pins at `running` forever in the
+# GUI, and how anything keyed on the terminal frame (the observer's Watch trigger) never fires.
+@testset "execute_task — failure paths still announce" begin
+    proj = create_project!(name="exec-fail-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    unknown = _collect_exec(TaskRequest(; task_id = "execunk", fun_name = "nope.notATask",
+                                          project_uid = proj.uid, image_uid = img.uid))
+    @test unknown.final == :failed
+    @test last(unknown.statuses)[1] == "failed"
+    @test any(l -> occursin("Unknown task", l), unknown.logs)
+
+    missing_img = _collect_exec(TaskRequest(; task_id = "execmiss",
+                                             fun_name = "testTasks.image_task",
+                                             project_uid = proj.uid, image_uid = "nosuchuid"))
+    @test missing_img.final == :failed
+    @test last(missing_img.statuses)[1] == "failed"
+
+    # A bad param throws in `run_task` BEFORE any job is queued, so `on_status_change` never fires —
+    # the terminal frame here can only come from execute_task's own outer catch.
+    badparam = _collect_exec(TaskRequest(; task_id = "execbad",
+                                          fun_name = "testTasks.image_task",
+                                          project_uid = proj.uid, image_uid = img.uid,
+                                          params = Dict{String,Any}("waitMs" => "not-an-int")))
+    @test badparam.final == :failed
+    @test last(badparam.statuses)[1] == "failed"
+    @test any(l -> occursin("[ERROR]", l), badparam.logs)
+
+    rm(proj.root; recursive=true)
+end
+
+# The request IS the wire format, so it round-trips through JSON unchanged — one encoder, one decoder.
+# Each transport shaping its own dict is how a param key goes missing on one path only.
+@testset "TaskRequest survives the wire" begin
+    req = TaskRequest(; task_id = "t1", fun_name = "segment.cellpose", project_uid = "p1",
+                        image_uid = "i1", image_uids = ["i1", "i2"], pool_name = "gpu",
+                        params = Dict{String,Any}("blockSize" => 512, "name" => "x"))
+    back = task_request(JSON3.read(JSON3.write(task_request_dict(req)), Dict{String,Any}))
+
+    @test back.task_id == req.task_id && back.fun_name == req.fun_name
+    @test back.project_uid == req.project_uid && back.image_uid == req.image_uid
+    @test back.image_uids == req.image_uids && back.pool_name == req.pool_name
+    @test back.params["blockSize"] == 512 && back.params["name"] == "x"
+    @test back.target == "local"          # the field a second target lands in, defaulted not omitted
+
+    # A request off the wire with only the required keys must not throw — a sender on older code
+    # omitting an optional field is a compatibility case, not an error.
+    minimal = task_request(Dict{String,Any}("taskId" => "t2", "funName" => "f", "projectUid" => "p"))
+    @test minimal.image_uids == String[] && minimal.params == Dict{String,Any}()
+    @test minimal.target == "local"
+end
+
+# ── The detached task runner ──────────────────────────────────────────────────
+# In-process: the server's routes and fan-out, driven directly. A REAL second process is exercised by
+# `pixi run test-runner` (app/test/runner_e2e.jl) — it costs a Julia start-up + precompile, which does
+# not belong in the suite everyone runs.
+@testset "runner protocol identity" begin
+    # `/ping` must carry what tells an adopted runner apart from one we started, and WHICH CODE it is
+    # running — a runner that deliberately survives your edits is only safe if it says so (Decision 5).
+    id = runner_identity()
+    @test id["protocol"] == RUNNER_PROTOCOL
+    @test id["pid"] == getpid()
+    @test haskey(id, "commit") && haskey(id, "startedAt") && haskey(id, "projectsDir")
+end
+
+@testset "runner_emit never blocks or throws without subscribers" begin
+    # Emission happens on a POOL WORKER thread. If it could block or throw it would wedge a slot, so
+    # the no-subscriber case has to be a silent no-op rather than an error path nobody tests.
+    @test runner_emit(Dict{String,Any}("type" => "task:log", "taskId" => "x", "line" => "hi")) === nothing
+end
+
+@testset "runner client refuses a dead port cleanly" begin
+    # Every one of these runs on the API server's request path. A runner that is simply not there must
+    # read as absent — never a throw that takes a route down, and never a hang.
+    h = RunnerHandle(; port = 7699)          # nothing listens here
+    @test runner_ping(h) === nothing
+    @test runner_alive(h) == false
+end
+
 # ── Chain template round-trip ─────────────────────────────────────────────
 # ── Chain node scope defaults from the task spec (single source of truth) ────
 # A node built without an explicit scope inherits the task JSON's "scope": set-scope

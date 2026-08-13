@@ -141,6 +141,9 @@ prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }           
 # 202s → 69s locally, same 2513 assertions. See app/test/suite.jl for the other half of the fix.
 test-pkg      = { cmd = "julia -O0 --project test/runtests.jl", cwd = "app" }
 test-api      = { cmd = "julia -O0 --project test/runtests.jl", cwd = "api" }   # same reason as above — measured 67s → 42s
+# Detached-task-runner end-to-end: launches a REAL second Julia process. NOT in test-pkg — it pays a
+# full child start-up + precompile, which is minutes on a cold depot. Run it when touching app/src/runner/.
+test-runner   = { cmd = "julia --project test/runner_e2e.jl", cwd = "app" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 test-mcp      = { cmd = "python -m unittest discover -s tests -t . -v", cwd = "mcp", env = { PYTHONPATH = "." } }

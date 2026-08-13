@@ -459,106 +459,17 @@ function handle_task_run(ws, data)
     # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
-    Threads.@spawn begin
-        task_struct = try
-            _task_from_fun_name(fun_name)
-        catch
-            ws_log(ws, task_id, "[ERROR] Unknown task: $fun_name")
-            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-            return
-        end
-
-        # Set-scope tasks (e.g. behaviour.hmm) run once over the whole selected image vector;
-        # image-scope tasks run on the single image. The frontend sends `imageUids` for set tasks.
-        if task_scope(task_struct) == "set"
-            uids = isempty(image_uids) ? (isempty(image_uid) ? String[] : [image_uid]) : image_uids
-            imgs = CciaImage[]
-            for u in uids
-                try
-                    obj = init_object(project_uid, u)
-                    obj isa CciaImage ? push!(imgs, obj) :
-                        ws_log(ws, task_id, "[WARN] not an image: $u")
-                catch ex
-                    ws_log(ws, task_id, "[WARN] could not load image $u: $ex")
-                end
-            end
-            if isempty(imgs)
-                ws_log(ws, task_id, "[ERROR] Set task '$fun_name' has no images")
-                ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-                return
-            end
-            rep = first(imgs).uid
-            final_status = Ref{Symbol}(:failed)
-            # run_task validates params FIRST (throws ParamValidationError before any job runs), so a
-            # bad-param launch never reaches on_status_change. Catch it here so the failure is logged
-            # AND a terminal task:status frame still goes out — otherwise the throw dies in the
-            # @spawn silently (no [ERROR], no frame → the observer's "Watch" auto-trigger, which keys
-            # off the terminal frame, never fires). Same guarantee for any pre-job throw.
-            try
-                result = run_task(task_struct, imgs, params;
-                                  task_id          = task_id,
-                                  pool_name        = pool_name,
-                                  on_log           = line -> ws_log(ws, task_id, line),
-                                  on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                                  on_status_change = rec -> begin
-                                      # queued/running forwarded live; also forward :cancelled at once
-                                      # (it has no result to order before it) so a cancelled task —
-                                      # especially a still-QUEUED one — reflects immediately, not only
-                                      # when a worker later dequeues and skips it. :done/:failed still
-                                      # wait for the final send.
-                                      if rec.status in (:queued, :running, :cancelled)
-                                          ws_status(ws, task_id, string(rec.status), rep; fun=fun_name)
-                                      end
-                                      final_status[] = rec.status
-                                  end)
-                isnothing(result) || ws_result(ws, task_id, rep, result)
-            catch ex
-                ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
-                final_status[] = :failed
-            end
-            # a set task touched EVERY member — send the full list so the frontend invalidates all of
-            # their plots, not just the representative's (closes the non-rep-member gap).
-            ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs], fun=fun_name)
-            return
-        end
-
-        # ── image-scope (single image) ──────────────────────────────────────────
-        img = try
-            obj = init_object(project_uid, image_uid)
-            obj isa CciaImage || error("Not a CciaImage")
-            obj
-        catch ex
-            ws_log(ws, task_id, "[ERROR] Could not load image: $ex")
-            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-            return
-        end
-
-        # Capture the final status so we can send ws_result before ws_status("done"),
-        # preserving the result→status ordering the frontend expects.
-        final_status = Ref{Symbol}(:failed)
-        # See the set-scope branch: run_task validates params first (throws before any job runs), so
-        # a pre-job throw is caught here to guarantee an [ERROR] log + a terminal task:status frame.
-        try
-            result = run_task(task_struct, img, params;
-                              task_id          = task_id,
-                              pool_name        = pool_name,
-                              on_log           = line -> ws_log(ws, task_id, line),
-                              on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                              on_status_change = rec -> begin
-                                  # Forward queued/running immediately, and :cancelled too (no result
-                                  # to order before it) so a cancelled — especially still-QUEUED —
-                                  # task reflects at once. Hold :done/:failed until after the result.
-                                  if rec.status in (:queued, :running, :cancelled)
-                                      ws_status(ws, task_id, string(rec.status), image_uid; fun=fun_name)
-                                  end
-                                  final_status[] = rec.status
-                              end)
-            isnothing(result) || ws_result(ws, task_id, image_uid, result)
-        catch ex
-            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
-            final_status[] = :failed
-        end
-        ws_status(ws, task_id, string(final_status[]), image_uid; fun=fun_name)
-    end
+    # Everything above is the ASKING side — guards and project-state edits this process owns. The run
+    # itself is `execute_task` (app/src/runner/execute.jl), which knows nothing about sockets: scope
+    # dispatch, the pre-job throw guard, and the result→terminal-status ordering all live there, so the
+    # detached runner executes the identical code rather than a second copy of it.
+    # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
+    req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params)
+    Threads.@spawn execute_task(req;
+        on_log      = line -> ws_log(ws, task_id, line),
+        on_progress = (n, t) -> ws_progress(ws, task_id, n, t),
+        on_status   = (status, uid, uids) ->
+                          ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name),
+        on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta))
 end
 
