@@ -1,6 +1,12 @@
 # Detached task runner — plan
 
-**Status:** planning (2026-08-13). Nothing built. Phase 0 is a measurement that may defer the rest.
+**Status:** Phases 1 and 2 BUILT and verified (2026-08-13), dev-only. Phase 0 was a dead end and is
+recorded as one. **The durable "how it works" now lives in [`docs/RUNNER.md`](../RUNNER.md)** — read
+that first; this file is kept for the decisions and the routes not taken, which the reference doc does
+not carry.
+
+What is left: Phase 3's target badge (moot while dev-only — see D3d), the on-disk spool (D4, deferred),
+and Phase 4's remote target.
 
 ## Goal
 
@@ -9,11 +15,11 @@ flight**. A separate long-lived **runner** owns the resource pools, the task reg
 executor; the API server becomes a client of it and can restart, crash, or switch worktree underneath
 a running segmentation.
 
-Immediate driver is dev: `api/src/*.jl` is not Revise-tracked, so most backend edits mean a restart,
-and a restart kills every running task. But the same seam gives users two things that are not dev
-conveniences — **processing that continues after the app is closed** (D3b) and, later, a **remote
-processing target** (an internal Linux box, eventually HPC). So the job record carries a `target` from
-day one even though only `local` exists, and lifetime is a policy rather than a constant.
+Driver is dev, and — settled in D3d after building it — that is *all* it is. `api/src/*.jl` is not
+hot-reloaded, so most backend edits mean a restart, and a restart killed every running task. The
+"processing continues after the app is closed" idea (D3b) was explored and dropped: a prod install has
+no Restart button, so there is no benefit there to protect, and a prod user leaves the app running
+anyway. The job record still carries a `target` so a remote runner (Phase 4) needs no reshaping.
 
 Not a goal: making the *first* run faster, changing what a task computes, or building the remote
 target. See *HPC — what this must not preclude*.

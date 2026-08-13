@@ -44,13 +44,12 @@ project-scoped, and must not require an *open* project).
 > Operates on image(s) and wants pooling / chaining / QC / resume → **scheduler task**.
 > One-off project-/bundle-scoped op, or no image target → **background job**.
 
-> **Which PROCESS runs it is a separate question from which mechanism.** A scheduler task may execute
-> in the API server or in the detached **task runner** (`CECELIA_RUNNER=1`, port 7657) — same code,
-> same frames, but it survives a backend restart. A background job always runs in the API server and
-> dies with it: export/import/data patches are project-scoped one-offs that hold no pool slot, and
-> moving them would drag `project_io.jl` across a process boundary for nothing (Decision 8 of
-> [`docs/todo/TASK_RUNNER_PLAN.md`](todo/TASK_RUNNER_PLAN.md)). If a 40-minute export surviving a
-> restart turns out to matter, that is a second, simpler spool — not this one.
+> **Which PROCESS runs it is a separate question from which mechanism.** In dev, a scheduler task or a
+> chain may execute in the detached **task runner** ([`docs/RUNNER.md`](RUNNER.md), port 7657) — same
+> code, same frames, but it survives a backend restart. A background job always runs in the API server
+> and dies with it: export/import/data patches are project-scoped one-offs that hold no pool slot, and
+> moving them would drag `project_io.jl` across a process boundary for nothing. If a 40-minute export
+> surviving a restart turns out to matter, that is a second, simpler spool — not this one.
 
 ## The `jobs.jl` API
 

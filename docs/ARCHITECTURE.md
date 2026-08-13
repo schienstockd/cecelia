@@ -386,6 +386,11 @@ Julia            →  task dispatch, gating, statistics, REST/WS API, HPC
 Python           →  image I/O, Napari, PyTorch, Cellpose
 ```
 
+The Julia half is one process in production and optionally **two in dev**: the API server, and a
+detached **task runner** that owns the resource pools so a backend restart does not kill work in
+flight. Same code, driven through the same sink-agnostic `execute_task`/`execute_chain`; the API server
+relays its frames rather than translating them. Dev-only on purpose — see [`docs/RUNNER.md`](RUNNER.md).
+
 **Never add Rust or a fourth language.** The rationale:
 Python owns all image I/O and ML regardless of what orchestrates it. The remaining work (gating, HMM,
 spatial stats, clustering) maps 1:1 from R to Julia's scientific ecosystem (StatsBase, Distributions,
