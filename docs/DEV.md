@@ -53,8 +53,13 @@ encouraged (`import`, `update`, `gating`, …).
 When a commit is authored by Claude Code, end the message with the trailer:
 
 ```
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude <model> <noreply@anthropic.com>
 ```
+
+`<model>` is the model **actually writing that commit** (`Claude Opus 5`, …) — read it off the
+running session, don't copy it from here. This line named one version for a long time and kept
+naming it after that model was superseded, which made the trailer a record of when the rule was
+written rather than of who wrote the commit.
 
 Ship the test in the same commit as the code (see `CLAUDE.md` → **Testing**), and update the
 relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current* table).
