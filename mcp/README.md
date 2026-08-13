@@ -73,7 +73,7 @@ with the matching guard in `app/test/suite.jl`.
 | `get_spatial_stats(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | region-clustering runs (regions.{suffix}: n regions, sizes) + pairwise cell-type contact log-odds (association/avoidance per population pair) |
 | `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |
 | `get_repl_api()` | `GET /api/repl/api` | notebook/REPL data-access surface: the read accessors + their live docstrings + the `docs/REPL.md` cookbook (write rules). Read before generating `using Cecelia` code. Project-independent |
-| `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count, flagged images (warn/fail QC), recent lab-log entries (7 days). Call first when a chat begins |
+| `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count + `excludedCount`, flagged images (warn/fail QC — each with `included`, each finding with its `fun`), recent lab-log entries (7 days), and the `guidance`. Call first when a chat begins |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
 | `get_recent_logs(level="", limit=100)` | `GET /api/logs/recent` | recent backend console lines (server `@info`/`@warn`/`@error`) — where a Julia-side task crash lands (not in `get_task_log`) |
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |

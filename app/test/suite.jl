@@ -1468,6 +1468,23 @@ end
     @test img1.uid in uids && !(img2.uid in uids)     # only the warn image flags; clean stays clean
     f1 = b.flagged[findfirst(f -> f.uid == img1.uid, b.flagged)]
     @test f1.worst == "warn" && f1.findings[1].short == "Few tracks"
+    # WHICH task banked it. Without the fun, a probe's hardcoded threshold is indistinguishable from a
+    # real pipeline finding — that cost a session chasing "0 cells" no segmentation had produced.
+    @test f1.findings[1].fun == "tracking.bayesian_tracking"
+    # an image the user has NOT excluded says so positively (absent would read as "unknown")
+    @test f1.included == true && b.excludedCount == 0
+
+    # EXCLUDED images: still listed (a warn on one is information, and dropping it would make the count
+    # disagree with the image table) but LABELLED, so a session leads with the ones that still count.
+    # The first real session opened on a drift anomaly for an image its owner had dropped weeks earlier.
+    img1.included = false
+    save!(img1)
+    b2 = session_briefing(proj)
+    @test b2.imageCount == 2 && b2.excludedCount == 1      # cohort size is imageCount - excludedCount
+    f1b = b2.flagged[findfirst(f -> f.uid == img1.uid, b2.flagged)]
+    @test f1b.included == false && f1b.findings[1].short == "Few tracks"   # labelled, not hidden
+    img1.included = true
+    save!(img1)
     @test length(b.recentLabLog) == 1 && b.recentLabLog[1].author == "User"
     @test occursin("tracking", b.recentLabLog[1].summary)
 
@@ -9401,10 +9418,23 @@ end
         # describe a board the same way (Decision 2)
         @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
               ["B/qc/_tracked", "T/qc/_tracked"]
-        # an explicit popType overrides the picker's
-        @test expand_board(proj, "pt", [Dict("plot" => "track_measures", "popType" => "track",
-                                             "pops" => ["B/qc/_tracked"])];
-                           pops = avail)["contents"][1]["state"]["sel"] == ["track::B/qc/_tracked"]
+        # An explicit popType is honoured ONLY when it is the spec's own default — stating it is
+        # redundant, but not wrong.
+        @test expand_board(proj, "pt-ok", [Dict("plot" => "track_measures", "popType" => "live",
+                                                "pops" => ["B/qc/_tracked"])];
+                           pops = avail)["contents"][1]["state"]["sel"] == ["live::B/qc/_tracked"]
+        # …and REFUSED otherwise. This used to override, and that is how a whole authored board came out
+        # blank: `popType: "track"` on `T/qc/_tracked` wrote `track::T/qc/_tracked`, which the panel
+        # cannot resolve, so all four plots said "Select one or more populations" and the board's
+        # population list showed 0 — no error anywhere. Note "track" IS in track_measures' offered
+        # popTypes ["live","track","trackclust"], so a membership check would not have caught it:
+        # offering a family is not the same as a population being available under it.
+        e_pt = try expand_board(proj, "pt-bad", [Dict("plot" => "track_measures", "popType" => "track",
+                                                     "pops" => ["B/qc/_tracked"])]; pops = avail)
+               catch err; err end
+        @test e_pt isa BoardSpecError
+        @test occursin("track", e_pt.msg) && occursin("live", e_pt.msg)   # names both, so a caller can fix it
+        @test occursin("blank", e_pt.msg)                                 # …and says why it matters
         # more plots than slots
         @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
 
@@ -9423,6 +9453,21 @@ end
         @test doc2.active_id == doc.active_id
         @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
         @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
+
+        # ── the name is STORED as it will render (board_display_name) ───────────────────────────────
+        # Vue escapes text, so a stored entity displays as the entity — on a tab the authoring tool
+        # cannot rename. A real board shipped as "Behaviour &amp; tracking by image" because the agent
+        # HTML-escaped the ampersand and nothing repaired it. Repair, don't reject: the intent is
+        # unambiguous and an error would spend a round-trip on punctuation.
+        @test board_display_name("  Behaviour &amp; tracking  ") == "Behaviour & tracking"
+        @test board_display_name("a &lt;b&gt; &quot;c&quot; &#39;d&#39;") == "a <b> \"c\" 'd'"
+        @test board_display_name(board_display_name("A &amp; B")) == "A & B"      # idempotent
+        # &amp; decodes LAST, so an escaped entity unwinds one level, not two
+        @test board_display_name("&amp;lt;not a tag&amp;gt;") == "&lt;not a tag&gt;"
+        doc3, _ = append_board(doc2, "Behaviour &amp; tracking", lay)
+        @test doc3.tabs[end]["name"] == "Behaviour & tracking"
+        # …and the duplicate check sees through the escaping too: the same name twice is still one name
+        @test_throws BoardSpecError append_board(doc3, "Behaviour & tracking", lay)
     end
 
     @testset "boards document — one reader, both shapes, versioned writes" begin

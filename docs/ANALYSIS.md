@@ -39,6 +39,27 @@ and is one click to remove. The in-app *"What can Claude do here?"* dialog
 and is where a user checks before letting Claude near their Analysis page. See
 `docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
 
+Two rules the expander enforces, both from one authored board that rendered completely blank:
+
+- **`popType` is DERIVED, and an explicit one is refused unless it is the spec's own default.** The
+  popType is half of every `tkey`, and a tkey whose family the panel does not offer for that population
+  resolves to nothing — every plot shows "Select one or more populations" and the board's population
+  list shows 0, with no error anywhere. `popType: "track"` on `T/qc/_tracked` did exactly that, and a
+  membership check would not have saved it: `track_measures`/`hmm_state_*`/`cell_properties` all *offer*
+  `["live","track","trackclust"]`, but offering a family is not the same as a population being
+  available under it (that project's picker offers those pops as `live`). Since `expand_board` is
+  reached only by the MCP route and the REPL — the GUI writes boards through its own autosave — the
+  only caller who ever sets `popType` is an agent copying one back off `get_analysis_boards`.
+- **Board names are stored as they will render** (`board_display_name`): stripped, HTML entities
+  decoded. Vue escapes text, so a stored `&amp;` displays as `&amp;` on a tab the authoring tool
+  cannot rename. Repaired rather than rejected — the intent is unambiguous.
+
+**A board authored this way compares BY IMAGE.** The by-attribute mode (compare by Mouse/Location)
+lives in frontend panel state the expander does not write, and only `population_summary` /
+`spatial_cell_properties` declare `by_attr` in `scopeModes` at all — so "does X differ between mice"
+cannot be answered by an authored board. The tool's docstring tells the assistant to say so and offer a
+notebook instead of passing a per-image board off as the grouped figure.
+
 **The document has ONE reader/writer** — `app/src/analysis_boards.jl` (`read_boards_doc` /
 `normalise_boards` / `write_boards_doc`), used by the autosave route, the project-open payload and
 `board_summaries` alike. The last time this file had two parsers they disagreed about its shape and

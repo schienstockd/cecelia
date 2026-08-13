@@ -28,6 +28,25 @@ struct BoardSpecError <: Exception
 end
 Base.showerror(io::IO, e::BoardSpecError) = print(io, "BoardSpecError: ", e.msg)
 
+# `&amp;` LAST, so an escaped entity ("&amp;lt;") decodes one level to "&lt;" and not all the way to "<".
+const _NAME_ENTITIES = ("&lt;" => "<", "&gt;" => ">", "&quot;" => "\"", "&#39;" => "'",
+                        "&apos;" => "'", "&#38;" => "&", "&amp;" => "&")
+
+"""
+    board_display_name(name) -> String
+
+A board name as it should be STORED: stripped, with HTML entities decoded.
+
+Vue renders text escaped, so a stored `&amp;` displays as `&amp;` — the entity itself, forever, on a
+tab the user cannot rename from the tool that created it. An LLM authoring a board called
+"Behaviour & tracking" escapes the ampersand roughly as often as not; `add_analysis_board` is add-only,
+so the cost of not repairing it is a permanently mis-titled board and a manual delete. Repair here
+rather than reject: the intent is unambiguous, and an error would spend a round-trip on punctuation.
+
+Idempotent, so normalising at more than one layer is safe.
+"""
+board_display_name(name::AbstractString) = String(strip(replace(String(name), _NAME_ENTITIES...)))
+
 # ── The plot-spec registry (one reader) ──────────────────────────────────────────────────────────────
 # The specs are package JSON; `api/src/plotting_api.jl` serves them to Vue and reads them through here,
 # so the expander validates against exactly what the board can render.
@@ -161,7 +180,28 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     offered = get(ds, "popTypes", nothing)
     first_pt = offered isa AbstractVector && !isempty(offered) ?
         _bs_str(get(first(offered), "popType", nothing)) : ""
-    pop_type = _bs_str(get(d, "popType", nothing), first_pt)
+    # An explicit popType is only honoured when it IS the spec's own default. Anything else is refused.
+    #
+    # This is narrower than it looks. The popType is half of every `tkey`, and a tkey whose family the
+    # panel does not offer for that population resolves to NOTHING: every plot renders "Select one or
+    # more populations" and the board's population list shows 0, with no error anywhere. That is what
+    # `popType: "track"` on `T/qc/_tracked` did to a whole authored board — and "track" passes every
+    # check we could cheaply write, because track_measures/hmm_state_*/cell_properties all OFFER
+    # popTypes ["live","track","trackclust"]. Offering a family is not the same as that population being
+    # available under it, and `board_spec_populations` collapses each pop to one family, so it cannot
+    # answer the pair question either.
+    #
+    # So we only write the shape we know renders: the spec's default (which is what every board in a
+    # real project stores, and what the flow-gate-used-as-`live` case below depends on). expand_board is
+    # reached only by the MCP route and the REPL — the GUI writes boards through its own autosave — so
+    # the only caller who ever sets popType is an agent copying one off get_analysis_boards without
+    # knowing it is derived. Refusing costs that caller nothing and closes a silent failure.
+    asked_pt = _bs_str(get(d, "popType", nothing))
+    isempty(asked_pt) || isempty(first_pt) || asked_pt == first_pt || throw(BoardSpecError(
+        "plots[$i]: popType \"$asked_pt\" is not \"$id\"'s own (\"$first_pt\"). popType is DERIVED " *
+        "from the plot and its populations — omit it. Setting it writes a population key the panel " *
+        "cannot resolve, and the plot renders blank with no error."))
+    pop_type = isempty(asked_pt) ? first_pt : asked_pt
 
     # Populations → `tkey`s ("popType::valueName/pop"). A tkey naming a population that does not exist
     # renders an EMPTY panel with no error — the exact silent failure this validator exists to close.
@@ -251,9 +291,12 @@ end
 Add ONE board to a document — the add-only half of Decision 1. Never touches an existing tab, so the
 id bookkeeping lives here rather than in the route. Throws `BoardSpecError` if the name is taken (the
 route turns that into a 409), because two boards with one name is a GUI the user cannot navigate.
+
+The name is stored as `board_display_name` gives it (stripped, entities decoded) — normalised HERE, the
+invariant's owner, because the REPL reaches this without the route.
 """
 function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict)
-    nm = strip(String(name))
+    nm = board_display_name(name)
     for t in doc.tabs
         t isa AbstractDict || continue
         strip(_bs_str(get(t, :name, get(t, "name", nothing)))) == nm &&

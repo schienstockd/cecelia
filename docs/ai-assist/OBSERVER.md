@@ -275,7 +275,14 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   and suggests an in-range direction (`observer_prompt.jl`), framed suggestion-not-instruction.
 - **`get_session_briefing`** — chat startup context (name/count + flagged images + recent lab log),
   plus the `guidance` payload; the server instructions send every session here first. Flagged uses the
-  one canonical `all_qc_docs` (shared with the image table).
+  one canonical `all_qc_docs` (shared with the image table). Each flagged image carries `included` and
+  each finding its `fun`, with `excludedCount` alongside `imageCount` — both learned the hard way on a
+  real project: the first session led with a drift anomaly on an image its owner had already **excluded**,
+  and spent a pass chasing "4 images measured 0 cells" that came from `customExamples.qcProbe`, a
+  drop-in example with a hardcoded 1200-cell threshold, not from segmentation. Excluded images are
+  labelled, not hidden (a warn on one is still information, and hiding it would make the count disagree
+  with the image table); custom-module QC is likewise surfaced with its `fun`, never filtered — a user's
+  own task banking QC is legitimate QC, the problem was that nothing said who said it.
 - **REPL knowledge (`get_repl_api` + `docs/REPL.md`)** — the notebook-safe accessor allow-list
   (`NOTEBOOK_API`) with live docstrings; a golden test keeps REPL.md from drifting.
 - **`create_notebook`** — generates a runnable Pluto notebook from cells (`/api/notebooks/write`).

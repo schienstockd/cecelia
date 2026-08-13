@@ -94,7 +94,10 @@ class GuidanceTest(unittest.TestCase):
         for rule in ("not four replicates",     # grouping: 4 images from 1 mouse are not 4 replicates
                      "statUnit",                # pooling every track fakes the n
                      "presses Run",             # a chain is authored inert; the user runs it
-                     "beside"):                 # boards/chains are add-only, never edits
+                     "beside",                  # boards/chains are add-only, never edits
+                     "included: false",         # an image the user already dropped is not news
+                     "excludedCount",           # …and it is not part of the cohort denominator
+                     "`fun`"):                  # which task's QC is talking (a probe ≠ segmentation)
             self.assertIn(rule, guidance.BRIEFING_GUIDANCE)
 
     def test_the_briefing_ships_the_guidance(self):

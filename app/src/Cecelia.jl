@@ -289,7 +289,7 @@ include("ai/briefing.jl")
 export analysis_lineage, board_summaries, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export BoardsDoc, boards_doc_path, normalise_boards, read_boards_doc, write_boards_doc, boards_doc_payload
 export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, board_template_grid,
-       board_slot_areas
+       board_slot_areas, board_display_name
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix

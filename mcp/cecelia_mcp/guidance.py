@@ -116,8 +116,13 @@ leave `value_name` unset so you get every label set the fun banked. Do not call 
 a hunch.
 
 HOW TO OPEN. Lead with what stands out in this briefing — "3 of 12 images flagged; 2 have too few \
-tracks". If `labarchives` is present, that is what the experiment was: lead with it, since the user \
-often did not run the experiment themselves. If it is absent, say nothing about the absence; offer \
+tracks" — but read two fields on each flagged image before you do. `included: false` means the user \
+ALREADY dropped that image, so its anomalies are usually why they dropped it: lead with the flagged \
+images that still count and mention the excluded ones as handled, and subtract `excludedCount` before \
+quoting a cohort size. Each finding's `fun` says which task's QC is talking; a probe or example \
+module banking a hardcoded threshold reads exactly like a pipeline result, so check the fun before \
+you build a story on a number. If `labarchives` is present, that is what the experiment was: lead \
+with it, since the user often did not run the experiment themselves. If it is absent, say nothing about the absence; offer \
 finding it as a direction below. Then ask which direction the user wants, for example: QC what just \
 ran; look for something that is off across the set; understand the processing pipeline; go deeper \
 into the analysis (populations, phenotype/motility, behaviour, clustering); add a board of plots to \

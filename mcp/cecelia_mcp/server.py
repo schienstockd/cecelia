@@ -257,13 +257,18 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     click, not their work. 409 if the name is taken (pick another; never try to replace theirs).
 
     `plots` is a list, in reading order, of:
-      {plot, measure?, chart?, pops?, popType?, groupBy?, statUnit?, imageAgg?}
+      {plot, measure?, chart?, pops?, groupBy?, statUnit?, imageAgg?}
       - `plot`     the plot-spec id from get_available_plots (e.g. "track_measures"). REQUIRED.
       - `chart`    one the spec offers ("boxplot", "violin", …); defaults to its first.
       - `measure`  one the spec carries (e.g. "live.track.speed"); defaults to the spec's own.
       - `pops`     populations as "valueName/pop" — EXACTLY as get_populations and get_analysis_boards
                    report them (e.g. "B/qc/_tracked"). A population that does not exist is rejected.
-      - `groupBy`  a categorical column to split by (e.g. "live.cell.hmm.state.movement").
+      - `groupBy`  a categorical column to split by (e.g. "live.cell.hmm.state.movement"). This splits
+                   the plot by a measured VALUE; it is not the experimental grouping (see below).
+      - **`popType` is NOT a field here.** It is DERIVED from the populations you name. get_analysis_boards
+        reports one because that is what got stored — do not copy it back: a `popType` that disagrees
+        with a population's own type produced a board where every panel said "Select one or more
+        populations", and the request is now rejected rather than written.
       - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
                    `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
                    every track across images treats one image's 400 tracks as 400 replicates.
@@ -278,11 +283,21 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     list_images' `attr` before anything cross-image. Pick the canonical clustering run rather than
     guessing among leftovers, and drop excluded images.
 
+    **A board authored here compares BY IMAGE — it cannot group by an experimental attribute.** The
+    board's own by-attribute mode (compare by Mouse/Location) lives in frontend panel state this tool
+    does not write, and only two specs offer it at all (population_summary, spatial_cell_properties).
+    So when the user's question is "does X differ between mice/treatments", say that plainly: offer the
+    per-image board AND tell them either to switch the board's scope to by-attribute in the GUI, or let
+    you build a notebook (create_notebook) that groups properly. Do not quietly hand over a per-image
+    board as if it answered the grouped question — with one image per mouse it is not the same figure.
+
     The server validates against the project and refuses to write a board that would render blank —
     unknown plot id, a chart that spec doesn't offer, a measure it doesn't carry, a population that
-    does not exist (422, naming what was available). It CANNOT check intent: a well-formed board built
-    on the wrong clustering run is still wrong. So say in chat which values you read from the data and
-    which you defaulted, and tell the user the board was added beside their own."""
+    does not exist, a `popType` contradicting the populations, or populations of mixed type in one plot
+    (422, naming what was available). It CANNOT check intent: a well-formed board built on the wrong
+    clustering run is still wrong. So say in chat which values you read from the data and which you
+    defaulted, and tell the user the board was added beside their own. Also give it a PLAIN name —
+    write "Behaviour & tracking", never "&amp;"; the name is stored verbatim and you cannot rename it."""
     return _client.add_analysis_board(project_uid, name, plots, template)
 
 
@@ -479,9 +494,16 @@ def get_chains(project_uid: str) -> dict:
 def get_session_briefing(project_uid: str) -> dict:
     """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
     the user re-explaining. Returns:
-      - `projectName`, `imageCount`
+      - `projectName`, `imageCount`, `excludedCount` (how many of them are EXCLUDED from analysis —
+        subtract before quoting a cohort size)
       - `flagged`: images with a warn/fail QC finding (same source as the app's image table) —
-        `[{uid, name, worst: warn|fail, findings: [{level, short}]}]`
+        `[{uid, name, worst: warn|fail, included, findings: [{level, short, fun}]}]`.
+        **`included: false` means the user already dropped that image** — do not lead with its
+        anomalies; they are usually WHY it was dropped. Lead with the flagged images that still count,
+        and mention the excluded ones as already handled.
+        `fun` is the task whose QC banked the finding: check it before believing a number. A probe or
+        example module banking a hardcoded threshold looks exactly like a real pipeline finding
+        otherwise ("4 images measured 0 cells" once came from a test probe, not segmentation).
       - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
 
       - `guidance`: HOW TO WORK WITH THIS PROJECT — the disciplines that span tools (what to check
