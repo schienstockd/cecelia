@@ -47,6 +47,16 @@ press again to force.
 If you are iterating on task code and would rather not think about it, turn the toggle off — tasks then
 run in the backend and Restart is enough for everything.
 
+### If it is not there when you press Run
+
+The task **runs in the backend instead** — it works and finishes normally, it just dies with the next
+Restart, which is the one thing you enabled the runner to avoid. That is a surprise worth surfacing, so
+the Run panel shows **"Task runner down"** with a **Start** button whenever the runner is enabled and
+not answering. Nothing else on that page would tell you.
+
+It cannot go missing while you are working: the idle exit requires **no subscriber**, and the backend
+holds one open. So this only appears after `pixi run stop-runner`, or if the runner crashed.
+
 ---
 
 ## Why dev-only
