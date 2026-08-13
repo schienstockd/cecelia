@@ -213,3 +213,28 @@ function safe_name_part(raw)::String
     s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
     String(strip(s, ['_', '.']))
 end
+
+"""
+    git_probe(args...; dir = pwd()) -> String
+
+Best-effort `git`: stdout stripped, `""` on any failure, and **stderr discarded**.
+
+For dev *diagnostics* only — the REPL panel's commit line and the worktree switcher. Every caller
+treats "" as "not a git checkout" and carries on, which is the normal case for an installed app:
+there is no `.git` under `~/.local/share/cecelia`, so each probe made git print
+`fatal: not a git repository (or any of the parent directories): .git` into the user's launch
+output. The failures were already caught and harmless; only the leaked text reached the console,
+where it reads like a broken install (reported in #540).
+
+Same reason `_kill_tree`/`_dir_bytes` live here rather than inline: a shell-out gets one spelling.
+Not for anything whose *result* matters — a caller that needs to know WHY git failed should run it
+itself and read stderr.
+"""
+function git_probe(args::AbstractString...; dir::AbstractString = pwd())::String
+    try
+        cmd = Cmd(String["git", "-C", String(dir), String.(args)...])
+        String(strip(read(pipeline(cmd; stderr = devnull), String)))
+    catch
+        ""      # git absent, not a repo, or a non-zero exit — all "no answer"
+    end
+end

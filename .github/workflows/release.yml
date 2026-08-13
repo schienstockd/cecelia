@@ -43,10 +43,18 @@ jobs:
         run: |
           mkdir -p out
           echo "${{ github.ref_name }}" > VERSION   # so the installed app knows its version
+          # This list is an ALLOW-list, so anything not named here is silently absent from every
+          # stable install while the dev channel (a full branch archive) stays fine — the failure
+          # never shows up in development. #540 was exactly that: `pluto/` was missing and
+          # `api/src/notebooks_api.jl` includes `pluto/sysimage_stamp.jl` at server load, so every
+          # v0.1.1 install died on first launch. `preview/` and `mcp/` were missing too and fail
+          # quieter still (no preview worker to spawn; an observer registered against a directory
+          # that isn't there). Before removing anything here, check the `release bundle ships every
+          # runtime path` testset in app/test/suite.jl, which pins the load-bearing ones.
           tar -czf out/cecelia.tar.gz \
-            api app python app.py pixi.toml pixi.lock VERSION \
+            api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
             napari/napari_bridge.py frontend/dist \
-            install.sh install.ps1 README.md docs
+            install.sh install.ps1 README.md LICENSE THIRD_PARTY.md docs
           # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
           # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
           # `out/cecelia.tar.gz` would not match a file downloaded as `cecelia.tar.gz`.

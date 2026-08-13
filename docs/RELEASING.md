@@ -167,10 +167,16 @@ non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install c
    > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
    > they now have to decide. The commit log is one click away on the compare link appended below.
 4. Bump the `version:` + `date-released:` in **`CITATION.cff`** to this tag.
-5. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
-6. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
+5. **`bash scripts/bundle_check.sh --launch`** — packs the bundle `release.yml` will pack, extracts
+   it, and boots the API server from it on `:8099` (~20 s, leaves the running app alone). The tar
+   list is an allow-list, so a runtime directory nobody named is missing from the *stable* channel
+   only, and the `dev` channel keeps working — which is how v0.1.1 shipped without `pluto/` and died
+   at launch for every installer (#540). CI pins the same list, but this is the one that runs the
+   thing. See `docs/SHIPPING.md` → *Building & releasing*.
+6. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
+7. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
    fresh machine + the target dataset before relying on it.
-7. Only at a coarse boundary: add a MILESTONES entry (append-only).
+8. Only at a coarse boundary: add a MILESTONES entry (append-only).
 
 ### Regenerating the CHANGELOG section
 
