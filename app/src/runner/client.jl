@@ -37,6 +37,11 @@ function _runner_get(h::RunnerHandle, path::AbstractString; timeout::Real = 5)::
     JSON3.read(String(r.body), Dict{String,Any})
 end
 
+function _runner_get_array(h::RunnerHandle, path::AbstractString; timeout::Real = 5)::Vector{Any}
+    r = HTTP.get(_runner_url(h, path); request_timeout = timeout, retry = false, status_exception = true)
+    JSON3.read(String(r.body), Vector{Any})
+end
+
 function _runner_post(h::RunnerHandle, path::AbstractString, body::Dict; timeout::Real = 10)::Dict{String,Any}
     r = HTTP.post(_runner_url(h, path), ["Content-Type" => "application/json"], JSON3.write(body);
                   request_timeout = timeout, retry = false, status_exception = true)
@@ -137,7 +142,9 @@ end
 runner_submit(h::RunnerHandle, req::TaskRequest) = _runner_post(h, "/submit", task_request_dict(req))
 runner_cancel(h::RunnerHandle, task_id::AbstractString) =
     _runner_post(h, "/cancel", Dict{String,Any}("taskId" => string(task_id)))
-runner_tasks(h::RunnerHandle)  = get(_runner_get(h, "/tasks"), "tasks", Any[])
+# Bare arrays now (the runner speaks the API server's rail API) — `_runner_get_array` rather than
+# `_runner_get`, which is typed for an object.
+runner_tasks(h::RunnerHandle)  = _runner_get_array(h, "/api/tasks")
 # Chains. `runner_submit_chain` returns the runner's reply so a 409 (the run id is already executing
 # there) is distinguishable from a transport failure — those need different answers, and treating a
 # refusal as "unreachable" would run the same chain twice.
@@ -146,9 +153,9 @@ runner_submit_chain(h::RunnerHandle, req::ChainRequest) =
 runner_cancel_chain(h::RunnerHandle, run_id::AbstractString) =
     _runner_post(h, "/cancel-chain", Dict{String,Any}("runId" => string(run_id)))
 runner_chain_runs(h::RunnerHandle) = get(_runner_get(h, "/chains"), "runs", Any[])
-runner_pools(h::RunnerHandle)  = get(_runner_get(h, "/pools"), "pools", Any[])
+runner_pools(h::RunnerHandle)  = _runner_get_array(h, "/api/pools")
 runner_recent(h::RunnerHandle; since::AbstractString = "") =
-    get(_runner_get(h, "/tasks/recent?since=$(HTTP.escapeuri(since))"), "tasks", Any[])
+    _runner_get_array(h, "/api/tasks/recent?since=$(HTTP.escapeuri(since))")
 runner_set_pool_limit(h::RunnerHandle, name::AbstractString, limit::Integer) =
     _runner_post(h, "/pools/set", Dict{String,Any}("name" => string(name), "limit" => Int(limit)))
 

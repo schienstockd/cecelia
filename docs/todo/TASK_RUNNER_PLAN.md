@@ -101,7 +101,14 @@ Implementation note: `_stop_children_for_exit` currently serves both routes. It 
 above has to be taught which children belong to which route, or it will pass while the asymmetry is
 broken.
 
-### D3b — The runner is launched **detached**, so quitting the app can leave work running.
+### D3b — ~~The runner is launched detached, so quitting the app can leave work running.~~
+**NOT BUILT — superseded by D3d (2026-08-13). The process side exists; the feature does not.**
+
+*Kept because the reasoning below is still correct if the premise ever changes, and because the
+`detach = true` launch it argued for is in the code. What changed is who it is for: with the runner
+dev-only, "quit and keep processing" has nobody to serve — a developer restarts, they do not quit.*
+
+
 
 Launch it in its own process group / session (`setsid`, `CREATE_NEW_PROCESS_GROUP` on Windows) with no
 controlling terminal — so it survives the app exiting rather than dying with it. Then Quit with work in
@@ -121,6 +128,37 @@ The real hazard is invisibility — a detached process holding the GPU and writi
 UI attached. Non-negotiable mitigations: a PID/port file in the spool dir, the runner listed by
 `pixi run stop`, a System-panel row that shows an adopted runner as adopted, and a first-launch "while
 you were away" summary. A runner you cannot find from the GUI is a bug, not a feature.
+
+### D3c — The runner exits when it has no work and no audience.
+
+Launched detached, nothing stops it. Left alone it is a Julia process holding GPU memory with no
+window, no cancel and no way to find it, **forever**. The work finishing is fine; the idle process
+afterwards is not.
+
+So it exits after `RUNNER_IDLE_EXIT_SECONDS` (600) with **neither work nor a subscriber**. Both
+conditions are load-bearing: work alone would kill it between two tasks of a batch, and a subscriber
+alone would kill it during the ~45 s of a backend restart — the exact thing it exists to survive. The
+cost of being generous is one cold start if you come back after a long gap.
+
+Plus a `runner.json` (pid, port, commit) in the config dir, so a stray runner is findable rather than
+folklore.
+
+### D3d — The runner is DEV-ONLY, and that is not a temporary state.
+
+The benefit is "a backend restart does not cost a running task". **A production install has no Restart
+button** (`v-if="diag?.dev"`, both the sidebar and Settings), so the benefit is unreachable there —
+while every failure mode is a prod problem: an idle process with no window, no cancel, nothing to find
+it by. In dev there is a terminal and `pixi run stop-runner`.
+
+And a prod user does not need it. They leave the app running; **closing the browser tab was never what
+stopped a task** — the app's own orientation tour says so. The gap D3b tried to fill is not a gap.
+
+`runner_enabled()` therefore requires `is_dev_session()`, and the Settings toggle hides outside dev
+like the Restart button it sits under. Asserted in `app/test/suite.jl`, because "it is only a setting,
+what harm" is exactly how this drifts back on.
+
+If someone does ask for overnight processing, D3b is a day or two — the detached launch is already
+there. Do not build it before they ask.
 
 ### D10 — The regress ends at the filesystem. Do not ship a third process to watch the second.
 
@@ -195,6 +233,10 @@ boundary and buys nothing. *Open question:* a 40-minute export also dies on rest
 to hurt, the answer is probably a second, dumber spool, not putting them in the task runner.
 
 ### D9 — `target` exists on the job record from day one; the UI shows a badge, not a dead selector.
+
+> *Superseded in part by D3d: with the runner dev-only there is no user-facing badge to ship. The
+> field stays on the record.*
+
 
 `target: "local"` on every job. The Task Runner shows it as a **read-only badge** beside the pool chip
 — which earns its place with one target, because in dev it answers "did this run on the runner, and on

@@ -878,7 +878,7 @@ async function switchWt(path: string) {
 
       <!-- Task runner. Only shown when enabled (CECELIA_RUNNER=1) — an always-visible row for a
            process most installs don't run would be noise. -->
-      <div class="svc-row" v-if="runnerRaw">
+      <div class="svc-row" v-if="diag?.dev && runnerRaw">
         <span class="svc-name">Task runner</span>
         <span class="svc-pill" :class="stateInfo(runnerSt).tone"><span class="dot" /> {{ stateInfo(runnerSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
@@ -899,7 +899,9 @@ async function switchWt(path: string) {
         </span>
       </div>
 
-      <div class="field" style="margin: 0.2rem 0 0.6rem;">
+      <!-- dev only, like the Restart button above it and for the same reason: without Restart the
+           runner buys a prod user nothing, while its failure modes all land on them. -->
+      <div class="field" v-if="diag?.dev" style="margin: 0.2rem 0 0.6rem;">
         <CcToggle class="toggle-row" :disabled="svcBusy === 'runner' || runnerRaw?.settable === false"
                :model-value="!!runnerRaw?.enabled"
                @update:model-value="runnerToggle($event)"

@@ -50,6 +50,8 @@ function _runner_sub_sender(ws, q::Channel{String})
     end
 end
 
+_runner_subscriber_count()::Int = lock(_runner_subs_lock) do; length(_runner_subs); end
+
 """Broadcast one event frame to every subscriber. Never blocks the caller, never throws."""
 function runner_emit(msg::Dict{String,Any})
     json = JSON3.write(msg)
@@ -186,6 +188,58 @@ runner_identity()::Dict{String,Any} = Dict{String,Any}(
     "chainRuns"     => runner_chain_claims(),
     "projectsDir"   => projects_dir())
 
+# ── Life span: the runner must not outlive its REASON ─────────────────────────
+#
+# It is launched detached so it survives a backend restart — which means nothing stops it. Left alone
+# it is a Julia process holding GPU memory with no window, no cancel and no way for anyone to find it,
+# forever. The work finishing is fine; the idle process afterwards is the problem.
+#
+# So it exits when it has neither WORK nor an AUDIENCE. Both conditions matter:
+#   • work only        → it would exit between two tasks of a batch;
+#   • subscriber only  → a backend restart drops the connection for ~45 s and would kill it, which is
+#                        the exact thing it exists to survive.
+#
+# The window is therefore generous, and being generous costs only a cold start (~45 s of Julia +
+# Cecelia) if you come back after a long gap.
+const RUNNER_IDLE_EXIT_SECONDS = Ref(600.0)
+
+_runner_has_work()::Bool = !isempty(list_tasks()) || !isempty(runner_chain_claims())
+
+function _runner_idle_watchdog!()
+    idle_since = Ref(time())
+    Threads.@spawn while true
+        sleep(15)
+        try
+            if _runner_has_work() || _runner_subscriber_count() > 0
+                idle_since[] = time()
+            elseif time() - idle_since[] > RUNNER_IDLE_EXIT_SECONDS[]
+                @info "Task runner idle with nothing connected — exiting" after_seconds = round(Int, time() - idle_since[])
+                _runner_remove_state_file()
+                exit(0)
+            end
+        catch e
+            @warn "Runner idle watchdog" exception = e   # never let this kill the runner
+        end
+    end
+end
+
+# A findable process. Without this a stray runner is folklore — you know the port, and that is all.
+_runner_state_path() = joinpath(config_dir(), "runner.json")
+
+function _runner_write_state_file(port::Integer)
+    try
+        ensure_config_dir()
+        write_json_atomic(_runner_state_path(),
+                          Dict{String,Any}("pid" => getpid(), "port" => Int(port),
+                                           "commit" => _RUNNER_COMMIT[],
+                                           "startedAt" => _RUNNER_STARTED_AT[]))
+    catch e
+        @warn "Could not write the runner state file" exception = e
+    end
+end
+
+_runner_remove_state_file() = (try; rm(_runner_state_path(); force = true); catch; end; nothing)
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 # Handlers return a plain `(status, json_string)` pair — never an `HTTP.Response` — so the stream
@@ -275,11 +329,21 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
         route = uri.path
         if req.method == "GET"
             route == "/ping"  && return _json(200, runner_identity())
-            route == "/tasks" && return _json(200, (; tasks = list_tasks()))
-            route == "/pools"  && return _json(200, (; pools = pool_status()))
+            # THE TASK-RAIL API, spelled exactly as the API server spells it — bare arrays, `/api/…`
+            # paths. The runner IS a task-rail server, so it answers the questions a task-rail client
+            # asks, and every existing reader points at it unchanged:
+            #
+            #     CECELIA_PORT=7657 pixi run console
+            #
+            # which is the only way to see what a runner is doing with no backend attached. The first
+            # version invented `/tasks` + a `{tasks: …}` envelope for no reason; those stay as aliases
+            # rather than being a second dialect anyone has to know about.
+            route in ("/api/tasks", "/tasks")  && return _json(200, list_tasks())
+            route in ("/api/pools", "/pools")  && return _json(200, sort(pool_status(), by = p -> p.name))
             route == "/chains" && return _json(200, (; runs = runner_chain_claims()))
-            route == "/tasks/recent" &&
-                return _json(200, (; tasks = recent_tasks(; since = get(HTTP.queryparams(uri), "since", ""))))
+            route in ("/api/tasks/recent", "/tasks/recent") &&
+                return _json(200, recent_tasks(; since = get(HTTP.queryparams(uri), "since", "")))
+            route == "/api/health" && return _json(200, (; ok = true, version = "CeceliaRunner"))
         elseif req.method == "POST"
             route == "/submit"       && return _runner_submit(body_bytes)
             route == "/cancel"       && return _runner_cancel(body_bytes)
@@ -336,6 +400,9 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
     # The chain event bus is in-process, so a chain executing here fires its events here. Same builder
     # the API server uses, so the frames are byte-identical and it can relay them untranslated.
     subscribe_chain_frames!(runner_emit)
+    _runner_write_state_file(port)
+    atexit(_runner_remove_state_file)
+    _runner_idle_watchdog!()
     @info "Cecelia task runner starting" host port pid=getpid() threads=Threads.nthreads() commit=_RUNNER_COMMIT[] projects_dir=projects_dir()
     HTTP.listen(_runner_stream, host, port)
 end

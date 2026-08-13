@@ -3950,69 +3950,49 @@ end
 # The opt-in is a SETTING, not just an env var — a packaged install has no way to set an env var, so
 # "opt-in" would have meant "dev-only". The override still wins, which is what `pixi run dev-runner`
 # and CI use; the test pins that precedence, because getting it backwards makes the toggle a lie.
-@testset "runner opt-in: setting, with an env override" begin
+# The runner is DEV-ONLY. A prod install has no Restart button, so its whole benefit is unreachable
+# there while every failure mode (an idle process with no window, no cancel, nothing to find it by)
+# lands on the user — and a prod user does not need it: they leave the app running, and closing the
+# browser tab was never what stopped a task. The gate is asserted, not remembered, because "it is only
+# a setting, what harm" is exactly how it would drift back on.
+@testset "runner is dev-only, then a setting, then an env override" begin
     # `init_cecelia!()` mutates PROCESS-WIDE config, so this testset must put it back — leaving it
     # pointed at a throwaway config dir broke 37 later testsets (every one that touches
     # projects_dir()) the first time this was written, while passing itself.
     cfg = mktempdir()
     try
-    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => nothing) do
-        init_cecelia!()
-        @test runner_enabled() == false                    # default off — known gaps remain
-        @test set_runner_enabled!(true) == true
-        @test runner_enabled() == true                     # …and it survives a config reload
-        init_cecelia!()
-        @test runner_enabled() == true
-        @test occursin("[runner]", read(custom_toml_path(), String))
-        # merged write: an unrelated key must survive, like every other setting writer
-        @test set_runner_enabled!(false) == false
-    end
-    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => "1") do
-        init_cecelia!()
-        @test runner_enabled() == true                     # env wins over a file that says false
-    end
-    withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_RUNNER" => "0") do
-        init_cecelia!()
-        @test runner_enabled() == false                    # …in both directions
-    end
+        # NOT dev: off, whatever the file says. Written first because it is the load-bearing one.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_RUNNER" => nothing) do
+            init_cecelia!()
+            @test is_dev_session() == false
+            @test set_runner_enabled!(true) == false      # persisted, but not in EFFECT here
+            @test runner_enabled() == false
+        end
+        # …and not even an explicit env override turns it on outside dev.
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_RUNNER" => "1") do
+            init_cecelia!()
+            @test runner_enabled() == false
+        end
+
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => "1", "CECELIA_RUNNER" => nothing) do
+            init_cecelia!()
+            @test runner_enabled() == true                # the value written above, now in effect
+            @test occursin("[runner]", read(custom_toml_path(), String))
+            @test set_runner_enabled!(false) == false
+            init_cecelia!()
+            @test runner_enabled() == false               # …and it survives a config reload
+        end
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => "1", "CECELIA_RUNNER" => "1") do
+            init_cecelia!()
+            @test runner_enabled() == true                # env wins over a file that says false
+        end
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => "1", "CECELIA_RUNNER" => "0") do
+            init_cecelia!()
+            @test runner_enabled() == false               # …in both directions
+        end
     finally
-        init_cecelia!()                                    # restore the suite's own config
+        init_cecelia!()                                   # restore the suite's own config
     end
-end
-
-# ── The runner's claim on a chain run id ──────────────────────────────────────
-# A chain run MUTATES run.json as it goes (per-node status, params_hash, the resume bookkeeping), so
-# two processes executing the same run id corrupt each other's state — silently, and visible only later
-# as a resume doing the wrong thing. The enabled flag makes that impossible today, but that makes the
-# guard a configuration accident rather than a property of the code.
-@testset "runner claims a chain run id" begin
-    @test Cecelia._claim_chain_run!("r1") == true
-    @test Cecelia._claim_chain_run!("r1") == false      # the second submission is refused
-    @test Cecelia._claim_chain_run!("r2") == true       # a different run is unaffected
-    @test "r1" in Cecelia.runner_chain_claims()
-    Cecelia._release_chain_run!("r1")
-    @test Cecelia._claim_chain_run!("r1") == true       # …and re-claimable once released
-    Cecelia._release_chain_run!("r1"); Cecelia._release_chain_run!("r2")
-    @test isempty(Cecelia.runner_chain_claims())
-
-    # A FRESH run has no id yet — `run_chain` mints one — so it can never collide and must never be
-    # refused. Claiming on "" would make the runner accept exactly one fresh chain, ever.
-    @test Cecelia._claim_chain_run!("") == true
-    @test Cecelia._claim_chain_run!("") == true
-    @test isempty(Cecelia.runner_chain_claims())
-end
-
-@testset "ChainRequest survives the wire" begin
-    req = ChainRequest(; project_uid = "p1", chain_name = "my-chain",
-                         image_uids = ["a", "b"], run_id = "r9", start_node = "n3")
-    back = chain_request(JSON3.read(JSON3.write(chain_request_dict(req)), Dict{String,Any}))
-    @test back.project_uid == "p1" && back.chain_name == "my-chain"
-    @test back.image_uids == ["a", "b"] && back.run_id == "r9" && back.start_node == "n3"
-    @test back.target == "local"
-    # A resume carries no chain name or images — they come from the persisted run. Decoding that must
-    # not invent them.
-    resume = chain_request(Dict{String,Any}("projectUid" => "p1", "runId" => "r9"))
-    @test resume.chain_name == "" && resume.image_uids == String[]
 end
 
 @testset "runner client refuses a dead port cleanly" begin

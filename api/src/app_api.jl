@@ -24,6 +24,18 @@
 # calls against the ports `api_diagnostics` reports. The runner is reported there too but is stopped
 # CONDITIONALLY, so it is asserted separately rather than by that count.
 function _stop_children_for_exit(; stop_runner::Bool = true)
+    # In-flight TASK subprocesses. Nothing else kills these: `exit(0)` below just reparents them, so a
+    # Quit during a cellpose run left the Python child alive — finishing, writing its zarr, and never
+    # registered, because the Julia post-step (`register_label_files!`, QC, run log) died with us.
+    # `cancel_task!` marks the record and kills the process TREE. Only reaches tasks in THIS process;
+    # ones on the detached runner go when the runner does, below.
+    if stop_runner
+        try
+            for t in list_tasks(); cancel_task!(String(t.id)); end
+        catch e
+            @warn "Shutdown: cancelling in-flight tasks failed" exception = e
+        end
+    end
     try
         v = _viewer()
         v !== nothing && close!(v)          # kills the napari bridge process
