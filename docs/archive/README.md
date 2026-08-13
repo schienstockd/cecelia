@@ -29,9 +29,11 @@ ships the work, not in a later sweep. `prompt-welcome-guides-entry.md` is the wo
 for a CTA on a welcome page that does not exist, and for a first-time ring that was rejected, so a
 reader without that note has a plausible spec for two things deliberately not built.
 
-**Two files here are cited from outside and are not spent:**
+**One file here is cited from outside:** `python-audit-report.md` — `FAQ.md` sends readers here for
+the full "why is there still Python" breakdown, and `docs/FUTURE.md` cites it. Read it as a
+point-in-time analysis, not as current fact.
 
-- `python-audit-report.md` — `FAQ.md` sends readers here for the full "why is there still Python"
-  breakdown, and `docs/FUTURE.md` cites it. Read as a point-in-time analysis, not as current fact.
-- `julia-port-watchlist.md` — describes itself as a *living* checklist to recheck periodically. If it
-  is still being maintained it belongs in `docs/`, not here; if it is not, the banner is correct.
+Its companion `julia-port-watchlist.md` was written as a *living* checklist and is the clearest case
+for why this folder is named what it is: the recheck it describes stopped, because the port was judged
+**not feasible** rather than not-yet-possible, and nothing in the file said so. A reader would have
+found a maintained-looking watch list for an abandoned idea.

@@ -4,9 +4,18 @@
 
 # Julia Port Watch List
 
-> Living checklist distilled from `docs/archive/python-audit-report.md`. Purpose: recheck periodically
-> whether a Julia drop-in has appeared for each **blocked** item. Each "cannot port (yet)" row names
-> the *specific* package/capability to watch for, so the recheck is a concrete search, not a re-audit.
+> **Outcome: the port is not happening, and nobody is rechecking this** (Dominik, 2026-08-13). It was
+> written as a living checklist — recheck periodically whether a Julia drop-in had appeared for each
+> blocked item — and that recheck stopped, because the idea was judged not feasible rather than
+> not-yet-possible. The load-bearing parts of the pipeline are published algorithms (Cellpose, btrack,
+> scanpy/Leiden), and porting those means reimplementing them, not moving glue. `FAQ.md` states the
+> settled position: the remaining Python is a deliberate, permanent rim, not unfinished business.
+>
+> Kept for the per-item analysis of what depends on what, which is still accurate about the shape of
+> the codebase even though its conclusion is spent.
+
+> Distilled from `docs/archive/python-audit-report.md`. Each "cannot port (yet)" row names the
+> *specific* package/capability that was being watched for.
 
 ## Governing rules (read before porting anything)
 
