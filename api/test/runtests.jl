@@ -3229,17 +3229,17 @@ end
 end
 
 # ── Chain event → WS bridge: taskId degradation ───────────────────────────────
-# The bridge reads `task_id` through `_ev_task_id`, not `p.task_id`, because two real payloads lack a
+# The bridge reads `task_id` through `chain_event_task_id`, not `p.task_id`, because two real payloads lack a
 # usable one: a node with no task id yet (skipped before submission, set-scope/incremental nodes that
 # bypass `run_task`) carries `nothing`, and a hand-fired REPL/test event may omit the field entirely.
 # Either must degrade to "" — a bridge handler that throws would take down chain telemetry for every
 # connected client.
 @testset "API: chain bridge taskId degradation" begin
-    @test _ev_task_id((; task_id = "abc123")) == "abc123"
-    @test _ev_task_id((; task_id = nothing))  == ""       # node had no task id yet
-    @test _ev_task_id((; run_id  = "r1"))     == ""       # field absent (hand-fired event)
-    @test _ev_task_id(NamedTuple())            == ""
-    @test _ev_task_id((; task_id = "x")) isa String
+    @test chain_event_task_id((; task_id = "abc123")) == "abc123"
+    @test chain_event_task_id((; task_id = nothing))  == ""       # node had no task id yet
+    @test chain_event_task_id((; run_id  = "r1"))     == ""       # field absent (hand-fired event)
+    @test chain_event_task_id(NamedTuple())            == ""
+    @test chain_event_task_id((; task_id = "x")) isa String
 end
 
 # ── Chain event → WS bridge: the frames that actually go out ───────────────────

@@ -139,6 +139,7 @@ export resize_pool!, set_pool_limit!
 # Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
 # by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
 export TaskRequest, execute_task, task_request, task_request_dict
+export subscribe_chain_frames!, chain_event_task_id
 # The detached task runner (runner/server.jl + runner/client.jl)
 export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
@@ -249,6 +250,8 @@ include("tasks/chain.jl")
 # Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
 # detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
 include("runner/execute.jl")
+# Chain events -> wire frames, shared by the API server and the runner (one builder, one bank).
+include("runner/chain_frames.jl")
 include("napari.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
 # `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).

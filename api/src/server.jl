@@ -124,101 +124,16 @@ function api_logs_recent()
 end
 
 # ── Chain event → WS bridge ───────────────────────────────────────────────────
-# `taskId` is the scheduler task the node ran as — the task console correlates it with its
-# `GET /api/tasks` row to attribute the node's real outcome (a chain run emits no `task:status`
-# frames, so without it a finished node can only be reported as "outcome unseen"). Read with
-# `_ev_task_id` rather than `p.task_id`: a hand-fired event from the REPL/tests may omit the field,
-# and a node with no task id yet (skipped before submission, set-scope) carries `nothing` — both
-# must degrade to "" and never take the bridge down.
-_ev_task_id(p)::String = something(get(p, :task_id, ""), "")
-
-
-subscribe_chain_events!("node:queued", function(p)
-    broadcast_ws(Dict{String,Any}(
-        "type"       => "chain:node:queued",
-        "runId"      => p.run_id,
-        "chainName"  => p.chain_name,
-        "projectUid" => p.project_uid,
-        "imageUid"   => p.image_uid,
-        "nodeId"     => p.node_id,
-        "fn"         => p.fn,
-        "params"     => p.params,
-        "taskId"     => _ev_task_id(p),
-    ))
-end)
-
-# `startedAt` rides along for the same reason `taskId` does: a chain run emits no `task:status`, so these
-# frames are the ONLY live carrier of a node's timing, and a client that times the row itself is timing
-# from when it saw the frame. The per-image path fires this from the scheduler's own `:running` transition,
-# so the start is already on record and exact; a **set-scope** node bypasses `run_task` entirely (no
-# `TaskRecord`), which is what `note_task_started!` here covers — first-write-wins, so it can only ever
-# fill in a start that nothing more precise has recorded.
-subscribe_chain_events!("node:running", function(p)
-    tid = _ev_task_id(p)
-    broadcast_ws(Dict{String,Any}(
-        "type"       => "chain:node:running",
-        "runId"      => p.run_id,
-        "chainName"  => p.chain_name,
-        "projectUid" => p.project_uid,
-        "imageUid"   => p.image_uid,
-        "nodeId"     => p.node_id,
-        "fn"         => p.fn,
-        "params"     => p.params,
-        "taskId"     => tid,
-        "startedAt"  => isempty(tid) ? "" : iso_utc(note_task_started!(tid)),
-    ))
-end)
-
-# A terminal outcome reaches a client through exactly TWO carriers, and BOTH bank it for replay
-# (`record_task_outcome!`) — a chain run emits no `task:status` at all (`handle_chain_run` passes no
-# `on_status_change`), so `ws_status` never sees a chain node and banking only there would leave every
-# chain node unrecoverable. Keyed by the node's scheduler task id, which is what a consumer correlates a
-# chain row against. `status` on node:failed may be "skipped" (never ran, no task id) — not a terminal
-# task status, so `record_task_outcome!` ignores it. See `app/src/tasks/task_outcomes.jl`.
+# The frames themselves — and the terminal-outcome banking that goes with them — are built by
+# `subscribe_chain_frames!` in the package, so the detached runner emits byte-identical frames from its
+# own process rather than carrying a second copy of this. That copy is the thing to avoid: the builder
+# BANKS (`record_task_outcome!`), and a chain run emits no `task:status` at all, so this is one of only
+# two carriers that can make a chain node's outcome recoverable. See app/src/runner/chain_frames.jl.
 #
-# The banked row is also where the frame's timestamps come from — it is written FIRST and it is what
-# drops the task's start from the in-flight timing map, so re-deriving them here would publish `""` for
-# every finished node. Same rule as `ws_status`: one derivation, two carriers, no disagreement about when
-# a task ran. `_ev_times` degrades to empty strings for a node with no banked row (a `skipped` status,
-# no task id) — the frame still goes out, just without timing.
-_ev_times(row) = isnothing(row) ? ("", "") : (row.started_at, row.finished_at)
-
-subscribe_chain_events!("node:done", function(p)
-    started, finished = _ev_times(record_task_outcome!(_ev_task_id(p), "done";
-                                                       image_uid=p.image_uid, fun=p.fn))
-    broadcast_ws(Dict{String,Any}(
-        "type"       => "chain:node:done",
-        "runId"      => p.run_id,
-        "chainName"  => p.chain_name,
-        "projectUid" => p.project_uid,
-        "imageUid"   => p.image_uid,
-        "nodeId"     => p.node_id,
-        "fn"         => p.fn,
-        "params"     => p.params,
-        "result"     => p.result,
-        "taskId"     => _ev_task_id(p),
-        "startedAt"  => started,
-        "finishedAt" => finished,
-    ))
-end)
-
-subscribe_chain_events!("node:failed", function(p)
-    started, finished = _ev_times(record_task_outcome!(_ev_task_id(p), p.status;
-                                                       image_uid=p.image_uid, fun=p.fn))
-    broadcast_ws(Dict{String,Any}(
-        "type"       => "chain:node:failed",
-        "runId"      => p.run_id,
-        "chainName"  => p.chain_name,
-        "projectUid" => p.project_uid,
-        "imageUid"   => p.image_uid,
-        "nodeId"     => p.node_id,
-        "fn"         => p.fn,
-        "status"     => p.status,
-        "taskId"     => _ev_task_id(p),
-        "startedAt"  => started,
-        "finishedAt" => finished,
-    ))
-end)
+# Registered unconditionally, for the in-process path (the runner disabled, or a chain that fell back).
+# When a chain runs on the runner these never fire here — the events happen in that process — and the
+# frames arrive over the relay instead.
+subscribe_chain_frames!(broadcast_ws)
 
 # ── HTTP router ───────────────────────────────────────────────────────────────
 
