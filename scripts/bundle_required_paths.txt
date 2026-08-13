@@ -1,0 +1,46 @@
+# Paths the INSTALLED app loads at runtime — one per line, repo-relative, forward slashes.
+# Blank lines and `#` comments ignored.
+#
+# ONE list, two checkers, because they answer different questions:
+#   * app/test/suite.jl -> `release bundle ships every runtime path` reads it on every CI run and
+#     asserts each entry is COVERED by the tar file list in .github/workflows/release.yml (and is a
+#     real path, so a typo here fails rather than silently passing).
+#   * scripts/bundle_check.sh builds the bundle that workflow describes, extracts it, and asserts
+#     each entry is ACTUALLY THERE — the list can be right while the tar goes wrong.
+#
+# Why the list exists at all: the release tar is an allow-list, so a directory nobody remembers to
+# name is missing from every stable install while the dev channel (a full branch archive) keeps
+# working — the gap cannot be seen in development. That is #540: `pluto/` was absent and the API
+# server includes `pluto/sysimage_stamp.jl` at load, so every v0.1.1 install died on first launch.
+#
+# Add an entry when the app starts loading something new from disk at runtime. Keep it to files that
+# are load-bearing for a RUNNING install — this is not an inventory of the repo.
+
+# ── spawned processes ────────────────────────────────────────────────────────────────────────────
+# Asserted against Cecelia.NAPARI_BRIDGE / Cecelia.PREVIEW_WORKER, so moving either file fails the
+# test here rather than at a user's first launch.
+napari/napari_bridge.py
+preview/preview_worker.py
+
+# ── notebooks ────────────────────────────────────────────────────────────────────────────────────
+# sysimage_stamp.jl is `include`d by api/src/notebooks_api.jl at server START — missing ⇒ no API.
+pluto/sysimage_stamp.jl
+pluto/Project.toml
+pluto/launch.jl
+
+# ── the observer MCP server ──────────────────────────────────────────────────────────────────────
+# Registered as `python -m cecelia_mcp.server` with PYTHONPATH=<install>/mcp (observer_mcp_spec).
+mcp/cecelia_mcp/server.py
+
+# ── the app itself ───────────────────────────────────────────────────────────────────────────────
+app.py
+api/src/server.jl
+app/src/Cecelia.jl
+python/cecelia/utils/zarr_utils.py
+pixi.toml
+pixi.lock
+
+# ── licensing ────────────────────────────────────────────────────────────────────────────────────
+# GPL-3: a conveyed copy carries the license text and the third-party attributions with it.
+LICENSE
+THIRD_PARTY.md

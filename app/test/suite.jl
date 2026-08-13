@@ -191,6 +191,69 @@ end
     end
 end
 
+# The tar list in `.github/workflows/release.yml` is an ALLOW-list, so a directory the running app
+# loads is absent from every stable install the moment nobody remembers to name it — and the dev
+# channel, which ships a full branch archive, keeps working, so the gap is invisible in development.
+# That is #540: `pluto/` was missing, `api/src/notebooks_api.jl` includes `pluto/sysimage_stamp.jl`
+# at server load, and every v0.1.1 install died on first launch. `preview/` and `mcp/` were missing
+# by the same mechanism and fail quieter (no worker to spawn; an observer registered against a
+# directory that isn't there).
+#
+# So this pins the paths the INSTALLED app opens against what the bundle actually carries. The two
+# process paths are read from the constants that spawn them rather than retyped, so moving a file
+# fails here instead of at a user's first launch.
+@testset "release bundle ships every runtime path" begin
+    repo = normpath(joinpath(@__DIR__, "..", ".."))
+    yml  = joinpath(repo, ".github", "workflows", "release.yml")
+    if !isfile(yml)
+        @warn "release.yml not found — skipping bundle coverage" path=yml
+        @test_skip false
+    else
+        # The tar invocation, backslash-continued across lines: take from `tar -czf` to the first
+        # line that does not continue.
+        lines = readlines(yml)
+        i = findfirst(l -> occursin("tar -czf", l), lines)
+        @test i !== nothing
+        toks = String[]
+        while i !== nothing && i <= length(lines)
+            line = strip(lines[i])
+            more = endswith(line, "\\")
+            append!(toks, split(replace(line, r"\\$" => ""), r"\s+"; keepempty = false))
+            more || break
+            i += 1
+        end
+        filter!(t -> !(t in ("tar", "-czf", "out/cecelia.tar.gz")), toks)
+        @test !isempty(toks)
+
+        # tar carries a directory whole, so a token covers itself and everything under it.
+        covered(p) = any(t -> t == p || startswith(p, t * "/"), toks)
+        # repo-relative, forward-slash — these are tar paths, not filesystem paths
+        rel(abs_path) = replace(relpath(normpath(abs_path), repo), '\\' => '/')
+
+        # The list lives in scripts/bundle_required_paths.txt, NOT here — `scripts/bundle_check.sh`
+        # checks the same entries against a bundle it actually builds and extracts, and two
+        # hand-kept copies would drift the moment one checker was updated.
+        listfile = joinpath(repo, "scripts", "bundle_required_paths.txt")
+        @test isfile(listfile)
+        required = [strip(l) for l in readlines(listfile)
+                    if !isempty(strip(l)) && !startswith(strip(l), "#")]
+        @test length(required) >= 10        # a truncated/emptied list must not pass silently
+
+        # The two spawned processes are pinned to the constants that spawn them, so moving either
+        # file fails HERE (pointing at the list) instead of at a user's first launch.
+        @test rel(Cecelia.NAPARI_BRIDGE) in required
+        @test rel(Cecelia.PREVIEW_WORKER) in required
+
+        for p in required
+            @test covered(p)
+            # and it has to be a real path, or the entry above is pinning a typo
+            @test ispath(joinpath(repo, split(p, '/')...))
+        end
+        # built by the release job, so it exists in CI but not in a checkout — coverage only
+        @test covered("frontend/dist")
+    end
+end
+
 # ── Custom cellpose model resolver ───────────────────────────────────────────
 # A user-placed checkpoint under `<config_dir>/models/cellposeModels/{name}` is picked up
 # by the cellpose Julia handler and passed to Python as an absolute file path (which
