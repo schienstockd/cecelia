@@ -82,14 +82,15 @@ once, then act on the go-ahead. Dominik added this rule after reservations surfa
 Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merged this way). An agent
 **asks first** (see the golden rule) before pushing the branch or opening the PR.
 
-- The `gh` CLI is **not installed in the agent environment**. An agent therefore **pushes the
-  branch and relays the PR-creation URL** (the `https://github.com/schienstockd/cecelia/pull/new/<branch>`
-  link printed by `git push`) for Dominik to open — it does not attempt `gh pr create`.
-- **Always relay a complete, paste-ready PR body** — for *every* branch, not just large ones.
-  Because `gh` is absent, GitHub receives **no** description automatically; the body is text Dominik
-  pastes into the PR form. The commit message and the PR body serve different readers (reviewers
-  skim the PR on GitHub), so a body is always worth giving — short for small branches, but never
-  omitted. (Don't leave it to a per-branch judgement call; that produced inconsistent PRs.)
+- The `gh` CLI **is installed and authenticated** in the agent environment, so an agent pushes the
+  branch and opens the PR itself with `gh pr create`, then relays the PR URL. (This section used to
+  say `gh` was absent and that the agent should hand over the `pull/new/<branch>` link for Dominik to
+  open and paste a body into — that stopped being true, and the stale instruction had agents doing
+  the manual dance for no reason.)
+- **Always write a complete PR body** — for *every* branch, not just large ones. The commit message
+  and the PR body serve different readers (reviewers skim the PR on GitHub), so a body is always
+  worth giving — short for small branches, but never omitted. Pass it as a file
+  (`gh pr create --body-file <path>`) rather than inline, so markdown and newlines survive the shell.
 - End PR bodies (when an agent drafts one) with:
 
   ```
@@ -98,7 +99,8 @@ Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merge
 
 ```bash
 git push -u origin feat/<short-slug>
-# relay the "Create a pull request" URL git prints
+gh pr create --base main --title "<type>(<scope>): <summary>" --body-file <path>
+# relay the PR URL it prints
 ```
 
 ## CI
