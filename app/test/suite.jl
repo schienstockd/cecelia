@@ -1800,6 +1800,37 @@ end
     rm(projS.root; recursive=true)
 end
 
+# a failure the user re-ran successfully is NOT a failure — the digest reports where the day left each
+# image, not every attempt (2026-08-13: 4 of 6 images failed drift correction, all 4 succeeded on the
+# re-run, and the module was still headed ❌ "4 failed")
+@testset "Lab log context — a re-run supersedes an earlier failure" begin
+    projR = create_project!(name="labctx-retry-$(rand(1000:9999))")
+    sR    = add_set!(projR; name="set-R")
+    iR1   = add_image!(sR; name="r-1", meta=Dict{String,Any}("ori_path"=>"/tmp/r1.tif"))
+    iR2   = add_image!(sR; name="r-2", meta=Dict{String,Any}("ori_path"=>"/tmp/r2.tif"))
+    d = Date(2026, 7, 26)
+    for im in (iR1, iR2)
+        append_run_log!(im, "cleanupImages.driftCorrect", "driftCorrected", "failed"; at="2026-07-26T09:00:00")
+        append_run_log!(im, "cleanupImages.driftCorrect", "driftCorrected", "done";   at="2026-07-26T11:00:00")
+    end
+    ctx = capture_context!(projR; date=d)
+    @test occursin("✅ Cleanup", ctx)                                  # recovered → not a failed module
+    @test !occursin("failed", ctx)
+    @test occursin("driftCorrect on 2 images", ctx)
+    @test occursin("2 re-run after a failure", ctx)                   # the retry itself is still recorded
+
+    # an image left failed still counts — and counts ONCE per image, not once per attempt
+    iR3 = add_image!(sR; name="r-3", meta=Dict{String,Any}("ori_path"=>"/tmp/r3.tif"))
+    for at in ("2026-07-26T12:00:00", "2026-07-26T12:30:00")
+        append_run_log!(iR3, "cleanupImages.driftCorrect", "driftCorrected", "failed"; at=at)
+    end
+    ctx2 = capture_context!(projR; date=d)
+    @test occursin("❌ Cleanup", ctx2)
+    @test occursin("driftCorrect on 3 images — 2 re-run after a failure — 1 failed", ctx2)
+
+    rm(projR.root; recursive=true)
+end
+
 # gating + exclusion deltas: NET over the day, diffed against a start-of-day baseline
 @testset "Lab log context — gating & exclusions (daily net)" begin
     proj = create_project!(name="labctx-gate-$(rand(1000:9999))")
