@@ -191,6 +191,39 @@ end
     end
 end
 
+# Best-effort git for the dev diagnostics. The point is what it does NOT do: no throw, no stderr.
+# An installed app has no `.git`, so every probe printed `fatal: not a git repository` into the
+# user's launch console (#540) — caught and harmless, but it reads like a broken install.
+@testset "git_probe is quiet and never throws" begin
+    mktempdir() do d          # a directory that is definitely not a git checkout
+        # stderr has to be captured at the fd level (a file), not an IOBuffer — the leak this guards
+        # against comes from the CHILD process inheriting stderr, which an in-memory buffer wouldn't
+        # see anyway.
+        errfile = joinpath(d, "stderr.txt")
+        out = open(errfile, "w") do io
+            redirect_stderr(io) do
+                Cecelia.git_probe("rev-parse", "--short", "HEAD"; dir = d)
+            end
+        end
+        @test out == ""                          # no answer, rather than an exception
+        @test isempty(read(errfile, String))     # and git's "fatal: …" did not reach the console
+        @test Cecelia.git_probe("no-such-subcommand"; dir = d) == ""
+        @test Cecelia.git_probe("rev-parse"; dir = joinpath(d, "does", "not", "exist")) == ""
+
+        # Control: with stderr INHERITED, that same call is exactly what used to be printed. Without
+        # this the test above would also pass on a machine where git says nothing at all.
+        if Sys.which("git") !== nothing
+            ctlfile = joinpath(d, "control.txt")
+            open(ctlfile, "w") do io
+                redirect_stderr(io) do
+                    try; read(`git -C $d rev-parse --short HEAD`, String); catch; end
+                end
+            end
+            @test occursin("not a git repository", read(ctlfile, String))
+        end
+    end
+end
+
 # The tar list in `.github/workflows/release.yml` is an ALLOW-list, so a directory the running app
 # loads is absent from every stable install the moment nobody remembers to name it — and the dev
 # channel, which ships a full branch archive, keeps working, so the gap is invisible in development.

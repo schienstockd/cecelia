@@ -33,7 +33,7 @@ _repl_available() = _repl_on[] && _host_is_loopback()
 # reads the live HEAD each request, and flags `stale` when they differ — i.e. the tree moved
 # (commit/merge/pull) but the backend wasn't restarted. git is best-effort ("" in a packaged build).
 const _REPO_ROOT = dirname(dirname(@__DIR__))
-_git_short(root) = try; String(strip(read(`git -C $root rev-parse --short HEAD`, String))); catch; ""; end
+_git_short(root) = Cecelia.git_probe("rev-parse", "--short", "HEAD"; dir = root)
 const _STARTED_AT = time()
 const _GIT_COMMIT = _git_short(_REPO_ROOT)
 

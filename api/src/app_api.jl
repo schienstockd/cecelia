@@ -81,15 +81,17 @@ end
 # The supervisor (`dev.jl`) does the actual relaunch — this endpoint just records the target and exits
 # with the restart sentinel (same mechanism as restart). DEV + supervised only. NOTE: this switches the
 # server on :8080 only; a frontend-only branch still needs its own Vite (see docs/DEV.md branch preview).
-_git_toplevel(dir::AbstractString) =
-    try; strip(readchomp(`git -C $dir rev-parse --show-toplevel`)); catch; ""; end
+_git_toplevel(dir::AbstractString) = Cecelia.git_probe("rev-parse", "--show-toplevel"; dir = dir)
 
 # GET /api/app/worktrees → { worktrees: [{path, branch, current, primary}], current, canSwitch }
 function api_app_worktrees(::HTTP.Request)
     here = _git_toplevel(pwd())
     out = Any[]
+    # "" covers both "git said no" and "there is no .git here" — an installed app is the latter, and
+    # it is not an error state, just nothing to switch to. See Cecelia.git_probe.
+    text = Cecelia.git_probe("worktree", "list", "--porcelain")
+    isempty(text) && return 200, JSON3.write((; worktrees = Any[], current = here, canSwitch = false))
     try
-        text = readchomp(`git -C $(pwd()) worktree list --porcelain`)
         for block in split(text, "\n\n")
             isempty(strip(block)) && continue
             path = ""; branch = "(detached)"
@@ -121,11 +123,9 @@ function api_app_switch_worktree(body_bytes::Vector{UInt8})
     isempty(target) && return 400, JSON3.write((; error = "path required"))
     here = _git_toplevel(pwd())
     known = Set{String}()
-    try
-        for l in eachline(`git -C $(pwd()) worktree list --porcelain`)
-            startswith(l, "worktree ") && push!(known, String(l[10:end]))
-        end
-    catch; end
+    for l in split(Cecelia.git_probe("worktree", "list", "--porcelain"), "\n")
+        startswith(l, "worktree ") && push!(known, String(l[10:end]))
+    end
     (target in known) || return 400, JSON3.write((; error = "Not a known worktree: $target"))
     target == here && return 200, JSON3.write((; ok = true, message = "Already on this worktree"))
     apidir = joinpath(target, "api")
