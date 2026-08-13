@@ -54,7 +54,9 @@ resident processes are addressed identically. Raises on the worker's `{"type": "
 """
 function send(w::PreviewWorker, msg::Dict)::Dict{String,Any}
     result = Dict{String,Any}()
-    HTTP.WebSockets.open("ws://localhost:$(w.port)") do ws
+    # Same cap as the napari leg — a preview reply carries whole label blocks, corrected channels and
+    # PNG contact sheets in one frame. See `WS_MAX_FRAME_SIZE` (utils.jl).
+    HTTP.WebSockets.open("ws://localhost:$(w.port)"; maxframesize = WS_MAX_FRAME_SIZE) do ws
         HTTP.WebSockets.send(ws, JSON3.write(msg))
         result = JSON3.read(HTTP.WebSockets.receive(ws), Dict{String,Any})
     end

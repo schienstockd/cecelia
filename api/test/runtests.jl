@@ -699,6 +699,41 @@ end
     end
 end
 
+@testset "API: the flow sheet renders a centred crop, not the whole frame" begin
+    # The panel used to send the FULL XY extent. On the one small image it was built against that was
+    # ~1.5 MB; on a real 1044×1102 movie it is 36.3 MB in one websocket frame, and the reply died on the
+    # 16 MiB frame cap with `1009: message too large` — see `FLOW_INSPECT_MAX_PX` for the measurement.
+    #
+    # Centred, because the corner of an intravital frame is routinely outside the specimen. These two
+    # are the bounds the worker actually returned for that image at the default size.
+    @test _centre_span(1044, 512) == (266, 778)
+    @test _centre_span(1102, 512) == (295, 807)
+    # ...and the span is exactly the cap, wherever it lands
+    for (len, cap) in ((1044, 512), (1102, 512), (1023, 256), (1024, 768))
+        lo, hi = _centre_span(len, cap)
+        @test hi - lo == cap
+        @test lo >= 0 && hi <= len
+        # off-centre by at most the odd pixel
+        @test abs(lo - (len - hi)) <= 1
+    end
+
+    # An image already smaller than the cap is shown whole — no crop, no padding. `fXgbTl` (418×434)
+    # is that case, and it is the image the panel was developed against, so this must stay a no-op.
+    @test _centre_span(418, 512) == (0, 418)
+    @test _centre_span(434, 512) == (0, 434)
+    @test _centre_span(512, 512) == (0, 512)
+
+    # A missing/degenerate size means the whole axis rather than an empty region: an empty XY region is
+    # rejected downstream ("empty preview region"), which would read as a broken panel.
+    @test _centre_span(600, 0) == (0, 600)
+    @test _centre_span(600, -1) == (0, 600)
+
+    # The server's own fallback is what the panel's default mirrors (utils/flowRegion.ts).
+    @test FLOW_INSPECT_MAX_PX == 512
+    ts = read(joinpath(@__DIR__, "..", "..", "frontend", "src", "utils", "flowRegion.ts"), String)
+    @test occursin("DEFAULT_FLOW_REGION_PX = $(FLOW_INSPECT_MAX_PX)", ts)
+end
+
 @testset "API: image geometry (axis mapping + version resolution)" begin
     # Pure parts of image_geometry.jl — no zarr, no IO. These were `_crop_*` privates until a second
     # consumer showed none of it was crop-specific (docs: the anisotropy grid advisory).
