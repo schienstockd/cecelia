@@ -27,9 +27,15 @@ import { computed, ref, watch, onMounted } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
+import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowRegion'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 
 const COLORMAPS = ['viridis', 'magma', 'grey']
+
+// Same centred crop as the metric sheet, and the same control for it: the two claim to show the same
+// window, so an extent offered on one and fixed on the other would break that claim silently.
+const REGION_OPTIONS: ChipOption[] = FLOW_REGION_OPTIONS
+  .map(v => ({ value: String(v), label: String(v) }))
 
 const props = defineProps<{
   projectUid: string
@@ -96,6 +102,10 @@ const colormap = computed({
   get: () => state.value.colormap ?? 'viridis',
   set: v => (state.value.colormap = v),
 })
+const regionSize = computed({
+  get: () => String(state.value.regionSize ?? DEFAULT_FLOW_REGION_PX),
+  set: v => (state.value.regionSize = Number(v)),
+})
 
 // Declared BEFORE the watches that name them: a watch source runs immediately at setup, and a `const`
 // below it is still in the temporal dead zone — which throws, takes the panel's setup with it, and
@@ -131,10 +141,11 @@ const request = computed<FlowRequest | null>(() =>
         valueName: state.value.valueName || 'default',
         cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
         colormap: colormap.value, model: props.model,
+        regionSize: Number(regionSize.value),
       }
     : null)
 
-const { planes, extent, runState, loading, showSpinner, starting, error, load } =
+const { planes, extent, regionLabel, runState, loading, showSpinner, starting, error, load } =
   useFlowPlanes(state, request)
 
 // Follow the host: seed the first image, and drop a pick that has left the selection.
@@ -196,6 +207,15 @@ watch(imageOptions, opts => {
               v-tooltip.top="'Channel the flow is computed on'">channel</span>
         <ChipSelect :options="channelOptions" :model-value="channels" multiple aria-label="Channels"
                     @update:model-value="v => channels = v as string[]" />
+      </label>
+
+      <!-- Centred crop, with the extent actually rendered beside it — see FlowMetricsView. -->
+      <label class="cc-row fpv-terms">
+        <span class="cc-muted cc-fs-xs"
+              v-tooltip.top="'Centred crop of the frame, in pixels'">region</span>
+        <ChipSelect :options="REGION_OPTIONS" v-model="regionSize" variant="segmented"
+                    aria-label="Region size" />
+        <span v-if="regionLabel" class="cc-readout cc-fs-2xs">{{ regionLabel }}</span>
       </label>
     </div>
 

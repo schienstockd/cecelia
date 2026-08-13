@@ -61,6 +61,26 @@ in `script_params` (the one function every runner already calls) so a new runner
 doing anything, and an ABSENT `CECELIA_PY_CONTRACT` is allowed through so replaying a saved params file
 by hand still works.
 
+### …and both ends of a resident-Python socket carry the same frame cap
+
+Every message on the napari and preview legs is **one JSON frame carrying a whole payload** — a label
+block, a set of AF-corrected channels, a contact sheet of PNGs. Both ends cap the size of a frame they
+will accept, the two caps are independent, and one number governs all four:
+`WS_MAX_FRAME_SIZE` (`app/src/utils.jl`) = `WS_MAX_SIZE` in both `napari_bridge.py` and
+`preview_worker.py`, asserted equal by the `resident python legs agree on their frame cap` testset.
+
+This is the protocol-version failure in a value nobody thought of as a version. The Python side had been
+raised to 64 MiB with a comment saying the 1 MiB default "is not a graceful degradation — the server
+rejects the frame and closes the connection, so the preview would fail on big images only". All of that
+was equally true of the Julia side, which nobody set: HTTP.jl's client default is 16 MiB, so the
+**backend was the narrow leg**. A whole-frame flow-metrics sheet on a 1044×1102 movie is 36.3 MB in one
+frame, and it arrived as `websocket closed with status 1009: message too large` — on every image except
+the 418×434 one the panel had been developed against.
+
+A cap is a backstop, not a budget. A producer that can emit tens of MB still has to bound what it
+sends — see `FLOW_INSPECT_MAX_PX` (`api/src/optical_flow_api.jl`), which crops the flow sheet rather
+than relying on the transport to survive it.
+
 ### Layer ownership
 
 | Concern | Layer | Notes |

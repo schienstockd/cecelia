@@ -10467,6 +10467,38 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         end
     end
 
+    @testset "resident python legs agree on their websocket frame cap" begin
+        # The same failure shape as the protocol table above, in a number nobody thought of as a
+        # version. Both ends of each leg cap the size of a frame they will accept, the caps are
+        # independent, and the Python side had been raised to 64 MiB while the Julia side sat on
+        # HTTP.jl's 16 MiB default. That made the backend the narrow leg: the flow-metrics sheet on a
+        # 1050×1047 movie is 40–75 MB in one frame, and the read died with `1009: message too large` on
+        # every image except the small one it was built against. Nothing named the cap.
+        repo = joinpath(dirname(dirname(pathof(Cecelia))), "..")
+        mib = Cecelia.WS_MAX_FRAME_SIZE ÷ (1024 * 1024)
+        for (what, rel) in (("napari bridge", "napari/napari_bridge.py"),
+                            ("preview worker", "preview/preview_worker.py"))
+            path = joinpath(repo, rel)
+            @test isfile(path)
+            src = read(path, String)
+            m = match(r"^WS_MAX_SIZE\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024"m, src)
+            @test m !== nothing
+            m === nothing && continue
+            py = parse(Int, m.captures[1])
+            @test py == mib
+            py == mib ||
+                @warn "$what: Python caps at $(py) MiB, Julia at $(mib) MiB — set BOTH" rel
+            # and it must actually reach the server, not merely be defined
+            @test occursin("max_size=WS_MAX_SIZE", src)
+        end
+        # Julia is a CLIENT on both legs, so the cap is a keyword on the open — the default is what was
+        # wrong, so an unqualified `WebSockets.open` here is the bug returning.
+        for rel in ("napari.jl", "preview.jl")
+            src = read(joinpath(dirname(pathof(Cecelia)), rel), String)
+            @test occursin("maxframesize = WS_MAX_FRAME_SIZE", src)
+        end
+    end
+
     @testset "the params contract is checked where every runner already goes" begin
         # The guard lives in `script_params`, not in each runner, so a NEW runner is covered by writing
         # nothing. Asserted on the source because the check runs in a subprocess we do not spawn here.

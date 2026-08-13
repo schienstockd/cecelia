@@ -33,6 +33,7 @@ import { computed, watch } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
+import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowRegion'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
 
 interface FlowState extends FlowPlaneState {
@@ -49,6 +50,11 @@ const SCALE_OPTIONS: ChipOption[] = ['1', '2', '3', '4', '6', '8', '12', '16']
   .map(v => ({ value: v, label: v }))
 
 const COLORMAPS = ['viridis', 'magma', 'grey']
+
+// The sheet shows a CENTRED CROP, not the whole frame — see utils/flowRegion.ts for the measurement
+// that makes that the right default, and the readout beside the chips for what a given image gets.
+const REGION_OPTIONS: ChipOption[] = FLOW_REGION_OPTIONS
+  .map(v => ({ value: String(v), label: String(v) }))
 
 const state = computed(() => props.state)
 
@@ -85,6 +91,10 @@ const colormap = computed({
 const scales = computed({
   get: () => state.value.scales ?? DEFAULT_SCALES,
   set: v => (state.value.scales = v),
+})
+const regionSize = computed({
+  get: () => String(state.value.regionSize ?? DEFAULT_FLOW_REGION_PX),
+  set: v => (state.value.regionSize = Number(v)),
 })
 
 // Declared BEFORE `load` and its watchers, not after: a watcher getter naming `channels` runs
@@ -127,9 +137,10 @@ const request = computed<FlowRequest | null>(() => state.value.imageUid ? {
   valueName: state.value.valueName || 'default',
   cellChannels: state.value.channels ?? [], t: t.value, z: state.value.z ?? null,
   colormap: colormap.value, temporalScales: scales.value.map(Number),
+  regionSize: Number(regionSize.value),
 } : null)
 
-const { planes, extent, runState, loading, showSpinner, starting, error, load } =
+const { planes, extent, regionLabel, runState, loading, showSpinner, starting, error, load } =
   useFlowPlanes(state, request)
 
 // Show everything by default — a contact sheet you have to unhide plane by plane answers nothing.
@@ -202,6 +213,16 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
               v-tooltip.top="'Channel the flow is computed on — a model seeds its own'">channel</span>
         <ChipSelect :options="channelOptions" :model-value="channels" multiple aria-label="Channels"
                     @update:model-value="v => channels = v as string[]" />
+      </label>
+
+      <!-- The sheet is a centred crop, and the readout says which one — a size chip alone would imply
+           512 px on an image only 418 px wide. -->
+      <label class="cc-row fmv-terms">
+        <span class="cc-muted cc-fs-xs"
+              v-tooltip.top="'Centred crop of the frame, in pixels'">region</span>
+        <ChipSelect :options="REGION_OPTIONS" v-model="regionSize" variant="segmented"
+                    aria-label="Region size" />
+        <span v-if="regionLabel" class="cc-readout cc-fs-2xs">{{ regionLabel }}</span>
       </label>
 
       <label class="cc-row fmv-scales">
