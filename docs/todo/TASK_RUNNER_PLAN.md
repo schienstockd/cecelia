@@ -314,9 +314,25 @@ the Quit/Restart asymmetry (D3) land here — without them the thing is not cont
 > exactly what the API server needs — Cecelia, HTTP, JSON3 — so a fourth manifest would be pure
 > maintenance cost for no isolation.
 
-> **Checkpoint:** start a cellpose run, hit Settings → Restart mid-run, and watch the task rail
-> repopulate, the task finish, and the labels register in ccid.json. Then do it again with a worktree
-> switch.
+> **Checkpoint: MET 2026-08-13.** Verified twice, and the two runs cover different halves.
+>
+> *Headless, isolated pair (backend :8081 / runner :7697, throwaway config):* a task submitted through
+> the real `task:run` path executed in the runner's registry; the backend was **`kill -9`'d** mid-run
+> (harder than a restart) and the task kept going; it **finished while the backend was dead**, leaving
+> nothing on the event stream at all; a restarted backend adopted the runner and reported
+> `started_at`/`finished_at` **byte-identical** to the runner's own record. That last part is the
+> whole reason the timestamps are passed through rather than re-derived.
+>
+> *In the GUI (Dominik):* a real **cellpose segmentation survived Settings → Restart** — the case the
+> headless run could not reach, because it is the one with a Python child and a Julia post-step
+> (`register_label_files!`, `write_qc`, `append_run_log!`) on the far side of the restart.
+>
+> Two bugs came out of driving it that no test had caught, both only reachable by running two
+> instances at once: only the *server* honoured `CECELIA_RUNNER_PORT` (so an overridden client pinged
+> a dead port and fell back to in-process **forever** — a launch that looks fine and runs nothing on
+> the runner), and `/ping` reported the constant rather than the port it had bound.
+>
+> Still unverified: the worktree switch, and Quit-stops-it (asserted in source, never executed).
 
 ### Phase 2 — chains
 
