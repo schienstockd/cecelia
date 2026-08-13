@@ -25,7 +25,12 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # Duplicated as literals because dev.jl is a standalone supervisor with no Cecelia loaded (same reason
 # `_free_port` is inlined below). `api/test/runtests.jl` asserts these agree with the package constants,
 # so the copies cannot drift apart silently.
-const CHILD_PORTS = (7655, 7656, 7660)   # napari, preview worker, notebooks
+# The task runner (7657) is here too, and its presence is a judgement call worth stating: it is
+# DESIGNED to outlive the backend, so an in-app Restart deliberately leaves it running. But this
+# `finally` runs on Ctrl-C / Quit / crash — the supervisor itself going away — and at that point
+# nothing is left that could ever reach it again. An unreachable runner holding the GPU with no UI
+# attached is the failure mode Decision 3b calls out, so teardown takes it.
+const CHILD_PORTS = (7655, 7656, 7657, 7660)   # napari, preview worker, task runner, notebooks
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
 # with the restart sentinel; we relaunch the backend FROM THAT DIR (and the frontend from the sibling

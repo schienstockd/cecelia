@@ -9,6 +9,15 @@ and (2) there was no per-stage concurrency awareness — GPU-bound denoising and
 segmentation were treated identically. This file documents every non-obvious decision made to
 fix those problems.
 
+> **Where this runs.** Everything below describes the scheduler wherever it lives — and in **dev** it can
+> live in a second process. With the runner enabled (Settings → System, dev only) the API server hands
+> tasks *and chains* to the detached **task runner** (`app/src/runner/`, port 7657), which owns the pools
+> and the task registry there instead, so restarting the backend no longer kills work in flight. Same
+> `run_task`/`run_chain`, same pools, same frames; the API server relays them. Off by default and
+> unavailable in a production install, in which case everything here runs in the API server exactly as
+> documented. Background jobs and the task preview are never on it.
+> How it works and why dev-only: [`docs/RUNNER.md`](RUNNER.md).
+
 > The scheduler is for **image/set-scoped analysis tasks** (`CciaTask`). One-off **project-/bundle-scoped**
 > operations with no image target — Settings data patches, Project Manager export/import — are NOT
 > scheduler tasks; they're **background jobs** (`app/src/jobs.jl`), which also now owns the process-kill

@@ -136,6 +136,39 @@ Scope: outward-facing text landing under his identity. **Not** commit messages (
 `Co-Authored-By: Claude <model>`), not PR bodies (the `🤖 Generated with Claude Code` trailer above
 does the same job), not code comments, not chat.
 
+## What to press after you change something
+
+Nothing in the Julia halves is hot-reloaded — Revise is loaded but nothing ever drains its revision
+queue, because a server has no REPL prompt to hook (see `docs/RUNNER.md` and the plan's Phase 0). So a
+code change means a restart. The question is only *which* restart.
+
+**Settings → System → Restart is the replacement for `Ctrl-C` + `pixi run dev`.** It exits the backend
+with a sentinel the supervisor relaunches from, and on the way out it stops napari, the preview worker
+and Pluto — so they come back fresh too. The one thing it deliberately leaves alone is the **task
+runner**, which is the whole point of it.
+
+| you changed | what to press |
+|---|---|
+| `frontend/` | nothing — Vite hot-reloads |
+| `api/src/*.jl` (routes, sockets, handlers) | **Restart** |
+| `app/src/*.jl` (the package) | **Restart** |
+| `app/src/tasks/**` or a `*_run.py` — the code that runs on an image | **Restart**, then **Restart** on the Task runner row |
+| `napari/napari_bridge.py` or `api/src/napari_api.jl` | **Restart** (it stops napari too), then reopen the image to reload its layers |
+| `preview/preview_worker.py` | **Restart** (it stops the preview worker too) |
+| `pluto/` | **Restart**, or just the Notebooks row |
+
+The runner is the exception because it is **built** to survive a restart — otherwise a backend edit
+would still cost you a running segmentation. The tax is that it keeps the code it started with: its row
+shows **"old code"** with its commit when it is behind, and its Restart refuses while it still has work
+(press again to force). If you are iterating on task code and would rather not think about it, turn the
+runner off and Restart is enough for everything.
+
+`Ctrl-C` + `pixi run dev` still works and is still the right move when a `struct` change or a crash has
+left the process wedged — it just costs you whatever the runner was doing, because the supervisor's
+teardown takes it too.
+
+Why the runner is dev-only, and how it works: [`docs/RUNNER.md`](RUNNER.md).
+
 ## CI
 
 Every push/PR runs `.github/workflows/ci.yml` — a smoke test from a fresh checkout, as **three

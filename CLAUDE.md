@@ -8,6 +8,7 @@ See also:
 - [`FAQ.md`](FAQ.md) — root-level, reader-facing highlight doc: the *counterintuitive* "why" (AI-written, no Rust, browser-not-Electron, three languages). Punch lines, not prose. Keep it a highlight reel — do NOT expand it into a summary of the `docs/`; add new detail to the relevant `docs/` file and only promote a genuinely surprising one-liner up to the FAQ.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layer boundaries, WS protocol, data model contracts, Napari lifecycle
 - [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
+- [`docs/RUNNER.md`](docs/RUNNER.md) — the detached task runner (dev only): why a second process, the Quit-vs-Restart asymmetry, staleness reporting, chain-run claims, and why it is not offered in production.
 - [`docs/JOBS.md`](docs/JOBS.md) — background jobs vs scheduler tasks: the `jobs.jl` registry (OS process-kill primitives + `track_job!`/`cancel_job!`), when to write a job vs a `CciaTask`, and how project-wide ops (data patches, project export/import) run end-to-end over the WS task rail
 - [`docs/UI.md`](docs/UI.md) — frontend conventions, component catalog, how to add module pages and plots
 - [`docs/MODULES.md`](docs/MODULES.md) — complete guide to adding task functions and module pages
@@ -37,6 +38,7 @@ See also:
 | Layer boundaries, contracts, hidden invariants | `docs/ARCHITECTURE.md` |
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
 | Background jobs (data patches, project export/import), `jobs.jl` registry, process-kill primitives | `docs/JOBS.md` |
+| The detached task runner: its process, lifecycle, routes, dev-only gating | `docs/RUNNER.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |
 | Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
 | Notebooks Playground: Pluto engine, `CeceliaNb`, registry/versioning, sysimage, `/api/notebooks/*` | `docs/NOTEBOOKS.md` |

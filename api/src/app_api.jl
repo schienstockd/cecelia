@@ -15,7 +15,27 @@
 # Killing the preview worker here does NOT cost the warm-worker optimisation it was built for. A Revise
 # reload never reaches this function (the process does not exit), which is the case adoption exists to
 # serve; only an explicit Quit or Restart does, and after either the process handle is gone anyway.
-function _stop_children_for_exit()
+# `stop_runner` is the ONE asymmetry between Quit and Restart, and it is the whole point of the task
+# runner: Restart must leave it running (that is how a backend restart stops costing a segmentation),
+# while Quit — the user saying they are done — takes it with everything else. Every other resident
+# child is stopped by both. See docs/todo/TASK_RUNNER_PLAN.md → Decision 3.
+#
+# NOTE for whoever adds the next child: the runtests assertion below counts `_kill_listeners_on_port`
+# calls against the ports `api_diagnostics` reports. The runner is reported there too but is stopped
+# CONDITIONALLY, so it is asserted separately rather than by that count.
+function _stop_children_for_exit(; stop_runner::Bool = true)
+    # In-flight TASK subprocesses. Nothing else kills these: `exit(0)` below just reparents them, so a
+    # Quit during a cellpose run left the Python child alive — finishing, writing its zarr, and never
+    # registered, because the Julia post-step (`register_label_files!`, QC, run log) died with us.
+    # `cancel_task!` marks the record and kills the process TREE. Only reaches tasks in THIS process;
+    # ones on the detached runner go when the runner does, below.
+    if stop_runner
+        try
+            for t in list_tasks(); cancel_task!(String(t.id)); end
+        catch e
+            @warn "Shutdown: cancelling in-flight tasks failed" exception = e
+        end
+    end
     try
         v = _viewer()
         v !== nothing && close!(v)          # kills the napari bridge process
@@ -38,6 +58,9 @@ function _stop_children_for_exit()
     try; Cecelia._kill_listeners_on_port(Cecelia.NAPARI_PORT);  catch; end
     try; Cecelia._kill_listeners_on_port(Cecelia.PREVIEW_PORT); catch; end
     try; Cecelia._kill_listeners_on_port(NOTEBOOKS_PORT);       catch; end
+    # …and the task runner, but ONLY on the routes that mean "stop everything". A restart leaving it
+    # alive is not an oversight to be tidied up later — it is the feature.
+    stop_runner && try; Cecelia.runner_stop!(_RUNNER); catch; end
 end
 
 # POST /api/app/shutdown  → { ok, message }   — the global "Quit everything".
@@ -68,7 +91,7 @@ function api_app_restart(body_bytes::Vector{UInt8})
     _can_restart() || return 409, JSON3.write((;
         error = "Restart unavailable — the server isn't running under a supervisor."))
     @info "Restart requested via /api/app/restart"
-    _stop_children_for_exit()
+    _stop_children_for_exit(; stop_runner = false)   # a restart must NOT cost a running task
     @async begin
         sleep(0.4)      # flush the HTTP response first, then exit with the restart sentinel
         exit(RESTART_EXIT_CODE)
@@ -132,7 +155,9 @@ function api_app_switch_worktree(body_bytes::Vector{UInt8})
     isdir(apidir) || return 400, JSON3.write((; error = "No api/ directory in $target"))
     write(sf, apidir)                    # the supervisor relaunches the child here on the next loop
     @info "Worktree switch requested via /api/app/switch-worktree" target apidir
-    _stop_children_for_exit()
+    # Same as restart: the runner survives. It is now definitely running the OTHER worktree's code —
+    # `/api/runner/status` reports its commit so that is visible rather than silent (Decision 5).
+    _stop_children_for_exit(; stop_runner = false)
     @async begin
         sleep(0.4)
         exit(RESTART_EXIT_CODE)

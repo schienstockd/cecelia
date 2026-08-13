@@ -35,10 +35,21 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # `_set_status!` reads back its own (earlier, exact) value rather than being overwritten by this one.
 # `finishedAt` comes from the banked outcome row so the live frame and the replayable row cannot disagree
 # about when the task ended.
-function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="")
-    string(status) == "running" && note_task_started!(task_id)
+# `started_at`/`finished_at` are for a frame this process did NOT produce — the detached task runner
+# relaying one it stamped itself. Empty (the normal case) means "derive them here", exactly as before.
+# They exist because re-deriving a relayed task's times is the elapsed-timer bug one process boundary
+# out: a task the runner has been running for twenty minutes would be stamped as starting when the
+# relay first saw it, and a restarted API server would restart every timer on reconnect. Seeding
+# `note_task_started!` with the runner's value is safe because it is first-write-wins.
+function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
+                   started_at="", finished_at="")
+    if string(status) == "running"
+        seed = parse_iso_utc(started_at)
+        isnothing(seed) ? note_task_started!(task_id) : note_task_started!(task_id, seed)
+    end
     row = record_task_outcome!(task_id, status;
-                               image_uid=uid, image_uids=image_uids, fun=fun, pool=pool)
+                               image_uid=uid, image_uids=image_uids, fun=fun, pool=pool,
+                               started_at=started_at, finished_at=finished_at)
     _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid,
                        imageUids=image_uids, fun=fun, pool=pool,
                        startedAt  = isnothing(row) ? iso_utc(task_started_at(task_id)) : row.started_at,
@@ -74,7 +85,11 @@ function handle_message(ws, raw::AbstractString)
         # tells the bridge to stop the frame loop it is in), and background jobs (cancel_job!, kills the
         # subprocess(es) — data patches + project export/import).
         # So the Task-Manager Cancel button works on all of them, not just scheduler tasks.
-        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_job!(task_id))
+        # …and the detached runner, where a scheduler task most likely actually IS. All of these are
+        # no-ops for an unknown id, so asking all four is free; asking fewer is a Cancel button that
+        # silently does nothing depending on where the task happens to be running.
+        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id);
+                             cancel_job!(task_id); _cancel_on_runner(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)
     elseif type == "movie:record"
@@ -83,7 +98,10 @@ function handle_message(ws, raw::AbstractString)
         handle_chain_run(ws, data)
     elseif type == "chain:cancel"
         run_id = String(get(data, :runId, ""))
-        isempty(run_id) || cancel_chain_run!(run_id)
+        # Both processes: the run may be executing here (fallback) or on the runner. Each is a no-op
+        # for an id it does not know, so asking both is free — asking one is a Cancel that silently
+        # does nothing depending on where the run happens to be.
+        isempty(run_id) || (cancel_chain_run!(run_id); _cancel_chain_on_runner(run_id))
     elseif type == "maintenance:run"
         handle_maintenance_run(ws, data)
     elseif type == "maintenance:cancel"
@@ -364,7 +382,9 @@ function handle_chain_run(ws, data)
         return
     end
 
-    proj = load_project(project_uid)
+    # NOTE: no `load_project` here any more. The EXECUTING process loads it (`execute_chain`), which is
+    # the whole point — the runner resolves the project against its own `projects_dir()`. Loading it
+    # here too was a wasted read of every ccid.json in the project on the dispatch path.
 
     # Hard-skip excluded images (belt-and-suspenders — the GUI already blocks selecting them).
     if !resuming
@@ -383,30 +403,26 @@ function handle_chain_run(ws, data)
                                            runId=(resuming ? run_id : nothing),
                                            imageCount=length(image_uids))))
 
-    Threads.@spawn try
-        if resuming
-            run_chain(proj, String[]; run_id=run_id,
-                      start_node = isempty(start_node) ? nothing : start_node,
-                      on_cancel_check = is_chain_cancelled,
-                      on_log = line -> begin
-                          println(line)
-                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
-                      end)
-        else
-            run_chain(proj, image_uids; chain=chain_name,
-                      on_cancel_check = is_chain_cancelled,
-                      on_log = line -> begin
-                          println(line)
-                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
-                      end)
-        end
-        broadcast_ws(Dict{String,Any}("type" => "chain:run:done", "chain" => chain_name))
-    catch e
-        @warn "chain:run error" chain=chain_name run_id=run_id exception=e
-        broadcast_ws(Dict{String,Any}("type"  => "chain:run:failed",
-                                      "chain" => chain_name,
-                                      "error" => string(e)))
+    # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
+    # is already executing there, and starting a second execution would have two processes writing the
+    # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node)
+    outcome = _submit_chain_to_runner(creq)
+    outcome === :accepted && return
+    if outcome === :refused
+        broadcast_ws(Dict{String,Any}("type" => "chain:run:failed", "chain" => chain_name,
+                                      "error" => "This run is already executing on the task runner."))
+        return
     end
+
+    Threads.@spawn execute_chain(creq;
+        on_log = line -> begin
+            println(line)
+            broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
+        end,
+        on_finished = (ok, err) -> broadcast_ws(Dict{String,Any}(
+            "type"  => ok ? "chain:run:done" : "chain:run:failed",
+            "chain" => chain_name, "error" => err)))
 end
 
 # Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).
@@ -459,106 +475,24 @@ function handle_task_run(ws, data)
     # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
-    Threads.@spawn begin
-        task_struct = try
-            _task_from_fun_name(fun_name)
-        catch
-            ws_log(ws, task_id, "[ERROR] Unknown task: $fun_name")
-            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-            return
-        end
+    # Everything above is the ASKING side — guards and project-state edits this process owns. The run
+    # itself is `execute_task` (app/src/runner/execute.jl), which knows nothing about sockets: scope
+    # dispatch, the pre-job throw guard, and the result→terminal-status ordering all live there, so the
+    # detached runner executes the identical code rather than a second copy of it.
+    # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
+    req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params)
 
-        # Set-scope tasks (e.g. behaviour.hmm) run once over the whole selected image vector;
-        # image-scope tasks run on the single image. The frontend sends `imageUids` for set tasks.
-        if task_scope(task_struct) == "set"
-            uids = isempty(image_uids) ? (isempty(image_uid) ? String[] : [image_uid]) : image_uids
-            imgs = CciaImage[]
-            for u in uids
-                try
-                    obj = init_object(project_uid, u)
-                    obj isa CciaImage ? push!(imgs, obj) :
-                        ws_log(ws, task_id, "[WARN] not an image: $u")
-                catch ex
-                    ws_log(ws, task_id, "[WARN] could not load image $u: $ex")
-                end
-            end
-            if isempty(imgs)
-                ws_log(ws, task_id, "[ERROR] Set task '$fun_name' has no images")
-                ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-                return
-            end
-            rep = first(imgs).uid
-            final_status = Ref{Symbol}(:failed)
-            # run_task validates params FIRST (throws ParamValidationError before any job runs), so a
-            # bad-param launch never reaches on_status_change. Catch it here so the failure is logged
-            # AND a terminal task:status frame still goes out — otherwise the throw dies in the
-            # @spawn silently (no [ERROR], no frame → the observer's "Watch" auto-trigger, which keys
-            # off the terminal frame, never fires). Same guarantee for any pre-job throw.
-            try
-                result = run_task(task_struct, imgs, params;
-                                  task_id          = task_id,
-                                  pool_name        = pool_name,
-                                  on_log           = line -> ws_log(ws, task_id, line),
-                                  on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                                  on_status_change = rec -> begin
-                                      # queued/running forwarded live; also forward :cancelled at once
-                                      # (it has no result to order before it) so a cancelled task —
-                                      # especially a still-QUEUED one — reflects immediately, not only
-                                      # when a worker later dequeues and skips it. :done/:failed still
-                                      # wait for the final send.
-                                      if rec.status in (:queued, :running, :cancelled)
-                                          ws_status(ws, task_id, string(rec.status), rep; fun=fun_name)
-                                      end
-                                      final_status[] = rec.status
-                                  end)
-                isnothing(result) || ws_result(ws, task_id, rep, result)
-            catch ex
-                ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
-                final_status[] = :failed
-            end
-            # a set task touched EVERY member — send the full list so the frontend invalidates all of
-            # their plots, not just the representative's (closes the non-rep-member gap).
-            ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs], fun=fun_name)
-            return
-        end
+    # Hand it to the detached runner if there is one — then this server can restart without taking the
+    # run with it, and its frames arrive back through the relay into these same sinks. `false` means
+    # "not handled there" (disabled, still precompiling, stopped), and we execute in-process below:
+    # the status quo, not a regression.
+    _submit_to_runner(req) && return
 
-        # ── image-scope (single image) ──────────────────────────────────────────
-        img = try
-            obj = init_object(project_uid, image_uid)
-            obj isa CciaImage || error("Not a CciaImage")
-            obj
-        catch ex
-            ws_log(ws, task_id, "[ERROR] Could not load image: $ex")
-            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
-            return
-        end
-
-        # Capture the final status so we can send ws_result before ws_status("done"),
-        # preserving the result→status ordering the frontend expects.
-        final_status = Ref{Symbol}(:failed)
-        # See the set-scope branch: run_task validates params first (throws before any job runs), so
-        # a pre-job throw is caught here to guarantee an [ERROR] log + a terminal task:status frame.
-        try
-            result = run_task(task_struct, img, params;
-                              task_id          = task_id,
-                              pool_name        = pool_name,
-                              on_log           = line -> ws_log(ws, task_id, line),
-                              on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                              on_status_change = rec -> begin
-                                  # Forward queued/running immediately, and :cancelled too (no result
-                                  # to order before it) so a cancelled — especially still-QUEUED —
-                                  # task reflects at once. Hold :done/:failed until after the result.
-                                  if rec.status in (:queued, :running, :cancelled)
-                                      ws_status(ws, task_id, string(rec.status), image_uid; fun=fun_name)
-                                  end
-                                  final_status[] = rec.status
-                              end)
-            isnothing(result) || ws_result(ws, task_id, image_uid, result)
-        catch ex
-            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
-            final_status[] = :failed
-        end
-        ws_status(ws, task_id, string(final_status[]), image_uid; fun=fun_name)
-    end
+    Threads.@spawn execute_task(req;
+        on_log      = line -> ws_log(ws, task_id, line),
+        on_progress = (n, t) -> ws_progress(ws, task_id, n, t),
+        on_status   = (status, uid, uids) ->
+                          ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name),
+        on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta))
 end
 

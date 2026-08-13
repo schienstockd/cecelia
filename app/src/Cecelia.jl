@@ -6,6 +6,7 @@ export cellpose_models_dir, cellpose_model_path, list_cellpose_models
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export projects_dir, setup_required, set_projects_dir!
 export bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
+export runner_enabled, set_runner_enabled!, is_dev_session
 export image_compressor, set_image_compressor!, bf2raw_compression_flags, bf2raw_chunk_flags, bf2raw_format_flags, IMAGE_COMPRESSOR_CHOICES
 export IMAGE_COMPRESSOR_MEASURED_ON
 export ngff_version, chunk_separator, set_store_layout!
@@ -130,11 +131,21 @@ export ResourcePool, TaskRecord
 export run_task, run_tasks
 export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks,
        recent_tasks, record_task_outcome!, pool_status
-export note_task_started!, task_started_at, forget_task_start!, iso_utc, TASK_TS_FORMAT
+export note_task_started!, task_started_at, forget_task_start!, iso_utc, parse_iso_utc, TASK_TS_FORMAT
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
 export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
 export resize_pool!, set_pool_limit!
+# Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
+# by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
+export TaskRequest, execute_task, task_request, task_request_dict
+export ChainRequest, execute_chain, chain_request, chain_request_dict
+export subscribe_chain_frames!, chain_event_task_id
+# The detached task runner (runner/server.jl + runner/client.jl)
+export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
+export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
+export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_pools, runner_set_pool_limit
+export runner_submit_chain, runner_cancel_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
@@ -238,10 +249,21 @@ include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
+# Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
+# detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
+include("runner/execute.jl")
+# Chain events -> wire frames, shared by the API server and the runner (one builder, one bank).
+include("runner/chain_frames.jl")
 include("napari.jl")
 # Task preview — the resident preview worker's lifecycle + request shape. After napari.jl (shares the
 # `send` generic and the resident-WS-process pattern) and jobs.jl (_kill_proc_tree).
 include("preview.jl")
+# The detached task runner: `server.jl` is the process that owns the pools and executes tasks,
+# `client.jl` is the API server's side of it. After napari.jl/preview.jl — same resident-child
+# lifecycle — and after jobs.jl, whose `_kill_listeners_on_port` is how a runner we only ADOPTED gets
+# stopped. See docs/todo/TASK_RUNNER_PLAN.md.
+include("runner/server.jl")
+include("runner/client.jl")
 # Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)
 # + py_runner.jl (run_py/task_run_dir).
 include("maintenance.jl")

@@ -442,6 +442,70 @@ napari_discrete_gpu()::Bool =
 tasks_concurrent_limit()::Int =
     Int(get(get(cecelia_conf(), "tasks", Dict{String,Any}()), "concurrentLimit", 4))
 
+# ── The detached task runner (Settings → System) ──────────────────────────────────────────────────
+#
+# Whether tasks execute in a SEPARATE process, so restarting the backend does not kill work in flight.
+# `[runner].enabled`, default **false** while the design has known gaps (no on-disk spool; chains and
+# background jobs still run in-process — docs/todo/TASK_RUNNER_PLAN.md).
+#
+# A SETTING, not just an env var, because "opt-in" has to mean something to a user. It began as
+# `CECELIA_RUNNER=1`, which exists only as a pixi task — a packaged install had no way to turn it on
+# at all, so what was called opt-in was really "dev-only". The env var is kept as an OVERRIDE (it
+# wins, and is how `pixi run dev-runner` and CI ask for it without touching a config file); the
+# setting is what a user actually has.
+_env_flag(name) = lowercase(strip(get(ENV, name, ""))) in ("1", "true", "yes", "on")
+
+"""
+    is_dev_session() -> Bool
+
+Whether this is a development run (`pixi run dev` sets `CECELIA_DEV`; `prod`, `app.py` and the
+packaged launcher never do). Mirrors the API layer's `_is_dev`, in the package so the runner and its
+gating can read it too.
+"""
+is_dev_session()::Bool = _env_flag("CECELIA_DEV")
+
+"""
+    runner_enabled() -> Bool
+
+**Dev only.** A production install has no Restart button, so the runner's whole benefit — a backend
+restart not costing a running task — is unreachable there, while every one of its failure modes
+(an idle process with no window, no cancel, nothing to find it by) lands squarely on the user. And a
+prod user does not need it: they leave the app running, and closing the browser tab was never what
+stopped a task.
+
+So this is deliberately not a thing a user can switch on. The process side of "quit and keep
+processing" (`detach = true`) is already built if that ever becomes something someone asks for —
+see docs/todo/TASK_RUNNER_PLAN.md → Decision 3b — but it is not built on a guess.
+"""
+function runner_enabled()::Bool
+    is_dev_session() || return false
+    haskey(ENV, "CECELIA_RUNNER") && return _env_flag("CECELIA_RUNNER")
+    Bool(get(get(cecelia_conf(), "runner", Dict{String,Any}()), "enabled", false))
+end
+
+"""
+    set_runner_enabled!(on) -> Bool
+
+Persist `[runner].enabled` and hot-reload config. Mirrors `set_image_compressor!` — merged write, so
+an unrelated key in `custom.toml` survives.
+
+Returns the value now in EFFECT, which is not always what was asked: `CECELIA_RUNNER` overrides the
+file, so a dev session started with the env var reports `true` however the toggle is set. Returning
+the effective value rather than the written one is what lets the UI show the truth instead of the
+request.
+"""
+function set_runner_enabled!(on::Bool)::Bool
+    ensure_config_dir()
+    cfg_path = custom_toml_path()
+    cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
+    r   = get(cfg, "runner", Dict{String,Any}())
+    r["enabled"] = on
+    cfg["runner"] = r
+    write_atomic(io -> TOML.print(io, cfg), cfg_path)
+    init_cecelia!()
+    runner_enabled()
+end
+
 # ── Image store compression ──────────────────────────────────────────────────────────────────────
 
 """

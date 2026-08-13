@@ -44,6 +44,13 @@ project-scoped, and must not require an *open* project).
 > Operates on image(s) and wants pooling / chaining / QC / resume → **scheduler task**.
 > One-off project-/bundle-scoped op, or no image target → **background job**.
 
+> **Which PROCESS runs it is a separate question from which mechanism.** In dev, a scheduler task or a
+> chain may execute in the detached **task runner** ([`docs/RUNNER.md`](RUNNER.md), port 7657) — same
+> code, same frames, but it survives a backend restart. A background job always runs in the API server
+> and dies with it: export/import/data patches are project-scoped one-offs that hold no pool slot, and
+> moving them would drag `project_io.jl` across a process boundary for nothing. If a 40-minute export
+> surviving a restart turns out to matter, that is a second, simpler spool — not this one.
+
 ## The `jobs.jl` API
 
 A job is identified by the client's `taskId`. The registry tracks a **cancel flag** plus the job's

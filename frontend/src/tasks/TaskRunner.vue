@@ -15,7 +15,7 @@
   it on the way back.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams } from './paramValues'
 import { usePanelResize } from '../composables/usePanelResize'
@@ -194,6 +194,30 @@ watch(() => props.defs, (defs) => {
 // on ["T"]) is disabled in the picker + Run button unless every selected image carries those axes.
 // The backend refuses to run anyway (TaskApplicabilityError); this removes the surprise.
 const selectedImages = computed(() => paramContext.value.images)
+// ── Task runner down ──────────────────────────────────────────────────────────
+// Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
+// backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
+// enabled it to avoid. Nothing else surfaces that on this page.
+// Polled slowly: it changes when a process starts or stops, not continuously, and this panel is on
+// every module page.
+const runnerDown = ref(false)
+async function pollRunner() {
+  try {
+    const d = await (await fetch('/api/runner/status')).json()
+    runnerDown.value = d?.enabled === true && d?.running !== true
+  } catch { runnerDown.value = false }   // can't ask → don't cry wolf
+}
+let runnerTimer: number | undefined
+onMounted(() => { pollRunner(); runnerTimer = window.setInterval(pollRunner, 20000) })
+onUnmounted(() => { if (runnerTimer) window.clearInterval(runnerTimer) })
+
+async function startRunner() {
+  runnerDown.value = false                       // optimistic: the row shows the truth in a moment
+  try { await fetch('/api/runner/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }) }
+  catch { /* the poll below re-asserts reality */ }
+  setTimeout(pollRunner, 2000)
+}
+
 const gatingReasonFor = (def: TaskDef) => taskGatingReason(def, selectedImages.value)
 const activeTaskGatingReason = computed(() =>
   taskDef.value ? gatingReasonFor(taskDef.value) : ''
@@ -393,6 +417,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     <section class="runner-section run-section">
       <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
            BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
+      <!-- Short = the problem, the action lives in the tooltip and the button beside it. -->
+      <div v-if="runnerDown" class="runner-down cc-muted-warn cc-fs-xs">
+        <i class="pi pi-exclamation-triangle" />
+        <span v-tooltip.left="'Runs in the backend instead — this one stops if you restart'">Task runner down</span>
+        <button class="cc-btn cc-btn-bare cc-fs-xs" @click="startRunner"
+                v-tooltip.left="'Start the task runner'">Start</button>
+      </div>
+
       <div class="run-row">
         <button
           class="run-btn"
@@ -542,6 +574,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
 .fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+.runner-down {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
 .env-badge {
   font-size: var(--cc-fs-2xs);
   font-weight: 600;
