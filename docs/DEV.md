@@ -108,6 +108,34 @@ gh pr create --base main --title "<type>(<scope>): <summary>" --body-file <path>
 # relay the PR URL it prints
 ```
 
+### Agent-authored public replies are attributed
+
+Anything an agent posts to a **public surface under Dominik's account** — an issue comment, a
+discussion reply, a review comment on someone else's PR — ends with an attribution line naming the
+model:
+
+```markdown
+---
+
+*This reply was written by Claude Code (<model>), working in this repo on @schienstockd's behalf —
+as was the fix in #<pr>. Cecelia is openly AI-assisted; see [`CLAUDE.md`](../CLAUDE.md). Anything
+here that needs a human decision is his.*
+```
+
+`<model>` is the model **actually writing that reply** (`Claude Opus 5`, …) — read it off the running
+session, don't copy a version out of this file. Same rule, and the same reason, as the commit trailer
+above: this doc pinned one model there for months and kept pinning it after that model was
+superseded, so what shipped recorded when the rule was written rather than who wrote the thing.
+
+The objection is not the AI involvement — this project says it is AI-assisted on the front page.
+It is the **implied claim of authorship**: the comment carries Dominik's name and an outside reader
+assumes he typed it. Prompted by the reply on #540 (2026-08-13), which went out unmarked and read,
+in his words, like AI.
+
+Scope: outward-facing text landing under his identity. **Not** commit messages (they already carry
+`Co-Authored-By: Claude <model>`), not PR bodies (the `🤖 Generated with Claude Code` trailer above
+does the same job), not code comments, not chat.
+
 ## CI
 
 Every push/PR runs `.github/workflows/ci.yml` — a smoke test from a fresh checkout, as **three
