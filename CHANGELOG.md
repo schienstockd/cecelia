@@ -15,6 +15,27 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.2] — 2026-08-13
+
+A fix release. Fresh installs of `v0.1.1` did not launch — if you hit
+`pluto/sysimage_stamp.jl not found`, this is the fix. Update in the app, or re-run the installer.
+
+### Fixed
+
+- **The release bundle was missing three directories the app loads at runtime**, so every stable
+  install failed on first launch: the API server reads a file from `pluto/` while starting up, and
+  `preview/` (task preview) and `mcp/` (the AI observer) were absent by the same gap, failing more
+  quietly. The `dev` channel was never affected, which is why it took an install to find (#540).
+  Reported by @lxfhfut, with the cause and the fix.
+- **Packaged launches no longer print `fatal: not a git repository`** to the console. The dev
+  diagnostics probe git on startup; in an installed app there is no repository to find, and the
+  failure was harmless but read like a broken install.
+- **Smoothing reports progress while it runs.** It stood at 50% through the whole streaming stage —
+  the long one — and now advances per z-plane.
+- **The daily lab-log digest no longer calls a task failed when a later re-run succeeded.** A day
+  where four images failed and were all re-run successfully was headed ❌ *"4 failed"*; it now
+  reports where the day left each image, and notes the retry separately.
+
 ## [0.1.1] — 2026-08-13
 
 60 pull requests since `v0.1.0`. Still `0.1.x` deliberately — this is the framework's first iteration
@@ -372,7 +393,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/schienstockd/cecelia/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/schienstockd/cecelia/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...v0.1.0
 [0.1.0-rc9]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...v0.1.0-rc9
