@@ -98,7 +98,10 @@ function handle_message(ws, raw::AbstractString)
         handle_chain_run(ws, data)
     elseif type == "chain:cancel"
         run_id = String(get(data, :runId, ""))
-        isempty(run_id) || cancel_chain_run!(run_id)
+        # Both processes: the run may be executing here (fallback) or on the runner. Each is a no-op
+        # for an id it does not know, so asking both is free — asking one is a Cancel that silently
+        # does nothing depending on where the run happens to be.
+        isempty(run_id) || (cancel_chain_run!(run_id); _cancel_chain_on_runner(run_id))
     elseif type == "maintenance:run"
         handle_maintenance_run(ws, data)
     elseif type == "maintenance:cancel"
@@ -379,7 +382,9 @@ function handle_chain_run(ws, data)
         return
     end
 
-    proj = load_project(project_uid)
+    # NOTE: no `load_project` here any more. The EXECUTING process loads it (`execute_chain`), which is
+    # the whole point — the runner resolves the project against its own `projects_dir()`. Loading it
+    # here too was a wasted read of every ccid.json in the project on the dispatch path.
 
     # Hard-skip excluded images (belt-and-suspenders — the GUI already blocks selecting them).
     if !resuming
@@ -398,30 +403,26 @@ function handle_chain_run(ws, data)
                                            runId=(resuming ? run_id : nothing),
                                            imageCount=length(image_uids))))
 
-    Threads.@spawn try
-        if resuming
-            run_chain(proj, String[]; run_id=run_id,
-                      start_node = isempty(start_node) ? nothing : start_node,
-                      on_cancel_check = is_chain_cancelled,
-                      on_log = line -> begin
-                          println(line)
-                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
-                      end)
-        else
-            run_chain(proj, image_uids; chain=chain_name,
-                      on_cancel_check = is_chain_cancelled,
-                      on_log = line -> begin
-                          println(line)
-                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
-                      end)
-        end
-        broadcast_ws(Dict{String,Any}("type" => "chain:run:done", "chain" => chain_name))
-    catch e
-        @warn "chain:run error" chain=chain_name run_id=run_id exception=e
-        broadcast_ws(Dict{String,Any}("type"  => "chain:run:failed",
-                                      "chain" => chain_name,
-                                      "error" => string(e)))
+    # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
+    # is already executing there, and starting a second execution would have two processes writing the
+    # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node)
+    outcome = _submit_chain_to_runner(creq)
+    outcome === :accepted && return
+    if outcome === :refused
+        broadcast_ws(Dict{String,Any}("type" => "chain:run:failed", "chain" => chain_name,
+                                      "error" => "This run is already executing on the task runner."))
+        return
     end
+
+    Threads.@spawn execute_chain(creq;
+        on_log = line -> begin
+            println(line)
+            broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
+        end,
+        on_finished = (ok, err) -> broadcast_ws(Dict{String,Any}(
+            "type"  => ok ? "chain:run:done" : "chain:run:failed",
+            "chain" => chain_name, "error" => err)))
 end
 
 # Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).

@@ -138,6 +138,14 @@ runner_submit(h::RunnerHandle, req::TaskRequest) = _runner_post(h, "/submit", ta
 runner_cancel(h::RunnerHandle, task_id::AbstractString) =
     _runner_post(h, "/cancel", Dict{String,Any}("taskId" => string(task_id)))
 runner_tasks(h::RunnerHandle)  = get(_runner_get(h, "/tasks"), "tasks", Any[])
+# Chains. `runner_submit_chain` returns the runner's reply so a 409 (the run id is already executing
+# there) is distinguishable from a transport failure — those need different answers, and treating a
+# refusal as "unreachable" would run the same chain twice.
+runner_submit_chain(h::RunnerHandle, req::ChainRequest) =
+    _runner_post(h, "/submit-chain", chain_request_dict(req))
+runner_cancel_chain(h::RunnerHandle, run_id::AbstractString) =
+    _runner_post(h, "/cancel-chain", Dict{String,Any}("runId" => string(run_id)))
+runner_chain_runs(h::RunnerHandle) = get(_runner_get(h, "/chains"), "runs", Any[])
 runner_pools(h::RunnerHandle)  = get(_runner_get(h, "/pools"), "pools", Any[])
 runner_recent(h::RunnerHandle; since::AbstractString = "") =
     get(_runner_get(h, "/tasks/recent?since=$(HTTP.escapeuri(since))"), "tasks", Any[])

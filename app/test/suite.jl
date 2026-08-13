@@ -3980,6 +3980,41 @@ end
     end
 end
 
+# ── The runner's claim on a chain run id ──────────────────────────────────────
+# A chain run MUTATES run.json as it goes (per-node status, params_hash, the resume bookkeeping), so
+# two processes executing the same run id corrupt each other's state — silently, and visible only later
+# as a resume doing the wrong thing. The enabled flag makes that impossible today, but that makes the
+# guard a configuration accident rather than a property of the code.
+@testset "runner claims a chain run id" begin
+    @test Cecelia._claim_chain_run!("r1") == true
+    @test Cecelia._claim_chain_run!("r1") == false      # the second submission is refused
+    @test Cecelia._claim_chain_run!("r2") == true       # a different run is unaffected
+    @test "r1" in Cecelia.runner_chain_claims()
+    Cecelia._release_chain_run!("r1")
+    @test Cecelia._claim_chain_run!("r1") == true       # …and re-claimable once released
+    Cecelia._release_chain_run!("r1"); Cecelia._release_chain_run!("r2")
+    @test isempty(Cecelia.runner_chain_claims())
+
+    # A FRESH run has no id yet — `run_chain` mints one — so it can never collide and must never be
+    # refused. Claiming on "" would make the runner accept exactly one fresh chain, ever.
+    @test Cecelia._claim_chain_run!("") == true
+    @test Cecelia._claim_chain_run!("") == true
+    @test isempty(Cecelia.runner_chain_claims())
+end
+
+@testset "ChainRequest survives the wire" begin
+    req = ChainRequest(; project_uid = "p1", chain_name = "my-chain",
+                         image_uids = ["a", "b"], run_id = "r9", start_node = "n3")
+    back = chain_request(JSON3.read(JSON3.write(chain_request_dict(req)), Dict{String,Any}))
+    @test back.project_uid == "p1" && back.chain_name == "my-chain"
+    @test back.image_uids == ["a", "b"] && back.run_id == "r9" && back.start_node == "n3"
+    @test back.target == "local"
+    # A resume carries no chain name or images — they come from the persisted run. Decoding that must
+    # not invent them.
+    resume = chain_request(Dict{String,Any}("projectUid" => "p1", "runId" => "r9"))
+    @test resume.chain_name == "" && resume.image_uids == String[]
+end
+
 @testset "runner client refuses a dead port cleanly" begin
     # Every one of these runs on the API server's request path. A runner that is simply not there must
     # read as absent — never a throw that takes a route down, and never a hang.

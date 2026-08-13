@@ -114,6 +114,43 @@ const PORT = parse(Int, get(ENV, "CECELIA_RUNNER_TEST_PORT", "7698"))   # not th
         pools = runner_pools(h)
         @test !isempty(pools)
         @test any(p -> String(get(p, "name", "")) == "cpu", pools)
+        # ── A CHAIN, executed in the runner's process ──────────────────────────────
+        # Different carrier from a task: chain telemetry rides the event bus (`chain:node:*`), built by
+        # `subscribe_chain_frames!` in THAT process. So this asserts the second half of Phase 2 — that
+        # the frames a client sees are produced across the boundary and arrive intact.
+        chain_img = add_image!(first(sets(proj)); name = "img2")
+        make_chain(proj, "e2e-chain", [chain_node("testTasks.image_task")])
+
+        before = lock(flock) do; length(frames); end
+        cresp = runner_submit_chain(h, ChainRequest(; project_uid = proj.uid,
+                                                      chain_name  = "e2e-chain",
+                                                      image_uids  = [chain_img.uid]))
+        @test cresp["ok"] == true
+
+        cok = timedwait(60.0; pollint = 0.2) do
+            lock(flock) do
+                any(f -> get(f, "type", "") in ("chain:run:done", "chain:run:failed"), frames)
+            end
+        end
+        @test cok === :ok
+
+        cframes = lock(flock) do; frames[(before + 1):end]; end
+        ctypes  = [get(f, "type", "") for f in cframes]
+        @test "chain:run:done" in ctypes                    # …and it SUCCEEDED, not merely finished
+        @test "chain:node:done" in ctypes
+        # The node frame must carry what a client keys on. A chain run emits no `task:status` at all, so
+        # these fields are the only carrier — `taskId` is what correlates the row, and without
+        # `startedAt` the Live view times the node from when it happened to see it.
+        nodedone = first(f for f in cframes if get(f, "type", "") == "chain:node:done")
+        @test String(get(nodedone, "runId", "")) != ""
+        @test String(get(nodedone, "nodeId", "")) != ""
+        @test String(get(nodedone, "imageUid", "")) == chain_img.uid
+        @test !isempty(String(get(nodedone, "taskId", "")))
+        @test !isempty(String(get(nodedone, "startedAt", "")))
+        @test !isempty(String(get(nodedone, "finishedAt", "")))
+
+        # The claim is released when the run ends, or a resume of it could never be accepted again.
+        @test isempty(runner_chain_runs(h))
     finally
         sub === nothing || (try; schedule(sub, InterruptException(); error = true); catch; end)
         runner_stop!(h)

@@ -88,6 +88,75 @@ function _emit_status(id, status, uid, uids, fun)
         "finishedAt" => isnothing(row) ? "" : row.finished_at))
 end
 
+# ── Chain runs ────────────────────────────────────────────────────────────────
+#
+# A chain run MUTATES `run.json` as it goes — per-node status, `params_hash`, the resume bookkeeping —
+# so two processes executing the same run id would corrupt each other's state, silently and in a way
+# that only shows up as a resume doing the wrong thing later. Today the enabled flag makes that
+# impossible (exactly one path is live), but relying on that means the guard is a configuration
+# accident rather than a property of the code.
+#
+# So the runner CLAIMS a run id for the duration and refuses a second submission of it. Only resumes
+# need it: a fresh run's id does not exist until `run_chain` mints it, so it cannot collide with
+# anything.
+const _CHAIN_CLAIMS      = Set{String}()
+const _CHAIN_CLAIMS_LOCK = ReentrantLock()
+
+# Returns false if already held. Claim and check are one atomic step on purpose — a check-then-claim
+# is precisely the race this exists to close.
+function _claim_chain_run!(run_id::AbstractString)::Bool
+    isempty(run_id) && return true                 # fresh run: nothing to collide with
+    lock(_CHAIN_CLAIMS_LOCK) do
+        String(run_id) in _CHAIN_CLAIMS ? false : (push!(_CHAIN_CLAIMS, String(run_id)); true)
+    end
+end
+
+_release_chain_run!(run_id::AbstractString) =
+    (isempty(run_id) || lock(_CHAIN_CLAIMS_LOCK) do; delete!(_CHAIN_CLAIMS, String(run_id)); end; nothing)
+
+runner_chain_claims()::Vector{String} =
+    lock(_CHAIN_CLAIMS_LOCK) do; sort(collect(_CHAIN_CLAIMS)); end
+
+_emit_chain_log(line) = runner_emit(Dict{String,Any}("type" => "chain:log", "line" => line))
+
+function _runner_submit_chain(body_bytes::Vector{UInt8})
+    creq = try
+        chain_request(_body_dict(body_bytes))
+    catch e
+        return _json(400, (; error = "bad request: " * sprint(showerror, e)))
+    end
+    isempty(creq.project_uid) && return _json(400, (; error = "projectUid required"))
+    (isempty(creq.chain_name) && isempty(creq.run_id)) &&
+        return _json(400, (; error = "chain or runId required"))
+    _claim_chain_run!(creq.run_id) ||
+        return _json(409, (; error = "run $(creq.run_id) is already executing on this runner"))
+
+    Threads.@spawn begin
+        try
+            execute_chain(creq;
+                on_log      = line -> (println(line); _emit_chain_log(line)),
+                on_finished = (ok, err) -> runner_emit(Dict{String,Any}(
+                    "type"  => ok ? "chain:run:done" : "chain:run:failed",
+                    "chain" => creq.chain_name, "runId" => creq.run_id,
+                    "error" => err)))
+        catch e
+            @error "Runner: chain execution escaped" chain = creq.chain_name exception = (e, catch_backtrace())
+            runner_emit(Dict{String,Any}("type" => "chain:run:failed", "chain" => creq.chain_name,
+                                         "runId" => creq.run_id, "error" => sprint(showerror, e)))
+        finally
+            _release_chain_run!(creq.run_id)
+        end
+    end
+    _json(200, (; ok = true, chain = creq.chain_name, runId = creq.run_id))
+end
+
+function _runner_cancel_chain(body_bytes::Vector{UInt8})
+    run_id = String(get(_body_dict(body_bytes), "runId", ""))
+    isempty(run_id) && return _json(400, (; error = "runId required"))
+    cancel_chain_run!(run_id)
+    _json(200, (; ok = true))
+end
+
 # ── Process identity ──────────────────────────────────────────────────────────
 # What `/ping` answers, so the API server can tell "the runner I started" from "a runner that outlived
 # something", and — the point of D5 — WHICH CODE it is running. A runner that does not restart when you
@@ -114,6 +183,7 @@ runner_identity()::Dict{String,Any} = Dict{String,Any}(
     "startedAt"     => _RUNNER_STARTED_AT[],
     "uptimeSeconds" => round(Int, time() - _RUNNER_STARTED_AT[]),
     "threads"       => Threads.nthreads(),
+    "chainRuns"     => runner_chain_claims(),
     "projectsDir"   => projects_dir())
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -206,12 +276,15 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
         if req.method == "GET"
             route == "/ping"  && return _json(200, runner_identity())
             route == "/tasks" && return _json(200, (; tasks = list_tasks()))
-            route == "/pools" && return _json(200, (; pools = pool_status()))
+            route == "/pools"  && return _json(200, (; pools = pool_status()))
+            route == "/chains" && return _json(200, (; runs = runner_chain_claims()))
             route == "/tasks/recent" &&
                 return _json(200, (; tasks = recent_tasks(; since = get(HTTP.queryparams(uri), "since", ""))))
         elseif req.method == "POST"
-            route == "/submit"    && return _runner_submit(body_bytes)
-            route == "/cancel"    && return _runner_cancel(body_bytes)
+            route == "/submit"       && return _runner_submit(body_bytes)
+            route == "/cancel"       && return _runner_cancel(body_bytes)
+            route == "/submit-chain" && return _runner_submit_chain(body_bytes)
+            route == "/cancel-chain" && return _runner_cancel_chain(body_bytes)
             route == "/pools/set" && return _runner_pools_set(body_bytes)
         end
         _json(404, (; error = "no route: $(req.method) $route"))
@@ -260,6 +333,9 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
     _RUNNER_STARTED_AT[]  = time()
     _RUNNER_COMMIT[]      = _runner_git_short()
     _RUNNER_BOUND_PORT[]  = port
+    # The chain event bus is in-process, so a chain executing here fires its events here. Same builder
+    # the API server uses, so the frames are byte-identical and it can relay them untranslated.
+    subscribe_chain_frames!(runner_emit)
     @info "Cecelia task runner starting" host port pid=getpid() threads=Threads.nthreads() commit=_RUNNER_COMMIT[] projects_dir=projects_dir()
     HTTP.listen(_runner_stream, host, port)
 end

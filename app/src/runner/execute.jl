@@ -191,3 +191,74 @@ function _execute_image_task(req::TaskRequest, task_struct;
     on_status(string(final_status[]), req.image_uid, String[])
     final_status[]
 end
+
+# ── Chains ────────────────────────────────────────────────────────────────────
+
+"""
+    ChainRequest
+
+A chain run as it crosses a process boundary. Same rule as `TaskRequest`: uids and names, never a host
+path — the executing process resolves them against its own `projects_dir()`.
+
+`run_id` non-empty means **resume** an existing run (re-do failed/incomplete/changed nodes) rather
+than start a fresh one; `start_node` additionally force-restarts that node and everything downstream
+("resume from here"). When resuming, `chain_name`/`image_uids` come from the persisted run, so they are
+not required.
+"""
+Base.@kwdef struct ChainRequest
+    project_uid::String
+    chain_name::String         = ""
+    image_uids::Vector{String} = String[]
+    run_id::String             = ""
+    start_node::String         = ""
+    target::String             = "local"
+end
+
+chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
+    "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
+    "runId" => r.run_id, "startNode" => r.start_node, "target" => r.target)
+
+chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
+    project_uid = string(get(d, "projectUid", "")),
+    chain_name  = string(get(d, "chain", "")),
+    image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
+    run_id      = string(get(d, "runId", "")),
+    start_node  = string(get(d, "startNode", "")),
+    target      = string(get(d, "target", "local")))
+
+"""
+    execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
+
+Run a chain to completion and return whether it succeeded. **Blocks** — `run_chain` fetches every image
+thread before returning.
+
+`on_log(line)` receives the executor's log lines; `on_finished(ok::Bool, err::String)` fires exactly
+once. Per-node progress does NOT come through here — it goes over the chain **event bus**
+(`subscribe_chain_frames!`), which is a separate carrier because a node's telemetry has to reach a
+client that connected after the run started.
+
+Cancellation is checked through the package registry (`is_chain_cancelled`), so it works from whichever
+process is executing: the cancel and the run must land in the same one, which is what the runner's
+claim on a run id enforces.
+"""
+function execute_chain(req::ChainRequest;
+                       on_log::Function      = _ -> nothing,
+                       on_finished::Function = (ok, err) -> nothing)::Bool
+    try
+        proj = load_project(req.project_uid)
+        if isempty(req.run_id)
+            run_chain(proj, req.image_uids; chain = req.chain_name,
+                      on_cancel_check = is_chain_cancelled, on_log = on_log)
+        else
+            run_chain(proj, String[]; run_id = req.run_id,
+                      start_node = isempty(req.start_node) ? nothing : req.start_node,
+                      on_cancel_check = is_chain_cancelled, on_log = on_log)
+        end
+        on_finished(true, "")
+        true
+    catch e
+        @warn "chain run failed" chain = req.chain_name run_id = req.run_id exception = (e, catch_backtrace())
+        on_finished(false, string(e))
+        false
+    end
+end

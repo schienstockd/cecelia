@@ -26,15 +26,32 @@ _runner_enabled() = Cecelia.runner_enabled()
 # One runner frame → this server's own sinks. Unknown types are ignored rather than logged: a newer
 # runner emitting a frame this server has no handler for must not produce a warning per log line.
 function _relay_runner_frame(f::Dict{String,Any})
+    t  = String(get(f, "type", ""))
     id = String(get(f, "taskId", ""))
-    isempty(id) && return
-    t = String(get(f, "type", ""))
+    # A chain frame is keyed by run/node, not by a task id — a skipped or set-scope node legitimately
+    # has none, so the task-frame guard must not drop it.
+    (isempty(id) && !startswith(t, "chain:")) && return
     if t == "task:log"
         ws_log(nothing, id, String(get(f, "line", "")))
     elseif t == "task:progress"
         ws_progress(nothing, id, Float64(get(f, "progress", 0.0)))
     elseif t == "task:result"
         ws_result(nothing, id, String(get(f, "imageUid", "")), get(f, "meta", nothing))
+    elseif startswith(t, "chain:")
+        # Chain frames are already in their final client shape (`subscribe_chain_frames!` built them in
+        # the runner, from the same builder this server uses in-process), so they are broadcast
+        # VERBATIM. The one thing that must still happen here is the BANK: `/api/tasks/recent` is served
+        # from this process, so an outcome banked only in the runner is unrecoverable for a browser that
+        # missed the live frame. Banked with the RUNNER's timestamps, never re-derived.
+        if t in ("chain:node:done", "chain:node:failed")
+            record_task_outcome!(String(get(f, "taskId", "")),
+                                 t == "chain:node:done" ? "done" : String(get(f, "status", "failed"));
+                                 image_uid   = String(get(f, "imageUid", "")),
+                                 fun         = String(get(f, "fn", "")),
+                                 started_at  = String(get(f, "startedAt", "")),
+                                 finished_at = String(get(f, "finishedAt", "")))
+        end
+        broadcast_ws(f)
     elseif t == "task:status"
         # The runner's timestamps are passed through, not re-derived — see `ws_status`.
         ws_status(nothing, id, String(get(f, "status", "")), String(get(f, "imageUid", ""));
@@ -210,3 +227,31 @@ function api_runner_set_enabled(body_bytes::Vector{UInt8})
                         message = now ? "Tasks will run in the task runner." :
                                         "New tasks will run in the backend."))
 end
+
+# ── Chains on the runner ──────────────────────────────────────────────────────
+
+"""
+    _submit_chain_to_runner(req) -> Symbol
+
+`:accepted` (running there), `:refused` (the runner says that run id is already executing on it), or
+`:unavailable` (no runner — the caller runs it here).
+
+The three are kept apart deliberately. A refusal and a transport failure look the same from a `try`,
+and treating a refusal as "unavailable" would start a SECOND execution of a run that is already going —
+both writing the same `run.json`. That is the corruption the runner's claim exists to prevent, so the
+client must not undo it by falling back.
+"""
+function _submit_chain_to_runner(req)::Symbol
+    _runner_enabled() || return :unavailable
+    try
+        get(Cecelia.runner_submit_chain(_RUNNER, req), "ok", false) === true ? :accepted : :refused
+    catch e
+        # An HTTP 409 raises here (status_exception), and it is the one error that is NOT "no runner".
+        occursin("409", sprint(showerror, e)) && return :refused
+        @warn "Runner unreachable — running the chain in-process" exception = e
+        :unavailable
+    end
+end
+
+_cancel_chain_on_runner(run_id::AbstractString) =
+    (_runner_enabled() && try; Cecelia.runner_cancel_chain(_RUNNER, run_id); catch; end; nothing)

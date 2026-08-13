@@ -139,11 +139,13 @@ export resize_pool!, set_pool_limit!
 # Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
 # by the detached runner next. See docs/todo/TASK_RUNNER_PLAN.md.
 export TaskRequest, execute_task, task_request, task_request_dict
+export ChainRequest, execute_chain, chain_request, chain_request_dict
 export subscribe_chain_frames!, chain_event_task_id
 # The detached task runner (runner/server.jl + runner/client.jl)
 export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
 export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_pools, runner_set_pool_limit
+export runner_submit_chain, runner_cancel_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
