@@ -21,13 +21,35 @@ that talks to the Julia API over HTTP. It is separate infra, not part of the `ce
 mcp/
   cecelia_mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
+    guidance.py  # what the server TELLS a session about its own toolset (see below)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
     server.py    # FastMCP server — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
+    test_server.py    # tool registration + the guidance guard (every tool is named; instructions stay small)
 ```
+
+## The server briefs the session — `guidance.py`
+
+`check my current project in cecelia` is a sufficient prompt. There is nothing to paste, because the
+server carries its own instructions:
+
+- **`SERVER_INSTRUCTIONS`** → `FastMCP(instructions=…)`, delivered in the `initialize` response and
+  landing in the client's system prompt. It only has to get the assistant to the front door: resolve
+  the project with `list_projects` (most-recently-opened first), then call `get_session_briefing`.
+  **Keep it short** — the observer is registered user-scope, so this is in context for every `claude`
+  session on the machine, Cecelia-related or not. `test_server.py` holds the budget.
+- **`BRIEFING_GUIDANCE`** → merged into `get_session_briefing`'s response as `guidance`. The long form:
+  the grouping discipline before any cross-image figure, the add-only rules for boards, the
+  designs-but-never-runs rule for chains, how to open. Costs nothing until a session opens a project.
+
+Per-tool detail belongs in the tool's own docstring (also always in context); `guidance.py` is only
+for what spans tools. **A new tool must be named there** or the assistant never offers it — enforced by
+`GuidanceTest` in `mcp/tests/test_server.py`, with a three-tool exemption for the observer's own
+autonomous-loop bookkeeping. The in-app observer has its own prompt (`app/src/ai/observer_prompt.jl`)
+with the matching guard in `app/test/suite.jl`.
 
 ## Tools
 

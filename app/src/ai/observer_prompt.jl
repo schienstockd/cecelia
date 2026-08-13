@@ -5,11 +5,17 @@
 # across every run AND across whichever agent backend is used (Claude today; Gemini/ChatGPT later).
 # See docs/todo/OBSERVER_INTEGRATION_PLAN.md (Decision 7) and docs/ai-assist/OBSERVER.md.
 #
-# ⚠️ TWO COPIES, KEPT IN SYNC BY HAND. This one goes to the IN-APP agent; `buildChatPrompt` in
-# frontend/src/lib/chatHandoff.ts is the paste-in prompt for a session the USER starts in their own
-# terminal. They can't share a source (Julia vs TS), so **adding or changing a capability means editing
-# both.** `create_chain` was added here and NOT there, and the user noticed the omission from the
-# prompt they pasted — the failure is silent, so treat the pair as one edit.
+# ⚠️ ONE OF TWO PROMPTS. This one goes to the IN-APP agent Cecelia spawns. A session the USER starts in
+# their own terminal is briefed by the MCP server itself — `mcp/cecelia_mcp/guidance.py`
+# (`SERVER_INSTRUCTIONS` reaches the client on connect; `BRIEFING_GUIDANCE` rides back with
+# get_session_briefing). That used to be a third copy of all this in TypeScript, pasted by the user;
+# it went stale twice (`create_chain`, then `get_analysis_boards`/`get_image_attributes` — a tool
+# added here and not there is a capability the assistant never offers).
+#
+# So: adding an MCP tool the in-app observer should use means editing THIS file AND `guidance.py`.
+# Neither can import the other, so each has its own half of the guard — `app/test/suite.jl` →
+# *"the in-app observer prompt names the MCP tools it can use"* and `mcp/tests/test_server.py` →
+# `GuidanceTest`. Both fail by naming the tool you forgot.
 
 # The shared behaviour — signal discipline. Deliberately strict: the failure mode is a chatty lab log
 # nobody trusts.

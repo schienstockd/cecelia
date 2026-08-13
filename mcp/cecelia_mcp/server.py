@@ -9,6 +9,12 @@ Note the split that shapes this server: Claude can DESIGN work but never START i
 authors a pipeline the user then runs from the whiteboard; there is no run/submit tool, because
 launching is a WebSocket message and this server speaks only HTTP.
 
+The server also carries its own briefing — ``cecelia_mcp.guidance``. ``SERVER_INSTRUCTIONS`` goes out
+with the ``initialize`` response (so a session knows to resolve the project and pull the briefing
+first) and ``BRIEFING_GUIDANCE`` rides back with ``get_session_briefing``. That is what makes "check
+my current project in cecelia" a sufficient prompt; **a tool added here must be named there**, or the
+assistant never offers it (``mcp/tests/test_server.py`` fails if it isn't).
+
 Run:   pixi run mcp          (or:  PYTHONPATH=mcp python -m cecelia_mcp.server)
 Talks to the Julia API at $CECELIA_API_URL (default http://127.0.0.1:8080), so `pixi run dev` must
 be running. See mcp/README.md for wiring this into Claude Code.
@@ -23,6 +29,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 from cecelia_mcp.client import CeceliaClient
+from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -38,7 +45,29 @@ LAB_LOG_SOURCES = {"claude": CLAUDE_AUTHOR, "labarchives": "LabArchives"}
 _API_URL = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
 _client = CeceliaClient(base_url=_API_URL)
 _monitor = SessionMonitor()
-mcp = FastMCP("cecelia-observer")
+# `instructions` reaches the client in the `initialize` response and lands in its system prompt, which
+# is what makes "check my project in cecelia" enough on its own — the assistant knows to resolve the
+# project and pull the briefing without the user pasting a prompt. Kept short on purpose; the long
+# form is delivered by get_session_briefing. See cecelia_mcp/guidance.py for the split and its budget.
+mcp = FastMCP("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
+
+
+@mcp.tool()
+def list_projects() -> list:
+    """Every Cecelia project on this machine, MOST-RECENTLY-OPENED FIRST — so for "my project" / "my
+    current project" with no id given, the first entry is the one the user is working in. Name it back
+    to them instead of asking for a uid (they mostly do not know it; it is in the app's title bar).
+
+    `lastOpenedAt` is stamped when a project is OPENED in Cecelia, so the order tracks what the user
+    has actually been looking at — not when the data was created. Two caveats worth stating out loud
+    rather than guessing past: a project the user opened in a different install/projects dir is not
+    here, and if they switch projects in the app mid-session this order goes stale. If the top entry
+    is not the obvious match for what they asked about, say what you found and let them pick."""
+    return [
+        {"uid": p.get("uid"), "name": p.get("name"),
+         "lastOpenedAt": p.get("lastOpenedAt"), "createdAt": p.get("createdAt")}
+        for p in _client.get_projects().get("projects", [])
+    ]
 
 
 @mcp.tool()
@@ -455,9 +484,18 @@ def get_session_briefing(project_uid: str) -> dict:
         `[{uid, name, worst: warn|fail, findings: [{level, short}]}]`
       - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
 
+      - `guidance`: HOW TO WORK WITH THIS PROJECT — the disciplines that span tools (what to check
+        before proposing any figure or cross-image comparison, and the rules for the few things you can
+        write). Read it before you propose anything; it is written to be followed, not summarised.
+
     Use it to open with what matters ("3 of 12 images flagged; 2 have too few tracks") and to pick up
     where the last session left off (the lab log). Then ask the user which direction to take. Read-only."""
-    return _client.get_session_briefing(project_uid)
+    # The guidance rides along with the briefing rather than sitting in the server instructions: it is
+    # ~600 words that only matter once a session actually opens a project, and the observer is
+    # registered user-scope, so in the instructions it would be in context for every unrelated `claude`
+    # session on the machine. Server-side, not pasted by the user — that is the whole point (see
+    # guidance.py). Merged into the response so one call orients AND briefs.
+    return {**_client.get_session_briefing(project_uid), "guidance": BRIEFING_GUIDANCE}
 
 
 @mcp.tool()

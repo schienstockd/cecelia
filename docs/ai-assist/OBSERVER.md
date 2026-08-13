@@ -30,15 +30,19 @@ The value of the observer session depends entirely on what Claude can see. Claud
 ## MCP tools to implement
 
 > **Adding a tool touches THREE files.** `mcp/cecelia_mcp/server.py` (the tool, plus a `client.py`
-> method and its `ALLOWED_ROUTES` entry) — and **both** prompts: `app/src/ai/observer_prompt.jl`
-> (`_OBSERVER_RULES`, the in-app observer) and `frontend/src/lib/chatHandoff.ts` (`buildChatPrompt`,
-> the Chat-to-Claude prompt the user pastes). An unmentioned tool is an unused one: the assistant
-> never offers the capability. This has gone stale **twice** — `create_chain`, then
+> method and its `ALLOWED_ROUTES` entry), `mcp/cecelia_mcp/guidance.py` (what the server tells any
+> session about its own toolset), and `app/src/ai/observer_prompt.jl` (`_OBSERVER_RULES`, the in-app
+> observer's system prompt). An unmentioned tool is an unused one: the assistant never offers the
+> capability. This has gone stale **twice** — `create_chain`, then
 > `get_analysis_boards`/`get_image_attributes` — both caught only when Dominik pasted his prompt and
-> noticed the gap. The ⚠️ comment in `chatHandoff.ts` did not prevent either, because you only read it
-> if you already knew the second file existed. It is now enforced by `app/test/suite.jl` →
-> *"the two observer prompts name the same MCP tools"*, which parses `@mcp.tool()` out of `server.py`
-> and asserts the prompts' asymmetry equals an explicit, commented allowlist.
+> noticed the gap. A ⚠️ comment did not prevent either, because you only read it if you already knew
+> the other file existed, so each half is enforced by a test in its own language:
+> `mcp/tests/test_server.py` → `GuidanceTest` (every registered tool is named in `guidance.py`, bar an
+> explicit three-tool exemption) and `app/test/suite.jl` → *"the in-app observer prompt names the MCP
+> tools it can use"* (parses `@mcp.tool()` out of `server.py`, asserts the omissions equal a
+> commented allowlist). There used to be a fourth surface — a ~900-word prompt in
+> `frontend/src/lib/chatHandoff.ts` that the user copied into their session — and it is exactly the
+> copy that went stale both times; see *The hand-off is one line* below.
 
 
 **Read-only (Phase 1 — implement now):**
@@ -81,6 +85,32 @@ Only expose endpoints that already exist and are stable in the Julia API. Add mi
 ## Transport
 
 stdio — standard for local MCP servers. Claude Code connects over stdin/stdout. The MCP server starts alongside the Julia API or independently for sessions where the GUI isn't running.
+
+## The hand-off is one line — the server briefs itself
+
+**"hey claude, check my current project in cecelia" is the whole prompt.** Nothing is pasted, and
+that is a deliberate reversal: the Chat-to-Claude button used to copy ~900 words naming every tool
+and every discipline, so how well the session went depended on the user remembering to paste a wall
+of text they had no reason to read. Two things fixed it, both in `mcp/cecelia_mcp/guidance.py`:
+
+| Constant | Delivered by | Cost | Carries |
+|---|---|---|---|
+| `SERVER_INSTRUCTIONS` | `FastMCP(instructions=…)` → the `initialize` response → the client's system prompt | **always in context**, in every session with the server registered | the entry point only: resolve the project via `list_projects`, then `get_session_briefing`; read-only + designs-but-never-starts; don't self-configure |
+| `BRIEFING_GUIDANCE` | `get_session_briefing`'s `guidance` field | nothing until a session opens a project | the working rules: grouping/replicates, boards, chains, cohort QC, how to open |
+
+The split is a budget, not taste. The observer is registered **user-scope** (`claude mcp add-json …
+-s user`, see OBSERVER-SETUP.md), so `instructions` sits in the system prompt of *every* `claude`
+session on the machine — most of which are not about Cecelia. Anything that can wait for the
+briefing waits for the briefing; a rule that must hold *before* the first tool call cannot.
+
+`list_projects` is what makes "my project" resolvable with no uid: `/api/projects` is ordered by
+`lastOpenedAt` (stamped when a project is opened in the app), so the first entry is the one the user
+is looking at. It is an inference, not a fact — the tool's docstring says so, and says to name the
+project back rather than assume.
+
+Per-tool detail stays in each tool's own docstring (also always in context); `guidance.py` is only
+for what spans tools. `buildChatPrompt` survives as one line, because the one thing the server cannot
+infer is *which* project — the app knows, so it says so.
 
 ## The observer session (sit next to me mode)
 
@@ -243,9 +273,9 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   `/api/tasks/definitions`, trimmed at the MCP boundary.
 - **§1 parameter suggestions** — on a cohort outlier, Claude reads the trail + `get_module_params` range
   and suggests an in-range direction (`observer_prompt.jl`), framed suggestion-not-instruction.
-- **`get_session_briefing`** — chat startup context (name/count + flagged images + recent lab log);
-  `buildChatPrompt` calls it first. Flagged uses the one canonical `all_qc_docs` (shared with the image
-  table).
+- **`get_session_briefing`** — chat startup context (name/count + flagged images + recent lab log),
+  plus the `guidance` payload; the server instructions send every session here first. Flagged uses the
+  one canonical `all_qc_docs` (shared with the image table).
 - **REPL knowledge (`get_repl_api` + `docs/REPL.md`)** — the notebook-safe accessor allow-list
   (`NOTEBOOK_API`) with live docstrings; a golden test keeps REPL.md from drifting.
 - **`create_notebook`** — generates a runnable Pluto notebook from cells (`/api/notebooks/write`).

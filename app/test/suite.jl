@@ -1071,56 +1071,66 @@ end
     @test occursin("press Run", fp)
 end
 
-@testset "the two observer prompts name the same MCP tools" begin
-    # THE recurring bug in this area, twice now: an MCP tool is added, ONE of the two prompts is
-    # updated, and the other silently goes stale — an unmentioned tool is an unused one, so the
+@testset "the in-app observer prompt names the MCP tools it can use" begin
+    # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
+    # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
     # capability just never gets offered. It surfaced both times only because Dominik pasted his
     # Chat-to-Claude prompt and noticed something missing (create_chain the first time,
     # get_analysis_boards/get_image_attributes the second).
     #
-    # A warning comment inside one of the files cannot fix this — you only read it if you already knew
-    # the other file existed. So the invariant is enforced here instead, across all three sources.
-    # Same idea as "calibration writers agree across languages": two implementations that cannot call
-    # each other get a test that compares them.
+    # There used to be a SECOND prompt to compare against here (`buildChatPrompt` in
+    # frontend/src/lib/chatHandoff.ts, the wall of text the user pasted). It is now one line: the tool
+    # knowledge moved into the MCP server itself (mcp/cecelia_mcp/guidance.py), which is where the
+    # server can hand it to any session without the user pasting anything. So the guard splits by
+    # language, each half in the one that can read its own constants:
+    #   - HERE: the in-app prompt (`_OBSERVER_RULES`, Julia) vs the tools server.py registers.
+    #   - mcp/tests/test_server.py: `guidance.py` vs the same tool list, against the real constants
+    #     (this test can only pattern-match a file, so a name in a Python COMMENT would fool it).
+    #   - frontend/src/lib/chatHandoff.test.ts: asserts the pasted line names NO tool, so the copy
+    #     that went stale twice cannot grow back.
+    # Same idea as "calibration writers agree across languages": implementations that cannot call each
+    # other get a test that compares them.
     #
-    # The prompts are NOT required to name the same set — they address different surfaces — but every
-    # difference must be DELIBERATE and listed below. Adding a tool to one prompt and not the other now
-    # fails here, naming the offender.
+    # The in-app prompt is NOT required to name every tool — it addresses a narrower surface — but
+    # every omission must be DELIBERATE and listed below. Adding a tool the in-app observer should be
+    # offering, and forgetting the prompt, now fails here and names the offender.
     root = normpath(joinpath(@__DIR__, "..", ".."))
     server = read(joinpath(root, "mcp", "cecelia_mcp", "server.py"), String)
-    jl     = read(joinpath(root, "app", "src", "ai", "observer_prompt.jl"), String)
-    ts     = read(joinpath(root, "frontend", "src", "lib", "chatHandoff.ts"), String)
+    # The PROMPT, not the file that holds it: a tool name in a source comment (this file's own header
+    # names several) would otherwise count as "mentioned" and mask a real omission. That is not
+    # hypothetical — rewording the header alone flipped this assertion once.
+    jl = Cecelia.observer_feedback_prompt("NRUBxU")
 
     tools = Set(String[m.captures[1] for m in eachmatch(r"@mcp\.tool\(\)\s*\ndef (\w+)", server)])
     @test length(tools) >= 30                          # anti-vacuity: a bad regex must not pass
     named_jl = Set(t for t in tools if occursin(t, jl))
-    named_ts = Set(t for t in tools if occursin(t, ts))
 
-    # In the IN-APP prompt only — it drives the autonomous observer loop, which the user's own session
-    # has no use for.
-    @test setdiff(named_jl, named_ts) == Set(["poll_observations"])
-    # In the CHAT HAND-OFF only — orientation + authoring aids for a session the user starts fresh;
-    # the in-app agent is already oriented and does not browse notebooks.
-    # (`get_available_plots` left this list when add_analysis_board landed — the in-app observer needs
-    # the spec ids and each spec's chart types to author a board, so both prompts now name it.)
-    # LabArchives is CHAT-ONLY, and structurally so: the in-app agent is spawned with `--mcp-config`
-    # listing ONLY cecelia-observer, so it has no LabArchives connector and could never read an ELN.
-    # Mentioning the tools there would advertise a capability that build cannot have.
-    @test setdiff(named_ts, named_jl) ==
-        Set(["get_session_briefing", "list_notebooks", "set_notebook_description",
-             "get_labarchives_context", "set_labarchives_context"])
-    # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
-    # prompt, plus the observer's own bookkeeping.
-    @test setdiff(tools, union(named_jl, named_ts)) ==
-        Set(["get_image_notes", "get_observer_stats", "get_qc_metrics", "get_spatial_stats",
-             "set_observer_active"])
-    # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
-    # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
-    # (set_labarchives_context is deliberately absent — see the chat-only note above.)
+    # NOT named in the in-app prompt, each for a reason:
+    #   - the in-app agent is spawned against ONE project it was given, so it needs neither the
+    #     project picker nor the chat-session briefing;
+    #   - browsing/renaming notebooks is a chat activity (it authors and revises, it does not shop);
+    #   - LabArchives is CHAT-ONLY, and structurally so: the in-app agent is spawned with
+    #     `--mcp-config` listing ONLY cecelia-observer, so it has no LabArchives connector and could
+    #     never read an ELN. Naming the tools would advertise a capability that build cannot have;
+    #   - per-image detail (notes / single-image QC / spatial) is reached from a summary, not from the
+    #     prompt;
+    #   - get_observer_stats / set_observer_active are the observer's own bookkeeping.
+    @test setdiff(tools, named_jl) ==
+        Set(["list_projects", "get_session_briefing",
+             "list_notebooks", "set_notebook_description",
+             "get_labarchives_context", "set_labarchives_context",
+             "get_image_notes", "get_qc_metrics", "get_spatial_stats",
+             "get_observer_stats", "set_observer_active"])
+    # Every WRITE the in-app observer can make must be named: a mutating capability nobody mentions is
+    # a capability the assistant never uses, which is how create_chain sat unmentioned for a release.
     for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
               "add_analysis_board")
-        @test w in named_jl && w in named_ts
+        @test w in named_jl
     end
+    # `poll_observations` is the one tool the in-app prompt names that the chat guidance does not — it
+    # drives the autonomous observer loop, which a user's own session has no use for. Asserted from
+    # this side because it is the in-app prompt's distinguishing tool.
+    @test "poll_observations" in named_jl
 end
 
 @testset "MCP connections — enumerate whatever is registered" begin
