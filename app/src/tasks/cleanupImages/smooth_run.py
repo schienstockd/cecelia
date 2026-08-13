@@ -76,7 +76,6 @@ def run(params):
     stat         = str(params.get('temporalStat', 'median'))
     restore_gain = bool(params.get('restoreGain', True))
 
-    log.progress(0, 4)
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read is one chunk-aligned plane, so a dask graph only adds
     # overhead. Same reasoning as drift_correct_run.py (docs/todo/ZARR_STREAMING_PLAN.md).
@@ -103,6 +102,15 @@ def run(params):
 
     half = max(0, (frames - 1) // 2) if frames and frames > 1 else 0
 
+    # One progress scale across the whole run rather than a 4-step one, same as drift_correct_run.py:
+    # the streaming loop below is the minutes-long part and the old scale stood still through all of
+    # it (25% → 50% → done). One tick per z-plane — the same beat as the log's `z i/nz` lines — plus
+    # the gain estimate and the pyramid. Deliberately NOT per (z, timepoint): that is `nz * nt` ticks
+    # (~6.7k on a 37 z × 181 t movie), a progress line per plane for a bar that only has so many pixels.
+    total = nz + 2
+    done = 0
+    log.progress(done, total)
+
     def read_plane(t, c, z):
         return np.asarray(level_in[_plane_slice(len(shape), t_idx, t, c_idx, c, z_idx, z)],
                           dtype=np.float32)
@@ -117,7 +125,6 @@ def run(params):
     dtype_max = np.iinfo(zarr_utils.native_dtype(level_in.dtype)).max \
         if np.issubdtype(level_in.dtype, np.integer) else None
     if restore_gain and dtype_max is not None:
-        log.progress(1, 4)
         log.log('>> estimate dynamic-range gain')
         rng = np.random.default_rng(0)
         picks = [(int(rng.integers(0, nt)), int(rng.integers(0, nz)))
@@ -134,8 +141,11 @@ def run(params):
             gain = max(1.0, hi_in / hi_sm)
         log.log(f'   input p99.99 {hi_in:.1f}, smoothed {hi_sm:.1f} -> gain {gain:.2f}')
 
+    # Counted whether or not it ran, so the scale means the same thing with restoreGain off.
+    done = 1
+    log.progress(done, total)
+
     # ── stream ─────────────────────────────────────────────────────────────────────────────────
-    log.progress(2, 4)
     log.log(f'>> smooth + write (streaming per z-plane): {out_path}')
     stats = {'zeroFracIn': {}, 'zeroFracOut': {}, 'clippedVoxels': 0, 'gain': gain}
     zin = {c: [] for c in sel}
@@ -186,10 +196,11 @@ def run(params):
                 for key in [k for k in cache if k[0] < t - half]:
                     del cache[key]
 
+            done += 1
+            log.progress(done, total)
             if nz > 1:
                 log.log(f'   z {z + 1}/{nz}')
 
-        log.progress(3, 4)
         log.log('>> build pyramid + save')
         zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
         ome_xml_utils.save_meta_in_zarr(staging, im_path, changed_shape=shape, dim_utils=dim_utils)
@@ -226,7 +237,7 @@ def run(params):
         write_json_atomic(qc_out_path, stats)
         log.log(f'>> saved QC stats: {qc_out_path}')
 
-    log.progress(4, 4)
+    log.progress(total, total)
     log.log('>> done')
 
 
