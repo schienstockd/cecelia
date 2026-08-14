@@ -299,7 +299,7 @@ is segmented, which is most images.
 | `models[].medianFilter` | int | 0 | Median filter kernel (0=off) |
 | `models[].gaussianFilter` | float | 0.0 | Gaussian sigma (0=off) |
 | `models[].threshold` | int | 0 | Absolute intensity gate; pixels below set to 0 |
-| `models[].stitchThreshold` | float | 0.0 | Z-stitch threshold (0=2D per slice, no stitch) |
+| `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch) |
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
 | `labelOverlap` | float | 0.0 | IoU threshold for tile seam stitching; 0 = simple np.maximum merge |
