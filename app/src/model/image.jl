@@ -57,6 +57,16 @@ function img_zero_dir(img::CciaImage)::String
     joinpath(dirname(dirname(img._dir)), "0", img.uid)
 end
 
+"""Project directory this image lives in — `{projects_dir}/{proj_uid}/` (`img._dir` is `{proj}/1/{uid}/`)."""
+img_project_dir(img::CciaImage)::String = dirname(dirname(img._dir))
+
+"""
+Project uid this image belongs to. The uid IS the project directory's name (see
+`docs/OBJECTMODEL.md`), so it is read off the path rather than stored on the image — an image that
+was copied into another project belongs to that project, whatever any baked-in value would say.
+"""
+img_project_uid(img::CciaImage)::String = basename(img_project_dir(img))
+
 """Absolute path to the active (or named) filepath version. Resolves into the 0 (image) dir."""
 function img_filepath(img::CciaImage, name::Union{String,Nothing}=nothing)::Union{String,Nothing}
     filename = isnothing(name) ? versioned_get(img.filepath) : get(img.filepath, name, nothing)

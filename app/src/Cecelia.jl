@@ -32,7 +32,7 @@ export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, move_image!
-export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, img_is_calibrated,
+export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated,
        image_included
 export img_axes, img_has_time
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name

@@ -22,6 +22,10 @@ For how a task that has LEFT this snapshot ended, see `recent_tasks()` (`tasks/t
 this one cannot answer that, and inferring an outcome from a row's absence is how the task console
 came to report every finished task as "outcome unseen".
 
+`project_uid` says which project `image_uid` belongs to — one server serves every project under
+`projects_dir()`, so an image uid on its own doesn't. Resolved at submit time; `""` for a task
+registered without an image (there is none today).
+
 `live_outputs` carries the stores the task is streaming into right now (usually empty — see
 `live_outputs` in task.jl). This snapshot is therefore also the answer to "what can I watch while it
 runs?", which is how the napari viewer offers a preview of a segmentation before `ccid.json` knows
@@ -40,7 +44,7 @@ the alternative is a client guessing, and a guessed param set is a silently diff
 function list_tasks()
     lock(_TASKS_LOCK) do
         [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
-           image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
+           image_uid=rec.image_uid, project_uid=rec.project_uid, chain_run_id=rec.chain_run_id,
            chain_node_id=rec.chain_node_id,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
            started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs,
@@ -293,6 +297,11 @@ mutable struct TaskRecord
     fun_name::String
     pool_name::String
     image_uid::String
+    # Which project the image belongs to — resolved from the image at submit time (`img_project_uid`),
+    # because nothing downstream can recover it: the record only carries a uid, and one server serves
+    # every project under `projects_dir()`, so a bare image uid doesn't say whose it is. Reported so a
+    # client watching the whole rail (the task console) can say which project a row's image is in.
+    project_uid::String
     chain_run_id::String                    # "" for standalone tasks; run.id for chain nodes
     # The chain NODE this task is, alongside the run it belongs to. Reported so a client can correlate the
     # task with the node it sees in chain events: the GUI keys a chain row `runId::nodeId::imageUid`, so
@@ -328,13 +337,14 @@ const _TASKS      = Dict{String, TaskRecord}()
 const _TASKS_LOCK = ReentrantLock()
 
 function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
+                         project_uid::String = "",
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
                          chain_node_id::String = "",
                          params::Dict{String,Any} = Dict{String,Any}())
     # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
     # so any start still on record belongs to the previous run and must not be inherited.
     forget_task_start!(id)
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, chain_run_id, chain_node_id, :queued,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, :queued,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs, params)
     lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
@@ -566,6 +576,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     pool      = _pool(pool_name)
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
+                                 project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, params = params)
     _set_status!(rec, :queued)
@@ -610,6 +621,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     pool      = _pool(pool_name)
     rep       = first(imgs)
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
+                                 project_uid = img_project_uid(rep),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, params = params)
     _set_status!(rec, :queued)

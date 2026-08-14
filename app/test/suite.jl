@@ -3660,8 +3660,13 @@ end
         # (frontend/src/utils/runningTasks.ts), each of which silently blanks a column if one is renamed.
         # Pinned here so a rename fails a test instead — the frontend pins its own half in
         # runningTasks.test.ts.
-        @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :chain_run_id, :chain_node_id,
-                            :status, :queued_at, :started_at, :params]), Set(keys(row)))
+        @test issubset(Set([:id, :fun_name, :pool_name, :image_uid, :project_uid, :chain_run_id,
+                            :chain_node_id, :status, :queued_at, :started_at, :params]), Set(keys(row)))
+        # …and WHICH project the image belongs to: one server serves every project under
+        # `projects_dir()`, so the task console (which watches the whole rail, not one project) can't
+        # tell two images apart by uid alone. Read off the image's path, never stored — the project's
+        # identity IS its directory name (docs/OBJECTMODEL.md).
+        @test row.project_uid == proj.uid == img_project_uid(img)
         # …and the params it was SUBMITTED with, which is what lets a client that didn't launch the task
         # offer Re-run: with only the fun_name it would relaunch on the JSON spec's defaults instead.
         @test row.params == Dict{String,Any}("modelType" => "cyto3", "diameter" => 17)
