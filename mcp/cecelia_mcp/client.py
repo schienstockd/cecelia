@@ -377,7 +377,8 @@ class CeceliaClient:
         return self._request("POST", "/api/chains/create",
                              body={"projectUid": project_uid, "template": template})
 
-    def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = ""):
+    def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = "",
+                           compare_by: str = ""):
         # Create-only: adds ONE board and cannot modify, delete, rename or reorder any existing one
         # (409 on a duplicate name, 422 on a spec the project cannot plot). Deliberately NOT
         # /api/projects/boards, which is the browser's autosave of the WHOLE document — allow-listing
@@ -385,4 +386,8 @@ class CeceliaClient:
         body: dict = {"projectUid": project_uid, "name": name, "plots": plots}
         if template:
             body["template"] = template
+        if compare_by:
+            # board-level: what the plots compare ACROSS images (per_image / summarised / an attribute
+            # name). Server-validated against the project's real attributes.
+            body["compareBy"] = compare_by
         return self._request("POST", "/api/boards/add", body=body)

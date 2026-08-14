@@ -249,7 +249,8 @@ def get_available_plots(module: str = "") -> list:
 
 
 @mcp.tool()
-def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "") -> dict:
+def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "",
+                       compare_by: str = "") -> dict:
     """ADD one Analysis board to the project — a figure the user opens on the /analysis page.
 
     Additive and one board per call: this cannot modify, rename, reorder or delete any board. It lands
@@ -283,13 +284,18 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     list_images' `attr` before anything cross-image. Pick the canonical clustering run rather than
     guessing among leftovers, and drop excluded images.
 
-    **A board authored here compares BY IMAGE — it cannot group by an experimental attribute.** The
-    board's own by-attribute mode (compare by Mouse/Location) lives in frontend panel state this tool
-    does not write, and only two specs offer it at all (population_summary, spatial_cell_properties).
-    So when the user's question is "does X differ between mice/treatments", say that plainly: offer the
-    per-image board AND tell them either to switch the board's scope to by-attribute in the GUI, or let
-    you build a notebook (create_notebook) that groups properly. Do not quietly hand over a per-image
-    board as if it answered the grouped question — with one image per mouse it is not the same figure.
+    `compare_by` is what the board compares ACROSS IMAGES — board-level, so it governs every plot on it:
+      - omitted        the app's default: one image at a time. A board with no `compare_by` is NOT a
+                       cross-image figure, whatever its plots are.
+      - "per_image"    one series per image
+      - "summarised"   the whole set pooled into one series
+      - an ATTRIBUTE NAME (e.g. "Mouse") groups images sharing that value into one series labelled by
+        it — the experimental comparison. Two may be combined: "Treatment,Mouse".
+    **This is the difference between a board and a figure.** If the user asks "does X differ between
+    mice/treatments", the answer is `compare_by="Mouse"`, not a per-image board with a caveat. Take the
+    name from get_image_attributes (the server rejects one the project does not have) and size the
+    groups with list_images' `attr` FIRST: grouping by an axis where each group holds one image is not a
+    comparison, and you should say so instead of drawing it.
 
     The server validates against the project and refuses to write a board that would render blank —
     unknown plot id, a chart that spec doesn't offer, a measure it doesn't carry, a population that
@@ -298,7 +304,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     clustering run is still wrong. So say in chat which values you read from the data and which you
     defaulted, and tell the user the board was added beside their own. Also give it a PLAIN name —
     write "Behaviour & tracking", never "&amp;"; the name is stored verbatim and you cannot rename it."""
-    return _client.add_analysis_board(project_uid, name, plots, template)
+    return _client.add_analysis_board(project_uid, name, plots, template, compare_by)
 
 
 @mcp.tool()

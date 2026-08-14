@@ -9373,13 +9373,23 @@ end
         # and ignores each slot's own — so an authored board rendered with NO series until the user
         # picked populations by hand. Regression test for exactly that.
         withpops = expand_board(proj, "sel", [Dict("plot" => "track_measures", "pops" => ["B/qc"])];
-                                pops = Dict("B/qc" => "flow"))
+                                pops = Dict("B/qc" => "live"))
         @test withpops["shared"]["scope"] == "local"
-        # The SPEC's own first popType wins over the family the pop happens to be stored under: a flow
-        # gate is legitimately usable as a `live` pop, and track_measures fetches live — which is why
-        # the project's real boards store `live::B/qc/_tracked`. The picker's family is only the
-        # fallback for a spec that offers no popTypes at all.
+        # A tkey is tagged with the population's OWN family — the same tag the picker puts on it (see
+        # plot_population_groups), which is what the frontend builds its tkeys from.
+        #
+        # This fixture used to say `Dict("B/qc" => "flow")` and expect `live::B/qc`, on the reasoning
+        # that "a flow gate is legitimately usable as a live pop". That was a misreading of why the real
+        # project stores `live::B/qc/_tracked`: it stores live because the PICKER TAGS those pops live
+        # (`load_pop_map(img, vn, "live")` returns the gate tree, and the derived `_tracked` pops are
+        # injected under live). Checked against the real project — its families are live (B/qc, T/qc,
+        # and their `_tracked` children), labels, region and trackclust; nothing is tagged flow. A
+        # genuinely flow-tagged population is NOT reachable on track_measures, which offers only
+        # live/track/trackclust, and writing `live::` over it would have produced a blank panel.
         @test withpops["contents"][1]["state"]["sel"] == ["live::B/qc"]
+        # …and that case is now refused rather than silently mis-tagged
+        @test_throws BoardSpecError expand_board(proj, "sel-flow",
+            [Dict("plot" => "track_measures", "pops" => ["B/qc"])]; pops = Dict("B/qc" => "flow"))
         # and nothing else is invented in the shared bag — the rest are frontend defaults
         @test collect(keys(withpops["shared"])) == ["scope"]
 
@@ -9418,23 +9428,73 @@ end
         # describe a board the same way (Decision 2)
         @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
               ["B/qc/_tracked", "T/qc/_tracked"]
-        # An explicit popType is honoured ONLY when it is the spec's own default — stating it is
-        # redundant, but not wrong.
+        # ── popType must REACH the named populations ────────────────────────────────────────────────
+        # The panel fetches its list with `plot_pop_types(popType, granularity)` and tags each pop with
+        # the family it was found under; a tkey outside that expansion matches nothing and the panel
+        # renders empty with no error. So the check is reachability, not membership.
+        #
+        # Stating the popType the derivation would pick anyway is redundant but fine:
         @test expand_board(proj, "pt-ok", [Dict("plot" => "track_measures", "popType" => "live",
                                                 "pops" => ["B/qc/_tracked"])];
                            pops = avail)["contents"][1]["state"]["sel"] == ["live::B/qc/_tracked"]
-        # …and REFUSED otherwise. This used to override, and that is how a whole authored board came out
-        # blank: `popType: "track"` on `T/qc/_tracked` wrote `track::T/qc/_tracked`, which the panel
-        # cannot resolve, so all four plots said "Select one or more populations" and the board's
-        # population list showed 0 — no error anywhere. Note "track" IS in track_measures' offered
-        # popTypes ["live","track","trackclust"], so a membership check would not have caught it:
-        # offering a family is not the same as a population being available under it.
+        # …and "track" is REFUSED even though track_measures offers it. This is the real bug, traced:
+        # `plot_pop_types("track", "track") == ["track"]`, track-family pops are gates drawn on per-track
+        # measures (`{vn}__tracks.json`), and the project that hit this has none — so the picker returned
+        # ZERO populations, all four plots said "Select one or more populations", and nothing errored.
+        # A membership check would have passed it: "track" IS in ["live","track","trackclust"].
         e_pt = try expand_board(proj, "pt-bad", [Dict("plot" => "track_measures", "popType" => "track",
                                                      "pops" => ["B/qc/_tracked"])]; pops = avail)
                catch err; err end
         @test e_pt isa BoardSpecError
         @test occursin("track", e_pt.msg) && occursin("live", e_pt.msg)   # names both, so a caller can fix it
         @test occursin("blank", e_pt.msg)                                 # …and says why it matters
+
+        # A CLUSTER board must still work: population_summary's first offered popType is "flow", but
+        # trackclust pops are only reachable under "trackclust", so the derivation must walk past the
+        # default rather than stamping it. (Dominik's own "Clustering" board is exactly this shape — an
+        # earlier version of this fix, which allowed only the spec's default, would have refused to
+        # re-author it.)
+        clust = Dict("B/Directed" => "trackclust", "B/Scanning" => "trackclust")
+        cl = expand_board(proj, "clust", [Dict("plot" => "population_summary",
+                                               "pops" => ["B/Directed", "B/Scanning"])]; pops = clust)
+        @test cl["contents"][1]["state"]["popType"] == "trackclust"
+        @test cl["contents"][1]["state"]["sel"] == ["trackclust::B/Directed", "trackclust::B/Scanning"]
+        # …and explicitly asking for it is accepted, because it reaches them
+        @test expand_board(proj, "clust2", [Dict("plot" => "population_summary", "popType" => "trackclust",
+                                                 "pops" => ["B/Directed"])];
+                           pops = clust)["contents"][1]["state"]["popType"] == "trackclust"
+        # a plot that cannot reach the populations at all is refused, naming what it does offer
+        e_reach = try expand_board(proj, "unreach", [Dict("plot" => "spatial_interactions",
+                                                          "pops" => ["B/Directed"])]; pops = clust)
+                  catch err; err end
+        @test e_reach isa BoardSpecError && occursin("flow", e_reach.msg)
+
+        # ── compareBy: what makes a board a FIGURE ───────────────────────────────────────────────────
+        # Board-level, because useSummaryData destructures compareMode/compareAttr out of the SHARED
+        # bag. Without it an authored board sits on the frontend default (single image) — which is how
+        # a board built for a 4-mouse experiment came out comparing images, unable to answer the
+        # question it was asked.
+        one = [Dict("plot" => "track_measures")]
+        have = ["Treatment", "Mouse"]   # injected like `pops` — no project on disk needed
+        @test !haskey(expand_board(proj, "c0", one)["shared"], "compareMode")   # omitted → untouched
+        @test expand_board(proj, "c1", one; compare_by = "per_image", attrs = have)["shared"]["compareMode"] == "per_image"
+        @test expand_board(proj, "c2", one; compare_by = "summarised", attrs = have)["shared"]["compareMode"] == "summarised"
+        # an attribute name → by_attr
+        s_attr = expand_board(proj, "c3", one; compare_by = "Mouse", attrs = have)["shared"]
+        @test s_attr["compareMode"] == "by_attr" && s_attr["compareAttr"] == "Mouse"
+        @test !haskey(s_attr, "compareAttr2")
+        # two combine, in order
+        s_two = expand_board(proj, "c4", one; compare_by = "Treatment,Mouse", attrs = have)["shared"]
+        @test s_two["compareAttr"] == "Treatment" && s_two["compareAttr2"] == "Mouse"
+        # …and an attribute the project does not have is refused, naming the ones it does — grouping by
+        # a name nothing carries silently falls back to per-image, i.e. the wrong figure, drawn.
+        e_attr = try expand_board(proj, "c5", one; compare_by = "Genotype", attrs = have) catch err; err end
+        @test e_attr isa BoardSpecError && occursin("Genotype", e_attr.msg) && occursin("Mouse", e_attr.msg)
+        @test_throws BoardSpecError expand_board(proj, "c6", one; compare_by = "Mouse,Treatment,Location", attrs = have)
+        # an UNANNOTATED set gets told what to do instead, not just "no such attribute" — this is the
+        # common case (nobody annotated the images) and "Available: " with an empty list is a dead end.
+        e_none = try expand_board(proj, "c7", one; compare_by = "Mouse", attrs = String[]) catch err; err end
+        @test e_none isa BoardSpecError && occursin("per_image", e_none.msg)
         # more plots than slots
         @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
 

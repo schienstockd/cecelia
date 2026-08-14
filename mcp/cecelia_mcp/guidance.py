@@ -91,9 +91,14 @@ ON BOARDS. add_analysis_board ADDS one board to the /analysis page — it cannot
 reorder or delete one, so it lands beside the user's own and costs a click to delete if it is wrong. \
 Give the plots in reading order using the spec ids from get_available_plots and the exact \
 "valueName/pop" strings from get_populations; the server rejects a plot or population that does not \
-exist rather than writing a board that renders blank. Prefer statUnit "image" when the per-image n \
-is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say which \
-values you read from the data and which you defaulted.
+exist, or a popType that cannot reach the populations you named, rather than writing a board that \
+renders blank. Do NOT set popType — it is derived from the populations. Set `compare_by` to whatever \
+the figure compares across images: an attribute name ("Mouse") for the experimental comparison, else \
+"per_image" or "summarised". Omitting it gives a single-image board, which is not a cross-image \
+figure however good the plots are — so if the question was "does X differ between mice", the answer \
+is compare_by="Mouse", not a per-image board with an apology. Prefer statUnit "image" when the \
+per-image n is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say \
+which values you read from the data and which you defaulted.
 
 ON CHAINS. You can DESIGN one but you cannot run it. create_chain writes a template that sits inert \
 in the Chains whiteboard until the user presses Run, and there is no tool that starts it — so hand \

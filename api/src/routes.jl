@@ -962,7 +962,8 @@ function api_boards_add(body_bytes::Vector{UInt8})
             return 409, JSON3.write((; error="A board named \"$(strip(name))\" already exists in this project",
                                        code="duplicate_board_name"))
         end
-        layout = expand_board(proj, name, plots; template = template)
+        layout = expand_board(proj, name, plots; template = template,
+                              compare_by = String(get(body, :compareBy, "")))
         updated, id = append_board(doc, name, layout)
         version = write_boards_doc(path, updated; version = doc.version + 1)
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
