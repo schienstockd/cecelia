@@ -19,7 +19,9 @@ has to not break them):
     below therefore caches *spatially smoothed* frames and takes the temporal statistic across them.
   * **one shared kernel for every channel.** The consumer is a cross-channel ratio (AF's weight is
     `b_t^p / sum_i b_i^p`), so a per-channel transform corrupts it. That extends to the dynamic-range
-    gain below: ONE gain for all smoothed channels, never per-channel.
+    gain below: ONE gain for all smoothed channels, never per-channel. For `stat="gated"`, whose
+    kernel is ADAPTIVE, "shared" has to mean shared WEIGHTS: the match and the gate are derived once
+    from the summed channels of the window and applied to each — see the gated branch below.
 
 Parameter contract (JSON written by Julia):
   imPath           - absolute path to input .ome.zarr
@@ -42,7 +44,7 @@ from cecelia.utils.atomic_io import write_json_atomic
 
 # coastal owns the smoothing engine (array-only, imports nothing from cecelia). Declared as a git
 # dep in pixi.toml — see the note there for why it is no longer an editable sibling path.
-from coastal.smooth import spatial_smooth, temporal_smooth
+from coastal.smooth import spatial_smooth, temporal_smooth, gated_frame, noise_sigma
 
 #: How many (t, z) planes to sample when estimating the dynamic-range gain. The gain only needs the
 #: right order of magnitude, and a sample keeps this from being a second full pass over the store.
@@ -101,6 +103,15 @@ def run(params):
             f'sigma={sigma}, frames={frames}, stat={stat}')
 
     half = max(0, (frames - 1) // 2) if frames and frames > 1 else 0
+    gated = stat == 'gated' and half > 0
+
+    # ── the gate's noise scale ─────────────────────────────────────────────────────────────────
+    # Estimated ONCE, from a sample, and handed to every frame. `gated_frame` would otherwise
+    # estimate it per window — a 3-9 frame sample — so the gate's strictness would drift between
+    # z-planes and timepoints for no physical reason. The noise level is a property of the
+    # acquisition, not of the window we happen to be holding. (coastal pins the two forms equal
+    # given one sigma.)
+    gate_sigma = None
 
     # One progress scale across the whole run rather than a 4-step one, same as drift_correct_run.py:
     # the streaming loop below is the minutes-long part and the old scale stood still through all of
@@ -141,6 +152,20 @@ def run(params):
             gain = max(1.0, hi_in / hi_sm)
         log.log(f'   input p99.99 {hi_in:.1f}, smoothed {hi_sm:.1f} -> gain {gain:.2f}')
 
+    if gated:
+        log.log('>> estimate the gate noise scale')
+        rng = np.random.default_rng(1)
+        zs = sorted({int(rng.integers(0, nz)) for _ in range(min(3, nz))})
+        span = min(nt, 8)
+        samples = []
+        for z in zs:
+            # the guide is the SUM over smoothed channels, so estimate on that same quantity
+            slab = np.stack([sum(spatial_smooth(read_plane(t, c, z), sigma) for c in sel)
+                             for t in range(span)])
+            samples.append(noise_sigma(slab))
+        gate_sigma = float(np.median(samples))
+        log.log(f'   gate sigma {gate_sigma:.2f} (median of {len(samples)} z-planes)')
+
     # Counted whether or not it ran, so the scale means the same thing with restoreGain off.
     done = 1
     log.progress(done, total)
@@ -170,8 +195,24 @@ def run(params):
                 return cache[key]
 
             for t in range(nt):
+                # `gated` needs every selected channel's window at once: the match and the weight come
+                # from their SUM, so that one gate can be applied to all of them (the AF-ratio
+                # invariant, for an adaptive kernel). Built per timepoint from the same cache the
+                # other stats use, so memory is still bounded by the window.
+                gate_out = {}
+                if gated:
+                    wins = {c: np.stack([spatial_at(tt, c)
+                                         for tt in range(t - half, t + half + 1)]) for c in sel}
+                    guide = None
+                    for w in wins.values():
+                        guide = w.copy() if guide is None else guide + w
+                    for c in sel:
+                        gate_out[c] = gated_frame(wins[c], guide=guide, sigma=gate_sigma)
+
                 for c in sel:
-                    if half == 0:
+                    if gated:
+                        out = gate_out[c]
+                    elif half == 0:
                         out = spatial_at(t, c)
                     else:
                         # spatial FIRST (cached), then the temporal statistic across the window

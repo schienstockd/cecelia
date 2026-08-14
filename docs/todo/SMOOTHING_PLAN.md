@@ -6,6 +6,49 @@ composite. Measurements are real (2026-08-04) on `zolIMa/fXgbTl` (16-bit, the op
 `zolIMa/Dml3RG` movie (drift-corrected, 181×4×35×1036×1055, ~30 min). See *What was built* below for
 where the implementation diverged from this design — read that before trusting the sections above it.
 
+## 2026-08-14 — a third statistic: `gated`
+
+The design below is unchanged and still describes why this task exists (AF's background derivation on
+photon-starved data). What follows is an addition, driven by a different regime: 30 s intravital
+movies that are NOT photon-limited, where the temporal median was visibly over-smoothing.
+
+**The diagnosis.** At 30 s the median inter-frame displacement over signal is ~1 px, but the tail runs
+to 2.7 px (p90) and ~6 px (p99). So the median denoises the near-static majority well and smears
+exactly the moving cells — the thing being measured. Temporal redundancy is real but **not
+co-located**, and a fixed window assumes it is.
+
+**`stat='gated'`** block-matches a ±1 px window to find where each patch went, then weights each
+neighbour by how well the matched patch agrees. Static content averages fully; content that arrived,
+left, or could not be tracked matches nowhere, the weights collapse, and the output is the current
+frame. Worst case is the identity, never a blur.
+
+Measured on `WIaUjL/p6t4mC` (30 s, C2) — noise removed / punctum amplitude kept / motion-sharpness
+ratio. The median degrades monotonically with window; the gate does not, so with it the window is
+finally worth raising:
+
+| window | median | gated |
+|---|---|---|
+| 3 | 32% / 0.92 / 0.96 | 25% / 1.00 / 1.00 |
+| 5 | 44% / 0.85 / 0.91 | 45% / 1.00 / 1.01 |
+| 9 | 53% / 0.69 / 0.77 | 54% / 1.00 / 1.02 |
+
+The sharpness metric is **differential** (gradient kept in moving regions ÷ in static ones). That is
+deliberate: a raw Sobel number cannot separate denoising from smearing on noisy data — both lower it —
+which is what made coastal's earlier B1 evaluation inconclusive.
+
+**It does not change the default.** `median` remains the default: `gated` is measured on this regime
+only, and the photon-limited case this task was built for (86–95% zero voxels) is untested with it.
+
+**Cross-channel ratio.** The one-shared-kernel invariant needed re-reading for an adaptive kernel: the
+gate is derived ONCE from the summed channels and applied identically to all. Gating per channel would
+decide differently at one voxel. Measured drift in AF's ratio, at matched noise reduction: `median(5)`
+0.0290 at 44%, shared gate 0.0129 at 45% — **the median it replaces perturbs the ratio more**, because
+a temporal median is nonlinear and per-channel, so each channel is pulled to a different timepoint's
+value. The invariant only ever covered the linear terms.
+
+**Not established:** behaviour at 15 s, on a second acquisition, or on photon-limited data; and whether
+the ratio moves in the RIGHT direction (that needs AF output compared downstream, not just drift).
+
 ## The problem, measured
 
 AF correction produced almost nothing on resonance-scanner movies (`zolIMa/2h06xA` and its crops).

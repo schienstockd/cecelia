@@ -51,9 +51,10 @@
       "default": "median",
       "options": [
         { "label": "Median", "value": "median" },
-        { "label": "Mean",   "value": "mean" }
+        { "label": "Mean",   "value": "mean" },
+        { "label": "Gated",  "value": "gated" }
       ],
-      "tip": "Median rejects a cell that moved through the window; mean inflates masks ~34%"
+      "tip": "Gated keeps per-frame sharpness; median blurs cells that moved, mean more so"
     },
     {
       "key": "restoreDynamicRange",
