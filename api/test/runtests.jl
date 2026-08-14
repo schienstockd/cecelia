@@ -3863,15 +3863,18 @@ end
     st, body = api_store_layout_get(HTTP.Request("GET", "/api/storage/layout"))
     @test st == 200
     d = JSON3.read(body)
-    @test d.default == "flat"                       # measured: same read time, ~14% less on disk
+    @test d.default == "nested"                     # flat was removed — see below
     @test d.current in [String(c.name) for c in d.choices]
     @test !isempty(String(d.measuredOn))
 
-    # The rows are the three VIABLE combinations, NOT the cross product. Flat keys + NGFF 0.5 cannot be
-    # written (bioformats2raw silently emits zarr v2 for that pair), so it must not be offered at all —
-    # an unreachable state beats a warned one.
-    @test length(d.choices) == 3
-    @test !any(String(c.chunkSeparator) == "flat" && String(c.ngffVersion) == "0.5" for c in d.choices)
+    # FLAT IS NOT OFFERED AT ALL (2026-08-14). It was the default, on ~14% less disk at identical read
+    # time — but re-measured on a real 3.5 GB movie the saving is ~5%, and a flat store conforms to no
+    # published NGFF version: nested storage is what 0.2 introduced, so flat keys are 0.1 storage under
+    # the 0.4-shaped metadata we write beside them. bioformats2raw stamped 0.1 for `--no-nested` while
+    # our own writers stamped 0.4 for the identical layout. Removing the choice makes the
+    # unnameable store unrepresentable, and retires the old flat+0.5 conflict with it.
+    @test length(d.choices) == 2
+    @test !any(String(c.chunkSeparator) == "flat" for c in d.choices)
     # every row carries its measured numbers, since that is the whole reason this is a table
     for c in d.choices
         for k in (:label, :keys, :dirs, :size, :read, :detail)

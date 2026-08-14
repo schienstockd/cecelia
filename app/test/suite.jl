@@ -11137,8 +11137,7 @@ end
 @testset "bioformats2raw format flags" begin
     # The import is the ONLY place the store format is chosen; derived stores inherit it
     # (docs/todo/ZARR_V3_PLAN.md D9).
-    ff(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[1]
-    conflicted(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)[2]
+    ff(args...; kw...) = Cecelia.bf2raw_format_flags(args...; kw...)
 
     @test isempty(ff("0.4", "auto"))                       # default = the command we always ran
     @test ff("0.5", "auto") == ["--ngff-version", "0.5"]
@@ -11155,20 +11154,15 @@ end
     end
 
     # ── chunk-key separator ──────────────────────────────────────────────────────
-    # Flat keys are the measured "fewer files" lever: 4 directories vs 224 on one conversion, 56x, with
-    # no format change. Nested is bioformats2raw's default and stays ours.
-    @test ff("0.4", "auto"; separator = "nested") == String[]
-    @test ff("0.4", "auto"; separator = "flat")   == ["--no-nested"]
-
-    # THE CONFLICT: --no-nested + --ngff-version 0.5 makes bioformats2raw silently write zarr v2
-    # (verified both flag orders). The two must never be emitted together, and the caller must be told.
-    @test ff("0.5", "auto"; separator = "flat") == ["--no-nested"]     # 0.5 dropped, not both
-    @test !("--ngff-version" in ff("0.5", "auto"; separator = "flat"))
-    @test conflicted("0.5", "auto"; separator = "flat")
-    @test !conflicted("0.5", "auto"; separator = "nested")
-    @test !conflicted("0.4", "auto"; separator = "flat")
-    # a conflicted request is no longer 0.5, so no shard flags ride along with it
-    @test ff("0.5", "1024"; separator = "flat", shard_depth = "all", z_planes = 13) == ["--no-nested"]
+    # `--no-nested` IS NEVER EMITTED (2026-08-14). Flat keys saved ~5% on a real movie at identical read
+    # time, but produce a store that conforms to no published NGFF version — nested storage is what 0.2
+    # introduced, so flat keys are 0.1 storage under the 0.4-shaped metadata written beside them. The
+    # separator is therefore no longer a parameter of this function at all, which also retires the old
+    # flat+0.5 conflict (that pair silently wrote zarr v2) by making it unrepresentable.
+    for v in ("0.4", "0.5"), sh in ("auto", "1024")
+        @test !("--no-nested" in ff(v, sh))
+    end
+    @test_throws MethodError Cecelia.bf2raw_format_flags("0.4", "auto"; separator = "flat")
 
     # ── shard depth ──────────────────────────────────────────────────────────────
     # The ONLY axis that reduces the file count on a 512x512 frame — width/height cap to the frame, so
