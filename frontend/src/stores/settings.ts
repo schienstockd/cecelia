@@ -10,6 +10,16 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.taskListAutoFollow') !== 'false'  // default true
   )
 
+  // Whether the Task Manager lists only the open project's tasks. ON by default: the store is not
+  // cleared when a project is opened (a run keeps reporting into the tab that launched it), so after
+  // a switch the manager was showing the previous project's rows with nothing to distinguish them —
+  // every other view of the same store already scopes itself (`forModule(module, projectUid)`).
+  // A setting rather than a bare ref because the cross-project view is a real one — a project
+  // export/import runs against a project that is NOT the open one — so it stays one click away.
+  const tasksThisProjectOnly = ref(
+    localStorage.getItem('cc.tasksThisProjectOnly') !== 'false'  // default true
+  )
+
   // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
   // composables/useDataRefresh). On by default; users who find plots refetching under them distracting
   // can turn it off (they then refresh on the next navigation / input change).
@@ -347,6 +357,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
+  watch(tasksThisProjectOnly,     v => localStorage.setItem('cc.tasksThisProjectOnly',     String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
   watch(animationSyncNapari,      v => localStorage.setItem('cc.animationSyncNapari',      String(v)))
@@ -376,5 +387,5 @@ export const useSettingsStore = defineStore('settings', () => {
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { taskListAutoFollow, tasksThisProjectOnly, autoRefreshOnTask, napariUpdateImage, animationSyncNapari, cleanCapture, napariResetOnReload, napariLabelsCache, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesLoop, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getBranchVisibility, setBranchVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })

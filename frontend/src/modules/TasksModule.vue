@@ -5,6 +5,7 @@ import { TASK_STATUS } from '../lib/taskStatus'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
+import { useProjectMetaStore } from '../stores/projectMeta'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -14,10 +15,12 @@ import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 import { canRerunTask } from '../utils/taskRerun'
+import { taskInScope, taskProjectLabel } from '../utils/taskScope'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
 const settings = useSettingsStore()
+const projectMeta = useProjectMetaStore()
 
 // live scheduler throttle — a quick popover off the toolbar (not buried in Settings)
 const throttleBtn  = ref<HTMLElement | null>(null)
@@ -31,12 +34,30 @@ const { isCopied: copied, copy } = useCopyFlash()
 
 const selected = computed(() => tasks.tasks.find(t => t.id === selectedId.value) ?? null)
 
+// Scoped to the open project by default — the rule, its two exceptions and why they exist live in
+// `utils/taskScope.ts`. In short: the task store is not cleared when a project is opened (a run keeps
+// reporting into the tab that launched it), so after a switch this list was showing the previous
+// project's rows with nothing on them to say so.
+const inScope = (t: TaskEntry) =>
+  taskInScope(t, projectMeta.current?.uid, settings.tasksThisProjectOnly)
+
 const filtered = computed(() => {
   return tasks.tasks.filter(t => {
+    if (!inScope(t)) return false
     if (statusFilter.value === 'all')    return true
     if (statusFilter.value === 'active') return t.status === 'running' || t.status === 'queued'
     return t.status === statusFilter.value
   })
+})
+
+const foreignProject = (t: TaskEntry) =>
+  taskProjectLabel(t, projectMeta.current?.uid, settings.tasksThisProjectOnly,
+                   uid => projectMeta.recent.find(p => p.uid === uid)?.name)
+
+// A row that has just gone out of scope must not stay open in the detail pane — the log below would
+// then belong to a task the list no longer shows.
+watch(() => filtered.value.some(t => t.id === selectedId.value), inList => {
+  if (!inList) selectedId.value = null
 })
 
 // Honour jump requests from sidebar
@@ -128,6 +149,9 @@ const FILTERS: ChipOption[] = [
         v-tooltip.bottom="'Show only tasks in this state'"
         @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
+      <CcToggle class="follow-toggle" v-model="settings.tasksThisProjectOnly" label="This project"
+        v-tooltip.bottom="'Hide tasks from other projects'" />
+
       <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
         v-tooltip.left="'Automatically select the newest running task'" />
 
@@ -174,7 +198,10 @@ const FILTERS: ChipOption[] = [
               </span>
               <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
             </div>
-            <div class="row-image cc-muted cc-fs-xs">{{ t.imageName }}</div>
+            <div class="row-image cc-muted cc-fs-xs">
+              <span v-if="foreignProject(t)"
+                v-tooltip.right="'From another project'">{{ foreignProject(t) }} · </span>{{ t.imageName }}
+            </div>
           </div>
 
           <div class="row-actions" @click.stop>

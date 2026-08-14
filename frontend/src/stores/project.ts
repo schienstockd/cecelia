@@ -57,6 +57,11 @@ export interface CciaSet {
 
 export const useProjectStore = defineStore('project', () => {
   const sets = ref<CciaSet[]>([])
+  // WHICH project the sets above belong to. The store holds no other clue: a set carries a uid and a
+  // name and nothing that says where it came from, so every consumer of `sets` was trusting that
+  // whoever wrote them wrote the open project's. Recorded so that trust is checkable — see
+  // `belongsToOpenProject` and its use in `projectMeta.openProject`.
+  const loadedProjectUid = ref<string | null>(null)
   const activeSetUid = ref<string | null>(null)
   const napariImageUid = ref<string | null>(null)
   // Reload signal for the napari viewer: bumped by anything asking to refresh the SHOWN image (the
@@ -103,6 +108,21 @@ export const useProjectStore = defineStore('project', () => {
 
   const activeSet = () => sets.value.find(s => s.uid === activeSetUid.value) ?? null
 
+  /**
+   * Do the loaded sets belong to `uid`?
+   *
+   * The image table showed a PREVIOUS project's images while the sidebar named the new one — a state
+   * the load path cannot produce on its own (one caller, `current` and the sets written in the same
+   * tick, everything downstream a computed), so something else has to be writing one of the two. This
+   * is what makes that answerable instead of a guess: whoever loads the sets says which project they
+   * are, and the answer is checked at the point where the two could disagree.
+   *
+   * `null` (nothing loaded, or a caller that predates the stamp) counts as belonging — the guard is
+   * for a KNOWN mismatch, and treating "unknown" as wrong would empty the table on the honest path.
+   */
+  const belongsToOpenProject = (uid: string | null | undefined) =>
+    !loadedProjectUid.value || !uid || loadedProjectUid.value === uid
+
   // Which set an image belongs to (an image lives in exactly one set). Used to key per-set napari
   // viewer preferences (colour-by / show-3D / point size / overlay toggles) — see settings store.
   const setUidOfImage = (imageUid: string): string | null =>
@@ -119,8 +139,9 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   // Called when a project is opened — replaces the in-memory set/image list.
-  function loadFromApi(apiSets: CciaSet[]) {
+  function loadFromApi(apiSets: CciaSet[], projectUid?: string) {
     sets.value = apiSets
+    loadedProjectUid.value = projectUid ?? null
     activeSetUid.value = sets.value[0]?.uid ?? null
     imageSelection.value = {}     // selections are per-project; don't carry across loads
     imageSort.value = {}          // …nor the per-page table sort
@@ -132,6 +153,7 @@ export const useProjectStore = defineStore('project', () => {
 
   function clear() {
     sets.value = []
+    loadedProjectUid.value = null
     activeSetUid.value = null
     napariImageUid.value = null
     imageSelection.value = {}
@@ -304,5 +326,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
