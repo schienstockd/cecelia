@@ -84,11 +84,13 @@ btrack       = ">=0.7"
 # cecelia's IO/napari helpers lazily); this entry is only cecelia consuming coastal's array-only
 # algorithms, which import nothing from cecelia.
 # The rev is a HARD floor, not a snapshot: `segment.coastal` calls `flow_metrics_for_frame` and
-# `LearnedAffinityInference(seed_blur_sigma=...)`, and `opticalFlow.train` calls
-# `train_with_metrics(val_frames=..., on_epoch=...)` — none of which exists before this commit.
-# An older rev fails at RUN time (TypeError: unexpected keyword argument), not at install or in CI —
-# the Python tests stub coastal deliberately, so nothing catches a rollback.
-coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "cbd56bf266c65f02acaeb13d14c5003b6bc95f3a" }
+# `LearnedAffinityInference(seed_blur_sigma=...)`, `opticalFlow.train` calls
+# `train_with_metrics(val_frames=..., on_epoch=...)`, and `cleanupImages.smooth` calls
+# `gated_frame`/`noise_sigma` for `temporalStat="gated"` — none of which exists before this commit.
+# An older rev fails at RUN time (TypeError / ImportError), not at install or in CI — the Python tests
+# stub coastal deliberately, and the gated runner tests SKIP when the pinned coastal predates
+# `gated_frame`, so nothing catches a rollback.
+coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "438227340b763461fec134b745448ccdca5f4188" }
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
