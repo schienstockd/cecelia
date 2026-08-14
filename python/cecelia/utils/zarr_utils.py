@@ -138,29 +138,31 @@ def _group_format(group, default=2):
 
 
 #: Chunk-key separators, by name. "/" nests keys into a directory tree, "." keeps them flat.
-#: Not cosmetic: it decides how many DIRECTORIES a store costs, which is most of its filesystem
-#: footprint and all of its cost on a network share. Measured on a 512x512x13z x2c x4t conversion —
-#: nested 224 directories, flat 4; on a real 1.7 GB import, 20,933 vs ~4.
+#:
+#: **We write NESTED, always, in both formats** (Dominik, 2026-08-14). `flat` remains here because we
+#: still READ stores written before this — the separator is self-describing (v2 `.zarray`
+#: `dimension_separator`, v3 `chunk_key_encoding`), so old flat stores keep working untouched and
+#: nothing needs re-importing.
+#:
+#: Why flat was dropped rather than relabelled: **a flat store conforms to no published NGFF version.**
+#: Nested storage is what 0.2 introduced (ome-zarr-py `FormatV02`: "Changelog: move to nested
+#: storage"), and 0.3/0.4/0.5 inherit it — so flat keys are 0.1 storage, while the metadata we write
+#: alongside them (`axes` + `coordinateTransformations`) is 0.4-shaped and 0.1 does not even define it.
+#: The two writers each picked a different half of that hybrid and disagreed on disk: bioformats2raw
+#: stamped `0.1` for `--no-nested` while our own writers stamped `0.4` for the identical layout.
+#:
+#: What flat bought, re-measured on a real 3.5 GB movie rather than the 81 MB fixture the original
+#: decision used: ~171 MB of directory inodes, **~5%** — not the 14% that justified it — and **no read
+#: speedup at all** (189 ms flat vs 188 ms nested). 5% of a movie is not worth a store that no
+#: conforming reader can name.
 CHUNK_SEPARATORS = {'nested': '/', 'flat': '.'}
-CHUNK_SEPARATOR_DEFAULT = 'flat'
-
-#: Flat chunk keys for the stores WE write, in both formats.
-#:
-#: zarr-python defaults v2 to `.` (`3.0.0.0.0`) and v3 to `/` (`c/3/0/0/0/0`), so simply moving a writer
-#: to v3 silently turns one directory into one per chunk-key prefix — MEASURED on a real drift output:
-#: 4 directories became 24 211, ~11% more ALLOCATED disk for byte-identical data (invisible to a byte
-#: sum; it is blocks, which is what `_path_bytes` and Settings → Storage report).
-#:
-#: Flat is not a new convention — it is what our v2 derived stores already do, so pinning it keeps a
-#: correction/crop/label store laid out the same way before and after the format change.
-#:
-#: NOT applied to bioformats2raw's imports, which we do not write: those are nested for BOTH formats
-#: (v2 `0/0/36/0/8/0/0`, v3 `0/0/c/36/0/8/0/0`), so the format costs nothing there either way.
-_V3_FLAT_CHUNK_KEY = {'name': 'default', 'configuration': {'separator': '.'}}
+CHUNK_SEPARATOR_DEFAULT = 'nested'
 
 #: The OME-NGFF spec version each zarr format declares. Fixed, not configurable: 0.5 is the version
-#: that introduced the `ome` attribute a v3 store must carry, and 0.4 is the shape our v2 multiscales
-#: already have (`axes` + `coordinateTransformations`, both 0.4 additions).
+#: that introduced the `ome` attribute a v3 store must carry, and 0.4 is what our v2 multiscales now
+#: genuinely are — `axes` + `coordinateTransformations` (both 0.4 additions) AND the nested storage 0.2
+#: introduced. This mapping was only ever true of the metadata half; since we stopped writing flat keys
+#: it is true of the store.
 NGFF_VERSION_BY_FORMAT = {2: '0.4', 3: '0.5'}
 
 
@@ -301,8 +303,13 @@ def store_encoding_of(reference_path):
                 sep = None
     except Exception:
         fmt, sep = None, None
+    # FORMAT is inherited (D9, above). The SEPARATOR deliberately is not, any more: we write nested
+    # unconditionally, so a derived store of a legacy flat source comes out nested rather than
+    # propagating a layout that conforms to no NGFF version (see CHUNK_SEPARATORS). `sep` is still read
+    # off the reference because callers use this to describe a source, but it does not decide the write.
+    _ = sep
     return {'zarr_format': fmt if fmt in (2, 3) else 2,
-            'separator': sep if sep in ('/', '.') else CHUNK_SEPARATORS[CHUNK_SEPARATOR_DEFAULT]}
+            'separator': CHUNK_SEPARATORS[CHUNK_SEPARATOR_DEFAULT]}
 
 
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):

@@ -158,19 +158,22 @@ class InheritFormatTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_store_encoding_of_reports_the_source_format_and_separator(self):
+    def test_the_format_is_inherited_but_the_separator_never_is(self):
+        # D9 inherits the FORMAT so a v2 original cannot acquire a v3 variant. The SEPARATOR is not
+        # inherited: we write nested unconditionally, so a derived store of a LEGACY FLAT source comes
+        # out nested rather than propagating a layout that conforms to no NGFF version.
         for fmt in (2, 3):
             for sep in ('.', '/'):
                 p = os.path.join(self.tmp, f'src{fmt}{"n" if sep == "/" else "f"}.ome.zarr')
                 zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1,
                                               zarr_format=fmt, separator=sep)
-                self.assertEqual({'zarr_format': fmt, 'separator': sep},
-                                 zarr_utils.store_encoding_of(p), f'v{fmt} sep {sep!r}')
+                self.assertEqual({'zarr_format': fmt, 'separator': '/'},
+                                 zarr_utils.store_encoding_of(p), f'v{fmt} source sep {sep!r}')
 
     def test_a_missing_or_unreadable_source_falls_back_to_v2_rather_than_raising(self):
         # a derived write must not fail because a source's metadata could not be parsed
         for ref in (os.path.join(self.tmp, 'nope'), None, ''):
-            self.assertEqual({'zarr_format': 2, 'separator': '.'}, zarr_utils.store_encoding_of(ref))
+            self.assertEqual({'zarr_format': 2, 'separator': '/'}, zarr_utils.store_encoding_of(ref))
 
     def test_the_streaming_writer_inherits_too(self):
         # open_multiscales_for_writing is the path the correction tasks use — the main way a derived
@@ -306,15 +309,17 @@ class ValidBoxIsFormatAgnosticTest(unittest.TestCase):
         self.assertNotIn(zarr_utils.CECELIA_ATTR, attrs.get('ome', {}))
 
 
-class FlatChunkKeyTest(unittest.TestCase):
-    """A v3 store WE write must not explode into one directory per chunk-key prefix.
+class NestedChunkKeyTest(unittest.TestCase):
+    """Every store WE write uses NESTED chunk keys, in both formats.
 
-    zarr-python defaults v2 to `.` and v3 to `/`, so moving a writer to v3 silently turns 4 directories
-    into 24 211 (measured on a real drift output) — ~11% more ALLOCATED disk for byte-identical data.
-    That cost is invisible to a byte sum; it is blocks, which is what `_path_bytes` and Settings →
-    Storage report.
+    This pinned the opposite until 2026-08-14, when flat was dropped: flat keys cost ~5% less disk on a
+    real movie (not the ~14% an 81 MB fixture suggested) and read no faster (189 vs 188 ms), but they
+    produce a store that conforms to NO published NGFF version — nested storage is what 0.2 introduced
+    (ome-zarr-py FormatV02) and 0.3/0.4/0.5 inherit it, so flat keys are 0.1 storage under 0.4-shaped
+    metadata. The two writers had each labelled a different half of that hybrid and disagreed on disk.
 
-    Flat is not a new convention: it is what our v2 derived stores already do.
+    Reading flat stores is untouched — the separator is self-describing, so everything written before
+    this still opens.
     """
 
     def setUp(self):
@@ -336,24 +341,23 @@ class FlatChunkKeyTest(unittest.TestCase):
                 break
         return dirs, key, p
 
-    def test_v3_chunk_keys_are_flat_like_v2(self):
-        d2, k2, _ = self._dirs_and_key(2)
-        d3, k3, p3 = self._dirs_and_key(3)
-        self.assertIsNotNone(k3, 'no chunk file found in the v3 store')
-        # a v3 store must not add a directory per chunk-key prefix the way the `/` default does
-        self.assertLessEqual(d3, d2 + 1, f'v3 exploded into directories: {d3} vs v2 {d2} (key {k3})')
-        # the chunk file sits directly under its level, exactly like the v2 one
-        self.assertEqual(1, k3.count(os.sep), f'v3 chunk key is nested: {k3}')
-        self.assertEqual(k2.count(os.sep), k3.count(os.sep), f'v2 {k2} vs v3 {k3}')
-        # and it still reads back
-        np.testing.assert_array_equal(self.arr, np.asarray(zarr_utils.open_as_zarr(p3)[0][0][:]))
+    def test_both_formats_write_nested_chunk_keys(self):
+        _, k2, p2 = self._dirs_and_key(2)
+        _, k3, p3 = self._dirs_and_key(3)
+        for fmt, key in ((2, k2), (3, k3)):
+            self.assertIsNotNone(key, f'no chunk file found in the v{fmt} store')
+            # a nested key is a directory tree: `0/0/0/0/0`, not one `0.0.0.0.0` filename
+            self.assertGreater(key.count(os.sep), 1, f'v{fmt} chunk key is flat: {key}')
+        # and both still read back
+        for p in (p2, p3):
+            np.testing.assert_array_equal(self.arr, np.asarray(zarr_utils.open_as_zarr(p)[0][0][:]))
 
     def test_the_encoding_is_declared_in_the_metadata(self):
         import json
         _, _, p = self._dirs_and_key(3)
         with open(os.path.join(p, '0', 'zarr.json'), encoding='utf-8') as fh:
             meta = json.load(fh)
-        self.assertEqual('.', meta['chunk_key_encoding']['configuration']['separator'])
+        self.assertEqual('/', meta['chunk_key_encoding']['configuration']['separator'])
 
 
 class NgffVersionStampTest(unittest.TestCase):

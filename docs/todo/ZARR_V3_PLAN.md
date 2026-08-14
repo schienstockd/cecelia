@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phases 1-3 built and Phase 4 measured.** **Default is now `flat` — NGFF 0.4 / zarr v2 with flat chunk keys** (Dominik, 2026-08-07): same read time as nested, ~14% less on disk. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** **Default is `nested` — NGFF 0.4 / zarr v2, nested chunk keys** (Dominik, 2026-08-14). `flat` was the default from 2026-08-07 and has been **removed entirely**, not relabelled: a flat store conforms to **no published NGFF version** (nested storage is what 0.2 introduced — ome-zarr-py `FormatV02`, "Changelog: move to nested storage" — and 0.3/0.4/0.5 inherit it), so flat keys are 0.1 storage carrying the 0.4-shaped metadata (`axes` + `coordinateTransformations`) written beside them. The two writers each labelled a different half and disagreed on disk: bioformats2raw stamped `0.1` for `--no-nested`, our own writers stamped `0.4` for the identical layout. Its measured benefit also shrank under re-measurement — ~14% on an 81 MB fixture, but **~5% (171 MB) on a real 3.5 GB movie**, with **no read speedup** (189 ms flat vs 188 ms nested). Existing flat stores still READ (the separator is self-describing); nothing needs re-importing, and derived stores of a legacy flat source now come out nested. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -195,10 +195,13 @@ store's directory count comes from. Measured on a 512×512×13z×2c×4t conversi
 import from 20 933 directories to ~4. All four variants read back with identical pixels. That is a
 bigger and far safer win than sharding, and it needs neither v3 nor the D8 write-amplification risk.
 
-> **TRAP: `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr v2 store.**
-> Verified in both flag orders — the root carries `.zgroup`, not `zarr.json`. You ask for 0.5 and get
-> 0.4 with no warning. So the two must never be emitted together; a UI offering both independently
-> would let a user pick 0.5 and get v2, with only the metadata modal's format readout to reveal it.
+> **TRAP (RETIRED 2026-08-14 — `--no-nested` is no longer emitted at all): `--no-nested` combined
+> with `--ngff-version 0.5` silently produces a zarr v2 store.** Verified in both flag orders — the
+> root carries `.zgroup`, not `zarr.json`. You ask for 0.5 and get 0.4 with no warning. This is kept
+> as the record of why `bf2raw_format_flags` once returned a `conflict` flag. Dropping flat made the
+> pair unrepresentable, which is the better fix: there is now no separator parameter to conflict with.
+> The SAME trap existed one version down and was never handled — flat + the default 0.4 silently
+> produced a store declaring `0.1` — which is what exposed the whole issue.
 
 Not adopted yet: flipping it changes the on-disk layout of every new import, and whether ~10 000 files
 in one directory beats them spread over 21 000 directories is filesystem-dependent (fine on ext4 with

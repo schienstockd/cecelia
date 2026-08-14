@@ -619,18 +619,22 @@ end
 #: default codec", not the size of the layout as such. A different codec shifts all three rows together
 #: — the DIFFERENCE between them is a directory-inode cost and does not depend on the codec at all.
 #:
-#: `flat` is the default: same data bytes as nested and the same read time, but 10 MB of 81 MB less on
-#: disk (~14%) because it does not allocate ~2,470 directory inodes. Free on local disk, and a network
-#: share should favour it further.
+#: **`flat` was removed (Dominik, 2026-08-14).** It was the default, on 10 MB of 81 MB (~14%) saved
+#: directory inodes at identical read time. Two things undid it. First, re-measured on a real 3.5 GB
+#: movie instead of this 81 MB fixture, the saving is **~171 MB, ~5%** — the fixture flattered it
+#: because its data was small relative to its directory count. Second, and decisive: a flat store
+#: **conforms to no published NGFF version.** Nested storage is what 0.2 introduced (ome-zarr-py
+#: `FormatV02`, "Changelog: move to nested storage") and 0.3/0.4/0.5 inherit it, so flat keys are 0.1
+#: storage carrying 0.4-shaped metadata that 0.1 does not define. The two writers each labelled a
+#: different half and disagreed on disk — bioformats2raw stamped `0.1` for `--no-nested`, our own
+#: writers stamped `0.4` for the identical layout. 5% of a movie does not buy a store no conforming
+#: reader can name. Existing flat stores still READ (the separator is self-describing); nothing needs
+#: re-importing, and derived stores of a legacy flat source now come out nested.
 #:
 #: `v3` is offered and NOT default: same size, ~40% slower to read (263 vs 188 ms, its whole range above
 #: every other median). bioformats2raw ALWAYS shards v3, so this measures "v3 as we can actually produce
 #: it"; the shard-index indirection is the likely cause. See docs/todo/ZARR_V3_PLAN.md.
 const STORE_LAYOUT_CHOICES = [
-    (name = "flat", ngffVersion = "0.4", chunkSeparator = "flat",
-     label = "zarr v2 · flat keys", keys = "36.0.8", dirs = "4",
-     size = "71.1 MB", read = "189 ms",
-     detail = "NGFF 0.4, dimension_separator '.' (--no-nested)"),
     (name = "nested", ngffVersion = "0.4", chunkSeparator = "nested",
      label = "zarr v2 · nested keys", keys = "0/0/36/0/8", dirs = "2,474",
      size = "81.2 MB", read = "188 ms",
@@ -640,7 +644,7 @@ const STORE_LAYOUT_CHOICES = [
      size = "81.2 MB", read = "263 ms",
      detail = "NGFF 0.5, zarr.json + sharding_indexed (--ngff-version 0.5)"),
 ]
-const STORE_LAYOUT_DEFAULT = "flat"
+const STORE_LAYOUT_DEFAULT = "nested"
 
 #: What every row was measured on — shown as the table's caption, one line, like the compressor's, and
 #: naming the codec for the same reason that one names the layout.
@@ -665,11 +669,11 @@ ngff_version()::String =
 
 chunk_separator()::String =
     (v = String(get(get(cecelia_conf(), "zarr", Dict{String,Any}()), "chunkSeparator", CHUNK_SEPARATOR_DEFAULT));
-     v in ("nested", "flat") ? v : CHUNK_SEPARATOR_DEFAULT)
+     v == "nested" ? v : CHUNK_SEPARATOR_DEFAULT)   # "flat" is no longer offered; see CHUNK_SEPARATORS
 
 #: Defaults for the two underlying keys — derived from the default LAYOUT so they cannot drift apart.
 const NGFF_VERSION_DEFAULT = "0.4"
-const CHUNK_SEPARATOR_DEFAULT = "flat"
+const CHUNK_SEPARATOR_DEFAULT = "nested"
 
 """Persist a whole LAYOUT by name (both keys at once) and hot-reload. Setting the pair together is what
 keeps the impossible combination unreachable from the UI."""
@@ -791,26 +795,21 @@ one chunk rewrites the whole shard: safe for an import (written once, sequential
 expensive for anything filling a store incrementally (D8). `"auto"` defers to upstream rather than
 naming a number chosen to look decisive.
 """
-function bf2raw_format_flags(ngff_version, shard_size; separator = "nested",
+function bf2raw_format_flags(ngff_version, shard_size;
                             shard_depth = "1", z_planes::Int = 0)
     v     = strip(string(ngff_version))
-    sep   = lowercase(strip(string(separator)))
-    flat  = sep == "flat"
     flags = String[]
 
-    # THE CONFLICT. `--no-nested` combined with `--ngff-version 0.5` silently produces a zarr **v2**
-    # store — verified in both flag orders against 0.12.1: the root ends up with `.zgroup`, not
-    # `zarr.json`. You ask for 0.5 and get 0.4, with no warning from the CLI. So the two are never
-    # emitted together, and the caller is TOLD which one it lost rather than discovering it later in the
-    # metadata modal. Flat wins because it is the one with a measured benefit (56x fewer directories);
-    # NGFF 0.5 currently buys nothing on its own.
-    conflict = flat && v == "0.5"
-    flat && push!(flags, "--no-nested")
-    if !(isempty(v) || v == "0.4" || conflict)
+    # `--no-nested` is never emitted: we write NESTED keys in every format (see CHUNK_SEPARATORS in
+    # zarr_utils.py for why flat was dropped — it conforms to no NGFF version). That also retires the
+    # old flat-vs-0.5 conflict this function used to report: `--no-nested` combined with
+    # `--ngff-version 0.5` silently produced a zarr v2 store, which was the reason a `conflict` flag
+    # existed at all. With flat gone the impossible state is unrepresentable rather than warned about.
+    if !(isempty(v) || v == "0.4")
         append!(flags, ["--ngff-version", v])
     end
-    # sharding is NGFF 0.5 only — and a conflicted request is no longer 0.5
-    (v == "0.5" && !conflict) || return (flags, conflict)
+    # sharding is NGFF 0.5 only
+    v == "0.5" || return flags
 
     sh = lowercase(strip(string(shard_size)))
     if !(isempty(sh) || sh == "auto")
@@ -828,7 +827,7 @@ function bf2raw_format_flags(ngff_version, shard_size; separator = "nested",
         n = tryparse(Int, d)
         (isnothing(n) || n <= 1) || append!(flags, ["--shard-depth", string(n)])
     end
-    (flags, conflict)
+    flags
 end
 
 """
