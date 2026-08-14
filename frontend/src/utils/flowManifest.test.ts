@@ -63,6 +63,26 @@ describe('modelDetailGroups', () => {
       .toBe('long: 40–89')
   })
 
+  // The XY window and the Z interval are the other two axes of "what did this model actually see",
+  // and both are seed-derived like the frame window — so the manifest is the only record, and the
+  // modal is where anyone looks for it.
+  it('reports the crop, spelling out a whole-frame run rather than showing 0', () => {
+    expect(fieldsOf({ cropSize: 0 }, 'Source').Crop).toBe('whole frame')
+    expect(fieldsOf({ cropSize: 512 }, 'Source').Crop).toBe('512×512')
+  })
+
+  it('counts the random crop windows across every movie and plane', () => {
+    expect(fieldsOf({ cropSize: 512, cropWindows: { a: [[1, 2, 512, 512], [9, 9, 512, 512]],
+                                                    b: [[3, 4, 512, 512]] } }, 'Source').Crop)
+      .toBe('512×512 at random (3 windows)')
+  })
+
+  it('shows the Z interval only when one was asked for', () => {
+    expect(fieldsOf({ zPlanes: 10, zSpacing: 2 }, 'Input')['Z spacing']).toBe('every 2')
+    expect(fieldsOf({ zPlanes: 10, zSpacing: 0 }, 'Input')['Z spacing']).toBeUndefined()
+    expect(fieldsOf({ zPlanes: 10 }, 'Input')['Z spacing']).toBeUndefined()
+  })
+
   it('shows no window row when nothing was cut', () => {
     expect(fieldsOf({ maxFrames: 50, frameWindows: {} }, 'Source'))
       .toEqual({ 'Max frames/movie': '50' })

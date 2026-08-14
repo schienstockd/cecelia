@@ -421,8 +421,80 @@ there. Indices are resolved per movie, since depth is: the manifest records the 
 and the actual indices per image as `zPlanesUsed`, because "3 planes" of a 31-deep stack and of a
 9-deep one are different tissue.
 
-Pooled frames are movies × planes × timepoints and the metric stack is ~11–15 float32 planes per
-frame, so the plane count is a straight memory multiplier.
+**`zSpacing` sets how far apart those planes are, and the two COMBINE** — `zPlanes` planes,
+`zSpacing` apart, centred on the stack. They answer different questions and neither derives from the
+other: the count is how many sequences a movie contributes (the memory), the spacing is how much
+*depth* they span — which without it is whatever the stack happens to be, since `zPlanes = 3` is 15
+planes apart on a 45-deep stack and 12 on a 35-deep one. On zolIMa, `zPlanes = 10, zSpacing = 2`
+gives planes 10–28 of a 38-deep stack and 13–31 of a 45-deep one: the same 20-plane block of tissue
+either way, taken from the middle.
+
+Centred rather than spread, because naming an interval is asking for a block at that interval and
+the middle of the stack is where the tissue is. `zSpacing = 0` keeps the count rule above (spread
+over the whole stack). The count is clamped to what fits at that interval (`n_z // zSpacing`, and
+`MAX_Z_PLANES` for a REPL caller not bound by the form), so a stack too shallow yields fewer planes
+rather than reading past the end — logged as a shortfall, never silent. The run logs the interval in
+planes *and* in µm, since the µm is what compares across images acquired at different Z steps.
+
+> An earlier cut had `zSpacing` **override** the count. On a real run (`zPlanes = 10, zSpacing = 2`,
+> 38 planes) that gave every 2nd plane of the whole stack — 19 sequences where 10 were asked for,
+> double the memory and the metric time, visible only as a long list of indices in the log.
+
+**`cropSize` trains on a random square window of each plane rather than the whole frame.** It is the
+only parameter that DIVIDES the whole cost instead of multiplying part of it — 512 of a 1046×1104
+field is 22% of the pixels, so 22% of the metric memory *and* of the Farneback time — which is what
+makes several Z planes affordable at all. What it costs is field of view per sequence.
+
+- **Random position, unlike the two flow panels' centred crop** (`FLOW_INSPECT_MAX_PX`). A panel
+  answers "do these metrics look like cells" about one picture, where the middle is the safe bet;
+  training is fitted to whatever it is shown, so one fixed window would make the model's whole
+  experience of every recording the same patch of field. Drawn per (movie × plane) from the run's
+  seed — reproducible, different across runs, and different between the planes of one stack.
+- **Padded off the border by `CROP_BORDER_FRAC`** (10% of each axis). The edge of an intravital frame
+  is routinely outside the specimen, and Farneback has nothing beyond the boundary to match, so the
+  outermost pixels carry the least reliable flow in the movie. The margin shrinks rather than fails
+  when the window nearly fills the axis.
+- **Cropped after the projection, never before**, so `normaliseToWhole`'s percentiles are still the
+  whole plane's — otherwise the same structure would be scaled differently depending on where the
+  window landed, and inference normalises over the whole frame.
+- The window is a **copy**, not a slice view: a view keeps the whole uncropped stack alive, which is
+  the allocation the parameter exists to avoid.
+
+The manifest records `cropSize` and the positions as `cropWindows` (uID → `[y, x, h, w]` per plane,
+in `zPlanesUsed` order). Size alone would not say what the model saw.
+
+Pooled frames are movies × planes × timepoints and the metric stack is ~11–15 planes per frame, so
+the plane count is a straight memory multiplier — the pooled metrics are by far the largest
+allocation in the task, and the one that decides whether a whole-set run fits.
+
+**Three things keep it down, all at the point of production** (`train_run.py`). Measured on zolIMa
+frames (1046×1104-ish, 60 per movie): **1.55 GB held per movie**, and 12.4 GB peak RSS for three —
+so a six-movie set is ~9.3 GB held and ~17 GB peak, against **~23 GB held** (≈30 GB peak) before,
+which on a 31 GB workstation is the difference between a run and an OOM kill:
+
+- **One sequence at a time.** `prepare_data_for_unet_batch` is a per-movie loop with no cross-movie
+  state, so the runner calls it per sequence and reduces each before computing the next. Handing it
+  the whole set keeps every movie's *full* float32 stack live at the peak. What is left above the
+  held set is ~7 GB of transient (one movie's flow fields at four scales) and does not stack.
+- **Drop `droppedMetrics` there, not after the split.** Dropping later built new dicts that shared
+  the surviving arrays, so the dropped planes stayed alive through metric computation, the split and
+  all of training — 3 of 15 held for nothing.
+- **Hold them as float16** (`METRIC_DTYPE`, recorded in the manifest as `metricDtype`). Every
+  consumer — coastal's dataset and its contrastive loss — does `torch.from_numpy(arr).float()`, so
+  the model sees float32 either way and this halves only what is carried in between.
+
+The run logs the figure (`~N GB of flow metrics held in memory`) and warns above `MEMORY_WARN_GB`.
+It is linear in images, Z planes and `maxFrames` alike, so those are the knobs when it is still too
+big — and dropping more metrics is a fourth, since each one is a full plane per frame.
+
+**The movies need not be the same size, and are not cropped to match.** A set is usually different
+crops of different fields (six from zolIMa spanned 1033×1037 to 1095×1106), so the pool cannot be one
+array — `pool_frames` falls back to a flat list of frames, which is also what coastal's splitter
+does. Nothing stacks two frames: coastal's dataset indexes one frame at a time and the runner leaves
+`batch_size` at 1, and the UNet pads its decoder to the skip connection, so odd dimensions are fine
+too. **The runner must therefore never pass a batch size** — that is what the fallback buys, and the
+alternative would be cropping every movie to the smallest one. The run logs the pooled frame count
+and, when they differ, the size *range*.
 
 **`maxFrames` caps what each movie contributes, because pooling is otherwise weighted by recording
 length.** A 200-frame movie contributes ~7× what a 30-frame one does, so without a cap the model is

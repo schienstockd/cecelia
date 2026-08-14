@@ -55,6 +55,32 @@ from cecelia.utils import coastal_utils
 # workstation comfortably holds alongside torch".
 MEMORY_WARN_GB = 16.0
 
+# How the pooled flow metrics are HELD — the single largest allocation in the task by an order of
+# magnitude (frames × pixels × metrics), and the one that decides whether a whole-set run fits.
+#
+# float16 rather than the float32 coastal produces, because nothing computes in this dtype: coastal's
+# dataset and its contrastive loss both do `torch.from_numpy(arr).float()`, so the model sees float32
+# either way and this only halves what is carried between production and that cast. The cost is ~0.05%
+# relative precision on a metric that is an input to a contrastive loss over sampled pixels — orders
+# of magnitude below the frame-to-frame variation the loss is reading. Recorded in the manifest, so a
+# model's provenance says what it was trained on rather than leaving it to be inferred.
+METRIC_DTYPE = np.float16
+
+# Most sequences one movie may contribute under `zSpacing`. The count form is bounded by the form
+# control; the spacing form is not — `spacing = 1` over a 45-plane stack asks for 45 sequences, 45×
+# the memory of a single-plane run, which nobody types on purpose. Same ceiling as the `zPlanes`
+# control, so the two forms cannot disagree about what is too much.
+MAX_Z_PLANES = 25
+
+# How far a random training crop is kept off the frame border, as a fraction of each axis.
+#
+# Two reasons, both about the data rather than the geometry: the edge of an intravital frame is
+# routinely outside the specimen (the flow panels centre their crop for exactly this), and Farneback
+# has nothing beyond the boundary to match against, so the outermost pixels carry the least reliable
+# flow in the movie. 10% still leaves ~300 px of jitter for a 512 window on a 1046-px axis, so the
+# windows are genuinely different between movies.
+CROP_BORDER_FRAC = 0.1
+
 
 def _open(im_path):
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
@@ -63,8 +89,21 @@ def _open(im_path):
     return im_dat, dim_utils
 
 
-def z_planes(n_z, n):
+def z_planes(n_z, n, spacing=0):
     """`n` evenly-spaced plane indices through a stack of `n_z` — the centres of `n` equal bins.
+
+    `spacing` says how far apart, and the two COMBINE — `n` planes, `spacing` apart, centred on the
+    stack. They are different questions and both are worth pinning: the count is how many sequences
+    this movie contributes (the memory), while the interval is how much DEPTH they span, which
+    without it is whatever the stack happens to be — `n = 3` is 15 planes apart on a 45-deep stack
+    and ~12 on a 35-deep one, so the same request samples the deeper movie more coarsely in µm.
+
+    Centred, not spread, when a spacing is given: naming an interval is asking for a block of tissue
+    at that interval, and the middle of the stack is where it is. `spacing = 0` keeps the original
+    reading — `n` planes over the WHOLE stack — which is the only sensible one with no interval.
+
+    Clamped to what the stack holds at that interval (and to `MAX_Z_PLANES`), so 10 planes 2 apart
+    from a 9-deep stack yields fewer rather than reading past the end. The caller logs the shortfall.
 
     Bin centres, not `linspace(0, n_z - 1, n)`, and the difference matters at both ends of `n`:
 
@@ -79,8 +118,51 @@ def z_planes(n_z, n):
     (which would silently weight those frames twice in the pool).
     """
     n_z = int(n_z)
+    spacing = int(spacing or 0)
+    if spacing >= 1:
+        # `n_z // spacing` is the fit: one plane per `spacing` planes of depth. It is what bounds the
+        # count, so a stack too shallow for the request gives fewer planes rather than reading past
+        # the end — and it leaves a margin at each end in every case but an exact fit, which keeps
+        # the run off plane 0 and `n_z - 1` the way the count rule does (the top and bottom of an
+        # intravital stack are usually outside the tissue).
+        count = max(1, min(int(n), n_z // spacing, MAX_Z_PLANES))
+        start = (n_z - (count - 1) * spacing) // 2
+        return [start + i * spacing for i in range(count)]
     n = max(1, min(int(n), n_z))
     return sorted({int((i + 0.5) * n_z / n) for i in range(n)})
+
+
+def crop_window(shape, size, rng, border_frac=CROP_BORDER_FRAC):
+    """`(y0, x0, h, w)` — a random square window of `size`, or `None` for the whole plane.
+
+    RANDOM position, not the centred crop the two flow panels render (`FLOW_INSPECT_MAX_PX`). The
+    panels answer "do these metrics look like cells" about one picture, where the middle is the safe
+    bet; training is fitted to whatever it is shown, so one fixed window per movie would make the
+    model's whole experience of every recording the same patch of field. The window is drawn per
+    (movie × plane) from the run's seed, so it is reproducible from the manifest and different across
+    runs — the same argument as `frame_window`, in the other two axes.
+
+    PADDED off the border by `border_frac` of each axis. The edge of an intravital frame is routinely
+    outside the specimen, and it is also where Farneback has nothing beyond the boundary to match, so
+    the flow planes there are the least trustworthy in the movie. The margin shrinks rather than
+    fails when the window nearly fills the axis — a crop the size of the frame is a whole frame, not
+    an error.
+
+    Crops an axis only where the window is smaller than it, so a 768 window on a 1039×700 plane takes
+    768 of the long axis and all 700 of the short one.
+    """
+    h, w = int(shape[0]), int(shape[1])
+    size = int(size or 0)
+    if size <= 0 or (size >= h and size >= w):
+        return None
+    out = []
+    for length in (h, w):
+        span = min(size, length)
+        margin = min(int(length * border_frac), (length - span) // 2)
+        free = length - span - 2 * margin
+        out.append((margin + int(rng.integers(0, free + 1)), span))
+    (y0, hh), (x0, ww) = out
+    return y0, x0, hh, ww
 
 
 def frame_window(n_t, max_frames, seed, movie_idx):
@@ -105,6 +187,42 @@ def frame_window(n_t, max_frames, seed, movie_idx):
     rng = np.random.default_rng([int(seed), int(movie_idx)])
     start = int(rng.integers(0, n_t - n_use + 1))
     return start, start + n_use
+
+
+def pool_frames(all_frames):
+    """The per-movie sequences as ONE training set — an array when they agree, a flat list when not.
+
+    Movies in one experiment are rarely the same size (a set of six from zolIMa spans 1033×1037 to
+    1095×1106 — different crops of different fields), so `np.concatenate` across them raises. coastal
+    already falls back to a flat list of frames inside `train_test_split_per_movie`; this is the same
+    fallback for the no-split path, so the two branches produce the same KIND of object and everything
+    downstream can treat the pool as a sequence of frames rather than an array.
+
+    A ragged pool is trainable, not a degraded mode: coastal's dataset indexes frames one at a time
+    and the runner leaves `batch_size` at its default of 1, so nothing ever stacks two differently
+    shaped frames. It is why the runner must NOT start passing a batch size — that is the constraint
+    this fallback buys, and the alternative (cropping every movie to the smallest) would throw away
+    real data to satisfy a stacking step that never happens.
+    """
+    if len({f.shape[1:] for f in all_frames}) == 1:
+        return np.concatenate(all_frames, axis=0)
+    return [f for arr in all_frames for f in arr]
+
+
+def reduce_metrics(per_frame, dropped):
+    """One sequence's metric dicts as training will HOLD them — unwanted keys gone, rest `METRIC_DTYPE`.
+
+    Called per sequence, at the point of production, because both reductions are about the peak and
+    neither is about the arithmetic:
+
+    - Dropping here rather than after the split is what actually frees the dropped planes. Filtering
+      later builds new dicts that SHARE the surviving arrays, so the originals stay reachable through
+      the un-filtered list for the rest of the run — the dropped metrics were being carried through
+      metric computation, the split, and all of training.
+    - The cast is storage only. Every consumer does `torch.from_numpy(arr).float()`.
+    """
+    return [{k: v.astype(METRIC_DTYPE, copy=False) for k, v in mm.items() if k not in dropped}
+            for mm in per_frame]
 
 
 def _training_sequence(im_dat, dim_utils, params, z, window=None):
@@ -191,7 +309,13 @@ def run(params):
     # mostly fitted to whichever image the microscope was left on longest. Nothing in the run or the
     # manifest showed that — the frame count is a single pooled number.
     max_frames = int(params.get('maxFrames', 0))
-    sequences, used, planes_used, windows = [], [], {}, {}
+    # Every metric plane is paid for at the frame's full area, so this is the one knob that divides
+    # the whole cost rather than multiplying part of it: 512 of a 1046×1104 field is 22% of the
+    # pixels, i.e. 22% of the metric memory AND of the Farneback time. What it costs is field of
+    # view per sequence, which is why the position is random rather than fixed — see `crop_window`.
+    crop_size = int(params.get('cropSize', 0))
+    z_spacing = int(params.get('zSpacing', 0))
+    sequences, used, planes_used, windows, crops = [], [], {}, {}, {}
     for i, m in enumerate(movies):
         im_path = m['imPath']
         uid = m.get('uID', '')
@@ -222,22 +346,56 @@ def run(params):
         # a 9-plane one are different indices, and a single global list would read past the end of
         # the shallow one.
         axes = set(dim_utils.im_dim_order)
+        depth = ''
         if 'Z' in axes:
             n_z = int(dim_utils.dim_val('Z'))
-            planes = z_planes(n_z, n_planes)
+            planes = z_planes(n_z, n_planes, z_spacing)
             planes_used[uid] = planes
+            if z_spacing >= 1:
+                # The interval in µm as well as in planes — the number that means anything across
+                # images acquired at different Z steps, and not something the form can show.
+                dz = dim_utils.im_physical_size('z', default=0) or 0
+                depth = f' every {z_spacing} of {n_z}'
+                if dz:
+                    depth += f' ({z_spacing * dz:.1f} {dim_utils.im_physical_unit("z")})'
+            # ONE shortfall warning for both forms: whatever the rule, the thing worth saying is that
+            # this movie is contributing fewer planes than was asked for.
             if len(planes) < n_planes:
-                log.log(f'>> [WARN] {uid} has {n_z} Z planes — training on {len(planes)}, '
+                deep = f' at spacing {z_spacing}' if z_spacing >= 1 else ''
+                log.log(f'>> [WARN] {uid} has {n_z} Z planes — training on {len(planes)}{deep}, '
                         f'not the {n_planes} requested')
         else:
             planes = [None]
 
-        for z in planes:
-            sequences.append(_training_sequence(im_dat, dim_utils, params, z, (start, stop)))
+        n_y, n_x = int(dim_utils.dim_val('Y')), int(dim_utils.dim_val('X'))
+        for zi, z in enumerate(planes):
+            seq = _training_sequence(im_dat, dim_utils, params, z, (start, stop))
+            # Cropped AFTER the projection, never before: the percentiles are taken over the whole
+            # plane and the whole movie (see `_training_sequence`), which is the statistic inference
+            # reproduces. Normalising a crop by its own percentiles would scale the same structure
+            # differently depending on where the window landed.
+            #
+            # Seeded per (movie, plane) so each window is independent — two planes of one stack are
+            # two views of the tissue, and giving them the same XY window would make them more alike
+            # than they need to be. Reproducible from the manifest's seed either way.
+            win = crop_window(seq.shape[1:], crop_size,
+                              np.random.default_rng([seed, i, zi]))
+            if win is not None:
+                y0, x0, hh, ww = win
+                # A COPY, not the slice's view: a view keeps the whole uncropped plane stack alive,
+                # which is the entire allocation this parameter exists to avoid.
+                seq = np.ascontiguousarray(seq[:, y0:y0 + hh, x0:x0 + ww])
+                crops.setdefault(uid, []).append([y0, x0, hh, ww])
+            sequences.append(seq)
+            del seq
         used.append(uid)
         where = f'Z {planes}' if planes != [None] else '2D'
         span = f'{n_use} frames' if n_use == n_t else f'frames {start}–{stop - 1} of {n_t}'
-        log.log(f'>>   {where}: {len(planes)} × {span} of {sequences[-1].shape[1:]}')
+        # The positions themselves go to the manifest, not the log — one line per plane would bury
+        # the run, and "which window" is a question asked of a saved model, not of a scrolling log.
+        at = (f'{sequences[-1].shape[1:]} cropped at random from ({n_y}, {n_x})'
+              if uid in crops else f'{sequences[-1].shape[1:]}')
+        log.log(f'>>   {where}{depth}: {len(planes)} × {span} of {at}')
         # `i + 1`, not `len(used)`: the scale is over the movies ATTEMPTED, so a skipped movie still
         # advances the bar rather than leaving it short by however many were unusable.
         log.progress(i + 1, total_steps)
@@ -254,15 +412,34 @@ def run(params):
     # produced them, and the alternative — a copy of the metric list here — would be a second
     # spelling of `train.jl`'s `FIXED_FLOW_METRICS` free to disagree with it. The real total is
     # logged below, from the metrics that actually exist.
+    # A RANGE, not `sequences[0]`: the movies are usually different sizes, and quoting the first
+    # one's as if it were the pool's is exactly the number this line exists to let you judge.
     n_frames_pooled = sum(int(s.shape[0]) for s in sequences)
-    mpx = float(np.prod(sequences[0].shape[1:])) / 1e6
-    log.log(f'>> pooling {n_frames_pooled} frames from {len(sequences)} sequence(s) '
-            f'at {mpx:.2f} MP')
+    mpx = sorted({float(np.prod(s.shape[1:])) / 1e6 for s in sequences})
+    at = f'{mpx[0]:.2f} MP' if len(mpx) == 1 else f'{mpx[0]:.2f}–{mpx[-1]:.2f} MP'
+    log.log(f'>> pooling {n_frames_pooled} frames from {len(sequences)} sequence(s) at {at}')
 
     log.log(f'>> computing flow metrics for {len(sequences)} sequence(s) '
             f'(scales {scales}, cumulative {cumulative})')
-    all_frames, all_metrics = prepare_data_for_unet_batch(
-        sequences, temporal_scales=scales, cumulative_window=cumulative)
+    # ONE SEQUENCE AT A TIME, and each one reduced to what training keeps before the next is computed.
+    # `prepare_data_for_unet_batch` is a plain per-movie loop with no cross-movie state, so this is
+    # the same computation — but handing it all six at once means the full float32 metric stack of
+    # every movie is live at the peak, which for a six-movie zolIMa set is ~23 GB held before
+    # training allocates anything. Reduced here it is ~9 GB held (measured 1.55 GB per movie), and
+    # what sits above that is one movie's flow fields rather than six.
+    #
+    # The two reductions are `reduce_metrics`: drop the unwanted metrics here rather than after the
+    # split, and hold the rest as float16.
+    all_frames, all_metrics = [], []
+    for i, seq in enumerate(sequences):
+        seq_frames, seq_metrics = prepare_data_for_unet_batch(
+            [seq], temporal_scales=scales, cumulative_window=cumulative)
+        all_frames.append(seq_frames[0])
+        all_metrics.append(reduce_metrics(seq_metrics[0], dropped))
+        # The source plane sequence is a normalised copy inside `seq_frames` now; holding the
+        # original as well costs a frame stack per movie for nothing.
+        sequences[i] = None
+        del seq, seq_frames, seq_metrics
     log.progress(len(movies) + 1, total_steps)
 
     # Pool AFTER the per-sequence metrics: concatenating frames first would make flow cross a
@@ -283,19 +460,19 @@ def run(params):
     # both seams, which is worse.
     train_ratio = float(params.get('trainRatio', 1.0))
     split = 0.0 < train_ratio < 1.0
+    # Both branches re-reference the same metric dicts (the split copies the FRAMES, never the metric
+    # planes), so once the pool exists `all_frames`/`all_metrics` have no reader — but they are still
+    # a reference, and what they are holding a reference to is the 9 GB. Dropped explicitly rather
+    # than left to fall out of scope at the end of a function that then trains for an hour.
     if split:
-        frames_prep, val_frames_arr, metrics_raw, val_metrics_raw = train_test_split_per_movie(
+        frames_prep, val_frames_arr, metrics, val_metrics = train_test_split_per_movie(
             all_frames, all_metrics, train_ratio=train_ratio, shuffle=False)
     else:
-        frames_prep = np.concatenate(all_frames, axis=0)
-        metrics_raw = [mm for per_sequence in all_metrics for mm in per_sequence]
-        val_frames_arr, val_metrics_raw = None, None
-
-    def _keep(ms):
-        return [{k: v for k, v in mm.items() if k not in dropped} for mm in ms]
-
-    metrics = _keep(metrics_raw)
-    val_metrics = _keep(val_metrics_raw) if val_metrics_raw else None
+        frames_prep = pool_frames(all_frames)
+        metrics = [mm for per_sequence in all_metrics for mm in per_sequence]
+        val_frames_arr, val_metrics = None, None
+    del all_frames, all_metrics, sequences
+    val_metrics = val_metrics or None
 
     # Both sides, or the model trains on one channel layout and is scored on another.
     key_sets = {tuple(sorted(mm.keys())) for mm in metrics + (val_metrics or [])}
@@ -304,8 +481,15 @@ def run(params):
         # contract exists to prevent, so it stops the run.
         raise ValueError(f'movies produced different metric sets: {sorted(key_sets)}')
     metric_keys = sorted(metrics[0].keys())
-    log.log(f'>> {frames_prep.shape[0]} pooled frames, {len(metric_keys)} metrics: '
+    # `len`, not `.shape[0]` — the pool is a flat list of frames whenever the movies differ in size
+    # (see `pool_frames`), and every count from here on has to read it as a sequence.
+    n_pooled = len(frames_prep)
+    log.log(f'>> {n_pooled} pooled frames, {len(metric_keys)} metrics: '
             f'{", ".join(metric_keys)}')
+    if not isinstance(frames_prep, np.ndarray):
+        # In the run's own log, because it is the reason a re-run with one image behaves differently
+        # from a re-run with six — and the constraint (`batch_size` 1) it puts on the training call.
+        log.log('>> movies differ in size — pooled frame by frame, one frame per batch')
     if split:
         log.log(f'>> holding out {len(val_metrics)} frames ({(1 - train_ratio) * 100:.0f}%) '
                 f'for validation')
@@ -314,8 +498,16 @@ def run(params):
     # the long part and it holds all of this, so a run that is going to die of memory says so here
     # rather than at an arbitrary epoch — and the number tells you WHICH knob to turn, since it is
     # linear in Z planes, images and timepoints alike.
-    metrics_gb = (frames_prep.shape[0] * float(np.prod(frames_prep.shape[1:]))
-                  * len(metric_keys) * 4 / 1024 ** 3)
+    #
+    # BOTH sides. The held-out frames' metrics are held for the whole run too — they are evaluated
+    # every epoch — so counting only the training pool understates the peak by the split fraction,
+    # which is the one direction this number must not be wrong in.
+    pooled_px = sum(int(f.size) for f in frames_prep)
+    if val_frames_arr is not None:
+        pooled_px += sum(int(f.size) for f in val_frames_arr)
+    # `METRIC_DTYPE`'s itemsize, not a hardcoded 4: the number has to be what is actually held, or
+    # the warning fires on a run that fits and stays quiet on one that does not.
+    metrics_gb = pooled_px * len(metric_keys) * np.dtype(METRIC_DTYPE).itemsize / 1024 ** 3
     log.log(f'>> ~{metrics_gb:.1f} GB of flow metrics held in memory')
     if metrics_gb > MEMORY_WARN_GB:
         log.log(f'>> [WARN] ~{metrics_gb:.0f} GB of metrics — if the run is killed, reduce '
@@ -375,6 +567,7 @@ def run(params):
         'cumulativeWindow': cumulative,
         'droppedMetrics': list(dropped),
         'metricKeys': metric_keys,
+        'metricDtype': np.dtype(METRIC_DTYPE).name,
         'channelName': params.get('channelName', ''),
         'trainChannels': list(params['trainChannels']),
         'epochs': epochs,
@@ -383,7 +576,7 @@ def run(params):
         'normalise': float(params.get('normalise', 99.99)),
         'sourceImages': used,
         'sourceValueName': params.get('valueName', ''),
-        'nFrames': int(frames_prep.shape[0]),
+        'nFrames': n_pooled,
         'foregroundWeight': float(params.get('foregroundWeight', 1.0)),
         'intensityWeight': float(params.get('intensityWeight', 1.0)),
         'temporalWeight': float(params.get('temporalWeight', 2.0)),
@@ -393,6 +586,13 @@ def run(params):
         # "which frames did it see" answerable without re-deriving it from the seed by hand.
         'frameWindows': windows,
         'zPlanes': n_planes,
+        'zSpacing': z_spacing,
+        # The crop SIZE alone would not let anyone re-derive what the model saw — the window is
+        # random per (movie, plane), so the positions are the record. Same reasoning as
+        # `frameWindows`: seed-derived is reproducible only if you also know the rule, and a saved
+        # model outlives anyone's memory of it. Empty when training on whole frames.
+        'cropSize': crop_size,
+        'cropWindows': crops,
         # The indices, not just the count: "3 planes" of a 31-deep stack and of a 9-deep one are
         # different depths, and which ones a model saw is the question you ask when it does badly on
         # a stack of a different thickness. Empty for 2D movies.
