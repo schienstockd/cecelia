@@ -301,9 +301,17 @@ function _compare_state(proj::CciaProject, compare_by::AbstractString;
         have = String[String(p.first) for p in attr_value_counts(imgs)]
     end
     for a in attrs
-        a in have || throw(BoardSpecError(
+        a in have && continue
+        # "differs only in case" hint — the same courtesy `channel_indices` pays for channel names,
+        # and for the same reason: one experiment shipped `mem-TOM` and `mem-Tom`, and a caller reading
+        # an attribute name out of prose (or its own memory) gets the case wrong long before it gets
+        # the word wrong. Without the hint the message is "not an attribute" next to a list containing
+        # what looks like the same word.
+        near = findfirst(h -> lowercase(h) == lowercase(a), have)
+        throw(BoardSpecError(
             "compareBy \"$a\" is not an image attribute in this project. " *
-            (isempty(have) ?
+            (near !== nothing ? "Did you mean \"$(have[near])\"? (differs only in case)" :
+             isempty(have) ?
              "These images carry no attributes at all, so they can only be compared per image — " *
              "use compareBy \"per_image\" (or annotate the set first)." :
              "Available: $(join(have, ", ")). Use get_image_attributes to see their values.")))

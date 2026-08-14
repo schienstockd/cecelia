@@ -1051,49 +1051,45 @@ end
     # a dir that no longer exists is skipped, not attempted (Claude ignores its entry too)
     @test Cecelia.remove_shadowing_observer_mcps(a, ["/no/such/dir/at/all"]) == (String[], String[])
 
-    # the prompt carries the project + the discipline rules
+    # the prompt carries the project + the discipline rules THIS ROLE adds
     fp = Cecelia.observer_feedback_prompt("NRUBxU")
     @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
     # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
     # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
     @test occursin("get_module_params", fp) && occursin("suggest", fp)
-    # The artifacts it can author are named, so the agent knows they exist — the prompt listed
-    # neither for a while, and an unmentioned tool is an unused one.
-    @test occursin("create_notebook", fp) && occursin("create_chain", fp)
-    # the Phase-0 read tools + the discipline that makes them worth having (a figure proposed without
-    # checking how the images are annotated throws the experiment's design away)
-    @test occursin("get_image_attributes", fp) && occursin("get_analysis_boards", fp)
-    # match on unwrapped text — the prompt is hard-wrapped, so a phrase can straddle a newline
-    @test occursin("not four replicates", replace(fp, r"\s+" => " "))
-    # …and the boundary is stated: authoring a chain is not running it. This is the line that keeps
-    # the assistant from telling a user their pipeline has started.
-    @test occursin("cannot start", fp) || occursin("cannot rename", fp)
-    @test occursin("press Run", fp)
+    # the watch loop's own tools — nobody else polls a running project
+    @test occursin("poll_observations", fp) && occursin("get_cohort_qc", fp)
+    # the lab-log discipline, which is the whole point of the role: most of the time, write nothing
+    @test occursin("write NOTHING", fp)
+    # …and it is pointed at the server's briefing for everything shared, rather than restating it
+    @test occursin("get_session_briefing", fp)
+    # It must NOT restate what the MCP server already tells every client (mcp/cecelia_mcp/guidance.py):
+    # the read catalogue, the grouping discipline, the boards/chains rules, the never-starts boundary.
+    # A second copy is what went stale twice. Match on unwrapped text — the prompt is hard-wrapped, so
+    # a phrase can straddle a newline.
+    flat = replace(fp, r"\s+" => " ")
+    for shared in ("not four replicates", "statUnit", "press Run", "get_image_attributes",
+                   "get_analysis_boards", "get_available_plots", "get_repl_api")
+        @test !occursin(shared, flat)
+    end
 end
 
-@testset "the in-app observer prompt names the MCP tools it can use" begin
+@testset "the in-app observer prompt is a role, not a second tool manual" begin
     # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
     # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
-    # capability just never gets offered. It surfaced both times only because Dominik pasted his
-    # Chat-to-Claude prompt and noticed something missing (create_chain the first time,
-    # get_analysis_boards/get_image_attributes the second).
+    # capability just never gets offered (create_chain the first time, then get_analysis_boards /
+    # get_image_attributes). Both surfaced only because Dominik read a prompt and noticed a gap.
     #
-    # There used to be a SECOND prompt to compare against here (`buildChatPrompt` in
-    # frontend/src/lib/chatHandoff.ts, the wall of text the user pasted). It is now one line: the tool
-    # knowledge moved into the MCP server itself (mcp/cecelia_mcp/guidance.py), which is where the
-    # server can hand it to any session without the user pasting anything. So the guard splits by
-    # language, each half in the one that can read its own constants:
-    #   - HERE: the in-app prompt (`_OBSERVER_RULES`, Julia) vs the tools server.py registers.
-    #   - mcp/tests/test_server.py: `guidance.py` vs the same tool list, against the real constants
-    #     (this test can only pattern-match a file, so a name in a Python COMMENT would fool it).
-    #   - frontend/src/lib/chatHandoff.test.ts: asserts the pasted line names NO tool, so the copy
-    #     that went stale twice cannot grow back.
-    # Same idea as "calibration writers agree across languages": implementations that cannot call each
-    # other get a test that compares them.
+    # The fix was to stop having copies. The MCP server describes its own toolset
+    # (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS on connect, BRIEFING_GUIDANCE with
+    # get_session_briefing), and the in-app agent is spawned with `--mcp-config` pointing at that same
+    # server, so it gets both. What is left here is the ROLE — the watch loop, the QC pass, the
+    # lab-log discipline — which no chat session has.
     #
-    # The in-app prompt is NOT required to name every tool — it addresses a narrower surface — but
-    # every omission must be DELIBERATE and listed below. Adding a tool the in-app observer should be
-    # offering, and forgetting the prompt, now fails here and names the offender.
+    # So this no longer checks "does the prompt name every tool". It checks the DIVISION: the loop's
+    # own tools are named here, and the shared catalogue is NOT restated here. Each side is guarded in
+    # its own language, since neither can import the other — mcp/tests/test_server.py → GuidanceTest
+    # holds the other half (every registered tool is named in guidance.py).
     root = normpath(joinpath(@__DIR__, "..", ".."))
     server = read(joinpath(root, "mcp", "cecelia_mcp", "server.py"), String)
     # The PROMPT, not the file that holds it: a tool name in a source comment (this file's own header
@@ -1105,32 +1101,27 @@ end
     @test length(tools) >= 30                          # anti-vacuity: a bad regex must not pass
     named_jl = Set(t for t in tools if occursin(t, jl))
 
-    # NOT named in the in-app prompt, each for a reason:
-    #   - the in-app agent is spawned against ONE project it was given, so it needs neither the
-    #     project picker nor the chat-session briefing;
-    #   - browsing/renaming notebooks is a chat activity (it authors and revises, it does not shop);
-    #   - LabArchives is CHAT-ONLY, and structurally so: the in-app agent is spawned with
-    #     `--mcp-config` listing ONLY cecelia-observer, so it has no LabArchives connector and could
-    #     never read an ELN. Naming the tools would advertise a capability that build cannot have;
-    #   - per-image detail (notes / single-image QC / spatial) is reached from a summary, not from the
-    #     prompt;
-    #   - get_observer_stats / set_observer_active are the observer's own bookkeeping.
-    @test setdiff(tools, named_jl) ==
-        Set(["list_projects", "get_session_briefing",
-             "list_notebooks", "set_notebook_description",
-             "get_labarchives_context", "set_labarchives_context",
-             "get_image_notes", "get_qc_metrics", "get_spatial_stats",
-             "get_observer_stats", "set_observer_active"])
-    # Every WRITE the in-app observer can make must be named: a mutating capability nobody mentions is
-    # a capability the assistant never uses, which is how create_chain sat unmentioned for a release.
-    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
-              "add_analysis_board")
-        @test w in named_jl
+    # The watch loop's OWN tools — the reason this role exists. Nothing else polls a running project
+    # or decides whether a finished-but-degenerate run is worth a line in the lab log.
+    for own in ("poll_observations",        # the 10-attempts pattern, from the session monitor
+                "get_task_history", "get_task_log", "get_recent_logs",   # what ran / what broke
+                "get_cohort_qc",            # a "done" run that produced far too few cells
+                "get_module_params",        # the param-suggestion range
+                "read_lab_log", "append_lab_log",                        # prior context + its output
+                "get_session_briefing")     # …and where the shared rules come from
+        @test own in named_jl
     end
-    # `poll_observations` is the one tool the in-app prompt names that the chat guidance does not — it
-    # drives the autonomous observer loop, which a user's own session has no use for. Asserted from
-    # this side because it is the in-app prompt's distinguishing tool.
-    @test "poll_observations" in named_jl
+    # The SHARED catalogue must not be restated here — that is the second copy, and the second copy is
+    # the bug. These are all named by guidance.py, which reaches this agent through the same MCP.
+    for shared in ("get_image_attributes", "get_analysis_boards", "get_available_plots",
+                   "get_populations", "get_measure_summary", "get_analysis_lineage", "get_repl_api",
+                   "add_analysis_board", "list_projects")
+        @test !(shared in named_jl)
+    end
+    # A tool this role does not use is fine; a tool NOBODY names is not. Every tool the in-app prompt
+    # leaves out must be covered by the server's guidance — asserted in full by GuidanceTest, and
+    # pinned here as the reason this set is allowed to be small.
+    @test length(named_jl) < length(tools)
 end
 
 @testset "MCP connections — enumerate whatever is registered" begin
@@ -9495,6 +9486,11 @@ end
         # common case (nobody annotated the images) and "Available: " with an empty list is a dead end.
         e_none = try expand_board(proj, "c7", one; compare_by = "Mouse", attrs = String[]) catch err; err end
         @test e_none isa BoardSpecError && occursin("per_image", e_none.msg)
+        # …and a case slip says so, like channel_indices does for channel names (`mem-TOM`/`mem-Tom`).
+        # "not an attribute" next to a list containing what looks like the same word is a dead end.
+        e_case = try expand_board(proj, "c8", one; compare_by = "mouse", attrs = have) catch err; err end
+        @test e_case isa BoardSpecError && occursin("differs only in case", e_case.msg) &&
+              occursin("\"Mouse\"", e_case.msg)
         # more plots than slots
         @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
 

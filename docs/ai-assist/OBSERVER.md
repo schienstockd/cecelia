@@ -29,20 +29,27 @@ The value of the observer session depends entirely on what Claude can see. Claud
 
 ## MCP tools to implement
 
-> **Adding a tool touches THREE files.** `mcp/cecelia_mcp/server.py` (the tool, plus a `client.py`
-> method and its `ALLOWED_ROUTES` entry), `mcp/cecelia_mcp/guidance.py` (what the server tells any
-> session about its own toolset), and `app/src/ai/observer_prompt.jl` (`_OBSERVER_RULES`, the in-app
-> observer's system prompt). An unmentioned tool is an unused one: the assistant never offers the
-> capability. This has gone stale **twice** — `create_chain`, then
-> `get_analysis_boards`/`get_image_attributes` — both caught only when Dominik pasted his prompt and
+> **Adding a tool touches TWO files.** `mcp/cecelia_mcp/server.py` (the tool, plus a `client.py`
+> method and its `ALLOWED_ROUTES` entry) and `mcp/cecelia_mcp/guidance.py` (what the server tells any
+> session about its own toolset). An unmentioned tool is an unused one: the assistant never offers the
+> capability. This went stale **twice** — `create_chain`, then
+> `get_analysis_boards`/`get_image_attributes` — both caught only when Dominik read a prompt and
 > noticed the gap. A ⚠️ comment did not prevent either, because you only read it if you already knew
-> the other file existed, so each half is enforced by a test in its own language:
+> the other file existed.
+>
+> It was four surfaces, then three, and is now two, by deleting copies rather than adding warnings:
+> the ~900-word prompt in `frontend/src/lib/chatHandoff.ts` that the user pasted (see *The hand-off is
+> one line*), and then the tool catalogue in `app/src/ai/observer_prompt.jl` — the in-app agent is
+> spawned with `--mcp-config` pointing at this same server, so it already receives
+> `SERVER_INSTRUCTIONS` and `BRIEFING_GUIDANCE`; restating them there was a second copy of exactly the
+> kind that had already gone stale twice. `_OBSERVER_RULES` now carries only what the role adds — the
+> watch loop, the cohort-QC pass, the parameter-suggestion rules and the lab-log discipline — and
+> edits there are needed only when the WATCH LOOP changes, not when a tool is added.
+>
+> Each side is enforced in its own language, since neither can import the other:
 > `mcp/tests/test_server.py` → `GuidanceTest` (every registered tool is named in `guidance.py`, bar an
-> explicit three-tool exemption) and `app/test/suite.jl` → *"the in-app observer prompt names the MCP
-> tools it can use"* (parses `@mcp.tool()` out of `server.py`, asserts the omissions equal a
-> commented allowlist). There used to be a fourth surface — a ~900-word prompt in
-> `frontend/src/lib/chatHandoff.ts` that the user copied into their session — and it is exactly the
-> copy that went stale both times; see *The hand-off is one line* below.
+> explicit three-tool exemption) and `app/test/suite.jl` → *"the in-app observer prompt is a role, not
+> a second tool manual"* (the loop's own tools are named; the shared catalogue is asserted **absent**).
 
 
 **Read-only (Phase 1 — implement now):**
