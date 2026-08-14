@@ -78,6 +78,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
 | Task/chain status (5-state) | `lib/taskStatus.ts` (`TASK_STATUS`) | a per-file status→icon/colour map |
+| Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
+| Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
 
 **Semantic role utilities** (global classes in `style.css` — *compose* them, add only layout in scoped CSS). These generalise recurring text/surface **scenarios** rather than a component per widget:
 
@@ -1517,9 +1519,24 @@ Z/frames/duration/pixel-size and one column per attr.
 `pi-flag` **QC** badge when `qcSummary(img)` (`frontend/src/lib/qc.ts`) finds any QC finding on the
 image. QC is the general "we processed this, but the output looks off" layer: the **backend** computes
 findings per (task, output) into `1/{uid}/qc/{funName}/{valueName}.json` (see ARCHITECTURE → *QC
-sidecars* and `docs/todo/QC_PLAN.md`); `qc.ts` only aggregates + formats them. The badge hover shows
-the finding detail (e.g. drift correction's jump / canvas-expansion). It's **advisory** — never blocks.
-`warn` findings tint amber; `info` are neutral. (MetadataPanel + chain-whiteboard surfaces are later phases.)
+sidecars* and `docs/todo/QC_PLAN.md`); `qc.ts` only aggregates + formats them. It's **advisory** —
+never blocks. `warn` findings tint amber; `info` are neutral. (MetadataPanel + chain-whiteboard
+surfaces are later phases.)
+
+The badge hover lists the findings **grouped by the task that raised them**, each group headed by the
+shared `.cc-module-tag` pill (`qcTooltipHtml` + `groupByTask` in `lib/qc.ts`, labelled via
+`taskDefs.labelFor` and tinted via `taskModule.moduleTagStyle`) — the same pill as the task manager's
+row and the image table's run tag, so "which step" reads identically in all three places. An image
+routinely carries findings from several steps at once — `p6t4mC` has one each from import, drift and AF
+— and the flat list named none of them, so there was no way to tell which step to go back to. Two
+consequences worth knowing before touching it:
+- It is the **one structured tooltip in the app**: v-tooltip's object form with `escape: false` and a
+  `class: 'qc-tip'` that scopes the block layout away from the ~200 phrase tooltips. A tooltip cannot
+  render a badge otherwise. Every interpolated string is escaped in `qcTooltipHtml` — that is not
+  optional, and a new field rendered there must go through `esc` too.
+- The plain-text `QcSummary.long` is still produced (and still what MCP/lab-log style consumers would
+  want), but it is **not** what the tooltip shows: `.p-tooltip-text` sets no `white-space`, so its
+  `\n`s collapsed and three findings rendered as one run-on paragraph.
 
 **Include / exclude an image.** Any image can be excluded from further processing/analysis — the
 systematic successor to the old R app's `Include=Y/N` keyword (`CciaImage.included`, default `true`;
