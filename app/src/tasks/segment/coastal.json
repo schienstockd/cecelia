@@ -38,7 +38,7 @@
           "probThreshold": 0.3,
           "affinityThreshold": 0.5,
           "minComponentSize": 2.0,
-          "stitchThreshold": 0.0,
+          "stitchThreshold": 0.2,
           "probBlurSigma": 0.0,
           "embeddingBlurSigma": 0.5,
           "mergeAffinityThreshold": 0.65,

@@ -35,7 +35,7 @@
           "nucChannels": [],
           "cellDiameter": 10,
           "normalise": 99.9,
-          "stitchThreshold": 0.0,
+          "stitchThreshold": 0.2,
           "threshold": 0,
           "medianFilter": 0,
           "gaussianFilter": 0.0
