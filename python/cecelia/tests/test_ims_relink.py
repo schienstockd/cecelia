@@ -23,6 +23,13 @@ try:
 except ImportError:                       # h5py is a pixi-tier dep, not part of the IO tier
     HAVE_H5PY = False
 
+#: Whether "make it unwritable, expect a clean refusal" is a meaningful test here. Windows `chmod`
+#: only flips the read-only ATTRIBUTE (and CI runners are often elevated, which ignores it), and root
+#: ignores the write bit outright — in both cases the file stays writable and the test would assert
+#: the opposite of what happens. Evaluated with `hasattr` because `os.getuid` does not EXIST on
+#: Windows: naming it unguarded at class-body scope fails the whole module import, not just this test.
+_CAN_TEST_READONLY = os.name != 'nt' and not (hasattr(os, 'getuid') and os.getuid() == 0)
+
 
 def _ims(path, soft=True, dangling=False, imaris=True):
     """A miniature Imaris file: data under /Workflows/InitialImages, linked from the root."""
@@ -153,7 +160,7 @@ class PatchTest(unittest.TestCase):
         ims_relink.patch(self.root, apply=True, log=lambda _: None)
         self.assertLess(os.path.getsize(self.src) - before, 4096)
 
-    @unittest.skipIf(os.getuid() == 0, 'root ignores the write bit')
+    @unittest.skipUnless(_CAN_TEST_READONLY, 'needs POSIX file permissions and a non-root user')
     def test_readonly_source_fails_loudly_and_is_left_intact(self):
         os.chmod(self.src, stat.S_IRUSR)
         try:

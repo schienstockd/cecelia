@@ -179,7 +179,10 @@ def patch(root, apply=False, log=print):
             repaired += 1
             # Name every link and where it points: this line is the whole basis for deciding to let
             # the patch write to a raw acquisition file, so it must not summarise away a surprise.
-            targets = sorted({os.path.dirname(t) for t in info['links'].values()})
+            # `rpartition`, not `os.path.dirname`: these are HDF5 INTERNAL paths, which are POSIX-style
+            # on every platform. Routing them through the OS path module works today only because
+            # ntpath also accepts `/`, and it invites a `\` to appear in a group name later.
+            targets = sorted({t.rpartition('/')[0] or '/' for t in info['links'].values()})
             log(f'  would repair: {name}')
             log(f'      - {", ".join("/" + k for k in info["links"])} are soft links into '
                 f'{", ".join(targets)}')
