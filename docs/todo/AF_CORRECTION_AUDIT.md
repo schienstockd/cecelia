@@ -9,10 +9,25 @@ spleen movie, which alternatives were tested against it, and which of its defect
 could not: CH3 leaked 2.3% into CH2 *and* was ~7x brighter, so the dominance weight erased the channel
 it leaked into. Corrected CH2 came out 98-99% zero and segmenting it found CH3. What landed:
 
-* `af_bleedthrough_alphas` derives α per ordered channel pair (`coloc_utils.envelope_slope`) and
-  `af_correct_frame` subtracts it before the weight. Measured on `p6t4mC`: α = 0.0248 for CH3→CH2 and
-  exactly zero for the other eleven ordered pairs; co-positive target retention **5.6-7.4% → 82-83%**
-  with leak-only voxels still losing 93-98%.
+* `af_bleedthrough_alphas` derives α per ordered channel pair and `af_correct_frame` subtracts it
+  before the weight. Exactly zero for eleven of the twelve ordered pairs on `p6t4mC`.
+* **Which estimator is a question about the EXPERIMENT, and it is now asked.** Each combination carries
+  `exclusive` — "different cell types", default on. Exclusive → `coloc_utils.tls_slope`, because with
+  nothing legitimately co-located the whole proportional relationship is leak. Co-labelled →
+  `coloc_utils.envelope_slope`, the floor, because anything above it may be real.
+
+  This landed the wrong way round first, and the failure is worth keeping. `p6t4mC` is two reporters in
+  two cell types with no overlap; shipping the envelope unconditionally derived **0.0248** where the
+  total slope gives **0.113**, and Dominik's verdict on the run was "there is still overspill from CH3
+  into CH2, quite a lot". Measured: the residual on the CH3-brightest voxels sat at **2.54×** the
+  target's level elsewhere at 0.0248 and **~0.9×** at 0.113 — while the target's OWN cells are kept at
+  100% either way, because they sit where the competitor is dim and `α·competitor` is ~0 there. So the
+  larger coefficient costs a mutually-exclusive experiment nothing.
+
+  The audit's argument for the envelope was protecting co-positive cells; it was inherited without
+  checking whether the experiment had any. On synthetic data with no co-labelling the two estimators
+  agree to within 3%, so the 5× divergence on real data is not explained by the definitions —
+  recorded, not resolved.
 * **A competitor identified as a leak source is dropped from the weight's denominator.** This is not a
   detail — unmix-*and*-weigh kept **6.4%**, i.e. no better than the weight alone. The two mechanisms
   answer the same question about the same pair, so applying both re-removes the same overlap and the

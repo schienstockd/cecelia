@@ -1263,7 +1263,7 @@ _DERIVE_T = object()   # sentinel: derive the time axis from dim_utils
 
 def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales, im_chunks,
                              x_idx=None, y_idx=None, t_idx=_DERIVE_T, ignore_channel=False,
-                             squeeze=False, idx_adjust=0, kind='image'):
+                             squeeze=False, idx_adjust=0, kind='image', on_progress=None):
     """Write downsampled pyramid levels 1..nscales-1 into an already-created multiscales group,
     slicing ``level_source`` (numpy / dask / an on-disk zarr level-0) with power-of-two XY strides.
 
@@ -1303,13 +1303,19 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
             str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype),
             **_codec_kwargs(kind, _group_format(multiscales_zarr),
                             separator=_group_separator(multiscales_zarr)))
+        n_t = 1 if t_idx is None else shape0[t_idx]
+        total = len(slices) * n_t
         if t_idx is None:
             dest[:] = _read(tuple(x))
+            if on_progress is not None:
+                on_progress(i + 1, total)
         else:
-            for t in range(shape0[t_idx]):
+            for t in range(n_t):
                 rd = list(x);              rd[t_idx] = slice(t, t + 1, 1)
                 wr = [slice(None)] * len(dest_shape); wr[t_idx] = slice(t, t + 1, 1)
                 dest[tuple(wr)] = _read(tuple(rd))
+                if on_progress is not None:
+                    on_progress(i * n_t + t + 1, total)
 
 
 def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,

@@ -578,6 +578,12 @@ AF_ALPHA_MAX_SAMPLES = 2_000_000
 #: input `af_weight_stats` already warns about for the triangle threshold.)
 AF_ALPHA_MIN = 0.005
 
+#: A leak cannot exceed its source: `alpha >= 1` would mean the target receives more than the competing
+#: channel emits. Physical rather than tuned, and load-bearing for the exclusive path — `tls_slope` is
+#: symmetric, so both directions of a pair always fit (at `a` and `1/a`), and this bound is what leaves
+#: exactly the one running from the brighter channel into the dimmer.
+AF_ALPHA_MAX = 1.0
+
 #: **There is deliberately no fit-quality gate to go with it, and that is worth writing down because the
 #: obvious one does not work.** R^2 of the envelope fit looks like the way to tell a leak from a
 #: coincidence, and it is not: a leak-free pair has a FLAT floor, which a flat line fits beautifully, so
@@ -599,7 +605,8 @@ AF_WEIGHT_EXPONENT = 2
 
 def af_weight_stats(
         data, dim_utils, channels, background_method='triangle',
-        timepoints=None, spatial_stride=(1, 1), exponent=AF_WEIGHT_EXPONENT):
+        timepoints=None, spatial_stride=(1, 1), exponent=AF_WEIGHT_EXPONENT,
+        on_progress=None, exclusive=None):
     """The one thing the power weight needs that a single region cannot supply: a background level per
     participating channel. Derived, not dialled in
     (`intensity_utils.background_threshold`, Zack's triangle by default).
@@ -664,7 +671,10 @@ def af_weight_stats(
 
     hists = {ch: np.zeros(nbins, np.int64) for ch in channels}
     pairs = {ch: [] for ch in channels}
-    for t in ts:
+    # `on_progress(n, total)` per TIMEPOINT, not per channel-slab: this pass is one of the two
+    # minutes-long spans in the task and it used to report nothing at all. The unit matches the
+    # correction loop's below so a single scale can span both — see `af_progress_total`.
+    for n_done, t in enumerate(ts, start=1):
         take = None
         for ch in channels:
             a = _stride(_af_slab(data, dim_utils, ch, t))
@@ -680,6 +690,8 @@ def af_weight_stats(
                             max(1, flat.size // max(1, min(quota, flat.size))))
                     take = take[take < flat.size]
                 pairs[ch].append(flat[take].astype(np.float64))
+        if on_progress is not None:
+            on_progress(n_done, len(ts))
 
     backgrounds = {ch: float(intensity_utils.background_threshold(hists[ch], background_method))
                    for ch in channels}
@@ -687,18 +699,35 @@ def af_weight_stats(
                  for ch in channels}
     samples = ({ch: np.concatenate(v) for ch, v in pairs.items()} if quota and any(pairs.values())
                else {})
-    alphas = af_bleedthrough_alphas(samples, backgrounds) if samples else {}
+    alphas = af_bleedthrough_alphas(samples, backgrounds, exclusive) if samples else {}
     return AfWeightStats(backgrounds=backgrounds, alphas=alphas, saturated=saturated,
                          exponent=int(exponent), nbins=nbins)
 
 
-def af_bleedthrough_alphas(samples, backgrounds):
+def af_bleedthrough_alphas(samples, backgrounds, exclusive=None):
     """Bleedthrough coefficient per ORDERED channel pair, from paired background-subtracted samples.
 
     ``samples`` maps a channel index to a flat array of voxel values, all arrays sampled at the SAME
     positions. Returns ``{(src, dst): alpha}`` for every ordered pair whose fit clears `AF_ALPHA_MIN`;
     a pair with no detectable leak is simply absent, which is the honest way to say "nothing to
     subtract" and is what makes an all-zero result cost nothing downstream.
+
+    **``exclusive`` maps a TARGET channel to whether a voxel can carry both markers, and it chooses the
+    estimator — because that is a question about the experiment, not about the data.**
+
+    * ``True`` (different cell types, no co-labelling) → `coloc_utils.tls_slope`. With nothing
+      legitimately co-located, the ENTIRE proportional relationship between the two channels is leak,
+      so the total regression is the estimate and there is nothing for it to over-remove.
+    * ``False`` (cells may carry both) → `coloc_utils.envelope_slope`. The floor of the joint
+      distribution is the part attributable to the optics; anything above it may be real co-labelling
+      and must survive (`docs/todo/AF_CORRECTION_AUDIT.md`).
+
+    The two answers differ by ~5x on real data and the choice is not inferable from the pixels. On
+    `WIaUjL/p6t4mC` — two reporters, two cell types, no overlap — the envelope gave **0.024** and left
+    the residual on the CH3-brightest voxels at **2.5x** the target's level elsewhere, i.e. visibly
+    uncorrected; the TLS slope gave **0.13**, which levels it out while leaving 100% of the target's own
+    signal (those voxels have no competitor to subtract). Defaulting to co-labelled would have made that
+    the experience of every mutually-exclusive pair, which is the common case.
 
     **Why this is a separate job from the dominance weight.** The task has two of them
     (`docs/todo/AF_CORRECTION_AUDIT.md` → *The task has TWO jobs, and only one mechanism*): removing
@@ -728,13 +757,21 @@ def af_bleedthrough_alphas(samples, backgrounds):
 
     b = {int(ch): np.maximum(np.asarray(v, dtype=np.float64) - float(backgrounds.get(int(ch), 0.0)), 0)
          for ch, v in samples.items()}
+    exclusive = dict(exclusive or {})
     fits = {}
     for src in sorted(b):
         for dst in sorted(b):
             if src == dst:
                 continue
-            alpha, r2, _bins = coloc_utils.envelope_slope(b[src], b[dst])
-            if np.isfinite(alpha) and alpha >= AF_ALPHA_MIN:
+            if bool(exclusive.get(dst, True)):
+                # symmetric by construction: fitting the other way round returns 1/a. The physical
+                # bound below is what picks the direction — a leak cannot exceed 100% of its source,
+                # so of the two reciprocals only the one from the brighter channel can survive.
+                alpha, _intercept = coloc_utils.tls_slope(b[src], b[dst])
+                r2 = 1.0        # no separate fit quality; the direction rule below decides instead
+            else:
+                alpha, r2, _bins = coloc_utils.envelope_slope(b[src], b[dst])
+            if np.isfinite(alpha) and AF_ALPHA_MIN <= alpha < AF_ALPHA_MAX:
                 fits[(src, dst)] = (float(alpha), float(r2) if np.isfinite(r2) else 0.0)
 
     # ONE DIRECTION per pair. A proportional leak has a direction — the filter set passes some of the
@@ -750,7 +787,10 @@ def af_bleedthrough_alphas(samples, backgrounds):
     out = {}
     for (src, dst), (alpha, r2) in fits.items():
         rev = fits.get((dst, src))
-        if rev is None or r2 > rev[1] or (r2 == rev[1] and alpha >= rev[0]):
+        # Both surviving means neither channel is clearly the source. Keep the SMALLER coefficient: a
+        # leak runs from the brighter channel into the dimmer one, so the smaller fraction is the
+        # physically sensible reading and the larger would take a bite out of the source itself.
+        if rev is None or alpha < rev[0] or (alpha == rev[0] and r2 >= rev[1]):
             out[(src, dst)] = alpha
     return out
 
@@ -885,7 +925,8 @@ def af_correct_frame(slabs, target, stats, out_dtype):
 
 
 def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competing_channel_idx,
-                              background_method='triangle', stats=None, logfile_utils=None):
+                              background_method='triangle', stats=None, logfile_utils=None,
+                              on_progress=None):
     """Correct one channel, streamed one timepoint at a time into ``out`` (peak memory = one frame,
     not the whole channel).
 
@@ -920,6 +961,8 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
     for t in range(T):
         corrected = af_correct_frame(_af_slabs(data, dim_utils, channels, t),
                                      channel_idx, stats, out.dtype)
+        if on_progress is not None:
+            on_progress(t + 1, T)
         H_out += np.bincount(np.clip(corrected, 0, stats.nbins - 1).astype(np.int64).ravel(),
                              minlength=stats.nbins)[:stats.nbins]
         _af_write_slab(out, dim_utils, out_ch, t, corrected)
@@ -995,7 +1038,7 @@ def af_correction_output_shape(input_array, dim_utils, af_combinations=None):
     return tuple(input_array.shape)
 
 
-def _copy_channel(input_image, out, i, dim_utils):
+def _copy_channel(input_image, out, i, dim_utils, on_progress=None):
     """Carry a channel no combination covers through unchanged, one timepoint at a time.
 
     It used to denoise, gaussian-blur, rolling-ball and top-hat these channels — by DEFAULT, since
@@ -1006,10 +1049,54 @@ def _copy_channel(input_image, out, i, dim_utils):
     for t in range(T):
         _af_write_slab(out, dim_utils, i, t,
                        _af_slab(input_image, dim_utils, i, t).astype(out.dtype))
+        # reported on the same scale as a CORRECTED channel: copying a channel is most of a pass over
+        # the movie, so leaving it out made the bar stall for exactly as long as it takes
+        if on_progress is not None:
+            on_progress(t + 1, T)
+
+
+def af_participating_channels(af_combinations):
+    """Every channel any combination reads — targets and competitors, deduped, in order.
+
+    The set the globals are derived over. One pure function because two callers need to agree on it:
+    `af_correct_image`, which derives once over exactly this set, and `af_progress_total`, which has to
+    predict whether a derivation pass will happen at all.
+    """
+    out = []
+    for target, spec in sorted({int(i): x for i, x in af_combinations.items()}.items()):
+        competing = (spec or {}).get('competingChannels', []) or []
+        if not competing:
+            continue
+        for ch in [target] + [int(c) for c in competing]:
+            if ch not in out:
+                out.append(ch)
+    return out
+
+
+def af_progress_total(dim_utils, af_combinations, nscales=1):
+    """Total progress units for one AF run. **One unit = one timepoint of one pass over the movie.**
+
+    Every span of this task is a per-timepoint loop, so a single unit spans all of them and the bar
+    moves at roughly one rate throughout:
+
+    * the global derivation — ONE pass, over the participating channels together (`af_weight_stats`)
+    * one pass per channel written — corrected (`_stream_corrected_channel`) or carried through
+      (`_copy_channel`), which costs a pass either way
+    * one pass per pyramid level (`zarr_utils.write_multiscale_pyramid`)
+
+    Here rather than in the runner so the reporter and the total cannot disagree — the runner needs the
+    number before the work starts, and the failure mode of two copies of this formula is a bar that
+    stops at 80% or claims to finish early. Pinned by `test_af_progress_total_matches_the_ticks`.
+    """
+    n_t = int(dim_utils.dim_val('T')) if dim_utils.is_timeseries() else 1
+    n_c = int(dim_utils.dim_val('C'))
+    derivation = 1 if af_participating_channels(af_combinations) else 0
+    return n_t * (derivation + n_c + max(0, int(nscales) - 1))
 
 
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
-                     background_method='triangle', out=None, output_stats=None):
+                     background_method='triangle', out=None, output_stats=None,
+                     on_progress=None, progress_total=None, progress_offset=0):
     """Correct autofluorescence for all channels, streamed ONE TIMEPOINT AT A TIME per channel.
 
     A **channel combination is now just channels**: which channel to correct, and which channels
@@ -1029,6 +1116,10 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     Pass a dict as ``output_stats`` to receive per-corrected-channel `af_output_stats`, keyed by
     channel index as a string — an out-parameter rather than a second return value so callers that use
     the returned array keep working.
+
+    ``on_progress(n, total)`` is called per timepoint across EVERY span — see `af_progress_total` for
+    the unit. ``progress_total``/``progress_offset`` let a caller place these ticks inside a larger
+    scale that also covers the pyramid build, which is the other minutes-long span.
     """
     n_channels = dim_utils.dim_val('C')
     af_combinations = {int(i): x for i, x in af_combinations.items()}
@@ -1036,6 +1127,45 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     if out is None:   # legacy/small: allocate the full output (compute still streams per frame)
         out = np.zeros(af_correction_output_shape(input_image, dim_utils, af_combinations),
                        dtype=zarr_utils.native_dtype(input_image.dtype))
+
+    total = progress_total or af_progress_total(dim_utils, af_combinations)
+    done = int(progress_offset)
+
+    def _tick(n, _sub_total):
+        if on_progress is not None:
+            on_progress(done + n, total)
+
+    # ONE derivation, over every participating channel at once, reused by every combination.
+    #
+    # This used to run per corrected channel (`_stream_corrected_channel` derives its own when handed
+    # `stats=None`), and the numbers were identical every time: a background is a property of a channel
+    # and an alpha of a channel PAIR, so neither depends on which combination asked. A two-combination
+    # setup over one channel pair therefore paid for two full passes over the movie to compute the same
+    # answer twice — exactly the waste `PreviewState.af_stats` documents on the preview side (measured
+    # there at 80.7 s against one pass). Deriving here also makes the progress total predictable, which
+    # it cannot be while the number of passes depends on the combination count.
+    participating = af_participating_channels(af_combinations)
+    stats = None
+    if participating:
+        if logfile_utils is not None:
+            logfile_utils.log(f'>> derive globals over channels {participating} '
+                              f'({background_method})')
+        # `exclusive` is per TARGET channel, which is per combination — it says whether a voxel of
+        # this channel can also legitimately be the competing one, and that is what picks the
+        # bleedthrough estimator (see `af_bleedthrough_alphas`). Defaults True: different cell types is
+        # the common case, and the other default leaves a mutually-exclusive pair visibly uncorrected.
+        exclusive = {int(t): bool((spec or {}).get('exclusive', True))
+                     for t, spec in af_combinations.items()}
+        if logfile_utils is not None:
+            co = sorted(t for t, ex in exclusive.items() if not ex)
+            logfile_utils.log(f'>> derive globals over channels {participating} '
+                              f'({background_method})' +
+                              (f'; channels {co} may be co-labelled' if co else
+                               '; all targets are distinct cell types'))
+        stats = af_weight_stats(input_image, dim_utils, participating,
+                                background_method=background_method, on_progress=_tick,
+                                exclusive=exclusive)
+        done += int(dim_utils.dim_val('T')) if dim_utils.is_timeseries() else 1
 
     output_stats = {} if output_stats is None else output_stats
     for i in range(n_channels):
@@ -1046,7 +1176,10 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                 input_image, out, dim_utils, channel_idx=i, out_ch=i,
                 competing_channel_idx=competing,
                 background_method=background_method,
-                logfile_utils=logfile_utils)
+                stats=stats,
+                logfile_utils=logfile_utils,
+                on_progress=_tick)
         else:
-            _copy_channel(input_image, out, i, dim_utils)
+            _copy_channel(input_image, out, i, dim_utils, on_progress=_tick)
+        done += int(dim_utils.dim_val('T')) if dim_utils.is_timeseries() else 1
     return out

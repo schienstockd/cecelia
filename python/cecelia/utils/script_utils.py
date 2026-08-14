@@ -27,14 +27,46 @@ import os
 CONTRACT_VERSION = 1
 
 
+#: Smallest change in completion worth a line. Every emitted line is a stdout write, a Julia parse and
+#: a `task:progress` WS frame to every connected client, so the cost is per line while the value is per
+#: VISIBLE change — and a bar cannot show more than ~100 distinct states. At 1% a task emits ~100 lines
+#: however finely it counts, which is what lets a task count in its natural unit without the unit
+#: deciding the traffic: AF over a 180-frame 4-channel movie counts 900 timepoint-passes and emits 101.
+#:
+#: **Coalesced at the SINK, not at each call site** — the same rule the frontend's continuous controls
+#: follow (`docs/UI.md`). A per-runner throttle would be a different number in every task and a new one
+#: to get wrong in the next task; here a runner reports every unit it does and this decides what is
+#: worth saying.
+PROGRESS_MIN_FRACTION = 0.01
+
+
 class StdoutLogger:
     """Minimal logger that writes to stdout so Julia can stream every line."""
+
+    def __init__(self):
+        self._progress_total = None      # the scale the last emitted line was on
+        self._progress_frac = None       # …and how far through it was
 
     def log(self, msg):
         print(str(msg), flush=True)
 
     def progress(self, n: int, total: int):
-        """Emit a structured progress line that Julia parses into a task:progress WS message."""
+        """Emit a structured progress line that Julia parses into a task:progress WS message.
+
+        Coalesced to `PROGRESS_MIN_FRACTION` of the total. The two ends are ALWAYS emitted: the first
+        line is what sizes the bar, and the last is what completes it — dropping either would be
+        visible, where dropping an intermediate is by definition not.
+        """
+        n, total = int(n), int(total)
+        if total <= 0:
+            return
+        frac = n / total
+        ends = n <= 0 or n >= total
+        # a changed total is a new scale, not a step along the old one
+        same_scale = self._progress_total == total and self._progress_frac is not None
+        if not ends and same_scale and abs(frac - self._progress_frac) < PROGRESS_MIN_FRACTION:
+            return
+        self._progress_total, self._progress_frac = total, frac
         print(f'[PROGRESS] {n}/{total}', flush=True)
 
 

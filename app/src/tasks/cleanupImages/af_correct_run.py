@@ -38,7 +38,6 @@ def run(params):
     background_method  = str(params.get('backgroundMethod', 'triangle'))
     qc_out_path        = params.get('qcOutPath')
 
-    log.progress(0, 3)
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read below goes through `fortify(arr[slice])` per frame, so the
     # dask handle only ever added graph overhead. Measured on a real store (zolIMa/ldYr8J, 0.78 GB):
@@ -53,7 +52,15 @@ def run(params):
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim}')
     log.log(f'>> afCombinations: {af_combinations}')
 
-    log.progress(1, 3)
+    # ONE progress scale across the whole run rather than a 4-step one, same reason and same shape as
+    # `drift_correct_run.py`: every span here is a per-timepoint loop minutes long on a real movie, and
+    # the old scale stood still through each of them. One unit = one timepoint of one pass — the global
+    # derivation, then each channel written, then each pyramid level. The formula lives in
+    # `af_progress_total` so the total and the ticks cannot disagree.
+    total = correction_utils.af_progress_total(dim_utils, af_combinations, nscales=len(im_dat))
+    af_units = correction_utils.af_progress_total(dim_utils, af_combinations, nscales=1)
+    log.progress(0, total)
+
     log.log('>> correct image (streaming to disk)')
     # Stream channel-by-channel into the on-disk output store — the whole corrected image never lives
     # in RAM (was the OOM on large time-lapses). Size level 0 up front, fill per-channel, then build
@@ -75,11 +82,13 @@ def run(params):
             background_method=background_method,
             out=level0,
             output_stats=output_stats,
+            on_progress=lambda n, _t: log.progress(n, total),
         )
 
-        log.progress(2, 3)
         log.log(f'>> build pyramid + save: {im_correction_path}')
-        zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
+        zarr_utils.write_multiscale_pyramid(
+            group, level0, dim_utils, len(im_dat), list(pchunks),
+            on_progress=lambda n, _t: log.progress(af_units + n, total))
 
         log.log('>> save OME-XML metadata')
         ome_xml_utils.save_meta_in_zarr(
@@ -112,7 +121,7 @@ def run(params):
             log.log(f">> ch{ch}: {s.get('saturatedFrac', 0.0) * 100:.3f}% of input saturated, "
                     f"{s.get('levelsUsed', 0)}/{s.get('levelsAvailable', 0)} levels used")
 
-    log.progress(3, 3)
+    log.progress(total, total)
     log.log('>> done')
 
 

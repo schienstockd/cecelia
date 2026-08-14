@@ -77,6 +77,31 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
 }
 
 /**
+ * What the form should become on (re)init, or `null` for "leave it alone".
+ *
+ * The distinction this exists to make: **"you have no saved params" and "I could not load your saved
+ * params" are not the same answer, and only one of them should overwrite the form.** They used to be
+ * the same value — `fetchSavedParams` returned `{}` when the project uid wasn't known yet, when the
+ * request failed, and when it threw — and the caller fed that straight to `buildParamValues`, which
+ * answers every param with its spec default. So a load that never happened silently reset a form the
+ * user had just filled in, on any task, with nothing logged.
+ *
+ * `saved === null` means the load did not happen. Everything else is a real answer, including `{}`
+ * (genuinely nothing saved → defaults, which is right on a first run).
+ *
+ * A DRAFT wins over both: it is what the user typed and has not run yet. Reconciled through
+ * `buildParamValues` rather than restored raw, because a draft outlives a spec change.
+ */
+export function resolveInitialParams(
+  def: TaskDef, draft: ParamValues | undefined, saved: ParamValues | null,
+): ParamValues | null {
+  if (draft) return buildParamValues(def, draft)
+  if (saved === null) return null
+  return buildParamValues(def, saved)
+}
+
+
+/**
  * The payload to send on run: top-level section containers hoisted away, one entry per real param.
  *
  * Falls back to the param's default rather than emitting `undefined` — an undefined value is dropped by

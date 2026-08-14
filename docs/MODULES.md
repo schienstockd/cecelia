@@ -235,6 +235,16 @@ streams stdout (`[PROGRESS] n/total` → `on_progress`, the rest → `on_log`), 
 for cancellation, and returns clean-exit (checks both `exitcode` AND `termsignal` — libuv reports
 `exitcode==0` for killed procs):
 
+**Count in your natural unit; do not throttle in the runner.** Report every unit of work you do —
+per timepoint, per frame, per tile — and let `script_utils.StdoutLogger.progress` decide what is worth
+a line. It coalesces to `PROGRESS_MIN_FRACTION` (1%) of the total, always keeping the first line (which
+sizes the bar) and the last (which completes it), so a task emits ~100 lines however finely it counts:
+AF's 900 timepoint-passes over a 180-frame 4-channel movie become 100 lines. A per-runner throttle is a
+different number in every task and a new one to get wrong in the next one — same reason the frontend
+coalesces continuous controls at the sink (`docs/UI.md`). The opposite failure is worse and was the
+live one: AF reported `0/3, 1/3, 2/3, 3/3` for a run whose two long spans were each a single step, so
+the bar stood still for minutes at a time.
+
 ```julia
 ok = run_py("tasks/<category>/<name>_run.py",
     (; imPath = im_path, imCorrectionPath = out_path, myParam = params["myParam"]),
@@ -890,6 +900,17 @@ halves are hidden by a CSS rule rather than a per-element guard: `docs/UI.md` �
   selected it shows the set-level default). The fetch re-runs on function change and on project/set
   switch — which is what stops one project's params leaking into another (there is no project-keyed
   localStorage; `ccid.json` is the single source of truth).
+- **A load that did not happen is not "nothing saved".** `fetchSavedParams` answers `null` when it
+  could not ask (no project uid yet) or did not get an answer (non-OK response, a throw), and
+  `resolveInitialParams` then LEAVES THE FORM ALONE. Only a real answer — including an empty one —
+  builds values, because `buildParamValues` answers every param with its spec default and stamping
+  that over a filled-in form is indistinguishable from the user's settings being forgotten.
+  This was a live bug on every task: `projectMeta.openProject` writes `sets` before `current`
+  (deliberately — see that store), so `setUid` went non-empty while the project uid was still null,
+  the load ran with no uid, returned `{}`, and the form was reset to defaults with nothing re-running
+  it once the project arrived. The fetch is therefore watched on **`projectUid` as well as** fun and
+  set — a re-run when the uid appears is what makes the `null` answer recoverable rather than a form
+  stuck empty.
 
 Whiteboard chain nodes are unaffected — their params live in the per-project chain template, not in
 `funParams`.

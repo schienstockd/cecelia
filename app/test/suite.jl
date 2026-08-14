@@ -2636,9 +2636,23 @@ end
     keys_top = [string(get(p, "key", "")) for p in get(spec, "params", [])]
     @test keys_top == ["valueName", "afCombinations", "backgroundMethod"]
 
+    # `exclusive` is the ONE addition, and it is admitted on a rule the deleted twenty all failed:
+    # it is a fact about the SPECIMEN that no amount of looking at the pixels can supply, not a number
+    # to fit. Can one voxel carry both markers? The user knows; the estimator cannot. It selects
+    # between the total slope and the envelope floor (`af_bleedthrough_alphas`), which on
+    # `WIaUjL/p6t4mC` differ 5x — 0.113 against 0.024, the difference between a corrected channel and
+    # one that visibly still carries the other's overspill.
+    #
+    # Anything proposed here later has to clear the same bar. `channelPercentile` and friends did not:
+    # they were dials with no defensible value, fitted per dataset and never revisited.
     combo = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "afCombinations")
     @test [string(get(p, "key", "")) for p in get(combo, "params", [])] ==
-          ["targetChannel", "competingChannels"]
+          ["targetChannel", "competingChannels", "exclusive"]
+
+    # a statement, not a dial: boolean, and defaulting to the common case (distinct cell types)
+    excl = only(p for p in get(combo, "params", []) if string(get(p, "key", "")) == "exclusive")
+    @test string(get(excl, "type", "")) == "bool"
+    @test get(excl, "default", nothing) === true
 
     # `none` is NOT offered: the weight is a ratio of intensities, so an unsubtracted pedestal makes
     # background voxels split evenly and survive. Measured on kSUFux/Or1L8a: 92.1% of background voxels

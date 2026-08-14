@@ -41,6 +41,13 @@
           "multiple": true,
           "default": [],
           "tip": "Channels that share signal with this one"
+        },
+        {
+          "key": "exclusive",
+          "label": "Different cell types",
+          "type": "bool",
+          "default": true,
+          "tip": "Turn off if cells can carry both markers"
         }
       ]
     },

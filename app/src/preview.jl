@@ -39,7 +39,10 @@ const PREVIEW_PORT   = 7656
 # 11 is the "a bug fixed inside the worker" case again: AF correction now unmixes bleedthrough before
 # the dominance weight, so an adopted protocol-10 worker would keep previewing a correction in which a
 # leaked channel erases the target it leaked into.
-const PREVIEW_PROTOCOL = 11
+# 12 is the same "fixed inside the worker" case as 11: the estimator for that unmix is now chosen per
+# combination by `exclusive`, and an adopted protocol-11 worker always uses the envelope — ~5x too small
+# a coefficient on a pair of distinct cell types, i.e. a preview that visibly leaves the overspill in.
+const PREVIEW_PROTOCOL = 12
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
