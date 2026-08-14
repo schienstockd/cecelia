@@ -50,9 +50,12 @@
       "type": "select",
       "default": "median",
       "options": [
-        { "label": "Median", "value": "median" },
-        { "label": "Mean",   "value": "mean" },
-        { "label": "Gated",  "value": "gated" }
+        { "label": "Median", "value": "median",
+          "help": "Photon-limited data — keeps signal AF would otherwise threshold away. Blurs cells that moved." },
+        { "label": "Mean",   "value": "mean",
+          "help": "Rarely. Averages the whole window regardless of motion, and inflates masks ~34%." },
+        { "label": "Gated",  "value": "gated",
+          "help": "Well-exposed movies with moving cells — keeps them sharp. Not for photon-limited data." }
       ],
       "tip": "Gated keeps per-frame sharpness; median blurs cells that moved, mean more so"
     },

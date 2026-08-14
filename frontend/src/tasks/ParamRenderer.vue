@@ -10,6 +10,8 @@ import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import InlineNote from '../components/InlineNote.vue'
+import { selectedOptionHelp } from '../utils/optionHelp'
 import { isChosenValueName, preferredValueName } from './paramValues'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -419,6 +421,11 @@ function updateGroupEntry(entryKey: string, paramKey: string, newVal: unknown) {
 
 // channelSelection toggle helpers
 const channelOptions = computed<ChipOption[]>(() => availableChannels.value.map(ch => ({ value: ch, label: ch })))
+// Per-option guidance for a `select` — see `utils/optionHelp.ts` for why this is not a `tip` and not
+// an advisory.
+const optionHelp = computed(() =>
+  props.param.type === 'select' ? selectedOptionHelp(props.param.options, val.value) : '')
+
 // channelSelection stores an array even when single (`multiple === false`) — so route through a handler
 // that keeps only the newly-added value in the single case, preserving the old replace-on-click behaviour.
 function onChannelUpdate(next: string[]) {
@@ -605,18 +612,20 @@ const pct = computed(() => {
          exactly what happened, and the `v-else` fallback above then rendered its "unsupported type"
          spinner under every param on the page. -->
     <div v-if="advisoryLoading" class="param-advisory cc-muted">checking…</div>
-    <!-- the advisory tip hangs off its MESSAGE, not the row: the data-quality flag below carries its
-         own, and a row tip fired on top of it (docs/UI.md → nested tooltips) -->
-    <div v-else-if="advisory" class="param-advisory cc-muted"
-         :class="`sev-${advisory.severity}`">
-      <i class="pi" :class="SEVERITY[advisory.severity].icon" />
-      <span v-tooltip.right="advisory.tip">{{ advisory.message }}</span>
+    <!-- `InlineNote` hangs the tooltip off the TEXT, not the row, which is what the data-quality flag
+         in the slot needs: a row-level tip fires on top of the flag's own (docs/UI.md → nested tooltips) -->
+    <InlineNote v-else-if="advisory" class="param-advisory"
+                :severity="advisory.severity" :short="advisory.message" :detail="advisory.tip">
       <!-- optional second signal: how good the DATA is, as distinct from how concerning the
            recommendation is. Own colour + own tooltip; colour is never the only cue. -->
       <i v-if="advisory.flag" class="pi param-advisory-flag" :class="SEVERITY[advisory.flag.severity].icon"
          :style="{ color: SEVERITY[advisory.flag.severity].color }"
          v-tooltip.right="advisory.flag.tip" />
-    </div>
+    </InlineNote>
+    <!-- Per-OPTION guidance for a select: what this choice means and when to pick it. Deliberately NOT
+         an advisory — nothing about the user's data was consulted, and borrowing `severity: ok` would
+         render a green check claiming a verdict nobody reached. -->
+    <InlineNote v-if="optionHelp" class="param-advisory" :short="optionHelp" placement="bottom" />
   </div>
 
   <!-- section rendered outside .param-row so it spans full width -->
@@ -803,9 +812,8 @@ const pct = computed(() => {
    sole cue — a shape-distinct icon rides along (see lib/severity.ts). */
 /* no font-size here: `.cc-muted` on the element already sets --cc-fs-sm, and repeating it is a
    no-op the cssScenarios shadowing detector (rightly) fails on. */
-.param-advisory { display: flex; align-items: center; gap: 0.3rem; }
-.param-advisory.sev-warn { color: var(--cc-sev-warn); }
-.param-advisory.sev-fail { color: var(--cc-sev-fail); }
+/* layout only — `InlineNote` owns the icon/text/gap and the severity colour */
+.param-advisory { display: flex; }
 .param-advisory-flag { margin-left: 0.1rem; }
 
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */

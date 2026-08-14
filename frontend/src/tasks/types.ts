@@ -20,7 +20,10 @@ export interface ParamDef {
   step?: number
   default?: unknown
   // select / valueNameSelection
-  options?: { label: string; value: string }[]
+  // `help` is per-OPTION guidance — "when would I pick this one" — shown under the select once that
+  // option is chosen. Distinct from `tip`, which describes the PARAM: a label like "Gated" says
+  // nothing on its own and the answer differs per option, so one param-level tip cannot carry it.
+  options?: { label: string; value: string; help?: string }[]
   multiple?: boolean
   field?: string        // valueNameSelection: which image field to read names from ('filepath' | 'labels')
   popType?: string      // popSelection: which population type to list ('flow' | 'live' | 'clust')

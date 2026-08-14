@@ -10,7 +10,7 @@
  */
 import { computed, onMounted, watch } from 'vue'
 import { useTaskPreviewStore } from '../stores/taskPreview'
-import { SEVERITY } from '../lib/severity'
+import InlineNote from './InlineNote.vue'
 import type { PreviewContext } from '../utils/taskPreview'
 
 const props = defineProps<{
@@ -78,22 +78,17 @@ const label = computed(() => {
       <!-- why there is no fresh preview. A mismatch between what the viewer shows and what the task
            reads is amber, not muted: it looks exactly like a working preview of the wrong pixels, so
            it has to be as loud as the other warnings. `utils/taskPreview.previewNotice` decides. -->
-      <span v-if="preview.notice.short"
-        :class="preview.notice.warn ? 'preview-warn cc-fs-2xs' : 'cc-muted cc-fs-2xs'"
-        v-tooltip.left="preview.notice.detail || undefined">
-        <i v-if="preview.notice.warn" class="pi" :class="SEVERITY.warn.icon" />
-        {{ preview.notice.short }}
-      </span>
+      <InlineNote v-if="preview.notice.short"
+        :class="preview.notice.warn ? 'preview-warn cc-fs-2xs' : 'cc-fs-2xs'"
+        :severity="preview.notice.warn ? 'warn' : undefined" placement="left"
+        :short="preview.notice.short" :detail="preview.notice.detail || undefined" />
       <!-- Every "the run will not look exactly like this" caveat: 2D fallback / no signal, base model
            only, run-would-tile, composite steps not previewed. Collected in the store (`warnings`) —
            they are the same kind of statement and rendered identically, so one loop rather than a span
            each. All go through the severity model: shape-distinct icon + text, never colour alone
            (lib/severity.ts, WCAG 1.4.1). -->
-      <span v-for="w in preview.warnings" :key="w.short" class="preview-warn cc-fs-2xs"
-        v-tooltip.left="w.detail">
-        <i class="pi" :class="SEVERITY.warn.icon" />
-        {{ w.short }}
-      </span>
+      <InlineNote v-for="w in preview.warnings" :key="w.short" class="preview-warn cc-fs-2xs"
+        severity="warn" placement="left" :short="w.short" :detail="w.detail" />
     </div>
   </div>
 </template>

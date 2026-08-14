@@ -8,6 +8,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
+import InlineNote from './InlineNote.vue'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
@@ -260,13 +261,15 @@ async function fillFlagged() {
       <div class="pp-form">
         <p v-if="focusedImg" class="focus-name">{{ focusedImg.name }}</p>
 
-        <p v-if="focusedWarning" class="warn-line" v-tooltip.bottom="focusedWarning.long">
-          <i class="pi pi-exclamation-triangle" /> {{ focusedWarning.short }}
-        </p>
+        <!-- both through `InlineNote` — the shared "short line, reasoning on hover" shape. The
+             warning had hardcoded `pi-exclamation-triangle` rather than reading the severity model,
+             so a palette or icon change would have missed it. The re-run note keeps an explicit icon
+             because its meaning is history, not severity. -->
+        <InlineNote v-if="focusedWarning" class="warn-line" severity="warn" placement="bottom"
+                    :short="focusedWarning.short" :detail="focusedWarning.long" />
 
-        <p v-if="downstreamNote" class="rerun-line" v-tooltip.bottom="downstreamNote.long">
-          <i class="pi pi-history" /> {{ downstreamNote.short }}
-        </p>
+        <InlineNote v-if="downstreamNote" class="rerun-line" icon="pi-history" placement="bottom"
+                    :short="downstreamNote.short" :detail="downstreamNote.long" />
 
         <ChipSelect class="toggle-row" multiple :options="dimOptions" v-model="includeModel"
           v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct'" />
