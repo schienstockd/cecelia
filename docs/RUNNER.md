@@ -148,6 +148,25 @@ asserts all three directions, including that Quit does *not* opt out — the cop
 `dev.jl`'s `CHILD_PORTS` includes 7657, so Ctrl-C takes it: once the supervisor is gone nothing can
 reach it again.
 
+**A crash is the third case, and it relaunches.** The supervisors (`api/dev.jl`, prod's `app.py`) used
+to treat every death that was not the restart sentinel as "the user is done" — so a backend segfault
+ran the teardown above and reaped the runner, meaning a crash cost exactly the running segmentation the
+runner exists to protect. Both now classify the death (`_crash_death` / `_crashed`, kept in step and
+tested in `api/test`):
+
+| how the backend died | supervisor |
+|---|---|
+| `exit(42)` — Restart / worktree switch | relaunch (the loop's main job) |
+| `exit(0)` — in-app Quit; `SIGINT`/`SIGTERM`/`SIGKILL` — Ctrl-C, `pixi run stop` | stop, teardown takes the runner |
+| a **fault** signal (SEGV/ABRT/BUS/FPE/ILL) or any other nonzero exit | **relaunch, children left running** |
+
+The distinction that matters is the middle row: relaunching on `SIGTERM`/`SIGKILL` would make
+`pixi run stop` unable to stop the app, because the supervisor would keep bringing it back. Bounded by
+`CRASH_LIMIT` faults inside `CRASH_WINDOW` (3 in 60 s) — a server that cannot boot at all stops with
+the reason on screen instead of looping, and then the teardown *does* take the runner. Every resident
+child is adopt-or-launch, so the relaunched server picks the runner (and napari, the preview worker,
+Pluto) straight back up.
+
 ---
 
 ## What is NOT on the runner

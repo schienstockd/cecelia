@@ -10007,6 +10007,32 @@ end
     @test Cecelia._listener_pids_from_ss(two) == [10, 22]            # distinct PIDs kept, in order
 end
 
+# Killing an ALREADY-DEAD process must be a no-op, not a segfault.
+#
+# This is a crash regression, and the only test in the suite whose failure mode is the whole process
+# dying: `_kill_proc_tree` used to read the pid with a bare `ccall(:uv_process_get_pid, …,
+# proc.handle)`, and Julia sets `proc.handle = C_NULL` the moment a process is reaped — so the ccall
+# dereferenced NULL. It killed a running server (SIGSEGV in the napari-close path during a Restart) and
+# took the detached task runner with it. An exited process is the COMMON input here: cancelling a task
+# whose Python just finished, and closing a napari bridge that failed to start, both arrive this way.
+#
+# `Libc.getpid` is the fix — the same read with the iolock held and a `handle != C_NULL` check, raising
+# a catchable `UV_ESRCH` instead. Asserting "no crash" cannot be done with `@test_throws`; the
+# assertions are that we get here at all, and that the call reports the process as gone.
+@testset "killing a dead process is a no-op (_kill_proc_tree)" begin
+    proc = run(`$(Base.julia_cmd().exec[1]) --startup-file=no -e "exit()"`; wait = false)
+    wait(proc)                                     # reaped → handle closed → C_NULL
+    @test !process_running(proc)                   # the precondition the crash needed
+    @test_throws Base.IOError Libc.getpid(proc)     # Base's guarded read: catchable, not a segfault
+    @test Cecelia._kill_proc_tree(proc) === nothing # …and the caller survives it
+    # A LIVE process still gets killed — the guard must not have turned the function into a no-op.
+    live = run(`$(Base.julia_cmd().exec[1]) --startup-file=no -e "sleep(30)"`; wait = false)
+    @test process_running(live)
+    Cecelia._kill_proc_tree(live)
+    wait(live)
+    @test !process_running(live)
+end
+
 # Project export → import round-trip (project_io.jl / jobs.jl). Uses its own CECELIA_DEV_DIR +
 # temp projects dir so it never touches the real dev/prod config; restores afterwards. Verifies:
 # each .zarr store is packed to ONE .zarr.tar (no unpacked stores in the bundle), the lockfile is

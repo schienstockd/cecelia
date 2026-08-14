@@ -112,8 +112,26 @@ def _apply_pending_update() -> None:
 
 
 # The server exits with this code to ask its supervisor (us) to relaunch it — Settings → System →
-# Restart (POST /api/app/restart). Mirrors the dev.jl supervisor loop. Any other exit → we stop.
+# Restart (POST /api/app/restart). Mirrors the dev.jl supervisor loop.
 RESTART_EXIT_CODE = 42
+
+# …and a CRASH is relaunched too, on the same rule dev.jl uses (`_crash_death` there — keep the two in
+# step). Exit 0 is the in-app Quit and a negative rc is a signal we or the OS sent to stop it
+# (SIGTERM/SIGINT/SIGKILL, i.e. the window closing or a `kill`), so neither comes back. Anything else
+# — a nonzero exit, or a FAULT signal — is the server falling over, and a user whose two-hour
+# segmentation is mid-flight would rather have the app come back than find a closed window. Bounded by
+# CRASH_LIMIT inside CRASH_WINDOW so a server that cannot boot reports that instead of looping.
+_FAULT_SIGNALS = (4, 6, 7, 8, 10, 11)   # ILL, ABRT, BUS (7 Linux / 10 macOS), FPE, SEGV
+CRASH_LIMIT = 3
+CRASH_WINDOW = 60.0
+
+
+def _crashed(rc: int) -> bool:
+    """Did the server FALL OVER (relaunch), rather than being asked to stop (don't)?
+
+    `Popen.wait` returns `-N` for a process killed by signal N, so a fault is `-11`, not `11`.
+    """
+    return (-rc in _FAULT_SIGNALS) if rc < 0 else rc not in (0, RESTART_EXIT_CODE)
 
 
 def main() -> int:
@@ -122,6 +140,7 @@ def main() -> int:
     # backend restart is available (we relaunch it on RESTART_EXIT_CODE).
     env = {**os.environ, "CECELIA_SUPERVISED": "1"}
     first = True
+    crashes: list[float] = []          # fault timestamps inside CRASH_WINDOW — the loop breaker
     while True:
         # Apply staged updates every iteration, not just at first launch — Settings → System Restart
         # re-enters this loop with the Julia backend down, which is the one moment we can swap
@@ -147,6 +166,15 @@ def main() -> int:
             if rc == RESTART_EXIT_CODE:
                 print("Restarting Cecelia…")
                 continue
+            if _crashed(rc):
+                now = time.time()
+                crashes = [t for t in crashes if now - t < CRASH_WINDOW] + [now]
+                if len(crashes) < CRASH_LIMIT:
+                    print(f"Cecelia stopped unexpectedly ({rc}) — restarting…", file=sys.stderr)
+                    continue
+                print(f"Cecelia crashed {len(crashes)} times in {int(CRASH_WINDOW)}s — giving up.",
+                      file=sys.stderr)
+                return 1
             return 0
         except KeyboardInterrupt:
             return 0
