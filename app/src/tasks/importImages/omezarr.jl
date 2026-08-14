@@ -35,6 +35,57 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
 end
 
 """
+    _recover_ims_time_increment!(zarr_meta, src_path, run_dir; on_log) -> Bool
+
+Fill `TimeIncrement`/`TimeIncrementUnit` from an Imaris `.ims` SOURCE when the converted store has
+none. Returns whether it filled anything.
+
+Bio-Formats' `ImarisHDFReader` reports no `TimeIncrement` and no per-plane `DeltaT` at all — it loads
+the file's timing into the unstructured original-metadata table (what ImageJ's "Show Info" prints)
+and never promotes it into the OME model. So bioformats2raw writes a store with no interval, and
+`_delta_t_fallback` above has nothing to scrape: the number is in the source file and only reachable
+by reading it directly. Same shape as the ImageJ Z-spacing fix in the task below, and for the same
+reason — a source-specific calibration recovery Bio-Formats doesn't hand us.
+
+Only ever ADDS a value: if the store already carried an interval, that is what bioformats2raw
+actually found and it wins. An irregular series yields nothing (the runner refuses to flatten it to a
+median) — logged, because "no interval" and "an interval we declined to guess" are different answers
+and only the second is worth acting on.
+"""
+function _recover_ims_time_increment!(zarr_meta::Dict{String,Any}, src_path::AbstractString,
+                                      run_dir::AbstractString;
+                                      on_log::Function = _ -> nothing)::Bool
+    endswith(lowercase(src_path), ".ims") || return false
+    isfile(src_path) || return false
+
+    result_file = joinpath(run_dir, "read_ims_time_interval.$(string(rand(UInt32); base = 16)).result.json")
+    try
+        ok = run_py("tasks/importImages/read_ims_time_interval_run.py",
+                    (; imPath = src_path, resultPath = result_file), run_dir; on_log = on_log)
+        (ok && isfile(result_file)) || return false
+        res = JSON3.read(read(result_file, String))
+        if haskey(res, :TimeIncrement)
+            zarr_meta["TimeIncrement"] = Float64(res[:TimeIncrement])
+            # The runner returns SECONDS and no unit, on purpose: ccid/NGFF spell it `second` and
+            # OME-XML spells it `s`, so the unit belongs to whoever stores the value. Stamped here
+            # exactly as the `_delta_t_fallback` path does; `sync_zarr_calibration!` converts at the
+            # OME-XML boundary (enforced by `test_ome_unit_symbols.py`).
+            zarr_meta["TimeIncrementUnit"] = "second"
+            nominal = get(res, :nominal, false) === true
+            on_log("[INFO] Frame interval $(zarr_meta["TimeIncrement"]) s recovered from the Imaris " *
+                   "source ($(get(res, :source, "?"))$(nominal ? ", nominal" : ""))")
+            return true
+        end
+        on_log("[WARN] No frame interval in the Imaris source: $(get(res, :reason, "unknown"))")
+    catch e
+        @warn "Could not read Imaris time interval" src_path exception = e
+    finally
+        rm(result_file; force = true)
+    end
+    false
+end
+
+"""
 Directory whose `.zattrs` carries the NGFF `multiscales` — the bioformats2raw series wrapper
 (`zarr/0`) or, for a flat `create_multiscales` store, `zarr` itself. Julia mirror of Python's
 `zarr_utils.series_base`; the ONE place on this side that decides the layout, so a reader or a
@@ -602,6 +653,15 @@ function resync_ome_meta!(img::CciaImage)::Bool
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     zarr_meta = read_ome_metadata(zarr_path)
     isempty(zarr_meta) && return false
+
+    # An Imaris timelapse imported before the source-timing recovery existed has no interval anywhere
+    # — not in the store, not in ccid — so re-reading the store can't produce one. Go back to the
+    # source file, which is the whole point of this being the repair path that needs no re-import.
+    if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
+        src = string(get(img.meta, "ori_path", ""))
+        isempty(src) || _recover_ims_time_increment!(zarr_meta, src, task_run_dir(img._dir))
+    end
+
     merged = _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
     has_calibration_meta(merged) && sync_zarr_calibration!(zarr_path, merged)
     write_metadata_qc!(img)     # recompute calibration QC from the refreshed meta
@@ -835,6 +895,13 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                 rm(result_file; force = true)
             end
         end
+    end
+
+    # Imaris sources: Bio-Formats hands over no timing whatsoever, so a timelapse arrives with no
+    # interval. Recover it from the source file (see `_recover_ims_time_increment!`). Only when the
+    # store genuinely has none — a real value from bioformats2raw always wins.
+    if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
+        _recover_ims_time_increment!(zarr_meta, src_path, task_run_dir(img._dir); on_log = on_log)
     end
 
     # Clipping at ACQUISITION, checked on every import. A channel the detector clipped has lost
