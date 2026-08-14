@@ -25,6 +25,16 @@ const MAINTENANCE_PATCHES = MaintenancePatch[
         "Delete store directories left by cancelled or crashed runs. Run with no tasks in flight.",
         "utils/store_sweep.py",
     ),
+    MaintenancePatch(
+        "ims-softlink",
+        "Repair Imaris sources",
+        # The user's entry point to this is the import error, so the description quotes it. WHY
+        # Bio-Formats can't read the file (netcdf-java doesn't follow HDF5 soft links) is in the
+        # script header, not in a Settings string. "Pixel data is untouched" earns the write: this is
+        # the only patch that edits a file OUTSIDE the project.
+        "Fix .ims sources that fail to import with \"Unknown pixel type: null\". Pixel data is untouched.",
+        "utils/ims_relink.py",
+    ),
 ]
 
 """

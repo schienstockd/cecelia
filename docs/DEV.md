@@ -373,3 +373,12 @@ patches from `GET /api/maintenance/patches` and launches one via the `maintenanc
 (cancel via `maintenance:cancel`). Registry + runner: `app/src/maintenance.jl`
 (`run_maintenance_patch`/`cancel_maintenance!`); WS handler: `api/src/sockets.jl`
 (`handle_maintenance_run`). Example patch: `store-debris` (the leftover-store sweep).
+
+**A patch may reach outside the project — deliberately, and only via what the project records.** The
+scope is "one project" in the sense that `root` bounds what it may *consult*, not that every byte it
+writes lives under `root`: `ims-softlink` repairs the `.ims` **source files** the project's images name
+in `meta.ori_path`, because the defect is in the acquisition file and no amount of rewriting the
+project fixes it. A patch that writes to the user's raw data owes more than the usual care — dry-run
+must be the default, every file it declines must say why (`ims_relink.inspect` returns a `state` per
+file rather than a boolean), and it must verify the result by reading back through the path it just
+changed. Do not widen this to "patches can touch anything": `root` is still the only input.
