@@ -70,13 +70,21 @@ end
 QC for AF correction, from the per-channel output stats the runner writes.
 
 This task used to be QC-exempt, with a comment calling itself the weakest exemption in the codebase.
-It now has exactly ONE finding, because the correction has no free parameter left to land badly and the
-only objective signal is about the INPUT:
+It now has two findings, and both are about things the user can act on OUTSIDE this task:
 
 * **saturated input** → the channel was clipped at the sensor, before we saw it. `saturatedFrac`. No
   correction recovers a clipped voxel's true value, so this is a warning about the acquisition and the
   action is at the microscope. Measured across the nine kSUFux movies, CH3 saturation ranged from
   0.001% to 0.018% of voxels — a 13x spread within one experiment at identical settings.
+
+* **bleedthrough detected** → a derived, non-zero `alpha` for some source channel
+  (`correction_utils.af_bleedthrough_alphas`). The correction subtracts it, so this is not a failure —
+  it is the diagnostic the audit said this task had never had. A leak is a property of the FILTER SET,
+  so it should be the same across a set acquired the same way; one image differing is a real signal
+  about the optics. There is no invented threshold here: the coefficient is already floored at
+  `AF_ALPHA_MIN` on the Python side, so anything reported is something the estimator was willing to
+  claim, and the finding simply says so. Measured on `WIaUjL/p6t4mC`: 0.0248 from CH3 into CH2, and
+  exactly zero for the other eleven ordered pairs among four channels.
 
 **`af-low-range` is deleted, not re-tuned, and that is the interesting part.** It warned when the output
 used under 20% of the dtype's levels. That was a real signal under the RATIO, whose output was stretched
@@ -92,6 +100,14 @@ suppressed", but there is no observed instance of that, so the threshold would h
 than derived — the trap `docs/MODULES.md` names ("do not invent a meaningless metric"). If such a case
 ever appears it supplies both the failure mode and the number.
 
+**It appeared — `WIaUjL/p6t4mC` — and it was a missing MECHANISM, not a missing warning.** CH3 leaked
+2.3% into CH2 and was ~7x brighter, so the dominance weight (which scales) read every co-positive voxel
+as CH3's: corrected CH2 came out 98-99% zero and segmenting it found CH3. The fix was to unmix the leak
+first and drop that competitor from the weight — see `correction_utils.af_correct_frame`, which takes
+co-positive retention there from 5.6-7.4% to 82-83%. A suppression finding is still unbuilt, and now
+has a harder case to justify itself against: near-total suppression is a legitimate answer when a
+channel genuinely loses on its own merits.
+
 `clippedFrac` and `ceiling` went with the ratio too: the output is `b * weight` with `weight <= 1`, so it
 can never reach the top of the range, and there is no derived ceiling left to drift across a set.
 
@@ -99,7 +115,7 @@ Advisory only, per `docs/MODULES.md` — never an `error`, never a gate.
 """
 function af_qc_findings(per_channel::AbstractDict)
     findings = Vector{Dict{String,Any}}()
-    worst_saturated, worst_levels = 0.0, 1.0
+    worst_saturated, worst_levels, worst_leak = 0.0, 1.0, 0.0
     for (ch, s) in sort(collect(per_channel); by = first)
         saturated = Float64(get(s, "saturatedFrac", 0.0))
         used      = Float64(get(s, "levelsUsed", 0))
@@ -117,8 +133,24 @@ function af_qc_findings(per_channel::AbstractDict)
                     "saturatedFrac" => round(saturated; digits = 5),
                     "saturatedPct"  => round(saturated * 100; digits = 3))))
         end
+
+        # Bleedthrough INTO this channel, one finding per source — the sources are what the user would
+        # go and look at, and collapsing them into one finding would hide which filter pair is leaking.
+        leaks = get(s, "bleedthrough", nothing)
+        if leaks isa AbstractDict
+            for (src, a) in sort(collect(leaks); by = first)
+                alpha = Float64(a)
+                worst_leak = max(worst_leak, alpha)
+                push!(findings, qc_finding("warn", "af.bleedthrough"; channel = ch,
+                    value = string(round(alpha * 100; digits = 2), "%"),
+                    detail = Dict{String,Any}(
+                        "sourceChannel" => string(src),
+                        "alpha"         => round(alpha; digits = 5),
+                        "alphaPct"      => round(alpha * 100; digits = 2))))
+            end
+        end
     end
-    findings, (; saturated = worst_saturated, levels = worst_levels)
+    findings, (; saturated = worst_saturated, levels = worst_levels, leak = worst_leak)
 end
 
 function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
@@ -190,9 +222,14 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
             write_qc(img, "cleanupImages.afCorrect", out_value_name, findings;
                      metrics = Dict{String,Any}("saturatedFrac" => worst.saturated,
                                                 "levelsUsedFrac" => worst.levels,
+                                                # cohort-comparable BECAUSE a leak is a filter-set
+                                                # property: one image of a set differing from its peers
+                                                # is the signal, not the absolute value
+                                                "maxBleedthrough" => worst.leak,
                                                 "byChannel" => per_ch))
             on_log("[QC] $(round(worst.saturated * 100; digits = 3))% of input voxels saturated; " *
-                   "$(round(worst.levels * 100; digits = 1))% of the output range used.")
+                   "$(round(worst.levels * 100; digits = 1))% of the output range used; " *
+                   "max bleedthrough $(round(worst.leak * 100; digits = 2))%.")
         catch e
             on_log("[QC] could not compute AF QC: $e")
         end

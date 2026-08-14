@@ -548,11 +548,42 @@ def _af_subtract(slab, subtract_val):
     return f
 
 
-#: The GLOBAL values the power weight needs before it can correct a single voxel: one background level
-#: per participating channel. Whole-image by definition, which is why they are a separate, cacheable
-#: step — see `af_weight_stats`. ``saturated`` rides along because the same pass already has the
-#: histograms, and input saturation is the one thing about this correction worth warning about.
-AfWeightStats = collections.namedtuple('AfWeightStats', 'backgrounds saturated exponent nbins')
+#: The GLOBAL values the correction needs before it can touch a single voxel: a background level per
+#: participating channel, and a BLEEDTHROUGH coefficient per ordered channel pair. Whole-image by
+#: definition, which is why they are a separate, cacheable step — see `af_weight_stats`. ``saturated``
+#: rides along because the same pass already has the histograms, and input saturation is the one thing
+#: about this correction worth warning about.
+AfWeightStats = collections.namedtuple('AfWeightStats',
+                                       'backgrounds alphas saturated exponent nbins')
+
+#: Paired voxels sampled for the bleedthrough fit, across the whole derivation. `alpha` is ONE SCALAR
+#: PER CHANNEL PAIR over the entire movie, so this is a statistical question and not a per-voxel one:
+#: measured on `WIaUjL/p6t4mC`, 3.1M pooled voxels gave 0.0231 and the per-plane estimates over the same
+#: movie ran 0.020-0.045, i.e. the pooled number is already tighter than the frame-to-frame spread. The
+#: cap exists so the sample cannot grow with the movie — 2M float64 pairs is ~16 MB per channel.
+AF_ALPHA_MAX_SAMPLES = 2_000_000
+
+#: Below this, a fitted coefficient is reported as ZERO rather than applied. Two reasons, and the second
+#: is the load-bearing one. A fit always returns *something*, so without a floor every channel pair
+#: acquires a small spurious leak and the correction starts subtracting noise from signal. And
+#: `coloc_utils.envelope_slope` is measured to err HIGH at small alpha (+55% at 0.01), which is exactly
+#: the regime where a fitted number is least trustworthy.
+#:
+#: 0.005 has margin on both sides, measured. On INDEPENDENT channels with realistic statistics the
+#: estimate never exceeded **0.0009** at any sample size from 5k to 3M voxels (8 seeds each), and on the
+#: real four-channel `WIaUjL/p6t4mC` eleven of the twelve ordered pairs came back at exactly 0.0000. A
+#: genuine leak on that image sits at **0.023**. So the floor is ~5x above the noise and ~4x below the
+#: smallest real leak seen. (Uniformly-distributed synthetic channels DO produce spurious fits around
+#: 0.01, but a fluorescence channel is mostly background and nothing like uniform — the same degenerate
+#: input `af_weight_stats` already warns about for the triangle threshold.)
+AF_ALPHA_MIN = 0.005
+
+#: **There is deliberately no fit-quality gate to go with it, and that is worth writing down because the
+#: obvious one does not work.** R^2 of the envelope fit looks like the way to tell a leak from a
+#: coincidence, and it is not: a leak-free pair has a FLAT floor, which a flat line fits beautifully, so
+#: a synthetic pair with no leak at all scores 0.47 while the real CH3->CH2 leak scores 0.43. R^2 says
+#: how well determined the slope is, never whether it is non-zero. `envelope_slope` still returns it,
+#: for reporting; gating on it would have rejected the real leak and admitted the null.
 
 #: How sharply a channel must dominate a voxel to keep it: ``weight = b_t^p / Σ b_i^p``.
 #:
@@ -626,26 +657,122 @@ def af_weight_stats(
     def _stride(a):
         return a[..., ::zst, ::xyst, ::xyst] if (strided and a.ndim >= 3) else a
 
+    # Per-frame quota for the PAIRED sample the bleedthrough fit needs. A histogram is a marginal and
+    # cannot answer a joint question, so the pairs have to be carried out of this loop — the alternative
+    # is a second full pass over the movie for one scalar per channel pair.
+    quota = max(1, int(AF_ALPHA_MAX_SAMPLES) // max(1, len(ts))) if len(channels) > 1 else 0
+
     hists = {ch: np.zeros(nbins, np.int64) for ch in channels}
+    pairs = {ch: [] for ch in channels}
     for t in ts:
+        take = None
         for ch in channels:
             a = _stride(_af_slab(data, dim_utils, ch, t))
             hists[ch] += np.bincount(np.clip(a, 0, nbins - 1).astype(np.int64).ravel(),
                                      minlength=nbins)[:nbins]
+            if quota:
+                flat = a.ravel()
+                # the SAME positions in every channel, or the samples are not pairs at all. Evenly
+                # spaced rather than random: no seed to carry, and a fluorescence frame has no
+                # structure at the sampling period that a regular grid could alias with.
+                if take is None:
+                    take = (np.arange(min(quota, flat.size), dtype=np.int64) *
+                            max(1, flat.size // max(1, min(quota, flat.size))))
+                    take = take[take < flat.size]
+                pairs[ch].append(flat[take].astype(np.float64))
 
     backgrounds = {ch: float(intensity_utils.background_threshold(hists[ch], background_method))
                    for ch in channels}
     saturated = {ch: float(hists[ch][nbins - 1]) / max(1.0, float(hists[ch].sum()))
                  for ch in channels}
-    return AfWeightStats(backgrounds=backgrounds, saturated=saturated,
+    samples = ({ch: np.concatenate(v) for ch, v in pairs.items()} if quota and any(pairs.values())
+               else {})
+    alphas = af_bleedthrough_alphas(samples, backgrounds) if samples else {}
+    return AfWeightStats(backgrounds=backgrounds, alphas=alphas, saturated=saturated,
                          exponent=int(exponent), nbins=nbins)
 
 
-def af_correct_frame(slabs, target, stats, out_dtype):
-    """Correct ONE frame of ONE channel: keep the share of each voxel this channel dominates.
+def af_bleedthrough_alphas(samples, backgrounds):
+    """Bleedthrough coefficient per ORDERED channel pair, from paired background-subtracted samples.
 
-        b_i    = max(raw_i - background_i, 0)      for the target and every competing channel
-        out_t  = b_t * b_t^p / Σ_i b_i^p
+    ``samples`` maps a channel index to a flat array of voxel values, all arrays sampled at the SAME
+    positions. Returns ``{(src, dst): alpha}`` for every ordered pair whose fit clears `AF_ALPHA_MIN`;
+    a pair with no detectable leak is simply absent, which is the honest way to say "nothing to
+    subtract" and is what makes an all-zero result cost nothing downstream.
+
+    **Why this is a separate job from the dominance weight.** The task has two of them
+    (`docs/todo/AF_CORRECTION_AUDIT.md` → *The task has TWO jobs, and only one mechanism*): removing
+    intensity present in more than one channel because the tissue is autofluorescent, and removing
+    intensity present in more than one channel because the filter set leaks. They are separable because
+    only one is proportional — bleedthrough is a property of the optics, so every voxel where the source
+    is bright gets the same fraction added, which is a straight line through the FLOOR of the joint
+    distribution. Broadband autofluorescence varies structure to structure and sits above that floor.
+    `coloc_utils.envelope_slope` fits the floor and is therefore blind to the autofluorescence, which is
+    the property the whole split rests on and is pinned by
+    `test_coloc_utils.test_a_co_present_structure_barely_moves_the_envelope`.
+
+    **Why it must run BEFORE the weight, not instead of it.** A dominance weight answers "which channel
+    owns this voxel" by *scaling*, so where a real target cell overlaps a brighter competitor it removes
+    a fraction of a genuine cell rather than the leaked amount. On `WIaUjL/p6t4mC` (CH3 into CH2, alpha
+    0.023) that was the difference between keeping **5.6-7.4%** of co-positive CH2 and keeping
+    **82-85%** of it — while the leak-only voxels still lost 93-98% of their signal. Subtracting an
+    amount and scaling by a fraction are not interchangeable, and the leak is an amount.
+
+    A coefficient is deliberately NOT derived for a pair whose source is too dim to fit against: the
+    reverse direction of a real one-way leak is exactly that case, and it is where a fit invents numbers
+    (measured on the same image, CH3->CH2 came back 0.020-0.045 across timepoints while CH2->CH3 swung
+    0.000-0.179). `AF_ALPHA_MIN` plus `envelope_slope`'s own nan-on-too-little-data is what stops those
+    reaching a voxel.
+    """
+    from cecelia.utils import coloc_utils
+
+    b = {int(ch): np.maximum(np.asarray(v, dtype=np.float64) - float(backgrounds.get(int(ch), 0.0)), 0)
+         for ch, v in samples.items()}
+    fits = {}
+    for src in sorted(b):
+        for dst in sorted(b):
+            if src == dst:
+                continue
+            alpha, r2, _bins = coloc_utils.envelope_slope(b[src], b[dst])
+            if np.isfinite(alpha) and alpha >= AF_ALPHA_MIN:
+                fits[(src, dst)] = (float(alpha), float(r2) if np.isfinite(r2) else 0.0)
+
+    # ONE DIRECTION per pair. A proportional leak has a direction — the filter set passes some of the
+    # brighter emitter into the dimmer channel's band — and two channels cannot each be a fixed fraction
+    # of the other. When both directions fit, the relationship is shared structure rather than an
+    # identifiable leak, and subtracting both would take a bite out of each channel on the strength of
+    # the other. Keep the better-supported direction only.
+    #
+    # This is NOT a general solution to mutual bleedthrough. Genuine two-way spectral overlap is a
+    # linear system and wants an inverted mixing matrix, not two independent subtractions; that is out
+    # of scope here and the one-way case is what real filter sets mostly present. Measured on
+    # `WIaUjL/p6t4mC`, exactly one of the twelve ordered pairs among four channels fitted at all.
+    out = {}
+    for (src, dst), (alpha, r2) in fits.items():
+        rev = fits.get((dst, src))
+        if rev is None or r2 > rev[1] or (r2 == rev[1] and alpha >= rev[0]):
+            out[(src, dst)] = alpha
+    return out
+
+
+def af_correct_frame(slabs, target, stats, out_dtype):
+    """Correct ONE frame of ONE channel — two jobs, in the one order that works.
+
+        b_i    = max(raw_i - background_i, 0)          for the target and every competing channel
+        b_i   <- max(b_i - Σ_j α_ji · b_j, 0)          (a) BLEEDTHROUGH: subtract the leaked amount
+        out_t  = b_t * b_t^p / Σ_i b_i^p               (b) CO-PRESENCE: keep the share this one owns
+
+    (a) removes intensity that is in the target because the FILTER SET leaks — proportional, global, a
+    property of the optics (`af_bleedthrough_alphas`). (b) removes intensity that is in more than one
+    channel because the TISSUE is autofluorescent — structure-specific, not proportional. The task has
+    always had both jobs and, until this, only mechanism (b); see
+    `docs/todo/AF_CORRECTION_AUDIT.md` → *The task has TWO jobs, and only one mechanism*.
+
+    **Subtracting an amount is not interchangeable with scaling by a fraction, and using (b) for (a)'s
+    job is what broke `WIaUjL/p6t4mC`.** CH3 leaked 2.3% into CH2 and was ~7x brighter, so the weight
+    read every co-positive voxel as CH3's and kept **5.6-7.4%** of the target's own signal there —
+    corrected CH2 came out 98-99% zero and segmenting it found CH3. Unmixing first keeps **82-85%** of
+    that co-positive signal while the leak-only voxels still lose 93-98%.
 
     Takes the raw slabs already read, keyed by channel index, so it is pure compute with no data
     access. That is what lets the preview hand it a CROP while the run hands it a whole frame, and it
@@ -704,10 +831,43 @@ def af_correct_frame(slabs, target, stats, out_dtype):
 
     b = {int(ch): _af_subtract(slab, stats.backgrounds[int(ch)]) for ch, slab in slabs.items()}
 
+    # (a) BLEEDTHROUGH — subtract the leaked AMOUNT, before anything scales anything. Order matters and
+    # is not a preference: the weight below multiplies, so a leak left in place would be partly kept
+    # wherever the target dominates and would drag the target's own share down wherever it does not.
+    # Clamped at zero because `envelope_slope` errs high by design (see its docstring), so the honest
+    # reading of a negative result is "nothing left", not "negative fluorescence".
+    # attribute access, not `getattr(..., default)`: a stats object without `alphas` is one derived by
+    # code that predates the unmix, and silently treating it as "no leak" is exactly the quiet wrong
+    # answer the `backgrounds` guard above refuses to give
+    alphas = stats.alphas or {}
+    if alphas:
+        leaked = {}
+        for (src, dst), alpha in alphas.items():
+            if src in b and dst in b:
+                leaked[dst] = leaked.get(dst, 0.0) + float(alpha) * b[src]
+        # every participating channel is unmixed, not just the target: a competitor still carrying the
+        # target's leak would claim the target's own voxels in the weight below
+        for ch, amount in leaked.items():
+            b[ch] = np.maximum(b[ch] - amount, 0)
+
+    # (b) CO-PRESENCE — the dominance weight, over the competitors the unmix did NOT already account for.
+    #
+    # **A channel is one or the other, never both, and getting this wrong is what makes (a) pointless.**
+    # Once `src` has been unmixed out of `target`, what remains in the target is by construction the part
+    # NOT explained by src — there is nothing left for a dominance contest against src to decide. Leaving
+    # it in the denominator just re-removes the same overlap, multiplicatively this time, and the
+    # subtraction buys nothing: measured on `WIaUjL/p6t4mC`, unmix-then-weight kept **6.4%** of
+    # co-positive target signal against **7.4%** for the weight alone and **84.9%** for the unmix alone.
+    # The weight, not the leak, was doing the erasing.
+    #
+    # The partition is DERIVED, not configured, and it is derived by the thing that distinguishes the two
+    # jobs in the first place: a competitor whose contribution fits a proportional law is optics, and one
+    # whose does not is autofluorescence. `AF_ALPHA_MIN` is where that decision is actually made.
+    unmixed_from_target = {src for (src, dst) in alphas if dst == target}
     num = b[target] ** p
     den = num.copy()
     for ch, v in b.items():
-        if ch != target:
+        if ch != target and ch not in unmixed_from_target:
             den += v ** p
     # den == 0 exactly where every channel sits at or below its own background — nothing to attribute.
     # `where` leaves those voxels at the zeros `out=` already holds rather than dividing by zero.
@@ -746,9 +906,12 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
     if logfile_utils is not None:
         others = ', '.join(f'ch{c} {stats.backgrounds.get(int(c), 0.0):.0f}'
                            for c in competing_channel_idx)
+        leaks = ', '.join(f'ch{s}->ch{d} {a:.4f}' for (s, d), a in sorted(stats.alphas.items())
+                          if d == int(channel_idx))
         logfile_utils.log(
             f'>> ch{channel_idx}: background {stats.backgrounds.get(int(channel_idx), 0.0):.0f} '
-            f'({background_method}), competing against {others}, p={stats.exponent}')
+            f'({background_method}), competing against {others}, p={stats.exponent}, '
+            f'bleedthrough {leaks or "none detected"}')
 
     # Output histogram, accumulated as we go — the objective signal the QC exemption in af_correct.jl
     # said was missing. Free: one bincount per frame we already hold.
@@ -779,6 +942,13 @@ def af_derived_values(stats, target):
         'background': float(stats.backgrounds.get(target, 0.0)),
         'competingBackgrounds': {str(ch): float(v) for ch, v in sorted(stats.backgrounds.items())
                                  if ch != target},
+        # Bleedthrough INTO this channel, per source. The audit's point about alpha is that its value to
+        # a user is diagnostic as much as corrective: a non-zero coefficient says the filter set leaks
+        # (go look at the optics), a zero one says what was removed was tissue autofluorescence
+        # (nothing to fix). "No bleedthrough detected" is a real result, so an empty dict is reported
+        # rather than the key being absent.
+        'bleedthrough': {str(src): float(a) for (src, dst), a in sorted(stats.alphas.items())
+                         if dst == target},
         'saturatedFrac': float(stats.saturated.get(target, 0.0)),
         'exponent': int(stats.exponent),
     }

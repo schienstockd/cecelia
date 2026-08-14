@@ -36,7 +36,10 @@ const PREVIEW_PORT   = 7656
 # anything we would not want served from the old code has to move it. 5 is that case with nothing else
 # attached: the reply shape is identical to 4, and the fix (a preview crashing on every AF request) is
 # invisible to any check but this one.
-const PREVIEW_PROTOCOL = 10
+# 11 is the "a bug fixed inside the worker" case again: AF correction now unmixes bleedthrough before
+# the dominance weight, so an adopted protocol-10 worker would keep previewing a correction in which a
+# leaked channel erases the target it leaked into.
+const PREVIEW_PROTOCOL = 11
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker

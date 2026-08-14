@@ -166,7 +166,13 @@ def _cellpose_imports():
 #: entirely in the REQUEST (`api/src/optical_flow_api.jl` sends narrower bounds); a worker of any
 #: version answers whatever region it is handed, so an adopted protocol-10 worker answers identically.
 #: The cap is on messages the worker RECEIVES, and requests are a few hundred bytes.
-PROTOCOL = 10
+#: 11: AF correction unmixes BLEEDTHROUGH before the dominance weight
+#:     (`correction_utils.af_bleedthrough_alphas`). The load-bearing kind of bump, the same case as 4:
+#:     an adopted protocol-10 worker still has the old one-mechanism `af_correct_frame`, so it would
+#:     keep serving previews in which a leaked channel erases the target it leaked into — silently,
+#:     against a backend that believes it is showing the new method, for a preview whose entire purpose
+#:     is to agree with the run. Its `derived` readout would also lack `bleedthrough`.
+PROTOCOL = 11
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -194,7 +200,8 @@ class PreviewState:
         self._images_zarr = {}   # im_path → plain zarr levels (see image_zarr)
         self._model_cache = {}   # shared with each CellposeUtils instance (see `segmenter`)
         self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
-        self._af = {}            # (im_path, channel, af channels, method) → AF stats
+        self._af = {}            # (im_path, channel, method) → per-channel AF stats
+        self._af_alpha = {}      # (im_path, src, dst, method) → bleedthrough coefficient (0.0 = none)
 
     def image(self, im_path):
         """The image as DASK levels. Kept lazy because cellpose's whole-image normalisation
@@ -284,23 +291,42 @@ class PreviewState:
         channels = script_utils.channel_indices(
             [channel_idx], 'the target channel', _AF_TRANSLATOR) + competing
 
-        missing = [ch for ch in dict.fromkeys(channels) if (im_path, ch, method) not in self._af]
-        if missing:
+        uniq = list(dict.fromkeys(channels))
+        wanted_pairs = [(s, d) for s in uniq for d in uniq if s != d]
+        missing_ch = [ch for ch in uniq if (im_path, ch, method) not in self._af]
+        missing_pairs = [p for p in wanted_pairs
+                         if (im_path, p[0], p[1], method) not in self._af_alpha]
+        # A bleedthrough coefficient belongs to an ordered PAIR, so it gets its own cache rather than
+        # being squeezed into the per-channel one — and it is derived pair-by-pair
+        # (`af_bleedthrough_alphas` loops over pairs independently), so deriving it over a SUBSET of the
+        # channels gives the same number as over all of them. That is what keeps the two caches
+        # composable: a third combination naming an already-seen pair pays nothing.
+        needed = list(dict.fromkeys(missing_ch + [c for p in missing_pairs for c in p]))
+        if needed:
             # one pass over the union of what is not yet known, never per combination
             derived = correction_utils.af_weight_stats(
-                self.image_zarr(im_path)[0], dim_utils, missing,
+                self.image_zarr(im_path)[0], dim_utils, needed,
                 background_method=method, spatial_stride=AF_PREVIEW_STRIDE,
                 timepoints=_preview_timepoints(dim_utils))
-            for ch in missing:
+            for ch in needed:
                 # nbins and exponent are image-wide rather than per-channel, but they are two ints and
                 # carrying them here keeps this to ONE cache — a second one keyed by image would have to
                 # be invalidated in step with this, for nothing
                 self._af[(im_path, ch, method)] = (
                     derived.backgrounds[ch], derived.saturated[ch], derived.nbins, derived.exponent)
+            for s in needed:
+                for d in needed:
+                    # ABSENT means "no leak detected", and that has to be cached as 0.0 — leaving the key
+                    # out would make every subsequent preview re-derive the whole pass to learn the same
+                    # nothing, which is the cold start this cache exists to pay once
+                    s != d and self._af_alpha.setdefault(
+                        (im_path, s, d, method), float(derived.alphas.get((s, d), 0.0)))
 
         entries = [self._af[(im_path, ch, method)] for ch in channels]
         return correction_utils.AfWeightStats(
             backgrounds={ch: entries[i][0] for i, ch in enumerate(channels)},
+            alphas={p: self._af_alpha[(im_path, p[0], p[1], method)] for p in wanted_pairs
+                    if self._af_alpha.get((im_path, p[0], p[1], method), 0.0) > 0.0},
             saturated={ch: entries[i][1] for i, ch in enumerate(channels)},
             nbins=entries[0][2], exponent=entries[0][3])
 

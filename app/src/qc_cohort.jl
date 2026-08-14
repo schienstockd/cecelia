@@ -94,7 +94,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # `ratio / ceiling * rescale`. The output is now in input counts — no ceiling, nothing derived
     # per image to drift. (And the premise was weak anyway: acquisition drift means intensities are not
     # comparable between intravital movies regardless of what this task does.)
-    "cleanupImages.afCorrect"        => ["saturatedFrac", "levelsUsedFrac"],
+    "cleanupImages.afCorrect"        => ["saturatedFrac", "levelsUsedFrac", "maxBleedthrough"],
 )
 
 """
