@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
-  paramsBlocker, hasAfCombination,
+  paramsBlocker, hasAfCombination, previewValueName,
   warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
   type PreviewContext, type PreviewStatus, previewFailureLog } from './taskPreview'
 
@@ -119,6 +119,29 @@ describe('the params these readers get must be flat', () => {
   it('still detects a previewable model either way, because models is not section-nested', () => {
     expect(hasPreviewableModel(NESTED)).toBe(true)
     expect(hasPreviewableModel(FLAT)).toBe(true)
+  })
+})
+
+describe('previewValueName — the layer belongs to the OUTPUT, not the input version', () => {
+  // THE reported bug: the preview layer was keyed by the input image version. napari uses this name
+  // as the label stem, and a segmentation's own layers are named after the LABEL SET, so segmenting
+  // `corrected` into label set `default` put `(corrected) Preview` on screen while `(default) Labels`
+  // was never evicted — two masks stacked — and the finished run then looked for a `(default) Preview`
+  // that did not exist, leaving the stale preview behind.
+  it('prefers outputValueName when the task has one', () => {
+    expect(previewValueName({ valueName: 'corrected', outputValueName: 'default' })).toBe('default')
+  })
+
+  it('falls back to the input version for a task with no output name (AF correction)', () => {
+    expect(previewValueName({ valueName: 'corrected', afCombinations: {} })).toBe('corrected')
+  })
+
+  it('never yields an empty stem', () => {
+    expect(previewValueName(null)).toBe('default')
+    expect(previewValueName({})).toBe('default')
+    // an unset text param arrives as '' rather than absent — that must not become "() Preview"
+    expect(previewValueName({ valueName: 'corrected', outputValueName: '' })).toBe('corrected')
+    expect(previewValueName({ outputValueName: 3 })).toBe('default')
   })
 })
 

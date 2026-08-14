@@ -29,6 +29,7 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
+import { previewValueName } from '../utils/taskPreview'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -443,7 +444,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <TaskPreviewControls
           :project-uid="projectMeta.current?.uid ?? ''"
           :image-uid="drivingImageUid"
-          :value-name="String(paramValues.valueName ?? 'default')"
+          :value-name="previewValueName(previewParams)"
           :fun-name="taskDef?.fun_name ?? ''"
           :params="previewParams"
           :previewable="canPreview"

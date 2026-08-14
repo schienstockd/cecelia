@@ -881,11 +881,18 @@ the preview needed a third. Add a new label family by calling that helper, not b
 
 | Subdir | Suffixes |
 |---|---|
-| `labels` | `Labels`, `Labels (live)` |
+| `labels` | `Labels`, `Labels (live)`, `Preview` |
 | `branchLabels` | `Branches` |
 
 A store holds **at most one** of its family's suffixes at a time — the adder evicts the siblings — so a
 finished set replaces its own live preview and vice versa.
+
+`Preview` (the task preview, which has no store behind it) shares the family for exactly that reason,
+which makes its stem load-bearing: it must be the **label** `value_name` — a segmentation's
+`outputValueName` — not the image version the task READS. The frontend used to send the input version,
+so segmenting `corrected` into label set `default` put `(corrected) Preview` beside an un-evicted
+`(default) Labels`, and the finished run then failed to remove the preview it did not share a stem
+with. Pinned by `previewValueName` in `frontend/src/utils/taskPreview.ts`.
 
 The suffix is prefixed by a **stem**, and that stem is the `value_name`, never the on-disk filename
 (`_label_layer_stem`). A preview reads a `.partial` staging path, so naming the layer after the file
