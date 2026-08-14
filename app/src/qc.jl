@@ -129,6 +129,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "af.saturated_input" => (
         short = "Channel {channel} saturated",
         long  = "Input voxels are clipped at the top of the range, so their true value is already lost — lower the gain or laser power and reacquire."),
+    "af.bleedthrough" => (
+        short = "Channel {channel} carries {value} bleedthrough",
+        long  = "The correction subtracted it, but a leak is a filter-set property — check the emission filters if it differs across a set acquired the same way."),
 
     # smoothing (_smooth_qc_findings). Both findings are about the STEP rather than
     # the input: it always "succeeds", it just may have overshot the dtype or bought nothing.

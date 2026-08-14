@@ -1,9 +1,36 @@
 # AF correction — audit against `4kS67f/Y1IAZU`
 
 **Status:** measured 2026-08-06 on `4kS67f/Y1IAZU` (raw `ccidImage.ome.zarr` and the shipped
-`ccidDriftCorrected.ome.zarr`). Nothing changed in code. This records what the current correction
-does on a real 4-channel 2P spleen movie, which alternatives were tested against it, and which of
-its defects are worth acting on.
+`ccidDriftCorrected.ome.zarr`). This records what the current correction does on a real 4-channel 2P
+spleen movie, which alternatives were tested against it, and which of its defects are worth acting on.
+
+**2026-08-14 — item 2 of the suggested order has SHIPPED, driven by a second dataset.**
+`WIaUjL/p6t4mC` is the second image this file said it needed, and it presented a failure `Y1IAZU`
+could not: CH3 leaked 2.3% into CH2 *and* was ~7x brighter, so the dominance weight erased the channel
+it leaked into. Corrected CH2 came out 98-99% zero and segmenting it found CH3. What landed:
+
+* `af_bleedthrough_alphas` derives α per ordered channel pair (`coloc_utils.envelope_slope`) and
+  `af_correct_frame` subtracts it before the weight. Measured on `p6t4mC`: α = 0.0248 for CH3→CH2 and
+  exactly zero for the other eleven ordered pairs; co-positive target retention **5.6-7.4% → 82-83%**
+  with leak-only voxels still losing 93-98%.
+* **A competitor identified as a leak source is dropped from the weight's denominator.** This is not a
+  detail — unmix-*and*-weigh kept **6.4%**, i.e. no better than the weight alone. The two mechanisms
+  answer the same question about the same pair, so applying both re-removes the same overlap and the
+  subtraction buys nothing. The partition is derived from whether α clears `AF_ALPHA_MIN`.
+* α is banked and warned on (`af.bleedthrough`, cohort metric `maxBleedthrough`) — item 3's diagnostic
+  half, which this file called the QC signal the task had never had.
+
+**Items 1 and 4 have NOT shipped** — the co-presence subtraction with smoothed competitors, and
+retiring `AF_WEIGHT_EXPONENT`. Note for whoever picks item 1 up: measured on `p6t4mC` the proposed
+operator keeps **0.9-3.0%** of co-positive target signal, i.e. *worse* there than the weight it
+replaces. It is ~10x better on `Y1IAZU` and worse on this one, and the reason is the same asymmetry —
+every "present in more than one channel" rule reads a co-positive voxel as belonging to the channel
+that is brighter in absolute terms. Item 1 needs a third dataset before it is a default.
+
+Also measured, and independent of any of this: **running AF after smoothing costs real signal.**
+Smoothing correlates the channels (Pearson 0.63-0.69 → 0.73-0.79 on `p6t4mC`) and inflates the fitted
+α (0.025 → 0.051), taking co-positive retention from 83% to 59%. The Costes walk stops converging
+entirely on smoothed pixels. AF belongs before smoothing in the chain.
 
 Companion to [`AF_QUANTISATION.md`](AF_QUANTISATION.md), which covers the *input precision* half of
 the same task. This file is about the *mechanism*.

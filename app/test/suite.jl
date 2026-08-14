@@ -2456,6 +2456,36 @@ end
     # advisory only, per docs/MODULES.md — never an error, never a gate
     @test all(x -> x["level"] == "warn", f)
 
+    # BLEEDTHROUGH — the diagnostic the audit said this task had never had. Not a failure: the
+    # correction subtracts the leak, and the finding exists because a leak is a FILTER-SET property, so
+    # one image of a set differing from its peers is a real signal about the optics.
+    clean = Dict{String,Any}("1" => Dict{String,Any}(
+        "saturatedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256,
+        "bleedthrough" => Dict{String,Any}()))
+    @test isempty(Cecelia.af_qc_findings(clean)[1])          # no leak detected → nothing to say
+    @test Cecelia.af_qc_findings(clean)[2].leak == 0.0
+
+    leaky = Dict{String,Any}("1" => Dict{String,Any}(
+        "saturatedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256,
+        # the real numbers measured on WIaUjL/p6t4mC: CH3 into CH2, and nothing else
+        "bleedthrough" => Dict{String,Any}("2" => 0.0248)))
+    lf, lw = Cecelia.af_qc_findings(leaky)
+    @test length(lf) == 1 && lf[1]["code"] == "af.bleedthrough" && lf[1]["level"] == "warn"
+    @test lw.leak == 0.0248
+    @test haskey(Cecelia.QC_TEXT, "af.bleedthrough")
+    @test lf[1]["detail"] isa AbstractDict                   # figures in `detail`, never a string
+    @test lf[1]["detail"]["sourceChannel"] == "2"            # WHICH filter pair leaks is the point
+    @test lf[1]["detail"]["alphaPct"] == 2.48
+    @test !isempty(get(lf[1], "long", ""))
+
+    # one finding PER SOURCE — collapsing them would hide which pair is leaking, which is the only
+    # thing a user can act on
+    two = Dict{String,Any}("1" => Dict{String,Any}(
+        "saturatedFrac" => 0.0, "levelsUsed" => 200, "levelsAvailable" => 256,
+        "bleedthrough" => Dict{String,Any}("2" => 0.02, "3" => 0.05)))
+    tf, tw = Cecelia.af_qc_findings(two)
+    @test length(tf) == 2 && tw.leak == 0.05
+
     # `af-low-range` IS GONE, and re-tuning it would be wrong. It warned when the output used <20% of
     # the dtype's levels — a real signal under the RATIO, whose output was stretched to fill the range
     # through a derived ceiling. The power weight outputs INPUT COUNTS, so a 16-bit channel with signal
@@ -2476,8 +2506,11 @@ end
 
     # `levelsUsedFrac` stays a COHORT metric: an image far below its peers is informative even when the
     # absolute number is not. `saturatedFrac` describes the acquisition — measured across the nine
-    # kSUFux movies it spanned 0.001%-0.018%, a 13x spread at identical settings.
-    @test COHORT_METRICS["cleanupImages.afCorrect"] == ["saturatedFrac", "levelsUsedFrac"]
+    # kSUFux movies it spanned 0.001%-0.018%, a 13x spread at identical settings. `maxBleedthrough` is
+    # the most cohort-shaped of the three: a leak is a property of the FILTER SET, so it should be
+    # identical across a set acquired the same way and one image differing is the whole signal.
+    @test COHORT_METRICS["cleanupImages.afCorrect"] ==
+          ["saturatedFrac", "levelsUsedFrac", "maxBleedthrough"]
     @test !("ceiling" in COHORT_METRICS["cleanupImages.afCorrect"])
     @test !("clippedFrac" in COHORT_METRICS["cleanupImages.afCorrect"])
 

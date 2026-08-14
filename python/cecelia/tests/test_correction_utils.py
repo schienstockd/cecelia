@@ -295,6 +295,123 @@ class AfPreviewSeamTest(unittest.TestCase):
         self.assertTrue(np.array_equal(a, b))
 
 
+class AfBleedthroughTest(unittest.TestCase):
+    """Job (a) — subtract the amount the filter set leaked, before the dominance weight scales anything.
+
+    The failure this exists to prevent is measured, not hypothetical: on `WIaUjL/p6t4mC` a 2.3% leak
+    from a channel 7x brighter made the weight erase the target it leaked into, so a corrected channel
+    came out 98-99% zero and segmenting it found the SOURCE. See `af_bleedthrough_alphas`.
+    """
+
+    SHAPE = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)
+
+    def _stats(self, backgrounds, alphas, nbins=65536):
+        return cu.AfWeightStats(backgrounds=dict(backgrounds), alphas=dict(alphas),
+                                saturated={ch: 0.0 for ch in backgrounds},
+                                exponent=cu.AF_WEIGHT_EXPONENT, nbins=nbins)
+
+    def test_the_leaked_amount_is_subtracted_not_scaled(self):
+        """The whole point, as arithmetic. A target voxel at 500 counts carrying 0.1x of a 1000-count
+        source keeps 500 - 100 = 400 of its own — it does not get multiplied by anything on account of
+        the leak."""
+        stats = self._stats({0: 0.0, 1: 0.0}, {(1, 0): 0.1})
+        target = np.array([[500]], dtype=np.uint16)
+        source = np.array([[1000]], dtype=np.uint16)
+        out = cu.af_correct_frame({0: target, 1: source}, 0, stats, np.uint16)
+        # 500 - 0.1*1000 = 400, and that is the ANSWER: channel 1 was identified as a leak source, so
+        # it is not also a co-presence competitor and the weight has nothing left to scale by. Leaving
+        # it in the denominator would give 400 * 400^2/(400^2 + 1000^2) = 55 — the same overlap removed
+        # twice, which is the composition `af_correct_frame` documents as the thing that fails.
+        self.assertEqual(int(out[0, 0]), 400)
+
+    def test_it_keeps_a_co_positive_voxel_the_weight_alone_would_erase(self):
+        """The regression that started this. A dim target overlapping a much brighter source: with the
+        leak removed first, the target keeps most of itself; with the weight alone it keeps almost
+        nothing. Both numbers asserted, so a change that silently reverts the order fails here."""
+        target = np.array([[300]], dtype=np.uint16)
+        source = np.array([[2100]], dtype=np.uint16)          # ~7x brighter, as measured on p6t4mC
+        weight_only = cu.af_correct_frame(
+            {0: target, 1: source}, 0, self._stats({0: 0.0, 1: 0.0}, {}), np.uint16)
+        unmixed = cu.af_correct_frame(
+            {0: target, 1: source}, 0, self._stats({0: 0.0, 1: 0.0}, {(1, 0): 0.023}), np.uint16)
+        self.assertLess(int(weight_only[0, 0]), 10, 'the weight alone should erase this voxel')
+        # 300 - 0.023*2100 = 252, and channel 1 is NOT also weighed against — see the partition in
+        # `af_correct_frame`. Unmixing AND weighing against the same competitor gave 4 here, i.e.
+        # WORSE than the 6 the weight alone gives, which is the whole reason the partition exists.
+        self.assertEqual(int(unmixed[0, 0]), 252)
+
+    def test_every_channel_is_unmixed_not_only_the_target(self):
+        """A competitor still carrying the target's leak would claim the target's own voxels in the
+        weight. So the subtraction is applied to all participating channels, and the target's output
+        therefore depends on a coefficient that does not name it at all."""
+        slabs = {0: np.array([[400]], dtype=np.uint16), 1: np.array([[400]], dtype=np.uint16)}
+        clean = cu.af_correct_frame(slabs, 0, self._stats({0: 0.0, 1: 0.0}, {}), np.uint16)
+        # 0 -> 1 is a leak INTO the competitor; it must still change what the competitor can claim
+        leaky = cu.af_correct_frame(
+            slabs, 0, self._stats({0: 0.0, 1: 0.0}, {(0, 1): 0.5}), np.uint16)
+        self.assertGreater(int(leaky[0, 0]), int(clean[0, 0]),
+                           'cleaning the competitor must give the target back some of its voxel')
+
+    def test_the_subtraction_is_clamped_at_zero(self):
+        """`envelope_slope` errs high by construction, so an over-subtracted voxel is expected and its
+        honest value is zero rather than negative fluorescence."""
+        stats = self._stats({0: 0.0, 1: 0.0}, {(1, 0): 0.9})
+        out = cu.af_correct_frame({0: np.array([[100]], dtype=np.uint16),
+                                   1: np.array([[1000]], dtype=np.uint16)}, 0, stats, np.uint16)
+        self.assertEqual(int(out[0, 0]), 0)
+
+    def test_no_detected_leak_changes_nothing_at_all(self):
+        """Most channel pairs do not leak, and for those this step must be a structural no-op — not
+        'approximately unchanged'. `af_bleedthrough_alphas` omits a pair rather than storing a small
+        number precisely so this holds."""
+        rng = np.random.default_rng(31)
+        slabs = {ch: rng.integers(0, 4000, size=(20, 20)).astype(np.uint16) for ch in range(3)}
+        bg = {ch: 5.0 for ch in range(3)}
+        np.testing.assert_array_equal(
+            cu.af_correct_frame(slabs, 0, self._stats(bg, {}), np.uint16),
+            cu.af_correct_frame(slabs, 0, cu.AfWeightStats(
+                backgrounds=bg, alphas={}, saturated={ch: 0.0 for ch in bg},
+                exponent=cu.AF_WEIGHT_EXPONENT, nbins=65536), np.uint16))
+
+    def test_a_derived_alpha_finds_an_injected_leak_and_not_a_clean_pair(self):
+        """End to end through `af_weight_stats`: build an image where channel 3 leaks into channel 1
+        and nothing else does, and check both halves of the answer."""
+        du = _dim_utils(**self.SHAPE)
+        rng = np.random.default_rng(32)
+        data = np.zeros(tuple(du.im_dim), dtype=np.uint16)
+        shape = cu._af_slab(data, du, 1, 0).shape
+        # EXPONENTIAL, not uniform. A fluorescence channel is mostly background with a bright tail, and
+        # the estimator is calibrated on that shape; uniform noise is the degenerate input this module
+        # already warns about for the triangle threshold, and it produces spurious ~0.01 fits.
+        for t in range(du.dim_val('T')):
+            src = rng.exponential(300, size=shape)
+            own = rng.exponential(40, size=shape)
+            cu._af_write_slab(data, du, 3, t, np.clip(src, 0, 65535).astype(np.uint16))
+            cu._af_write_slab(data, du, 1, t, np.clip(own + 0.10 * src, 0, 65535).astype(np.uint16))
+            cu._af_write_slab(data, du, 2, t,
+                              np.clip(rng.exponential(40, size=shape), 0, 65535).astype(np.uint16))
+        stats = cu.af_weight_stats(data, du, [1, 2, 3], background_method='none')
+        self.assertIn((3, 1), stats.alphas, f'missed the injected leak: {stats.alphas}')
+        self.assertAlmostEqual(stats.alphas[(3, 1)], 0.10, delta=0.05)
+        self.assertNotIn((2, 1), stats.alphas, 'invented a leak between independent channels')
+        self.assertNotIn((2, 3), stats.alphas, 'invented a leak between independent channels')
+
+    def test_a_coefficient_under_the_floor_is_not_applied(self):
+        """`AF_ALPHA_MIN` exists because a fit always returns something. Below it the pair is reported
+        as clean, so nothing is subtracted from anything."""
+        du = _dim_utils(**self.SHAPE)
+        rng = np.random.default_rng(33)
+        data = rng.integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+        stats = cu.af_weight_stats(data, du, [1, 3], background_method='none')
+        for pair, a in stats.alphas.items():
+            self.assertGreaterEqual(a, cu.AF_ALPHA_MIN, f'{pair} kept a sub-floor coefficient {a}')
+
+    def test_the_readout_reports_what_leaked_into_this_channel(self):
+        stats = self._stats({0: 0.0, 1: 0.0, 2: 0.0}, {(1, 0): 0.05, (2, 0): 0.01, (0, 2): 0.2})
+        out = cu.af_derived_values(stats, 0)
+        self.assertEqual(out['bleedthrough'], {'1': 0.05, '2': 0.01})   # into 0 only, not out of it
+
+
 class AfWeightMechanismTest(unittest.TestCase):
     """What the power weight actually does, pinned as arithmetic rather than as a golden image.
 
@@ -306,9 +423,14 @@ class AfWeightMechanismTest(unittest.TestCase):
 
     SHAPE = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)
 
-    def _stats(self, backgrounds, exponent=cu.AF_WEIGHT_EXPONENT, nbins=256):
-        """A hand-built stats object, so the per-voxel arithmetic can be checked without an image."""
-        return cu.AfWeightStats(backgrounds=dict(backgrounds),
+    def _stats(self, backgrounds, exponent=cu.AF_WEIGHT_EXPONENT, nbins=256, alphas=None):
+        """A hand-built stats object, so the per-voxel arithmetic can be checked without an image.
+
+        ``alphas`` defaults to EMPTY — no bleedthrough — which is what keeps every assertion below a
+        statement about the dominance weight alone. The unmixing step is exercised on its own in
+        `AfBleedthroughTest`; mixing the two here would make each of these tests depend on both.
+        """
+        return cu.AfWeightStats(backgrounds=dict(backgrounds), alphas=dict(alphas or {}),
                                 saturated={ch: 0.0 for ch in backgrounds},
                                 exponent=exponent, nbins=nbins)
 
