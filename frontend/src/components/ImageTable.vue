@@ -8,14 +8,14 @@ import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
-import { qcSummary, qcState } from '../lib/qc'
+import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
 import { isExcluded, isIncluded, isImported, isStarred } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { type SortState } from '../utils/sortRows'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
-import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
+import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
@@ -69,9 +69,17 @@ function warnIconFor(img: CciaImage): { tip: string } | null {
 // from the metadata warning: any module can emit it, and it's non-blocking (hover for detail).
 // The slot's tooltip — the findings when there are any, else what the absence MEANS. "Nothing has run"
 // and "everything that ran was fine" are different answers and the icon alone cannot say which.
-function qcTip(img: CciaImage): string {
+//
+// With findings this is the OBJECT form of v-tooltip (`escape: false` + a scoped class), because each
+// finding is badged with the task that raised it — an image can carry findings from import, drift and
+// AF at once, and the flat list gave no way to tell them apart. The HTML is built (and escaped) by
+// `qcTooltipHtml`; the no-findings branch stays a plain escaped string.
+function qcTip(img: CciaImage): string | Record<string, unknown> {
   const s = qcSummary(img)
-  if (s) return s.long
+  if (s) return {
+    value: qcTooltipHtml(s.groups, taskDefs.labelFor, fn => moduleTagStyle(moduleIdFromFun(fn))),
+    escape: false, class: 'qc-tip',
+  }
   return qcState(img) === 'clean' ? 'QC passed — no findings' : 'No QC yet — nothing has been run'
 }
 function pageIconFor(): { tip: string } | null {
@@ -204,11 +212,10 @@ const fmtRunAt = (at: string) => (at ?? '').replace('T', ' ')
 function lastRunTag(img: CciaImage) {
   const e = lastSuccessfulRun(img.runLog)
   if (!e) return null
-  const colour = moduleColor(moduleIdFromFun(e.fun))
   return {
     module: funModuleLabel(e.fun),           // e.g. "Cleanup"
     fun: taskDefs.labelFor(e.fun),           // e.g. "Cellpose correct" (falls back to fun tail)
-    style: { background: colour + '22', color: colour, borderColor: colour + '55' },
+    style: moduleTagStyle(moduleIdFromFun(e.fun)),
     tip: `Last run: ${e.fun}${e.valueName ? ` → ${e.valueName}` : ''} · ${fmtRunAt(e.at)}`,
   }
 }
@@ -598,11 +605,11 @@ const unselectableUids = computed(() =>
       </span>
       <span class="uid-row">
         <span class="img-uid cc-muted cc-fs-xs">{{ img.uid }}</span>
-        <!-- last successful run — task-manager-style module tag (see run log / taskModule palette) -->
-        <span v-if="lastRunTag(img)" class="run-tag" :style="lastRunTag(img)!.style"
+        <!-- last successful run — the shared module tag (.cc-module-tag + taskModule palette) -->
+        <span v-if="lastRunTag(img)" class="cc-module-tag run-tag" :style="lastRunTag(img)!.style"
           v-tooltip.right="lastRunTag(img)!.tip">
-          <span class="run-tag-mod">{{ lastRunTag(img)!.module }}</span>
-          <span class="run-tag-fun">{{ lastRunTag(img)!.fun }}</span>
+          <span class="cc-module-tag-mod">{{ lastRunTag(img)!.module }}</span>
+          <span class="cc-module-tag-fun">{{ lastRunTag(img)!.fun }}</span>
         </span>
       </span>
       <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
@@ -890,17 +897,9 @@ const unselectableUids = computed(() =>
 .runlog-at { margin-left: auto; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .img-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 
-/* last-successful-run tag — mirrors the task-manager module pill (colour from taskModule palette),
-   pushed to the right of the UID. Module id bold/uppercase, function label alongside. */
-.run-tag {
-  display: inline-flex; align-items: baseline; gap: 0.3rem; flex-shrink: 0;
-  max-width: 60%;
-  padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs);
-  border: 1px solid transparent;
-  font-size: var(--cc-fs-2xs); line-height: 1.5;
-}
-.run-tag-mod { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
-.run-tag-fun { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* last-successful-run tag: the shared `.cc-module-tag` (style.css) plus the one thing that is this
+   site's own — how much of the UID row it may take before the function label ellipsises. */
+.run-tag { max-width: 60%; }
 
 .dim { color: var(--cc-text-dim); }
 

@@ -170,6 +170,24 @@ body {
 }
 .p-tooltip-arrow { display: none; }
 
+/* QC findings tooltip (ImageTable's qc-dot → lib/qc.ts qcTooltipHtml). The one tooltip in the app
+   that is structured rather than a phrase: an image can carry findings from several tasks at once, so
+   each is badged with the task that raised it. Scoped to `.qc-tip` — passed via v-tooltip's object
+   form — so the block layout can't leak into the ~200 phrase tooltips everywhere else. */
+.qc-tip .p-tooltip-text {
+  /* wider than the 280px phrase cap: these lines are sentences, and at 280px a three-finding image
+     wrapped into a ~14-line column */
+  max-width: min(340px, calc(100vw - 1rem));
+  text-align: left;
+}
+.qc-tip .qcf + .qcf { margin-top: 0.45rem; }
+.qc-tip .qcf-p { color: var(--cc-text); }
+/* the action line, subdued so the problem reads first — same split as the QC copy convention
+   (short = the problem, long = what to do about it) */
+.qc-tip .qcf-a { color: var(--cc-text-dim); }
+.qc-tip .qcf-a::before { content: '→ '; }
+.qc-tip .cc-module-tag { margin-right: 0.35rem; }
+
 /* ── Button utilities ──────────────────────────────────────────────────────── */
 /* Use these across all module pages and layout components.                    */
 
@@ -487,6 +505,33 @@ body {
    eyebrow against the first row of chips rather than against the top of their box. */
 .cc-row-group-top { align-items: flex-start; }
 .cc-row-group-top > .cc-lbl-col { padding-top: 0.2rem; }
+
+/* MODULE TAG — "which module/task did this come from", as a pill tinted with that module's accent.
+   The colours are NOT here: they come from `utils/taskModule.ts` (`moduleTagStyle`, over the one
+   `MODULE_COLORS` palette) as an inline style, because the tint is a runtime lookup per module.
+
+   Three sites: the task manager's row pill (`TasksModule`), the image table's last-successful-run tag
+   (`ImageTable`), and the QC tooltip's provenance badge (`lib/qc.ts` — that one emits raw HTML into a
+   PrimeVue tooltip, which is why this is a global CLASS and not a component). The first two were
+   hand-written copies of each other that shared only the palette; ImageTable's own comment said it
+   "mirrors the task-manager module pill", so the duplication was deliberate and never closed.
+
+   `-mod` and `-fun` are the two OPTIONAL parts, and a site takes what it can say: the task manager has
+   only a module id, the image table has both, the QC tooltip has only a task label (the module is
+   already carried by the colour, and the tooltip is too narrow to spend a word restating it).
+
+   `-fun` MEANS "secondary to the bold module id" — hence the opacity — so a site whose label is the
+   only thing in the pill takes NEITHER part and puts its text in the tag directly. Wearing `-fun`
+   there costs 0.85 of the label's contrast (4.55:1 -> 3.70:1), silently undoing the lift
+   `moduleTagStyle` applies. Guarded in `lib/qc.test.ts`. */
+.cc-module-tag {
+  display: inline-flex; align-items: baseline; gap: 0.3rem; flex-shrink: 0;
+  padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs);
+  border: 1px solid transparent;   /* borderColor comes from moduleTagStyle */
+  font-size: var(--cc-fs-2xs); line-height: 1.5;
+}
+.cc-module-tag-mod { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+.cc-module-tag-fun { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ONE density scale, composed with any text scenario: `.cc-muted .cc-fs-xs`, `.cc-eyebrow .cc-fs-2xs`,
    `.cc-readout .cc-fs-2xs`, `.cc-empty-inline .cc-fs-3xs`.

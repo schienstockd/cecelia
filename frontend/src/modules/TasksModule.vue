@@ -10,7 +10,7 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
-import { moduleColor } from '../utils/taskModule'
+import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
@@ -185,8 +185,8 @@ const FILTERS: ChipOption[] = [
 
           <div class="row-body">
             <div class="row-top">
-              <span class="mod-pill" :style="{ background: moduleColor(t.module) + '33', color: moduleColor(t.module) }">
-                {{ t.module }}
+              <span class="cc-module-tag" :style="moduleTagStyle(t.module)">
+                <span class="cc-module-tag-mod">{{ t.module }}</span>
               </span>
               <span v-if="t.chainRunId" class="chain-pill"
                 v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`">
@@ -367,15 +367,6 @@ const FILTERS: ChipOption[] = [
 
 .row-body  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .row-top   { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
-.mod-pill  {
-  font-size: var(--cc-fs-2xs);
-  font-weight: 700;
-  padding: 0.05rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-  flex-shrink: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .row-label {
   font-size: var(--cc-fs-sm);
   font-weight: 500;
