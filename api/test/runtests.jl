@@ -293,6 +293,44 @@ end
     dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
     @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
     @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
+    # …but a CRASH must not reach that teardown, or the runner it is supposed to protect dies with the
+    # server that crashed. The relaunch decision is real code, loaded and called here rather than
+    # grepped for: whether SIGTERM counts as a fault is exactly the kind of thing a text assertion
+    # cannot see. `dev.jl` guards its `supervise()` call on being the script, so this include is inert.
+    @test occursin("_crash_death(backend[])", dev)
+    let switch = get(ENV, "CECELIA_SWITCH_FILE", nothing)
+        @eval module DevSupervisor; include(joinpath(@__DIR__, "..", "dev.jl")); end
+        switch === nothing ? delete!(ENV, "CECELIA_SWITCH_FILE") : (ENV["CECELIA_SWITCH_FILE"] = switch)
+    end
+    # A fault → relaunch. `exitcode` is 0 for a signalled process (libuv), so the signal must be read
+    # FIRST — checking the code first would read every crash as a clean exit and stop supervising.
+    crashed(code, sig) = DevSupervisor._crash_death(code, sig)   # (exitcode, termsignal), as libuv reports
+    @test crashed(0, 11)         # SIGSEGV — the crash this guard came from, and exitcode 0 with it
+    @test crashed(0, 6)          # SIGABRT
+    @test crashed(1, 0)          # a nonzero exit (a Windows fault arrives as one of these)
+    # Asked to stop → stay stopped. Relaunching on SIGTERM/SIGKILL would make `pixi run stop` unable to
+    # stop the app: the supervisor would keep bringing the backend back.
+    @test !crashed(0, 15)        # SIGTERM — `pixi run stop`
+    @test !crashed(0, 9)         # SIGKILL — a forced kill
+    @test !crashed(0, 2)         # SIGINT  — Ctrl-C
+    @test !crashed(0, 0)         # in-app Quit
+    @test !crashed(42, 0)        # the restart sentinel — the loop's own path, not a crash
+    @test DevSupervisor._crash_why(0, 11) == "signal 11"
+    @test DevSupervisor._crash_why(3, 0)  == "exit code 3"
+    # The loop breaker: CRASH_LIMIT faults inside the window stops it, and an old fault is forgotten so
+    # a server that crashes once a day still self-heals forever.
+    times = Float64[]
+    @test DevSupervisor._note_crash!(times)                   # 1st
+    @test DevSupervisor._note_crash!(times)                   # 2nd
+    @test !DevSupervisor._note_crash!(times)                  # 3rd inside the window → give up
+    stale = [time() - DevSupervisor.CRASH_WINDOW - 1, time() - DevSupervisor.CRASH_WINDOW - 2]
+    @test DevSupervisor._note_crash!(stale) && length(stale) == 1   # both aged out; only the new one
+
+    # PROD's supervisor carries the same rule (it cannot call the Julia one), so assert the mirror
+    # exists — `_crashed` there reads a NEGATIVE rc as the signal, which is Popen's convention.
+    app_src = read(joinpath(@__DIR__, "..", "..", "app.py"), String)
+    @test occursin("def _crashed(", app_src) && occursin("if _crashed(rc):", app_src)
+    @test occursin("_FAULT_SIGNALS", app_src)
 
     # PROD's supervisor (`app.py`) had the same hole: `proc.terminate()` kills the Julia server and
     # leaves its three grandchildren running. It closes it by REUSING the route above rather than

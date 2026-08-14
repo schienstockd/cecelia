@@ -54,13 +54,28 @@ function _kill_tree(pid::Int)
 end
 
 # Kill a live process AND its child tree, given the Julia Process handle. `Base.Process` has no
-# `.pid` field, so get the OS pid via libuv, kill the tree (subprocesses — napari/Qt, bioformats —
-# spawn children), then SIGKILL the handle itself. Best-effort; callers wrap in try/catch where a
-# dead/reused handle is possible. One place for the `uv_process_get_pid` + `_kill_tree` + `kill` dance.
+# `.pid` field, so get the OS pid from libuv, kill the tree (subprocesses — napari/Qt, bioformats —
+# spawn children), then SIGKILL the handle itself. One place for the pid + `_kill_tree` + `kill` dance.
+#
+# **The pid comes from `Libc.getpid`, never a raw `uv_process_get_pid` ccall.** Julia sets
+# `proc.handle = C_NULL` the instant a process is reaped (`uv_return_spawn`, base/process.jl), so the
+# bare ccall dereferences NULL for any process that has ALREADY exited — a SIGSEGV that kills the whole
+# server, and one that no caller can defend against, because a segfault is not catchable by the
+# `try`/`catch` every call site wraps this in. `Libc.getpid` is the same read done safely: it takes the
+# iolock (the handle is nulled on the libuv event loop, so an unlocked read races it) and throws a
+# catchable `UV_ESRCH` instead of touching a null pointer.
+#
+# An already-dead process is not an edge case here — it is the common one. Cancelling a task whose
+# Python exited a moment earlier, and closing a napari bridge that failed to start, both arrive with a
+# closed handle; the second one segfaulted a running server mid-restart and took the detached task
+# runner with it (`dev.jl` reaps the child ports when the supervise loop ends).
 function _kill_proc_tree(proc::Base.Process)
-    pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
-    _kill_tree(pid)
-    kill(proc, Base.SIGKILL)
+    # 0 = the handle is already closed, i.e. the process is gone. Nothing to enumerate or kill: its
+    # children were reparented at exit and `_kill_tree` on a stale pid could hit a REUSED one.
+    pid = try; Int(Libc.getpid(proc)); catch; 0; end
+    pid > 0 && _kill_tree(pid)
+    try; kill(proc, Base.SIGKILL); catch; end   # Base guards this one itself (`process_running`)
+    nothing
 end
 
 # Kill whatever process is LISTENING on a TCP port (+ its tree). Cross-platform, best-effort. Used to

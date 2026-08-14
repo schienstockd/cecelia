@@ -352,9 +352,12 @@ use the named helper, don't re-derive the platform branch inline:
   `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
   never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
   `CreateProcess` refuses batch files, they need `cmd /c`.
-- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`; never write
-  `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
-  handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia
+- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`, or `_kill_proc_tree(proc)` when you
+  hold a `Base.Process`; never write `kill`/`pgrep`/`taskkill` inline. `Base.Process` has no `.pid`
+  field, and the pid must come from **`Libc.getpid(proc)`** — a raw
+  `ccall(:uv_process_get_pid, …, proc.handle)` dereferences NULL for a process that has already exited
+  (Julia nulls `handle` on reap), which is an **uncatchable SIGSEGV that kills the server**; `Libc.getpid`
+  does the same read with the iolock held and throws instead. Never `taskkill /IM julia.exe` — it kills every Julia
   process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
   port** instead of process name (via `_kill_listeners_on_port`, same file).
 - **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed

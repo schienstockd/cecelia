@@ -163,9 +163,15 @@ shows **"old code"** with its commit when it is behind, and its Restart refuses 
 (press again to force). If you are iterating on task code and would rather not think about it, turn the
 runner off and Restart is enough for everything.
 
-`Ctrl-C` + `pixi run dev` still works and is still the right move when a `struct` change or a crash has
-left the process wedged — it just costs you whatever the runner was doing, because the supervisor's
-teardown takes it too.
+`Ctrl-C` + `pixi run dev` still works and is still the right move when a `struct` change has left the
+process wedged — it just costs you whatever the runner was doing, because the supervisor's teardown
+takes it too.
+
+A **crash** no longer costs you that. The supervisor relaunches the backend on a fault instead of
+exiting, and leaves every child running, so the runner keeps its task and the fresh server adopts it —
+you see `[dev] backend crashed — relaunching` and the traceback stays on screen. Three faults inside a
+minute and it gives up (a server that cannot boot should say so, not loop). Full rule:
+[`docs/RUNNER.md`](RUNNER.md) → *Lifecycle*.
 
 Why the runner is dev-only, and how it works: [`docs/RUNNER.md`](RUNNER.md).
 

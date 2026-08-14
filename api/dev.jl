@@ -27,9 +27,14 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # so the copies cannot drift apart silently.
 # The task runner (7657) is here too, and its presence is a judgement call worth stating: it is
 # DESIGNED to outlive the backend, so an in-app Restart deliberately leaves it running. But this
-# `finally` runs on Ctrl-C / Quit / crash — the supervisor itself going away — and at that point
-# nothing is left that could ever reach it again. An unreachable runner holding the GPU with no UI
-# attached is the failure mode Decision 3b calls out, so teardown takes it.
+# `finally` runs when the SUPERVISOR itself goes away — Ctrl-C, Quit, or a crash it has given up on —
+# and at that point nothing is left that could ever reach the runner again. An unreachable runner
+# holding the GPU with no UI attached is the failure mode Decision 3b calls out, so teardown takes it.
+#
+# A single crash no longer reaches here at all: it relaunches the backend instead (`_crash_death`), so
+# the runner keeps working and the fresh server adopts it. This used to be the bug — a segfault in the
+# backend's own shutdown path counted as "the user is done" and reaped the running segmentation the
+# runner exists to protect.
 const CHILD_PORTS = (7655, 7656, 7657, 7660)   # napari, preview worker, task runner, notebooks
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
@@ -114,6 +119,54 @@ function _stop_frontend(vite)
     _free_port(FRONTEND_PORT)     # ensure the port is actually free before a relaunch binds it
 end
 
+# ── Crash relaunch ─────────────────────────────────────────────────────────────
+# A backend death is one of three things, and only the third gets relaunched:
+#
+#   RESTART_EXIT_CODE  the app asked to be restarted        → relaunch (the loop's main job)
+#   asked to stop      exit 0 (in-app Quit), SIGINT/TERM/KILL (Ctrl-C, `pixi run stop`)  → stop
+#   CRASHED            a fault signal, or any other nonzero exit                → relaunch
+#
+# The middle row is the one that has to be got right: relaunching on SIGTERM/SIGKILL would make
+# `pixi run stop` unable to stop the app, since the supervisor would keep bringing it back. So this
+# lists the signals that mean "something went wrong" rather than treating every signal as a crash.
+# Windows has no signals — a fault arrives as a nonzero exit code (0xC0000005), which the exitcode
+# branch already covers.
+
+#: Deaths that mean a fault, not a request: ILL, ABRT, BUS (7 on Linux, 10 on macOS), FPE, SEGV.
+const _FAULT_SIGNALS = (4, 6, 7, 8, 10, 11)
+#: A crash loop must not spin forever — N faults inside this window and we stop and tear down, so a
+#: server that cannot boot at all (a syntax error in `api/src`, a port it can never bind) surfaces as
+#: a stopped supervisor with the reason on screen instead of an endless relaunch scroll.
+const CRASH_LIMIT  = 3
+const CRASH_WINDOW = 60.0   # seconds
+
+# `exitcode == 0` does NOT mean a clean exit for a signalled process — libuv reports 0 with the signal
+# in `termsignal` (the same trap `run_py` documents for task subprocesses), so the signal is checked
+# FIRST and the exit code only for a process that was not signalled.
+#
+# Split into a pure `(exitcode, termsignal)` method plus a `Process` wrapper so the API suite can test
+# the rule itself — the interesting cases are SIGSEGV/SIGABRT/SIGTERM, and none of them can be produced
+# on demand from a real subprocess on every OS.
+_crash_death(exitcode::Integer, termsignal::Integer)::Bool =
+    termsignal != 0 ? (termsignal in _FAULT_SIGNALS) : !(exitcode in (0, RESTART_EXIT_CODE))
+_crash_death(p::Base.Process)::Bool = _crash_death(p.exitcode, p.termsignal)
+
+_crash_why(exitcode::Integer, termsignal::Integer)::String =
+    termsignal != 0 ? "signal $termsignal" : "exit code $exitcode"
+_crash_why(p::Base.Process)::String = _crash_why(p.exitcode, p.termsignal)
+
+# Record a crash and answer "keep going?". Timestamps within the window only, so an app that crashes
+# once a day forever still self-heals — the limit is about a LOOP, not a lifetime total.
+function _note_crash!(times::Vector{Float64})::Bool
+    now = time()
+    filter!(t -> now - t < CRASH_WINDOW, times)
+    push!(times, now)
+    length(times) < CRASH_LIMIT && return true
+    @error "[dev] backend crashed $(length(times)) times in $(Int(CRASH_WINDOW))s — not relaunching. " *
+           "Fix the crash, then `pixi run dev` again (the task runner is stopped with everything else)."
+    false
+end
+
 # Wrapped in a function so `workdir`/`vite` are plain locals we can reassign across iterations — a bare
 # `while` at script top level is SOFT scope, where reassigning a global needs `global` (and getting it
 # wrong crashes the supervisor). Function (hard) scope sidesteps that whole class of bug.
@@ -127,6 +180,7 @@ function supervise()
     # kill, and the backend julia (which SURVIVES a bare terminal SIGINT) + Vite were orphaned on their
     # ports. Now Ctrl-C interrupts `wait`, and `finally` kills BOTH children by handle + frees the ports.
     backend = Ref{Union{Base.Process,Nothing}}(nothing)
+    crashes = Float64[]                # fault timestamps inside CRASH_WINDOW — the loop breaker
     try
         while true
             # `--project` (no path) + relative `includet` resolve against the child's cwd → running it in
@@ -143,7 +197,17 @@ function supervise()
                 e isa InterruptException || rethrow()
                 break                                     # Ctrl-C → stop supervising (finally tears down)
             end
-            backend[].exitcode == RESTART_EXIT_CODE || break   # 0 / crash / signal → done
+            if backend[].exitcode != RESTART_EXIT_CODE
+                # 0 = the in-app Quit asked for this; anything else is a CRASH, and a crash is not the
+                # user saying they are done. Relaunching is what makes the detached task runner keep its
+                # promise: the teardown below reaps :7657, so treating a crash as an exit killed the
+                # running segmentation the runner exists to protect — the crash cost more than the
+                # restart it was meant to survive. Relaunch instead and the fresh server ADOPTS the
+                # runner (and napari, the preview worker, the notebook server — all adopt-or-launch),
+                # so a crash costs a few seconds of downtime and nothing else.
+                (_crash_death(backend[]) && _note_crash!(crashes)) || break
+                @warn "[dev] backend crashed — relaunching; children left running" why = _crash_why(backend[])
+            end
 
             # relaunch target: the switch file names another worktree's api dir, else stay put.
             newdir = workdir
@@ -176,4 +240,8 @@ function supervise()
     end
 end
 
-supervise()
+# Run only when this file IS the script (`julia --project dev.jl`, the `pixi run dev` command). Guarded
+# so the API suite can `include` it and unit-test the crash classifier for real — the alternative was
+# asserting on the file's SOURCE TEXT, which is what the CHILD_PORTS check has to do and which cannot
+# tell whether `_crash_death` actually treats SIGTERM as a request rather than a fault.
+abspath(PROGRAM_FILE) == (@__FILE__) && supervise()   # parens: a bare `@__FILE__ && x` eats the `&&`

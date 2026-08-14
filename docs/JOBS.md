@@ -70,6 +70,21 @@ parallel export).
 runner, app shutdown, and `cancel_job!`. They live here (not `scheduler.jl`) because they were always
 general, not scheduler-specific.
 
+> **A process handle's pid comes from `Libc.getpid(proc)` — never a raw `uv_process_get_pid` ccall.**
+> Julia sets `proc.handle = C_NULL` the instant a process is reaped, so the bare ccall dereferences
+> NULL for anything that has already exited: an instant **SIGSEGV that kills the whole server**, and one
+> no caller can defend against, because a segfault is not catchable by the `try`/`catch` they all wrap
+> it in. `Libc.getpid` is the same read done safely — iolock held (the handle is nulled on the libuv
+> event loop, so an unlocked read races it) and a `handle != C_NULL` check, raising a catchable
+> `UV_ESRCH` instead.
+>
+> An already-dead process is the **common** input, not an edge case: cancelling a task whose Python
+> exited a moment ago, and closing a napari bridge that failed to start, both arrive with a closed
+> handle. The second one segfaulted a running server mid-Restart and took the detached task runner with
+> it (`dev.jl` reaps the child ports when its supervise loop ends). Regression test: *"killing a dead
+> process is a no-op"* in `app/test/suite.jl` — the one test whose failure mode is the test process
+> dying.
+
 ## How a project-wide operation runs, end to end
 
 Export is the canonical example (import and data patches follow the same rail):
