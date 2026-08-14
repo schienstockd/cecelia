@@ -185,7 +185,7 @@ export const TIPS: WhatNewCard[] = [
     steps: [
       'Lab log → Set up my terminal (once).',
       'Run claude in a terminal.',
-      'Click Chat to Claude, paste the prompt in, ask away.',
+      'Ask: "check my current project in cecelia".',
     ],
     sketchAnimation: { id: 'claude_mcp' },
   },

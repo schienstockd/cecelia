@@ -1051,76 +1051,77 @@ end
     # a dir that no longer exists is skipped, not attempted (Claude ignores its entry too)
     @test Cecelia.remove_shadowing_observer_mcps(a, ["/no/such/dir/at/all"]) == (String[], String[])
 
-    # the prompt carries the project + the discipline rules
+    # the prompt carries the project + the discipline rules THIS ROLE adds
     fp = Cecelia.observer_feedback_prompt("NRUBxU")
     @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
     # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
     # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
     @test occursin("get_module_params", fp) && occursin("suggest", fp)
-    # The artifacts it can author are named, so the agent knows they exist — the prompt listed
-    # neither for a while, and an unmentioned tool is an unused one.
-    @test occursin("create_notebook", fp) && occursin("create_chain", fp)
-    # the Phase-0 read tools + the discipline that makes them worth having (a figure proposed without
-    # checking how the images are annotated throws the experiment's design away)
-    @test occursin("get_image_attributes", fp) && occursin("get_analysis_boards", fp)
-    # match on unwrapped text — the prompt is hard-wrapped, so a phrase can straddle a newline
-    @test occursin("not four replicates", replace(fp, r"\s+" => " "))
-    # …and the boundary is stated: authoring a chain is not running it. This is the line that keeps
-    # the assistant from telling a user their pipeline has started.
-    @test occursin("cannot start", fp) || occursin("cannot rename", fp)
-    @test occursin("press Run", fp)
+    # the watch loop's own tools — nobody else polls a running project
+    @test occursin("poll_observations", fp) && occursin("get_cohort_qc", fp)
+    # the lab-log discipline, which is the whole point of the role: most of the time, write nothing
+    @test occursin("write NOTHING", fp)
+    # …and it is pointed at the server's briefing for everything shared, rather than restating it
+    @test occursin("get_session_briefing", fp)
+    # It must NOT restate what the MCP server already tells every client (mcp/cecelia_mcp/guidance.py):
+    # the read catalogue, the grouping discipline, the boards/chains rules, the never-starts boundary.
+    # A second copy is what went stale twice. Match on unwrapped text — the prompt is hard-wrapped, so
+    # a phrase can straddle a newline.
+    flat = replace(fp, r"\s+" => " ")
+    for shared in ("not four replicates", "statUnit", "press Run", "get_image_attributes",
+                   "get_analysis_boards", "get_available_plots", "get_repl_api")
+        @test !occursin(shared, flat)
+    end
 end
 
-@testset "the two observer prompts name the same MCP tools" begin
-    # THE recurring bug in this area, twice now: an MCP tool is added, ONE of the two prompts is
-    # updated, and the other silently goes stale — an unmentioned tool is an unused one, so the
-    # capability just never gets offered. It surfaced both times only because Dominik pasted his
-    # Chat-to-Claude prompt and noticed something missing (create_chain the first time,
-    # get_analysis_boards/get_image_attributes the second).
+@testset "the in-app observer prompt is a role, not a second tool manual" begin
+    # THE recurring bug in this area, twice: an MCP tool is added, one of the prompts describing the
+    # toolset is updated and another silently goes stale — an unmentioned tool is an unused one, so the
+    # capability just never gets offered (create_chain the first time, then get_analysis_boards /
+    # get_image_attributes). Both surfaced only because Dominik read a prompt and noticed a gap.
     #
-    # A warning comment inside one of the files cannot fix this — you only read it if you already knew
-    # the other file existed. So the invariant is enforced here instead, across all three sources.
-    # Same idea as "calibration writers agree across languages": two implementations that cannot call
-    # each other get a test that compares them.
+    # The fix was to stop having copies. The MCP server describes its own toolset
+    # (mcp/cecelia_mcp/guidance.py: SERVER_INSTRUCTIONS on connect, BRIEFING_GUIDANCE with
+    # get_session_briefing), and the in-app agent is spawned with `--mcp-config` pointing at that same
+    # server, so it gets both. What is left here is the ROLE — the watch loop, the QC pass, the
+    # lab-log discipline — which no chat session has.
     #
-    # The prompts are NOT required to name the same set — they address different surfaces — but every
-    # difference must be DELIBERATE and listed below. Adding a tool to one prompt and not the other now
-    # fails here, naming the offender.
+    # So this no longer checks "does the prompt name every tool". It checks the DIVISION: the loop's
+    # own tools are named here, and the shared catalogue is NOT restated here. Each side is guarded in
+    # its own language, since neither can import the other — mcp/tests/test_server.py → GuidanceTest
+    # holds the other half (every registered tool is named in guidance.py).
     root = normpath(joinpath(@__DIR__, "..", ".."))
     server = read(joinpath(root, "mcp", "cecelia_mcp", "server.py"), String)
-    jl     = read(joinpath(root, "app", "src", "ai", "observer_prompt.jl"), String)
-    ts     = read(joinpath(root, "frontend", "src", "lib", "chatHandoff.ts"), String)
+    # The PROMPT, not the file that holds it: a tool name in a source comment (this file's own header
+    # names several) would otherwise count as "mentioned" and mask a real omission. That is not
+    # hypothetical — rewording the header alone flipped this assertion once.
+    jl = Cecelia.observer_feedback_prompt("NRUBxU")
 
     tools = Set(String[m.captures[1] for m in eachmatch(r"@mcp\.tool\(\)\s*\ndef (\w+)", server)])
     @test length(tools) >= 30                          # anti-vacuity: a bad regex must not pass
     named_jl = Set(t for t in tools if occursin(t, jl))
-    named_ts = Set(t for t in tools if occursin(t, ts))
 
-    # In the IN-APP prompt only — it drives the autonomous observer loop, which the user's own session
-    # has no use for.
-    @test setdiff(named_jl, named_ts) == Set(["poll_observations"])
-    # In the CHAT HAND-OFF only — orientation + authoring aids for a session the user starts fresh;
-    # the in-app agent is already oriented and does not browse notebooks.
-    # (`get_available_plots` left this list when add_analysis_board landed — the in-app observer needs
-    # the spec ids and each spec's chart types to author a board, so both prompts now name it.)
-    # LabArchives is CHAT-ONLY, and structurally so: the in-app agent is spawned with `--mcp-config`
-    # listing ONLY cecelia-observer, so it has no LabArchives connector and could never read an ELN.
-    # Mentioning the tools there would advertise a capability that build cannot have.
-    @test setdiff(named_ts, named_jl) ==
-        Set(["get_session_briefing", "list_notebooks", "set_notebook_description",
-             "get_labarchives_context", "set_labarchives_context"])
-    # Named by NEITHER: per-image detail an agent reaches for from a summary rather than from the
-    # prompt, plus the observer's own bookkeeping.
-    @test setdiff(tools, union(named_jl, named_ts)) ==
-        Set(["get_image_notes", "get_observer_stats", "get_qc_metrics", "get_spatial_stats",
-             "set_observer_active"])
-    # Every WRITE must be offered by both: a mutating capability nobody mentions is a capability the
-    # assistant never uses, which is how create_chain sat unmentioned in the hand-off.
-    # (set_labarchives_context is deliberately absent — see the chat-only note above.)
-    for w in ("append_lab_log", "create_notebook", "revise_notebook", "create_chain",
-              "add_analysis_board")
-        @test w in named_jl && w in named_ts
+    # The watch loop's OWN tools — the reason this role exists. Nothing else polls a running project
+    # or decides whether a finished-but-degenerate run is worth a line in the lab log.
+    for own in ("poll_observations",        # the 10-attempts pattern, from the session monitor
+                "get_task_history", "get_task_log", "get_recent_logs",   # what ran / what broke
+                "get_cohort_qc",            # a "done" run that produced far too few cells
+                "get_module_params",        # the param-suggestion range
+                "read_lab_log", "append_lab_log",                        # prior context + its output
+                "get_session_briefing")     # …and where the shared rules come from
+        @test own in named_jl
     end
+    # The SHARED catalogue must not be restated here — that is the second copy, and the second copy is
+    # the bug. These are all named by guidance.py, which reaches this agent through the same MCP.
+    for shared in ("get_image_attributes", "get_analysis_boards", "get_available_plots",
+                   "get_populations", "get_measure_summary", "get_analysis_lineage", "get_repl_api",
+                   "add_analysis_board", "list_projects")
+        @test !(shared in named_jl)
+    end
+    # A tool this role does not use is fine; a tool NOBODY names is not. Every tool the in-app prompt
+    # leaves out must be covered by the server's guidance — asserted in full by GuidanceTest, and
+    # pinned here as the reason this set is allowed to be small.
+    @test length(named_jl) < length(tools)
 end
 
 @testset "MCP connections — enumerate whatever is registered" begin
@@ -1458,6 +1459,23 @@ end
     @test img1.uid in uids && !(img2.uid in uids)     # only the warn image flags; clean stays clean
     f1 = b.flagged[findfirst(f -> f.uid == img1.uid, b.flagged)]
     @test f1.worst == "warn" && f1.findings[1].short == "Few tracks"
+    # WHICH task banked it. Without the fun, a probe's hardcoded threshold is indistinguishable from a
+    # real pipeline finding — that cost a session chasing "0 cells" no segmentation had produced.
+    @test f1.findings[1].fun == "tracking.bayesian_tracking"
+    # an image the user has NOT excluded says so positively (absent would read as "unknown")
+    @test f1.included == true && b.excludedCount == 0
+
+    # EXCLUDED images: still listed (a warn on one is information, and dropping it would make the count
+    # disagree with the image table) but LABELLED, so a session leads with the ones that still count.
+    # The first real session opened on a drift anomaly for an image its owner had dropped weeks earlier.
+    img1.included = false
+    save!(img1)
+    b2 = session_briefing(proj)
+    @test b2.imageCount == 2 && b2.excludedCount == 1      # cohort size is imageCount - excludedCount
+    f1b = b2.flagged[findfirst(f -> f.uid == img1.uid, b2.flagged)]
+    @test f1b.included == false && f1b.findings[1].short == "Few tracks"   # labelled, not hidden
+    img1.included = true
+    save!(img1)
     @test length(b.recentLabLog) == 1 && b.recentLabLog[1].author == "User"
     @test occursin("tracking", b.recentLabLog[1].summary)
 
@@ -9346,13 +9364,23 @@ end
         # and ignores each slot's own — so an authored board rendered with NO series until the user
         # picked populations by hand. Regression test for exactly that.
         withpops = expand_board(proj, "sel", [Dict("plot" => "track_measures", "pops" => ["B/qc"])];
-                                pops = Dict("B/qc" => "flow"))
+                                pops = Dict("B/qc" => "live"))
         @test withpops["shared"]["scope"] == "local"
-        # The SPEC's own first popType wins over the family the pop happens to be stored under: a flow
-        # gate is legitimately usable as a `live` pop, and track_measures fetches live — which is why
-        # the project's real boards store `live::B/qc/_tracked`. The picker's family is only the
-        # fallback for a spec that offers no popTypes at all.
+        # A tkey is tagged with the population's OWN family — the same tag the picker puts on it (see
+        # plot_population_groups), which is what the frontend builds its tkeys from.
+        #
+        # This fixture used to say `Dict("B/qc" => "flow")` and expect `live::B/qc`, on the reasoning
+        # that "a flow gate is legitimately usable as a live pop". That was a misreading of why the real
+        # project stores `live::B/qc/_tracked`: it stores live because the PICKER TAGS those pops live
+        # (`load_pop_map(img, vn, "live")` returns the gate tree, and the derived `_tracked` pops are
+        # injected under live). Checked against the real project — its families are live (B/qc, T/qc,
+        # and their `_tracked` children), labels, region and trackclust; nothing is tagged flow. A
+        # genuinely flow-tagged population is NOT reachable on track_measures, which offers only
+        # live/track/trackclust, and writing `live::` over it would have produced a blank panel.
         @test withpops["contents"][1]["state"]["sel"] == ["live::B/qc"]
+        # …and that case is now refused rather than silently mis-tagged
+        @test_throws BoardSpecError expand_board(proj, "sel-flow",
+            [Dict("plot" => "track_measures", "pops" => ["B/qc"])]; pops = Dict("B/qc" => "flow"))
         # and nothing else is invented in the shared bag — the rest are frontend defaults
         @test collect(keys(withpops["shared"])) == ["scope"]
 
@@ -9391,10 +9419,78 @@ end
         # describe a board the same way (Decision 2)
         @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
               ["B/qc/_tracked", "T/qc/_tracked"]
-        # an explicit popType overrides the picker's
-        @test expand_board(proj, "pt", [Dict("plot" => "track_measures", "popType" => "track",
-                                             "pops" => ["B/qc/_tracked"])];
-                           pops = avail)["contents"][1]["state"]["sel"] == ["track::B/qc/_tracked"]
+        # ── popType must REACH the named populations ────────────────────────────────────────────────
+        # The panel fetches its list with `plot_pop_types(popType, granularity)` and tags each pop with
+        # the family it was found under; a tkey outside that expansion matches nothing and the panel
+        # renders empty with no error. So the check is reachability, not membership.
+        #
+        # Stating the popType the derivation would pick anyway is redundant but fine:
+        @test expand_board(proj, "pt-ok", [Dict("plot" => "track_measures", "popType" => "live",
+                                                "pops" => ["B/qc/_tracked"])];
+                           pops = avail)["contents"][1]["state"]["sel"] == ["live::B/qc/_tracked"]
+        # …and "track" is REFUSED even though track_measures offers it. This is the real bug, traced:
+        # `plot_pop_types("track", "track") == ["track"]`, track-family pops are gates drawn on per-track
+        # measures (`{vn}__tracks.json`), and the project that hit this has none — so the picker returned
+        # ZERO populations, all four plots said "Select one or more populations", and nothing errored.
+        # A membership check would have passed it: "track" IS in ["live","track","trackclust"].
+        e_pt = try expand_board(proj, "pt-bad", [Dict("plot" => "track_measures", "popType" => "track",
+                                                     "pops" => ["B/qc/_tracked"])]; pops = avail)
+               catch err; err end
+        @test e_pt isa BoardSpecError
+        @test occursin("track", e_pt.msg) && occursin("live", e_pt.msg)   # names both, so a caller can fix it
+        @test occursin("blank", e_pt.msg)                                 # …and says why it matters
+
+        # A CLUSTER board must still work: population_summary's first offered popType is "flow", but
+        # trackclust pops are only reachable under "trackclust", so the derivation must walk past the
+        # default rather than stamping it. (Dominik's own "Clustering" board is exactly this shape — an
+        # earlier version of this fix, which allowed only the spec's default, would have refused to
+        # re-author it.)
+        clust = Dict("B/Directed" => "trackclust", "B/Scanning" => "trackclust")
+        cl = expand_board(proj, "clust", [Dict("plot" => "population_summary",
+                                               "pops" => ["B/Directed", "B/Scanning"])]; pops = clust)
+        @test cl["contents"][1]["state"]["popType"] == "trackclust"
+        @test cl["contents"][1]["state"]["sel"] == ["trackclust::B/Directed", "trackclust::B/Scanning"]
+        # …and explicitly asking for it is accepted, because it reaches them
+        @test expand_board(proj, "clust2", [Dict("plot" => "population_summary", "popType" => "trackclust",
+                                                 "pops" => ["B/Directed"])];
+                           pops = clust)["contents"][1]["state"]["popType"] == "trackclust"
+        # a plot that cannot reach the populations at all is refused, naming what it does offer
+        e_reach = try expand_board(proj, "unreach", [Dict("plot" => "spatial_interactions",
+                                                          "pops" => ["B/Directed"])]; pops = clust)
+                  catch err; err end
+        @test e_reach isa BoardSpecError && occursin("flow", e_reach.msg)
+
+        # ── compareBy: what makes a board a FIGURE ───────────────────────────────────────────────────
+        # Board-level, because useSummaryData destructures compareMode/compareAttr out of the SHARED
+        # bag. Without it an authored board sits on the frontend default (single image) — which is how
+        # a board built for a 4-mouse experiment came out comparing images, unable to answer the
+        # question it was asked.
+        one = [Dict("plot" => "track_measures")]
+        have = ["Treatment", "Mouse"]   # injected like `pops` — no project on disk needed
+        @test !haskey(expand_board(proj, "c0", one)["shared"], "compareMode")   # omitted → untouched
+        @test expand_board(proj, "c1", one; compare_by = "per_image", attrs = have)["shared"]["compareMode"] == "per_image"
+        @test expand_board(proj, "c2", one; compare_by = "summarised", attrs = have)["shared"]["compareMode"] == "summarised"
+        # an attribute name → by_attr
+        s_attr = expand_board(proj, "c3", one; compare_by = "Mouse", attrs = have)["shared"]
+        @test s_attr["compareMode"] == "by_attr" && s_attr["compareAttr"] == "Mouse"
+        @test !haskey(s_attr, "compareAttr2")
+        # two combine, in order
+        s_two = expand_board(proj, "c4", one; compare_by = "Treatment,Mouse", attrs = have)["shared"]
+        @test s_two["compareAttr"] == "Treatment" && s_two["compareAttr2"] == "Mouse"
+        # …and an attribute the project does not have is refused, naming the ones it does — grouping by
+        # a name nothing carries silently falls back to per-image, i.e. the wrong figure, drawn.
+        e_attr = try expand_board(proj, "c5", one; compare_by = "Genotype", attrs = have) catch err; err end
+        @test e_attr isa BoardSpecError && occursin("Genotype", e_attr.msg) && occursin("Mouse", e_attr.msg)
+        @test_throws BoardSpecError expand_board(proj, "c6", one; compare_by = "Mouse,Treatment,Location", attrs = have)
+        # an UNANNOTATED set gets told what to do instead, not just "no such attribute" — this is the
+        # common case (nobody annotated the images) and "Available: " with an empty list is a dead end.
+        e_none = try expand_board(proj, "c7", one; compare_by = "Mouse", attrs = String[]) catch err; err end
+        @test e_none isa BoardSpecError && occursin("per_image", e_none.msg)
+        # …and a case slip says so, like channel_indices does for channel names (`mem-TOM`/`mem-Tom`).
+        # "not an attribute" next to a list containing what looks like the same word is a dead end.
+        e_case = try expand_board(proj, "c8", one; compare_by = "mouse", attrs = have) catch err; err end
+        @test e_case isa BoardSpecError && occursin("differs only in case", e_case.msg) &&
+              occursin("\"Mouse\"", e_case.msg)
         # more plots than slots
         @test_throws BoardSpecError ok([Dict("plot" => "track_measures") for _ in 1:5]; template = "2x2")
 
@@ -9413,6 +9509,21 @@ end
         @test doc2.active_id == doc.active_id
         @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
         @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
+
+        # ── the name is STORED as it will render (board_display_name) ───────────────────────────────
+        # Vue escapes text, so a stored entity displays as the entity — on a tab the authoring tool
+        # cannot rename. A real board shipped as "Behaviour &amp; tracking by image" because the agent
+        # HTML-escaped the ampersand and nothing repaired it. Repair, don't reject: the intent is
+        # unambiguous and an error would spend a round-trip on punctuation.
+        @test board_display_name("  Behaviour &amp; tracking  ") == "Behaviour & tracking"
+        @test board_display_name("a &lt;b&gt; &quot;c&quot; &#39;d&#39;") == "a <b> \"c\" 'd'"
+        @test board_display_name(board_display_name("A &amp; B")) == "A & B"      # idempotent
+        # &amp; decodes LAST, so an escaped entity unwinds one level, not two
+        @test board_display_name("&amp;lt;not a tag&amp;gt;") == "&lt;not a tag&gt;"
+        doc3, _ = append_board(doc2, "Behaviour &amp; tracking", lay)
+        @test doc3.tabs[end]["name"] == "Behaviour & tracking"
+        # …and the duplicate check sees through the escaping too: the same name twice is still one name
+        @test_throws BoardSpecError append_board(doc3, "Behaviour & tracking", lay)
     end
 
     @testset "boards document — one reader, both shapes, versioned writes" begin

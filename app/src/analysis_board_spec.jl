@@ -28,6 +28,25 @@ struct BoardSpecError <: Exception
 end
 Base.showerror(io::IO, e::BoardSpecError) = print(io, "BoardSpecError: ", e.msg)
 
+# `&amp;` LAST, so an escaped entity ("&amp;lt;") decodes one level to "&lt;" and not all the way to "<".
+const _NAME_ENTITIES = ("&lt;" => "<", "&gt;" => ">", "&quot;" => "\"", "&#39;" => "'",
+                        "&apos;" => "'", "&#38;" => "&", "&amp;" => "&")
+
+"""
+    board_display_name(name) -> String
+
+A board name as it should be STORED: stripped, with HTML entities decoded.
+
+Vue renders text escaped, so a stored `&amp;` displays as `&amp;` — the entity itself, forever, on a
+tab the user cannot rename from the tool that created it. An LLM authoring a board called
+"Behaviour & tracking" escapes the ampersand roughly as often as not; `add_analysis_board` is add-only,
+so the cost of not repairing it is a permanently mis-titled board and a manual delete. Repair here
+rather than reject: the intent is unambiguous, and an error would spend a round-trip on punctuation.
+
+Idempotent, so normalising at more than one layer is safe.
+"""
+board_display_name(name::AbstractString) = String(strip(replace(String(name), _NAME_ENTITIES...)))
+
 # ── The plot-spec registry (one reader) ──────────────────────────────────────────────────────────────
 # The specs are package JSON; `api/src/plotting_api.jl` serves them to Vue and reads them through here,
 # so the expander validates against exactly what the board can render.
@@ -157,22 +176,77 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
             "plots[$i]: \"$id\" does not carry measure \"$measure\". Offers: $(join(opts, ", "))"))
     end
 
-    # popType: explicit, else the spec's first offered one (its own default).
+    # ── popType: which FAMILIES the panel will load, not a label ────────────────────────────────────
+    #
+    # Traced, because guessing this wrote a board where all four plots said "Select one or more
+    # populations". The panel fetches its population list from GET /api/plots/populations with the
+    # panel's `popType`, which the route expands via `plot_pop_types(popType, granularity)` — a track
+    # plot unions `[popType, "track"]`, a cell plot is just `[popType]` — and offers each population
+    # TAGGED with the family it was found under. The frontend builds every `tkey` from that tag. So a
+    # tkey whose family is outside the expansion of the panel's popType is one the picker never offers:
+    # it matches nothing, the panel renders empty, and NOTHING errors.
+    #
+    # That is exactly what `popType: "track"` on `T/qc/_tracked` did. `plot_pop_types("track","track")`
+    # is just `["track"]` — track-family pops are gates drawn on per-track measures (`{vn}__tracks.json`)
+    # — and that project has none at all (its families are live, labels, region, trackclust). Zero
+    # populations, four blank plots. Note "track" IS in track_measures' offered popTypes, so a
+    # membership check would not have caught it: what matters is whether the NAMED POPULATIONS are
+    # reachable under the popType, not whether the spec lists it.
+    #
+    # `pops` (board_spec_populations) is the same enumeration the picker uses and tags each population
+    # with its family, so it can answer exactly that question.
     offered = get(ds, "popTypes", nothing)
-    first_pt = offered isa AbstractVector && !isempty(offered) ?
-        _bs_str(get(first(offered), "popType", nothing)) : ""
-    pop_type = _bs_str(get(d, "popType", nothing), first_pt)
+    offered = offered isa AbstractVector ? offered : Any[]
+    _pt_of  = e -> _bs_str(get(e, "popType", nothing))
+    _gran_of = e -> _bs_str(get(e, "granularity", nothing))
+    # families a given popType would make available on THIS spec (its own granularity entry)
+    _families = pt -> begin
+        e = findfirst(x -> _pt_of(x) == pt, offered)
+        Set(plot_pop_types(pt, e === nothing ? "" : _gran_of(offered[e])))
+    end
+    first_pt = isempty(offered) ? "" : _pt_of(first(offered))
+    asked_pt = _bs_str(get(d, "popType", nothing))
 
-    # Populations → `tkey`s ("popType::valueName/pop"). A tkey naming a population that does not exist
-    # renders an EMPTY panel with no error — the exact silent failure this validator exists to close.
-    sel = String[]
-    for p in _bs_strs(get(d, "pops", nothing))
+    wanted = _bs_strs(get(d, "pops", nothing))
+    for p in wanted
         haskey(pops, p) || throw(BoardSpecError(
             "plots[$i]: no population \"$p\" in this project. " *
             "Use get_populations to see what exists (as valueName/pop)."))
-        pt = isempty(pop_type) ? pops[p] : pop_type
-        push!(sel, "$(pt)::$(p)")
     end
+    needed = unique(String[pops[p] for p in wanted])          # the families the named pops live in
+
+    if isempty(asked_pt)
+        # Derive: the spec's first offered popType that actually reaches every named population. With no
+        # pops named there is nothing to reach, so the spec's own default stands.
+        pop_type = first_pt
+        if !isempty(needed)
+            idx = findfirst(e -> issubset(needed, _families(_pt_of(e))), offered)
+            idx === nothing && throw(BoardSpecError(
+                "plots[$i]: \"$id\" cannot plot $(join(("\"$p\" ($(pops[p]))" for p in wanted), ", ")) " *
+                "— it offers $(join((_pt_of(e) for e in offered), ", ")), and none of those reach " *
+                "$(join(needed, ", ")) populations. Pick a different plot or different populations."))
+            pop_type = _pt_of(offered[idx])
+        end
+    else
+        # Explicit: must be one the spec offers AND must reach every named population.
+        any(e -> _pt_of(e) == asked_pt, offered) || isempty(offered) || throw(BoardSpecError(
+            "plots[$i]: \"$id\" does not offer popType \"$asked_pt\". " *
+            "Offers: $(join((_pt_of(e) for e in offered), ", ")) — and it is DERIVED from the " *
+            "populations anyway, so omit it."))
+        fam = _families(asked_pt)
+        issubset(needed, fam) || throw(BoardSpecError(
+            "plots[$i]: popType \"$asked_pt\" cannot reach " *
+            "$(join(("\"$p\" (a $(pops[p]) population)" for p in wanted if !(pops[p] in fam)), ", ")). " *
+            "With popType \"$asked_pt\" this panel only lists $(join(sort(collect(fam)), ", ")) " *
+            "populations, so the plot would render blank with no error. popType is DERIVED from the " *
+            "populations — omit it."))
+        pop_type = asked_pt
+    end
+
+    # Populations → `tkey`s ("popType::valueName/pop"), each tagged with ITS OWN family — which is how
+    # the picker tags them, and why a track plot can legitimately overlay a `live` pop and a `track` pop
+    # in one panel (`plot_pop_types` unions them).
+    sel = String["$(pops[p])::$(p)" for p in wanted]
 
     state = Dict{String,Any}("specId" => id, "chartType" => chart)
     isempty(measure) || (state["measure"] = measure)
@@ -197,15 +271,79 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     Dict{String,Any}("kind" => "summary", "ref" => id, "state" => state)
 end
 
+# What the board compares across images → the `shared` keys `useSummaryData` reads
+# (`compareMode`/`compareAttr`/`compareAttr2`). Board-level, not per-slot: the composable destructures
+# all three out of the shared bag, so one comparison governs every panel.
+#
+# This is the difference between a board and a FIGURE. Without it an authored board is stuck on the
+# frontend default (single image), which is why the first board authored for a 4-mouse experiment
+# compared by image and could not answer "does this differ between mice". `groupAttr` reaches the data
+# route generically (api_plot_data builds `attr_map` from `im.attr` for any plot), so this is not
+# limited to the two specs whose `scopeModes` happen to list `by_attr` — that field is declarative and
+# nothing reads it.
+function _compare_state(proj::CciaProject, compare_by::AbstractString;
+                        attrs_available::Union{Vector{String},Nothing} = nothing)::Dict{String,Any}
+    want = strip(String(compare_by))
+    isempty(want) && return Dict{String,Any}()
+    want in ("image", "per_image", "summarised") && return Dict{String,Any}("compareMode" => want)
+
+    # anything else names image attributes ("Mouse", or "Treatment,Mouse" to combine two)
+    attrs = String[strip(a) for a in split(want, ","; keepempty = false)]
+    isempty(attrs) && return Dict{String,Any}()
+    length(attrs) <= 2 || throw(BoardSpecError(
+        "compareBy takes at most two attributes (the board combines them); got $(length(attrs))"))
+    # injectable for the same reason `pops` is: the accept/reject rules are testable without a project
+    # on disk. Production passes nothing and gets the project's own images.
+    have = attrs_available
+    if have === nothing
+        imgs = CciaImage[]
+        for s in proj._sets, img in images(s); push!(imgs, img); end
+        have = String[String(p.first) for p in attr_value_counts(imgs)]
+    end
+    for a in attrs
+        a in have && continue
+        # "differs only in case" hint — the same courtesy `channel_indices` pays for channel names,
+        # and for the same reason: one experiment shipped `mem-TOM` and `mem-Tom`, and a caller reading
+        # an attribute name out of prose (or its own memory) gets the case wrong long before it gets
+        # the word wrong. Without the hint the message is "not an attribute" next to a list containing
+        # what looks like the same word.
+        near = findfirst(h -> lowercase(h) == lowercase(a), have)
+        throw(BoardSpecError(
+            "compareBy \"$a\" is not an image attribute in this project. " *
+            (near !== nothing ? "Did you mean \"$(have[near])\"? (differs only in case)" :
+             isempty(have) ?
+             "These images carry no attributes at all, so they can only be compared per image — " *
+             "use compareBy \"per_image\" (or annotate the set first)." :
+             "Available: $(join(have, ", ")). Use get_image_attributes to see their values.")))
+    end
+    out = Dict{String,Any}("compareMode" => "by_attr", "compareAttr" => attrs[1])
+    length(attrs) == 2 && (out["compareAttr2"] = attrs[2])
+    out
+end
+
 """
-    expand_board(proj, name, plots; template = "") -> Dict
+    expand_board(proj, name, plots; template = "", compare_by = "") -> Dict
 
 Validate a board spec against the project and expand it into a `LayoutEntry` (the value stored under
 `layouts["tab:<id>"]`). Throws `BoardSpecError` — with a message naming the bad value and the available
 ones — rather than writing a board that would render blank.
+
+`compare_by` sets what the board compares ACROSS IMAGES — board-level, because that is where
+`useSummaryData` keeps it (the `shared` bag, not per-slot):
+
+  - `""`            leave the frontend default (single-image)
+  - `"per_image"`   one series per image
+  - `"summarised"`  pool the whole set into one series
+  - any other value is an image ATTRIBUTE name (e.g. `"Mouse"`) → `by_attr`, so images sharing a value
+    pool into one series labelled by it. Two attributes may be combined as `"Treatment,Mouse"`.
+
+The attribute names are validated against the project's own images, because an attribute that does not
+exist groups nothing and the board silently falls back to per-image.
 """
 function expand_board(proj::CciaProject, name::AbstractString, plots; template::AbstractString = "",
-                      pops::Union{AbstractDict,Nothing} = nothing)
+                      pops::Union{AbstractDict,Nothing} = nothing,
+                      compare_by::AbstractString = "",
+                      attrs::Union{Vector{String},Nothing} = nothing)
     isempty(strip(String(name))) && throw(BoardSpecError("the board needs a name"))
     plots isa AbstractVector || throw(BoardSpecError("`plots` must be a list"))
     isempty(plots) && throw(BoardSpecError("a board needs at least one plot"))
@@ -232,10 +370,11 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
     # renders with no series until the user picks populations by hand. That is exactly what happened the
     # first time this shipped with an empty `shared`.
     #
-    # Only `scope` is set. Everything else in the bag (compareMode, poolGroups, vis, the clustering
-    # picks) is a frontend default we would only be copying — same rule as the omitted `vis`.
+    # Only `scope` and the requested comparison are set. Everything else in the bag (poolGroups, vis,
+    # the clustering picks) is a frontend default we would only be copying — same rule as omitted `vis`.
     shared = any(c -> c !== nothing && haskey(c["state"], "sel"), contents) ?
         Dict{String,Any}("scope" => "local") : Dict{String,Any}()
+    merge!(shared, _compare_state(proj, compare_by; attrs_available = attrs))
 
     Dict{String,Any}(
         "cols" => cols, "rows" => rows,
@@ -251,9 +390,12 @@ end
 Add ONE board to a document — the add-only half of Decision 1. Never touches an existing tab, so the
 id bookkeeping lives here rather than in the route. Throws `BoardSpecError` if the name is taken (the
 route turns that into a 409), because two boards with one name is a GUI the user cannot navigate.
+
+The name is stored as `board_display_name` gives it (stripped, entities decoded) — normalised HERE, the
+invariant's owner, because the REPL reaches this without the route.
 """
 function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict)
-    nm = strip(String(name))
+    nm = board_display_name(name)
     for t in doc.tabs
         t isa AbstractDict || continue
         strip(_bs_str(get(t, :name, get(t, "name", nothing)))) == nm &&

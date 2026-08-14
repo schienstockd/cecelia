@@ -9,6 +9,12 @@ Note the split that shapes this server: Claude can DESIGN work but never START i
 authors a pipeline the user then runs from the whiteboard; there is no run/submit tool, because
 launching is a WebSocket message and this server speaks only HTTP.
 
+The server also carries its own briefing — ``cecelia_mcp.guidance``. ``SERVER_INSTRUCTIONS`` goes out
+with the ``initialize`` response (so a session knows to resolve the project and pull the briefing
+first) and ``BRIEFING_GUIDANCE`` rides back with ``get_session_briefing``. That is what makes "check
+my current project in cecelia" a sufficient prompt; **a tool added here must be named there**, or the
+assistant never offers it (``mcp/tests/test_server.py`` fails if it isn't).
+
 Run:   pixi run mcp          (or:  PYTHONPATH=mcp python -m cecelia_mcp.server)
 Talks to the Julia API at $CECELIA_API_URL (default http://127.0.0.1:8080), so `pixi run dev` must
 be running. See mcp/README.md for wiring this into Claude Code.
@@ -23,6 +29,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 from cecelia_mcp.client import CeceliaClient
+from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -38,7 +45,29 @@ LAB_LOG_SOURCES = {"claude": CLAUDE_AUTHOR, "labarchives": "LabArchives"}
 _API_URL = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
 _client = CeceliaClient(base_url=_API_URL)
 _monitor = SessionMonitor()
-mcp = FastMCP("cecelia-observer")
+# `instructions` reaches the client in the `initialize` response and lands in its system prompt, which
+# is what makes "check my project in cecelia" enough on its own — the assistant knows to resolve the
+# project and pull the briefing without the user pasting a prompt. Kept short on purpose; the long
+# form is delivered by get_session_briefing. See cecelia_mcp/guidance.py for the split and its budget.
+mcp = FastMCP("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
+
+
+@mcp.tool()
+def list_projects() -> list:
+    """Every Cecelia project on this machine, MOST-RECENTLY-OPENED FIRST — so for "my project" / "my
+    current project" with no id given, the first entry is the one the user is working in. Name it back
+    to them instead of asking for a uid (they mostly do not know it; it is in the app's title bar).
+
+    `lastOpenedAt` is stamped when a project is OPENED in Cecelia, so the order tracks what the user
+    has actually been looking at — not when the data was created. Two caveats worth stating out loud
+    rather than guessing past: a project the user opened in a different install/projects dir is not
+    here, and if they switch projects in the app mid-session this order goes stale. If the top entry
+    is not the obvious match for what they asked about, say what you found and let them pick."""
+    return [
+        {"uid": p.get("uid"), "name": p.get("name"),
+         "lastOpenedAt": p.get("lastOpenedAt"), "createdAt": p.get("createdAt")}
+        for p in _client.get_projects().get("projects", [])
+    ]
 
 
 @mcp.tool()
@@ -182,8 +211,8 @@ def get_module_params(category: str = "") -> dict:
     the task reads it. Read the LABEL as well as the key: a unit usually lives there (`cellDiameter` is
     labelled "Cell diameter (µm)", so its default of 10 is 10 µm, not 10 px).
 
-    A `select` param also carries `options` — its full list of legal values, which the server validates
-    against, so use one of them verbatim rather than echoing the default.
+    A `select` param also carries `options` — its full list of legal values. Use one of them verbatim
+    rather than echoing the default; anything else is not a value the task can take.
 
     **Selection params name live project state, which is NOT in the spec** — their candidates are absent
     here by design, so resolve them per project before you set one (this is where an under-informed guess
@@ -220,7 +249,8 @@ def get_available_plots(module: str = "") -> list:
 
 
 @mcp.tool()
-def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "") -> dict:
+def add_analysis_board(project_uid: str, name: str, plots: list, template: str = "",
+                       compare_by: str = "") -> dict:
     """ADD one Analysis board to the project — a figure the user opens on the /analysis page.
 
     Additive and one board per call: this cannot modify, rename, reorder or delete any board. It lands
@@ -228,13 +258,18 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     click, not their work. 409 if the name is taken (pick another; never try to replace theirs).
 
     `plots` is a list, in reading order, of:
-      {plot, measure?, chart?, pops?, popType?, groupBy?, statUnit?, imageAgg?}
+      {plot, measure?, chart?, pops?, groupBy?, statUnit?, imageAgg?}
       - `plot`     the plot-spec id from get_available_plots (e.g. "track_measures"). REQUIRED.
       - `chart`    one the spec offers ("boxplot", "violin", …); defaults to its first.
       - `measure`  one the spec carries (e.g. "live.track.speed"); defaults to the spec's own.
       - `pops`     populations as "valueName/pop" — EXACTLY as get_populations and get_analysis_boards
                    report them (e.g. "B/qc/_tracked"). A population that does not exist is rejected.
-      - `groupBy`  a categorical column to split by (e.g. "live.cell.hmm.state.movement").
+      - `groupBy`  a categorical column to split by (e.g. "live.cell.hmm.state.movement"). This splits
+                   the plot by a measured VALUE; it is not the experimental grouping (see below).
+      - **`popType` is NOT a field here.** It is DERIVED from the populations you name. get_analysis_boards
+        reports one because that is what got stored — do not copy it back: a `popType` that disagrees
+        with a population's own type produced a board where every panel said "Select one or more
+        populations", and the request is now rejected rather than written.
       - `statUnit` "individual" (every cell/track a point) or "image" (each image collapsed to one
                    `imageAgg`, "mean"/"median"). PREFER "image" when per-image n is small — pooling
                    every track across images treats one image's 400 tracks as 400 replicates.
@@ -249,12 +284,26 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     list_images' `attr` before anything cross-image. Pick the canonical clustering run rather than
     guessing among leftovers, and drop excluded images.
 
-    The server validates against the project and refuses to write a board that would render blank —
-    unknown plot id, a chart that spec doesn't offer, a measure it doesn't carry, a population that
-    does not exist (422, naming what was available). It CANNOT check intent: a well-formed board built
-    on the wrong clustering run is still wrong. So say in chat which values you read from the data and
-    which you defaulted, and tell the user the board was added beside their own."""
-    return _client.add_analysis_board(project_uid, name, plots, template)
+    `compare_by` is what the board compares ACROSS IMAGES — board-level, so it governs every plot on it:
+      - omitted        the app's default: one image at a time. A board with no `compare_by` is NOT a
+                       cross-image figure, whatever its plots are.
+      - "per_image"    one series per image
+      - "summarised"   the whole set pooled into one series
+      - an ATTRIBUTE NAME (e.g. "Mouse") groups images sharing that value into one series labelled by
+        it — the experimental comparison. Two may be combined: "Treatment,Mouse".
+    **This is the difference between a board and a figure.** If the user asks "does X differ between
+    mice/treatments", the answer is `compare_by="Mouse"`, not a per-image board with a caveat. Take the
+    name from get_image_attributes (the server rejects one the project does not have) and size the
+    groups with list_images' `attr` FIRST: grouping by an axis where each group holds one image is not a
+    comparison, and you should say so instead of drawing it.
+
+    A spec the project cannot plot comes back 422 with a message naming what WAS available — read it
+    and resubmit rather than reporting failure. What no validation can check is INTENT: a well-formed
+    board built on the wrong clustering run is still wrong, and it is yours to get right. So say in
+    chat which values you read from the data and which you defaulted, and tell the user the board was
+    added beside their own. Also give it a PLAIN name — write "Behaviour & tracking", never "&amp;";
+    you cannot rename it afterwards."""
+    return _client.add_analysis_board(project_uid, name, plots, template, compare_by)
 
 
 @mcp.tool()
@@ -450,14 +499,30 @@ def get_chains(project_uid: str) -> dict:
 def get_session_briefing(project_uid: str) -> dict:
     """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
     the user re-explaining. Returns:
-      - `projectName`, `imageCount`
+      - `projectName`, `imageCount`, `excludedCount` (how many of them are EXCLUDED from analysis —
+        subtract before quoting a cohort size)
       - `flagged`: images with a warn/fail QC finding (same source as the app's image table) —
-        `[{uid, name, worst: warn|fail, findings: [{level, short}]}]`
+        `[{uid, name, worst: warn|fail, included, findings: [{level, short, fun}]}]`.
+        **`included: false` means the user already dropped that image** — do not lead with its
+        anomalies; they are usually WHY it was dropped. Lead with the flagged images that still count,
+        and mention the excluded ones as already handled.
+        `fun` is the task whose QC banked the finding: check it before believing a number. A probe or
+        example module banking a hardcoded threshold looks exactly like a real pipeline finding
+        otherwise ("4 images measured 0 cells" once came from a test probe, not segmentation).
       - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
+
+      - `guidance`: HOW TO WORK WITH THIS PROJECT — the disciplines that span tools (what to check
+        before proposing any figure or cross-image comparison, and the rules for the few things you can
+        write). Read it before you propose anything; it is written to be followed, not summarised.
 
     Use it to open with what matters ("3 of 12 images flagged; 2 have too few tracks") and to pick up
     where the last session left off (the lab log). Then ask the user which direction to take. Read-only."""
-    return _client.get_session_briefing(project_uid)
+    # The guidance rides along with the briefing rather than sitting in the server instructions: it is
+    # ~600 words that only matter once a session actually opens a project, and the observer is
+    # registered user-scope, so in the instructions it would be in context for every unrelated `claude`
+    # session on the machine. Server-side, not pasted by the user — that is the whole point (see
+    # guidance.py). Merged into the response so one call orients AND briefs.
+    return {**_client.get_session_briefing(project_uid), "guidance": BRIEFING_GUIDANCE}
 
 
 @mcp.tool()

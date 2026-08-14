@@ -46,19 +46,17 @@ const labarchives = ref<LabArchivesCtx>({ present: false })
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
-// brief "Prompt copied" state on the Chat-to-Claude button — 2.5s, longer than the default flash
+// brief "Copied" state on the Chat-to-Claude button — 2.5s, longer than the default flash
 // because the user has to go and paste it somewhere else. Shared helper (docs/UI.md → UX primitives).
 const { isCopied: chatCopied, copy: copyPrompt } = useCopyFlash(2500)
 
-// Chat to Claude: copy a starter prompt (project context + MCP pointer) to the clipboard for a full
-// external session. Re-copies on each click. Works for any MCP assistant — no `claude` install needed.
-// No toast — the button flashes "Prompt copied" (colour + tooltip) for a couple of seconds instead.
+// Chat to Claude: copy a one-line starter (which project + the MCP pointer) to the clipboard for a
+// full external session. Re-copies on each click. Works for any MCP assistant — no `claude` install
+// needed. No toast — the button flashes "Copied" (colour + tooltip) for a couple of seconds instead.
+// The observer's rules are NOT in this line; the MCP server delivers them (see lib/chatHandoff.ts).
 async function chatToClaude() {
   if (!projectUid.value) return
-  // a connector the user hid in Settings → MCP connections is dropped from the prompt: it must not
-  // offer a capability they've switched off (see utils/mcpConnections.ts)
-  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name,
-    { labarchives: !settings.hiddenMcpAccounts.includes('LabArchives') }))
+  await copyPrompt(buildChatPrompt(projectUid.value, pm.current?.name))
 }
 // Which terminal button the toolbar shows: 'setup' / 'resync' (not set up, or stale) vs 'chat'.
 const terminalCtaMode = computed(() => terminalCta(observer.available, observer.terminalState))
@@ -321,10 +319,11 @@ async function dismissEntry(entry: LabLogEntry) {
              : terminalCtaMode === 'resync' ? 'Fix terminal setup' : 'Set up my terminal' }}
         </button>
         <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
-             one-shot. Copies a starter prompt; no `claude` install needed. -->
+             one-shot. Copies ONE line naming this project — the rules come from the MCP server, so
+             asking it to check your project works without this too. No `claude` install needed. -->
         <button v-else class="ll-capture" :class="{ copied: chatCopied() }" :disabled="!projectUid" @click="chatToClaude"
-                v-tooltip.top="chatCopied() ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
-                  : 'Copy a starter prompt for a full chat in Claude Code'">
+                v-tooltip.top="chatCopied() ? 'Copied — paste it into Claude (or any MCP chat bot)'
+                  : 'Copy a one-line opener naming this project'">
           <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" /> {{ chatCopied() ? 'Copied' : 'Chat to Claude' }}
         </button>
         <span v-if="observerTokens" class="ll-tokens cc-muted cc-fs-xs"

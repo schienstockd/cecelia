@@ -941,7 +941,12 @@ function api_boards_add(body_bytes::Vector{UInt8})
     proj = try load_project(uid) catch e
         return 404, JSON3.write((; error="Could not load project: $(sprint(showerror, e))"))
     end
-    name = String(get(body, :name, ""))
+    # Normalised on the way IN, so the duplicate check below, the stored tab and the response all talk
+    # about the same string. `append_board` normalises again (it owns the invariant, and the REPL reaches
+    # it without this route); `board_display_name` is idempotent, so doing both costs nothing. Without
+    # this, an agent that HTML-escaped an ampersand got a tab titled "Behaviour &amp; tracking" that it
+    # could not rename — add_analysis_board is add-only.
+    name = board_display_name(String(get(body, :name, "")))
     plots = get(body, :plots, nothing)
     template = String(get(body, :template, ""))
     path = boards_doc_path(joinpath(projects_dir(), uid))
@@ -957,7 +962,8 @@ function api_boards_add(body_bytes::Vector{UInt8})
             return 409, JSON3.write((; error="A board named \"$(strip(name))\" already exists in this project",
                                        code="duplicate_board_name"))
         end
-        layout = expand_board(proj, name, plots; template = template)
+        layout = expand_board(proj, name, plots; template = template,
+                              compare_by = String(get(body, :compareBy, "")))
         updated, id = append_board(doc, name, layout)
         version = write_boards_doc(path, updated; version = doc.version + 1)
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))

@@ -39,6 +39,44 @@ and is one click to remove. The in-app *"What can Claude do here?"* dialog
 and is where a user checks before letting Claude near their Analysis page. See
 `docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
 
+Two rules the expander enforces, both from one authored board that rendered completely blank:
+
+- **`popType` is DERIVED, and an explicit one must REACH the populations named.** The popType is half
+  of every `tkey`. The panel fetches its list from `/api/plots/populations` with that popType, which the
+  route expands via `plot_pop_types(popType, granularity)` — a track plot unions `[popType, "track"]`,
+  a cell plot is just `[popType]` — and tags each population with the family it was found under; the
+  frontend builds every tkey from that tag. A tkey outside the expansion is one the picker never
+  offers: it matches nothing, the panel renders empty, and nothing errors.
+
+  `popType: "track"` on `T/qc/_tracked` did exactly that. `plot_pop_types("track","track") == ["track"]`,
+  track-family pops are gates drawn on per-track measures (`{vn}__tracks.json`), and that project has
+  none — zero populations, four blank plots. A membership check would NOT have caught it: `track` is in
+  `track_measures`' offered popTypes. So the expander checks reachability against
+  `board_spec_populations` (the same enumeration the picker uses), derives the popType when it is
+  omitted — walking past the spec's default when needed, so a `trackclust` cluster board still
+  authors — and refuses one that cannot reach the named pops.
+- **Board names are stored as they will render** (`board_display_name`): stripped, HTML entities
+  decoded. Vue escapes text, so a stored `&amp;` displays as `&amp;` on a tab the authoring tool
+  cannot rename. Repaired rather than rejected — the intent is unambiguous.
+
+**`compareBy` is what makes an authored board a FIGURE.** It sets `shared.compareMode` (+
+`compareAttr`/`compareAttr2`) — board-level, because `useSummaryData` destructures those out of the
+shared bag, so one comparison governs every panel. `"per_image"`, `"summarised"`, or an image
+**attribute name** (`"Mouse"`, or `"Treatment,Mouse"` to combine two) which groups images sharing that
+value into one series. Attribute names are validated against the project's own images, because one
+nothing carries silently falls back to per-image — the wrong figure, drawn without complaint.
+
+Omitting it leaves the app's single-image default, which is how the first board authored for a
+4-mouse experiment came out comparing images and could not answer the question it was built for.
+
+> `scopeModes` in a plot spec does **not** gate this, and should not be read as if it did. It is
+> declarative: nothing in the frontend or the API consumes it (its only reference is the optional field
+> in `plots/types.ts`, typed `('per_image'|'summarised')[]` — it does not even admit `by_attr`).
+> Grouping is applied generically by `api_plot_data`, which builds `attr_map` from `im.attr` for
+> whatever plot asked. Reading `scopeModes` as a capability list is what produced the claim that only
+> `population_summary`/`spatial_cell_properties` could group by attribute; `track_measures` groups by
+> Mouse perfectly well.
+
 **The document has ONE reader/writer** — `app/src/analysis_boards.jl` (`read_boards_doc` /
 `normalise_boards` / `write_boards_doc`), used by the autosave route, the project-open payload and
 `board_summaries` alike. The last time this file had two parsers they disagreed about its shape and

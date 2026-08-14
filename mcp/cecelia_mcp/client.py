@@ -8,8 +8,10 @@ cannot modify, rename, reorder or delete a board), ``POST /api/lablog/append``
 overwrites), ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in the
 registry sidecar — not its cells), ``POST /api/notebooks/revise`` (which SNAPSHOTS the current
 notebook first — a restorable version — then overwrites its cells; it's how a notebook gets a new
-version, never a "-v2" copy), and ``POST /api/chains/create`` (create-only + server-validated —
-writes a chain TEMPLATE the user then runs themselves). All six are recoverable / non-destructive to
+version, never a "-v2" copy), ``POST /api/chains/create`` (create-only + server-validated —
+writes a chain TEMPLATE the user then runs themselves), and ``POST /api/observer/labarchives/set``
+(REPLACES the ELN context sidecar — a cache of an external system of record, so a rewrite loses
+nothing). All seven are recoverable / non-destructive to
 project & analysis data: no allow-listed route can touch cell data, images, gates, or QC, revise
 can't lose a notebook's content (the pre-revision state is always snapshotted), a template is
 inert until a human presses Run, and an added board is one tab beside the user's own. Any attempt to call a route not on the list raises
@@ -39,7 +41,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {
-        ("POST", "/api/boards/add"),      # WRITE 6/6 — create-only: adds ONE Analysis board, never
+        ("POST", "/api/boards/add"),      # WRITE 6/7 — create-only: adds ONE Analysis board, never
                                           # edits/deletes/reorders one. Server-validated against the
                                           # project (unknown plot id, chart the spec doesn't offer, a
                                           # population that doesn't exist → 422 before anything is
@@ -71,11 +73,11 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/lablog"),
         ("GET", "/api/notebooks"),         # list a project's notebooks (file, description, version)
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
-        ("POST", "/api/lablog/append"),  # write 1/4 — append-only, server-guarded
-        ("POST", "/api/notebooks/write"),  # write 2/4 — create-only (409 on existing); serialises cells to a Pluto notebook
-        ("POST", "/api/notebooks/describe"),  # write 3/4 — edits ONLY a notebook's description string (registry sidecar); not its content
-        ("POST", "/api/notebooks/revise"),  # write 4/4 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
-        ("POST", "/api/chains/create"),  # write 5/5 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
+        ("POST", "/api/lablog/append"),  # write 1/7 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/7 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/notebooks/describe"),  # write 3/7 — edits ONLY a notebook's description string (registry sidecar); not its content
+        ("POST", "/api/notebooks/revise"),  # write 4/7 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/chains/create"),  # write 5/7 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
         ("POST", "/api/observer/labarchives/set"),  # write 7/7 — REPLACES the LabArchives context
                                           # sidecar (a cache of an external system of record, so a
                                           # rewrite loses nothing; LabArchives is itself versioned).
@@ -377,7 +379,8 @@ class CeceliaClient:
         return self._request("POST", "/api/chains/create",
                              body={"projectUid": project_uid, "template": template})
 
-    def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = ""):
+    def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = "",
+                           compare_by: str = ""):
         # Create-only: adds ONE board and cannot modify, delete, rename or reorder any existing one
         # (409 on a duplicate name, 422 on a spec the project cannot plot). Deliberately NOT
         # /api/projects/boards, which is the browser's autosave of the WHOLE document — allow-listing
@@ -385,4 +388,8 @@ class CeceliaClient:
         body: dict = {"projectUid": project_uid, "name": name, "plots": plots}
         if template:
             body["template"] = template
+        if compare_by:
+            # board-level: what the plots compare ACROSS images (per_image / summarised / an attribute
+            # name). Server-validated against the project's real attributes.
+            body["compareBy"] = compare_by
         return self._request("POST", "/api/boards/add", body=body)

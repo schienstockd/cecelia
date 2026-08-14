@@ -35,7 +35,13 @@ project in your own terminal, Cecelia sets Claude Code up for you:
 1. Lab-log panel → **Set up my terminal**. (This button sits where *Chat to Claude* will be — until
    your terminal is set up, that IS the next step, so it isn't tucked away in the info dialog.)
 2. Run `claude` in a terminal.
-3. The toolbar button is now **Chat to Claude** — it copies a starter prompt; paste it in.
+3. Ask away — `check my current project in cecelia` is enough. The server briefs the session itself
+   (`mcp/cecelia_mcp/guidance.py`; see OBSERVER.md → *The hand-off is one line*), so there is no prompt
+   to paste and nothing to remember.
+
+The toolbar button is now **Chat to Claude**. It copies one line naming the project you have open —
+`I'm working in the Cecelia project <name> (<uid>). Have a look at it…` — for when you want *that*
+project rather than the one you opened most recently.
 
 There is nothing to copy and no path to type. The button POSTs `/api/observer/register`, which runs
 `claude mcp add-json cecelia-observer <spec> -s user` with the same server spec the in-app agent uses,

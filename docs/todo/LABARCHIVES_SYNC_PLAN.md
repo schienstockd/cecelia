@@ -146,9 +146,11 @@ the part that prevents a wrong conclusion.**
 - Uses `CollapsibleSection` + `.cc-card`; no new primitive (`docs/UI.md`).
 
 ### Phase 3 — prompts + docs ✅
-- **Four surfaces, all of them** (a tool added to fewer is the recurring bug): `mcp/cecelia_mcp/server.py`,
-  `app/src/ai/observer_prompt.jl`, `frontend/src/lib/chatHandoff.ts`, and the opening menu in
-  `frontend/src/lib/claudeOverview.ts`.
+- **Every surface, not most** (a tool added to fewer is the recurring bug): `mcp/cecelia_mcp/server.py`,
+  `mcp/cecelia_mcp/guidance.py` (both the tool list and the opening menu the server hands a session),
+  `app/src/ai/observer_prompt.jl`, and the capability list in `frontend/src/lib/claudeOverview.ts`.
+  *(Was four surfaces including `frontend/src/lib/chatHandoff.ts`; that prompt is now one line and the
+  guidance moved into the MCP server — see `docs/ai-assist/OBSERVER.md` → The hand-off is one line.)*
 - `docs/ai-assist/LAB-LOG.md` gains the sidecar-vs-log split; `INVENTORY.md` gains the reader/writer line.
 
 ---

@@ -21,13 +21,51 @@ that talks to the Julia API over HTTP. It is separate infra, not part of the `ce
 mcp/
   cecelia_mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
+    guidance.py  # what the server TELLS a session about its own toolset (see below)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
     server.py    # FastMCP server — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
+    test_server.py    # tool registration + the guidance guard (every tool is named; instructions stay small)
+    test_guarantees.py # a promise in the prose must name the test that backs it (see below)
 ```
+
+## The server briefs the session — `guidance.py`
+
+`check my current project in cecelia` is a sufficient prompt. There is nothing to paste, because the
+server carries its own instructions:
+
+- **`SERVER_INSTRUCTIONS`** → `FastMCP(instructions=…)`, delivered in the `initialize` response and
+  landing in the client's system prompt. It only has to get the assistant to the front door: resolve
+  the project with `list_projects` (most-recently-opened first), then call `get_session_briefing`.
+  **Keep it short** — the observer is registered user-scope, so this is in context for every `claude`
+  session on the machine, Cecelia-related or not. `test_server.py` holds the budget.
+- **`BRIEFING_GUIDANCE`** → merged into `get_session_briefing`'s response as `guidance`. The long form:
+  the grouping discipline before any cross-image figure, the add-only rules for boards, the
+  designs-but-never-runs rule for chains, how to open. Costs nothing until a session opens a project.
+
+Per-tool detail belongs in the tool's own docstring (also always in context); `guidance.py` is only
+for what spans tools. **A new tool must be named there** or the assistant never offers it — enforced by
+`GuidanceTest` in `mcp/tests/test_server.py`, with a three-tool exemption for the observer's own
+autonomous-loop bookkeeping. The in-app observer has its own prompt (`app/src/ai/observer_prompt.jl`)
+carrying only the watch loop and the lab-log discipline, with the matching guard in `app/test/suite.jl`.
+
+### A promise must name the test that backs it
+
+This prose is Python; the behaviour it describes is Julia. Nothing tied the two, so a promise could be
+false for months — and one was: both this docstring and the guidance claimed the server "rejects …
+rather than writing a board that renders blank" while the expander happily wrote one that did.
+`tests/test_guarantees.py` holds the list of server guarantees the prose makes, each with the test that
+proves it, and fails on a new unlisted one. Two rules keep it honest:
+
+1. **State only guarantees the assistant ACTS on.** "Add-only, cannot rename or delete" changes what it
+   tells the user; "the server refuses to write a blank board" changed nothing — it submits and either
+   gets a 422 or doesn't. That sentence was deleted rather than tested. A guarantee that only reassures
+   can be wrong, and being right buys nothing.
+2. **Say what to DO, not what the server promises.** "A 422 names what was available — read it and
+   resubmit" is worth more than any assurance, and cannot rot.
 
 ## Tools
 
@@ -51,7 +89,7 @@ mcp/
 | `get_spatial_stats(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | region-clustering runs (regions.{suffix}: n regions, sizes) + pairwise cell-type contact log-odds (association/avoidance per population pair) |
 | `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |
 | `get_repl_api()` | `GET /api/repl/api` | notebook/REPL data-access surface: the read accessors + their live docstrings + the `docs/REPL.md` cookbook (write rules). Read before generating `using Cecelia` code. Project-independent |
-| `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count, flagged images (warn/fail QC), recent lab-log entries (7 days). Call first when a chat begins |
+| `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count + `excludedCount`, flagged images (warn/fail QC — each with `included`, each finding with its `fun`), recent lab-log entries (7 days), and the `guidance`. Call first when a chat begins |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
 | `get_recent_logs(level="", limit=100)` | `GET /api/logs/recent` | recent backend console lines (server `@info`/`@warn`/`@error`) — where a Julia-side task crash lands (not in `get_task_log`) |
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |
@@ -59,7 +97,7 @@ mcp/
 | `get_observer_stats()` | *(in-process)* | session throttle/cost state without draining (surfaced count, cap, throttled, token estimate) |
 | `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write 1/2** — appends a dated `[Claude]` entry, append-only |
 | `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write 2/2** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
-| `add_analysis_board(project_uid, name, plots, template="")` | `POST /api/boards/add` | **write 6/6** — ADDS one Analysis board (a figure on `/analysis`). Add-only: cannot modify, rename, reorder or delete a board, so it lands beside the user's own and is one click to delete. 409 on a duplicate name; server-**validated** against the project (unknown plot id / chart the spec doesn't offer / measure it doesn't carry / population that doesn't exist → 422 naming what was available), because a bad `tkey` renders an EMPTY panel with no error. NOT `/api/projects/boards`, the browser's whole-document autosave |
+| `add_analysis_board(project_uid, name, plots, template="", compare_by="")` | `POST /api/boards/add` | **write 6/6** — ADDS one Analysis board (a figure on `/analysis`). Add-only: cannot modify, rename, reorder or delete a board, so it lands beside the user's own and is one click to delete. `compare_by` is what it compares across images — `"per_image"`, `"summarised"`, or an image ATTRIBUTE name (`"Mouse"`, or `"Treatment,Mouse"`); omitting it gives a single-image board, not a cross-image figure. 409 on a duplicate name; server-**validated** against the project (unknown plot id / chart the spec doesn't offer / measure it doesn't carry / population that doesn't exist / a `popType` that cannot reach the named populations / an attribute the project lacks → 422 naming what was available), because a bad `tkey` renders an EMPTY panel with no error. NOT `/api/projects/boards`, the browser's whole-document autosave |
 | `create_chain(project_uid, name, nodes, edges, start_targets=None)` | `POST /api/chains/create` | **write 5/6** — authors a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-**validated** (unknown task / dangling edge / cycle / out-of-range param → 400 naming the offender). Params may be sparse. **There is no tool to run it** — the user launches it from the whiteboard |
 
 ## Live observation — the 10-attempts pattern (Slice B)

@@ -12,22 +12,39 @@ _briefing_field(x, k::AbstractString) =
     session_briefing(proj; recent_days=7, max_entries=20) -> NamedTuple
 
 Startup context for an observer chat session:
-`{projectUid, projectName, imageCount, flagged, recentLabLog}`.
+`{projectUid, projectName, imageCount, excludedCount, flagged, recentLabLog}`.
 
 - `flagged`: images carrying a warn/fail QC finding — SAME source as the image table (`all_qc_docs`),
-  each `{uid, name, worst, findings: [{level, short}]}` (findings capped per image).
+  each `{uid, name, worst, included, findings: [{level, short, fun}]}` (findings capped per image).
+- `excludedCount`: how many of `imageCount` are EXCLUDED from analysis. An excluded image still sits
+  in its set as "done", so a reader that treats `imageCount` as the cohort size is over by this many.
 - `recentLabLog`: lab-log entries from the last `recent_days` days, newest-first,
   `{date, author, summary}` (summary = the entry's first bullet).
+
+`included`/`excludedCount` are here because a flagged image the user has already EXCLUDED is not
+news — the first session on a real project opened by highlighting a drift anomaly on an image its
+owner had dropped weeks earlier, which reads as "your data is broken" instead of "you already handled
+this". Excluded images are still listed (a warn on one is information, and hiding it would make the
+count disagree with the image table); they are LABELLED so a session can lead with the ones that
+count. Each finding also carries its `fun`, so a reading session can tell which task's QC is talking —
+a probe or example module banking findings is otherwise indistinguishable from segmentation's.
 
 Read-only; a compact orientation, not a full report.
 """
 function session_briefing(proj::CciaProject; recent_days::Int = 7, max_entries::Int = 20)
     imgs = images(proj)
     flagged = Any[]
+    excluded = 0
     for img in imgs
+        image_included(img) || (excluded += 1)
         picked = Any[]
         worst = "ok"
-        for (_, doc) in all_qc_docs(img)
+        for (key, doc) in all_qc_docs(img)
+            # WHICH task's QC is talking. The doc carries `funName`; the key ("<fun>/<valueName>") is
+            # the fallback. Without it every finding reads as if the pipeline produced it, and a probe
+            # or example module banking a hardcoded threshold is indistinguishable from segmentation —
+            # which cost a whole session chasing "4 images measured 0 cells" that no segmentation ran.
+            fun = string(something(_briefing_field(doc, "funName"), first(split(string(key), "/"))))
             for f in something(_briefing_field(doc, "findings"), ())
                 lvl = string(something(_briefing_field(f, "level"), "ok"))
                 (lvl == "warn" || lvl == "fail") || continue
@@ -35,11 +52,15 @@ function session_briefing(proj::CciaProject; recent_days::Int = 7, max_entries::
                 (lvl == "warn" && worst == "ok") && (worst = "warn")
                 length(picked) < 5 &&
                     push!(picked, (; level = lvl,
-                                     short = string(something(_briefing_field(f, "short"), ""))))
+                                     short = string(something(_briefing_field(f, "short"), "")),
+                                     fun = fun))
             end
         end
         isempty(picked) && continue
-        push!(flagged, (; uid = img.uid, name = img.name, worst = worst, findings = picked))
+        # `included` on every entry, not only the excluded ones: an ABSENT field reads as "unknown", and
+        # a session deciding what to lead with should not have to infer it.
+        push!(flagged, (; uid = img.uid, name = img.name, worst = worst,
+                          included = image_included(img), findings = picked))
     end
 
     recent = Any[]
@@ -59,6 +80,6 @@ function session_briefing(proj::CciaProject; recent_days::Int = 7, max_entries::
     la = la_briefing(proj)
 
     base = (; projectUid = proj.uid, projectName = proj.name, imageCount = length(imgs),
-              flagged = flagged, recentLabLog = recent)
+              excludedCount = excluded, flagged = flagged, recentLabLog = recent)
     la === nothing ? base : merge(base, (; labarchives = la))
 end

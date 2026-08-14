@@ -13,7 +13,9 @@ export interface EntryPoint {
 
 /** A capability line. `needs` marks one that depends on an ACCOUNT-managed MCP connector: if the user
  *  hid that connector in Settings → MCP connections, listing it here would advertise something they
- *  have switched off — the same reason the chat prompt drops it (lib/chatHandoff.ts). */
+ *  have switched off. (The observer's own guidance handles this differently, because it cannot see a
+ *  browser setting: it makes the LabArchives direction conditional on the session actually HAVING the
+ *  connector — see mcp/cecelia_mcp/guidance.py.) */
 export type CapabilityItem = string | { text: string; needs: string }
 
 export interface CapabilityGroup {
@@ -53,8 +55,8 @@ export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
     icon: 'pi-comments',
     what: 'A full back-and-forth session about this project in Claude Code (or any MCP assistant).',
     steps: [
-      'Click Chat to Claude (copies a starter prompt)',
-      'Paste it into Claude Code',
+      'Run claude in a terminal',
+      'Ask it to check your project in Cecelia',
       'It gets oriented, then asks what you want to do',
     ],
   },
