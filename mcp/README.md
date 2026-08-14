@@ -29,6 +29,7 @@ mcp/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
     test_server.py    # tool registration + the guidance guard (every tool is named; instructions stay small)
+    test_guarantees.py # a promise in the prose must name the test that backs it (see below)
 ```
 
 ## The server briefs the session — `guidance.py`
@@ -49,7 +50,22 @@ Per-tool detail belongs in the tool's own docstring (also always in context); `g
 for what spans tools. **A new tool must be named there** or the assistant never offers it — enforced by
 `GuidanceTest` in `mcp/tests/test_server.py`, with a three-tool exemption for the observer's own
 autonomous-loop bookkeeping. The in-app observer has its own prompt (`app/src/ai/observer_prompt.jl`)
-with the matching guard in `app/test/suite.jl`.
+carrying only the watch loop and the lab-log discipline, with the matching guard in `app/test/suite.jl`.
+
+### A promise must name the test that backs it
+
+This prose is Python; the behaviour it describes is Julia. Nothing tied the two, so a promise could be
+false for months — and one was: both this docstring and the guidance claimed the server "rejects …
+rather than writing a board that renders blank" while the expander happily wrote one that did.
+`tests/test_guarantees.py` holds the list of server guarantees the prose makes, each with the test that
+proves it, and fails on a new unlisted one. Two rules keep it honest:
+
+1. **State only guarantees the assistant ACTS on.** "Add-only, cannot rename or delete" changes what it
+   tells the user; "the server refuses to write a blank board" changed nothing — it submits and either
+   gets a 422 or doesn't. That sentence was deleted rather than tested. A guarantee that only reassures
+   can be wrong, and being right buys nothing.
+2. **Say what to DO, not what the server promises.** "A 422 names what was available — read it and
+   resubmit" is worth more than any assurance, and cannot rot.
 
 ## Tools
 

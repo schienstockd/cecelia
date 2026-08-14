@@ -90,9 +90,9 @@ Two boards differing only in `statUnit` are the same plots at two summary levels
 ON BOARDS. add_analysis_board ADDS one board to the /analysis page — it cannot modify, rename, \
 reorder or delete one, so it lands beside the user's own and costs a click to delete if it is wrong. \
 Give the plots in reading order using the spec ids from get_available_plots and the exact \
-"valueName/pop" strings from get_populations; the server rejects a plot or population that does not \
-exist, or a popType that cannot reach the populations you named, rather than writing a board that \
-renders blank. Do NOT set popType — it is derived from the populations. Set `compare_by` to whatever \
+"valueName/pop" strings from get_populations. Do NOT set popType — it is derived from the \
+populations. A spec the project cannot plot comes back 422 naming what was available: read it and \
+resubmit rather than reporting failure. Set `compare_by` to whatever \
 the figure compares across images: an attribute name ("Mouse") for the experimental comparison, else \
 "per_image" or "summarised". Omitting it gives a single-image board, which is not a cross-image \
 figure however good the plots are — so if the question was "does X differ between mice", the answer \

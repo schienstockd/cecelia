@@ -211,8 +211,8 @@ def get_module_params(category: str = "") -> dict:
     the task reads it. Read the LABEL as well as the key: a unit usually lives there (`cellDiameter` is
     labelled "Cell diameter (µm)", so its default of 10 is 10 µm, not 10 px).
 
-    A `select` param also carries `options` — its full list of legal values, which the server validates
-    against, so use one of them verbatim rather than echoing the default.
+    A `select` param also carries `options` — its full list of legal values. Use one of them verbatim
+    rather than echoing the default; anything else is not a value the task can take.
 
     **Selection params name live project state, which is NOT in the spec** — their candidates are absent
     here by design, so resolve them per project before you set one (this is where an under-informed guess
@@ -297,13 +297,12 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     groups with list_images' `attr` FIRST: grouping by an axis where each group holds one image is not a
     comparison, and you should say so instead of drawing it.
 
-    The server validates against the project and refuses to write a board that would render blank —
-    unknown plot id, a chart that spec doesn't offer, a measure it doesn't carry, a population that
-    does not exist, a `popType` contradicting the populations, or populations of mixed type in one plot
-    (422, naming what was available). It CANNOT check intent: a well-formed board built on the wrong
-    clustering run is still wrong. So say in chat which values you read from the data and which you
-    defaulted, and tell the user the board was added beside their own. Also give it a PLAIN name —
-    write "Behaviour & tracking", never "&amp;"; the name is stored verbatim and you cannot rename it."""
+    A spec the project cannot plot comes back 422 with a message naming what WAS available — read it
+    and resubmit rather than reporting failure. What no validation can check is INTENT: a well-formed
+    board built on the wrong clustering run is still wrong, and it is yours to get right. So say in
+    chat which values you read from the data and which you defaulted, and tell the user the board was
+    added beside their own. Also give it a PLAIN name — write "Behaviour & tracking", never "&amp;";
+    you cannot rename it afterwards."""
     return _client.add_analysis_board(project_uid, name, plots, template, compare_by)
 
 
