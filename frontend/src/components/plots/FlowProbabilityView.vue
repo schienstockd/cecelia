@@ -29,6 +29,8 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
 import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowRegion'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
+import { gridColumns, imageGridPng, imageGridSvgFrom } from '../../plots/imageGrid'
+import { downloadDataUrl, downloadText } from '../../plots/export'
 
 const COLORMAPS = ['viridis', 'magma', 'grey']
 
@@ -148,6 +150,29 @@ const request = computed<FlowRequest | null>(() =>
 const { planes, extent, regionLabel, runState, loading, showSpinner, starting, error, load } =
   useFlowPlanes(state, request)
 
+// ── export (the generic panel contract — InteractivePanel picks these up via defineExpose) ──
+// Native-resolution via plots/imageGrid, for the reason spelled out in that file's header: capturing
+// the DOM would downsample a 512-768 px probability map to its ~220 px grid cell.
+const gridRef = ref<HTMLElement | null>(null)
+const exportFormats = ['png', 'svg']
+// The MODEL belongs in the name here, unlike the metrics sheet: this picture is a property of one
+// checkpoint, and two models on the same frame are exactly what gets compared.
+const stem = computed(() => [
+  'flow_probability', (props.model ?? '').replace(/\.pt$/, ''), nameOf(state.value.imageUid ?? ''),
+  `t${state.value.t ?? 0}`, state.value.z != null ? `z${state.value.z}` : '',
+].filter(Boolean).join('_').replace(/[^\w.-]+/g, '_'))
+const tiles = () => planes.value.map(p => ({ name: p.name, dataUrl: `data:image/png;base64,${p.png}` }))
+function exportAs(kind: string) {
+  const cols = gridColumns(gridRef.value)
+  if (kind === 'png')
+    imageGridPng(tiles(), cols).then(url => url && downloadDataUrl(`${stem.value}.png`, url))
+  else if (kind === 'svg')
+    imageGridSvgFrom(tiles(), cols).then(svg => svg && downloadText(`${stem.value}.svg`, svg, 'image/svg+xml'))
+}
+const exportImage = () => imageGridPng(tiles(), gridColumns(gridRef.value))
+const exportSvg = () => imageGridSvgFrom(tiles(), gridColumns(gridRef.value))
+defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
+
 // Follow the host: seed the first image, and drop a pick that has left the selection.
 watch(imageOptions, opts => {
   const uids = opts.map(o => o.value)
@@ -226,7 +251,7 @@ watch(imageOptions, opts => {
       Pick an image to see what the model predicts.
     </p>
 
-    <div class="fpv-grid" :class="{ 'planes-stale': showSpinner }">
+    <div ref="gridRef" class="fpv-grid" :class="{ 'planes-stale': showSpinner }">
       <figure v-for="p in planes" :key="p.name">
         <img :src="`data:image/png;base64,${p.png}`" :alt="p.name" />
         <figcaption class="cc-muted">{{ p.name }}</figcaption>
