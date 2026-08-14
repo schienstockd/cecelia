@@ -23,8 +23,16 @@ export interface FlowManifest {
   sourceImages?: string[]
   sourceValueName?: string
   nFrames?: number
-  /** How many evenly-spaced Z planes per movie. */
+  /** How many Z planes per movie. */
   zPlanes?: number
+  /** Planes between them, centred on the stack; 0/absent = spread over the whole stack. */
+  zSpacing?: number
+  /** Square window each sequence was trained on, at a random position; 0/absent = whole frame. */
+  cropSize?: number
+  /** uID → `[y, x, h, w]` per plane, in `zPlanesUsed` order. The position is random per sequence. */
+  cropWindows?: Record<string, number[][]>
+  /** How the pooled flow metrics were held — `float16` since the memory work. */
+  metricDtype?: string
   /** Cap on the contiguous frames each movie contributed; 0 = all. */
   maxFrames?: number
   /** Fraction of each sequence trained on; the rest was held out. 1 = no split. */
@@ -48,7 +56,7 @@ const KNOWN = new Set([
   'temporalScales', 'cumulativeWindow', 'droppedMetrics', 'metricKeys', 'channelName',
   'trainChannels', 'epochs', 'embeddingDim', 'seed', 'normalise', 'sourceImages',
   'sourceValueName', 'nFrames', 'zPlanes', 'zPlanesUsed', 'zSlice', 'trainedAt', 'lossWeights',
-  'maxFrames', 'frameWindows', 'trainRatio',
+  'maxFrames', 'frameWindows', 'trainRatio', 'zSpacing', 'cropSize', 'cropWindows', 'metricDtype',
   // Shown as a plot (Training convergence), not as hundreds of numbers in a dialog.
   'lossCurves',
 ])
@@ -81,6 +89,10 @@ function zPlaneFields(m: FlowManifest): (DetailField | null)[] {
   const distinct = new Set(per.map(([, v]) => v.join(',')))
   return [
     field('Z planes', m.zPlanes === 1 ? '1 (middle)' : m.zPlanes),
+    // The interval only when one was asked for. Without it the planes are spread over the whole
+    // stack, so the gap is a consequence of the depth rather than a setting, and a row saying
+    // "spacing: 0" would read as a choice nobody made.
+    field('Z spacing', m.zSpacing ? `every ${m.zSpacing}` : undefined),
     distinct.size === 1
       ? field('Planes', `[${[...distinct][0]}]`, true)
       : per.length
@@ -137,10 +149,17 @@ export function modelDetailGroups(manifest: FlowManifest | null | undefined): De
   // 200" is only recoverable by re-deriving it from the seed by hand — and the pooled total cannot
   // say whether a movie was cut or simply short.
   const cut = Object.entries(m.frameWindows ?? {})
+  // Same argument as the frame windows, in the other two axes: the XY window is random per sequence,
+  // so the size alone does not say what the model saw. Counted rather than listed — one line per
+  // (movie × plane) is a wall, and the exact corners are a question for the manifest file itself.
+  const crops = Object.values(m.cropWindows ?? {}).reduce((n, v) => n + v.length, 0)
   const source: (DetailField | null)[] = [
     field('Trained', m.trainedAt),
     field('Frames pooled', m.nFrames),
     field('Max frames/movie', m.maxFrames ? m.maxFrames : m.maxFrames === 0 ? 'all' : undefined),
+    field('Crop', m.cropSize
+      ? `${m.cropSize}×${m.cropSize}${crops ? ` at random (${crops} windows)` : ''}`
+      : m.cropSize === 0 ? 'whole frame' : undefined),
     cut.length
       ? { label: `Windows (${cut.length})`, mono: true,
           value: cut.map(([uid, [a, b]]) => `${uid}: ${a}–${(b ?? 0) - 1}`).join('  ') }

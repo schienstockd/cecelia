@@ -42,6 +42,26 @@
       "tip": "Evenly-spaced planes per movie; each multiplies the frames pooled"
     },
     {
+      "key": "zSpacing",
+      "label": "Z spacing",
+      "type": "int",
+      "min": 0,
+      "max": 25,
+      "step": 1,
+      "default": 0,
+      "tip": "Planes between them, taken from the middle; 0 = spread over the whole stack"
+    },
+    {
+      "key": "cropSize",
+      "label": "Crop size",
+      "type": "int",
+      "min": 0,
+      "max": 1024,
+      "step": 128,
+      "default": 0,
+      "tip": "Random square window per plane, off the border; 0 = whole frame"
+    },
+    {
       "key": "maxFrames",
       "label": "Max frames per movie",
       "type": "int",
@@ -184,7 +204,7 @@
       "key": "epochs",
       "label": "Epochs",
       "type": "int",
-      "min": 1,
+      "min": 5,
       "max": 500,
       "step": 5,
       "default": 30,

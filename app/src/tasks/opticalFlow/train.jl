@@ -153,6 +153,13 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
     on_log("[INFO] Scales: $(join(scales, ", ")) | cumulative window " *
            "$(Int(get(params, "cumulativeWindow", 5)))" *
            (isempty(dropped) ? "" : " | dropping $(join(dropped, ", "))"))
+    let crop = Int(get(params, "cropSize", 0)), zsp = Int(get(params, "zSpacing", 0))
+        # Said once, up front: both change what the run is fitted to rather than how it is fitted,
+        # and both are easy to leave set from a previous run without noticing.
+        on_log("[INFO] Sampling: $(Int(get(params, "zPlanes", 1))) Z plane(s)" *
+               (zsp >= 1 ? " every $(zsp)" : " over the stack") *
+               " | " * (crop > 0 ? "random $(crop)×$(crop) crop" : "whole frame"))
+    end
 
     # Set-scope run dir, consistent with every other set task (never a temp dir).
     task_dir = imgs[1]._dir
@@ -171,6 +178,11 @@ function _run_task(task::TrainFlowModel, imgs::Vector{CciaImage}, params::Dict{S
            channelName      = join([string(ch_names[c + 1]) for c in channels
                                     if 0 <= c < length(ch_names)], "+"),
            zPlanes          = Int(get(params, "zPlanes", 1)),
+           # Wins over `zPlanes` in the runner when set. Two controls for one choice rather than a
+           # mode switch: they answer different questions (how many planes vs how far apart), and a
+           # set of stacks of different depths cannot satisfy both at once.
+           zSpacing         = Int(get(params, "zSpacing", 0)),
+           cropSize         = Int(get(params, "cropSize", 0)),
            maxFrames        = Int(get(params, "maxFrames", 0)),
            trainRatio       = Float64(get(params, "trainRatio", 1.0)),
            temporalScales   = scales,

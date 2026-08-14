@@ -2707,6 +2707,46 @@ end
     end
 end
 
+@testset "every slider can reach its own max and default" begin
+    # An `int`/`float` param renders as `<input type="range">` (ParamRenderer.vue), and a range input
+    # anchors its stops at `min` — the reachable values are `min + k*step`, NOT the round numbers the
+    # three bounds suggest. So `min 1, max 500, step 5` (what `epochs` shipped as) offers 1, 6, 11 …
+    # 496: 100 is not selectable, 101 is, the declared max is unreachable, and the declared default of
+    # 30 is not even on a stop — the form silently disagrees with its own spec the moment the user
+    # touches the control.
+    #
+    # Only the two unambiguous failures are asserted. That the stops are round *numbers* is taste and
+    # sometimes wrong on purpose: `smooth.temporalFrames` is 1–9 step 2 precisely so the window stays
+    # odd, and its max and default are both reachable.
+    on_grid(v, mn, st) = (n = (v - mn) / st; isapprox(n, round(n); atol = 1e-6))
+    checked = 0
+    for (fun_name, task) in sort(collect(Cecelia._fun_name_map()); by = first)
+        path = try Cecelia._spec_path(task) catch; nothing end
+        (isnothing(path) && continue)
+        isfile(path) || continue
+        each_spec_param(get(JSON3.read(read(path, String)), :params, [])) do p, _
+            t = String(something(spec_get(p, "type", ""), ""))
+            (t == "int" || t == "float") || return
+            key = String(something(spec_get(p, "key", ""), ""))
+            mn = Float64(something(spec_get(p, "min", 0), 0))
+            mx = Float64(something(spec_get(p, "max", 100), 100))
+            st = Float64(something(spec_get(p, "step", t == "int" ? 1 : 0.01), 1))
+            st > 0 || return
+            checked += 1
+            on_grid(mx, mn, st) ||
+                @error "slider max is unreachable" task = fun_name param = key min = mn max = mx step = st
+            @test on_grid(mx, mn, st)
+            dflt = spec_get(p, "default", nothing)
+            if dflt isa Real
+                on_grid(Float64(dflt), mn, st) ||
+                    @error "slider default is not on a stop" task = fun_name param = key default = dflt min = mn step = st
+                @test on_grid(Float64(dflt), mn, st)
+            end
+        end
+    end
+    @test checked > 20      # the sweep actually found the sliders
+end
+
 @testset "plot specs live on the page that EXPLORES, not the one that DEFINES" begin
     # Where a plot lives is a product decision worth pinning, because the drift is invisible: a new
     # pop type arrives, someone adds a `population_summary_<type>.json` pointed at the page that
