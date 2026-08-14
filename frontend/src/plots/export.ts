@@ -198,11 +198,15 @@ export function svgEsc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-// assemble a complete <svg> document from a body string (already-built element strings)
+// assemble a complete <svg> document from a body string (already-built element strings).
+// The `xlink` namespace is declared unconditionally because `svgImage` emits `xlink:href` — see the
+// measurement on that function. An undeclared prefix makes the whole document malformed, so this is not
+// optional for the emitters that use it, and it costs 40 bytes for the ones that don't.
 export function svgDoc(o: { width: number; height: number; background?: string; body: string }): string {
   const bg = o.background && o.background !== 'transparent'
     ? `<rect width="100%" height="100%" fill="${o.background}"/>` : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${r1(o.width)}" height="${r1(o.height)}" ` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+         `width="${r1(o.width)}" height="${r1(o.height)}" ` +
          `viewBox="0 0 ${r1(o.width)} ${r1(o.height)}">${bg}${o.body}</svg>`
 }
 
@@ -255,11 +259,23 @@ export function svgText(x: number, y: number, s: string,
 // embed a raster layer as an <image>. `fit='none'` (default) stretches to the rect — used for the gating
 // density base, which exactly fills its plot area. `fit='meet'` aspect-fits (letterbox) — used for a
 // board slot's raster fallback, matching the PDF's aspect-preserving image placement.
+// `xlink:href`, NOT the SVG 2 `href` this used to emit. Plain `href` is honoured by every browser, so
+// every convenient way to check said the export was fine — but **Inkscape 1.2.2 ignores it and drops the
+// raster entirely**: measured on an 8-plane flow sheet, the same document rasterised to 13 KB of bare
+// captions with `href` and 1.19 MB with `xlink:href`. Illustrator is the documented driving requirement
+// for these exports (docs/PLOTS.md), so an attribute browsers accept and editors silently ignore is the
+// worst failure shape available. It also silently cost the gating points-mode density base, whose raster
+// layer goes through here.
+//
+// One spelling rather than both: the value is a base64 data URL, so emitting it twice DOUBLES the
+// document — an 8-plane sheet goes 5.5 MB → 11 MB, past `SVG_SIZE_WARN_BYTES`. `xlink:href` is
+// deprecated in SVG 2 but still honoured by every browser and every editor, so it is the spelling that
+// works in both places for one copy of the bytes.
 export function svgImage(dataUrl: string, x: number, y: number, w: number, h: number, fit: 'none' | 'meet' = 'none'): string {
   if (!dataUrl) return ''
   const par = fit === 'meet' ? 'xMidYMid meet' : 'none'
   return `<image x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" ` +
-         `preserveAspectRatio="${par}" href="${dataUrl}"/>`
+         `preserveAspectRatio="${par}" xlink:href="${dataUrl}"/>`
 }
 
 // Nest a complete <svg> as a child positioned at (x,y,w,h) inside a parent SVG. SVG supports a nested

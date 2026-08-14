@@ -42,6 +42,15 @@ describe('svgDoc — document wrapper', () => {
     expect(svgDoc({ width: 10, height: 10, body: '' })).not.toContain('<rect')
     expect(svgDoc({ width: 10, height: 10, background: 'transparent', body: '' })).not.toContain('<rect')
   })
+
+  // `svgImage` emits `xlink:href`, and an undeclared namespace prefix makes the whole document
+  // malformed — so this declaration is a hard dependency of that function, not decoration. Every SVG
+  // root in the app is built here (asserted by the caller sweep below), which is what makes one
+  // declaration enough.
+  it('declares the xlink namespace svgImage needs', () => {
+    expect(svgDoc({ width: 10, height: 10, body: '' }))
+      .toContain('xmlns:xlink="http://www.w3.org/1999/xlink"')
+  })
 })
 
 describe('vector primitives', () => {
@@ -58,7 +67,26 @@ describe('vector primitives', () => {
     expect(svgRect(1, 2, 3, 4, { fill: '#fff', stroke: '#000', rx: 2 })).toContain('<rect x="1" y="2" width="3" height="4"')
     expect(svgLine(0, 0, 5, 5, { stroke: '#000' })).toBe('<line x1="0" y1="0" x2="5" y2="5" stroke="#000" stroke-width="1"/>')
     expect(svgText(4, 4, 'hi', { fill: '#111', size: 12, anchor: 'middle' })).toContain('>hi</text>')
-    expect(svgImage('data:image/png;base64,AAAA', 0, 0, 10, 10)).toContain('href="data:image/png;base64,AAAA"')
+    expect(svgImage('data:image/png;base64,AAAA', 0, 0, 10, 10)).toContain('xlink:href="data:image/png;base64,AAAA"')
+  })
+
+  // Measured, not stylistic: with the SVG 2 `href` this used to emit, Inkscape 1.2.2 dropped the raster
+  // entirely — an 8-plane flow sheet rasterised to 13 KB of bare captions instead of 1.19 MB. Browsers
+  // honour both spellings, so every quick check said it worked. And ONE spelling, because the value is a
+  // base64 data URL: emitting it twice doubles the document (5.5 MB → 11 MB on that sheet).
+  it('references the raster with xlink:href only — editors ignore the SVG 2 spelling', () => {
+    const img = svgImage('data:image/png;base64,AAAA', 0, 0, 10, 10)
+    expect(img).toContain('xlink:href=')
+    expect(img.match(/href="data:image\/png;base64,AAAA"/g)).toHaveLength(1)   // not inlined twice
+    expect(img).not.toMatch(/[^:]href="data:/)                                 // no bare `href=`
+  })
+
+  // The pairing that makes the above safe: an `xlink:` attribute in a document whose root does not
+  // declare the prefix is malformed XML, and every renderer is entitled to reject the whole file.
+  it('is namespace-valid inside the document wrapper it is used with', () => {
+    const doc = svgDoc({ width: 10, height: 10, body: svgImage('data:image/png;base64,AAAA', 0, 0, 10, 10) })
+    expect(doc).toContain('xmlns:xlink=')
+    expect(doc.indexOf('xmlns:xlink=')).toBeLessThan(doc.indexOf('xlink:href='))
   })
 
   it('rotated text carries a rotate transform around its anchor', () => {
@@ -105,5 +133,47 @@ describe('svgEsc — XML safety in labels', () => {
   it('a population name with an ampersand survives into text/circle-group markup', () => {
     expect(svgText(0, 0, 'CD4 & CD8', { fill: '#000' })).toContain('CD4 &amp; CD8')
     expect(svgCircles([[0, 0]], { fill: '#000', label: 'a<b' })).toContain('data-group="a&lt;b"')
+  })
+})
+
+// Every `<svg>` ROOT in the app must come from `svgDoc`, because that is the only place the `xlink`
+// namespace `svgImage` depends on is declared. A second hand-rolled root would emit `xlink:href` under an
+// undeclared prefix — malformed XML, which a renderer may reject wholesale rather than degrade.
+//
+// Two roots are legitimately not `svgDoc` and both are listed with the reason: neither can contain
+// `svgImage` output. Adding a third means proving the same thing about it.
+const SRC = import.meta.glob('/src/**/*.{ts,vue}', {
+  query: '?raw', import: 'default', eager: true,
+}) as Record<string, string>
+
+const ROOT_EXEMPT: Record<string, string> = {
+  // wraps serialised HTML in a foreignObject — the raster arrives as an <img src>, not svgImage
+  'plots/export.ts:elementToImageURL': 'foreignObject wrapper',
+  // re-attributes an ALREADY-BUILT child svg into a slot; the page root around it is svgDoc's
+  'plots/export.ts:nestSvg': 'nested child, parent declares the namespace',
+}
+
+describe('svg roots all come from svgDoc', () => {
+  it('no site hand-rolls an <svg> root that could carry an xlink reference', () => {
+    const hits: string[] = []
+    for (const [path, src] of Object.entries(SRC)) {
+      if (path.endsWith('.test.ts')) continue
+      // strip comments first: the first cut of this counted a `<svg>` inside a doc comment in
+      // imageGrid.ts and reported a file that correctly uses svgDoc. A detector that fires on prose
+      // gets an exemption added for it, which is how an allow-list stops meaning anything.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      // a literal `<svg` opening tag inside a template/quoted string — i.e. a root being assembled
+      const roots = (code.match(/[`'"]<svg[\s>]/g) ?? []).length
+      if (!roots) continue
+      const rel = path.replace('/src/', '')
+      // export.ts owns svgDoc plus the two exempted builders
+      const allowed = rel === 'plots/export.ts' ? 1 + Object.keys(ROOT_EXEMPT).length : 0
+      if (roots > allowed) hits.push(`${rel} (${roots} roots, ${allowed} allowed)`)
+    }
+    expect(hits, 'build the document with svgDoc — it declares xmlns:xlink').toEqual([])
+  })
+
+  it('the glob resolved', () => {
+    expect(Object.keys(SRC).length).toBeGreaterThan(100)
   })
 })
