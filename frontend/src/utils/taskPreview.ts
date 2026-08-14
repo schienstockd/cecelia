@@ -61,6 +61,29 @@ export function previewBlocker(
 }
 
 /**
+ * The value_name the preview LAYER belongs to — `outputValueName` when the task has one, else the
+ * input version.
+ *
+ * Not the same question as "which image version does the task read", and getting the two confused is
+ * what this exists to stop. The napari bridge uses this name as the label stem: a preview lands as
+ * `({vn}) Preview` and evicts `({vn}) Labels` / `({vn}) Labels (live)`, which is what makes a finished
+ * run replace its own preview and vice versa (`_LABEL_SUFFIXES` in `napari/napari_bridge.py`). Those
+ * layers are named after the LABEL SET — `outputValueName` — so passing the input version here left
+ * `(corrected) Preview` sitting on top of an un-evicted `(default) Labels`, two masks stacked, and the
+ * finished run then failed to remove the stale preview.
+ *
+ * Falls back to the input version for a task with no output name of its own (AF correction), which is
+ * what it was already getting.
+ */
+export function previewValueName(params: Record<string, unknown> | null): string {
+  const pick = (k: string) => {
+    const v = params?.[k]
+    return typeof v === 'string' && v !== '' ? v : null
+  }
+  return pick('outputValueName') ?? pick('valueName') ?? 'default'
+}
+
+/**
  * Do these params carry something to preview yet? `null` when they do.
  *
  * **Permissive by default, and that matters.** This used to be `hasPreviewableModel` alone, which asks
