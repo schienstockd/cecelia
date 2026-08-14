@@ -44,7 +44,7 @@ from cecelia.utils.atomic_io import write_json_atomic
 
 # coastal owns the smoothing engine (array-only, imports nothing from cecelia). Declared as a git
 # dep in pixi.toml — see the note there for why it is no longer an editable sibling path.
-from coastal.smooth import spatial_smooth, temporal_smooth, gated_frame, noise_sigma
+from coastal.smooth import spatial_smooth, temporal_smooth, gated_frames, noise_sigma
 
 #: How many (t, z) planes to sample when estimating the dynamic-range gain. The gain only needs the
 #: right order of magnitude, and a sample keeps this from being a second full pass over the store.
@@ -106,7 +106,7 @@ def run(params):
     gated = stat == 'gated' and half > 0
 
     # ── the gate's noise scale ─────────────────────────────────────────────────────────────────
-    # Estimated ONCE, from a sample, and handed to every frame. `gated_frame` would otherwise
+    # Estimated ONCE, from a sample, and handed to every frame. `gated_frames` would otherwise
     # estimate it per window — a 3-9 frame sample — so the gate's strictness would drift between
     # z-planes and timepoints for no physical reason. The noise level is a property of the
     # acquisition, not of the window we happen to be holding. (coastal pins the two forms equal
@@ -206,8 +206,15 @@ def run(params):
                     guide = None
                     for w in wins.values():
                         guide = w.copy() if guide is None else guide + w
-                    for c in sel:
-                        gate_out[c] = gated_frame(wins[c], guide=guide, sigma=gate_sigma)
+                    # ONE call for every channel: the match depends only on the guide, so gating each
+                    # channel separately recomputes the identical block match C times — and the match
+                    # (a filter per candidate offset) is the expensive half, while applying a known one
+                    # is a gather. Measured on a real 4-channel plane: 588 ms -> 155 ms, i.e. 33.5 min
+                    # -> 8.9 min over a 180t x 19z movie.
+                    order = list(sel)
+                    for c, frame in zip(order, gated_frames([wins[c] for c in order], guide=guide,
+                                                            sigma=gate_sigma)):
+                        gate_out[c] = frame
 
                 for c in sel:
                     if gated:

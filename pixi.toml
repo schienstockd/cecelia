@@ -86,11 +86,12 @@ btrack       = ">=0.7"
 # The rev is a HARD floor, not a snapshot: `segment.coastal` calls `flow_metrics_for_frame` and
 # `LearnedAffinityInference(seed_blur_sigma=...)`, `opticalFlow.train` calls
 # `train_with_metrics(val_frames=..., on_epoch=...)`, and `cleanupImages.smooth` calls
-# `gated_frame`/`noise_sigma` for `temporalStat="gated"` — none of which exists before this commit.
-# An older rev fails at RUN time (TypeError / ImportError), not at install or in CI — the Python tests
-# stub coastal deliberately, and the gated runner tests SKIP when the pinned coastal predates
-# `gated_frame`, so nothing catches a rollback.
-coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "438227340b763461fec134b745448ccdca5f4188" }
+# `gated_frames`/`noise_sigma` for `temporalStat="gated"` — none of which exists before this commit.
+# An older rev mostly fails at RUN time (TypeError), not at install — the Python tests stub coastal
+# deliberately. The ONE thing CI does catch is a rollback past `gated_frames`: `smooth_run.py` imports
+# it at module scope, so `test_smooth_runner` errors on load rather than skipping. Nothing catches a
+# rollback past the `segment.coastal` / `opticalFlow.train` calls above.
+coastal      = { git = "https://github.com/schienstockd/coastal.git", rev = "1e594144c8bdda051ed11e201856921b2f6b489f" }
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
