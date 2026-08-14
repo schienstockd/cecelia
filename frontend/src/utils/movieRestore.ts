@@ -19,6 +19,7 @@
 // is Decision 7, and it is why there are two destinations for three producers.
 
 import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './batchMovie'
+import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
 
 /** A registry entry as `GET /api/movies/meta` returns it (api/src/movies_api.jl). */
 export interface MovieRegistryEntry {
@@ -141,8 +142,8 @@ export function lookRestore(config: Record<string, unknown> | null | undefined):
   put(cfg, 'labelContour', num(config.labelContour))
   put(cfg, 'show3D', typeof config.show3D === 'boolean' ? config.show3D : undefined)
   put(cfg, 'zSlice', config.zSlice === null ? null : num(config.zSlice))
-  put(cfg, 'compareLayout', config.compareLayout === 'column' || config.compareLayout === 'row'
-    ? config.compareLayout : undefined)
+  put(cfg, 'compareLayout', COMPARE_LAYOUTS.includes(config.compareLayout as CompareLayout)
+    ? config.compareLayout as CompareLayout : undefined)
   put(cfg, 'compareContrast', config.compareContrast === 'reference' || config.compareContrast === 'version'
     ? config.compareContrast : undefined)
   put(cfg, 'titleCard', output.titleCard)

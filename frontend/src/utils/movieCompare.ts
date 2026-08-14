@@ -16,12 +16,18 @@
 // means against the items an image actually has, what the movie gets called, and how much work the
 // user just asked for. Kept out of the SFCs so it can be tested (docs/DEV.md → Tests).
 
-export type CompareLayout = 'row' | 'column'
+/** How a SINGLE-row comparison is arranged: all across, all stacked, or wrapped into a near-square
+ *  grid (4 cells → 2x2). Only ever consulted when the two lists have not already fixed both
+ *  directions — see `compareShape`. */
+export type CompareLayout = 'row' | 'column' | 'grid'
 /** D4 — `reference`: the first cell's contrast is applied to every cell (one ruler for a correction).
  *  `version`: each cell keeps the napari settings saved for its own version. */
 export type CompareContrast = 'reference' | 'version'
 
 export const COMPARE_LAYOUT_DEFAULT: CompareLayout = 'row'
+/** Every layout there is — the picker's options and the restore validator read the SAME list, so a
+ *  new one cannot be offered by one and rejected by the other. */
+export const COMPARE_LAYOUTS: CompareLayout[] = ['row', 'column', 'grid']
 export const COMPARE_CONTRAST_DEFAULT: CompareContrast = 'reference'
 
 /** Items that no longer exist must not silently record the wrong thing. Drops unknown and duplicate
@@ -33,25 +39,43 @@ export function normaliseItems(selected: string[] | undefined, available: string
 }
 
 /**
- * The LAYOUT a pair of selections means. There is nothing to choose: versions run across, masks run
- * down, and which of those actually materialises follows from how many of each are picked.
+ * The LAYOUT a pair of selections means. When BOTH lists compare something there is nothing to
+ * choose — versions run across, masks run down:
  *
- *   2 versions x 2 masks -> a 2x2 grid
- *   2 versions x 1 mask  -> one row of 2 (a plain side-by-side comparison)
- *   1 version  x 2 masks -> one row of 2 (ditto — a single list always goes side by side)
+ *   2 versions x 2 masks -> a 2x2 grid (`fixed`)
+ *   2 versions x 1 mask  -> one list of 2, arranged by `layout`
+ *   1 version  x 2 masks -> ditto — a single list is the layout toggle's whole reason to exist
  *   1 x 1                -> one cell, an ordinary single recording
  *
- * `grid` is what the UI keys the layout toggle off: a row-vs-column choice only means something when
- * there is ONE row to point it at. Mirrors `_compare_grid` (api/src/napari_api.jl).
+ * `fixed` is what the UI keys the layout toggle off: the choice only means something when ONE list
+ * is doing the comparing. `grid` says the RESULT is two-dimensional — either because the cross
+ * product made it so, or because the user asked for the cells to be wrapped.
+ *
+ * Mirrors `_compare_grid` + `_wrap_grid` (api/src/napari_api.jl).
  */
-export interface CompareShape { rows: number; cols: number; cells: number; grid: boolean }
-export function compareShape(versions: string[], segmentations: string[]): CompareShape {
+export interface CompareShape { rows: number; cols: number; cells: number; grid: boolean; fixed: boolean }
+export function compareShape(versions: string[], segmentations: string[],
+                             layout: CompareLayout = COMPARE_LAYOUT_DEFAULT): CompareShape {
   const v = Math.max(1, versions.length)
   const s = Math.max(1, segmentations.length)
-  const grid = versions.length > 1 && segmentations.length > 1
-  const rows = grid ? s : 1
-  const cols = grid ? v : Math.max(v, s)
-  return { rows, cols, cells: rows * cols, grid }
+  const fixed = versions.length > 1 && segmentations.length > 1
+  if (fixed) return { rows: s, cols: v, cells: v * s, grid: true, fixed }
+  const cells = Math.max(v, s)
+  const { rows, cols } = wrapShape(cells, layout)
+  return { rows, cols, cells, grid: rows > 1 && cols > 1, fixed }
+}
+
+/**
+ * How `cells` of one list are arranged. `grid` wraps them into the squarest rectangle that holds
+ * them — 4 -> 2x2, 6 -> 3x2, 5 -> 3+2 (the short last row is centred by the compositor's existing
+ * padding, so a non-square count needs no special case). Two cells wrap to a single row of two,
+ * which IS the row layout, so small counts need no guard either.
+ */
+function wrapShape(cells: number, layout: CompareLayout): { rows: number; cols: number } {
+  if (layout === 'column') return { rows: cells, cols: 1 }
+  if (layout !== 'grid')   return { rows: 1, cols: cells }
+  const cols = Math.ceil(Math.sqrt(cells))
+  return { rows: Math.ceil(cells / cols), cols }
 }
 
 /** Is this a comparison at all — i.e. more than one cell to compose? */
@@ -92,8 +116,10 @@ export const comparePasses = (shape: CompareShape): number => Math.max(1, shape.
  */
 export function compareActionTip(shape: CompareShape, single: string): string {
   if (!isComparison(shape)) return single
-  const what = shape.grid ? `a ${shape.cols} x ${shape.rows} grid (versions across, masks down)`
-                          : `${shape.cols} side by side`
+  const what = shape.fixed  ? `a ${shape.cols} x ${shape.rows} grid (versions across, masks down)`
+             : shape.grid   ? `a ${shape.cols} x ${shape.rows} grid`
+             : shape.cols === 1 ? `${shape.cells} stacked`
+                                : `${shape.cells} side by side`
   return `Record ${what} — ${comparePasses(shape)} render passes`
 }
 

@@ -1115,6 +1115,31 @@ function _compare_grid(config)::Vector{MovieRow}
     MovieRow[(; label = "", columns = _version_columns(config, versions))]
 end
 
+# Fold ONE row of N cells into the squarest rectangle that holds them — the `grid` layout (4 → 2x2,
+# 6 → 3x2, 5 → 3 then 2). Four movies side by side are four times as wide as they are tall, which is a
+# strip nobody can read on a slide; wrapping them is a purely cosmetic rearrangement of cells that were
+# going to be recorded anyway.
+#
+# Deliberately NOT a new compositor: it hands `_record_grid!` the same `Vector{MovieRow}` the
+# cross-product builds, so the nested compose, the per-cell captions, the frame arithmetic, cancel and
+# staging are the machinery that already exists. A short last row is centred on black by
+# `movie_io._pad_to`, which is why a non-square count needs no special case.
+#
+# Only ever applied to a SINGLE row: with both lists comparing something, versions-across/masks-down
+# already fixes both directions and there is nothing to rearrange. Two cells wrap to one row of two —
+# which is the row layout — so small counts need no guard either.
+# Mirrors `wrapShape` (frontend/src/utils/movieCompare.ts).
+function _wrap_grid(rows::Vector{MovieRow}, layout::AbstractString)::Vector{MovieRow}
+    (layout != "grid" || length(rows) != 1) && return rows
+    cols = rows[1].columns
+    n    = length(cols)
+    n <= 1 && return rows
+    ncol = ceil(Int, sqrt(n))
+    # No row label: the cells carry their own captions and a wrapped row means nothing on its own —
+    # captioning it would put a blank band under every strip.
+    MovieRow[(; label = "", columns = cols[i:min(i + ncol - 1, n)]) for i in 1:ncol:n]
+end
+
 # The versions a config records, in column order. `valueNames` is the comparison list; a config from
 # before it existed (or one the user never touched) carries a single `valueName`, and "" — the active
 # version — is a perfectly good single column. Never empty, so callers always have one column.
@@ -1211,8 +1236,10 @@ end
 # then the strips are stacked. `movie_io.stitch_movies` already does one dimension at a time, correctly
 # and with a working cancel, so a grid is two passes of it rather than a second compositor that would
 # have to re-derive padding, caption bands and staging. A single-row grid skips the outer stitch
-# entirely and is byte-for-byte the comparison it always was — including honouring `layout`, which is
-# the user's row-vs-column choice and only means anything when there is one row to point it at.
+# entirely and is byte-for-byte the comparison it always was — including honouring `layout`, the
+# user's across/stacked/wrapped choice, which only means anything when ONE list is doing the comparing.
+# `"grid"` is that choice's third option and is resolved BEFORE any of this, by `_wrap_grid`: it turns
+# one row of N into several, so from here down a wrapped grid and a cross-product are the same thing.
 #
 # Contrast (D4): the FIRST cell establishes the look and every later cell inherits it (or keeps its own
 # version's saved settings). Across a grid that matters more than across a row — a mask row is the same
@@ -1227,9 +1254,14 @@ function _record_grid!(task_id::String, project_uid::String, image_uid::String, 
                        t_start::Int = 0, t_end = nothing, api_url = nothing,
                        show_timestamp::Bool = true, show_scale_bar::Bool = true)::Dict{String,Any}
     isempty(rows) && error("no rows to record")
-    n_rows = length(rows)
     cells  = sum(length(r.columns) for r in rows)
     cells == 0 && error("no columns to record")
+    # `grid` rearranges a single row into several — after this, layout is settled and everything below
+    # (the frame total, the nested compose) reads the rows it was handed. A wrap that yields one row
+    # (two cells or fewer) IS the row layout, so that is what the compose is told.
+    rows       = _wrap_grid(rows, layout)
+    row_layout = layout == "grid" ? "row" : layout
+    n_rows     = length(rows)
     _with_viewer() do
         v = _viewer()
         (isnothing(v) || !_viewer_alive()) && error("Napari not running")
@@ -1290,7 +1322,7 @@ function _record_grid!(task_id::String, project_uid::String, image_uid::String, 
                     ws_log(nothing, task_id, "composing $(length(cell_paths)) columns → $(basename(out_path))")
                     return stitch_movies!(v, out_path, cell_paths;
                                           labels = [c.label for c in row.columns],
-                                          layout = layout, fps = fps, title_card = title_card,
+                                          layout = row_layout, fps = fps, title_card = title_card,
                                           task_id = task_id, api_url = api_url,
                                           frame_offset = next_offset(), frame_total = total)
                 end
@@ -1314,7 +1346,10 @@ function _record_grid!(task_id::String, project_uid::String, image_uid::String, 
             end
 
             ws_log(nothing, task_id, "stacking $n_rows rows → $(basename(out_path))")
-            return stitch_movies!(v, out_path, strips; labels = [r.label for r in rows],
+            # A wrapped grid's rows have no labels (the cells carry them), and captioning with empty
+            # strings would band every strip with a blank strip of nothing.
+            row_labels = all(r -> isempty(r.label), rows) ? nothing : [r.label for r in rows]
+            return stitch_movies!(v, out_path, strips; labels = row_labels,
                                   layout = "column", fps = fps, title_card = title_card,
                                   task_id = task_id, api_url = api_url,
                                   frame_offset = next_offset(), frame_total = total)

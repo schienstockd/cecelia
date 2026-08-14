@@ -1791,6 +1791,31 @@ end
     @test length(plain) == 1 && length(plain[1].columns) == 1
     @test String(plain[1].columns[1].config[:valueName]) == ""
 
+    # `grid` layout — one row of N folded into the squarest rectangle that holds them. A cosmetic
+    # rearrangement of the SAME cells, handed on as the same `Vector{MovieRow}` the cross-product
+    # builds, so nothing downstream needs to know it happened.
+    four = _compare_grid(Dict{Symbol,Any}(:valueNames => ["a", "b", "c", "d"]))
+    wrapped = _wrap_grid(four, "grid")
+    @test [length(r.columns) for r in wrapped] == [2, 2]                 # 4 → 2x2
+    @test [c.label for r in wrapped for c in r.columns] == ["a", "b", "c", "d"]   # order preserved
+    @test all(r -> isempty(r.label), wrapped)    # the cells carry the captions; a wrapped row is nothing
+    # a short last row is allowed — the compositor centres it on black rather than us padding the grid
+    @test [length(r.columns) for r in
+           _wrap_grid(_compare_grid(Dict{Symbol,Any}(:valueNames => ["a","b","c","d","e"])), "grid")] == [3, 2]
+    @test [length(r.columns) for r in
+           _wrap_grid(_compare_grid(Dict{Symbol,Any}(:valueNames => ["a","b","c","d","e","f"])), "grid")] == [3, 3]
+    # two cells wrap to the row they already are, so `_record_grid!` needs no small-count guard
+    @test length(_wrap_grid(_compare_grid(Dict{Symbol,Any}(:valueNames => ["a", "b"])), "grid")) == 1
+    @test length(_wrap_grid(_compare_grid(Dict{Symbol,Any}()), "grid")) == 1
+    # the other layouts, and a CROSS-PRODUCT under any layout, are left exactly as they were: picking
+    # from both lists already fixes both directions
+    @test _wrap_grid(four, "row") === four && _wrap_grid(four, "column") === four
+    @test _wrap_grid(grid, "grid") === grid
+    # …and a wrap costs no extra RENDERS, only one more compose: 4 cells + 2 row composes + 1 stack,
+    # against 4 + 1 in a single row
+    @test _grid_frame_total(wrapped, 20) == 140
+    @test _grid_frame_total(four, 20) == 100
+
     # D4 — the contrast toggle. Anything unrecognised reads as the default rather than failing a batch.
     @test _share_contrast("reference") && _share_contrast("") && _share_contrast("nonsense")
     @test !_share_contrast("version")

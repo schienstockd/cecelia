@@ -140,6 +140,8 @@ describe('lookRestore — tolerance (Decision 6)', () => {
 
   it('drops an unknown layout rather than sending it on', () => {
     expect(lookRestore({ compareLayout: 'diagonal' })!.cfg).not.toHaveProperty('compareLayout')
+    // …but every layout the picker offers restores, since both read `COMPARE_LAYOUTS`
+    expect(lookRestore({ compareLayout: 'grid' })!.cfg.compareLayout).toBe('grid')
   })
 
   it('clamps a title card duration the way the recorder does', () => {

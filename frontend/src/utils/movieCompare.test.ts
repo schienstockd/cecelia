@@ -45,21 +45,44 @@ describe('versionsFromConfig', () => {
   })
 })
 describe('compareShape — versions across, masks down', () => {
-  it('is a grid only when BOTH lists have something to compare', () => {
+  it('FIXES the layout only when BOTH lists have something to compare', () => {
     expect(compareShape(['a', 'b'], ['s1', 's2']))
-      .toEqual({ rows: 2, cols: 2, cells: 4, grid: true })
+      .toEqual({ rows: 2, cols: 2, cells: 4, grid: true, fixed: true })
+    // …and the layout choice is then ignored, because there is nothing left to arrange
+    expect(compareShape(['a', 'b'], ['s1', 's2'], 'grid'))
+      .toEqual(compareShape(['a', 'b'], ['s1', 's2'], 'column'))
   })
 
   it('degenerates to ONE ROW when only one list does — whichever it is', () => {
     // "if only masks or only image versions are selected then put them side by side in columns"
-    expect(compareShape(['a', 'b'], ['s1'])).toEqual({ rows: 1, cols: 2, cells: 2, grid: false })
-    expect(compareShape(['a'], ['s1', 's2'])).toEqual({ rows: 1, cols: 2, cells: 2, grid: false })
-    expect(compareShape([], ['s1', 's2', 's3'])).toEqual({ rows: 1, cols: 3, cells: 3, grid: false })
+    expect(compareShape(['a', 'b'], ['s1'])).toEqual({ rows: 1, cols: 2, cells: 2, grid: false, fixed: false })
+    expect(compareShape(['a'], ['s1', 's2'])).toEqual({ rows: 1, cols: 2, cells: 2, grid: false, fixed: false })
+    expect(compareShape([], ['s1', 's2', 's3'])).toEqual({ rows: 1, cols: 3, cells: 3, grid: false, fixed: false })
+  })
+
+  it('stacks one list into a single COLUMN', () => {
+    expect(compareShape(['a', 'b', 'c'], [], 'column'))
+      .toEqual({ rows: 3, cols: 1, cells: 3, grid: false, fixed: false })
+  })
+
+  it('WRAPS one list into the squarest rectangle that holds it', () => {
+    // four movies side by side are four times as wide as they are tall — unreadable on a slide
+    expect(compareShape(['a', 'b', 'c', 'd'], [], 'grid'))
+      .toEqual({ rows: 2, cols: 2, cells: 4, grid: true, fixed: false })
+    expect(compareShape(['a', 'b', 'c', 'd', 'e', 'f'], [], 'grid'))
+      .toEqual({ rows: 2, cols: 3, cells: 6, grid: true, fixed: false })
+    // a non-square count keeps every cell — the short last row is centred by the compositor
+    expect(compareShape(['a', 'b', 'c', 'd', 'e'], [], 'grid'))
+      .toEqual({ rows: 2, cols: 3, cells: 5, grid: true, fixed: false })
+    // two wrap to the row they already are, so nothing needs a small-count guard
+    expect(compareShape(['a', 'b'], [], 'grid')).toEqual(compareShape(['a', 'b'], [], 'row'))
   })
 
   it('is one cell when there is nothing to compare', () => {
-    expect(compareShape([], [])).toEqual({ rows: 1, cols: 1, cells: 1, grid: false })
-    expect(compareShape(['a'], ['s1'])).toEqual({ rows: 1, cols: 1, cells: 1, grid: false })
+    expect(compareShape([], [])).toEqual({ rows: 1, cols: 1, cells: 1, grid: false, fixed: false })
+    expect(compareShape(['a'], ['s1'])).toEqual({ rows: 1, cols: 1, cells: 1, grid: false, fixed: false })
+    expect(compareShape(['a'], ['s1'], 'grid'))
+      .toEqual({ rows: 1, cols: 1, cells: 1, grid: false, fixed: false })
   })
 
   it('is rectangular — a 3x2 grid is 6 cells, not 5', () => {
@@ -112,6 +135,13 @@ describe('compareActionTip', () => {
       .toBe('Record a 2 x 2 grid (versions across, masks down) — 4 render passes')
     expect(compareActionTip(compareShape(['a', 'b'], []), 'plain'))
       .toBe('Record 2 side by side — 2 render passes')
+  })
+
+  it('states a WRAPPED shape as the grid it is — same passes, different arrangement', () => {
+    expect(compareActionTip(compareShape(['a', 'b', 'c', 'd'], [], 'grid'), 'plain'))
+      .toBe('Record a 2 x 2 grid — 4 render passes')
+    expect(compareActionTip(compareShape(['a', 'b', 'c', 'd'], [], 'column'), 'plain'))
+      .toBe('Record 4 stacked — 4 render passes')
   })
 
   it('falls back to the plain wording when there is no comparison', () => {

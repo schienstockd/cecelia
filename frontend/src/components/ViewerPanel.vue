@@ -196,8 +196,6 @@ const compareSegmentations = computed<string[]>({
     ? normaliseItems(settings.getMovieConfig(currentSetUid.value).compareSegmentations, labelNames.value)
     : [],
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareSegmentations: v }) } })
-// Versions across, masks down — the two selections fully determine the layout, nothing to choose.
-const compareShapeNow = computed(() => compareShape(compareVersions.value, compareSegmentations.value))
 // Mask outline width. Pushed to the LIVE viewer as well as persisted: it is a display property of the
 // layers already on screen, so seeing it is how you choose it — a value you can only judge by watching
 // a render finish is not a setting, it's a guess.
@@ -225,6 +223,10 @@ const movieBranchValueNames = computed<string[]>(() =>
 const compareLayout = computed<CompareLayout>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
+// Versions across, masks down — picking from BOTH lists fully determines the layout. One list leaves
+// the arrangement (across / stacked / wrapped into a grid) to `compareLayout`, so the shape needs it.
+const compareShapeNow = computed(() =>
+  compareShape(compareVersions.value, compareSegmentations.value, compareLayout.value))
 const compareContrast = computed<CompareContrast>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareContrast : COMPARE_CONTRAST_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareContrast: v }) } })
@@ -364,7 +366,7 @@ async function recordTimelapse() {
     const t = taskStore.add({
       module: 'viewer',
       label: shape.cells > 1
-        ? (shape.grid ? `Compare ${shape.cols} x ${shape.rows}` : `Compare ${shape.cols}`)
+        ? (shape.grid ? `Compare ${shape.cols} x ${shape.rows}` : `Compare ${shape.cells}`)
           + ` — ${napariImage.value?.name ?? 'movie'}`
         : `Record ${napariImage.value?.name ?? 'movie'}`,
       imageUid: uid, imageName: napariImage.value?.name ?? '', status: 'queued',

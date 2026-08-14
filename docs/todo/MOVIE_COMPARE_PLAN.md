@@ -2,7 +2,10 @@
 
 **Status:** P1–P6 built, then GENERALISED (2026-08-08, see *Risks* item 6): versions and segmentation
 masks are the two dimensions of a **grid**, `_record_columns!` became `_record_grid!` and the compose
-became nested. **The names below are the ones this plan was written against and are kept as the build
+became nested. Then (2026-08-14) `compareLayout` gained a third option, `grid`, which **wraps** one
+list of N cells into a near-square rectangle (4 → 2×2) — `_wrap_grid` reshapes the rows before
+`_record_grid!` sees them, so it reuses the nested compose rather than adding a compositor.
+**The names below are the ones this plan was written against and are kept as the build
 record — read `docs/NAPARI.md` → *Side-by-side comparison* and `INVENTORY.md` for what exists now.**
 All four suites green. **Still not run against a live napari** — the recording loop needs the viewer,
 so its passes, the shared-view apply and the composed output have not been exercised end to end.
