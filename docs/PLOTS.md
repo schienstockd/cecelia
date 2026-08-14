@@ -161,6 +161,20 @@ per-event CSV (channel values + population, Prism-ready) via the same `rowsToCsv
 **board** can also export as one vector SVG (each slot nested via `nestSvg`, raster fallback for
 image/HMM slots) — see `docs/ANALYSIS.md` → *Export*.
 
+**Contact-sheet export (tiles rendered server-side).** A plot whose content is a grid of PNG tiles the
+server produced — the optical-flow metric planes and probability map — exports through
+`frontend/src/plots/imageGrid.ts`, **not** `elementToImageURL`. The distinction is resolution, not
+style: `elementToImageURL` serialises the DOM into a `foreignObject` at the element's CSS size, which is
+right for an Observable Plot (it re-renders crisply at any scale) and wrong for a raster tile, because a
+512–768 px crop shown in a ~180 px grid cell would come back as a 3–4× downsample of data the client
+already holds in full. `imageGridPng`/`imageGridSvgFrom` decode each tile, take its natural size, and lay
+the sheet out at 1:1. The column count comes from `gridColumns(el)` — the live `repeat(auto-fill, …)`
+grid's actual first-row count — so the export is the sheet on screen rather than the helper's own idea of
+a grid. One view feeds the same two functions to the panel's Export dropdown and to the board's
+`exportImage`/`exportSvg`, so those paths cannot disagree. A `*View.vue` that renders a base64 tile grid
+without `exportFormats` fails a detector in `imageGrid.test.ts`: three of them shipped without an export
+because a missing dropdown looks like nothing at all.
+
 Code: `frontend/src/plots/plot.ts` (`buildPlotOptions(Plot, r, o)` — one builder per chart type,
 returns a `Plot.plot()` options object; takes the Plot module as a param so it carries no eager import)
 and `frontend/src/components/plots/PlotChart.vue` (lazy-imports Plot, injects width/height, re-renders

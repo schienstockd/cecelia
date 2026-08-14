@@ -29,12 +29,14 @@
   data is. Nothing here touches napari.
 -->
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useProjectStore } from '../../stores/project'
 import { DEFAULT_FLOW_REGION_PX, FLOW_REGION_OPTIONS } from '../../utils/flowRegion'
 import { useFlowPlanes, type FlowPlaneState, type FlowRequest } from '../../composables/useFlowPlanes'
+import { gridColumns, imageGridPng, imageGridSvgFrom } from '../../plots/imageGrid'
+import { downloadDataUrl, downloadText } from '../../plots/export'
 
 interface FlowState extends FlowPlaneState {
   scales?: string[]                     // temporal scales — this sheet's own choice
@@ -159,6 +161,32 @@ watch(imageOptions, opts => {
 
 const planeOptions = computed<ChipOption[]>(() => planes.value.map(p => ({ value: p.name, label: p.name })))
 const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).includes(p.name)))
+
+// ── export (the generic panel contract — InteractivePanel picks these up via defineExpose) ──
+// The tiles export at their NATIVE size via plots/imageGrid, not by capturing the DOM: they are 512-768
+// px crops shown in a ~180 px grid cell, so a DOM capture would hand back a 3-4x downsample of data the
+// client already holds in full. See the header of plots/imageGrid.ts.
+const gridRef = ref<HTMLElement | null>(null)
+const exportFormats = ['png', 'svg']
+// what the sheet IS: this image, this channel set, this timepoint. A bare `flow_metrics.png` is
+// unidentifiable the moment there are two of them in a downloads folder.
+const stem = computed(() => [
+  'flow_metrics', nameOf(state.value.imageUid ?? ''), state.value.valueName || 'default',
+  `t${t.value}`, state.value.z != null ? `z${state.value.z}` : '',
+].filter(Boolean).join('_').replace(/[^\w.-]+/g, '_'))
+const tiles = () => shown.value.map(p => ({ name: p.name, dataUrl: `data:image/png;base64,${p.png}` }))
+// light background: these go into figures, and the panel's dark chrome is a screen affordance
+function exportAs(kind: string) {
+  const cols = gridColumns(gridRef.value)
+  if (kind === 'png')
+    imageGridPng(tiles(), cols).then(url => url && downloadDataUrl(`${stem.value}.png`, url))
+  else if (kind === 'svg')
+    imageGridSvgFrom(tiles(), cols).then(svg => svg && downloadText(`${stem.value}.svg`, svg, 'image/svg+xml'))
+}
+// board PDF / board SVG — same sheet, same helper, so the two paths cannot drift
+const exportImage = () => imageGridPng(tiles(), gridColumns(gridRef.value))
+const exportSvg = () => imageGridSvgFrom(tiles(), gridColumns(gridRef.value))
+defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 </script>
 
 <template>
@@ -244,7 +272,7 @@ const shown = computed(() => planes.value.filter(p => (state.value.show ?? []).i
       Pick an image and a channel to see the flow metrics.
     </p>
 
-    <div class="fmv-grid" :class="{ 'planes-stale': showSpinner }">
+    <div ref="gridRef" class="fmv-grid" :class="{ 'planes-stale': showSpinner }">
       <figure v-for="p in shown" :key="p.name">
         <img :src="`data:image/png;base64,${p.png}`" :alt="p.name" />
         <figcaption class="cc-muted">{{ p.name }}</figcaption>
