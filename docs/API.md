@@ -253,7 +253,11 @@ configuration, and re-running would silently substitute the JSON spec's defaults
 whole snapshot is one `JSON3.write` and a partial set would be re-run as if complete. That check is a
 whitelist rather than an attempted write — JSON3 throws on a `Function` but turns an arbitrary struct
 into an object, which a probe would then publish as if it were the param. `{}` (a task that takes no
-params) and `null` (unknown) are therefore different answers, and the client must not conflate them. The
+params) and `null` (unknown) are therefore different answers, and the client must not conflate them.
+`project_uid` exists for the console: the browser already knows which project it is in, but the console
+watches the whole server — which serves every project under `projects_dir()` — so a row's `image_uid`
+alone doesn't say whose image it is. Resolved from the image's path at submit time (`img_project_uid`),
+never stored on the image: a project's identity IS its directory name. The
 field names are
 therefore a contract with two clients that share no runtime — pinned on both sides (*Scheduler records
 queued/started timestamps* in the package suite, `runningTasks.test.ts` in the frontend) so a rename fails

@@ -55,6 +55,11 @@ mutable struct TaskView
     id::String
     fun_name::String
     image_uid::String
+    # Which project the image belongs to (`project_uid` on the /api/tasks snapshot). The console
+    # watches the WHOLE server, which serves every project under `projects_dir()`, so an image uid on
+    # its own doesn't say whose row this is. Snapshot-only: a WS-only producer (job, batch movie)
+    # names no project, and those rows render it blank rather than guessing.
+    project_uid::String
     pool_name::String
     chain_run_id::String
     status::String
@@ -151,7 +156,7 @@ end
 # Get-or-create a task view, so a WS event for a not-yet-snapshotted task still shows up.
 function _task!(id::AbstractString)
     get!(TASKS, String(id)) do
-        TaskView(String(id), "", "", "", "", "queued", -1.0, "", Dates.now(),
+        TaskView(String(id), "", "", "", "", "", "queued", -1.0, "", Dates.now(),
                  Dates.now(UTC), false, false, false, 0)
     end
 end
@@ -295,6 +300,7 @@ function _reconcile_snapshot!(rows)
             t = _task!(id)
             t.fun_name     = String(get(row, :fun_name, t.fun_name))
             t.image_uid    = String(get(row, :image_uid, t.image_uid))
+            t.project_uid  = String(get(row, :project_uid, t.project_uid))
             t.pool_name    = String(get(row, :pool_name, t.pool_name))
             t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
             # The snapshot carries the scheduler's own timestamps, so elapsed is exact even for a task
@@ -582,18 +588,22 @@ function render()
     if isempty(tasks)
         print(io, col(DIM, "  no active tasks — waiting for work\n"))
     else
-        print(io, col(DIM, string(rpad("TASK", 9), rpad("FUNCTION", 26), rpad("IMAGE", 10),
-                                   rpad("POOL", 10), rpad("STATUS", 11), rpad("ELAPSED", 9),
-                                   "PROGRESS")), "\n")
+        # Widths add up to 99 with the progress bar, so the row still fits a 100-column terminal —
+        # PROJECT was paid for by narrowing IMAGE and POOL, both of which never fill 10 (a uid is 6
+        # chars, the longest pool name is 7).
+        print(io, col(DIM, string(rpad("TASK", 9), rpad("FUNCTION", 25), rpad("PROJECT", 8),
+                                   rpad("IMAGE", 8), rpad("POOL", 8), rpad("STATUS", 11),
+                                   rpad("ELAPSED", 9), "PROGRESS")), "\n")
         for t in tasks[1:nShown]
             chain = isempty(t.chain_run_id) ? "" : " ⛓"
             # ELAPSED is run time on a running row and queue wait on a queued one — the clock restarts
             # with the status (`_set_phase!`), so the column always reads "how long in this state".
             print(io,
                 rpad(short(t.id), 9),
-                rpad(trunc_s(isempty(t.fun_name) ? "…" : t.fun_name * chain, 25), 26),
-                rpad(short(t.image_uid), 10),
-                rpad(trunc_s(t.pool_name, 9), 10),
+                rpad(trunc_s(isempty(t.fun_name) ? "…" : t.fun_name * chain, 24), 25),
+                rpad(short(t.project_uid), 8),
+                rpad(short(t.image_uid), 8),
+                rpad(trunc_s(t.pool_name, 7), 8),
                 col(status_colour(t.status), rpad(t.status, 11)),
                 t.status == "running" ? rpad(dur_since(t), 9) : col(DIM, rpad(dur_since(t), 9)),
                 t.status == "running" ? progress_bar(t.progress) : col(DIM, "waiting"),

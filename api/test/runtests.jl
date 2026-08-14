@@ -2824,6 +2824,32 @@ end
     @test !("ghost" in C.SEEN_TERM)                       # …and not suppressed, so a real task returns
 end
 
+# ── Task console: the PROJECT column ──────────────────────────────────────────
+# The console watches the whole server, which serves every project under `projects_dir()` — so a row's
+# image uid alone doesn't say which project it belongs to. `project_uid` rides the snapshot
+# (`list_tasks()`); a WS-only producer names no project and must render blank rather than inherit one.
+@testset "API: task console picks up the project uid" begin
+    C = TaskConsoleUT
+    recon(rows) = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    reset_console!() = (empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS);
+                        for k in keys(C.TALLY); C.TALLY[k] = 0; end)
+
+    reset_console!()
+    recon([(; id="p1", status="running", fun_name="segment.cellpose", pool_name="gpu",
+              image_uid="EaMaVq", project_uid="NRUBxU", chain_run_id="")])
+    @test C.TASKS["p1"].project_uid == "NRUBxU"
+
+    # an older server (no project_uid on the snapshot) must not error, just leave it blank
+    reset_console!()
+    recon([(; id="p2", status="running", fun_name="segment.cellpose", pool_name="gpu",
+              image_uid="EaMaVq", chain_run_id="")])
+    @test C.TASKS["p2"].project_uid == ""
+
+    # …and neither does a WS-only row invent one
+    reset_console!()
+    @test C._task!("job1").project_uid == ""
+end
+
 # ── Task console: post-mortem log frames must not resurrect a finished task ────
 # The zombie-queued-row regression. Cancelling a running task broadcasts the terminal `task:status`
 # at once (cancel_task! → on_status_change), then the killed subprocess's reader flushes whatever was

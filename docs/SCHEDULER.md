@@ -719,6 +719,12 @@ moment a pool slot is acquired), both UTC, both published by `list_tasks()` → 
 ISO-8601 strings. `started_at − queued_at` is therefore the real queue wait, which is what makes a task
 blocked on a busy GPU read as *waiting* rather than as a run of zero seconds.
 
+It also carries **`project_uid`** — which project the row's `image_uid` belongs to, resolved from the
+image's own path at submit time (`img_project_uid`). One server serves every project under
+`projects_dir()`, so a client watching the whole rail rather than one project (the task console) cannot
+tell two images apart by uid; it is read off the path rather than stored because a project's identity is
+its directory name (`docs/OBJECTMODEL.md`).
+
 The record also carries the **`params` the run was submitted with** (post-`_flatten_sections`, so the
 shape `run_task` consumed — and flattening is idempotent, so it can be handed straight back). Same
 motivation one step further on: a client that didn't launch the task knew its `fun_name` but nothing

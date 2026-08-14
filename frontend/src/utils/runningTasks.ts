@@ -94,9 +94,10 @@ const moduleFromFun = moduleKeyFromFun
  * Skipped, each for a reason:
  * - **a terminal row** — the snapshot only ever lists in-flight work, but a row that has just flipped is
  *   the outcome poll's business, not ours.
- * - **an image the loaded project doesn't have** — the snapshot carries no `projectUid` (only
- *   `image_uid`), so a row we can't resolve might belong to another project entirely; showing it under
- *   this one would attribute someone else's run to the wrong place.
+ * - **an image the loaded project doesn't have** — a row we can't resolve to a name in THIS project may
+ *   belong to another one entirely; showing it here would attribute someone else's run to the wrong
+ *   place. (The snapshot does carry `project_uid` now — added for the task console, which watches every
+ *   project at once. Resolving the image name is the stricter test of the two, so it stays the filter.)
  * - **a row this tab already has** — it launched it, so its entry is richer (params, log, seq). Matched on
  *   the SCHEDULER id, which for a chain row lives on `backendTaskId` rather than `id`.
  * - **a chain node with no `chain_node_id`** — a set-scope node (it bypasses `run_task`, so it has no
