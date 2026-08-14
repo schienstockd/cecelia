@@ -126,7 +126,11 @@ def envelope_slope(x, y, bins=ENVELOPE_BINS, floor_pct=ENVELOPE_FLOOR_PCT,
                    min_per_bin=ENVELOPE_MIN_PER_BIN):
     """Slope through the LOWER ENVELOPE of ``y`` against ``x`` — the proportional part of the pair.
 
-    The conservative counterpart to `tls_slope`, and the one to subtract with. Bleedthrough is
+    The conservative counterpart to `tls_slope`, and the one to subtract with **when cells may carry
+    both markers** — see `correction_utils.af_bleedthrough_alphas`, which picks between the two on the
+    combination's `exclusive` flag. Where nothing is legitimately co-located there is nothing above the
+    floor to protect and the TOTAL slope is the coefficient; using this one there under-removes, by 5x
+    on `WIaUjL/p6t4mC`. Bleedthrough is
     proportional and GLOBAL — a property of the filter set, so every voxel where the source is bright
     gets the same fraction added — which makes it a straight line through the *floor* of the joint
     distribution. Anything co-present for a biological reason sits ABOVE that floor and varies from
@@ -134,8 +138,11 @@ def envelope_slope(x, y, bins=ENVELOPE_BINS, floor_pct=ENVELOPE_FLOOR_PCT,
 
     That is why the two estimators differ and why both are worth having: `tls_slope` fits ALL the
     signal, so genuine co-positive structures drag it up, and subtracting it would over-subtract.
-    Measured on `WIaUjL/p6t4mC` (CH3 -> CH2), the envelope gives 0.023 where the TLS slope gives
-    0.16-0.19; the gap between them is the co-positive population.
+    Measured on `WIaUjL/p6t4mC` (CH3 -> CH2), the envelope gives 0.025 where the TLS slope gives 0.113.
+    The gap between them is whatever sits ABOVE the floor — a co-positive population where one exists,
+    and on that image (two reporters, two cell types, confirmed no overlap) leak that this estimator
+    does not see. On synthetic data with no co-labelling the two agree to within 3%, so the divergence
+    there is a property of real data, not of the definition; recorded rather than explained.
 
     **Two calibration choices, both forced by measurement rather than taste** (the sweep is in
     `test_coloc_utils.EnvelopeSlopeTest`, injected alpha 0 to 0.2 on 200k synthetic voxels):

@@ -83,8 +83,10 @@ It now has two findings, and both are about things the user can act on OUTSIDE t
   so it should be the same across a set acquired the same way; one image differing is a real signal
   about the optics. There is no invented threshold here: the coefficient is already floored at
   `AF_ALPHA_MIN` on the Python side, so anything reported is something the estimator was willing to
-  claim, and the finding simply says so. Measured on `WIaUjL/p6t4mC`: 0.0248 from CH3 into CH2, and
-  exactly zero for the other eleven ordered pairs among four channels.
+  claim, and the finding simply says so. Measured on `WIaUjL/p6t4mC`: 0.113 from CH3 into CH2, and
+  exactly zero for the other eleven ordered pairs among four channels. (The first run reported 0.0248;
+  that pair is two distinct cell types, and the coefficient is ~5x larger once the combination says so
+  through `exclusive` — see `correction_utils.af_bleedthrough_alphas`.)
 
 **`af-low-range` is deleted, not re-tuned, and that is the interesting part.** It warned when the output
 used under 20% of the dtype's levels. That was a real signal under the RATIO, whose output was stretched

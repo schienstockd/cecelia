@@ -12,6 +12,8 @@ coercion + diagnosis is one helper here rather than a bare `int(c)` at each site
 bottom is what stops a new site reintroducing one.
 """
 import re
+import io
+import contextlib
 import unittest
 from pathlib import Path
 
@@ -200,3 +202,65 @@ class ContractVersionTest(unittest.TestCase):
         # writing nothing at all — that is the whole point of putting it here
         import inspect
         self.assertIn('check_contract_version', inspect.getsource(script_utils.script_params))
+
+class ProgressCoalescingTest(unittest.TestCase):
+    """`[PROGRESS]` lines are coalesced at the sink, so a task can count in its natural unit.
+
+    AF counts one unit per timepoint per pass — 900 of them on a 180-frame 4-channel movie — because
+    that is what makes the bar accurate and smooth. Emitting 900 lines is 900 stdout writes, Julia
+    parses and `task:progress` WS frames to every client, for a bar that cannot show more than ~100
+    states. The count and the traffic are separated here rather than in each runner.
+    """
+
+    def _emit(self, calls):
+        log = script_utils.StdoutLogger()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for n, total in calls:
+                log.progress(n, total)
+        return [l for l in buf.getvalue().splitlines() if l.startswith('[PROGRESS]')]
+
+    def test_a_fine_grained_count_emits_about_one_line_per_percent(self):
+        lines = self._emit([(n, 900) for n in range(901)])
+        self.assertLessEqual(len(lines), 105, f'{len(lines)} lines for 901 ticks')
+        self.assertGreaterEqual(len(lines), 95, f'only {len(lines)} lines — too coarse to watch')
+
+    def test_both_ends_always_survive(self):
+        """The first line sizes the bar and the last completes it; dropping either is visible."""
+        lines = self._emit([(n, 900) for n in range(901)])
+        self.assertEqual(lines[0], '[PROGRESS] 0/900')
+        self.assertEqual(lines[-1], '[PROGRESS] 900/900')
+
+    def test_a_small_task_still_reports_every_step(self):
+        """With 10 units each step IS 10%, so nothing is coalesced away — the throttle is a fraction
+        of the total, not a fixed stride, so it cannot silence a short task."""
+        lines = self._emit([(n, 10) for n in range(11)])
+        self.assertEqual(len(lines), 11)
+
+    def test_a_new_total_is_a_new_scale_not_a_step(self):
+        """A task that switches scale must not have its first line on the new one swallowed for being
+        close to its position on the old one."""
+        lines = self._emit([(0, 900), (450, 900), (5, 10)])
+        self.assertIn('[PROGRESS] 5/10', lines)
+
+    def test_going_backwards_is_reported(self):
+        """A phase that restarts its own count would otherwise stall the bar until it passed the high
+        water mark — the move is what matters, not the direction."""
+        lines = self._emit([(0, 100), (90, 100), (10, 100)])
+        self.assertIn('[PROGRESS] 10/100', lines)
+
+    def test_a_zero_total_says_nothing_rather_than_dividing_by_zero(self):
+        self.assertEqual(self._emit([(0, 0), (1, 0)]), [])
+
+    def test_each_run_gets_its_own_state(self):
+        """`get_logfile_utils` returns a fresh logger per run, so one task's position cannot silence
+        the start of the next."""
+        a, b = script_utils.get_logfile_utils({}), script_utils.get_logfile_utils({})
+        self.assertIsNot(a, b)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            a.progress(500, 900)
+            b.progress(501, 900)
+        self.assertEqual(len([l for l in buf.getvalue().splitlines()
+                              if l.startswith('[PROGRESS]')]), 2)
+
