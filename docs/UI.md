@@ -1660,9 +1660,34 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 **Task list scoping.** `useTaskStore().forModule(module, projectUid?)` and `clearFinished(module,
 projectUid?)` take an optional `projectUid` — `TaskList.vue`/`TaskRunner.vue` always pass the
 current project's uid so switching projects doesn't leave a previous project's (e.g. cancelled)
-tasks visible in the module sidebar. The global `/tasks` manager (`TasksModule.vue`) intentionally
-omits it — that page is the cross-project view. `TaskEntry.projectUid` is what makes the filter
-possible; it's stamped on every entry at `add()`/`addFromChainEvent()`.
+tasks visible in the module sidebar. `TaskEntry.projectUid` is what makes the filter possible; it's
+stamped on every entry at `add()`/`addFromChainEvent()`.
+
+The global `/tasks` manager (`TasksModule.vue`) used to omit it, as the cross-project view. It was
+reported as a bug and it was one: the store is never cleared on project open (a run keeps reporting
+into the tab that launched it, and `runningTasks.ts` adopts the backend's in-flight set on connect),
+so after a switch the manager listed the previous project's runs with **nothing on a row to say so**
+— a Smoothing run from the project you just left sitting above the training run you were watching.
+It now scopes to the open project by default (`settings.tasksThisProjectOnly`, a toggle in its
+toolbar), and the rule lives in `utils/taskScope.ts` because it has two exceptions worth pinning:
+
+- a row with **no** project (`projectUid: ''`) is never hidden — a project *import* has none yet, and
+  it is the job that creates one;
+- an **export** names a project that is usually not the open one, dispatched from the project panel
+  against any project on disk. That is a genuine cross-project row, which is why the scope is a
+  toggle and not a rule — with it off, a foreign row is labelled with its project's name.
+
+**A task frame only writes into its OWN project.** `task:result` does more than update a row: for a
+task that produces a new image (`cropImage`/`copyImage` report `newImageUid` + `setUid`) it folds the
+image into the project store so it appears without a reload. That was unconditional, and a task
+outlives the switch that leaves it running — so one finishing in the project you just left would
+`ensureSet` **its** set into the project you just opened and add its image to it. Foreign images in
+the image table, indistinguishable from your own, until the next project load wiped them. The frame's
+`projectUid` is now checked against the open one (`utils/taskScope.frameTargetsOpenProject`); a frame
+that names no project still writes, since it is unattributable and refusing would drop legitimate
+updates. `project.loadedProjectUid` records which project the loaded sets came from, and `App.vue`
+logs a named mismatch if the two ever disagree again — the store previously held no clue at all, so
+"the table is showing another project" had nothing to report itself with.
 
 **Cancel all** — a `pi-times-circle` button next to "Clear finished" in the Tasks section header,
 shown only when the current module+project has running/queued tasks. Cancels every one of them via

@@ -16,6 +16,8 @@ import LabLogPanel from './components/LabLogPanel.vue'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import { useTaskStore } from './stores/tasks'
+import { useProjectStore } from './stores/project'
+import { useLogStore } from './stores/log'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
 import GuidesDialog from './components/GuidesDialog.vue'
 import GuideBubble from './components/GuideBubble.vue'
@@ -61,6 +63,20 @@ watch(isWhatsNewOpen, (open) => {
 })
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
+
+// The one cross-store invariant nothing else can see: the loaded SETS must belong to the project the
+// app says is open. It was reported broken — the image table listing a previous project's images
+// under the new project's name — and the load path cannot produce that on its own, so if it happens
+// again this is what says so. The views already refuse to render a mismatched set (they show an empty
+// table rather than someone else's images); this makes it legible instead of looking like an empty
+// project. Named uids, because "stale data" without them is not a lead.
+const projectStore = useProjectStore()
+const logStore = useLogStore()
+watch([() => pm.current?.uid, () => projectStore.loadedProjectUid], ([openUid, loadedUid]) => {
+  if (!openUid || !loadedUid || openUid === loadedUid) return
+  logStore.error(`Project data mismatch: loaded sets belong to ${loadedUid} while ${openUid} is open.`,
+    { source: 'project' })
+}, { immediate: true })
 
 // Restore each image's remembered napari overlays (labels, branches, tracks, populations) when it
 // opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with

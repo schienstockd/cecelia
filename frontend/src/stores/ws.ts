@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
+import { frameTargetsOpenProject } from '../utils/taskScope'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
@@ -345,7 +346,14 @@ export const useWsStore = defineStore('ws', () => {
         // fresh image payload and add it to the set so it appears without a full project reload.
         const newImageUid    = meta.newImageUid as string | undefined
         const newImageSetUid = meta.setUid as string | undefined
-        if (newImageUid && newImageSetUid) {
+        // ONLY into the project the frame belongs to. A task outlives the switch that leaves it
+        // running, so a crop/copy finishing in the project you just left used to `ensureSet` ITS set
+        // into the project you just opened and add its image to it — foreign rows in the image table,
+        // indistinguishable from your own, until the next project load wiped them. See
+        // `utils/taskScope.frameTargetsOpenProject` for why an unattributed frame still writes.
+        if (newImageUid && newImageSetUid
+            && frameTargetsOpenProject(data.projectUid as string | undefined,
+                                       useProjectMetaStore().current?.uid)) {
           const projectUid = String((data.projectUid as string | undefined) ?? '')
             || useProjectMetaStore().current?.uid || ''
           if (projectUid) {

@@ -81,8 +81,12 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
         error?: string
       }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      // Sets FIRST, then `current`. They are written in the same tick either way, but the order is
+      // what a reader sees if anything between them ever throws: with `current` first, the app names
+      // the new project while the store still holds the old one's images — which is exactly the state
+      // that was reported. `loadedProjectUid` makes the pairing checkable rather than assumed.
+      projectStore.loadFromApi(body.sets ?? [], body.project!.uid)   // NB: clears the canvas/analysis stores — restore AFTER
       current.value = body.project!
-      projectStore.loadFromApi(body.sets ?? [])   // NB: clears the canvas/analysis stores — restore AFTER
       // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
       if (body.boards) {
         const groupKey = `analysis:${body.project!.uid}`
