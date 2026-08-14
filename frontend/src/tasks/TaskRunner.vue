@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
-import { buildParamValues, flattenParams } from './paramValues'
+import { flattenParams, resolveInitialParams } from './paramValues'
 import { usePanelResize } from '../composables/usePanelResize'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
@@ -133,18 +133,23 @@ const currentDraftKey = computed(() => taskDraftKey(
   projectMeta.current?.uid ?? '', taskDef.value?.fun_name ?? '',
   taskDraftScope(drivingImageUid.value, setUid.value)))
 
-async function fetchSavedParams(def: TaskDef): Promise<ParamValues> {
-  const projectUid = projectMeta.current?.uid ?? ''
-  if (!projectUid) return {}
-  const qs = new URLSearchParams({ projectUid, fun: def.fun_name })
+const projectUid = computed(() => projectMeta.current?.uid ?? '')
+
+// `null` = the load did NOT happen (no project uid yet, a non-OK response, a throw). `{}` = the server
+// answered and there is nothing saved. Collapsing the two into `{}` is what reset filled-in forms:
+// `buildParamValues(def, {})` answers every param with its default, so a load that never happened was
+// indistinguishable from a first run and silently overwrote the form. See `resolveInitialParams`.
+async function fetchSavedParams(def: TaskDef): Promise<ParamValues | null> {
+  if (!projectUid.value) return null
+  const qs = new URLSearchParams({ projectUid: projectUid.value, fun: def.fun_name })
   if (drivingImageUid.value) qs.set('imageUid', drivingImageUid.value)
   if (setUid.value) qs.set('setUid', setUid.value)
   try {
     const res = await fetch(`/api/tasks/funparams?${qs.toString()}`)
-    if (!res.ok) return {}
+    if (!res.ok) return null
     const d = await res.json() as { params?: ParamValues | null }
     return d.params ?? {}
-  } catch { return {} }
+  } catch { return null }
 }
 
 // Saved params are fetched from the server, so guard against a slower earlier request landing after
@@ -155,15 +160,20 @@ async function initParams(def: TaskDef | undefined) {
   // Restore an in-progress draft for this exact scope first; only then fall back to server-saved
   // params + defaults. (Drafts are written on user edits only, so this never masks a newer save.)
   const draft = drafts.get(currentDraftKey.value)
-  // Reconcile the draft against the CURRENT spec instead of restoring it raw. A draft outlives a param
-  // set change, so a raw restore left new params absent from the form — and `undefined` is dropped by
-  // JSON.stringify, so those params vanished from the run payload AND from the funParams record the
-  // server writes, i.e. the setting silently stopped being remembered. See tasks/paramValues.ts.
-  if (draft) { paramValues.value = buildParamValues(def, draft); return }
+  // Draft first, reconciled against the CURRENT spec instead of restored raw — a draft outlives a param
+  // set change, and `undefined` is dropped by JSON.stringify, so a raw restore made new params vanish
+  // from the run payload AND from the funParams record. All of that decision is `resolveInitialParams`.
+  // Early-returned rather than folded into the call below so a draft costs no request — but the
+  // DECISION is still the one helper, so the draft path cannot drift from the saved-record path.
+  if (draft) { paramValues.value = resolveInitialParams(def, draft, null) as ParamValues; return }
   const seq = ++paramReqSeq
   const saved = await fetchSavedParams(def)
   if (seq !== paramReqSeq) return
-  paramValues.value = buildParamValues(def, saved)
+  // `null` → the load did not happen, so LEAVE THE FORM ALONE rather than stamping defaults over it.
+  // The watches below re-run this once the project/set/selection is known, which is the case that used
+  // to arrive too late and find the form already reset.
+  const next = resolveInitialParams(def, undefined, saved)
+  if (next !== null) paramValues.value = next
 }
 
 // Persist a param edit as a draft (USER edits only — never on programmatic init) so navigating away
@@ -180,7 +190,16 @@ watch(selectedTask, (task) => {
 // Populate the form from remembered funParams: on function change, and on project/set switch
 // (setUid changes when the active set/project changes — this is what stops one project's params
 // leaking into another). Narrowing the selection to a single image reloads that image's record.
-watch([taskDef, setUid], () => initParams(taskDef.value), { immediate: true })
+//
+// **`projectUid` is in here because it lands AFTER the sets.** `projectMeta.openProject` writes `sets`
+// first and `current` second, on purpose (see that store) — so `setUid` goes non-empty while
+// `projectMeta.current` is still null, this watch fires, and the load runs with no project uid. It
+// used to answer `{}` for that, which `buildParamValues` turns into every param's default: the form
+// was stamped with defaults and nothing re-ran the load once the project arrived, so the params
+// stayed reset. That is the "my params go back to default when I navigate away" report, and it was
+// never AF-specific. The load now reports `null` for "did not happen" (`fetchSavedParams`) and this
+// re-runs it when the uid appears.
+watch([taskDef, setUid, projectUid], () => initParams(taskDef.value), { immediate: true })
 watch(drivingImageUid, (uid) => { if (uid) initParams(taskDef.value) })
 
 // When defs load from the API (async), pick the saved function or fall back to the first.
@@ -241,8 +260,6 @@ function run() {
   // loads the freshly-saved params. Done before the set-scope early-return so both paths clear it.
   drafts.clear(currentDraftKey.value)
 
-  const projectUid = projectMeta.current?.uid ?? ''
-
   log.info(
     `Submitting "${def.label}" for ${props.selectedUids.length} image(s)`,
     { source: props.module, detail: JSON.stringify(params, null, 2) }
@@ -259,11 +276,12 @@ function run() {
     const t = taskStore.add({
       module: props.module, label, imageUid: rep, imageName: repName,
       status: 'queued', taskName: def.task, funName: def.fun_name,
-      params: params as Record<string, unknown>, projectUid,
+      params: params as Record<string, unknown>, projectUid: projectUid.value,
     })
     ws.send({
       type: 'task:run', taskId: t.id, funName: def.fun_name, params,
-      imageUid: rep, imageUids: uids, projectUid, setUid: setUid.value, poolName: selectedPool.value,
+      imageUid: rep, imageUids: uids, projectUid: projectUid.value,
+      setUid: setUid.value, poolName: selectedPool.value,
     })
     return
   }
@@ -281,7 +299,7 @@ function run() {
       taskName:   def.task,
       funName:    def.fun_name,
       params:     params as Record<string, unknown>,
-      projectUid,
+      projectUid: projectUid.value,
     })
 
     ws.send({
@@ -290,7 +308,7 @@ function run() {
       funName:    def.fun_name,
       params:     params,
       imageUid:   uid,
-      projectUid,
+      projectUid: projectUid.value,
       setUid:     setUid.value,
       poolName:   selectedPool.value,
     })

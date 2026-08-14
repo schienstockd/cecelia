@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
-  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName } from './paramValues'
+  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
+  resolveInitialParams } from './paramValues'
 import type { TaskDef, ParamValues } from './types'
 
 // the clustRegions.cluster spec AFTER the neighbour-graph refactor
@@ -271,5 +272,51 @@ describe('isChosenValueName', () => {
     expect(isChosenValueName(undefined, 'default')).toBe(false)
     expect(isChosenValueName(null, 'default')).toBe(false)
     expect(isChosenValueName(3, 'default')).toBe(false)
+  })
+})
+
+describe('resolveInitialParams — a failed load must not reset the form', () => {
+  // The bug: `fetchSavedParams` returned `{}` for "no project uid yet", "response not ok" and "threw",
+  // and the caller fed that to `buildParamValues`, which answers every param with its default. So a
+  // load that never happened was indistinguishable from a first run and silently wiped a filled-in
+  // form — on any task, with nothing logged. Reported on cleanupImages.afCorrect, seen on others.
+  const def = {
+    fun_name: 'cleanupImages.afCorrect',
+    params: [
+      { key: 'backgroundMethod', type: 'select', default: 'triangle' },
+      { key: 'valueName', type: 'valueNameSelection', default: 'default' },
+    ],
+  } as unknown as TaskDef
+
+  it('returns null when the load did not happen, so the caller leaves the form alone', () => {
+    expect(resolveInitialParams(def, undefined, null)).toBeNull()
+  })
+
+  it('still applies defaults when the server genuinely has nothing saved', () => {
+    expect(resolveInitialParams(def, undefined, {})).toEqual({
+      backgroundMethod: 'triangle', valueName: 'default',
+    })
+  })
+
+  it('applies a real saved record', () => {
+    const saved = { backgroundMethod: 'otsu', valueName: 'driftCorrected' }
+    expect(resolveInitialParams(def, undefined, saved)).toEqual(saved)
+  })
+
+  it('an unrun draft beats both — it is what the user typed', () => {
+    const draft = { backgroundMethod: 'otsu', valueName: 'smoothed' }
+    expect(resolveInitialParams(def, draft, { backgroundMethod: 'triangle', valueName: 'default' }))
+      .toEqual(draft)
+    // and a draft still wins when the load failed, rather than the form being left empty
+    expect(resolveInitialParams(def, draft, null)).toEqual(draft)
+  })
+
+  it('reconciles the draft against the current spec rather than restoring it raw', () => {
+    // a draft written before `valueName` existed must not leave it undefined — undefined is dropped by
+    // JSON.stringify, which is how a param silently stops being submitted AND stops being remembered
+    const stale = { backgroundMethod: 'otsu' }
+    expect(resolveInitialParams(def, stale, null)).toEqual({
+      backgroundMethod: 'otsu', valueName: 'default',
+    })
   })
 })
