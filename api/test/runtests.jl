@@ -1428,6 +1428,68 @@ end
     end
 end
 
+@testset "API: set rename" begin
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-set-rename")
+        uid  = proj.uid
+        # BOTH sets up front, before the first handler call. `add_set!` ends in `save!(proj)`, which
+        # cascades `save!` over every set loaded in THIS (now stale) project object — so building a
+        # fixture in the middle would rewrite a name a handler had just committed from its own fresh
+        # load, and the test would be asserting against its own clobber. (Same trap a long-lived REPL
+        # session has; the handlers are safe because each request loads the project fresh.)
+        s     = add_set!(proj; name="before")
+        other = add_set!(proj; name="sibling")
+        img   = add_image!(s; name="im")
+
+        ren(args...) = _post(api_sets_rename, Dict(args...))
+        cre(args...) = _post(api_sets_create, Dict(args...))
+
+        # CREATE carries the same two rules as rename now — it was the one set route that neither
+        # trimmed nor checked the name, so " sibling " and "sibling" could become two sets whose picker
+        # rows are indistinguishable.
+        @test cre("projectUid"=>uid, "name"=>"sibling")[1] == 409                # taken
+        @test cre("projectUid"=>uid, "name"=>"  sibling  ")[1] == 409            # trimmed, then checked
+        @test cre("projectUid"=>uid, "name"=>"   ")[1] == 400                    # whitespace-only = empty
+        st_c, body_c = cre("projectUid"=>uid, "name"=>"  fresh  ")
+        @test st_c == 200 && String(JSON3.read(body_c).name) == "fresh"          # stored trimmed…
+        @test init_object(uid, String(JSON3.read(body_c).uid)).name == "fresh"   # …on disk, not just echoed
+
+        @test ren("setUid"=>s.uid, "name"=>"x")[1] == 400                      # projectUid required
+        @test ren("projectUid"=>uid, "name"=>"x")[1] == 400                    # setUid required
+        @test ren("projectUid"=>uid, "setUid"=>s.uid)[1] == 400                # name required
+        # whitespace-only is empty: a blank row in the picker cannot be told from a bug
+        @test ren("projectUid"=>uid, "setUid"=>s.uid, "name"=>"   ")[1] == 400
+        @test ren("projectUid"=>"nope", "setUid"=>s.uid, "name"=>"x")[1] == 404
+        @test ren("projectUid"=>uid, "setUid"=>"ghost", "name"=>"x")[1] == 404
+
+        st, body = ren("projectUid"=>uid, "setUid"=>s.uid, "name"=>"  after  ")
+        @test st == 200
+        @test String(JSON3.read(body).name) == "after"                         # trimmed, echoed back
+        @test String(JSON3.read(body).uid) == s.uid                            # identity unchanged
+
+        # The name guard is the MODEL's (`set_name_taken`), so a REPL caller gets it too; the handler
+        # maps it to the 409 `api_chains_rename` already uses for a taken target.
+        @test ren("projectUid"=>uid, "setUid"=>other.uid, "name"=>"after")[1] == 409
+        @test init_object(uid, other.uid).name == "sibling"                    # refused, nothing written
+        # …and the trim happens BEFORE the check, else " after " would slip a duplicate past it
+        @test ren("projectUid"=>uid, "setUid"=>other.uid, "name"=>" after ")[1] == 409
+        # renaming a set to its OWN name is a 200 no-op, which keeps a re-run idempotent
+        @test ren("projectUid"=>uid, "setUid"=>s.uid, "name"=>"after")[1] == 200
+        # …and it is on DISK, with the membership intact — the handler commits one field, so an image
+        # dropping out here would mean it wrote the whole object back from a stale read.
+        reloaded = init_object(uid, s.uid)
+        @test reloaded.name == "after" && reloaded.image_uids == [img.uid]
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: project delete" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()
@@ -3746,7 +3808,7 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/delete", "/api/setup/init",
+        "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
         "/api/storage/compressor/set", "/api/storage/layout/set", "/api/storage/reclaim",
         "/api/tasks/custom-modules/reload",
         "/api/update/apply",
@@ -3791,7 +3853,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 106
+    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 107
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

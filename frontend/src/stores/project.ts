@@ -171,6 +171,13 @@ export const useProjectStore = defineStore('project', () => {
     return s
   }
 
+  // Display name only — the uid is the identity, so nothing else in the store has to move (images are
+  // held on the set object itself, and every per-set setting is keyed by uid).
+  function renameSet(uid: string, name: string) {
+    const set = sets.value.find(s => s.uid === uid)
+    if (set) set.name = name
+  }
+
   function deleteSet(uid: string) {
     sets.value = sets.value.filter(s => s.uid !== uid)
     if (activeSetUid.value === uid)
@@ -326,5 +333,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })

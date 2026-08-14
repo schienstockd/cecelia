@@ -3929,6 +3929,56 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Renaming a set is a metadata edit, and must not disturb its membership ─────
+# A set's identity is its uid (the dir under {proj}/1/), so the name is display-only. The thing worth
+# pinning is that it lands ON DISK and that nothing else moves: the images stay attached, and the
+# project manifest — which stores uids — is untouched.
+@testset "Set rename" begin
+    proj = create_project!(name="sr-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="before")
+    a = add_image!(s; name="a"); b = add_image!(s; name="b")
+
+    out = rename_set!(proj, s.uid, "after")
+    @test out.uid == s.uid && out.name == "after"        # same object, new name
+    @test s.name == "after"                              # the loaded set is in step with disk
+    reloaded = init_object(proj.uid, s.uid)
+    @test reloaded.name == "after"                        # persisted, not just in memory
+    @test Set(reloaded.image_uids) == Set([a.uid, b.uid]) # membership survived the one-field commit
+    @test proj.set_uids == [s.uid]                        # the manifest keys off the uid, so untouched
+
+    # The duplicate-name GUARD lives at this layer on purpose, so it holds for a REPL caller — which is
+    # where a rename is most likely to be scripted across a cohort and least likely to be eyeballed.
+    # `add_set!` carries the same guard, so it covers all three creation paths (create route,
+    # `newSetName` on move, the copyImage task) at once.
+    @test_throws ErrorException add_set!(proj; name="after")
+    @test length(proj._sets) == 1                             # refused before anything was written
+    other = add_set!(proj; name="other")
+    @test set_name_taken(proj, "after")                       # taken by `s`
+    @test !set_name_taken(proj, "after"; except = s.uid)      # …but not by anyone ELSE
+    @test !set_name_taken(proj, "unused")
+    @test_throws ErrorException rename_set!(proj, other.uid, "after")
+    @test init_object(proj.uid, other.uid).name == "other"    # refused, and nothing was written
+
+    # Renaming to its OWN name is a no-op rather than a self-conflict, so a re-run is idempotent.
+    @test rename_set!(proj, s.uid, "after").name == "after"
+
+    # …and `force` is the escape hatch for a caller who means it (two sets CAN share a name — they are
+    # still distinct objects, keyed by uid). Both mutators take it, spelled the same way.
+    forced = add_set!(proj; name="after", force = true)
+    @test forced.name == "after" && forced.uid != s.uid
+    delete_set!(proj, forced.uid)
+    rename_set!(proj, other.uid, "after"; force = true)
+    @test init_object(proj.uid, other.uid).name == "after"
+    @test other.uid != s.uid
+
+    # the set-object form, which is what a REPL caller holding `sets(proj)[i]` reaches for
+    @test rename_set!(proj, other, "by object").name == "by object"
+    @test init_object(proj.uid, other.uid).name == "by object"
+
+    @test_throws ErrorException rename_set!(proj, "nosuchset", "x")
+    rm(proj.root; recursive=true)
+end
+
 # ── Sink-agnostic task execution (runner/execute.jl) ──────────────────────────
 # `execute_task` is the body `handle_task_run` used to inline. It is tested HERE, in the package, with
 # no server and no socket — which is the whole point: the API server and the detached runner drive the

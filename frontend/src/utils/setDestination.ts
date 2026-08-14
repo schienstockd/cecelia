@@ -11,6 +11,18 @@
 
 export type SetLike = { uid: string; name: string }
 
+/**
+ * Is `name` already used by a set — ignoring `exceptUid` (the set being renamed, so re-submitting its
+ * own name is not a conflict with itself)?
+ *
+ * The ONE client-side copy of the rule, mirroring `set_name_taken` in Julia (which is what actually
+ * enforces it, and what makes the routes 409). It was written three times before this — here, and twice
+ * in `SetBar` for create and rename — which is two chances to word the same refusal differently.
+ * Caller trims; the comparison is exact, like the Julia side.
+ */
+export const setNameTaken = (sets: SetLike[], name: string, exceptUid = ''): boolean =>
+  sets.some(s => s.name === name && s.uid !== exceptUid)
+
 export type SetDestination =
   | { ok: true; toSetUid: string; newSetName?: undefined }
   | { ok: true; toSetUid?: undefined; newSetName: string }
@@ -25,7 +37,7 @@ export function resolveSetDestination(sets: SetLike[], targetUid: string, newNam
   if (targetUid) return { ok: true, toSetUid: targetUid }
   const name = newName.trim()
   if (!name) return { ok: false, error: 'Select a set or enter a new set name.' }
-  if (sets.some(s => s.name === name)) return { ok: false, error: `A set named "${name}" already exists.` }
+  if (setNameTaken(sets, name)) return { ok: false, error: `A set named "${name}" already exists.` }
   return { ok: true, newSetName: name }
 }
 

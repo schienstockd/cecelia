@@ -1168,7 +1168,10 @@ function api_sets_create(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
     project_uid = String(get(body, :projectUid, ""))
-    name        = String(get(body, :name, ""))
+    # TRIMMED, like `rename` and the `newSetName` paths on move/copy — this route was the one that
+    # wasn't, so " Day 3 " and "Day 3" could become two sets whose picker rows look identical. Same rule
+    # as the `attr/*` routes' `_norm_attr`: normalise where the user's keystrokes enter the model.
+    name        = strip(String(get(body, :name, "")))
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(name)        && return 400, JSON3.write((; error="name required"))
 
@@ -1176,9 +1179,49 @@ function api_sets_create(body_bytes::Vector{UInt8})
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
 
     proj = load_project(project_uid)
-    s    = add_set!(proj; name=name)
+    # 409, the same code `rename` and `chains/rename` use for a taken name. The guard itself is
+    # `add_set!`'s (so the REPL and the copy/move paths get it too); this only maps it to a status.
+    set_name_taken(proj, name) &&
+        return 409, JSON3.write((; error="A set named \"$name\" already exists in this project"))
+    s    = add_set!(proj; name=String(name))
     @info "Created set" name uid=s.uid project=project_uid
-    200, JSON3.write((; uid=s.uid, name))
+    200, JSON3.write((; uid=s.uid, name=s.name))
+end
+
+# POST /api/sets/rename  { projectUid, setUid, name }  → { uid, name }
+#
+# A set's name is display-only — its identity is the uid (see `rename_set!`) — so this is a one-field
+# metadata edit, not the re-identify a project rename needs. Nothing else has to be told: the images
+# are attached by uid, and every per-set UI setting is keyed by uid too.
+#
+# The duplicate-name guard is the MODEL's (`set_name_taken` / `rename_set!`), so it holds for a REPL
+# caller too; this handler only maps it onto the status code `api_chains_rename` already uses for the
+# same shape of refusal — 409, "the target name is taken". Renaming to the set's own name is a 200
+# no-op, which is what makes a re-run idempotent.
+function api_sets_rename(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    set_uid     = String(get(body, :setUid, ""))
+    name        = strip(String(get(body, :name, "")))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
+    # Trimmed, so a whitespace-only name is an empty one — a set that renders as a blank row in the
+    # picker is unselectable by name and looks like a bug.
+    isempty(name)        && return 400, JSON3.write((; error="name required"))
+
+    proj_dir      = joinpath(projects_dir(), project_uid)
+    set_meta_file = state_file(proj_dir, set_uid)
+    isdir(proj_dir)       || return 404, JSON3.write((; error="Project not found"))
+    isfile(set_meta_file) || return 404, JSON3.write((; error="Set not found: $set_uid"))
+
+    proj = load_project(project_uid)
+    set_name_taken(proj, name; except = set_uid) &&
+        return 409, JSON3.write((; error="A set named \"$name\" already exists in this project"))
+    s = rename_set!(proj, set_uid, String(name))
+    @info "Renamed set" uid=set_uid name project=project_uid
+    200, JSON3.write((; uid=s.uid, name=s.name))
 end
 
 function api_sets_delete(body_bytes::Vector{UInt8})

@@ -1,7 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { resolveSetDestination, destinationParams } from './setDestination'
+import { resolveSetDestination, destinationParams, setNameTaken } from './setDestination'
 
 const SETS = [{ uid: 'aaa', name: 'Day 1' }, { uid: 'bbb', name: 'Day 2' }]
+
+// The one client-side copy of the rule (SetBar's create AND rename, plus the destination resolver
+// below, all read it). Mirrors `set_name_taken` in Julia, which is what actually enforces it.
+describe('setNameTaken', () => {
+  it('is true only for a name another set already has', () => {
+    expect(setNameTaken(SETS, 'Day 1')).toBe(true)
+    expect(setNameTaken(SETS, 'Day 3')).toBe(false)
+  })
+
+  it('ignores the set being renamed, so its own name is not a self-conflict', () => {
+    expect(setNameTaken(SETS, 'Day 1', 'aaa')).toBe(false)
+    expect(setNameTaken(SETS, 'Day 1', 'bbb')).toBe(true)   // …but a SIBLING's name still is
+  })
+
+  it('compares exactly — trimming belongs to the caller, as in Julia', () => {
+    expect(setNameTaken(SETS, ' Day 1 ')).toBe(false)
+  })
+})
 
 describe('resolveSetDestination', () => {
   it('takes the picked set when there is one', () => {

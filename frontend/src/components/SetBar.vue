@@ -4,6 +4,7 @@ import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { setNameTaken } from '../utils/setDestination'
 
 const props = defineProps<{ allowManage?: boolean }>()
 
@@ -16,20 +17,42 @@ const showNewInput  = ref(false)
 const confirmDelete = ref(false)
 // Copy set UID — shared copy+flash helper (docs/UI.md → UX-primitive catalog)
 const { isCopied: copiedSetUid, copy: copySetUid } = useCopyFlash()
-const creating      = ref(false)
+const busy          = ref(false)
 
 const activeSet = computed(() => project.activeSet())
+
+// ONE name input serving create and rename, the same state machine ChainModule uses for its
+// New/Rename pair — a second input would be a second thing to keep in sync and would double the width
+// of a bar that already holds the picker, the uid and three buttons.
+const nameMode = ref<'create' | 'rename'>('create')
+
+function openNameInput(mode: 'create' | 'rename') {
+  // clicking the button that is already open closes it, so the button is its own cancel
+  if (showNewInput.value && nameMode.value === mode) { closeNameInput(); return }
+  nameMode.value = mode
+  // Rename PREFILLS: a rename is usually an edit ("day3" → "day 3"), so retyping the whole name is
+  // work the user has already done once.
+  newSetName.value = mode === 'rename' ? (activeSet.value?.name ?? '') : ''
+  showNewInput.value = true
+}
+
+function closeNameInput() {
+  showNewInput.value = false
+  newSetName.value = ''
+}
+
+const submitName = () => (nameMode.value === 'rename' ? renameSet() : createSet())
 
 async function createSet() {
   const name = newSetName.value.trim()
   if (!name) { log.warn('Set name cannot be empty.', { source: 'manageImages' }); return }
-  if (project.sets.some(s => s.name === name)) {
+  if (setNameTaken(project.sets, name)) {
     log.warn(`A set named "${name}" already exists.`, { source: 'manageImages' }); return
   }
   if (!projectMeta.current) {
     log.warn('No project open.', { source: 'manageImages' }); return
   }
-  creating.value = true
+  busy.value = true
   try {
     const res = await fetch('/api/sets/create', {
       method: 'POST',
@@ -40,12 +63,47 @@ async function createSet() {
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
     project.addSetFromApi(body.uid!, name)
     log.info(`Created set "${name}".`, { source: 'manageImages' })
-    newSetName.value = ''
-    showNewInput.value = false
+    closeNameInput()
   } catch (e) {
     log.error(`Failed to create set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   } finally {
-    creating.value = false
+    busy.value = false
+  }
+}
+
+// Rename the active set. The name is display-only (the uid is the identity), so nothing moves on disk
+// and nothing else in the store has to be told — see `rename_set!` in app/src/model/project.jl.
+async function renameSet() {
+  const set  = activeSet.value
+  const name = newSetName.value.trim()
+  if (!set) return
+  if (!name) { log.warn('Set name cannot be empty.', { source: 'manageImages' }); return }
+  if (name === set.name) { closeNameInput(); return }      // no-op, not an error
+  // Pre-flight only — the real guard is `set_name_taken` in the model, which answers this for the REPL
+  // too and makes the route 409. Kept here so the common case is an instant warning instead of a round
+  // trip. Excludes THIS set, so re-submitting its own name is fine.
+  if (setNameTaken(project.sets, name, set.uid)) {
+    log.warn(`A set named "${name}" already exists.`, { source: 'manageImages' }); return
+  }
+  if (!projectMeta.current) {
+    log.warn('No project open.', { source: 'manageImages' }); return
+  }
+  busy.value = true
+  try {
+    const res = await fetch('/api/sets/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectMeta.current.uid, setUid: set.uid, name }),
+    })
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    project.renameSet(set.uid, name)
+    log.info(`Renamed set to "${name}".`, { source: 'manageImages' })
+    closeNameInput()
+  } catch (e) {
+    log.error(`Failed to rename set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
+  } finally {
+    busy.value = false
   }
 }
 
@@ -106,24 +164,29 @@ async function deleteSet() {
         <input
           class="set-name-input"
           v-model="newSetName"
-          placeholder="Set name…"
-          @keydown.enter="createSet"
-          @keydown.escape="showNewInput = false"
+          :placeholder="nameMode === 'rename' ? 'New name…' : 'Set name…'"
+          @keydown.enter="submitName"
+          @keydown.escape="closeNameInput"
           autofocus
-          v-tooltip.bottom="'Press Enter to create, Escape to cancel'"
+          v-tooltip.bottom="nameMode === 'rename' ? 'Press Enter to rename, Escape to cancel'
+                                                  : 'Press Enter to create, Escape to cancel'"
         />
-        <button class="cc-btn cc-btn-primary" @click="createSet" :disabled="creating"
-          v-tooltip.bottom="'Create this image set'">
-          <i v-if="creating" class="pi pi-spin pi-cog" />
-          <template v-else>Create</template>
+        <button class="cc-btn cc-btn-primary" @click="submitName" :disabled="busy"
+          v-tooltip.bottom="nameMode === 'rename' ? 'Rename this image set' : 'Create this image set'">
+          <i v-if="busy" class="pi pi-spin pi-cog" />
+          <template v-else>{{ nameMode === 'rename' ? 'Rename' : 'Create' }}</template>
         </button>
-        <button class="cc-btn cc-btn-ghost" @click="showNewInput = false"
+        <button class="cc-btn cc-btn-ghost" @click="closeNameInput"
           v-tooltip.bottom="'Cancel'">Cancel</button>
       </template>
       <template v-else>
-        <button class="cc-btn cc-btn-ghost" data-guide="set.new" @click="showNewInput = true"
+        <button class="cc-btn cc-btn-ghost" data-guide="set.new" @click="openNameInput('create')"
           v-tooltip.bottom="'Create a new image set to group related images together'">
           <i class="pi pi-plus" /> New set
+        </button>
+        <button v-if="activeSet" class="cc-btn cc-btn-ghost" @click="openNameInput('rename')"
+          v-tooltip.bottom="`Rename set '${activeSet.name}' — the images and their data are untouched`">
+          <i class="pi pi-pencil" /> Rename
         </button>
       </template>
 

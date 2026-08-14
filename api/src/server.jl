@@ -265,6 +265,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/projects/rename" => (req, body_bytes) -> (api_projects_rename(body_bytes)),
     "/api/projects/delete" => (req, body_bytes) -> (api_projects_delete(body_bytes)),
     "/api/sets/create" => (req, body_bytes) -> (api_sets_create(body_bytes)),
+    "/api/sets/rename" => (req, body_bytes) -> (api_sets_rename(body_bytes)),
     "/api/sets/delete" => (req, body_bytes) -> (api_sets_delete(body_bytes)),
     "/api/images/register" => (req, body_bytes) -> (api_images_register(body_bytes)),
     "/api/import/scan-legacy" => (req, body_bytes) -> (api_import_scan_legacy(body_bytes)),
