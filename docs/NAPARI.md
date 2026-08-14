@@ -328,15 +328,30 @@ run down the rows**.
 | Picked | Layout | Renders |
 |---|---|---|
 | 2+ versions, 2+ masks | the cross-product — a grid | rows × cols |
-| 2+ of one only | one row, side by side (whichever list it came from) | N |
+| 2+ of one only | N cells, arranged by `compareLayout` (see below) | N |
 | one of each | one cell — an ordinary recording | 1 |
 
 The picker is one control, `MovieCompareControls.vue`: two reorderable `ChipSelect`s where the
 selection *is* the mode (none = the ordinary movie, one = that one, two or more = a comparison).
-**There is no axis to choose** — the two selections fully determine the layout (`compareShape` in TS,
-`_compare_grid` in Julia). The row-vs-column toggle appears only for a single-row comparison, because
-a grid already fixes both directions. Design and rejected alternatives:
+**Picking from both lists leaves no axis to choose** — the cross-product fully determines the layout
+(`compareShape().fixed` in TS, `_compare_grid` in Julia), so the arrangement toggle only appears when
+ONE list is doing the comparing. Design and rejected alternatives:
 `docs/todo/MOVIE_COMPARE_PLAN.md`.
+
+**`compareLayout` — how one list of N cells is arranged.** Three options, on the same segmented
+`ChipSelect`: `row` (across, the default), `column` (stacked), `grid` (wrapped into the squarest
+rectangle that holds them — 4 → 2×2, 6 → 3×2, 5 → 3 then 2). Four movies side by side are four times
+as wide as they are tall, which is a strip nobody can read on a slide.
+
+`grid` is a purely cosmetic rearrangement of cells that were going to be recorded anyway, and it adds
+**no compositor**: `_wrap_grid` (`api/src/napari_api.jl`) folds the single `MovieRow` into several
+before `_record_grid!` looks at it, so from there down a wrapped grid and a cross-product are the same
+`Vector{MovieRow}` — same nested compose, same per-cell captions, same frame arithmetic, same cancel
+and staging. Two consequences of that: a short last row is centred on black by `movie_io._pad_to`
+(so a non-square count needs no padding of its own), and a wrapped row is captioned with **nothing** —
+the cells carry their names, and an empty row label would band each strip with a blank strip. Wrapping
+costs one extra compose pass, never an extra render. Mirrored by `wrapShape` in
+`frontend/src/utils/movieCompare.ts`.
 
 **It is one recording per CELL plus a nested compose, not a cleverer render.** `_record_grid!`
 (`api/src/napari_api.jl`) records each cell through the SAME path a single movie uses — so staging,

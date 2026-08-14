@@ -98,8 +98,6 @@ const compareSegmentations = computed<string[]>({
   get: () => segmentationsFromConfig(cfg.value, segNames.value),
   set: v => patch({ labelValueNames: v }),
 })
-// Versions across, masks down — the two selections fully determine the layout, nothing to choose.
-const compareShapeNow = computed(() => compareShape(compareVersions.value, compareSegmentations.value))
 // Mask outline width (0 = filled). Persisted only — unlike the viewer's recorder this page drives no
 // live layers of its own; the value reaches napari when the batch applies the config per image.
 const labelContour = computed<number>({
@@ -137,6 +135,10 @@ const movieScaleBar = computed<boolean>({
   set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showScaleBar: v }) } })
 const compareLayout = computed<CompareLayout>({
   get: () => cfg.value.compareLayout ?? COMPARE_LAYOUT_DEFAULT, set: v => patch({ compareLayout: v }) })
+// Versions across, masks down — picking from BOTH lists fully determines the layout. One list leaves
+// the arrangement (across / stacked / wrapped into a grid) to `compareLayout`, so the shape needs it.
+const compareShapeNow = computed(() =>
+  compareShape(compareVersions.value, compareSegmentations.value, compareLayout.value))
 const compareContrast = computed<CompareContrast>({
   get: () => cfg.value.compareContrast ?? COMPARE_CONTRAST_DEFAULT, set: v => patch({ compareContrast: v }) })
 const colourBy     = computed<string>({ get: () => cfg.value.colourBy ?? '',         set: v => patch({ colourBy: v }) })

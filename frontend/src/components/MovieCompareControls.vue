@@ -8,8 +8,9 @@
   down: two of both is a grid, two of one is a single row side by side (`compareShape`). The outline
   slider appears with the masks it applies to — 0 fills them, N draws an N-px contour so the channel
   signal underneath stays readable. Contrast
-  appears once there is something to compare; the row-vs-column toggle only when there is ONE row for
-  it to point at, since a grid already fixes both directions.
+  appears once there is something to compare; the arrangement toggle (across / stacked / wrapped into
+  a grid) only when ONE list is doing the comparing, since picking from both already fixes both
+  directions.
 
   Renders nothing for an image with one version and no segmentations — the common case gets smaller,
   not bigger. Pure logic lives in utils/movieCompare.ts. See docs/todo/MOVIE_COMPARE_PLAN.md.
@@ -51,11 +52,12 @@ const segs = computed(() => props.segmentations ?? [])
 // The outline slider only makes sense once a mask is actually drawn, so it rides the masks row rather
 // than sitting in the options popover with fps and size — it is a property OF the thing above it.
 const contour = computed(() => clampContour(props.contour))
-const shape = computed(() => compareShape(props.versions, segs.value))
+const shape = computed(() => compareShape(props.versions, segs.value, props.layout))
 const comparing = computed(() => isComparison(shape.value))
 const LAYOUT_OPTIONS: ChipOption[] = [
   { value: 'row', label: '', icon: 'pi pi-pause' },
   { value: 'column', label: '', icon: 'pi pi-equals' },
+  { value: 'grid', label: '', icon: 'pi pi-th-large' },
 ]
 const CONTRAST_OPTIONS: ChipOption[] = [
   { value: 'reference', label: 'matched' },
@@ -87,10 +89,11 @@ const CONTRAST_OPTIONS: ChipOption[] = [
       <span class="mc-val cc-readout">{{ contour || 'fill' }}</span>
     </span>
     <div v-if="comparing" class="mc-row cc-row">
-      <!-- a grid already fixes both directions (versions across, masks down), so the row-vs-column
-           choice is only offered when there is a single row for it to apply to -->
-      <ChipSelect v-if="!shape.grid" variant="segmented" :options="LAYOUT_OPTIONS" :model-value="layout"
-                  aria-label="Comparison layout" v-tooltip.bottom="'Columns side by side or stacked'"
+      <!-- picking from BOTH lists already fixes both directions (versions across, masks down), so the
+           arrangement is only offered when one list is doing the comparing -->
+      <ChipSelect v-if="!shape.fixed" variant="segmented" :options="LAYOUT_OPTIONS" :model-value="layout"
+                  aria-label="Comparison layout"
+                  v-tooltip.bottom="'Cells side by side, stacked, or wrapped into a grid'"
                   @update:model-value="emit('update:layout', $event as CompareLayout)" />
       <ChipSelect variant="segmented" :options="CONTRAST_OPTIONS" :model-value="contrast"
                   aria-label="Comparison contrast"
