@@ -39,7 +39,10 @@ try:
 except ImportError:
     HAVE_COASTAL = False
 
-HAVE_GATED = HAVE_COASTAL and hasattr(coastal.smooth, 'gated_frame')
+# `gated_frames` (plural) is the batched form the runner imports at module scope — a coastal that
+# predates it makes `_load_runner` raise rather than skip, which is the loud signal we want for a
+# rolled-back pin. The guard stays for the case where coastal is present but older.
+HAVE_GATED = HAVE_COASTAL and hasattr(coastal.smooth, 'gated_frames')
 
 
 def _load_runner():
@@ -118,13 +121,13 @@ class SmoothRunnerTest(unittest.TestCase):
         out = self._run(temporalStat='median')
         self.assertEqual(tuple(out.shape), tuple(self.shape))
 
-    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frame')
+    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_runs_and_writes_the_same_shape(self):
         out = self._run(temporalStat='gated')
         self.assertEqual(tuple(out.shape), tuple(self.shape))
         self.assertTrue(np.isfinite(out).all())
 
-    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frame')
+    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_keeps_the_moving_feature_the_median_flattens(self):
         """The property the option exists for, measured through the whole task rather than the
         library: at the centre of the moving blob, the median mixes frames where it was elsewhere."""
@@ -141,7 +144,7 @@ class SmoothRunnerTest(unittest.TestCase):
         self.assertLess(med_p, 0.95 * raw_p, 'median unexpectedly preserved the moving feature')
         self.assertGreater(gat_p, med_p, 'gated did not beat the median on the moving feature')
 
-    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frame')
+    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_applies_ONE_gate_to_every_channel(self):
         """The AF-ratio invariant for an adaptive kernel, asserted through the runner.
 
@@ -184,7 +187,7 @@ class SmoothRunnerTest(unittest.TestCase):
         np.testing.assert_allclose(c1, c0 * 2.0, rtol=0.02, atol=2.0)
         np.testing.assert_allclose(c2, c0 * 3.0, rtol=0.02, atol=3.0)
 
-    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frame')
+    @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_estimates_the_noise_scale_once(self):
         """Not per window: the gate's strictness is a property of the acquisition. Pinned by watching
         how often the runner asks coastal for an estimate."""
