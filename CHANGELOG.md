@@ -15,6 +15,18 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+### Fixed
+
+- **The optical-flow module's plots answer the t and z sliders about 3x faster.** Nudging a slider on
+  the flow-metrics sheet or the model-probability map took ~3.1 s to redraw and sent a 7.3 MB reply;
+  it is now ~1.0 s and 3.6 MB, measured on a 181-frame 4-channel movie at the default 512 px crop.
+  Two causes, both pure overhead: the temporal window the metrics are built from was read one frame
+  at a time through a lazy array handle, which rebuilt a task graph per frame (12x slower than
+  reading the same pixels directly), and each plane's colour map was expanded to full RGB before the
+  PNG was encoded rather than being written as the PNG's own palette. The pictures are unchanged —
+  byte-identical once decoded. The coastal segmentation preview read its window the same way and got
+  the same fix.
+
 ## [0.1.2] — 2026-08-13
 
 A fix release. Fresh installs of `v0.1.1` did not launch — if you hit

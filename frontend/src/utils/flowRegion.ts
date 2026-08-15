@@ -2,11 +2,12 @@
  * The XY extent the two flow panels render — the sizes they offer and how the answer reads back.
  *
  * Both panels show a CENTRED CROP of the frame, not the whole frame, because a whole frame costs far
- * more than a grid of ~180 px cells can show: measured on a 1044x1102 movie, the 16-plane sheet is
- * 36.3 MB and 8.2 s for the whole frame against 9.2 MB and 2.4 s at 512 px — and 36 MB used to arrive
- * as `websocket closed with status 1009: message too large`, because it does not fit in one websocket
- * frame. The full measurement lives on `FLOW_INSPECT_MAX_PX` in `api/src/optical_flow_api.jl`, which is
- * the same decision on the other side.
+ * more than a grid of ~180 px cells can show: re-measured on a 1046x1104 movie, the 16-plane sheet is
+ * 12.9 MB and 3.6 s for the whole frame against 3.6 MB and 0.8 s at 512 px. (Before the window read
+ * and the PNG encoder were fixed those were 36.3 MB / 8.2 s and 9.2 MB / 2.4 s, and 36 MB used to
+ * arrive as `websocket closed with status 1009: message too large`, because it did not fit in one
+ * websocket frame.) The full measurement lives on `FLOW_INSPECT_MAX_PX` in
+ * `api/src/optical_flow_api.jl`, which is the same decision on the other side.
  *
  * Here rather than in either SFC because BOTH panels offer it and they must not drift — the same
  * reason `useFlowPlanes` exists at all. The two claim to show what a run is fed over the same window;
@@ -17,11 +18,12 @@
 export const DEFAULT_FLOW_REGION_PX = 512
 
 /**
- * What the chips offer. The top of this list is bounded by the transport, not by taste. Measured, the
- * whole 16-plane reply runs ~35 bytes per pixel on real metric planes and ~67 on synthetic noise (the
- * pessimistic end); at 768 px that is at most ~40 MB, inside `WS_MAX_FRAME_SIZE` (64 MiB,
- * app/src/utils.jl) with room to spare, and at 1024 px it is ~70 MB, past it. Widening this list means
- * raising that number too — asserted in flowRegion.test.ts.
+ * What the chips offer. The top of this list used to be bounded by the transport; since the reply
+ * became a palette PNG it is bounded by TIME. Re-measured, the whole 16-plane reply runs ~13 bytes per
+ * pixel on real metric planes and ~22 on synthetic noise (the pessimistic end), so 768 px is ~13 MB
+ * against `WS_MAX_FRAME_SIZE` (64 MiB, app/src/utils.jl) — a bound that now only starts to bite around
+ * 1770 px, asserted in flowRegion.test.ts. What keeps 768 at the top instead is that it is ~1.8 s per
+ * scrub for cells drawn at ~180 px. Widening the list is a UX call; check the frame cap anyway.
  */
 export const FLOW_REGION_OPTIONS = [256, 512, 768]
 

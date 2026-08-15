@@ -486,6 +486,30 @@ class PreviewContext:
             self.levels[0].ndim, _axis_indices(self.dim_utils), self.bounds)
         return _as_cyx(zarr_utils.fortify(self.levels[0][sl]), self.dim_utils)
 
+    def crop_at_t(self, t):
+        """The same region at timepoint `t`, as `[C, Y, X]` — read one frame at a time.
+
+        Reads through the PLAIN ZARR handle, not `self.levels`. This is the access pattern
+        `PreviewState.image_zarr` exists for and its docstring already measures on the AF path: a
+        dask slice rebuilds and executes a graph, so paying that per frame across a temporal window
+        is the whole cost. Measured on `zolIMa/VJy1Nx` driftCorrected, the 17-frame window a
+        `temporalScales` of 8 needs, 512 px crop:
+
+            17 dask slices     1.276 s
+            17 zarr slices     0.106 s      (12x)
+
+        That was 41% of the 3.1 s a flow panel took to answer a nudge of the t slider. `self.levels`
+        stays dask because `norm_params` needs it lazy — a whole-channel histogram through a plain
+        handle is the OOM that put it there — so this is a second handle, not a flip of the first,
+        exactly as `af_stats` uses one.
+
+        `crop()` is deliberately left alone: it is ONE slice, so it pays the graph once.
+        """
+        levels = STATE.image_zarr(self.im_path)
+        sl = slice_utils.crop_slice_tuple(
+            levels[0].ndim, _axis_indices(self.dim_utils), {**self.bounds, 'T': (t, t + 1)})
+        return _as_cyx(zarr_utils.fortify(levels[0][sl]), self.dim_utils)
+
     def block_geometry(self):
         """`(axes, full_shape, block_shape)` for a channel-less block covering this region — what the
         receiver needs to place it in a full-extent layer with no translate."""
@@ -592,6 +616,27 @@ def _coastal_imports():
     return CoastalUtils, count_labels
 
 
+def _temporal_window(ctx, radius):
+    """`(context, centre)` — the visible region across a temporal window, as `[W, C, Y, X]`.
+
+    `centre` indexes the requested timepoint WITHIN the window, which is not `radius` at the ends of
+    the movie: the window is clamped there, never reflected, because repeating a frame invents motion
+    that was not imaged. Every caller needs that index, so it is returned rather than re-derived.
+
+    Shared by the coastal segmentation preview and both flow canvas plots because all three claim to
+    show what a RUN is fed over the window `predict_from_zarr` would have built. Two copies of the
+    clamping were already two chances for one of those claims to stop being true; they were also two
+    copies of the read, and only one of them would have been made fast.
+    """
+    t_now = int(ctx.bounds.get('T', (0, 1))[0])
+    n_t = int(ctx.axis_len.get('T', 1))
+    lo = max(0, t_now - radius)
+    hi = min(n_t - 1, t_now + radius)
+    # Each frame is reduced to [C, Y, X] by the same helper the single-frame path uses, so the window
+    # is exactly "the tile, through time".
+    return np.stack([ctx.crop_at_t(t) for t in range(lo, hi + 1)]), t_now - lo
+
+
 def _preview_coastal(ctx):
     """Segment the visible region with the flow model — same `predict_slice` the run calls.
 
@@ -611,20 +656,8 @@ def _preview_coastal(ctx):
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
 
     axes, full_shape, block_shape = ctx.block_geometry()
-    t_now = int(ctx.bounds.get('T', (0, 1))[0])
-    n_t = int(ctx.axis_len.get('T', 1))
-    lo = max(0, t_now - seg.TEMPORAL_RADIUS)
-    hi = min(n_t - 1, t_now + seg.TEMPORAL_RADIUS)
-
-    # The region across the window: same crop, T widened. Each frame is reduced to [C, Y, X] by the
-    # same helper the single-frame path uses, so the window is exactly "the tile, through time".
-    frames = []
-    for t in range(lo, hi + 1):
-        sl = slice_utils.crop_slice_tuple(
-            ctx.levels[0].ndim, _axis_indices(ctx.dim_utils), {**ctx.bounds, 'T': (t, t + 1)})
-        frames.append(_as_cyx(zarr_utils.fortify(ctx.levels[0][sl]), ctx.dim_utils))
-    context = np.stack(frames)
-    tile = context[t_now - lo]
+    context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
+    tile = context[centre]
 
     counts, block = {}, None
     for key in sorted(models.keys()):
@@ -634,7 +667,7 @@ def _preview_coastal(ctx):
             continue            # one type per preview: it is the primary you are judging
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params,
-                                  context=context, context_index=t_now - lo)
+                                  context=context, context_index=centre)
         masks = seg.post_process(masks, ['Y', 'X'], None, 1, False,
                                  real_border=_real_image_edges(ctx.bounds, ctx.axis_len))
         block = np.reshape(np.asarray(masks, dtype=seg.LABEL_DTYPE), block_shape)
@@ -699,19 +732,10 @@ def _flow_frame_and_metrics(ctx):
     mp = models[sorted(models.keys())[0]]
     scales, cumulative, dropped = temporal_config(seg._manifest(mp))
 
-    t_now = int(ctx.bounds.get('T', (0, 1))[0])
-    n_t = int(ctx.axis_len.get('T', 1))
-    lo = max(0, t_now - seg.TEMPORAL_RADIUS)
-    hi = min(n_t - 1, t_now + seg.TEMPORAL_RADIUS)
-    frames = []
-    for t in range(lo, hi + 1):
-        sl = slice_utils.crop_slice_tuple(
-            ctx.levels[0].ndim, _axis_indices(ctx.dim_utils), {**ctx.bounds, 'T': (t, t + 1)})
-        frames.append(_as_cyx(zarr_utils.fortify(ctx.levels[0][sl]), ctx.dim_utils))
-    context = np.stack(frames)
+    context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
 
     window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
-    frame, metrics = seg._flow_metrics(window, t_now - lo, scales, cumulative)
+    frame, metrics = seg._flow_metrics(window, centre, scales, cumulative)
     if dropped:
         # The model's OWN dropped set, from its manifest. Keeping a plane the model was not trained
         # on would show a sheet that does not match the channels it is fed.

@@ -108,15 +108,39 @@ def plane_png(plane, percentiles=(1.0, 99.5), colormap=DEFAULT_COLORMAP):
     Colour-mapped by default: these planes are read by eye, side by side, to answer "which of these
     looks like cells", and grey hides the mid-range structure that question is about. The LUT is
     applied AFTER the stretch, so the colours mean the same thing in every panel of the sheet.
+
+    The LUT goes in the PNG's own PALETTE rather than being expanded to an RGB array first. Same
+    picture — a palette PNG is one byte per pixel plus a 768-byte table, and every decoder expands it
+    to the identical RGB (asserted in `test_plane_render.py`, which reads these back through imageio
+    and gets `[Y, X, 3]`). It is the encode that differs, and it dominates the flow contact sheet:
+    measured on the real 16-plane sheet from `zolIMa/VJy1Nx` at 512 px,
+
+        LUT → RGB, imageio     1.014 s     5.50 MB PNG   7.33 MB reply
+        palette                0.242 s     2.72 MB PNG   3.62 MB reply
+
+    — 4x the encode and 2x the bytes, for a sheet the panel then draws at ~180 px per cell. Both
+    halves matter: the encode was a third of the whole 3.1 s wait between letting go of the t slider
+    and the picture changing, and the reply is re-parsed and re-serialised by Julia on its way out
+    (`app/src/preview.jl`), so its size is paid three times over. Halving it also puts the 768 px chip
+    (`utils/flowRegion.ts`) back well clear of `WS_MAX_FRAME_SIZE`.
+
+    Greyscale keeps its single-channel `L` PNG — it has no palette to put anywhere, and the tests
+    pin that it stays 2D on read.
     """
-    import imageio.v3 as iio          # local: only this path needs it, keeps the import cost off others
+    from PIL import Image             # local: only this path needs it, keeps the import cost off others
 
     img = stretch_to_uint8(plane, percentiles)
     if img.ndim != 2:
         raise ValueError(f'plane_png expects a 2D plane, got shape {img.shape}')
+    h, w = img.shape
     lut = colormap_lut(colormap)
-    if lut is not None:
-        img = lut[img]                # [Y, X] indices → [Y, X, 3] RGB
+    # `frombytes` rather than `fromarray(..., mode=...)`: passing an explicit mode to the latter is
+    # deprecated and due for removal, and 'P' is exactly the case it no longer covers.
+    if lut is None:
+        im = Image.frombytes('L', (w, h), img.tobytes())
+    else:
+        im = Image.frombytes('P', (w, h), img.tobytes())
+        im.putpalette(lut.tobytes())
     buf = io.BytesIO()
-    iio.imwrite(buf, img, extension='.png')
+    im.save(buf, format='PNG', compress_level=6)
     return buf.getvalue()

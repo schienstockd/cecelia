@@ -79,29 +79,33 @@ end
 #: crop of the frame, not the whole frame.
 #:
 #: The sheet is a contact sheet: 16 planes in a grid of ~180 px cells. A whole frame costs far more than
-#: that can show. Measured end to end against the worker on `zolIMa/VJy1Nx` driftCorrected
-#: (181x4x37x1044x1102, t=0, z=18, 4 channels, scales 1/2/4/8, viridis — the whole reply, base64
-#: included, and the wait the user sits through):
+#: that can show. Re-measured on `zolIMa/VJy1Nx` driftCorrected (181x4x38x1046x1104, z=19, 4 channels,
+#: scales 1/2/4/8, viridis) after the window read and the PNG encoder were fixed — worker-side, the
+#: whole reply with base64 included, plus roughly 0.15 s of Julia parse/re-serialise and HTTP on top:
 #:
-#:     whole frame  36.3 MB   8.2 s
-#:     768 px       20.2 MB   4.5 s
-#:     512 px        9.2 MB   2.4 s
+#:     whole frame  12.9 MB   3.6 s
+#:     768 px        7.3 MB   1.8 s
+#:     512 px        3.6 MB   0.8 s
+#:     256 px        1.0 MB   0.3 s
 #:
-#: The whole frame does not fit in HTTP.jl's 16 MiB client default, so the panel died with
+#: (Before those two fixes the same three were 36.3 / 20.2 / 9.2 MB and 8.2 / 4.5 / 2.4 s. The reads
+#: went through a dask handle one frame at a time and the LUT was expanded to RGB before encoding —
+#: see `PreviewContext.crop_at_t` and `plane_png`.)
+#:
+#: The whole frame did not fit in HTTP.jl's 16 MiB client default, so the panel died with
 #: `websocket closed with status 1009: message too large` on every image except the one it was
 #: developed against (`fXgbTl`, 418x434 — itself a crop, ~1.5 MB). The transport cap is now explicit
-#: and generous (`WS_MAX_FRAME_SIZE`, 64 MiB), but a bound that exists only in the transport is a bound
-#: that reports itself as a broken panel — and 36 MB per scrub of the t slider, for a picture 180 px
-#: wide, is not something to spend either. So the producer bounds itself here.
+#: and generous (`WS_MAX_FRAME_SIZE`, 64 MiB), and at ~13 bytes per pixel for the whole reply nothing
+#: this route can produce comes near it any more — even a whole frame of pure noise, the pessimistic
+#: end at ~21 bytes per pixel, is ~25 MB. **So the bound is now TIME, not bytes.** A crop is still a
+#: crop for the original reason: 3.6 s per scrub of the t slider, for a picture 180 px wide, is not
+#: something to spend.
 #:
-#: 512 is the default because it is under 10 MB and under 3 s while still showing a few hundred cells'
-#: worth of field; pixels are also paid for `2r+1` times over, because the flow build runs over a
-#: WINDOW of frames, which is why the timings scale worse than the bytes. This is the fallback for a
-#: caller that sends no `regionSize` — a REPL, a test — exactly as `colormap` works above; the panel
-#: always sends one, and its chip list is where the offered sizes live (`utils/flowRegion.ts`). The top
-#: of that list stays at 768 because a NOISY plane compresses about twice as poorly as the real metric
-#: planes measured here (~67 vs ~35 bytes per pixel for the whole reply), and 16 noisy planes at 1024 px
-#: would be ~70 MB — past `WS_MAX_FRAME_SIZE`. Widening the list means raising that number too.
+#: 512 is the default because it is under a second while still showing a few hundred cells' worth of
+#: field; pixels are also paid for `2r+1` times over, because the flow build runs over a WINDOW of
+#: frames, which is why the timings scale worse than the bytes. This is the fallback for a caller that
+#: sends no `regionSize` — a REPL, a test — exactly as `colormap` works above; the panel always sends
+#: one, and its chip list is where the offered sizes live (`utils/flowRegion.ts`).
 #:
 #: A crop and not a DOWNSAMPLE, and not a lower pyramid level: the question this sheet answers is "do
 #: these metrics look like cells", asked of the planes a run is actually fed. A run reads level 0, so a
