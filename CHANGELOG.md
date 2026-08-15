@@ -17,7 +17,7 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ## [0.1.3] — 2026-08-15
 
-37 pull requests since `v0.1.2`. Still `0.1.x`.
+41 pull requests since `v0.1.2`. Still `0.1.x`.
 
 **Read the first three sections before re-opening old work.** Several changes correct results rather
 than add anything: autofluorescence correction could erase a channel, asking for one segmentation
@@ -103,11 +103,26 @@ upgrade.
   pre-created for every image; six of them (`populations`, `stats`, `shapes`, `models`, `out`, `cl`) were
   empty on all 30 images in the dev projects dir and have no writer anywhere in the codebase (#579).
 
+### Changed — what the pickers call the centroid columns
+
+- **The centroid columns are named by what they are.** Every picker offering a data column showed the
+  raw `.h5ad` name, so the axis you gate on for position read `centroid_x` and the one that splits a
+  movie into timepoints — the first thing you meet on the segmentation-QC plot — read `centroid_t`.
+  They now read **X / Y / Z position** and **Time**, in the gate axis pickers and their plot titles, the
+  pair-grid measure list, and the summary "Split by" and heatmap "Category" menus. A time axis that
+  could not be converted to seconds says `Time (frames)` rather than naming the column (#583).
+- **Display only** — the stored column, CSV exports and the REPL keep `centroid_x`, and saved plot
+  settings keep working, since they record the column and not its label. This is the same split that
+  already showed intensity columns under their channel names.
+
 ### Added
 
 - **A detached task runner** (dev only, off by default). Tasks and chains run in a second process, so a
   backend restart no longer kills work in flight: Restart leaves it running, Quit takes it. It keeps the
   code it started with and flags "old code" with the commit when behind (#543).
+- **Floating panels maximise**, by button or by double-clicking the header — the Viewer controls and the
+  Lab log fill the width and everything below the app header. Drag and resize are inert while maximised,
+  and the panel's own position and size are kept, so restoring puts it back where it was (#584).
 - **Output names are a first-class control, and pick their settings back up.** Re-running a segmentation
   as `Tcell` when the last run was `Neutrophil` meant retyping the output name and every model parameter.
   A new `SuggestInput` opens on focus showing the names already in use and narrows as you type — for
@@ -133,6 +148,12 @@ upgrade.
 
 ### Fixed
 
+- **A floating panel dragged too far up could not be brought back.** The Viewer controls and the Lab log
+  are held above the app content, but the app header sits above *them* — so a panel dragged over it lost
+  not just its visibility but its pointer events, starting with its own header, which is the only handle
+  it can be dragged by. The position was clamped to the top of the window rather than to the bottom of
+  the header, in both of the two places that clamped it. **A panel already stuck this way comes back on
+  its own** the next time the app loads (#584).
 - **Quit, Ctrl-C and `pixi run stop` now actually stop the app.** Four separate pieces of Julia 1.12
   signal/exit behaviour meant stopping left processes running behind hundreds of lines of backtrace that
   read like a crash: `exit()` segfaulted with a worker mid-compile and the supervisor read the fault as a
@@ -189,6 +210,10 @@ upgrade.
 
 - Both task lists render through `SelectionTable`, the canonical list, instead of two independently
   hand-rolled ones that shared no markup, selection idiom or selection colour (#576, #578).
+- The pre-release bundle rehearsal (`scripts/bundle_check.sh --launch`) no longer hangs after it
+  passes. It sent one SIGTERM to the server it had started and then waited indefinitely, which a Julia
+  process mid-compile ignores — 64 minutes of wall clock for 69 seconds of work. It now uses the same
+  escalating port-kill the rest of the app does (#582).
 
 ## [0.1.2] — 2026-08-13
 
