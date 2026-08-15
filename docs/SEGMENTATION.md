@@ -241,10 +241,29 @@ Two qualifications on those numbers, both of which cost more than the difference
   boxed stores, held on 3, and rose on one 7-frame image. **Treat these as a snapshot of this
   machine's data, not a property of the feature.**
 
-Per timepoint the frame is narrowed to that frame's valid z span (`docs/ARCHITECTURE.md` → *The valid
-box*); tiling, inference, post-processing and nuc/cyto matching all run unchanged on the reduced
-stack. Only the **write** puts it back at its z offset, so the label store keeps its full shape with
-the skipped planes zero.
+Per timepoint the frame is narrowed to that frame's valid span (`docs/ARCHITECTURE.md` → *The valid
+box*) on **Z, Y and X**; tiling, inference, post-processing and nuc/cyto matching all run unchanged on
+the reduced frame. Only the **write** puts it back at its offset, so the label store keeps its full
+shape with the skipped region zero.
+
+**XY was added later than Z, and only because it was measured.** Drift pads XY exactly as it pads Z,
+but how much that is worth is entirely per-image and the two answers are far apart:
+
+| image | drift | canvas | real frame | XY padding |
+|---|---|---|---|---|
+| `zolIMa/Dml3RG` | 5.8 px | 1039 × 1060 | 1036 × 1055 | **0.4%** — not worth a read |
+| `WIaUjL/p6t4mC` | 139.9 px | 605 × 617 | 512 × 512 | **30% of the frame** |
+
+On `p6t4mC` that measured **21.7% off the cellpose call** (17.3 s → 13.6 s per timepoint, idle GPU) —
+less than the 30% area saving, because per-slice overhead does not shrink with the slice. It also
+removed **6–7 labels per timepoint that cellpose was finding in pure padding**.
+
+> **Unlike the z skip, the XY skip is NOT output-preserving.** The model is handed a
+> differently-*sized* image, so its internal tiling lands differently and masks near the data edge
+> shift: measured **99.62% foreground agreement** and **1.4–2.7% fewer cells** on `p6t4mC`. Some of
+> that drop is the spurious padding labels above, which is a correction; the rest is edge effects,
+> which is a change. Re-running an existing segmentation will therefore not reproduce its old cell
+> count. The z skip has no such caveat — dropping all-zero leading/trailing planes cannot move a mask.
 
 **This is a property of the base class, not of cellpose.** It lives in
 `SegmentationUtils.predict_from_zarr` — the one entry point every backend goes through — so a
@@ -253,13 +272,17 @@ subclass gets the skip by implementing `predict_slice` and nothing else. `Cellpo
 
 - **A skip, never a crop.** Each frame sits at its own offset *because* the correction aligned them
   in a shared canvas; cropping per frame would put them back out of register.
-- **Safe by construction.** A valid box is a contiguous `[start, stop)`, so narrowing z to it can only
-  drop LEADING/TRAILING planes. Interior planes inside the span survive, and the dropped ones are
-  all-zero — no labels for `stitch_threshold` to link across, so the stitching semantics inside the
-  span are unchanged rather than assumed to be.
-- **Ambiguity widens, never narrows** (`_valid_z_span`): no box, no Z, a degenerate range, or a span
-  under two planes all fall back to the whole stack. One plane is not meaningfully 3D. Missing cells
-  is a real cost; doing the work anyway is only the status quo.
+- **Safe by construction.** A valid box is a contiguous `[start, stop)`, so narrowing an axis to it
+  can only drop LEADING/TRAILING slices. Interior slices inside the span survive, and the dropped ones
+  are all-zero — on z, no labels for `stitch_threshold` to link across, so the stitching semantics
+  inside the span are unchanged rather than assumed to be.
+- **Ambiguity widens, never narrows** (`_valid_span`, with `_valid_z_span` as the named z spelling
+  that carries the z-specific rationale): no box, no entry for that axis, a degenerate range, or a
+  span under two slices all fall back to the full extent. One plane is not meaningfully 3D. Missing
+  cells is a real cost; doing the work anyway is only the status quo.
+- **Tiles are cut over the narrowed frame**, so the tile count can differ per timepoint. Every span is
+  therefore resolved up front rather than inside the loop — the progress total has to be known before
+  the first tile is reported.
 - **The label store records the span it segmented**, so a consumer knows those planes are zero
   because nothing *ran* there, not because nothing was *found*.
 - **Every array for one `predict_slice` call is narrowed together.** A temporal backend
@@ -276,6 +299,14 @@ subclass gets the skip by implementing `predict_slice` and nothing else. `Cellpo
   which is what the option means. Results therefore change for anyone running `clearDepth` on
   drift-corrected data — cells the padding used to shield are now cleared. Pinned by
   `ClearDepthMeetsTheSkipTest`.
+- **`clearTouchingBorder` changes the same way, for the same reason.** Its Y/X edges used to be
+  padding — all zero, so no label ever touched them and the option was a silent **no-op** on
+  drift-corrected data. Under the XY skip it acts on the real acquired frame boundary, which is what
+  it means. Pinned by `ClearTouchingBorderMeetsTheXYSkipTest`.
+- **The temporal window needs the XY offset added back.** `read_yx` addresses the *narrowed* frame,
+  but the window is read from the full store — so passing the index straight through reads the wrong
+  part of the image. The same trap as the z one above, one axis over, and silent rather than a
+  broadcast error. Pinned by `TemporalWindowMatchesTheTileInXYTest`.
 - **Normalisation is unaffected.** `normaliseToWhole` computes its percentile once from the full
   store *before* the timepoint loop, and it already excludes background zeros — so the padding never
   contributed to it and narrowing the stack cannot move it.

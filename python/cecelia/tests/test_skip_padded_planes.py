@@ -26,6 +26,11 @@ from cecelia.utils.segmentation_utils import SegmentationUtils
 
 T, C, Z, Y, X = 2, 1, 10, 16, 16
 Z0, Z1 = 3, 7          # the only planes holding data
+#: XY box, deliberately ASYMMETRIC and different from each other, so a y/x swap or a shared offset
+#: cannot pass. A drift correction pads XY exactly as it pads Z — worth 30% of a cellpose pass on a
+#: heavily drifted movie (WIaUjL/p6t4mC: a 512x512 frame inside a 605x617 canvas).
+Y0, Y1 = 4, 12
+X0, X1 = 5, 14
 
 _OME = f"""<?xml version="1.0" encoding="UTF-8"?>
 <OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
@@ -47,6 +52,8 @@ class _StubSeg(SegmentationUtils):
         zyx = tile.shape[-3:]
         self.seen_depths = getattr(self, 'seen_depths', [])
         self.seen_depths.append(zyx[0])
+        self.seen_shapes = getattr(self, 'seen_shapes', [])
+        self.seen_shapes.append(tuple(zyx))
         return np.ones(zyx, dtype=np.uint32)
 
 
@@ -81,9 +88,13 @@ class SkipPaddedPlanesTest(unittest.TestCase):
         zu.create_multiscales(da.from_array(self.arr, chunks=(1, 1, 1, Y, X)),
                               self.im_path, dim_utils=self.du, nscales=1)
 
+    #: What `with_box=True` writes. Overridden by the XY subclass so one fixture serves both.
+    BOX = {'Z': (Z0, Z1)}
+
     def _run(self, with_box, cls=_StubSeg, **over):
         if with_box:
-            zu.write_valid_box(self.im_path, ['Z'], {t: {'Z': (Z0, Z1)} for t in range(T)})
+            zu.write_valid_box(self.im_path, list(self.BOX),
+                               {t: dict(self.BOX) for t in range(T)})
         params = {
             'taskDir': self.dir, 'outputValueName': 'stub', 'imPath': self.im_path,
             'blockSize': 64, 'overlap': 0, 'labelOverlap': 0,
@@ -107,13 +118,15 @@ class SkipPaddedPlanesTest(unittest.TestCase):
     def test_labels_land_at_the_right_z_and_the_padding_stays_empty(self):
         _, out = self._run(with_box=True)
         self.assertEqual(out.shape, (T, Z, Y, X), 'the store must keep its FULL shape, not be cropped')
-        z_axis = 1
+        # the in-plane region this frame actually segmented — the whole plane unless the subclass
+        # also narrows XY, so one assertion serves both the z-only and the three-axis case
+        (y0, y1), (x0, x1) = self.BOX.get('Y', (0, Y)), self.BOX.get('X', (0, X))
         for z in range(Z):
-            plane = out[:, z]
             if Z0 <= z < Z1:
-                self.assertTrue((plane > 0).all(), f'z={z} is inside the box but was not segmented')
+                self.assertTrue((out[:, z, y0:y1, x0:x1] > 0).all(),
+                                f'z={z} is inside the box but was not segmented')
             else:
-                self.assertFalse(plane.any(), f'z={z} is padding but carries labels')
+                self.assertFalse(out[:, z].any(), f'z={z} is padding but carries labels')
 
     def test_the_label_store_records_the_span_it_segmented(self):
         """Outside the span the labels are zero because nothing ran, not because nothing was found."""
@@ -188,4 +201,82 @@ class ClearDepthMeetsTheSkipTest(SkipPaddedPlanesTest):
     def test_without_the_skip_clear_depth_still_reaches_the_canvas_edges(self):
         """The unboxed path is unchanged: the array edge is the canvas edge, as before."""
         _, out = self._run(with_box=False, clearDepth=True)
+        self.assertFalse(out.any())
+
+
+class SkipPaddedXYTest(SkipPaddedPlanesTest):
+    """The same skip, on Y and X — a drift correction pads those too.
+
+    Whether it is worth anything is per-image and was measured, not assumed: on a 5.8 px-drift movie
+    the XY padding is 0.4% of the frame, while on a 139.9 px-drift one the canvas is 605x617 around a
+    512x512 frame and ~30% of every cellpose pass is padding (zolIMa/Dml3RG vs WIaUjL/p6t4mC).
+
+    Inherits the whole z suite, re-run with an XY box in play — so the z behaviour has to survive
+    narrowing on three axes at once, which is the case that actually ships.
+
+    Unlike the z skip, this one is NOT output-preserving: cellpose sees a differently-sized image, so
+    its internal tiling lands differently and masks near the data edge can shift. That is a real
+    change to results, recorded here and in `predict_from_zarr`.
+    """
+
+    BOX = {'Z': (Z0, Z1), 'Y': (Y0, Y1), 'X': (X0, X1)}
+
+    def test_the_model_only_sees_the_valid_region(self):
+        seg, _ = self._run(with_box=True)
+        self.assertTrue(seg.seen_shapes, 'stub was never called')
+        self.assertEqual(set(seg.seen_shapes), {(Z1 - Z0, Y1 - Y0, X1 - X0)},
+                         f'cellpose was handed {set(seg.seen_shapes)}, expected one '
+                         f'{(Z1 - Z0, Y1 - Y0, X1 - X0)} region')
+
+    def test_labels_land_at_the_right_yx_and_the_padding_stays_empty(self):
+        _, out = self._run(with_box=True)
+        self.assertEqual(out.shape, (T, Z, Y, X), 'the store must keep its FULL shape')
+        for y in range(Y):
+            for x in range(X):
+                inside = (Y0 <= y < Y1) and (X0 <= x < X1)
+                col = out[:, Z0:Z1, y, x]
+                self.assertEqual(bool(col.any()), inside,
+                                 f'(y={y}, x={x}) inside={inside} but labels={bool(col.any())}')
+
+    def test_the_label_store_records_every_axis_it_narrowed(self):
+        _, _ = self._run(with_box=True)
+        box = zu.read_valid_box(os.path.join(self.dir, 'labels', 'stub.zarr'), timepoint=0)
+        self.assertIsNotNone(box)
+        self.assertEqual((box['Z'], box['Y'], box['X']), ((Z0, Z1), (Y0, Y1), (X0, X1)))
+
+
+class TemporalWindowMatchesTheTileInXYTest(TemporalWindowMatchesTheTileTest):
+    """The window is read from the FULL store, so an XY narrowing has to be added back to its index.
+
+    Exactly the bug the z skip already had once, one axis over: `read_yx` addresses the narrowed
+    frame, so passing it straight to the full store reads the wrong part of the image — silently, and
+    only when XY is narrowed. `context[context_index] IS the tile` is what catches it, which is why
+    this class exists rather than a new assertion.
+    """
+
+    BOX = {'Z': (Z0, Z1), 'Y': (Y0, Y1), 'X': (X0, X1)}
+
+
+class ClearTouchingBorderMeetsTheXYSkipTest(SkipPaddedPlanesTest):
+    """`clearTouchingBorder` changes meaning under the XY skip, exactly as `clearDepth` did under z.
+
+    Before, the array's Y/X edges were drift padding — all zero, so no label ever touched them and
+    the option was a silent NO-OP on drift-corrected data. Now the edges are the real acquired frame
+    boundary, which is what the option means.
+
+    A deliberate behaviour change, and it changes results for anyone running `clearTouchingBorder`
+    on drift-corrected data. Pinned so it is visible rather than discovered.
+    """
+
+    BOX = {'Z': (Z0, Z1), 'Y': (Y0, Y1), 'X': (X0, X1)}
+
+    def test_clear_touching_border_acts_on_the_real_frame_edge_not_the_padding(self):
+        _, out = self._run(with_box=True, clearTouchingBorder=True)
+        # the stub labels every voxel it is handed, so every label touches the span edge and all are
+        # cleared — the point is that clearing HAPPENS, at the data boundary rather than the canvas.
+        self.assertFalse(out.any(),
+                         'clearTouchingBorder had no effect — still clearing the padding edges')
+
+    def test_without_a_box_it_still_clears_at_the_canvas_edge(self):
+        _, out = self._run(with_box=False, clearTouchingBorder=True)
         self.assertFalse(out.any())
