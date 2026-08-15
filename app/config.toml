@@ -7,15 +7,17 @@ projects       = "/path/to/projects"
 bioformats2raw = "/path/to/bioformats2raw"
 python         = "python3"
 
+  # Per-image task subdirs, created up front at import (and mirrored by copy/crop). NOT a rename knob —
+  # every reader joins these names literally. Dropped: `log` (the scheduler tees to `logs/`, which its
+  # own writer creates) and `mesh` (meshes are per-timepoint and never persisted). `_load_image` clears
+  # both from images that already have them.
   [dirs.tasks]
   populations     = "populations"
   data            = "data"
-  log             = "log"
   labels          = "labels"
   labelProps      = "labelProps"
   tasks           = "tasks"
   stats           = "stats"
-  mesh            = "mesh"
   shapes          = "shapes"
   classifications = "cl"
   models          = "models"

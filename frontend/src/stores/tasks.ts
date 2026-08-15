@@ -29,6 +29,11 @@ export interface TaskEntry {
   // launch it, so it has no earlier log lines (backfilled from disk on first open) and its params come
   // from the snapshot rather than from the dispatch that created it.
   adopted?: boolean
+  // Set once the row's log has been replaced from the on-disk file (`setLog`), cleared by `restart()`.
+  // What decides whether opening the row fetches: "has no lines" was the old proxy and it LIED — the
+  // socket starts delivering live lines the moment a row is adopted, so by the time the user clicked,
+  // the row was non-empty and the fetch was skipped, leaving only the tail of a long run on screen.
+  logSynced?: boolean
   // Set only when `params` is a PLACEHOLDER rather than what the run was submitted with — an adopted row
   // whose snapshot carried none (a backend predating `list_tasks().params`). `rerun()` sends `params`, so
   // this withholds Re-run: an empty dict would silently relaunch with the JSON spec's defaults. Absent on
@@ -96,7 +101,9 @@ export const useTaskStore = defineStore('tasks', () => {
    */
   function setLog(id: string, lines: string[]) {
     const t = tasks.value.find(t => t.id === id)
-    if (t) t.log = lines
+    if (!t) return
+    t.log = lines
+    t.logSynced = true
   }
 
   function setStatus(id: string, status: TaskStatus, at: { startedAt?: Date; finishedAt?: Date } = {}) {
@@ -124,6 +131,7 @@ export const useTaskStore = defineStore('tasks', () => {
     if (!t) return
     t.status      = 'queued'
     t.log         = []
+    t.logSynced   = undefined   // the new run's lines are not on disk yet — re-sync when it is opened
     t.progress    = undefined
     t.startedAt   = undefined
     t.finishedAt  = undefined

@@ -8,7 +8,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
-import { fetchInFlightTasks, adoptableTasks } from '../utils/runningTasks'
+import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
 import { parseRailTime } from '../utils/taskElapsed'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -130,10 +130,16 @@ export const useWsStore = defineStore('ws', () => {
     const defs = useTaskDefsStore()
     void defs.ensureLoaded()                     // fire-and-forget; labelFor falls back to the fun name
     const tasks = useTaskStore()
-    const known = new Set(tasks.tasks.map(t => t.backendTaskId || t.id))
+    // scheduler id → the store row wearing it. A chain row's scheduler id lives on `backendTaskId`
+    // while its own `id` is the synthetic `runId::nodeId::imageUid` key, so the map keeps both ends.
+    const byBackendId = new Map(tasks.tasks.map(t => [t.backendTaskId || t.id, t]))
     tasks.adopt(adoptableTasks(rows, {
       projectUid, imageNames, labelFor: (f: string) => defs.labelFor(f),
-    }, id => known.has(id)))
+    }, id => byBackendId.has(id)))
+    // …and repair the rows adoption skipped: one that started while the socket was down never got its
+    // `running` frame and would sit at Queued for the rest of the run (utils/runningTasks.ts).
+    for (const r of staleInFlightStatuses(rows, id => byBackendId.get(id)))
+      tasks.setStatus(r.id, r.status, { startedAt: r.startedAt })
   }
 
   // A reload races: the socket usually opens BEFORE the project finishes loading, and until it has, a

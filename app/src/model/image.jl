@@ -617,8 +617,34 @@ tryparse_f64(v::Real) = Float64(v)
 tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing
 
+"""
+Task subdirs that images used to be given at import and nothing writes to any more:
+
+  • `log`  — the scheduler tees to `logs/` (`_wrap_log_with_file`); `log/` never held anything.
+  • `mesh` — meshes are rebuilt per timepoint in Python and never persisted (`mesh_utils.py`), since
+    the legacy `saveMeshes` was dropped.
+
+They are gone from `[dirs.tasks]`, so no new image gets them; this clears the ones already on disk.
+"""
+const _DEAD_TASK_DIRS = ("log", "mesh")
+
+# Same idea as the legacy `kind` field below — an image carrying the old shape is quietly brought up to
+# date when it loads, rather than needing a data patch for two empty directories. ONLY if empty: a dir
+# with anything in it is someone's data, whatever we think we know about who wrote it.
+function _drop_dead_task_dirs(dir::String)
+    for sub in _DEAD_TASK_DIRS
+        p = joinpath(dir, sub)
+        try
+            isdir(p) && isempty(readdir(p)) && rm(p)
+        catch e
+            @debug "Could not remove legacy task dir" path = p exception = e
+        end
+    end
+end
+
 function _load_image(dir::String)::CciaImage
     d = read_state_json(state_file(dir); as = Dict{String,Any})
+    _drop_dead_task_dirs(dir)
     to_spaths(key) = Dict{String,String}(
         string(k) => string(v) for (k, v) in get(d, key, Dict{String,Any}()))
     # labels: Dict{String, Vector{String}} — value can be a list or a bare string (legacy)

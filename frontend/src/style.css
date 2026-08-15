@@ -188,6 +188,11 @@ body {
 .qc-tip .qcf-a::before { content: '→ '; }
 .qc-tip .cc-module-tag { margin-right: 0.35rem; }
 
+/* Per-run breakdown behind the image table's module status badge, shown only when an image has more
+   than one run in that module (ImageTable's `imageModuleStatusTip`). Plain text — this exists purely
+   so the newlines survive, and stays scoped so the ~200 phrase tooltips keep collapsing theirs. */
+.task-tip .p-tooltip-text { white-space: pre-line; text-align: left; }
+
 /* ── Button utilities ──────────────────────────────────────────────────────── */
 /* Use these across all module pages and layout components.                    */
 

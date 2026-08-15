@@ -35,8 +35,17 @@ Sets group images for processing. An image belongs to one set but lives independ
       ccid.json             — CciaSet fields + image_uids list
     {image_uid}/
       ccid.json             — CciaImage fields
+      runlog.json           — per-run history (fun, valueName, params, status) — see run_log.jl
       data/                 — task outputs: labels.zarr, label props, layer-props .pkl
+      labels/               — segmentation label zarrs, one per value_name
+      labelProps/           — per-cell measurements, {value_name}.h5ad
+      populations/ cl/ shapes/ stats/ models/ out/
+      tasks/                — each run's params JSON (`[dirs.tasks] tasks`)
+      logs/                 — {fun_name}.log, CUMULATIVE across runs (scheduler `_wrap_log_with_file`)
+      qc/                   — per-fun QC sidecars
 ```
+
+The subdirs above `logs/` are created up front at import from `[dirs.tasks]` in `config.toml` (and mirrored by copy/crop); `logs/` and `qc/` are created on demand by their own writers. **`[dirs.tasks]` is not a rename knob** — every reader joins these names literally, so changing a value there breaks the readers rather than moving the directory. Two entries were dropped once nothing wrote to them: `log/` (the scheduler tees to `logs/`) and `mesh/` (meshes are rebuilt per timepoint in Python and never persisted — `mesh_utils.py`). `_load_image` removes both from images that still carry them, if they are empty.
 
 Sets and images live in the same flat `1/` namespace. They are distinguished only by the `"class"` field in their `ccid.json` (`"CciaSet"` vs `"CciaImage"`). `init_object(proj_uid, uid)` dispatches on that field — no need to know the type in advance.
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { runningTaskCount, adoptableTasks, type InFlightTaskRow } from './runningTasks'
+import { runningTaskCount, adoptableTasks, staleInFlightStatuses,
+         type InFlightTaskRow } from './runningTasks'
 
 const okJson = (body: unknown) =>
   vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) })
@@ -166,6 +167,54 @@ describe('adoptableTasks', () => {
   it('adopts several images of one batch', () => {
     const rows = [row(), row({ id: 'sched2', image_uid: 'CHWgkH', status: 'queued', started_at: '' })]
     expect(adoptableTasks(rows, ctx, none).map(t => t.id)).toEqual(['sched1', 'sched2'])
+  })
+})
+
+// The other half of adoption: a row the tab ALREADY has, whose `queued → running` frame it missed
+// while the socket was down. Nothing else revisits it, so it sat at Queued for the whole run.
+describe('staleInFlightStatuses', () => {
+  const row = (over: Partial<InFlightTaskRow> = {}): InFlightTaskRow => ({
+    id: 'sched1', fun_name: 'segment.cellpose', pool_name: 'gpu', image_uid: 'EaMaVq',
+    chain_run_id: '', status: 'running', queued_at: '2026-08-04T05:00:00.000Z',
+    started_at: '2026-08-04T05:00:04.000Z', ...over,
+  })
+  const store = (rows: Array<{ id: string; status: string; backendTaskId?: string }>) =>
+    (schedId: string) => rows.find(r => (r.backendTaskId ?? r.id) === schedId)
+
+  it('promotes a row the tab still thinks is queued', () => {
+    const out = staleInFlightStatuses([row()], store([{ id: 'sched1', status: 'queued' }]))
+    expect(out).toEqual([{ id: 'sched1', status: 'running',
+                           startedAt: new Date('2026-08-04T05:00:04.000Z') }])
+  })
+
+  it('addresses a chain row by its STORE id, matched on the scheduler id', () => {
+    const out = staleInFlightStatuses([row()], store([
+      { id: 'run1::nodeA::EaMaVq', status: 'queued', backendTaskId: 'sched1' },
+    ]))
+    expect(out.map(r => r.id)).toEqual(['run1::nodeA::EaMaVq'])
+  })
+
+  it('leaves a row that is already running, or that the tab has never seen', () => {
+    expect(staleInFlightStatuses([row()], store([{ id: 'sched1', status: 'running' }]))).toEqual([])
+    expect(staleInFlightStatuses([row()], store([]))).toEqual([])
+  })
+
+  // The one transition it owns. Everything else has another owner and must not be second-guessed here:
+  // an ended row belongs to the outcome poll, a cancelled one is sticky by the user's choice.
+  it('never touches a terminal or cancelled row, and ignores a still-queued snapshot row', () => {
+    for (const s of ['done', 'failed', 'cancelled'])
+      expect(staleInFlightStatuses([row()], store([{ id: 'sched1', status: s }]))).toEqual([])
+    expect(staleInFlightStatuses([row({ status: 'queued', started_at: '' })],
+                                 store([{ id: 'sched1', status: 'queued' }]))).toEqual([])
+  })
+
+  it('promotes without a start time when the snapshot carries none', () => {
+    const out = staleInFlightStatuses([row({ started_at: '' })], store([{ id: 'sched1', status: 'queued' }]))
+    expect(out).toEqual([{ id: 'sched1', status: 'running' }])
+  })
+
+  it('survives a non-array payload', () => {
+    expect(staleInFlightStatuses(undefined as unknown as InFlightTaskRow[], store([]))).toEqual([])
   })
 })
 
