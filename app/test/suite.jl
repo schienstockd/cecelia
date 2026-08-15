@@ -3635,8 +3635,13 @@ end
 end
 
 # The one name that survived `[dirs.tasks]`, now a constant rather than a config lookup.
+# Build the base with `joinpath` and reuse it on both sides: a literal "/x/y" keeps its forward
+# slashes on Windows while `joinpath` appends a backslash, so hardcoding either separator asserts
+# the platform rather than the behaviour.
 @testset "task_run_dir is <base>/tasks" begin
-    @test Cecelia.task_run_dir("/x/y") == joinpath("/x", "y", "tasks")
+    base = joinpath("x", "y")
+    @test Cecelia.task_run_dir(base) == joinpath(base, "tasks")
+    @test basename(Cecelia.task_run_dir(base)) == "tasks"
 end
 
 # ── Branch labels round-trip (BRANCHING_PLAN.md Decision 6) ──────────────────
