@@ -18,7 +18,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
 import { flattenParams, resolveInitialParams } from './paramValues'
-import { usePanelResize } from '../composables/usePanelResize'
 import { usePaneExpand } from '../composables/usePaneExpand'
 import PaneExpandBar from '../components/PaneExpandBar.vue'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
@@ -340,9 +339,11 @@ const hiddenTaskNote = computed(() => {
   return queued ? `${running} running · ${queued} queued` : `${running} running`
 })
 
-// ── Sidebar resize (shared composable; width persisted) ────────────────────────
-const { widthStyle, onResizeStart } =
-  usePanelResize({ min: 200, max: 600, default: 280, storageKey: 'cc-taskrunner-width' })
+// This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
+// It used to have its own `usePanelResize` + drag handle, which meant two widths and two stacked
+// handles on the same edge: dragging the host's handle widened the host while this stayed pinned at
+// its own stored 280px, so the content shifted instead of reflowing (Dominik, 2026-08-15).
+// `CollapsiblePanel`'s header already recorded this as the half-finished consolidation.
 
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Vertical space is the scarce one here: a long param list and a busy task list can't both fit on a
@@ -351,14 +352,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </script>
 
 <template>
-  <aside class="task-runner" :class="'pane-' + pane" :style="widthStyle">
-
-    <!-- drag handle on left edge -->
-    <div
-      class="resize-handle"
-      @mousedown="onResizeStart"
-      v-tooltip.left="'Drag to resize the task panel'"
-    />
+  <aside class="task-runner" :class="'pane-' + pane">
 
     <!-- ── Expand one half ── always visible, so whichever half is hidden can be brought back -->
     <PaneExpandBar
@@ -501,7 +495,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
 <style scoped>
 .task-runner {
-  flex-shrink: 0;
+  /* fills the host panel, which owns the width — see the note by the `pane` setup */
+  flex: 1;
+  min-width: 0;
   background: var(--cc-surface-1);
   border-left: 1px solid var(--cc-border);
   display: flex;
@@ -525,21 +521,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   flex: 1;
   min-height: 0;
   max-height: none;
-}
-
-.resize-handle {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  cursor: col-resize;
-  z-index: 10;
-}
-.resize-handle:hover,
-.resize-handle:active {
-  background: var(--cc-accent);
-  opacity: 0.35;
 }
 
 .runner-section {

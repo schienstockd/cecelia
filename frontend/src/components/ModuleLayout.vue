@@ -76,7 +76,10 @@ const props = withDefaults(defineProps<{
   // affordance with no other surface, that no live check could answer.
   hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
   hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
-  rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
+  // starting width (px) for the #right panel. Omitted → 280, which is the width TaskRunner and
+  // MetadataPanel used to pin THEMSELVES to; now that the host owns the width (one panel, one
+  // handle), that number has to live here or those panels would size to content instead.
+  rightDefaultWidth?: number
   cohortFuns?:  string[]  // explicit cohort funs for the "Check cohort" button (custom pages); overrides COHORT_STAGES
 }>(), {
   allowManage: false,
@@ -395,7 +398,7 @@ const visibleUids = computed<string[]>(() =>
 
       <!-- ── Right: module-specific panel (collapsible + resizable) ── -->
       <CollapsiblePanel v-if="$slots.right" :storage-key="rightWidthKey" label="functions panel"
-                        :max="680" :default-width="rightDefaultWidth ?? null">
+                        :max="680" :default-width="rightDefaultWidth ?? 280">
         <slot
           name="right"
           :set-uid="activeSet?.uid"

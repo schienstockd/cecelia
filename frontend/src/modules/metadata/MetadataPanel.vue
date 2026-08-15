@@ -8,14 +8,15 @@ import { buildFieldRegex, buildLookaroundRegex, extractWith, regexSampleFor,
          type FieldPos, type CtxClass, type ExtractKind, type RegexSource } from '../../utils/regexBuilder'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
          splitByChannelCount, skippedChannelCountMsg } from '../../utils/channelNames'
-import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import CcToggle from '../../components/CcToggle.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
-const { widthStyle, onResizeStart } =
-  usePanelResize({ min: 260, max: 520, default: 280, storageKey: 'cc-metadata-width' })
+// This panel does NOT own its width — `CollapsiblePanel` (its host, via ModuleLayout's `#right`) does.
+// It had its own `usePanelResize` + drag handle, which meant two widths and two stacked handles on one
+// edge: dragging the host widened the host while this stayed pinned at its stored 280px, so the
+// content shifted instead of reflowing (Dominik, 2026-08-15). Same fix as TaskRunner.
 
 const props = defineProps<{
   setUid: string | undefined
@@ -302,9 +303,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 </script>
 
 <template>
-  <aside class="metadata-panel-wrap" :style="widthStyle">
-    <!-- drag handle on left edge (shared usePanelResize) -->
-    <div class="resize-handle" @mousedown="onResizeStart" v-tooltip.left="'Drag to resize the panel'" />
+  <aside class="metadata-panel-wrap">
     <div class="metadata-panel">
 
     <!-- ── Physical size & timing ───────────────────────────────── -->
@@ -563,19 +562,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 </template>
 
 <style scoped>
-/* outer wrapper carries the (resizable) width + the fixed drag handle; inner scrolls under it */
+/* outer wrapper fills the host panel, which owns the width; inner scrolls under it */
 .metadata-panel-wrap {
   position: relative;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   min-height: 0;
 }
-.resize-handle {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
-  cursor: col-resize; z-index: 10;
-}
-.resize-handle:hover, .resize-handle:active { background: var(--cc-accent); opacity: 0.35; }
-
 .metadata-panel {
   width: 100%;
   border-left: 1px solid var(--cc-border);
