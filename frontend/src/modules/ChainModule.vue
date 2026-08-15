@@ -31,6 +31,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
+import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, type LayoutVariant } from '../utils/dagLayout'
@@ -896,25 +897,19 @@ function taskDefFor(fn: string): TaskDef | undefined {
   return allTaskDefs.value.find(d => d.fun_name === fn)
 }
 
-// filepath vs labels — the two image fields a value_name can live under. Consumer params tag this
-// via `field` ('labels' | 'filepath' | 'imFilepath'); anything not 'labels' is a filepath.
-function normField(f: string | undefined): 'filepath' | 'labels' {
-  return f === 'labels' ? 'labels' : 'filepath'
-}
-
 // The value_name a node produces, or null if it declares none (import, plots, …).
-function nodeOutputValueName(node: Node): { name: string; field: 'filepath' | 'labels' } | null {
-  const def = taskDefFor(node.data.fn)
-  if (!def) return null
-  if (def.outputValueName)
-    return { name: def.outputValueName, field: normField(def.outputField) }
-  // Output name is a user-set param (e.g. segment.cellpose "outputValueName") → labels output.
-  const outParam = def.params?.find(p => p.key === 'outputValueName')
-  if (outParam) {
-    const v = (node.data.params?.outputValueName ?? outParam.default) as unknown
-    if (v) return { name: String(v), field: normField(outParam.field) || 'labels' }
-  }
-  return null
+//
+// WHAT it produces is `utils/taskOutput.taskOutput` — the ONE rule, shared with the task preview.
+// This wrapper only narrows the namespace to the field a downstream `valueNameSelection` can name.
+// It used to answer both halves itself, and only for the `outputValueName` spelling, so a clustering
+// or spatial node propagated nothing. `consumerField` also reports null for a namespace no consumer
+// param can name (a cluster suffix, a model) — the old `normField` collapsed those to 'filepath',
+// which offered a cluster suffix as an image version.
+function nodeOutputValueName(node: Node): { name: string; field: ConsumerField } | null {
+  const out = taskOutput(taskDefFor(node.data.fn), node.data.params)
+  if (!out) return null
+  const field = consumerField(out.namespace)
+  return field ? { name: out.name, field } : null
 }
 
 // Prefill every field-compatible valueNameSelection param on `target` with `source`'s output.
@@ -928,7 +923,7 @@ function propagateValueName(sourceId: string, targetId: string) {
   if (!def) return
   const patch: Record<string, unknown> = {}
   for (const p of def.params ?? []) {
-    if (p.type === 'valueNameSelection' && normField(p.field) === out.field)
+    if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
       patch[p.key] = out.name
   }
   if (Object.keys(patch).length) {

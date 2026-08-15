@@ -4,6 +4,8 @@
 // The preview is expensive (real cellpose per run) and it is showing the user something they will
 // judge parameters by, so both questions below have to be answered exactly: WHETHER to run, and WHAT
 // the user is told when we don't.
+import { taskOutput } from './taskOutput'
+import type { TaskDef } from '../tasks/types'
 
 /** What the backend reports about the viewer + worker (`GET /api/preview/status`). */
 export interface PreviewStatus {
@@ -74,13 +76,23 @@ export function previewBlocker(
  *
  * Falls back to the input version for a task with no output name of its own (AF correction), which is
  * what it was already getting.
+ *
+ * The "does this task write a name, and what is it" half is `utils/taskOutput.taskOutput` — the ONE
+ * rule, shared with the chain whiteboard. This function is deliberately still its own thing: the two
+ * behaviours below are the LAYER's question, not the output's, and neither belongs in the shared rule.
+ *   • the fallback to the input version (a task with no output still gets a preview layer)
+ *   • always returning a string (a layer must be named; `null` has no meaning here)
+ * It used to read `outputValueName` itself, which was correct for exactly one of the six spellings a
+ * task can name its output with.
  */
-export function previewValueName(params: Record<string, unknown> | null): string {
-  const pick = (k: string) => {
-    const v = params?.[k]
-    return typeof v === 'string' && v !== '' ? v : null
-  }
-  return pick('outputValueName') ?? pick('valueName') ?? 'default'
+export function previewValueName(
+  def: TaskDef | undefined | null,
+  params: Record<string, unknown> | null,
+): string {
+  const out = taskOutput(def, params ?? undefined)
+  if (out) return out.name
+  const input = params?.valueName
+  return typeof input === 'string' && input !== '' ? input : 'default'
 }
 
 /**

@@ -462,7 +462,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <TaskPreviewControls
           :project-uid="projectMeta.current?.uid ?? ''"
           :image-uid="drivingImageUid"
-          :value-name="previewValueName(previewParams)"
+          :value-name="previewValueName(taskDef, previewParams)"
           :fun-name="taskDef?.fun_name ?? ''"
           :params="previewParams"
           :previewable="canPreview"
