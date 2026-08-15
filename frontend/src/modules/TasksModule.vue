@@ -10,6 +10,7 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
+import CcProgressBar from '../components/CcProgressBar.vue'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
@@ -255,9 +256,9 @@ const FILTERS: ChipOption[] = [
             </div>
           </div>
 
-          <div v-if="selected.status === 'running' && selected.progress !== undefined" class="log-progress">
-            <div class="log-progress-fill" :style="{ width: `${(selected.progress * 100).toFixed(1)}%` }" />
-          </div>
+          <CcProgressBar v-if="selected.status === 'running' && selected.progress !== undefined"
+            class="log-progress" :value="selected.progress"
+            :aria-label="`${selected.label} progress`" />
 
           <pre ref="logEl" class="log-body">{{ selected.log.join('\n') || '— no output yet —' }}</pre>
         </template>
@@ -439,17 +440,8 @@ const FILTERS: ChipOption[] = [
 .log-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 .log-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
-.log-progress {
-  height: 3px;
-  background: var(--cc-surface-2);
-  flex-shrink: 0;
-}
-.log-progress-fill {
-  height: 100%;
-  background: var(--cc-accent);
-  transition: width 0.25s ease;
-  min-width: 2px;
-}
+/* geometry only — the bar itself is CcProgressBar */
+.log-progress { flex-shrink: 0; }
 
 .log-body {
   flex: 1;

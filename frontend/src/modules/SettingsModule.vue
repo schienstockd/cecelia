@@ -21,6 +21,7 @@ import { mcpRows, type McpConnection } from '../utils/mcpConnections'
 import { isAuthError } from '../utils/observerSetup'
 import { claudeChatCommand } from '../lib/claudeOverview'
 import CcToggle from '../components/CcToggle.vue'
+import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 
 const showPackages = ref(false)
@@ -754,8 +755,8 @@ async function switchWt(path: string) {
         </div>
         <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
         <div v-if="patchRun(p.id)" class="patch-run">
-          <div v-if="patchRun(p.id)!.progress != null" class="patch-bar">
-            <span :style="{ width: (patchRun(p.id)!.progress! * 100) + '%' }" /></div>
+          <CcProgressBar v-if="patchRun(p.id)!.progress != null" class="patch-bar" size="bar"
+            :value="patchRun(p.id)!.progress" :aria-label="`${p.title} progress`" />
           <pre class="repl-log patch-log">{{ patchRun(p.id)!.log.join('\n') }}</pre>
           <span class="field-hint cc-muted cc-fs-xs">status: {{ patchRun(p.id)!.status }}</span>
         </div>
@@ -1270,8 +1271,7 @@ async function switchWt(path: string) {
 .patch-title { font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); flex: 1; }
 .patch-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 .patch-run { margin-top: 0.4rem; }
-.patch-bar { height: 4px; border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); overflow: hidden; margin-bottom: 0.35rem; }
-.patch-bar span { display: block; height: 100%; background: var(--cc-accent); transition: width 0.2s; }
+.patch-bar { margin-bottom: 0.35rem; }   /* geometry only — the bar itself is CcProgressBar */
 .patch-log { max-height: 200px; font-family: var(--cc-mono); font-size: var(--cc-fs-sm); color: var(--cc-text); white-space: pre-wrap; }
 
 .repl-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--cc-border); }

@@ -66,6 +66,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
 | Single-value slider | a plain `<input type="range">` — the global base themes it | a wrapper component (there is deliberately none) |
 | Loading state in a plot area | `components/plots/PlotSpinner.vue` (delayed — see *Plot loading state*) | an immediate inline spinner |
+| **Determinate progress** (a 0–1 fraction — a task, a patch, an export) | `components/CcProgressBar.vue` — `:value` (0–1, clamped, NaN-safe), `size` `thin` (3px, flush in a row/card) \| `bar` (4px, rounded, standalone). Width maths in `utils/progress.ts`. Caller keeps its own geometry (`flex`, `margin`) | a per-file track+fill pair — four of those existed on two heights, two radii, two transitions and three different fraction→width sums |
+| "Working", with no fraction to show | nothing, or the surface's existing cue — a running task row already says it via `lib/taskStatus.ts` | animating `CcProgressBar` to fake an indeterminate bar |
 | Transient "just did a thing" feedback | `useToast()` — the one `<Toast />` in `App.vue` | a second notification system |
 | Copy-to-clipboard (+ the "Copied!" flash) | `composables/useCopyFlash.ts` — `copy(text[, key])` + `isCopied([key])`; `utils/clipboard.ts` for the bare write | `navigator.clipboard.writeText` + a per-file `ref` and `setTimeout` |
 | Side panel of two stacked halves, either expandable to the whole panel | `composables/usePaneExpand.ts` + `components/PaneExpandBar.vue` (`utils/paneExpand.ts`) — see *Two-half side panels* | a per-panel mode `ref` + its own pair of toggle buttons |
