@@ -85,13 +85,50 @@ This is what lets a project be imported under a new uid, copied, or renamed (`re
   "class":      "CciaSet",
   "uid":        "AbCdEf",
   "name":       "Experiment 1",
-  "kind":       "static",
   "image_uids": ["KDIeEm", "XyZwVu"],
   "meta":       {}
 }
 ```
 
+(`kind` used to sit here — the project-wide static/live/flow distinction, dropped in favour of per-image
+axis gating via `Cecelia.task_applies`. `save!(set)` has not written it for a long time and `_load_set`
+silently ignores one left in a legacy file; the next save strips it.)
+
 `image_uids` is the ordered membership list. `_images` (the loaded `CciaImage` vector) is runtime-only and not serialised. `save!(set)` also calls `save!` on every member image.
+
+`name` is **display-only** — a set's identity is its `uid`, which is its directory name under `1/`. So
+`rename_set!` (`app/src/model/project.jl`, behind `POST /api/sets/rename`) is a one-field
+`commit_state!` with no directory move and no migration: the project manifest stores uids, images point
+at their set by uid, and the per-set UI settings are uid-keyed. It uses `commit_state!` rather than
+`save!(set)` deliberately — a full save writes the whole in-memory object back, which would clobber an
+`image_uids` change another thread committed in between.
+
+**The duplicate-name guard is in the model, not the UI.** `set_name_taken(proj, name; except)` is the
+one answer to "does another set already have this name", and **both** `add_set!` and `rename_set!`
+refuse unless `force = true`. It sits at this layer so it holds for a **REPL** caller — where a rename
+is most likely to be scripted across a cohort and least likely to be checked by eye — and so that one
+guard covers all three name→set creation paths: `POST /api/sets/create`, `newSetName` on
+`POST /api/images/move`, and the `copyImage` task.
+
+**A destination is resolved, not created blindly.** A caller that means "put this in a set called X"
+looks for an existing set with that name and reuses it (`api_images_move` is the reference shape);
+only a caller that means "make a new set" asks `add_set!` for one. `copyImage` used to skip that
+lookup, so copying into a new set named after an existing one produced two indistinguishable sets.
+
+```julia
+proj = load_project("NRUBxU")
+s    = sets(proj)[1]
+rename_set!(proj, s, "day 3")                 # set object or uid; guarded
+rename_set!(proj, s.uid, "day 3")             # renaming to its own name is a no-op, not a conflict
+rename_set!(proj, other, "day 3"; force = true)   # deliberate duplicate
+```
+
+> **A long-lived project object goes stale, and `save!(proj)` writes over the difference.**
+> `save!(proj)` cascades `save!` to every loaded set, so `add_set!`/`delete_set!` on a project object
+> you loaded a while ago rewrites its siblings' `ccid.json` **from your stale memory** — reverting, for
+> example, a rename the running app committed in between. Each API request loads the project fresh, so
+> the app is safe; a REPL session is not. Re-`load_project` before mutating if the app has been running
+> alongside you.
 
 ---
 

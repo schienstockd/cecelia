@@ -188,6 +188,13 @@ using CSV; CSV.write("output/per_cell_speed.csv", df)
 Read anything; write only figures and CSVs. If you need a derived value persisted back into the
 project, that's a task, not a notebook.
 
+**This binds notebooks, not an interactive session.** A REPL you are driving yourself may of course
+mutate — `run_task`/`run_tasks` exist for exactly that, and so do the model mutators
+(`rename_set!`, `add_set!`, `move_image!`). Their guards live in the model so they hold however they are
+reached; see `docs/OBJECTMODEL.md` for the set mutators, including the staleness trap when the app is
+running alongside you. What the rule above forbids is a *notebook* — a document meant to be re-run and
+regenerated — quietly changing the project it is reporting on.
+
 ---
 
 ## Generating a notebook (`create_notebook`)

@@ -60,10 +60,42 @@ function create_project!(; name::String,
     proj
 end
 
+"""
+    set_name_taken(proj, name; except = "") -> Bool
+
+Does a set in `proj` already carry `name`? `except` is a set uid to ignore — pass the set being renamed,
+so re-submitting its own name is not a conflict with itself.
+
+The ONE place "two sets should not share a name" is answered, so `add_set!`, `rename_set!`, the API
+handlers, the REPL and the UI cannot disagree about it. Names are compared exactly: trimming belongs to
+whoever accepts the user's keystrokes (the API handlers), not to the comparison.
+"""
+set_name_taken(proj::CciaProject, name::AbstractString; except::AbstractString = "")::Bool =
+    any(s -> s.name == name && s.uid != except, proj._sets)
+
+"""
+    add_set!(proj; name, meta = Dict(), force = false) -> CciaSet
+
+Create a set in `proj`. Errors if a set already carries `name` — pass `force = true` to allow the
+duplicate.
+
+Same guard, same reason and same escape hatch as `rename_set!`: a name is not an identity (sets are
+keyed by uid), so a duplicate corrupts nothing — but it is the label the person choosing between two
+sets has to go on, and two identical rows in the picker cannot be told apart. Guarding here rather than
+per-caller is what covers **all three** creation paths at once: this route, `newSetName` on
+`POST /api/images/move`, and the `copyImage` task.
+
+Callers that resolve a *destination* ("put it in a set called X") should look for an existing set with
+that name and reuse it, rather than asking for a duplicate and treating the refusal as an error —
+`api_images_move` is the reference for that shape.
+"""
 function add_set!(proj::CciaProject;
     name::String,
-    meta::Dict{String,Any} = Dict{String,Any}()
+    meta::Dict{String,Any} = Dict{String,Any}(),
+    force::Bool = false
 )::CciaSet
+    (!force && set_name_taken(proj, name)) &&
+        error("A set named \"$name\" already exists in this project — pass force = true to allow it")
     s       = CciaSet(name=name)
     set_dir = joinpath(proj.root, "1", s.uid)
     mkpath(set_dir)
@@ -144,6 +176,50 @@ function move_image!(proj::CciaProject, image_uid::String,
     save!(to)
     proj
 end
+
+"""
+    rename_set!(proj, set_uid | set, name; force = false) -> CciaSet
+
+Change a set's display name. Returns the set. Errors if `set_uid` is not in the project, or if another
+set already has `name` — pass `force = true` to allow the duplicate.
+
+A set's identity is its **uid** — the directory name under `{proj}/1/` — and nothing keys off the
+name: the project manifest stores uids, images point at their set by uid, and the per-set UI state
+(`getBatchMovieConfig(setUid)` and friends) is uid-keyed too. So a rename is a pure metadata edit
+with no directory move and no migration, which is why this is a one-field commit rather than the
+re-identify dance `reidentify_project!` has to do for a project.
+
+**The duplicate-name guard lives HERE, not in the UI.** A name is not an identity, so a duplicate is
+merely confusing rather than corrupting — but "confusing" is the whole point of a name, and two
+identical rows in the set picker cannot be told apart by the person choosing between them. Putting the
+check at this layer is what makes it hold for a REPL session too, which is where a rename is most
+likely to be scripted across a cohort and least likely to be reviewed by eye. `force = true` is the
+escape hatch for the caller who means it.
+
+Renaming a set to its OWN current name is a no-op, not a conflict (`except = set_uid`), so a script
+can re-run without special-casing.
+
+`commit_state!` rather than `save!(s)`: this touches one field, and a full save would write back the
+whole in-memory object, clobbering an `image_uids` change another thread committed meanwhile.
+"""
+function rename_set!(proj::CciaProject, set_uid::String, name::String;
+                     force::Bool = false)::CciaSet
+    idx = findfirst(s -> s.uid == set_uid, proj._sets)
+    isnothing(idx) && error("Set not found: $set_uid")
+    (!force && set_name_taken(proj, name; except = set_uid)) &&
+        error("A set named \"$name\" already exists in this project — pass force = true to allow it")
+    s = proj._sets[idx]
+    commit_state!(s) do raw
+        raw["name"] = name
+    end
+    s.name = name        # keep the loaded object in step with what is now on disk
+    s
+end
+
+# Set-object form, for a REPL/notebook caller who already has one in hand from `sets(proj)` — the uid
+# form stays primary because the guard needs the project either way.
+rename_set!(proj::CciaProject, s::CciaSet, name::AbstractString; force::Bool = false)::CciaSet =
+    rename_set!(proj, s.uid, String(name); force = force)
 
 """
 Delete a set from the project: removes every member image's data + metadata dirs,

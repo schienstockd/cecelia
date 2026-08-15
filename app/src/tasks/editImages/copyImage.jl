@@ -87,8 +87,20 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
         end
         dest = proj._sets[di]
     elseif !isempty(new_set_name)
-        dest = add_set!(proj; name = new_set_name)
-        on_log("[INFO] Created set '$(dest.name)' ($(dest.uid))")
+        # RESOLVE-or-create, the shape `api_images_move` already uses: a set that already carries this
+        # name is the set the user meant, not a reason to make a second one with the same label. This
+        # used to `add_set!` unconditionally, so copying into "New set: Day 3" when a "Day 3" existed
+        # produced two indistinguishable sets with the copy in the new one. `add_set!` now refuses a
+        # duplicate outright, which would have turned that into a failed task — reusing is what the
+        # caller wanted either way.
+        existing = findfirst(s -> s.name == new_set_name, proj._sets)
+        if isnothing(existing)
+            dest = add_set!(proj; name = String(new_set_name))
+            on_log("[INFO] Created set '$(dest.name)' ($(dest.uid))")
+        else
+            dest = proj._sets[existing]
+            on_log("[INFO] Using existing set '$(dest.name)' ($(dest.uid))")
+        end
     else
         on_log("[ERROR] copyImage: provide either toSetUid or newSetName")
         return nothing
