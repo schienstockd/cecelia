@@ -2859,6 +2859,26 @@ end
         @test st == 200 && JSON3.read(body).deleted == ["c.mp4"]
         @test !isfile(joinpath(mdir, "c.mp4"))
 
+        # ── the user's "name" suffix, banked so the next recording can offer it back
+        # It is NOT recoverable from the filename: that carries uid and attribute parts too, with
+        # nothing marking where the suffix begins, so parsing it back would mean encoding three
+        # recorders' naming conventions in a fourth place. Stored instead.
+        register_movie!(uid, "a.mp4"; produced_by = "viewer", suffix = "afCorrected")
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix == "afCorrected"
+
+        # The RAW suffix, not the `_sanitised` fragment that goes in the filename — offering `_af`
+        # back would re-prefix it to `__af` on the next recording.
+        @test !startswith(only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix, "_")
+
+        # A recorder that passes none leaves a banked one standing, like `imageUid`/`channels` — a
+        # re-record must not blank what the previous one knew.
+        register_movie!(uid, "a.mp4"; produced_by = "viewer")
+        @test only(filter(m -> m.name == "a.mp4", movies_with_meta(uid))).suffix == "afCorrected"
+
+        # A movie recorded before the field existed reports "", never `nothing` — the frontend filters
+        # blanks out of the suggestion list rather than rendering an empty row.
+        @test only(filter(m -> m.name == "b.mp4", movies_with_meta(uid))).suffix == ""
+
         # ── config banking + the stale rule
         register_movie!(uid, "b.mp4"; produced_by = "batch",
                         config = Dict("fps" => 15), config_kind = "look")

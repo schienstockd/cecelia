@@ -8,7 +8,7 @@
   with no side panel and is redundant now there is one (Dominik, 2026-08-10).
 -->
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
@@ -30,10 +30,16 @@ import TitleCardControls from '../../components/TitleCardControls.vue'
 import RestoreNotice from '../../components/RestoreNotice.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import TaskList from '../../tasks/TaskList.vue'
+import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
 
 const props = defineProps<{ selectedUids: string[]; setUid?: string }>()
 
 const projectMeta = useProjectMetaStore()
+
+// Suffixes already used in this project, offered in the recorder's "name" field. Lazily fetched and
+// cached across the three recorder panels — see composables/useMovieSuffixes.ts.
+const { suffixes: movieSuffixes, ensure: ensureMovieSuffixes } = useMovieSuffixes()
+watch(() => projectMeta.current?.uid ?? '', (uid: string) => { void ensureMovieSuffixes(uid) }, { immediate: true })
 const project = useProjectStore()
 const settings = useSettingsStore()
 const anim = useAnimationStore()
@@ -322,7 +328,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       <!-- Movie — the same controls as the viewer recorder and the batch page -->
       <section class="ap-sec">
         <h4>Movie</h4>
-        <MovieOutputControls v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
+        <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
                              v-model:suffix="anim.suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
         <TitleCardControls v-model="anim.titleCard" />
       </section>

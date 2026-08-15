@@ -42,11 +42,17 @@ import { useNapariStatus } from '../../composables/useNapariStatus'
 import { lookRestore, missingRefs, restoreNote, restoreTargetSet, type MovieRegistryEntry } from '../../utils/movieRestore'
 import { useMovieRestore } from '../../composables/useMovieRestore'
 import RestoreNotice from '../../components/RestoreNotice.vue'
+import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
 
 const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
+
+// Suffixes already used in this project, offered in the recorder's "name" field. Lazily fetched and
+// cached across the three recorder panels — see composables/useMovieSuffixes.ts.
+const { suffixes: movieSuffixes, ensure: ensureMovieSuffixes } = useMovieSuffixes()
+watch(() => projectMeta.current?.uid ?? '', (uid: string) => { void ensureMovieSuffixes(uid) }, { immediate: true })
 const settings    = useSettingsStore()
 const tasks       = useTaskStore()
 const ws          = useWsStore()
@@ -501,7 +507,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       <!-- Movie — the same controls as the viewer recorder and the animation page -->
       <section class="bm-sec">
         <h4>Movie</h4>
-        <MovieOutputControls v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
+        <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                              :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice"

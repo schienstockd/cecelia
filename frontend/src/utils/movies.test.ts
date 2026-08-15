@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
          resolveMovieImageUid, movieChannelCells, movieChannelCount,
-         type MovieEntry, type MovieImage } from './movies'
+         type MovieEntry, type MovieImage, movieSuffixesInUse } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -297,4 +297,27 @@ describe('movieRows — the image join', () => {
 
   // the union of keys across rows is `attrKeysOf` (utils/attrFilter.ts) — one implementation, shared
   // with the image table's own attribute filter, so a movie row is just another `AttrBearing`
+})
+
+describe('movieSuffixesInUse', () => {
+  const mv = (over: Partial<MovieEntry>): MovieEntry =>
+    ({ name: 'a.mp4', size: 1, mtime: 1, ...over })
+
+  it('collects the distinct suffixes, sorted', () => {
+    expect(movieSuffixesInUse([mv({ suffix: 'raw' }), mv({ suffix: 'af' }), mv({ suffix: 'raw' })]))
+      .toEqual(['af', 'raw'])
+  })
+
+  it('ignores movies recorded before the field existed', () => {
+    // the registry only started banking `suffix` when this landed; older rows must not become ""
+    expect(movieSuffixesInUse([mv({}), mv({ suffix: 'af' })])).toEqual(['af'])
+  })
+
+  it('ignores blank and whitespace-only suffixes — "no suffix" is not a suggestion', () => {
+    expect(movieSuffixesInUse([mv({ suffix: '' }), mv({ suffix: '   ' })])).toEqual([])
+  })
+
+  it('trims, so a stray space cannot make a second entry for one suffix', () => {
+    expect(movieSuffixesInUse([mv({ suffix: 'af' }), mv({ suffix: ' af ' })])).toEqual(['af'])
+  })
 })
