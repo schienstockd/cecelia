@@ -1707,6 +1707,32 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 `run_task` as the `pool_name` override kwarg. The old concurrent-task slider
 (`task:setLimit` / `tasksLimit`) has been removed entirely.
 
+**The two task surfaces render through one list and one row mapper.** The `/tasks` manager
+(`TasksModule.vue`) is a `SelectionTable` in `single` mode — a row IS selected, and what it selects is
+what the log pane shows — so its selected-row highlight is the table's own amber `--cc-selected`
+rather than the purple left rule it hand-rolled for a long time (`--cc-accent` is form-control chrome;
+see `docs/todo/TASK_LIST_UNIFICATION_PLAN.md` for the dating). Both surfaces flatten `TaskEntry` to
+row fields through **`utils/taskRows.ts`**, because `SelectionTable` renders `row[key]` and sorts by
+row FIELDS — including the raw `elapsedMs` behind the formatted `elapsed`, since `4m 12s` sorts before
+`59s` as text. Where the two lists genuinely differ they differ in their `#cell-*` slots (the manager
+prefixes the image with a foreign-project label, the sidebar shows a uid chip), never in a second copy
+of the derivation.
+
+The per-module sidebar (`TaskList.vue`, also hosted by `BatchMoviesPanel` and `AnimationPanel`) is the
+same table in `none` mode — a row there isn't selected, the buttons act — with two differences that
+follow from the panel being ~280px wide:
+
+- **the log expands in place**, through `#row-detail`, instead of into a side pane. `isExpanded` is
+  only ever "the user opened this row": the running-task bar is its **own column**, not a second
+  tenant of the detail row, so the predicate keeps meaning what it says.
+- **`fit="content"` + `overflow-x`** on its own wrapper, so the columns can outgrow the panel and be
+  dragged, rather than the panel being pushed wider (the containment `.task-list` needed as a card
+  stack, for the same reason).
+
+Its per-status row tint comes from `TASK_STATUS[...].tone` via `rowClass` + `:deep()` (the
+`ImageTable` `.row-excluded` precedent) — that `tone` field exists precisely so a component tints its
+own chrome from the same tokens as the status light, rather than the raw hexes the card stack carried.
+
 **Task list scoping.** `useTaskStore().forModule(module, projectUid?)` and `clearFinished(module,
 projectUid?)` take an optional `projectUid` — `TaskList.vue`/`TaskRunner.vue` always pass the
 current project's uid so switching projects doesn't leave a previous project's (e.g. cancelled)

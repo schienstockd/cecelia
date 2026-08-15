@@ -8,6 +8,8 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import { taskRows } from '../utils/taskRows'
 import { useRouter } from 'vue-router'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
@@ -16,8 +18,8 @@ import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
-import { taskElapsed } from '../utils/taskElapsed'
-import { canRerunTask } from '../utils/taskRerun'
+// `taskElapsed` / `canRerunTask` are still the canonical helpers — they are just called by the row
+// mapper now (utils/taskRows.ts) rather than here, so both lists get the same answer.
 import CcProgressBar from '../components/CcProgressBar.vue'
 
 const props = withDefaults(defineProps<{
@@ -117,9 +119,29 @@ async function copyLog(t: TaskEntry) {
   await copy(t.log.join('\n'), t.id)     // keyed flash — one row at a time
 }
 
-// shared formatter + shared 1s clock, so a running task's elapsed advances without a frame arriving
+// shared 1s clock, so a running task's elapsed advances without a frame arriving. Declared ABOVE
+// `rows`, which reads it — see utils/setupOrder.ts for why order matters.
 const now = useNowTick()
-const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
+
+// The table reads row FIELDS (and sorts by them), so entries are flattened by the shared mapper — the
+// same one the /tasks manager uses, which is what keeps the two lists from drifting again. The list is
+// already scoped to one project by `forModule`, so `thisProjectOnly` is true and no row is labelled.
+const rows = computed(() => taskRows(items.value, {
+  currentProjectUid: projectMeta.current?.uid,
+  thisProjectOnly:   true,
+  nameOfProject:     () => undefined,
+  now:               now.value,
+}))
+
+const TL_COLUMNS: SelectionColumn[] = [
+  // no label, and out of the resize path: an icon and a bar are their own width
+  { key: 'status',   label: '',      fixed: true, width: 28 },
+  { key: 'task',     label: 'Task',  sortable: true, ellipsis: true, width: 150 },
+  { key: 'image',    label: 'Image', sortable: true, ellipsis: true, width: 130 },
+  { key: 'progress', label: '',      fixed: true, width: 58 },
+  // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
+  { key: 'elapsed',  label: 'Time',  sortable: true, sortKey: 'elapsedMs', width: 58 },
+]
 </script>
 
 <template>
@@ -138,99 +160,98 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
         </button>
       </div>
     </div>
-    <div v-if="items.length === 0" class="task-empty cc-muted">
-      No tasks yet — select images and click Run.
-    </div>
+    <!-- The canonical table (docs/UI.md), same as the /tasks manager — `none` because a row here is
+         not "selected": the buttons act, and the log opens in place. The panel is narrow, so
+         `fit="content"` + the wrapper's `overflow-x` lets the columns outgrow it and
+         `column-width-key` makes them draggable and persistent.
+         `#row-detail` carries ONLY the expanded log, so `is-expanded` means what it says; the
+         running-task bar is its own column (docs/todo/TASK_LIST_UNIFICATION_PLAN.md → Decision 7b). -->
+    <div class="tl-scroll">
+      <SelectionTable
+        class="tl-table" selection-mode="none" :columns="TL_COLUMNS" :rows="rows" id-key="id"
+        :sort-storage-key="`cc.tasklist.${module}.sort`" :column-width-key="`cc.tasklist.colw`"
+        fit="content" actions-width="7rem"
+        :row-tooltip="r => r.task"
+        :row-class="r => `tone-${TASK_STATUS[r.status].tone} st-${r.status}`"
+        :is-expanded="r => expanded.has(r.id)">
 
-    <div
-      v-for="t in items"
-      :key="t.id"
-      class="task-item"
-      :class="'st-' + t.status"
-    >
-      <div class="task-header">
-        <i :class="['pi', TASK_STATUS[t.status].icon, 'task-icon']"
-          :style="{ color: TASK_STATUS[t.status].color }"
-          v-tooltip.left="TIP[t.status]" />
+        <template #cell-status="{ row: r }">
+          <i :class="['pi', TASK_STATUS[r.status].icon, 'task-icon']"
+            :style="{ color: TASK_STATUS[r.status].color }"
+            v-tooltip.left="TIP[r.status]" />
+        </template>
 
-        <div class="task-info">
-          <!-- the full-label tip (for a truncated label) sits on the TEXT, not the row: the row also
-               holds the jump button and the chain badge, whose own tips it fired over -->
+        <template #cell-task="{ row: r }">
           <span class="task-label">
-            <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" @click.stop="jumpToTask(t)" v-tooltip.right="'Open in task manager'">
+            <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="jumpToTask(r.entry)"
+              v-tooltip.right="'Open in task manager'">
               <i class="pi pi-arrow-left" />
             </button>
-            <span class="task-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
-            <i v-if="t.chainRunId" class="pi pi-sitemap chain-badge"
-               v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`" />
-            <span v-tooltip.right="t.label">{{ t.label }}</span>
+            <span class="task-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
+            <i v-if="r.chainLabel" class="pi pi-sitemap chain-badge" v-tooltip.right="r.chainTip" />
+            {{ r.task }}
           </span>
-          <span class="task-image cc-muted cc-fs-xs" v-tooltip.right="`UID: ${t.imageUid}`">
-            <span class="task-uid">{{ t.imageUid }}</span>
-            {{ t.imageName }}
+        </template>
+
+        <template #cell-image="{ row: r }">
+          <span class="task-image" v-tooltip.right="`UID: ${r.imageUid}`">
+            <span class="task-uid">{{ r.imageUid }}</span>
+            {{ r.image }}
           </span>
-        </div>
+        </template>
 
-        <span v-if="elapsed(t)" class="task-elapsed cc-muted cc-fs-xs"
-          v-tooltip.left="t.startedAt ? `Started ${t.startedAt.toLocaleTimeString()}` : ''">
-          {{ elapsed(t) }}
-        </span>
+        <!-- blank unless there is a fraction to show — an empty cell says "no reading", a 0% bar
+             would claim one. Same column on the /tasks manager. -->
+        <template #cell-progress="{ row: r }">
+          <CcProgressBar v-if="r.hasProgress" :value="r.progress" :aria-label="`${r.task} progress`" />
+          <span v-else />
+        </template>
 
-        <div class="task-actions">
-          <button
-            v-if="t.log.length || t.adopted"
-            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="toggleLog(t)"
-            v-tooltip.left="expanded.has(t.id) ? 'Hide log' : 'Show task log'"
-          >
-            <i :class="['pi', expanded.has(t.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
+        <template #cell-elapsed="{ row: r }">
+          <span class="task-elapsed cc-muted cc-fs-2xs"
+            v-tooltip.left="r.entry.startedAt ? `Started ${r.entry.startedAt.toLocaleTimeString()}` : ''">
+            {{ r.elapsed }}
+          </span>
+        </template>
+
+        <template #actions="{ row: r }">
+          <button v-if="r.entry.log.length || r.entry.adopted"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon" @click="toggleLog(r.entry)"
+            v-tooltip.left="expanded.has(r.id) ? 'Hide log' : 'Show task log'">
+            <i :class="['pi', expanded.has(r.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
           </button>
 
-          <button
-            v-if="t.status === 'running' || t.status === 'queued'"
-            class="icon-btn cc-btn cc-btn-bare cc-btn-icon danger"
-            @click="cancelTask(t)"
-            v-tooltip.left="t.chainRunId ? 'Stop chain run' : 'Cancel this task'"
-          >
+          <button v-if="r.status === 'running' || r.status === 'queued'"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(r.entry)"
+            v-tooltip.left="r.chainLabel ? 'Stop chain run' : 'Cancel this task'">
             <i class="pi pi-times" />
           </button>
 
-          <button
-            v-if="canRerunTask(t)"
-            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="rerun(t)"
-            v-tooltip.left="'Rerun this task with the same parameters'"
-          >
+          <button v-if="r.canRerun"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(r.entry)"
+            v-tooltip.left="'Rerun this task with the same parameters'">
             <i class="pi pi-replay" />
           </button>
 
-          <button
-            v-if="t.log.length"
-            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="copyLog(t)"
-            v-tooltip.left="isCopied(t.id) ? 'Copied!' : 'Copy log to clipboard'"
-          >
-            <i :class="['pi', isCopied(t.id) ? 'pi-check' : 'pi-copy']" />
+          <button v-if="r.entry.log.length"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon" @click="copyLog(r.entry)"
+            v-tooltip.left="isCopied(r.id) ? 'Copied!' : 'Copy log to clipboard'">
+            <i :class="['pi', isCopied(r.id) ? 'pi-check' : 'pi-copy']" />
           </button>
 
-          <button
-            v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
-            class="icon-btn cc-btn cc-btn-bare cc-btn-icon"
-            @click="tasks.remove(t.id)"
-            v-tooltip.left="'Dismiss this task from the list'"
-          >
+          <button v-if="r.status === 'done' || r.status === 'failed' || r.status === 'cancelled'"
+            class="icon-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(r.id)"
+            v-tooltip.left="'Dismiss this task from the list'">
             <i class="pi pi-trash" />
           </button>
-        </div>
-      </div>
+        </template>
 
-      <!-- progress bar — flush inside the card, hence `thin` (the default) -->
-      <CcProgressBar v-if="t.status === 'running' && t.progress !== undefined"
-        :value="t.progress" :aria-label="`${t.label} progress`" />
+        <template #row-detail="{ row: r }">
+          <pre class="task-log">{{ r.entry.log.join('\n') || 'No log output yet.' }}</pre>
+        </template>
 
-      <!-- log -->
-      <pre v-if="expanded.has(t.id) && t.log.length" class="task-log">{{ t.log.join('\n') }}</pre>
-      <div v-else-if="expanded.has(t.id)" class="task-log">No log output yet.</div>
+        <template #empty>No tasks yet — select images and click Run.</template>
+      </SelectionTable>
     </div>
   </div>
 </template>
@@ -248,7 +269,9 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
   min-width: 0;
 }
 
-.task-empty { padding: 1.5rem 0.5rem; }
+/* `fit="content"` means the columns can outgrow this narrow panel, so the horizontal overflow has to
+   land HERE rather than on the host — same containment the card stack needed (see `.task-list`). */
+.tl-scroll { min-width: 0; overflow-x: auto; }
 
 /* the heading row — sticky so the two list-wide actions stay reachable in a long list */
 .tasks-heading {
@@ -261,28 +284,20 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
-.task-item {
-  border-radius: var(--cc-radius-md);
-  border: 1px solid var(--cc-border);
-  overflow: hidden;
-  background: var(--cc-surface-1);
-}
-.task-item.st-running   { border-color: #1e3a5f; background: #1e3a5f18; }
-.task-item.st-failed    { border-color: #7f1d1d; background: #7f1d1d18; }
-.task-item.st-done      { border-color: #14532d55; }
-.task-item.st-cancelled { border-color: #3f3f4666; opacity: 0.6; }
-
-.task-header {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.6rem;
-}
+/* Per-status row tint, via SelectionTable's `rowClass` (the ImageTable `.row-excluded` precedent).
+   Keyed off `TASK_STATUS[...].tone`, which exists for exactly this — a component tinting its own
+   chrome consistently with the icon — so the tints come from the same tokens as the status lights
+   instead of the four raw hexes the card stack carried. `done` had only a border colour, which a
+   table row has nothing to do with; the status icon already says it. */
+.tl-table :deep(tr.tone-active) { background: color-mix(in srgb, var(--cc-active) 10%, transparent); }
+.tl-table :deep(tr.tone-fail)   { background: color-mix(in srgb, var(--cc-sev-fail) 10%, transparent); }
+.tl-table :deep(tr.st-cancelled) { opacity: 0.6; }
+/* the row buttons are dense here — the panel is 280px by default */
+.tl-table :deep(.sel-actions) .cc-btn { padding: 0.2rem 0.25rem; }
 
 .task-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
-.task-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .task-label {
   font-size: var(--cc-fs-sm);
   font-weight: 600;
@@ -314,14 +329,13 @@ const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.val
 
 .task-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 
-.task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
-
 /* .icon-btn → cc-btn cc-btn-bare cc-btn-icon */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .icon-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
-.jump-btn { color: #4ade80; -webkit-text-stroke: 0.4px #4ade80; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
-.task-item:hover .jump-btn { display: inline-flex; }
+/* + cc-btn cc-btn-bare cc-btn-icon. The `.task-item:hover` rule that sat here was dead — it set
+   `display: inline-flex` with no `display: none` base to reverse. */
+.jump-btn { color: #4ade80; -webkit-text-stroke: 0.4px #4ade80; }
 
 .task-log {
   font-family: var(--cc-mono);

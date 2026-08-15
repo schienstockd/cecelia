@@ -11,12 +11,15 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import { taskRows } from '../utils/taskRows'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
 import { canRerunTask } from '../utils/taskRerun'
-import { taskInScope, taskProjectLabel } from '../utils/taskScope'
+// the foreign-project LABEL now comes off the row (utils/taskRows.ts); the scope predicate stays here
+import { taskInScope } from '../utils/taskScope'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
@@ -51,9 +54,31 @@ const filtered = computed(() => {
   })
 })
 
-const foreignProject = (t: TaskEntry) =>
-  taskProjectLabel(t, projectMeta.current?.uid, settings.tasksThisProjectOnly,
-                   uid => projectMeta.recent.find(p => p.uid === uid)?.name)
+// shared formatter + shared 1s clock, so a running task's elapsed advances without a frame arriving.
+// Declared ABOVE `rows`, which reads it — see utils/setupOrder.ts for why order matters here.
+const now = useNowTick()
+const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
+
+// The table reads row FIELDS (and sorts by them), so the entries are flattened by the shared mapper —
+// the same one the per-module list uses, so the two lists can't drift again. Where the two surfaces
+// genuinely differ they differ in their `#cell-*` slots, not here (utils/taskRows.ts).
+const rows = computed(() => taskRows(filtered.value, {
+  currentProjectUid: projectMeta.current?.uid,
+  thisProjectOnly:   settings.tasksThisProjectOnly,
+  nameOfProject:     uid => projectMeta.recent.find(p => p.uid === uid)?.name,
+  now:               now.value,
+}))
+
+const TM_COLUMNS: SelectionColumn[] = [
+  // no label, and out of the resize path: an icon and a bar are their own width
+  { key: 'status',   label: '',       fixed: true, width: 30 },
+  { key: 'module',   label: 'Module', sortable: true, ellipsis: true, width: 92 },
+  { key: 'task',     label: 'Task',   sortable: true, ellipsis: true, width: 150 },
+  { key: 'image',    label: 'Image',  sortable: true, ellipsis: true, width: 128 },
+  { key: 'progress', label: '',       fixed: true, width: 66 },
+  // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
+  { key: 'elapsed',  label: 'Time',   sortable: true, sortKey: 'elapsedMs', width: 62 },
+]
 
 // A row that has just gone out of scope must not stay open in the detail pane — the log below would
 // then belong to a task the list no longer shows.
@@ -121,10 +146,6 @@ async function copyLog() {
   await copy(selected.value.log.join('\n'))
 }
 
-// shared formatter + shared 1s clock, so a running task's elapsed advances without a frame arriving
-const now = useNowTick()
-const elapsed = (t: TaskEntry) => taskElapsed(t.startedAt, t.finishedAt, now.value)
-
 // status icon/colour/label come from the ONE canonical map (lib/taskStatus.ts)
 
 
@@ -170,57 +191,75 @@ const FILTERS: ChipOption[] = [
     <!-- ── Body ───────────────────────────────────────────────────────── -->
     <div class="tm-body">
 
-      <!-- Task list -->
+      <!-- Task list — the canonical table (docs/UI.md). `single`: a row IS selected here, and what it
+           selects is what the log pane shows. The selected-row highlight is the table's own amber
+           `--cc-selected`; this page used to hand-roll the same left-rule idiom in `--cc-accent`
+           (purple = form-control chrome). See docs/todo/TASK_LIST_UNIFICATION_PLAN.md.
+           `@row-click` rather than `@update:model-value` — clicking the row that is already selected
+           emits no model change, and re-opening a row is what triggers its log backfill. -->
       <div class="tm-list">
-        <div v-if="filtered.length === 0" class="tm-empty">No tasks.</div>
+        <SelectionTable
+          class="tm-table" selection-mode="single" :columns="TM_COLUMNS" :rows="rows"
+          id-key="id" :model-value="selectedId ?? undefined"
+          sort-storage-key="cc.tasks.sort" column-width-key="cc.tasks.colw"
+          fit="content" actions-width="5.5rem"
+          :row-tooltip="r => r.projectLabel ? `${r.task} — from ${r.projectLabel}` : r.task"
+          @row-click="r => select(r.entry)">
 
-        <div
-          v-for="t in filtered" :key="t.id"
-          class="tm-row"
-          :class="{ selected: t.id === selectedId }"
-          @click="select(t)"
-        >
-          <i :class="['pi', TASK_STATUS[t.status].icon, 'row-icon']"
-            :style="{ color: TASK_STATUS[t.status].color }"
-            v-tooltip.right="TASK_STATUS[t.status].label" />
+          <template #cell-status="{ row: r }">
+            <i :class="['pi', TASK_STATUS[r.status].icon, 'row-icon']"
+              :style="{ color: TASK_STATUS[r.status].color }"
+              v-tooltip.right="TASK_STATUS[r.status].label" />
+          </template>
 
-          <div class="row-body">
-            <div class="row-top">
-              <span class="cc-module-tag" :style="moduleTagStyle(t.module)">
-                <span class="cc-module-tag-mod">{{ t.module }}</span>
-              </span>
-              <span v-if="t.chainRunId" class="chain-pill"
-                v-tooltip.right="`Chain: ${t.chainName ?? t.chainRunId} / ${t.chainRunId}`">
-                <i class="pi pi-sitemap" />{{ t.chainName || t.chainRunId }}
-              </span>
-              <span class="row-label">
-                <span class="row-seq cc-muted cc-fs-2xs">#{{ t.seq }}</span>
-                {{ t.label }}
-              </span>
-              <span v-if="elapsed(t)" class="row-elapsed cc-muted cc-fs-2xs">{{ elapsed(t) }}</span>
-            </div>
-            <div class="row-image cc-muted cc-fs-xs">
-              <span v-if="foreignProject(t)"
-                v-tooltip.right="'From another project'">{{ foreignProject(t) }} · </span>{{ t.imageName }}
-            </div>
-          </div>
+          <template #cell-module="{ row: r }">
+            <span class="cc-module-tag" :style="moduleTagStyle(r.module)">
+              <span class="cc-module-tag-mod">{{ r.module }}</span>
+            </span>
+          </template>
 
-          <div class="row-actions" @click.stop>
-            <button v-if="t.status === 'running' || t.status === 'queued'"
-              class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(t)"
-              v-tooltip.left="t.chainRunId ? 'Stop chain run' : 'Cancel task'">
+          <template #cell-task="{ row: r }">
+            <span class="row-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
+            <span v-if="r.chainLabel" class="chain-pill" v-tooltip.right="r.chainTip">
+              <i class="pi pi-sitemap" />{{ r.chainLabel }}
+            </span>
+            {{ r.task }}
+          </template>
+
+          <template #cell-image="{ row: r }">
+            <span v-if="r.projectLabel" class="cc-muted"
+              v-tooltip.right="'From another project'">{{ r.projectLabel }} · </span>{{ r.image }}
+          </template>
+
+          <!-- blank unless there is a fraction to show — an empty cell says "no reading", a 0% bar
+               would claim one. Same column on the per-module list. -->
+          <template #cell-progress="{ row: r }">
+            <CcProgressBar v-if="r.hasProgress" :value="r.progress" :aria-label="`${r.task} progress`" />
+            <span v-else />
+          </template>
+
+          <template #cell-elapsed="{ row: r }">
+            <span class="row-elapsed cc-muted cc-fs-2xs">{{ r.elapsed }}</span>
+          </template>
+
+          <template #actions="{ row: r }">
+            <button v-if="r.status === 'running' || r.status === 'queued'"
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(r.entry)"
+              v-tooltip.left="r.chainLabel ? 'Stop chain run' : 'Cancel task'">
               <i class="pi pi-times" />
             </button>
-            <button v-if="canRerun(t)"
-              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(t)" v-tooltip.left="'Rerun'">
+            <button v-if="r.canRerun"
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(r.entry)" v-tooltip.left="'Rerun'">
               <i class="pi pi-replay" />
             </button>
-            <button v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
-              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(t.id)" v-tooltip.left="'Dismiss'">
+            <button v-if="r.status === 'done' || r.status === 'failed' || r.status === 'cancelled'"
+              class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(r.id)" v-tooltip.left="'Dismiss'">
               <i class="pi pi-trash" />
             </button>
-          </div>
-        </div>
+          </template>
+
+          <template #empty>No tasks.</template>
+        </SelectionTable>
       </div>
 
       <!-- Log panel -->
@@ -324,59 +363,18 @@ const FILTERS: ChipOption[] = [
 }
 
 /* ── Task list ────────────────────────────────────────────────────────── */
+/* The pane; the rows are SelectionTable's. `overflow: auto` in BOTH axes is required by `fit="content"`
+   — the columns are draggable and can outgrow the pane (docs/UI.md → Drag-resizable table columns). */
 .tm-list {
-  width: 340px;
+  width: 460px;
   flex-shrink: 0;
   border-right: 1px solid var(--cc-border);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--cc-border);
-}
-.tm-empty {
-  padding: 2rem 1rem;
-  font-size: var(--cc-fs-sm);
-  color: var(--cc-text-dim);
-  text-align: center;
-  background: var(--cc-bg);
-}
-
-.tm-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  background: var(--cc-surface-1);
-  cursor: pointer;
-  transition: background 0.1s;
-  position: relative;
-}
-.tm-row:hover    { background: var(--cc-surface-2); }
-.tm-row.selected { background: var(--cc-surface-2); }
-.tm-row.selected::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--cc-accent);
-  border-radius: 0 2px 2px 0;
+  overflow: auto;
 }
 
 .row-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
-.row-body  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.row-top   { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
-.row-label {
-  font-size: var(--cc-fs-sm);
-  font-weight: 500;
-  color: var(--cc-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
 .row-seq { font-family: var(--cc-mono); margin-right: 0.2rem; }
 .chain-pill {
   display: inline-flex;
@@ -386,7 +384,8 @@ const FILTERS: ChipOption[] = [
   font-weight: 700;
   padding: 0.05rem 0.3rem;
   border-radius: var(--cc-radius-xs);
-  background: #a78bfa22;
+  /* purple is right here — this is a BADGE (form/control chrome), not a row selection */
+  background: color-mix(in srgb, var(--cc-accent) 13%, transparent);
   color: var(--cc-accent);
   flex-shrink: 0;
   max-width: 7rem;
@@ -400,16 +399,11 @@ const FILTERS: ChipOption[] = [
 .chain-pill.sm { font-size: var(--cc-fs-2xs); padding: 0.1rem 0.4rem; max-width: 10rem; }
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
-.row-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.row-actions {
-  display: flex;
-  gap: 0.1rem;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.tm-row:hover .row-actions { opacity: 1; }
+/* Row actions were hover-revealed here (`opacity: 0`) and always visible in the per-module list — a
+   difference nobody chose. `#actions` has no hover-reveal, so adopting the table settles it toward
+   always visible on both (docs/todo/TASK_LIST_UNIFICATION_PLAN.md → Decision 8). */
+.tm-table :deep(.sel-actions) .cc-btn { padding: 0.2rem 0.3rem; }
 
 /* ── Log panel ────────────────────────────────────────────────────────── */
 .tm-log-panel {
