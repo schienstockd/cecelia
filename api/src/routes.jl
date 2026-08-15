@@ -1475,12 +1475,21 @@ function api_objects_find(req::HTTP.Request)
         # The dir exists but no set claims it — a set-less leftover. Report what it IS rather than
         # "not found": the caller asked where a uid lives, and "in this project, unattached" is the
         # answer. `init_object` dispatches on the ccid.json `class`, so this needs no guessing.
+        #
+        # `obj.uid == q` is NOT redundant, and dropping it is a macOS/Windows-only bug. Those
+        # filesystems are case-INSENSITIVE, so the `isfile` above says yes for a wrong-case uid and
+        # `init_object` then happily reads the real object through that path — which would answer
+        # "p6T4MC" with p6t4mC, listed as unattached because the string comparisons in the set loop
+        # (correctly) all missed. The uid match is the STRING comparison; the stat is only a cheap
+        # pre-filter. Linux passed this; CI on the other two did not.
         if !found
             obj = try init_object(proj.uid, String(q)) catch; nothing end
-            isnothing(obj) || push!(matches, (; kind = obj isa CciaSet ? "set" : "image",
-                                               uid=obj.uid, name=obj.name,
-                                               projectUid=proj.uid, projectName=proj.name,
-                                               setUid="", setName=""))
+            isnothing(obj) && continue
+            obj.uid == q || continue
+            push!(matches, (; kind = obj isa CciaSet ? "set" : "image",
+                              uid=obj.uid, name=obj.name,
+                              projectUid=proj.uid, projectName=proj.name,
+                              setUid="", setName=""))
         end
     end
     if !isempty(matches)

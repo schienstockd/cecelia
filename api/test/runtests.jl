@@ -1604,7 +1604,17 @@ end
         end
         # A uid must not be matched case-insensitively or as a fragment — uids are exact, and a
         # near-miss falling through to the name pass would answer a different question silently.
-        @test find("q=$(lowercase(ic.uid))").count == 0 || lowercase(ic.uid) == ic.uid
+        # THE PLATFORM TRAP: macOS/Windows filesystems are case-insensitive, so the handler's
+        # `{proj}/1/{uid}` existence check answers yes for a wrong-case uid and `init_object` then
+        # reads the real object through that path. This passed on Linux and failed on the other two
+        # until the handler re-checked `obj.uid == q` — the match is the string comparison, the stat
+        # is only a pre-filter. `gen_uid` mixes case, so flipping it gives a genuinely different key.
+        let variant = any(islowercase, ic.uid) ? uppercase(ic.uid) : lowercase(ic.uid)
+            # An all-digit uid has no case to flip (1 in ~55k of `gen_uid`); skip rather than assert
+            # a vacuous inequality, so the suite can't flake on the RNG.
+            variant == ic.uid ? (@test_skip find("q=$variant").count == 0) :
+                                (@test      find("q=$variant").count == 0)
+        end
         @test find("q=no-such-uid").count == 0
 
         # Name pass: case-insensitive substring, across EVERY project — the same name in two projects
