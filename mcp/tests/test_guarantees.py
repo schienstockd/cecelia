@@ -101,6 +101,12 @@ GUARANTEES: dict[str, tuple[str, str, str, str]] = {
         "mcp/cecelia_mcp/guidance.py", "tagged [Claude] server-side",
         "api/test/runtests.jl", "[Claude]",
     ),
+    # It must report "not on this machine" for a uid that misses, not soften it into the nearest
+    # name match — the two are different answers and only one of them is about the object asked for.
+    "a uid is resolved exactly, never approximately": (
+        "mcp/cecelia_mcp/server.py", "a UID matches EXACTLY (case-sensitive)",
+        "api/test/runtests.jl", "A uid must not be matched case-insensitively",
+    ),
     # The whole designs-but-never-starts split, which it is told not to apologise for.
     "nothing here can start work": (
         "mcp/cecelia_mcp/guidance.py", "nothing here can START it",

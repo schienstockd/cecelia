@@ -205,6 +205,22 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(req.method, "GET")
         self.assertIn("/api/images?projectUid=proj1", req.full_url)
 
+    def test_find_object_builds_url_and_is_a_read(self):
+        # The one lookup that does NOT take a projectUid — it is how a bare uid gets one.
+        self.assertIn(("GET", "/api/objects/find"), ALLOWED_ROUTES)
+        with _patch_urlopen({"matches": []}) as u:
+            self.c.find_object("p6t4mC")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/objects/find?q=p6t4mC", req.full_url)
+        self.assertNotIn("projectUid", req.full_url)
+        self.assertNotIn("limit", req.full_url)          # unset limit is the server's default
+        with _patch_urlopen({"matches": []}) as u:
+            self.c.find_object("mertk 3", limit=5)
+        url = u.call_args[0][0].full_url
+        self.assertIn("q=mertk+3", url)                  # a name fragment is url-encoded, not split
+        self.assertIn("limit=5", url)
+
     def test_task_log_encodes_all_params(self):
         with _patch_urlopen({"exists": False, "content": ""}) as u:
             self.c.get_task_log("p", "img1", "segment.cellpose")

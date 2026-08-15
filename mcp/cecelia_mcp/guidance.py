@@ -39,6 +39,10 @@ When the user asks about "my project" / "my data" in Cecelia without naming one,
 — it is ordered most-recently-opened first, so the first entry is the one they are working in. Name \
 it back to them rather than asking for an id.
 
+When they instead quote an ID with no project (an image, set or project uid from a note or a \
+filename), call find_object — it resolves a uid, or a name fragment, to the project it lives in. \
+Never enumerate projects to find one.
+
 Then call get_session_briefing BEFORE anything else. Its `guidance` field tells you how to work with \
 this project — the grouping rules for any cross-image comparison, and the discipline for the few \
 things you can write. Read it and follow it; it is the rest of these instructions, delivered when it \
@@ -70,7 +74,8 @@ get_behaviour_summary (HMM states), get_cluster_summary, get_spatial_stats. Cros
 get_cohort_qc. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
 words), get_qc_metrics. The lab log: read_lab_log. The experiment as the lab notebook records it: \
 get_labarchives_context. The board's plot types: get_available_plots. The boards the user already \
-built: get_analysis_boards. How the images are annotated: get_image_attributes. The notebook/REPL \
+built: get_analysis_boards. How the images are annotated: get_image_attributes. Where a uid the user \
+quotes actually lives (which project, which set): find_object — one call, never a sweep over projects. The notebook/REPL \
 data-access surface: get_repl_api, and the notebooks themselves: list_notebooks, get_notebook — so \
 you can read one the user is stuck in and walk them through the fix.
 
