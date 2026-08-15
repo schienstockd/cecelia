@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
-  anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, formatBytes, paramAdvisor,
-  ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
+  anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
+  paramAdvisor, ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
+import { isImageVersionField, preferredValueName } from './paramValues'
 
 // EaMaVq's ACTIVE (drift-corrected) version — 544x548, not the 512x512 of its default import. That
 // gap is the whole reason this takes version geometry rather than a per-image stored size.
@@ -186,6 +187,103 @@ describe('motionDimsAdvisory', () => {
 
   it('no assessment → no advisory', () => {
     expect(motionDimsAdvisory('auto', null)).toBeNull()
+  })
+})
+
+// ── image version ──────────────────────────────────────────────────────────────────────────────
+//
+// The case this exists for, from live data: `WIaUjL/p6t4mC` is active on `afCorrected` (605x617,
+// drift-corrected) and was re-segmented on `default` (the 512x512 raw import). The run said done and
+// the labels were displaced in XY in the viewer, because a 512x512 label store was laid over a
+// 605x617 image. Both versions are used throughout as the realistic pair.
+const P6T4MC = {
+  uid: 'p6t4mC',
+  activeValueName: 'afCorrected',
+  filepaths: { default: 'ccidImage.ome.zarr', driftCorrected: 'd.zarr', afCorrected: 'af.zarr' },
+}
+
+describe('imageVersionAdvisory', () => {
+  it('warns, and names the version to switch to, when the pick is not the active one', () => {
+    const a = imageVersionAdvisory('default', [P6T4MC])!
+    expect(a.severity).toBe('warn')
+    expect(a.message).toContain('afCorrected')       // the fix is IN the one line, not only the tip
+    expect(a.tip).toContain('afCorrected')
+  })
+
+  it('confirms the ordinary case rather than going quiet on it', () => {
+    // silence here would be ambiguous with "this widget has no advisory" — the picker should say
+    // which of the two states it is in
+    const a = imageVersionAdvisory('afCorrected', [P6T4MC])!
+    expect(a.severity).toBe('ok')
+    expect(a.message).toBe('active version')
+  })
+
+  it('says nothing when there is only one version — nothing to get wrong', () => {
+    expect(imageVersionAdvisory('default', [
+      { uid: 'a', activeValueName: 'default', filepaths: { default: 'i.zarr' } },
+    ])).toBeNull()
+  })
+
+  it('says nothing about a name no selected image has — an upstream chain output, not a mistake', () => {
+    // `ParamContext.extraValueNames`: a whiteboard node's output ("cpCorrected") is selectable
+    // before it exists on disk. There is nothing to compare it to, so silence is the honest answer.
+    expect(imageVersionAdvisory('cpCorrected', [P6T4MC])).toBeNull()
+  })
+
+  it('counts the images that are off, rather than judging the selection by its first image', () => {
+    const onIt = { uid: 'b', activeValueName: 'default', filepaths: P6T4MC.filepaths }
+    const a = imageVersionAdvisory('default', [P6T4MC, onIt, { ...P6T4MC, uid: 'c' }])!
+    expect(a.severity).toBe('warn')
+    expect(a.message).toBe('not the active version on 2 of 3 images')
+  })
+
+  it('reports the spread instead of offering one image\'s version to all of them', () => {
+    const other = { uid: 'b', activeValueName: 'driftCorrected', filepaths: P6T4MC.filepaths }
+    const a = imageVersionAdvisory('default', [P6T4MC, other])!
+    expect(a.message).toBe('not the active version')          // no single name to offer
+    expect(a.tip).toContain('2 different versions')
+    expect(a.tip).not.toContain('Pick "')
+  })
+
+  it('treats a missing active name as `default` — an image that never had a version registered', () => {
+    const raw = { uid: 'z', filepaths: { default: 'i.zarr', smoothed: 's.zarr' } }
+    expect(imageVersionAdvisory('default', [raw])!.severity).toBe('ok')
+    expect(imageVersionAdvisory('smoothed', [raw])!.severity).toBe('warn')
+  })
+
+  it('has nothing to say with no images, no value, or a non-string value', () => {
+    expect(imageVersionAdvisory('default', [])).toBeNull()
+    expect(imageVersionAdvisory('default', undefined)).toBeNull()
+    expect(imageVersionAdvisory('', [P6T4MC])).toBeNull()
+    expect(imageVersionAdvisory(null, [P6T4MC])).toBeNull()
+  })
+})
+
+describe('the valueNameSelection advisor only speaks about IMAGE VERSIONS', () => {
+  const run = (field: string | undefined) =>
+    paramAdvisor({ type: 'valueNameSelection', key: 'valueName', field })!
+      .advise('default', { images: [P6T4MC] }, { type: 'valueNameSelection', key: 'valueName', field })
+
+  it('advises on `filepaths`, and on an absent field (which means filepaths)', async () => {
+    expect((await run('filepaths'))!.severity).toBe('warn')
+    expect((await run(undefined))!.severity).toBe('warn')
+  })
+
+  it('stays silent on label sets and spatial graphs — neither has an "active"', async () => {
+    // same widget, same key (`valueName` on branching / bayesianTracking / trackMeasures), different
+    // meaning. Comparing a label-set name to the image's active VERSION would warn on every one.
+    expect(await run('labels')).toBeNull()
+    expect(await run('spatialGraphs')).toBeNull()
+  })
+
+  it('is the same test the picker preselects with — one answer, not two', () => {
+    // `preferredValueName` selects the active version for exactly the fields this advises on. If
+    // these two ever disagree, the form preselects a value its own advisory then warns about.
+    for (const field of ['filepaths', undefined, 'labels', 'spatialGraphs'] as const) {
+      const advises = isImageVersionField(field)
+      expect(preferredValueName(['default', 'afCorrected'], field, 'afCorrected'))
+        .toBe(advises ? 'afCorrected' : 'default')
+    }
   })
 })
 

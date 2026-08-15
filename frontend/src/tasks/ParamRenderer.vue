@@ -8,7 +8,8 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
-import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext } from './paramAdvisors'
+import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext,
+         type AdvisorParam } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import InlineNote from '../components/InlineNote.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
@@ -338,12 +339,14 @@ const advisoryCtx = computed<AdvisorContext>(() => ({
 // event per pixel of travel. The old hand-rolled sequence token discarded the stale REPLIES but still
 // sent every request, so a drag fired a request per step at the API. `debouncedLatest` collapses the
 // burst into one, never runs two at once, and hands the run an `isCurrent()` for the same stale guard.
-const advisoryRun = debouncedLatest<{ advisor: ParamAdvisor | undefined; value: unknown; ctx: AdvisorContext }>(
-  async ({ advisor: a, value, ctx }, isCurrent) => {
+const advisoryRun = debouncedLatest<{
+  advisor: ParamAdvisor | undefined; value: unknown; ctx: AdvisorContext; param: AdvisorParam
+}>(
+  async ({ advisor: a, value, ctx, param }, isCurrent) => {
     if (!a) return
     advisoryLoading.value = true
     try {
-      const r = await a.advise(value, ctx)
+      const r = await a.advise(value, ctx, param)
       if (isCurrent()) advisory.value = r
     } finally {
       if (isCurrent()) advisoryLoading.value = false
@@ -356,7 +359,12 @@ function loadAdvisory() {
   advisoryRun.cancel()            // …and stop an in-flight run applying its (now older) answer over it
   advisoryLoading.value = false   // a cancelled run skips its own `finally`, so reset the flag here
   if (!advisor.value) return
-  advisoryRun.schedule({ advisor: advisor.value, value: val.value, ctx: advisoryCtx.value })
+  // the param goes WITH the run, not read at apply time: a type-registered advisor behaves
+  // differently per param (`valueNameSelection`'s `field`), so a stale reply must not be shaped by
+  // whichever param the renderer happens to be on when it lands
+  advisoryRun.schedule({
+    advisor: advisor.value, value: val.value, ctx: advisoryCtx.value, param: props.param,
+  })
 }
 // `val` is in the key list on purpose: an async advisor still depends on the CURRENT value (the grid
 // estimate changes as the slider moves), and `reloadOn` only covers the context. The fetch itself is
