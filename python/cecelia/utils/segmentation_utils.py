@@ -220,11 +220,28 @@ class SegmentationUtils:
         total = sum(len(v) for v in xy_tiles_by_t.values())
         done = 0
 
-        _yx_narrowed = any(sp['Y'] != (0, H) or sp['X'] != (0, W) for sp in spans.values())
-        if _yx_narrowed:
-            sp0 = spans[0]
-            print(f'>> skipping padded XY: segmenting y {sp0["Y"][0]}:{sp0["Y"][1]} of {H}, '
-                  f'x {sp0["X"][0]}:{sp0["X"][1]} of {W}', flush=True)
+        _extent = {'Z': n_z, 'Y': H, 'X': W}
+
+        # BOTH skip messages are reported here, once, for the whole movie — the z one used to print
+        # from inside the loop under `if t == 0`. The spans ARE per timepoint (`spans[t]`, and every
+        # narrow/read/write-back below uses that frame's own), but one line of frame 0's numbers
+        # reads exactly like a single decision carried over all 200 frames. The distinct-span count
+        # is what tells the two apart at a glance, so it is part of the message rather than something
+        # to go and check on the store.
+        def _span_msg(axes):
+            if not any(spans[t][ax] != (0, _extent[ax]) for ax in axes for t in spans):
+                return None
+            at_t0 = ', '.join(f'{ax.lower()} {spans[0][ax][0]}:{spans[0][ax][1]} of {_extent[ax]}'
+                              for ax in axes)
+            n = len({tuple(spans[t][ax] for ax in axes) for t in spans})
+            return at_t0 + (f' at t0, {n} distinct span(s) over {T} timepoints' if T > 1 else '')
+
+        _z_msg = _span_msg(['Z'])
+        if _z_msg:
+            print(f'>> skipping padded z planes: segmenting {_z_msg}', flush=True)
+        _yx_msg = _span_msg(['Y', 'X'])
+        if _yx_msg:
+            print(f'>> skipping padded XY: segmenting {_yx_msg}', flush=True)
 
         # Each store is written through `zarr_utils.staged_store`: streamed into a staging sibling
         # and renamed onto its final path only once its pyramid is complete. So re-running a
@@ -255,9 +272,6 @@ class SegmentationUtils:
                 narrowed = (z0, z1) != (0, n_z)
                 if narrowed:
                     frame_in = self._narrow_axis(frame_in, ifa_z, z0, z1)
-                    if t == 0:
-                        print(f'>> skipping padded z planes: segmenting z {z0}:{z1} of {n_z}',
-                              flush=True)
                 frame_in = self._narrow_axis(frame_in, ifa_y, y0, y1)
                 frame_in = self._narrow_axis(frame_in, ifa_x, x0, x1)
 
@@ -359,7 +373,6 @@ class SegmentationUtils:
             #
             # Only the axes that were ACTUALLY narrowed are recorded: writing a full-extent span for
             # an axis nothing skipped would claim a restriction that isn't one.
-            _extent = {'Z': n_z, 'Y': H, 'X': W}
             recorded = [ax for ax in ('Z', 'Y', 'X')
                         if (ax != 'Z' or store_la_z is not None)
                         and any(spans[t][ax] != (0, _extent[ax]) for t in spans)]
