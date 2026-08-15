@@ -183,7 +183,7 @@ uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.18.7+0"
 
 [[deps.Cecelia]]
-deps = ["Clustering", "DataFrames", "Dates", "DensityInterface", "Distributions", "HDF5", "HTTP", "HiddenMarkovModels", "HypothesisTests", "JSON3", "LinearAlgebra", "NearestNeighbors", "Random", "SHA", "Statistics", "StatsAPI", "StructTypes", "TOML", "UUIDs"]
+deps = ["Clustering", "DataFrames", "Dates", "DensityInterface", "Distributions", "HDF5", "HTTP", "HiddenMarkovModels", "HypothesisTests", "JSON3", "LinearAlgebra", "Logging", "NearestNeighbors", "Random", "SHA", "Statistics", "StatsAPI", "StructTypes", "TOML", "UUIDs"]
 path = "../app"
 uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 version = "0.0.0"

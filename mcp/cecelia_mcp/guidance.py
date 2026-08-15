@@ -62,7 +62,9 @@ BRIEFING_GUIDANCE = """\
 How to work with this project.
 
 WHAT YOU CAN SEE. Project state: get_project_info, list_images, get_task_history, get_task_log and \
-get_recent_logs (a Julia-side crash lands in get_recent_logs, NOT the task log). How the data was \
+get_recent_logs (a Julia-side crash lands in get_recent_logs, NOT the task log — and its `detail` \
+field carries the stacktrace, its `source` says which process spoke: backend, napari, preview, \
+runner or notebooks). How the data was \
 produced: get_analysis_lineage (the pipeline behind an image, and `rollup.divergences` for the odd \
 image out), get_chains. The analysis itself: get_populations (what a population MEANS — its gate \
 geometry or filter rule), get_measure_summary (phenotype + motility per population), \

@@ -1,7 +1,6 @@
 using Cecelia
 using HTTP
 using JSON3
-using Logging
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -77,50 +76,36 @@ function broadcast_ws(msg::Dict)
 end
 
 # ── Server-log tee → WS (the "pixi console" in the browser) ─────────────────────
-# The Settings console window streams the backend's OWN @info/@warn/@error (startup banner, napari
-# warnings, …), not just task logs. A global AbstractLogger forwards each record to the real console
-# logger AND broadcasts it as {type:"server:log"}, keeping a small ring buffer so a freshly-opened
-# console backfills recent lines via GET /api/logs/recent. Installed in `start()` only (never under
-# CECELIA_NO_SERVE) so the test harness keeps the plain logger.
-const _LOG_RING_CAP  = 500
-const _log_ring      = Vector{Dict{String,Any}}()
-const _log_ring_lock = ReentrantLock()
+# The console streams the backend's OWN @info/@warn/@error (startup banner, handler faults, napari
+# warnings, …), not just task logs — plus, since the log rail landed, every line the napari bridge,
+# the preview worker and the notebook server print, and everything the detached runner says over its
+# own stream. Installed in `start()` only (never under CECELIA_NO_SERVE) so the test harness keeps
+# the plain logger.
+#
+# The logger, the record shape and the ring all live in the PACKAGE (`app/src/log_stream.jl`), because
+# the runner needs the identical three and a second copy is how the two consoles would drift. This
+# file supplies only the SINK: stamp into the ring, broadcast the stamped record.
+const _log_ring = Cecelia.LogRing()
 
-function _push_log_ring(rec::Dict{String,Any})
-    lock(_log_ring_lock) do
-        push!(_log_ring, rec)
-        length(_log_ring) > _LOG_RING_CAP && popfirst!(_log_ring)
-    end
+# One record → the ring (which stamps `seq` + `ts`) → the wire. The BROADCAST carries the stamped copy,
+# so a client can spot a gap in `seq` and ask for it; see `LogRing`'s docstring for why log lines need
+# that when task frames do not.
+function _log_sink(rec::Dict{String,Any})
+    stamped = Cecelia.log_ring_push!(_log_ring, rec)
+    broadcast_ws(merge(stamped, Dict{String,Any}("type" => "server:log")))
 end
 
-struct BroadcastLogger <: Logging.AbstractLogger
-    inner::Logging.AbstractLogger
-end
-Logging.min_enabled_level(l::BroadcastLogger) = Logging.min_enabled_level(l.inner)
-Logging.shouldlog(l::BroadcastLogger, level, _module, group, id) =
-    Logging.shouldlog(l.inner, level, _module, group, id)
-Logging.catch_exceptions(l::BroadcastLogger) = Logging.catch_exceptions(l.inner)
-function Logging.handle_message(l::BroadcastLogger, level, message, _module, group, id, file, line; kwargs...)
-    Logging.handle_message(l.inner, level, message, _module, group, id, file, line; kwargs...)
-    try
-        lvl = level >= Logging.Error ? "error" : level >= Logging.Warn ? "warn" : "info"
-        msg = string(message)
-        isempty(kwargs) || (msg *= "  " * join(("$k = $v" for (k, v) in kwargs), "  "))
-        rec = Dict{String,Any}("level" => lvl, "message" => msg)
-        _push_log_ring(rec)
-        broadcast_ws(Dict{String,Any}("type" => "server:log", "level" => lvl, "message" => msg))
-    catch
-        # a logging failure must never escape the logger
-    end
-    nothing
-end
+_install_log_tee!() = Cecelia.install_log_tee!(_log_sink)
 
-_install_log_tee!() = global_logger(BroadcastLogger(global_logger()))
-
-# GET /api/logs/recent → { logs: [{level,message}, …] } — backfill a freshly-opened console window
-function api_logs_recent()
-    logs = lock(_log_ring_lock) do; copy(_log_ring); end
-    200, JSON3.write((; logs = logs))
+# GET /api/logs/recent[?since=<seq>] → { logs: [{seq,ts,level,source,message,detail?}, …], seq, ringId }
+# `since` omitted → the whole ring (a cold console's backfill); `since=n` → only what came after, which
+# is how a client repairs a gap it detected in the live stream without re-adding what it already has.
+# `ringId` tells a client whether its cursor still refers to THIS ring — see `LogRing`.
+function api_logs_recent(req::HTTP.Request)
+    since = tryparse(Int, get(HTTP.queryparams(HTTP.URI(req.target)), "since", "0"))
+    logs  = Cecelia.log_ring_since(_log_ring, since === nothing ? 0 : max(since, 0))
+    200, JSON3.write((; logs = logs, seq = Cecelia.log_ring_seq(_log_ring),
+                        ringId = Cecelia.log_ring_id(_log_ring)))
 end
 
 # ── Chain event → WS bridge ───────────────────────────────────────────────────
@@ -214,7 +199,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/get" => (req, body_bytes) -> (api_chains_get(req)),
     "/api/chains/runs" => (req, body_bytes) -> (api_chains_runs(req)),
     "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
-    "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent()),
+    "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
     "/api/napari/status" => (req, body_bytes) -> (api_napari_status(req)),
     "/api/napari/gpu" => (req, body_bytes) -> (api_napari_gpu_get(req)),

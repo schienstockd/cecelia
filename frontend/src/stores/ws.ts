@@ -75,6 +75,11 @@ export const useWsStore = defineStore('ws', () => {
       // start reading it from the beginning again rather than from a cursor it never issued.
       outcomeSince = ''
       recovered.clear()
+      // Read the backend's log ring from wherever this tab left off. On a cold load that is the whole
+      // ring (the console opens on what already happened, instead of empty until the next line); on a
+      // reconnect it is everything said while we were away — including a restart's startup banner and
+      // whatever the runner reported in the meantime.
+      useLogStore().backfill()
       startOutcomePoll()
       void adoptInFlight()
       ping()
@@ -168,11 +173,12 @@ export const useWsStore = defineStore('ws', () => {
       )
     }
 
-    // backend's own @info/@warn/@error (startup, napari warnings, …), teed by the server so the
-    // console window is a real "pixi console" — not just task logs. See server.jl BroadcastLogger.
+    // Everything the BACKEND SIDE says: its own @info/@warn/@error, plus every line the napari bridge,
+    // the preview worker, the Pluto server and the detached runner produce (they are all on the one log
+    // rail now — see app/src/log_stream.jl). The record carries `source`, `detail`, `ts` and `seq`;
+    // `pushServer` is what reads them, including the gap check that repairs a dropped frame.
     if (type === 'server:log') {
-      const level = (data.level === 'error' || data.level === 'warn') ? data.level : 'info'
-      useLogStore().push(level as any, String(data.message ?? ''), { source: 'server' })
+      useLogStore().pushServer(data as Parameters<ReturnType<typeof useLogStore>['pushServer']>[0])
     }
 
     // a lab-log entry was appended by ANY path (incl. an external Chat-to-Claude MCP session) — reload
@@ -203,6 +209,18 @@ export const useWsStore = defineStore('ws', () => {
         || useTaskStore().tasks.find(t => t.id === taskId)?.imageUid
         || ''
       if (taskId && status) {
+        // A FAILED run gets a console line. Its `[ERROR] …` output went only to `task:log`, i.e. into
+        // one row's log drawer — so the console, the thing that is meant to answer "did anything go
+        // wrong", stayed empty through every failed segmentation. The drawer is still where the full
+        // run log lives; this is the notification, with the tail of that log as the detail.
+        if (status === 'failed') {
+          const t = useTaskStore().tasks.find(x => x.id === taskId)
+          const tail = (t?.log ?? []).slice(-40).join('\n')
+          useLogStore().error(
+            `Task failed: ${t?.label ?? taskId}${t?.imageName ? ` — ${t.imageName}` : ''}`,
+            { source: 'task', detail: tail || undefined },
+          )
+        }
         // the backend's own timestamps — see utils/taskElapsed.ts for why they beat stamping locally
         useTaskStore().setStatus(taskId, status as any, {
           startedAt:  parseRailTime(data.startedAt),
@@ -287,6 +305,14 @@ export const useWsStore = defineStore('ws', () => {
       } else {
         // node:failed carries the real terminal status — :cancelled must not look :failed
         status = String(data.status ?? 'failed') === 'cancelled' ? 'cancelled' : 'failed'
+      }
+
+      // Same notification as a failed `task:status`, for the carrier that has no `task:status` at all:
+      // a chain run emits only node frames, so without this a chain that died mid-way said nothing in
+      // the console. Cancelled is a request, not a failure — it stays quiet.
+      if (status === 'failed') {
+        useLogStore().error(`Chain step failed: ${label || fn} — ${imageName}`,
+                            { source: 'chain', detail: String(data.error ?? '') || undefined })
       }
 
       useTaskStore().addFromChainEvent({

@@ -182,6 +182,42 @@ and a runner crash loses its in-flight task. Deferred, not dropped — plan D4.
 
 ---
 
+### Where its own output goes — two carriers, on purpose
+
+The runner is spawned `detach = true`, and a non-blocking `run` sends stdio to **devnull** — so until
+the log rail landed, **everything the runner said went nowhere**. Not "to the terminal": nowhere. The
+process most likely to be holding your segmentation was the one that could not tell you anything.
+
+It has two kinds of output and they need different carriers, because it is the one child that must
+outlive the process watching it:
+
+| | Goes to | How |
+|---|---|---|
+| `@info` / `@warn` / `@error` | the **app console** | the same `TeeLogger` → `runner:log` on its `/events` stream → relayed by the API server |
+| raw `stdout`/`stderr` — `println`, an unhandled `@spawn` task error, precompile chatter, a segfault dump | the **calling terminal** | stdio inherited from the backend at spawn |
+
+**Why not `spawn_logged` for the raw half.** That hands the child a pipe the *backend* reads, which
+becomes a broken pipe on exactly the restart the runner exists to survive. Inheriting the backend's
+stdio has no such problem: the fd belongs to the terminal, not to the backend, so a detached child goes
+on writing to it long after the backend is gone (verified). And the output you most need — a crash dump
+— is written by the C runtime *while the process dies*, so a pipe read by that same process is the
+worst possible destination for it. That is the argument for keeping raw stderr on a terminal rather
+than routing everything into the console.
+
+**This is not a dev/prod switch, and could not be one:** `runner_enabled()` requires
+`is_dev_session()`, so there is no runner in prod at all (see *Why dev-only*). Both carriers are simply
+correct in every launch mode we have — including `pixi run runner` standalone, where the terminal half
+was already working because the runner *is* the foreground process there.
+
+**The console half is gap-filled.** The runner keeps a `LogRing` of its own, served at
+`GET /api/logs/recent?since=<seq>` on :7657. The API server relays live records into its console ring
+under `source = "runner"` and, on every (re)connect, pulls what it missed — a third question alongside
+"what is in flight" and "how did things end", and for the same reason: **a runner routinely works with
+no subscriber**, so anything it said during a backend restart reached nobody. `_RUNNER_LOG_SEQ` is the
+cursor, and it resets on a relaunch because a fresh runner starts counting at 1.
+
+With no backend at all, `CECELIA_PORT=7657 pixi run console` still shows the task rail directly.
+
 ## File map
 
 | File | Role |

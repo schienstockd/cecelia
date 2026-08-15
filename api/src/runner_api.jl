@@ -11,6 +11,11 @@
 
 const _RUNNER      = Cecelia.RunnerHandle()
 const _RUNNER_SUB  = Ref{Union{Task,Nothing}}(nothing)
+#: How far we have read the runner's OWN log ring (its `seq`, not ours). The cursor is what turns a
+#: reconnect into a gap-fill: a runner that kept working through a backend restart said things nobody
+#: was listening to, and this is how those lines still arrive. Reset to 0 when the runner is relaunched
+#: (a fresh runner starts its counter over, so a stale cursor would skip its whole startup).
+const _RUNNER_LOG_SEQ = Ref(0)
 
 # A user SETTING (`[runner].enabled`, Settings → System), overridable by CECELIA_RUNNER for dev/CI —
 # see `runner_enabled` in config.jl for why it is not just the env var. Default off while the design
@@ -28,6 +33,14 @@ _runner_enabled() = Cecelia.runner_enabled()
 function _relay_runner_frame(f::Dict{String,Any})
     t  = String(get(f, "type", ""))
     id = String(get(f, "taskId", ""))
+    # The runner's own log records: NOT keyed by a task at all, so this has to come before the task-id
+    # guard below. They go into THIS server's ring (which restamps `seq` — the browser follows one
+    # counter, not two) and out as an ordinary `server:log` with `source = "runner"`, so the console
+    # treats a runner line exactly like a napari or backend line.
+    if t == "runner:log"
+        _relay_runner_log(f)
+        return
+    end
     # A chain frame is keyed by run/node, not by a task id — a skipped or set-scope node legitimately
     # has none, so the task-frame guard must not drop it.
     (isempty(id) && !startswith(t, "chain:")) && return
@@ -60,6 +73,23 @@ function _relay_runner_frame(f::Dict{String,Any})
                   started_at  = String(get(f, "startedAt", "")),
                   finished_at = String(get(f, "finishedAt", "")))
     end
+end
+
+"""
+One runner log record → this server's console ring.
+
+`seq` is DROPPED rather than passed through: the runner counts in its own sequence and this server
+restamps, so the browser follows exactly one counter and its gap detection stays meaningful. The
+runner's value is kept as the read cursor instead. `ts` survives, so a line is ordered by when the
+runner said it, not by when we heard it — which is the whole point for lines that arrive in a
+reconnect backfill, minutes late and all at once.
+"""
+function _relay_runner_log(f::AbstractDict)
+    _RUNNER_LOG_SEQ[] = max(_RUNNER_LOG_SEQ[], Int(get(f, "seq", 0)))
+    rec = Dict{String,Any}(String(k) => v for (k, v) in f if String(k) ∉ ("type", "seq"))
+    get!(rec, "source", Cecelia.LOG_SOURCE_RUNNER)
+    _log_sink(rec)
+    nothing
 end
 
 """
@@ -99,6 +129,16 @@ function _reconcile_with_runner()
         end
     catch e
         @warn "Runner reconcile: could not read recent outcomes" exception = e
+    end
+    # …and the third question, added with the log rail: what did it SAY while we were away. Same shape
+    # as the two above — a cursor, a bounded ring, replay through the live sink — because a runner that
+    # crashed a task during a backend restart explained itself to nobody otherwise.
+    try
+        for rec in Cecelia.runner_logs(_RUNNER; since = _RUNNER_LOG_SEQ[])
+            _relay_runner_log(rec)
+        end
+    catch e
+        @warn "Runner reconcile: could not read recent logs" exception = e
     end
     nothing
 end
@@ -203,6 +243,9 @@ function api_runner_restart(body_bytes::Vector{UInt8})
     end
     Cecelia.runner_stop!(_RUNNER)
     sleep(0.5)
+    # The replacement runner starts its log `seq` at 0, so a cursor left at the old one's high-water
+    # mark would skip its entire startup — including whatever made the restart necessary.
+    _RUNNER_LOG_SEQ[] = 0
     Threads.@spawn try; Cecelia.runner_launch!(_RUNNER); catch e
         @error "Task runner failed to relaunch" exception = (e, catch_backtrace())
     end

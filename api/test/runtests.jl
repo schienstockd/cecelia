@@ -224,9 +224,40 @@ end
     @test haskey(JSON3.read(body), :error)
 
     # the console backfill endpoint is a safe read
-    st2, body2 = api_logs_recent()
+    st2, body2 = api_logs_recent(HTTP.Request("GET", "/api/logs/recent"))
     @test st2 == 200
-    @test haskey(JSON3.read(body2), :logs)
+    d2 = JSON3.read(body2)
+    @test haskey(d2, :logs)
+    # `ringId` is what tells a client its `seq` cursor still refers to THIS ring. Without it, a client
+    # reconnecting to a RESTARTED backend would treat the fresh ring's first N records as ones it had
+    # already seen and drop them — the restart would silently eat its own startup lines.
+    @test !isempty(String(d2.ringId))
+    @test d2.seq isa Integer
+end
+
+@testset "API: the console log ring is incremental" begin
+    # `?since=<seq>` is the gap repair: a WS log frame is DROPPABLE (broadcast_ws skips a full client's
+    # queue rather than block a worker), and before the ring carried a sequence nothing could even
+    # notice a line had gone missing. Exercised through the real handler, against the real ring.
+    before = Cecelia.log_ring_seq(_log_ring)
+    _log_sink(Cecelia.log_record("warn", "ring probe"; source = Cecelia.LOG_SOURCE_NAPARI))
+
+    _, all_body = api_logs_recent(HTTP.Request("GET", "/api/logs/recent"))
+    probe = last(JSON3.read(all_body).logs)
+    @test String(probe.message) == "ring probe"
+    @test String(probe.source)  == Cecelia.LOG_SOURCE_NAPARI     # the facet survives the round trip
+    @test probe.seq == before + 1
+    @test !isempty(String(probe.ts))                             # stamped by the SINK, not the caller
+
+    # since = the record's own seq → nothing new; since = one less → exactly that record
+    _, none_body = api_logs_recent(HTTP.Request("GET", "/api/logs/recent?since=$(before + 1)"))
+    @test isempty(JSON3.read(none_body).logs)
+    _, gap_body = api_logs_recent(HTTP.Request("GET", "/api/logs/recent?since=$before"))
+    @test length(JSON3.read(gap_body).logs) == 1
+
+    # a garbage cursor backfills everything rather than 500-ing
+    st, _ = api_logs_recent(HTTP.Request("GET", "/api/logs/recent?since=abc"))
+    @test st == 200
 end
 
 @testset "API: shutdown stops EVERY resident child" begin
@@ -293,6 +324,14 @@ end
     dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
     @test dev_ports == sort([Cecelia.NAPARI_PORT, Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
     @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
+    # Both LONG-LIVED children this supervisor spawns must wire their streams EXPLICITLY. A
+    # non-blocking `run` defaults to devnull, NOT to inheritance, and the Vite launch got that wrong for
+    # as long as it existed — under a comment claiming the opposite, so its missing output was read as
+    # buffering rather than as the discard it was. Asserted per spawn rather than by counting
+    # `wait = false`, because the fire-and-forget `taskkill` on the Windows path legitimately wants
+    # devnull and would make a count meaningless.
+    @test occursin(r"run\(pipeline\(Cmd\(cmd; dir = fe\); stdout = stdout, stderr = stderr\)", dev)  # Vite
+    @test occursin(r"run\(pipeline\(bcmd; stdin = stdin, stdout = stdout, stderr = stderr\)", dev)   # backend
     # …but a CRASH must not reach that teardown, or the runner it is supposed to protect dies with the
     # server that crashed. The relaunch decision is real code, loaded and called here rather than
     # grepped for: whether SIGTERM counts as a fault is exactly the kind of thing a text assertion

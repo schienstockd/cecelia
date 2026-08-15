@@ -90,7 +90,12 @@ Returns the viewer so calls can be chained.
 function launch!(v::NapariViewer; discrete_gpu::Bool = false)::NapariViewer
     discrete_gpu && Sys.islinux() &&
         @info "Launching Napari on the discrete GPU (PRIME/DRI offload)"
-    v.proc = run(_bridge_cmd(discrete_gpu), wait=false)
+    # `spawn_logged`, not `run(...; wait=false)` — the latter swallows BOTH streams to devnull, so the
+    # bridge's ~20 `print(..., flush=True)` diagnostics and every Python traceback in it went nowhere
+    # at all (not the console, not the terminal). See `app/src/log_stream.jl`. A bridge we ADOPTED
+    # rather than spawned is still silent — we do not own its streams — which is one more reason a
+    # protocol mismatch relaunches instead of adopting.
+    v.proc = spawn_logged(LOG_SOURCE_NAPARI, _bridge_cmd(discrete_gpu))
     deadline = time() + 30
     while time() < deadline
         try

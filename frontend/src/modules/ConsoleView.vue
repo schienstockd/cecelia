@@ -12,16 +12,14 @@ import { useLogStore } from '../stores/log'
 
 const log = useLogStore()
 
-onMounted(async () => {
+onMounted(() => {
   document.title = 'Cecelia — Console'
-  // backfill recent backend logs so the window isn't empty until the next line arrives
-  try {
-    const { logs } = await (await fetch('/api/logs/recent')).json() as { logs: { level: string; message: string }[] }
-    for (const l of logs) {
-      const level = (l.level === 'error' || l.level === 'warn') ? l.level : 'info'
-      log.push(level as any, l.message, { source: 'server' })
-    }
-  } catch { /* server may be down — the live stream fills in once it's up */ }
+  // Backfill so the window isn't empty until the next line arrives. The fetch itself now lives in the
+  // log store (`backfill` → `repairGap`), because the DOCKED console needs exactly the same thing on a
+  // page load — it never had it, so the console actually in front of you always started blank while
+  // the pop-out was the only one that showed history. One implementation, both mount points; the ws
+  // store calls it again on every (re)connect.
+  log.backfill()
 })
 </script>
 

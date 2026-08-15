@@ -96,10 +96,14 @@ function launch!(w::PreviewWorker)::PreviewWorker
     # tasks' OWN compute, so it hits the same many-small-matmuls slowness — uncapped drift
     # estimation is ~1.8x slower even with the machine to itself. Not applied to the napari bridge:
     # that is an un-pooled interactive viewer, not BLAS-bound, and unmeasured.
-    w.proc = run(addenv(`$(python_bin_path()) $PREVIEW_WORKER`,
-                        "PYTHONPATH" => _python_dir(),
-                        "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK)),
-                 wait=false)
+    # `spawn_logged` (see napari.jl for the same change): `run(...; wait=false)` swallowed stdio, so
+    # the worker's `traceback.print_exc()` was discarded and the only thing Julia ever saw of a failure
+    # was the `{"type":"error","msg":"TypeName: message"}` reply — the exception type and message with
+    # no stack. The traceback now reaches the console under `source = "preview"`.
+    w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
+                          addenv(`$(python_bin_path()) $PREVIEW_WORKER`,
+                                 "PYTHONPATH" => _python_dir(),
+                                 "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK)))
     deadline = time() + 90
     squatter = nothing
     while time() < deadline

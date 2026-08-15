@@ -65,6 +65,28 @@ end
 # The frame shapes. Identical to the API server's `ws_*` helpers on purpose — the server relays these
 # straight into its own sinks, so a field added on one side is a field the other already carries.
 _emit_log(id, line)      = runner_emit(Dict{String,Any}("type" => "task:log", "taskId" => id, "line" => line))
+# The runner's OWN @info/@warn/@error — a launch failure, a pool refusal, an unhandled fault in a task
+# it accepted. It is `detach = true` on purpose (it must outlive the backend), so its stdio cannot be
+# piped anywhere: a pipe the backend owns becomes a broken pipe the moment the backend restarts, which
+# is the exact event the runner exists to survive. So it reports over the event stream it already has,
+# and the API server relays `runner:log` into the same console ring as its own records
+# (`_relay_runner_frame`). Before this the runner's logs went to devnull — the process most likely to
+# be running your segmentation was the one that could not tell you anything.
+#
+# It also RINGS what it says. A runner routinely runs with no subscriber — that is the whole feature —
+# so the frames it emits while the backend is restarting reach nobody. The backend pulls the gap from
+# `/api/logs/recent?since=` on every (re)connect, exactly as it already pulls `/api/tasks/recent` for
+# task outcomes. Same problem, same shape, one more reader.
+const _runner_log_ring = LogRing()
+function _emit_server_log(rec::Dict{String,Any})
+    # `log_record` defaults `source` to "backend" — correct in the API server, wrong here: from the
+    # console's point of view every one of these came from the RUNNER, and left at the default they
+    # would land under the Backend chip and be indistinguishable from the server's own lines. Forced
+    # rather than defaulted, because the runner spawns no children of its own to attribute.
+    rec["source"] = LOG_SOURCE_RUNNER
+    stamped = log_ring_push!(_runner_log_ring, rec)
+    runner_emit(merge(stamped, Dict{String,Any}("type" => "runner:log")))
+end
 _emit_progress(id, n, t) = runner_emit(Dict{String,Any}("type" => "task:progress", "taskId" => id,
                                                         "progress" => clamp(t > 0 ? n / t : 0.0, 0.0, 1.0)))
 _emit_result(id, uid, m) = runner_emit(Dict{String,Any}("type" => "task:result", "taskId" => id,
@@ -323,6 +345,12 @@ function _runner_events(ws)
     end
 end
 
+"""`?since=<seq>` as an Int, 0 for absent/garbage — a bad cursor should backfill everything, not 500."""
+function _query_since(uri::HTTP.URI)::Int
+    n = tryparse(Int, get(HTTP.queryparams(uri), "since", "0"))
+    n === nothing ? 0 : max(n, 0)
+end
+
 function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
     try
         uri   = HTTP.URI(req.target)
@@ -344,6 +372,12 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
             route in ("/api/tasks/recent", "/tasks/recent") &&
                 return _json(200, recent_tasks(; since = get(HTTP.queryparams(uri), "since", "")))
             route == "/api/health" && return _json(200, (; ok = true, version = "CeceliaRunner"))
+            # Same spelling as the API server's route, so `_relay_runner_frame`'s backfill is the same
+            # call against a different port (see `_emit_server_log`).
+            route == "/api/logs/recent" &&
+                return _json(200, (; logs   = log_ring_since(_runner_log_ring, _query_since(uri)),
+                                     seq    = log_ring_seq(_runner_log_ring),
+                                     ringId = log_ring_id(_runner_log_ring)))
         elseif req.method == "POST"
             route == "/submit"       && return _runner_submit(body_bytes)
             route == "/cancel"       && return _runner_cancel(body_bytes)
@@ -400,6 +434,9 @@ function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0
     # The chain event bus is in-process, so a chain executing here fires its events here. Same builder
     # the API server uses, so the frames are byte-identical and it can relay them untranslated.
     subscribe_chain_frames!(runner_emit)
+    # Installed BEFORE the startup banner below, so "task runner starting" is the first line a
+    # subscriber sees rather than the first one it misses.
+    install_log_tee!(_emit_server_log)
     _runner_write_state_file(port)
     atexit(_runner_remove_state_file)
     _runner_idle_watchdog!()
