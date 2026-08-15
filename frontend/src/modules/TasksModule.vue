@@ -13,6 +13,7 @@ import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import { taskRows } from '../utils/taskRows'
+import { usePanelResize } from '../composables/usePanelResize'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
@@ -69,15 +70,23 @@ const rows = computed(() => taskRows(filtered.value, {
   now:               now.value,
 }))
 
+// Starting widths, not minimums: the table is `fit="fill"` (the default), so it is exactly the pane's
+// width and the leftover is shared out. `fit="content"` was wrong here — it makes the declared sum a
+// MIN width, which overflowed this pane by 184px and pushed Time and the progress bar off-screen.
+// The list/log divider — the shared resize composable, with the handle on the list's RIGHT edge.
+// Wider by default than the hand-rolled list's 340px, because this one carries six columns.
+const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } =
+  usePanelResize({ min: 280, max: 760, default: 440, storageKey: 'cc-tasks-list-width', edge: 'right' })
+
 const TM_COLUMNS: SelectionColumn[] = [
   // no label, and out of the resize path: an icon and a bar are their own width
-  { key: 'status',   label: '',       fixed: true, width: 30 },
-  { key: 'module',   label: 'Module', sortable: true, ellipsis: true, width: 92 },
-  { key: 'task',     label: 'Task',   sortable: true, ellipsis: true, width: 150 },
-  { key: 'image',    label: 'Image',  sortable: true, ellipsis: true, width: 128 },
-  { key: 'progress', label: '',       fixed: true, width: 66 },
+  { key: 'status',   label: '',       fixed: true, width: 24 },
+  { key: 'module',   label: 'Module', sortable: true, ellipsis: true, width: 70 },
+  { key: 'task',     label: 'Task',   sortable: true, ellipsis: true, width: 130 },
+  { key: 'image',    label: 'Image',  sortable: true, ellipsis: true, width: 100 },
+  { key: 'progress', label: '',       fixed: true, width: 36 },
   // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
-  { key: 'elapsed',  label: 'Time',   sortable: true, sortKey: 'elapsedMs', width: 62 },
+  { key: 'elapsed',  label: 'Time',   sortable: true, sortKey: 'elapsedMs', width: 44 },
 ]
 
 // A row that has just gone out of scope must not stay open in the detail pane — the log below would
@@ -197,12 +206,19 @@ const FILTERS: ChipOption[] = [
            (purple = form-control chrome). See docs/todo/TASK_LIST_UNIFICATION_PLAN.md.
            `@row-click` rather than `@update:model-value` — clicking the row that is already selected
            emits no model change, and re-opening a row is what triggers its log backfill. -->
-      <div class="tm-list">
+      <div class="tm-list" :style="listWidthStyle">
+        <!-- drag the list/log divider (persisted). Handle on the list's RIGHT edge, hence
+             `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
+             scrolls away with the rows. -->
+        <div class="tm-divider" @mousedown="onListResizeStart"
+          v-tooltip.right="'Drag to resize the list'" />
+        <div class="tm-list-scroll">
         <SelectionTable
-          class="tm-table" selection-mode="single" :columns="TM_COLUMNS" :rows="rows"
+          class="tm-table" selection-mode="single" density="compact"
+          :columns="TM_COLUMNS" :rows="rows"
           id-key="id" :model-value="selectedId ?? undefined"
           sort-storage-key="cc.tasks.sort" column-width-key="cc.tasks.colw"
-          fit="content" actions-width="5.5rem"
+          actions-width="2.9rem"
           :row-tooltip="r => r.projectLabel ? `${r.task} — from ${r.projectLabel}` : r.task"
           @row-click="r => select(r.entry)">
 
@@ -227,8 +243,11 @@ const FILTERS: ChipOption[] = [
           </template>
 
           <template #cell-image="{ row: r }">
-            <span v-if="r.projectLabel" class="cc-muted"
-              v-tooltip.right="'From another project'">{{ r.projectLabel }} · </span>{{ r.image }}
+            <span class="tm-image">
+              <span v-if="r.projectLabel" class="cc-muted"
+                v-tooltip.right="'From another project'">{{ r.projectLabel }} ·</span>
+              <span class="cc-uid tm-uid">{{ r.imageUid }}</span>{{ r.image }}
+            </span>
           </template>
 
           <!-- blank unless there is a fraction to show — an empty cell says "no reading", a 0% bar
@@ -260,6 +279,7 @@ const FILTERS: ChipOption[] = [
 
           <template #empty>No tasks.</template>
         </SelectionTable>
+        </div>
       </div>
 
       <!-- Log panel -->
@@ -363,14 +383,25 @@ const FILTERS: ChipOption[] = [
 }
 
 /* ── Task list ────────────────────────────────────────────────────────── */
-/* The pane; the rows are SelectionTable's. `overflow: auto` in BOTH axes is required by `fit="content"`
-   — the columns are draggable and can outgrow the pane (docs/UI.md → Drag-resizable table columns). */
+/* The pane; the rows are SelectionTable's, at `compact` density. Width comes from `usePanelResize`
+   (draggable + persisted) rather than a constant — 340px could not hold six columns and any one
+   number is wrong for someone. `overflow: auto` is a backstop for a user who drags the COLUMNS wider
+   than the pane; the fill layout means it is otherwise dormant. */
 .tm-list {
-  width: 460px;
   flex-shrink: 0;
   border-right: 1px solid var(--cc-border);
-  overflow: auto;
+  position: relative;
+  overflow: hidden;              /* the scrolling is the inner half's, so the divider can't scroll away */
 }
+.tm-list-scroll { height: 100%; overflow: auto; }
+/* the divider: a grab strip on the pane's right edge, over the border it sits on */
+.tm-divider {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 4;                      /* above the table's sticky header */
+}
+.tm-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 
 .row-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
@@ -400,10 +431,25 @@ const FILTERS: ChipOption[] = [
 .log-title-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .row-elapsed { font-family: var(--cc-mono); flex-shrink: 0; }
 
+/* the image cell: uid chip then name, the name taking the leftover */
+.tm-image { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+/* + .cc-uid — this site's own half is only the chip (see TaskList's twin) */
+.tm-uid {
+  flex-shrink: 0;
+  background: var(--cc-surface-2);
+  padding: 0 0.2rem;
+  border-radius: var(--cc-radius-xs);
+}
+
 /* Row actions were hover-revealed here (`opacity: 0`) and always visible in the per-module list — a
    difference nobody chose. `#actions` has no hover-reveal, so adopting the table settles it toward
    always visible on both (docs/todo/TASK_LIST_UNIFICATION_PLAN.md → Decision 8). */
-.tm-table :deep(.sel-actions) .cc-btn { padding: 0.2rem 0.3rem; }
+/* `actions-width` is sized to what can appear AT ONCE, not to the number of buttons declared: cancel
+   shows only while running/queued and rerun/dismiss only once terminal, so the most a row ever shows
+   is two. Reserving for three left a running row's lone ✕ floating at the far edge of an empty column
+   (Dominik, 2026-08-15). */
+.tm-table :deep(.sel-actions) .cc-btn { padding: 0.15rem 0.25rem; }
+.tm-table :deep(.sel-actions) > * + * { margin-left: 0.15rem; }
 
 /* ── Log panel ────────────────────────────────────────────────────────── */
 .tm-log-panel {

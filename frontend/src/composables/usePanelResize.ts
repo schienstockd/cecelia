@@ -1,18 +1,24 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 
-// Shared drag-to-resize for a right-hand sidebar whose drag handle sits on its LEFT edge (dragging
-// left widens it). Used by TaskRunner and MetadataPanel — and by `CollapsiblePanel.vue`, which adds
-// the collapse half — so the resize behaviour + persistence live in ONE place. Width is clamped to
-// [min, max] and, when `storageKey` is given, remembered in localStorage (a user-settable option must
-// survive remount — see docs/UI.md).
+// Shared drag-to-resize for a panel with a drag handle on one edge. Used by TaskRunner and
+// MetadataPanel — and by `CollapsiblePanel.vue`, which adds the collapse half — so the resize
+// behaviour + persistence live in ONE place. Width is clamped to [min, max] and, when `storageKey` is
+// given, remembered in localStorage (a user-settable option must survive remount — see docs/UI.md).
+//
+// `edge` is which edge the HANDLE is on, and it only decides the sign of the drag:
+//   'left'  (default) a right-hand sidebar — dragging left widens it. Every original consumer.
+//   'right'           a left-hand pane — dragging right widens it. The /tasks list-vs-log divider.
+// It is an option rather than a second composable because the difference is one minus sign; the
+// clamping, the persistence and the auto-width case are identical, and a copy would drift on all three.
 //
 // Bind `widthStyle`, not `width`: an auto-width panel has no number, and every consumer would
 // otherwise spell the same null check (or silently render `nullpx`).
 export function usePanelResize(opts: { min?: number; max?: number; default?: number | null;
-                                       storageKey?: string } = {}) {
+                                       storageKey?: string; edge?: 'left' | 'right' } = {}) {
   const min = opts.min ?? 220
   const max = opts.max ?? 600
   const clamp = (w: number) => Math.min(max, Math.max(min, w))
+  const dir = opts.edge === 'right' ? -1 : 1   // handle on the right edge → drag right = wider
 
   // `default: null` = SIZE TO CONTENT until the user drags — the panel gets no width style at all.
   // ModuleLayout's right panel has always behaved that way (a module page that never sets a width
@@ -27,7 +33,7 @@ export function usePanelResize(opts: { min?: number; max?: number; default?: num
 
   function onMove(e: MouseEvent) {
     if (!dragging) return
-    width.value = clamp(startW + (startX - e.clientX))   // handle on LEFT edge → drag left = wider
+    width.value = clamp(startW + dir * (startX - e.clientX))
   }
   function onEnd() {
     if (!dragging) return

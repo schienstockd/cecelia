@@ -168,6 +168,30 @@ const props = withDefaults(defineProps<{
    * what it says.
    */
   selectAll?: boolean
+  /**
+   * Row density.
+   *
+   *  - `default`  the comfortable table — a page-width list you read a few rows of at a time.
+   *  - `compact`  a dense STATUS FEED: smaller type and roughly half the cell padding, for a list you
+   *               scan rather than read, in a panel that has no width to spare.
+   *
+   * It exists because the task lists are the second kind and the first kind's spacing made them
+   * unreadable — a 280px sidebar spent most of its width on padding, and the header stood as tall as
+   * the row it labelled. It is a PROP rather than each caller reaching in with `:deep()` on `th`/`td`,
+   * because "dense" is one decision the table should own once, not a padding number rediscovered per
+   * panel — the exact thing this component exists to stop.
+   */
+  density?: 'default' | 'compact'
+  /**
+   * Drop the header row entirely — for a list whose columns need no naming and which is read as a
+   * FEED rather than a table (the per-module task list: five rows in a 280px panel, where a header
+   * stood as tall as the rows it labelled).
+   *
+   * It takes the header's affordances with it, which is the whole trade: **no sort, no column
+   * resize, no reset-widths button**, since all three live in a header cell. Pass it only where those
+   * are genuinely not wanted — a table the user might want to sort keeps its header.
+   */
+  headerless?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -180,6 +204,8 @@ const props = withDefaults(defineProps<{
   selectionMode: 'single',
   disabledIds: () => [],
   selectAll: true,
+  density: 'default',
+  headerless: false,
 })
 
 const emit = defineEmits<{
@@ -286,14 +312,28 @@ const sortedRows = computed(() => {
 // radio column ended up as wide as the data columns. So the fixed path declares all of them: a narrow
 // constant for the radio, the composable's width per data column, and the rest for `#actions`.
 const resizable = computed(() => !!props.columnWidthKey)
+/**
+ * Whether the declared column widths are HONOURED — the `<colgroup>` plus `table-layout: fixed`.
+ *
+ * Resizing implies it, and so does `headerless`, which is why this is separate from `resizable`. The
+ * two were one flag, and that conflated "the user can drag the columns" with "the columns have
+ * widths at all": a headerless table fell back to AUTO layout, where a cell grows to its content and
+ * an inner `text-overflow: ellipsis` can never engage — so one long image name set the column width
+ * and pushed the row's buttons off the side of a 280px panel (Dominik, 2026-08-15).
+ */
+const sized = computed(() => resizable.value || props.headerless)
 
 // px offset for each sticky column: the pick column, then every sticky column before this one. Only a
 // LEADING run counts — the first non-sticky column ends it, since pinning something after a scrolling
 // column would let it slide over its neighbour.
-const PICK_COL_PX = 28   // .sel-col-pick is 1.75rem
+// .sel-col-pick — MUST track the CSS, in both densities: these are the offsets a sticky column is
+// pinned at, so a stale number slides the frozen columns off where the columns actually are.
+const PICK_COL_REM = { default: 1.75, compact: 1.25 } as const
+const pickColRem = computed(() => PICK_COL_REM[props.density])
+const pickColPx  = computed(() => pickColRem.value * 16)
 const stickyLeft = computed<Record<string, number>>(() => {
   const out: Record<string, number> = {}
-  let x = props.selectionMode === 'none' ? 0 : PICK_COL_PX
+  let x = props.selectionMode === 'none' ? 0 : pickColPx.value
   for (const c of props.columns) {
     if (!c.sticky) break
     out[c.key] = x
@@ -323,7 +363,7 @@ const { widthOf, onColumnResizeStart, resetWidths } = useColumnResize({
 // rather than a px total because `actionsWidth` is a caller-supplied CSS length (`11rem`).
 const declaredWidth = computed(() => {
   const parts: string[] = []
-  if (props.selectionMode !== 'none') parts.push('1.75rem')          // .sel-col-pick
+  if (props.selectionMode !== 'none') parts.push(`${pickColRem.value}rem`)   // .sel-col-pick
   for (const c of props.columns) {
     parts.push(c.fixed ? `${c.width ?? props.defaultColumnWidth}px` : widthOf(c.key))
   }
@@ -342,20 +382,20 @@ const declaredWidth = computed(() => {
  * and the container's width when there is room to spare.
  */
 const tableStyle = computed(() =>
-  resizable.value && props.fit === 'content' ? { minWidth: declaredWidth.value } : undefined)
+  sized.value && props.fit === 'content' ? { minWidth: declaredWidth.value } : undefined)
 
 </script>
 
 <template>
-  <table class="sel-table" :class="{ sized: resizable }" :style="tableStyle">
+  <table class="sel-table" :class="{ sized, compact: density === 'compact' }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
-    <colgroup v-if="resizable">
+    <colgroup v-if="sized">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
       <col v-for="c in columns" :key="c.key"
            :style="c.fixed ? (c.width ? { width: `${c.width}px` } : undefined) : { width: widthOf(c.key) }">
       <col v-if="$slots.actions" :style="{ width: actionsWidth }">
     </colgroup>
-    <thead>
+    <thead v-if="!headerless">
       <tr>
         <th v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input v-if="selectionMode === 'multi' && selectAll" type="checkbox" :checked="allSelected"
@@ -470,8 +510,14 @@ const tableStyle = computed(() =>
    without inviting a caller to try the same thing from its own stylesheet, where a single class loses
    to `.sel-table.sized` and does nothing at all. */
 .sel-col-pick { width: 1.75rem; }
-/* dim until the header is hovered — it is a rescue, not something to reach for */
-.sel-reset-w { opacity: 0.25; margin-left: 0.3rem; vertical-align: middle; }
+/* Dim until the header is hovered — it is a rescue, not something to reach for. ABSOLUTE, so it takes
+   no part in the header's layout: as an inline element with a margin it wrapped to a second line in a
+   narrow column, which stood the whole header row up at double height for the sake of a 12px icon
+   (Dominik, 2026-08-15 — the task manager's Module column). It sits inside the resize grip's 5px. */
+.sel-reset-w {
+  opacity: 0.25;
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+}
 th:hover .sel-reset-w { opacity: 0.7; }
 .sel-reset-w:hover { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 /* Pinned columns. They need an OPAQUE background or the scrolled cells show THROUGH them — and it has
@@ -501,6 +547,18 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
   background: var(--cc-border);
 }
 .sel-col-resize:hover::after { background: var(--cc-accent); }
+/* ── Compact density ──────────────────────────────────────────────────────────
+   A dense status feed rather than a comfortable table: one step down the type scale and roughly half
+   the cell padding. Only spacing and size change — colour, selection, sorting and sticky behaviour are
+   the same table, so a compact list still agrees with every other one about what a selected row is. */
+.sel-table.compact { font-size: var(--cc-fs-xs); }
+.sel-table.compact th { padding: 0.05rem 0.3rem; }
+.sel-table.compact td { padding: 0.1rem 0.3rem; }
+/* the radio/checkbox gutter shrinks with everything else — at default it is 28px of a 280px panel */
+.sel-table.compact .sel-col-pick { width: 1.25rem; }
+.sel-table.compact input[type="radio"], .sel-table.compact input[type="checkbox"] {
+  width: 11px; height: 11px; margin: 0;
+}
 /* an over-long value truncates instead of widening the table; the row tooltip carries the full text */
 .sel-ellipsis { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 /* an EMPTY `row-detail` slot still renders a <tr>, so it must not draw a border/hover of its own */

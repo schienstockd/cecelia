@@ -431,6 +431,20 @@ body {
 .cc-readout { font-variant-numeric: tabular-nums; color: var(--cc-text-dim); font-size: var(--cc-fs-sm); }
 .cc-readout-strong { color: var(--cc-text); font-weight: 600; }
 
+/* An OBJECT ID shown inline — an image uid beside its name, a task's image, a run id. Monospace + a
+   touch of tracking (an opaque 6-char token is read character by character, not as a word), dim
+   because it identifies rather than describes, and self-clipping since it sits next to a name that
+   should win the space. Three sites had their own half of this — `ImageTable`'s uid row, and both
+   task lists — so the shared half is here and each site keeps only its own geometry (a flex share, a
+   chip background). */
+.cc-uid {
+  font-family: var(--cc-mono);
+  font-size: var(--cc-fs-2xs);
+  letter-spacing: 0.03em;
+  color: var(--cc-text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */
 .cc-eyebrow {

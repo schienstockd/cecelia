@@ -133,14 +133,14 @@ const rows = computed(() => taskRows(items.value, {
   now:               now.value,
 }))
 
+// THREE columns, not six. `headerless` means no sort and no column resize (both live in a header
+// cell), so widths here are not starting hints for anything to drag — the table is auto-layout and
+// `task` simply takes what the other two leave. Image and progress are inside the task cell (the
+// original two-row entry); at 280px, columns of their own were squeezed to nothing.
 const TL_COLUMNS: SelectionColumn[] = [
-  // no label, and out of the resize path: an icon and a bar are their own width
-  { key: 'status',   label: '',      fixed: true, width: 28 },
-  { key: 'task',     label: 'Task',  sortable: true, ellipsis: true, width: 150 },
-  { key: 'image',    label: 'Image', sortable: true, ellipsis: true, width: 130 },
-  { key: 'progress', label: '',      fixed: true, width: 58 },
-  // `elapsed` is `4m 12s`, which sorts BEFORE `59s` as text — hence the raw-ms sort key
-  { key: 'elapsed',  label: 'Time',  sortable: true, sortKey: 'elapsedMs', width: 58 },
+  { key: 'status',  label: '', fixed: true, width: 22 },
+  { key: 'task',    label: '' },
+  { key: 'elapsed', label: '', fixed: true, width: 40 },
 ]
 </script>
 
@@ -168,9 +168,9 @@ const TL_COLUMNS: SelectionColumn[] = [
          running-task bar is its own column (docs/todo/TASK_LIST_UNIFICATION_PLAN.md → Decision 7b). -->
     <div class="tl-scroll">
       <SelectionTable
-        class="tl-table" selection-mode="none" :columns="TL_COLUMNS" :rows="rows" id-key="id"
-        :sort-storage-key="`cc.tasklist.${module}.sort`" :column-width-key="`cc.tasklist.colw`"
-        fit="content" actions-width="7rem"
+        class="tl-table" selection-mode="none" density="compact" headerless
+        :columns="TL_COLUMNS" :rows="rows" id-key="id"
+        actions-width="5.5rem"
         :row-tooltip="r => r.task"
         :row-class="r => `tone-${TASK_STATUS[r.status].tone} st-${r.status}`"
         :is-expanded="r => expanded.has(r.id)">
@@ -181,30 +181,26 @@ const TL_COLUMNS: SelectionColumn[] = [
             v-tooltip.left="TIP[r.status]" />
         </template>
 
+        <!-- The original TWO-ROW entry: label on top, image beneath, the running bar under both. One
+             cell rather than three columns — at 280px an Image column is squeezed to nothing, and the
+             uid + name were never a thing you sort by here (Dominik, 2026-08-15). -->
         <template #cell-task="{ row: r }">
-          <span class="task-label">
-            <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="jumpToTask(r.entry)"
-              v-tooltip.right="'Open in task manager'">
-              <i class="pi pi-arrow-left" />
-            </button>
-            <span class="task-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
-            <i v-if="r.chainLabel" class="pi pi-sitemap chain-badge" v-tooltip.right="r.chainTip" />
-            {{ r.task }}
-          </span>
-        </template>
-
-        <template #cell-image="{ row: r }">
-          <span class="task-image" v-tooltip.right="`UID: ${r.imageUid}`">
-            <span class="task-uid">{{ r.imageUid }}</span>
-            {{ r.image }}
-          </span>
-        </template>
-
-        <!-- blank unless there is a fraction to show — an empty cell says "no reading", a 0% bar
-             would claim one. Same column on the /tasks manager. -->
-        <template #cell-progress="{ row: r }">
-          <CcProgressBar v-if="r.hasProgress" :value="r.progress" :aria-label="`${r.task} progress`" />
-          <span v-else />
+          <div class="tl-entry">
+            <span class="tl-title">
+              <button class="jump-btn cc-btn cc-btn-bare cc-btn-icon" @click.stop="jumpToTask(r.entry)"
+                v-tooltip.right="'Open in task manager'">
+                <i class="pi pi-arrow-left" />
+              </button>
+              <span class="task-seq cc-muted cc-fs-2xs">#{{ r.seq }}</span>
+              <i v-if="r.chainLabel" class="pi pi-sitemap chain-badge" v-tooltip.right="r.chainTip" />
+              <span class="tl-label">{{ r.task }}</span>
+            </span>
+            <span class="tl-sub cc-muted cc-fs-2xs" v-tooltip.right="`UID: ${r.imageUid}`">
+              <span class="cc-uid task-uid">{{ r.imageUid }}</span>{{ r.image }}
+            </span>
+            <CcProgressBar v-if="r.hasProgress" :value="r.progress"
+              :aria-label="`${r.task} progress`" />
+          </div>
         </template>
 
         <template #cell-elapsed="{ row: r }">
@@ -269,8 +265,9 @@ const TL_COLUMNS: SelectionColumn[] = [
   min-width: 0;
 }
 
-/* `fit="content"` means the columns can outgrow this narrow panel, so the horizontal overflow has to
-   land HERE rather than on the host — same containment the card stack needed (see `.task-list`). */
+/* The table fills this panel (`fit` default), so it does not normally overflow; this is the backstop
+   for a user who drags the columns wider, and it keeps that overflow HERE rather than on the host —
+   the same containment the card stack needed (see `.task-list`). */
 .tl-scroll { min-width: 0; overflow-x: auto; }
 
 /* the heading row — sticky so the two list-wide actions stay reachable in a long list */
@@ -298,16 +295,21 @@ const TL_COLUMNS: SelectionColumn[] = [
 .task-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
-.task-label {
-  font-size: var(--cc-fs-sm);
+/* ── The two-row entry ────────────────────────────────────────────────────────
+   Title line, image line, and the running bar under both — the card stack's anatomy, in one cell.
+   Each line clips itself, so the surrounding `td`'s `nowrap` never has to hold them apart. */
+.tl-entry { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; padding: 0.1rem 0; }
+.tl-title { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.tl-label {
   font-weight: 600;
   color: var(--cc-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* + .cc-muted .cc-fs-2xs — the size is the ladder's, not a scoped `font-size` that would shadow the
+   utility it sits on (the cssScenarios ratchet flags exactly that, and did) */
+.tl-sub {
+  display: flex; align-items: center; gap: 0.25rem; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .task-seq { font-family: var(--cc-mono); flex-shrink: 0; }
 .chain-badge {
@@ -315,15 +317,12 @@ const TL_COLUMNS: SelectionColumn[] = [
   color: var(--cc-accent);
   flex-shrink: 0;
 }
-.task-image { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 0.3rem; }
+/* + .cc-uid (mono/tracking/dim/clip). This site's own half: the chip, because here the uid leads the
+   line and needs separating from the name that follows it. */
 .task-uid {
-  font-family: var(--cc-mono);
-  font-size: var(--cc-fs-2xs);
-  color: var(--cc-text-dim);
-  opacity: 0.6;
   flex-shrink: 0;
   background: var(--cc-surface-2);
-  padding: 0 0.25rem;
+  padding: 0 0.2rem;
   border-radius: var(--cc-radius-xs);
 }
 
