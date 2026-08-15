@@ -618,19 +618,29 @@ tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing
 
 """
-Task subdirs that images used to be given at import and nothing writes to any more:
+Task subdirs images used to be given at import that **no writer in the codebase has**. Ported over
+from the R version (`cciaImageCollection.R` created the same set) and pre-created ever since, so every
+image carried eight empty directories for features that either moved or never existed here:
 
-  • `log`  — the scheduler tees to `logs/` (`_wrap_log_with_file`); `log/` never held anything.
-  • `mesh` — meshes are rebuilt per timepoint in Python and never persisted (`mesh_utils.py`), since
-    the legacy `saveMeshes` was dropped.
+  • `log`   — the scheduler tees to `logs/` (`_wrap_log_with_file`); `log/` never held anything.
+  • `mesh`  — meshes are rebuilt per timepoint in Python and never persisted (`mesh_utils.py`).
+  • `models` — model vaults are config-scoped, not image-scoped (`cellpose_models_dir`,
+    `coastal_models_dir`); a flow model belongs to a SET, and there is one per set, not per image.
+  • `populations` — populations live in `gating/{value_name}.json` (docs/POPULATION.md).
+  • `stats`, `shapes`, `out`, `cl` — nothing joins `img._dir` with any of these, in Julia or Python.
 
-They are gone from `[dirs.tasks]`, so no new image gets them; this clears the ones already on disk.
+Nothing creates these any more, so this clears the ones already on disk.
+
+**Live directory names are deliberately absent**, even though an image imported before this change
+carries empty `labels/`, `labelProps/`, `data/` and `tasks/` too. Removing one of those would race a
+task that has just made it and is about to write in — the empty directory is harmless, and it fills in
+the first time that step runs.
 """
-const _DEAD_TASK_DIRS = ("log", "mesh")
+const _DEAD_TASK_DIRS = ("log", "mesh", "models", "populations", "stats", "shapes", "out", "cl")
 
 # Same idea as the legacy `kind` field below — an image carrying the old shape is quietly brought up to
-# date when it loads, rather than needing a data patch for two empty directories. ONLY if empty: a dir
-# with anything in it is someone's data, whatever we think we know about who wrote it.
+# date when it loads, rather than needing a data patch for a handful of empty directories. ONLY if
+# empty: a dir with anything in it is someone's data, whatever we think we know about who wrote it.
 function _drop_dead_task_dirs(dir::String)
     for sub in _DEAD_TASK_DIRS
         p = joinpath(dir, sub)

@@ -33,13 +33,17 @@ const PY_CONTRACT_VERSION = 1
 """
     task_run_dir(base_dir) -> String
 
-The consistent on-disk home for a run's params JSON: `<base_dir>/<conf dirs.tasks>` (default
-`tasks`). `base_dir` is an object's `_dir` — `img._dir` for image-scope tasks, the set/project dir
-for set-scope. Every `run_py` caller resolves its `config_dir` through this, so run configs always
-land under the project tree (never a temp dir)."""
+The consistent on-disk home for a run's params JSON: `<base_dir>/tasks`. `base_dir` is an object's
+`_dir` — `img._dir` for image-scope tasks, the set/project dir for set-scope. Every `run_py` caller
+resolves its `config_dir` through this, so run configs always land under the project tree (never a
+temp dir). `run_py` creates the directory, so nothing needs to make it in advance.
+
+The name was read from `[dirs.tasks] tasks` in `config.toml` — the only entry of that table whose
+value was ever honoured, the rest being pre-create names that every reader hardcoded anyway. The
+table is gone; this is a constant because it is one (renaming it would strand every existing run's
+params JSON, which is not a thing to offer as configuration)."""
 function task_run_dir(base_dir::AbstractString)::String
-    sub = get(get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict()), "tasks", "tasks")
-    joinpath(base_dir, string(sub))
+    joinpath(base_dir, "tasks")
 end
 
 # The user modules root (`<config_dir>/modules`) — put on PYTHONPATH for run_py so a custom

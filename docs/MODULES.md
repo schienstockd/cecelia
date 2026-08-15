@@ -92,6 +92,12 @@ im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
 `img._dir` is `{proj}/1/{uid}/` — the metadata directory.  
 `{proj}/0/{uid}/` is the image data directory.
 
+**If your task writes into a subdirectory of `img._dir`, create it.** Nothing is pre-created at import
+any more (docs/OBJECTMODEL.md → *Disk layout*): a subdirectory exists iff something has written to it,
+which is what makes an image folder a readable summary of what has run. So `mkpath(dirname(out))` — or
+Python's `atomic_path` / `write_h5ad_atomic`, which do it for you. `task_run_dir` also makes its own,
+so a `run_py` params JSON needs nothing.
+
 ### Writing the output + registering it
 
 ```julia
