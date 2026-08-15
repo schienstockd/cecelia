@@ -15,6 +15,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch, provide, useTemplateRef } from 'vue'
+import CanvasArrangeButtons from './CanvasArrangeButtons.vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
@@ -57,7 +58,7 @@ interface PanelState {
 }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
-const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+const { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PanelState>(zoomRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
     ckey)
 // show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
@@ -112,6 +113,9 @@ const activeIsPrecomputed = computed(() => {
   return !!spec && isPrecomputedSpec(spec)
 })
 function removePanel(id: number) { remove(id); delete readouts.value[id] }
+// Close all must drop the readouts too — they are keyed by panel id, and a stale entry would be
+// re-adopted by the next panel that reuses a freed id (`activeReadout` reads this map by id).
+function removeAllPanels() { removeAll(); readouts.value = {} }
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)
   if (scope.value === 'global') gSel.value = toggle(gSel.value, k)
@@ -194,13 +198,8 @@ watch(segPops, () => {
         </div>
         <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
           v-tooltip.bottom="'Pool populations and images — one series per Split-by group'" />
-        <!-- no group tip: both buttons carry their own, and a container tip fires on top of them -->
-        <div class="cc-btn-group">
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Tile in a grid'"
-                  @click="arrangeGrid"><i class="pi pi-th-large" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Cascade windows'"
-                  @click="arrangeCascade"><i class="pi pi-clone" /></button>
-        </div>
+        <CanvasArrangeButtons :count="panels.length" @tile="arrangeGrid" @cascade="arrangeCascade"
+                              @close-all="removeAllPanels" />
         <div class="cc-btn-group">
           <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': showManager }"
                   @click="showManager = !showManager"

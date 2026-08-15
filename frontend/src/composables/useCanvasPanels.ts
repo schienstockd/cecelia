@@ -50,6 +50,17 @@ export function useCanvasPanels<S>(
     if (e.activeId === id) e.activeId = e.panels.at(-1)?.id ?? 0
     store.delGeom(`${keyRef.value}:${id}`)        // drop the removed panel's persisted geometry
   }
+  // Close every plot on THIS canvas — the "I opened fifteen and want to start over" reset, since
+  // closing them one X at a time is the only alternative. Scoped to the current key, so the other
+  // images'/segmentations' canvases keep their panels (each key is its own entry, see above).
+  // Drops each panel's persisted geometry exactly as `remove` does — leaving it behind would place
+  // the next panel that happens to reuse a freed id at the closed one's position.
+  function removeAll() {
+    const e = cur()
+    for (const p of e.panels) store.delGeom(`${keyRef.value}:${p.id}`)
+    e.panels = []
+    e.activeId = 0
+  }
   // Cascade ("windowed"): stagger overlapping windows at a default size
   function arrangeCascade() {
     const e = cur()
@@ -85,5 +96,5 @@ export function useCanvasPanels<S>(
     return { w, h }
   })
 
-  return { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds }
+  return { panels, activeId, activePanel, shared, add, remove, removeAll, arrangeGrid, arrangeCascade, contentBounds }
 }

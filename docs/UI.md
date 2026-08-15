@@ -1891,6 +1891,24 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
 **Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
 zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
 
+### Arrange + close: one button group, every canvas
+
+`components/canvas/CanvasArrangeButtons.vue` is the toolbar group every free-floating plot canvas
+renders — **Tile · Cascade · Close all** — emitting to `useCanvasPanels`' `arrangeGrid` /
+`arrangeCascade` / `removeAll`. The Tile/Cascade pair had been copied verbatim into all four hosts
+(`SummaryCanvas`, `GatingPlots`, `ClusterPlots`, `FlowPlots`); the rest of each toolbar legitimately
+differs, so only this group is shared. A host that drives `useCanvasPanels` but renders its own
+arrange buttons fails the *every canvas host offers Close all* testset — the point being that a bulk
+close a user asks for on one page has to appear on all of them.
+
+**Close all arms first.** It is destructive and unrecoverable (panel state + persisted geometry), so
+it goes through `ConfirmButton` like `TabbedCanvas`'s "Close board" — including `needs-confirm` being
+false when the canvas is already empty, since a confirmation protecting nothing is just a click.
+`removeAll` is scoped to the canvas's **current key**, so other images'/segmentations' canvases keep
+their panels, and it drops each panel's persisted geometry exactly as `remove` does. A host that
+wraps `remove` with extra per-panel cleanup must wrap `removeAll` too — `SummaryCanvas` does, to clear
+the id-keyed `readouts` map.
+
 ### Show/hide the population manager
 
 The floating manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker` on summary
