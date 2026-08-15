@@ -4,6 +4,7 @@
 import type { CciaImage } from '../stores/project'
 import { isExcluded } from './inclusion'
 import { sortRows, type SortDir } from './sortRows'
+import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
 
 // Total elapsed duration of a timelapse = (frames − 1) × interval — the time span from the FIRST to
 // the LAST frame (an N-frame movie spans N−1 intervals). Returns '' when it isn't a timelapse
@@ -49,16 +50,6 @@ export function sortImages(images: CciaImage[], key: ImageSortKey, dir: ImageSor
   return sortRows(images, img => imageSortValue(img, key), dir)
 }
 
-// convert a value in `unit` to seconds; null when the unit isn't a recognised time unit
-function toSeconds(v: number, unit?: string | null): number | null {
-  const u = (unit ?? '').toLowerCase()
-  if (!u) return null
-  if (u.startsWith('ms') || u.startsWith('millis')) return v / 1000
-  if (u.startsWith('s')) return v                          // s / sec / second(s)
-  if (u === 'm' || u.startsWith('min')) return v * 60      // m / min / minute(s)
-  if (u.startsWith('h')) return v * 3600                   // h / hr / hour(s)
-  return null
-}
 function round2(v: number): number { return Math.round(v * 100) / 100 }
 function formatSeconds(sec: number): string {
   const s = Math.round(sec)

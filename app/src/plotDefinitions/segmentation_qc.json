@@ -10,7 +10,7 @@
     "granularity": "cell",
     "measure": "area",
     "measuresFromData": true,
-    "groupByOptions": ["t"]
+    "groupByOptions": ["centroid_t"]
   },
   "scopeModes": ["per_image", "summarised"],
   "params": [

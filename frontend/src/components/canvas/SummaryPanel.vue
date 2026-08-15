@@ -20,6 +20,8 @@ import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
+import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
+import { useProjectStore } from '../../stores/project'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
@@ -54,6 +56,7 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
                            readout: [PlotReadout] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
+const projectStore = useProjectStore()   // image metadata (the per-image frame interval for the time axis)
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
 // the columns actually present on the selected image+segmentation (loaded below), so we never offer a
@@ -335,6 +338,26 @@ const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
 const result = ref<PlotDataResponse | null>(null)
+// The temporal group levels are FRAME INDICES; the x axis should read in real elapsed time. The
+// interval is per IMAGE (OME `timeIncrement`), so this is a uID → seconds-per-frame map — and it is
+// `null` unless EVERY plotted image has one, because an unknown interval must not be drawn as
+// 1 s/frame (docs/ARCHITECTURE.md → *Calibration*: "a unit-less t scale is a placeholder, not a
+// reading"). Null → the axis stays in frames and keeps saying `centroid_t`.
+// The uIDs come from the RESPONSE (the images that actually returned data), not the props:
+// `imageUids` is empty for "the whole set", and a single-image plot carries uID ''. Declared here,
+// after `result`, so the getter can never be evaluated before it exists.
+const timeScale = computed(() => {
+  const fromSeries = [...new Set((result.value?.series ?? [])
+    .map(s => s.uID).filter((u): u is string => !!u))]
+  if (fromSeries.length) return frameSecondsByImage(fromSeries, projectStore.imageByUid)
+  // The series carry NO image identity — a single-image plot, or a `summarised` scope that folded
+  // several movies into one curve. The lookup key is then '', so one interval has to cover
+  // everything plotted; `sharedFrameSeconds` returns null if the movies disagree. With `imageUids`
+  // empty ("the whole set") we can't enumerate them, so we stay in frames rather than assume.
+  const uids = crossImage.value ? (props.imageUids ?? []) : (props.imageUid ? [props.imageUid] : [])
+  const s = sharedFrameSeconds(uids, projectStore.imageByUid)
+  return s == null ? null : { '': s }
+})
 const loading = ref(false)
 // delayed spinner — only shows if a fetch runs past the threshold, so quick plots never flash it
 const showSpinner = useDelayedLoading(loading)
@@ -549,6 +572,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
   nonNegative: true,               // the measures plotted here are non-negative
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
+  timeScale: timeSeries.value ? (timeScale.value ?? undefined) : undefined,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
 }))

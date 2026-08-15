@@ -384,14 +384,47 @@ above). `app/src/plotDefinitions/segmentation_qc.json` (`module: "segment"`, `fa
 
 - **Data source = the `labels` popType** (ungated all-cells, R parity). The population picker
   (`/api/plots/populations?popType=labels`) surfaces **one selectable population per segmentation
-  `value_name`** (B, T, …), so segmentations plot side by side.
+  `value_name`** (B, T, …), so segmentations plot side by side. Selecting several pools them in one
+  `pop_df` call: the pop ref's **value_name prefix** (`"Neutrophil/labels"`) picks the segmentation,
+  and a value_name absent on a given image is skipped, not an error (a set-level call spans images
+  that were not all segmented the same way). `label` is unique only *within* a segmentation, so the
+  pooled frame repeats label ids across value_names — the key is `(value_name, label)`, and nothing
+  on this path may dedup by `label` alone.
 - **Chart types**: `count` (the cell-count headline — # objects per series, no measure) plus the
   morphology distributions (`boxplot`/`violin`/`strip`/`bar`/`histogram`) over
   `area`/`solidity`/`aspect_ratio`/`eccentricity`.
-- **Per-timepoint (temporal-consistency) view**: the def lists `groupByOptions: ["t"]`; temporal
-  columns live in `obsm` (not `obs`), so `/api/gating/channels` reports them as `temporalColumns` and
-  `SummaryPanel` treats them as valid groupBy options. Grouping `count` by `t` yields cell count per
-  timepoint (drops/spikes visible). On a static image there is no temporal column, so it's absent.
+- **Per-timepoint (temporal-consistency) view**: the def lists `groupByOptions: ["centroid_t"]`;
+  temporal columns live in `obsm` (not `obs`), so `/api/gating/channels` reports them as
+  `temporalColumns` and `SummaryPanel` treats them as valid groupBy options. Selecting it flips the
+  chart menu to **[trend, count]** and renders a geom_smooth-style **LOESS curve + 95% CI ribbon**,
+  one line per image·segmentation (`buildTrendLine`), with span and interval controls — a timecourse
+  is a curve, not thousands of boxes. `count` gives cells per timepoint (drops/spikes visible);
+  `trend` gives the per-frame mean of any label measure. On a static image there is no temporal
+  column, so it's absent.
+
+  **X axis in real time.** The group levels are frame INDICES, so the axis would read `centroid_t`
+  0…179 — not a quantity anyone measures in. `utils/timeAxis.ts` converts them to elapsed **seconds**
+  using each image's OME `timeIncrement`, **per image** (two movies can run at different intervals, so
+  one factor for the plot would be wrong), and the axis is relabelled `Time (s)`. It falls back to
+  frames — keeping the `centroid_t` label — whenever the interval is not known for *every* plotted
+  image, or when a pooled/`summarised` curve spans movies whose intervals disagree: there is one x
+  axis, and putting a 30 s/frame movie on the same seconds axis as a 60 s/frame one is off by 2× with
+  nothing saying so. This is the plot-side half of the calibration rule in `docs/ARCHITECTURE.md` →
+  *Calibration* ("a unit-less t scale is a placeholder, not a reading"). Note the **CSV export stays
+  in frames** — it carries the raw aggregation, not the fitted curve.
+
+  **The fitted line is floored at zero.** Unlike every other chart here, the trend line's y is a
+  *model output*, not an aggregated measurement — so `nonNegative` has to apply to the fit itself and
+  not just to the error band. Local-linear LOESS overshoots at a cliff (a count crashing to 0 gives
+  the local window a steep negative slope and the fit extrapolates through it), which drew a
+  **negative count** that the y scale's 0 floor then clipped — reading as the line leaving the plot
+  and coming back. The ribbon is centred on the floored value, so band and line agree.
+
+  > **The name must be `centroid_t`, not `t`.** `groupByOptions` is a *hint* list filtered against the
+  > columns actually present, so a stale name doesn't error — the option silently never appears and
+  > the whole per-timepoint view is unreachable. This spec said `t`, the pre-migration spelling that
+  > `centroid_migrate.py` renamed to `centroid_t` (`uns/temporal_cols`), so it was dark from the
+  > migration until 2026-08-15. Pinned by the *plot spec groupByOptions name current columns* testset.
 
 Hosted on the segment module page (`SegmentModule.vue` → `<SummaryCanvas module="segment">`) and, via
 `whiteboardCompatible`, expandable from the whiteboard Live QC row.

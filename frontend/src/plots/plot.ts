@@ -254,6 +254,11 @@ export interface BuildOpts extends VisProps {
   smooth?: number                        // trend line: rolling-mean window (1 = raw)
   trend?: boolean                        // render as a geom_smooth line over an ordered X (time series)
   interval?: boolean                     // trend line: draw the ±95% confidence ribbon
+  // trend line: seconds-per-frame PER IMAGE, so the frame-index group levels are drawn as real
+  // elapsed time. Per image because two movies can have different intervals. Undefined = leave the
+  // axis in frames — set only when EVERY plotted image has a known interval (see utils/timeAxis.ts);
+  // an unknown interval must not be silently rendered as 1 s/frame.
+  timeScale?: Record<string, number>
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -719,7 +724,10 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   }
   const lines = new Map<string, { x: number; y: number }[]>()
   for (const s of r.series) {
-    const x = Number(s.group), y = Number(s.value)
+    // the group level is a FRAME INDEX; `timeScale` (when every image's interval is known) turns it
+    // into elapsed SECONDS, per image — two movies at different intervals must not share one factor
+    const perFrame = o.timeScale ? (o.timeScale[s.uID ?? ''] ?? NaN) : 1
+    const x = Number(s.group) * perFrame, y = Number(s.value)
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue
     const k = keyOf(s)
     ;(lines.get(k) ?? lines.set(k, []).get(k)!).push({ x, y })
@@ -736,9 +744,17 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     const grid = xs.length <= m ? xs.slice() : Array.from({ length: m }, (_, i) => x0 + (x1 - x0) * i / (m - 1))
     loess(xs, ys, grid, span).forEach((p, i) => {
       if (!Number.isFinite(p.y)) return
-      const lo = floor ? Math.max(0, p.y - 1.96 * p.se) : p.y - 1.96 * p.se, up = p.y + 1.96 * p.se
-      if ((o.interval ? up : p.y) > hi) hi = o.interval ? up : p.y
-      fit.push({ series: k, x: grid[i], y: p.y, lo, hi: up })
+      // The LINE here is a FITTED value, not a measured one — unlike every other chart on this canvas,
+      // where the point estimate comes straight from the aggregator and only the error BAR can run
+      // past zero (hence the `floor` on `lo` alone). Local-linear LOESS overshoots at a cliff: a count
+      // crashing to 0 gives the local window a steep negative slope and the fit extrapolates straight
+      // through it, so a COUNT was drawn NEGATIVE — then clipped by the y scale's 0 floor, which reads
+      // as the line mysteriously leaving the plot and coming back. Floor the fit itself, and centre the
+      // ribbon on what is actually drawn (flooring only `lo` left the band and the line disagreeing).
+      const y = floor ? Math.max(0, p.y) : p.y
+      const lo = floor ? Math.max(0, y - 1.96 * p.se) : y - 1.96 * p.se, up = y + 1.96 * p.se
+      if ((o.interval ? up : y) > hi) hi = o.interval ? up : y
+      fit.push({ series: k, x: grid[i], y, lo, hi: up })
     })
   }
   if (!fit.length) return null
@@ -748,7 +764,11 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const legend = dedupLegend(color)
   const legendN = legend.domain.length
   const topPad = legendTopPad(legendN, o)
-  const base = r.chartType === 'count' ? 'count' : (r.measure ?? 'value')
+  // with Fraction on, the count aggregation returns each bucket's SHARE of its series' total — so the
+  // axis runs 0…~0.03, and calling that "count" reads as a broken count rather than a proportion
+  const base = r.chartType === 'count'
+    ? (r.normalize && r.normalize !== 'none' ? 'fraction' : 'count')
+    : (r.measure ?? 'value')
   const marks: unknown[] = []
   if (o.interval) marks.push(
     Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15 }))
@@ -760,7 +780,10 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const opts: Record<string, unknown> = {
     ...THEME, color, marginTop: topPad,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { label: o.labX || r.groupBy || 't', grid: o.grid, ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
+    // "Time (s)" only when the frames were actually converted — otherwise the axis IS the frame index
+    // and must keep saying so rather than implying a unit it doesn't have
+    x: { label: o.labX || (o.timeScale ? 'Time (s)' : (r.groupBy || 't')), grid: o.grid,
+         ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
          ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
     marks,
