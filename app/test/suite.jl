@@ -2985,6 +2985,44 @@ end
     end
 end
 
+# ── a module summary canvas belongs to the SET, a gating canvas to the IMAGE ──────
+# The summary canvas used to be keyed by the FIRST selected image, which quietly tied two unrelated
+# things to the selection order: what got plotted, AND which saved layout you were looking at — so
+# re-ticking swapped your whole canvas, and ticking five images showed the first one's. Summary plots
+# are set-aware by design (the `compare` control is exactly the per-image/pooled/by-attribute choice),
+# so the LAYOUT has no business being image-scoped as well. Gating is the opposite case and must stay
+# per image: gates belong to one (image, value_name).
+#
+# Pinned by reading the key expressions, because both are one-liners in an SFC and the failure is
+# silent either way — a wrongly-scoped canvas still renders, just not the one you saved.
+@testset "summary canvas is set-scoped, gating canvas is image-scoped" begin
+    fe = joinpath(dirname(dirname(dirname(pathof(Cecelia)))), "frontend", "src")
+    ckey_line(path) = begin
+        ls = filter(l -> occursin("const ckey = computed", l),
+                    split(read(joinpath(fe, path...), String), '\n'))
+        @test length(ls) == 1                      # one key expression per canvas, or this is stale
+        first(ls)
+    end
+
+    sc = ckey_line(("components", "canvas", "SummaryCanvas.vue"))
+    @test occursin("setUid", sc)
+    @test !occursin("imageUid", sc)                # the bug: first-selected image decided the canvas
+
+    # gating stays per (image, value_name) — deliberate, not an oversight
+    gp = ckey_line(("modules", "gate", "GatingPlots.vue"))
+    @test occursin("imageUid", gp) && occursin("valueName", gp)
+
+    # cluster was already set-scoped; it is the precedent this follows (and `objectOf` persists a
+    # set-keyed canvas to the SET's own moduleCanvases.json, so no new persistence path was needed)
+    @test occursin("setUid", ckey_line(("modules", "cluster", "ClusterPlots.vue")))
+
+    # …and ticking several images must actually PLOT several: `image` means "the first one only", so it
+    # cannot be the default. `canCompare` already gates this on there being >1 image selected.
+    usd = read(joinpath(fe, "composables", "useSummaryData.ts"), String)
+    @test occursin("compareMode: 'per_image'", usd)
+    @test !occursin("compareMode: 'image'", usd)
+end
+
 @testset "interaction matrix aggregates with NO population targets" begin
     # The path `api_plot_data`'s `precomputed` branch now takes. The panel sends no `series` (the
     # matrix's rows/columns come from the neighbourStats run), so the targets vector is EMPTY — and

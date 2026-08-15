@@ -2541,10 +2541,24 @@ Every user-settable option MUST live in a persisted bag, or it silently resets o
 `ref()` in a canvas/panel component does NOT survive navigation). There are three scopes, all backed
 by the `canvasPanels` store and keyed per canvas.
 
-**The canvas key is per-image (module pages).** Module-page canvases embed the active object in their
-key — `summary:{module}:{imageUid}`, `gate:{popType}:{imageUid}:{valueName}` (per segmentation too),
-`clust:{popType}:{setUid}` (clustering is set-scope), `flow:model:{imageUid}`. **A new prefix must be
-added to `MODULE_PREFIXES` in `stores/canvasPanels.ts`** or the canvas works but never persists.
+**The canvas key embeds the object it belongs to (module pages)** — `summary:{module}:{setUid}`,
+`gate:{popType}:{imageUid}:{valueName}` (per segmentation too), `clust:{popType}:{setUid}`,
+`flow:model:{imageUid}`. **A new prefix must be added to `MODULE_PREFIXES` in
+`stores/canvasPanels.ts`** or the canvas works but never persists.
+
+> **Which object — set or image?** Ask what the canvas is *about*, not which one is selected.
+> **Gating is per image**: a gate belongs to one (image, value_name), so `gate:` is image-keyed.
+> **Summary plots are per SET**: the plots are cross-image by design — per-image / pooled /
+> by-attribute is precisely what the `compare` control chooses — so the layout must not be image-keyed
+> as well. `summary:` was image-keyed until 2026-08-15, which tied the SAVED LAYOUT to whichever image
+> happened to be **first in the selection**: re-ticking silently swapped your whole canvas, and ticking
+> five images showed the first one's. Both halves of that were invisible. Canvases saved under the old
+> per-image keys are not ported — there is no honest merge from N per-image layouts into one.
+> Pinned by the *summary canvas is set-scoped, gating canvas is image-scoped* testset.
+>
+> The matching data-side default: `compareMode` seeds to **`per_image`**, not `image` (which means
+> "the first selected image only"). `canCompare` already gates it on more than one image being
+> selected, so a single-image page is unchanged.
 `useCanvasPanels` takes a **reactive** key
 (Ref/getter) and rebinds to that object's own entry when the selection changes — so each image keeps
 its own plots/selections instead of the old single shared-per-module entry being pruned. Add

@@ -40,7 +40,13 @@ export function useSummaryData(opts: {
 
   const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups } =
     useViewState(opts.shared, {
-      compareMode: 'image' as 'image' | 'per_image' | 'summarised' | 'by_attr',
+      // DEFAULT = per_image, not 'image'. `'image'` means "the first selected image only", so with the
+      // old default you could tick five images and see one, with nothing but a dropdown labelled
+      // `compare` to say so. `canCompare` already gates this on there BEING several images, so a
+      // single-image selection behaves exactly as before; picking `image` explicitly is still how you
+      // focus on one. Only NEW canvases take this — `useViewState` seeds a default just once, so a
+      // saved canvas keeps whatever it stored.
+      compareMode: 'per_image' as 'image' | 'per_image' | 'summarised' | 'by_attr',
       compareAttr: '' as string,
       compareAttr2: '' as string,
       scope: 'global' as 'global' | 'local',
