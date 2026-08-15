@@ -145,7 +145,21 @@ note "instantiating api/ (shared depot, so this downloads nothing; first run pre
     julia --project src/server.jl >"$WORK/server.log" 2>&1 ) &
 SERVER_PID=$!
 kill_server() {
+  # **SIGTERM alone does not stop a Julia server**, and this teardown used to be exactly that
+  # followed by an unbounded `wait`. A thread inside codegen never reaches a safepoint, so the
+  # process prints every thread's backtrace and keeps running — still holding the port — and the
+  # `wait` then blocks forever. Measured: a rehearsal that had already printed "the bundle boots"
+  # sat here for 64 minutes having done 69 s of actual work (`real 63m59s`, `user 1m5s`). The port
+  # check below could never report it either, being on the far side of that `wait`.
+  #
+  # `api/portkill.jl` is the ONE escalating TERM → KILL → *verify* implementation, Base-only so it
+  # needs no env (`docs/DEV.md` → *Stopping the app*). Never hand-roll a second one — that is what
+  # this function was.
   kill "$SERVER_PID" 2>/dev/null || true
+  julia --startup-file=no "$ROOT/api/portkill.jl" rehearsal "$PORT" >/dev/null 2>&1 || true
+  # portkill works from the LISTENING socket, so it cannot see a server that died or was still
+  # precompiling before it ever bound. SIGKILL the pid we own to cover that case.
+  kill -9 "$SERVER_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
   # Belt and braces: if anything is still holding the port, it came from this script.
   if command -v ss >/dev/null 2>&1 && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then
