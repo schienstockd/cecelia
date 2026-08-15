@@ -1564,6 +1564,77 @@ end
     end
 end
 
+@testset "API: object find (a uid with no project in hand)" begin
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        pa = create_project!(name="api-find-alpha")
+        sa = add_set!(pa; name="set-A")
+        ia = add_image!(sa; name="shared-name")
+        pb = create_project!(name="api-find-beta")
+        sb = add_set!(pb; name="set-B")
+        ib = add_image!(sb; name="shared-name")
+        ic = add_image!(sb; name="unique-image")
+
+        find(q) = JSON3.read(api_objects_find(HTTP.Request("GET", "/api/objects/find?$q"))[2])
+
+        @test api_objects_find(HTTP.Request("GET", "/api/objects/find"))[1] == 400          # q required
+        @test api_objects_find(HTTP.Request("GET", "/api/objects/find?q=%20%20"))[1] == 400 # whitespace-only
+
+        # THE point of the route: a bare image uid resolves to its project without one being supplied.
+        let r = find("q=$(ic.uid)")
+            @test r.matchedBy == "uid" && r.count == 1
+            m = r.matches[1]
+            @test m.kind == "image" && m.uid == ic.uid && m.name == "unique-image"
+            @test m.projectUid == pb.uid && m.projectName == "api-find-beta"
+            @test m.setUid == sb.uid && m.setName == "set-B"
+            @test m.included == true
+        end
+        # …and it does not stop at images: a set uid and a project uid answer through the same call.
+        let r = find("q=$(sb.uid)")
+            @test r.matchedBy == "uid" && r.count == 1
+            @test r.matches[1].kind == "set" && r.matches[1].imageCount == 2
+        end
+        let r = find("q=$(pa.uid)")
+            @test r.matchedBy == "uid" && r.count == 1
+            @test r.matches[1].kind == "project" && r.matches[1].projectUid == pa.uid
+        end
+        # A uid must not be matched case-insensitively or as a fragment — uids are exact, and a
+        # near-miss falling through to the name pass would answer a different question silently.
+        @test find("q=$(lowercase(ic.uid))").count == 0 || lowercase(ic.uid) == ic.uid
+        @test find("q=no-such-uid").count == 0
+
+        # Name pass: case-insensitive substring, across EVERY project — the same name in two projects
+        # is two answers, not a guess at which one was meant.
+        let r = find("q=SHARED")
+            @test r.matchedBy == "name" && r.count == 2
+            @test Set(m.projectUid for m in r.matches) == Set([pa.uid, pb.uid])
+            @test all(m -> m.kind == "image" && m.name == "shared-name", r.matches)
+        end
+        @test find("q=set-").count == 2                      # sets match by name too
+        @test find("q=api-find-alpha").matches[1].kind == "project"
+
+        # A capped list must SAY it was capped, or the caller reads a trimmed list as the whole answer.
+        let r = find("q=shared-name&limit=1")
+            @test r.count == 1 && r.truncated == true
+        end
+        @test find("q=shared-name").truncated == false
+
+        # Read-only, like GET /api/images: no lastOpenedAt bump, nothing rewritten. This is what lets
+        # the observer call it while keeping its no-mutation guarantee.
+        let f = joinpath(tmp, pb.uid, "project.json"), before = read(f, String)
+            find("q=$(ib.uid)"); find("q=shared")
+            @test read(f, String) == before
+        end
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: task log + history" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()
@@ -3738,6 +3809,7 @@ end
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/notebooks/status", "/api/observer/briefing",
         "/api/observer/labarchives",
+        "/api/objects/find",
         "/api/optical-flow/models",
         "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
@@ -3853,7 +3925,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 75 && length(POST_ROUTES) == 107
+    @test length(GET_ROUTES) == 76 && length(POST_ROUTES) == 107
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

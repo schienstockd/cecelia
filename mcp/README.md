@@ -39,7 +39,8 @@ server carries its own instructions:
 
 - **`SERVER_INSTRUCTIONS`** → `FastMCP(instructions=…)`, delivered in the `initialize` response and
   landing in the client's system prompt. It only has to get the assistant to the front door: resolve
-  the project with `list_projects` (most-recently-opened first), then call `get_session_briefing`.
+  the project with `list_projects` (most-recently-opened first) — or with `find_object` when the user
+  quotes a uid instead of a project — then call `get_session_briefing`.
   **Keep it short** — the observer is registered user-scope, so this is in context for every `claude`
   session on the machine, Cecelia-related or not. `test_server.py` holds the budget.
 - **`BRIEFING_GUIDANCE`** → merged into `get_session_briefing`'s response as `guidance`. The long form:
@@ -73,6 +74,7 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 |---|---|---|
 | `get_project_info(project_uid)` | `GET /api/images` | name, kind, image count, sets, per-status breakdown |
 | `list_images(project_uid)` | `GET /api/images` | every image: uid, name, status, set |
+| `find_object(query, limit=50)` | `GET /api/objects/find` | which PROJECT a uid (or a name fragment) lives in — image, set or project. The only tool that takes no `project_uid`; it is how a uid quoted in a note gets one, instead of `list_images` over every project |
 | `get_image_info(project_uid, image_uid)` | `GET /api/images/meta` | channels, dims, physical sizes, labels, QC, run log, note |
 | `get_image_notes(project_uid, image_uid)` | `GET /api/images/meta` | the user's note for the image |
 | `get_qc_metrics(project_uid, image_uid)` | `GET /api/images/meta` | per-image QC flags/metrics |

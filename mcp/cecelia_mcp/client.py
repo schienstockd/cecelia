@@ -50,6 +50,10 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/projects"),
         ("GET", "/api/images"),
         ("GET", "/api/images/meta"),
+        ("GET", "/api/objects/find"),    # uid (or name) → WHICH project it lives in. The only read
+                                         # that does not start from a projectUid; without it the
+                                         # answer to "image p6t4mC" was /api/images per project
+                                         # until one matched. Read-only, no lastOpenedAt bump.
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
@@ -202,6 +206,12 @@ class CeceliaClient:
 
     def list_images(self, project_uid: str):
         return self._request("GET", "/api/images", {"projectUid": project_uid})
+
+    def find_object(self, query: str, limit: int | None = None):
+        # Where an object lives, given only its uid (or a fragment of its name) — the lookup every
+        # other route needs a projectUid for. Server-side across all projects: an exact uid is one
+        # stat per project, a name search loads each project's ccid.json files.
+        return self._request("GET", "/api/objects/find", {"q": query, "limit": limit})
 
     def get_analysis_boards(self, project_uid: str):
         return self._request("GET", "/api/analysis/boards", {"projectUid": project_uid})

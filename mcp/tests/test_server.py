@@ -21,7 +21,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
 
     def test_expected_read_and_write_tools_registered(self):
         for tool in (
-            "get_project_info", "list_images", "get_task_history",
+            "get_project_info", "list_images", "find_object", "get_task_history",
             "get_module_params", "get_available_plots", "get_analysis_lineage", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
@@ -42,6 +42,15 @@ class ServerToolRegistrationTest(unittest.TestCase):
     def test_list_projects_is_registered(self):
         # What makes "check my current project" resolvable without the user pasting a uid.
         self.assertIn("list_projects", self.names)
+
+    def test_the_uid_lookup_is_reachable_before_a_project_is_known(self):
+        # The other half of resolving a project: the user quotes an image/set uid and nothing says
+        # which project it is in. That has to be findable from the ALWAYS-in-context instructions —
+        # if it is only named in the briefing, the session has to have opened a project first, which
+        # is exactly the state a bare uid does not have. (Sweeping list_images over every project is
+        # what this replaces.)
+        self.assertIn("find_object", self.names)
+        self.assertIn("find_object", guidance.SERVER_INSTRUCTIONS)
 
 
 class GuidanceTest(unittest.TestCase):

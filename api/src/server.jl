@@ -180,6 +180,9 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/fs/list" => (req, body_bytes) -> (api_fs_list(req)),
     "/api/images" => (req, body_bytes) -> (api_images_list(req)),
     "/api/images/meta" => (req, body_bytes) -> (api_images_meta(req)),
+    # Not under /api/images: it answers for sets and projects too, and it is the only route that
+    # starts from a uid with no project in hand (see api_objects_find).
+    "/api/objects/find" => (req, body_bytes) -> (api_objects_find(req)),
     "/api/images/tasklog" => (req, body_bytes) -> (api_images_tasklog(req)),
     "/api/tasks/history" => (req, body_bytes) -> (api_tasks_history(req)),
     "/api/tasks/recent" => (req, body_bytes) -> (api_tasks_recent(req)),

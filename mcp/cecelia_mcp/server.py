@@ -71,6 +71,31 @@ def list_projects() -> list:
 
 
 @mcp.tool()
+def find_object(query: str, limit: int = 50) -> dict:
+    """WHICH PROJECT a uid belongs to — call this the moment the user quotes an id you have no project
+    for ("what happened to image p6t4mC?", a uid in a note, a filename, a lab-log line). Every other
+    tool here needs a `project_uid`; a uid on its own does not carry one, so without this the only way
+    to find it was list_images over every project until one matched. One call instead.
+
+    `query` is a uid OR a name fragment:
+      - a UID matches EXACTLY (case-sensitive) — image, set or project alike;
+      - if nothing matches, it falls back to a case-insensitive substring search over image, set and
+        project NAMES, so "shows me the mertk one" is answerable too.
+
+    Returns {query, matchedBy: "uid"|"name", count, truncated, matches: [...]}, each match {kind:
+    "image"|"set"|"project", uid, name, projectUid, projectName, + setUid/setName/status/included for
+    an image, imageCount for a set}. Take `projectUid` from the match and carry on with the normal
+    tools (get_image_info, get_session_briefing, …).
+
+    `count: 0` means it is in NO project on this machine — say that rather than guessing at a
+    near-match; a uid the user pasted from elsewhere may belong to another install or projects dir.
+    Names are not unique, so a name search can return several matches across projects — offer them,
+    don't pick. `truncated: true` means more matched than `limit`: narrow the query rather than
+    presenting the list as complete."""
+    return _client.find_object(query, limit)
+
+
+@mcp.tool()
 def get_project_info(project_uid: str) -> dict:
     """Project summary: name, kind, image count, its sets, a per-status breakdown, and `excludedCount`
     — how many images are EXCLUDED (included:false). An excluded image is a silent member: it still

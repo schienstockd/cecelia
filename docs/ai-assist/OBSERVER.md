@@ -56,6 +56,7 @@ The value of the observer session depends entirely on what Claude can see. Claud
 ```
 get_project_info          → name, version, image count, current stage
 list_images               → UIDs, names, processing status per stage, any user notes
+find_object               → a bare uid (or name fragment) → WHICH project it lives in, across all of them. The one read that needs no projectUid; without it a quoted uid meant list_images per project until one matched
 get_image_info            → one image: channels, dims, label props, task history
 get_task_log              → log content for a specific task run on a specific image
 get_task_history          → recent tasks across all images: function, status, timestamp, and the run's params (tuning trail)

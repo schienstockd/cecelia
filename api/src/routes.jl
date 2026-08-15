@@ -1423,6 +1423,95 @@ function api_images_list(req::HTTP.Request)
                         count=length(imgs), sets, images=imgs))
 end
 
+# GET /api/objects/find?q=[&limit=] → WHICH PROJECT an object lives in, across every project.
+#
+# Every other read route needs a `projectUid` the caller does not have: a uid quoted in a chat, a note
+# or a filename ("what happened to image p6t4mC?") says nothing about its project, so the only way to
+# use it was to call /api/images for each project in turn until one matched — N round trips to answer
+# a lookup, and the MCP observer did exactly that. This is the one route that starts from the object.
+#
+# `q` is a uid OR a name fragment, in that order of preference:
+#   - UID (exact, case-sensitive) — the metadata dir is `{proj}/1/{uid}`, so existence is one `isfile`
+#     per project and only the OWNING project is then loaded. Matches a project uid too.
+#   - NAME (case-insensitive substring) — only when nothing matched the uid pass, and it loads every
+#     project (each `ccid.json`, no pixel data). Names are not unique, so this can return several.
+# Read-only: no `lastOpenedAt` bump, the same non-mutating guarantee as GET /api/images.
+function api_objects_find(req::HTTP.Request)
+    query = HTTP.queryparams(HTTP.URI(req.target))
+    q     = strip(get(query, "q", ""))
+    isempty(q) && return 400, JSON3.write((; error="q required (a uid or a name fragment)"))
+    limit = something(tryparse(Int, get(query, "limit", "")), 50)
+    limit = clamp(limit, 1, 500)
+
+    _proj_match(p) = (; kind="project", uid=string(get(p, "uid", "")), name=string(get(p, "name", "")),
+                        projectUid=string(get(p, "uid", "")), projectName=string(get(p, "name", "")))
+    _set_match(proj, s) = (; kind="set", uid=s.uid, name=s.name,
+                             projectUid=proj.uid, projectName=proj.name,
+                             imageCount=length(s.image_uids))
+    _img_match(proj, s, img) = (; kind="image", uid=img.uid, name=img.name,
+                                  projectUid=proj.uid, projectName=proj.name,
+                                  setUid=s.uid, setName=s.name,
+                                  status=img.status, included=image_included(img))
+
+    projects = _scan_projects_raw()          # most-recently-opened first; carries uid/name/path
+    matches  = Vector{Any}()
+
+    # ── uid pass ──────────────────────────────────────────────────────────────────────────────────
+    for p in projects
+        root = string(get(p, "path", ""))
+        string(get(p, "uid", "")) == q && push!(matches, _proj_match(p))
+        isfile(state_file(root, String(q))) || continue
+        proj = try load_project(string(get(p, "uid", ""))) catch e
+            @warn "Skipping project that would not load" dir=root exception=e
+            continue
+        end
+        found = false
+        for s in proj._sets
+            s.uid == q && (push!(matches, _set_match(proj, s)); found = true)
+            for img in images(s)
+                img.uid == q && (push!(matches, _img_match(proj, s, img)); found = true)
+            end
+        end
+        # The dir exists but no set claims it — a set-less leftover. Report what it IS rather than
+        # "not found": the caller asked where a uid lives, and "in this project, unattached" is the
+        # answer. `init_object` dispatches on the ccid.json `class`, so this needs no guessing.
+        if !found
+            obj = try init_object(proj.uid, String(q)) catch; nothing end
+            isnothing(obj) || push!(matches, (; kind = obj isa CciaSet ? "set" : "image",
+                                               uid=obj.uid, name=obj.name,
+                                               projectUid=proj.uid, projectName=proj.name,
+                                               setUid="", setName=""))
+        end
+    end
+    if !isempty(matches)
+        return 200, JSON3.write((; query=String(q), matchedBy="uid",
+                                   count=length(matches), truncated=false, matches))
+    end
+
+    # ── name pass ─────────────────────────────────────────────────────────────────────────────────
+    needle = lowercase(String(q))
+    _hit(name) = occursin(needle, lowercase(String(name)))
+    for p in projects
+        _hit(get(p, "name", "")) && push!(matches, _proj_match(p))
+        proj = try load_project(string(get(p, "uid", ""))) catch e
+            @warn "Skipping project that would not load" dir=get(p, "path", "") exception=e
+            continue
+        end
+        for s in proj._sets
+            _hit(s.name) && push!(matches, _set_match(proj, s))
+            for img in images(s)
+                _hit(img.name) && push!(matches, _img_match(proj, s, img))
+            end
+        end
+    end
+    # A name fragment can match a whole set; cap it, but SAY so — a silently trimmed list reads as
+    # "these are all of them" and the caller would name the wrong image with full confidence.
+    truncated = length(matches) > limit
+    truncated && (matches = matches[1:limit])
+    200, JSON3.write((; query=String(q), matchedBy="name",
+                        count=length(matches), truncated, matches))
+end
+
 # GET /api/images/tasklog?projectUid&imageUid&fun → the raw task log for one fun on one image.
 # Reads {img._dir}/logs/{fun}.log (written by _wrap_log_with_file in the scheduler). Read-only;
 # backs the MCP observer's get_task_log tool. Returns exists=false + "" when no log exists yet.
