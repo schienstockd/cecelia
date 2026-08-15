@@ -193,9 +193,16 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             mod  = _category_of_fun(fun)
             push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.uid)
             get!(mod_sev, mod, "ok")
-            if String(get(e, "status", "done")) == "failed"
+            st = String(get(e, "status", "done"))
+            if st == "failed"
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # still failed at day's end
                 bump(mod, "fail")
+            elseif st != "done"
+                # cancelled / interrupted / still running — the run produced no result, so it is neither
+                # a failure of the science nor a success to read QC off. It stays in the day's activity
+                # list (it happened, and "why is there no output?" is answered by seeing it) but must not
+                # bump severity, count as a recovery, or have `_warn_findings` scanned against whatever
+                # output an EARLIER run happened to leave behind.
             else
                 # recovered: earlier attempts failed, the one that stands succeeded
                 get(n_failed, k, 0) > 0 &&

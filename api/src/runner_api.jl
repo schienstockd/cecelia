@@ -144,6 +144,62 @@ function _reconcile_with_runner()
 end
 
 """
+    _live_task_ids() -> (ids::Set{String}, trustworthy::Bool)
+
+Every task id executing ANYWHERE right now — this process plus the detached runner — and whether that
+answer can be relied on.
+
+`trustworthy` exists because the caller (`reap_run_log_for_project!`) uses absence from this set as
+proof that a run is dead. Three cases, and only the middle one is subtle:
+
+  * runner disabled → in-process tasks are the whole story. Trustworthy.
+  * runner enabled but not answering `/ping` → it is GONE, and so is everything it was running (it
+    holds its queue in memory with no spool). An empty contribution is the correct answer, and this is
+    the case the reap exists for — treating it as "unknown" would skip exactly the reap we want.
+  * runner alive but its task list read failed → it may well still be segmenting. NOT trustworthy;
+    the caller must not reap, or a transient timeout reports live work as interrupted.
+"""
+function _live_task_ids()
+    ids = Set{String}(string(t.id) for t in Cecelia.list_tasks())
+    _runner_enabled() || return ids, true
+    Cecelia.runner_alive(_RUNNER) || return ids, true
+    try
+        for t in Cecelia.runner_tasks(_RUNNER)
+            push!(ids, String(get(t, "id", "")))
+        end
+        ids, true
+    catch e
+        @warn "Run-log reap: runner is up but would not list its tasks — skipping" exception = e
+        ids, false
+    end
+end
+
+"""
+    reap_run_log_for_project!(proj) -> n
+
+Close out this project's abandoned runs: any run-log entry still marked `"running"` that nothing is
+executing any more becomes `"interrupted"`. Returns how many were reaped.
+
+Called on project OPEN, which is both the moment the answer is wanted ("I started six, what happened
+to the other three?") and the first moment after a crash or a Ctrl-C when someone asks. It is the only
+thing that can close those entries: the process that would have closed them is the one that died.
+
+Never throws — a project must still open when its provenance bookkeeping cannot be tidied.
+"""
+function reap_run_log_for_project!(proj)::Int
+    try
+        live, trustworthy = _live_task_ids()
+        trustworthy || return 0
+        n = sum(Cecelia.reap_run_log!(img, live) for img in Cecelia.images(proj); init = 0)
+        n > 0 && @info "Reaped interrupted runs" project = proj.uid count = n
+        n
+    catch e
+        @warn "Could not reap interrupted runs" exception = e
+        0
+    end
+end
+
+"""
 Start (or adopt) the runner and subscribe to it. Called once at server start-up.
 
 Launching happens on its own task: a COLD runner pays Julia load + Cecelia precompilation, and the app
@@ -165,25 +221,75 @@ function _start_runner!()
 end
 
 """
-    _submit_to_runner(req) -> Bool
+    _submit_to_runner(req) -> Symbol
 
-Hand a task to the runner. `false` means "not handled here" — the caller runs it in-process instead.
+`:accepted` (running there), `:refused` (a LIVE runner said no), or `:unavailable` (nothing answered).
 
-**Falling back rather than failing is deliberate.** A runner that is still precompiling, has been
-stopped from the shell, or died is a normal state of the world; the user pressing Run should get their
-task executed either way. The cost is that the run is then attached to this process and dies with it —
-which is the status quo, not a regression.
+Same three-way split as `_submit_chain_to_runner`, and for the same reason: a refusal and a transport
+failure look identical from a `try`, and here they call for opposite responses. A refusal is a live
+runner's answer and the caller should just run the task itself; "nothing answered" means the runner the
+user switched ON is gone, which is worth *fixing* rather than quietly working around — see
+`_ensure_runner!`.
+
+**Falling back rather than failing is still deliberate.** A runner that is precompiling, was stopped
+from the shell, or died is a normal state of the world; the user pressing Run should get their task
+executed either way. The cost is that the run is then attached to this process and dies with it.
 """
-function _submit_to_runner(req)::Bool
-    _runner_enabled() || return false
+function _submit_to_runner(req)::Symbol
+    _runner_enabled() || return :unavailable
     try
         ok = get(Cecelia.runner_submit(_RUNNER, req), "ok", false)
-        ok === true && return true
+        ok === true && return :accepted
         @warn "Runner refused the task — running it in-process" task_id = req.task_id
-        false
+        :refused
     catch e
         @warn "Runner unreachable — running the task in-process" task_id = req.task_id exception = e
-        false
+        :unavailable
+    end
+end
+
+# Serialises relaunches. Pressing Run on a set submits one task PER IMAGE in a tight loop, so without
+# this a dead runner would be "relaunched" six times at once — six cold Julia starts racing for one
+# port, five of which lose. The winner writes `runner.json`; the losers would adopt it anyway, but only
+# after paying the start.
+const _RUNNER_RELAUNCH_LOCK = ReentrantLock()
+
+"""
+    _ensure_runner!() -> Bool
+
+Make sure the enabled runner is actually running, launching it if it is not. `true` when there is a
+live runner to submit to afterwards.
+
+**Why a submit relaunches at all.** Falling back to in-process was silent, and silence was the whole
+problem: a runner that died mid-session turned every later run into one that dies with the next
+restart — precisely what the user enabled it to prevent — while the only signal was a small,
+20-second-polled label on one panel. Nobody watching a segmentation queue is watching that. So the
+fallback stops being the *first* answer to a missing runner and becomes the last one.
+
+This pays a COLD START (Julia + Cecelia precompilation, ~45 s). It must therefore never run on the WS
+receive loop — see the dispatch in `handle_task_run`.
+"""
+function _ensure_runner!()::Bool
+    _runner_enabled() || return false
+    Cecelia.runner_alive(_RUNNER) && return true
+    lock(_RUNNER_RELAUNCH_LOCK) do
+        Cecelia.runner_alive(_RUNNER) && return true   # another submit already brought it back
+        @warn "Task runner is enabled but not answering — relaunching it"
+        try
+            # Same reset as `/api/runner/restart`, and it matters more here: the replacement runner
+            # starts its log `seq` at 0, so a cursor left at the dead one's high-water mark would skip
+            # the new runner's entire startup — including anything explaining why its predecessor went
+            # away, which on this path is the question nobody has an answer to yet.
+            _RUNNER_LOG_SEQ[] = 0
+            Cecelia.runner_launch!(_RUNNER)
+            # No re-subscribe: `runner_subscribe!` reconnects on its own (backoff to 15 s) and fires
+            # `_reconcile_with_runner` on every successful reconnect, so the relay reattaches itself.
+            true
+        catch e
+            @error "Could not relaunch the task runner — this task will run in-process and will not \
+                    survive a restart" exception = (e, catch_backtrace())
+            false
+        end
     end
 end
 

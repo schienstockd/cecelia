@@ -292,6 +292,15 @@ end
     # killing a runner that may be mid-task on the developer's own machine.
     @test occursin("stop_runner::Bool = true", src)          # Quit gets the stop by DEFAULT…
     @test occursin("stop_runner && try; Cecelia.runner_stop!", body)
+    # …but the IN-PROCESS task cancel must NOT be gated on it. Every exit path here ends in `exit`, so
+    # a task running in this process (the fallback whenever the runner is down) dies either way; the
+    # gate only chose whether it died tidily. Gated, a Restart or worktree switch orphaned the Python
+    # child to keep burning GPU and left the run with no terminal status at all — it simply vanished.
+    # The runner's tasks are not in `_TASKS`, so this loop never reached them and the gate was never
+    # what protected them. Asserted on the loop itself, since the bug was one `if` around it.
+    cancel_at = findfirst("for t in list_tasks(); cancel_task!(", body)
+    @test cancel_at !== nothing
+    @test !occursin("if stop_runner", body[1:cancel_at[1]])
     # …and both restart paths opt out. Two call sites, asserted separately: a single count would pass
     # if one of them were changed to stop it.
     restart = src[findfirst("function api_app_restart(", src)[1]:end]
@@ -389,6 +398,66 @@ end
         @test i_term !== nothing
         @test i_graceful[1] < i_term[1]
     end
+end
+
+# ── A missing runner is repaired, not silently worked around ──────────────────
+# The runner dying used to degrade in total silence: every later run went in-process, dying with the
+# next restart — the one thing enabling the runner prevents — and the only tell was a 20-second-polled
+# label on the Run panel. Six segmentations were lost to exactly this.
+@testset "API: an unavailable runner is relaunched, not quietly bypassed" begin
+    src = read(joinpath(@__DIR__, "..", "src", "runner_api.jl"), String)
+    sock = read(joinpath(@__DIR__, "..", "src", "sockets.jl"), String)
+
+    # THREE states, not two. A refusal (a live runner saying no) and "nothing answered" call for
+    # opposite responses, and they are indistinguishable from a `try` — the same split, for the same
+    # reason, as `_submit_chain_to_runner`.
+    @test occursin("function _submit_to_runner(req)::Symbol", src)
+    for st in (":accepted", ":refused", ":unavailable")
+        @test occursin(st, src)
+    end
+    # With the runner disabled (the state under test), a submit is `:unavailable` — never `:refused`,
+    # which would send the dispatch down the "a live runner said no" path and skip the relaunch.
+    @test _submit_to_runner(TaskRequest(; task_id = "t1", fun_name = "segment.cellpose",
+                                          project_uid = "p", image_uid = "i")) === :unavailable
+
+    # …and only `:unavailable` relaunches. Relaunching on `:refused` would fight a runner that is
+    # alive and has already answered.
+    @test occursin("st === :unavailable && _runner_enabled()", sock)
+    @test occursin("_ensure_runner!()", sock)
+
+    # The relaunch is a ~45 s cold start and `handle_message` runs INLINE on the WS receive loop, so it
+    # must be spawned — blocking there stalls that client's whole stream, pings included, once per
+    # image on a set. Asserted on the ordering, since the bug is a missing `Threads.@spawn`.
+    let disp = sock[findfirst("st === :unavailable && _runner_enabled()", sock)[1]:end]
+        i_spawn  = findfirst("Threads.@spawn", disp)
+        i_ensure = findfirst("_ensure_runner!()", disp)
+        @test i_spawn !== nothing && i_ensure !== nothing
+        @test i_spawn[1] < i_ensure[1]        # spawned FIRST, then the slow work inside it
+    end
+
+    # Concurrent submits must not each pay a cold start — pressing Run on a set fires one per image.
+    @test occursin("_RUNNER_RELAUNCH_LOCK", src)
+    @test occursin("lock(_RUNNER_RELAUNCH_LOCK)", src)
+    # …and it re-checks liveness INSIDE the lock, or every queued submit relaunches in turn.
+    let ens = src[findfirst("function _ensure_runner!()", src)[1]:end]
+        ens = ens[1:findfirst("\nend", ens)[1]]
+        @test length(collect(eachmatch(r"runner_alive\(_RUNNER\)", ens))) >= 2
+        # A REPLACEMENT runner restarts its log `seq` at 0, so the read cursor has to go back with it —
+        # exactly as `/api/runner/restart` does. Left stale, the new runner's whole startup is skipped,
+        # and on this path that startup is the only place the reason for the death could show up.
+        @test occursin("_RUNNER_LOG_SEQ[] = 0", ens)
+        # …before the launch, not after: the runner starts talking as soon as it is up.
+        @test findfirst("_RUNNER_LOG_SEQ[] = 0", ens)[1] < findfirst("runner_launch!", ens)[1]
+    end
+
+    # The death itself is announced. The subscriber loop swallowed the drop and retried forever, so
+    # nothing anywhere said the runner had gone — not a log line, not a frame. It is a `@warn`, which
+    # the server's BroadcastLogger tees to the browser as `server:log`.
+    client = read(joinpath(@__DIR__, "..", "..", "app", "src", "runner", "client.jl"), String)
+    @test occursin("Task runner connection lost", client)
+    # …ONCE, on a connected→gone transition. This loop also spins while a cold runner precompiles, and
+    # warning per retry would bury the one event that matters under its own noise.
+    @test occursin("connected = false", client) && occursin("if connected", client)
 end
 
 @testset "API: packages" begin

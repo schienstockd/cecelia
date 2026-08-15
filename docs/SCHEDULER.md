@@ -705,8 +705,40 @@ path (`api/task_console.jl`, `frontend/src/utils/taskReconcile.ts`).
 - **`since` is inclusive**, so a poller always re-reads its own newest entry; two units finishing in the
   same millisecond would otherwise let a poll landing between them drop the second forever. Consumers
   de-duplicate by task id, which they must anyway.
-- **Not run history.** Fixed size, in memory, gone on restart. Durable per-image history is
-  `append_run_log!` → `GET /api/tasks/history`.
+- **Not run history.** Fixed size, in memory, gone on restart. Durable per-image history is the run
+  log → `GET /api/tasks/history`.
+
+### The durable half: a run is logged twice, not once
+
+`{1/uid}/runlog.json` is the record that outlives every process. It is written at **both** ends of a
+run — `open_run_log!` at `:running`, `close_run_log!` at the terminal status — and that shape is
+load-bearing, not bookkeeping taste:
+
+| status | means |
+|---|---|
+| `running` | started; outcome not yet known |
+| `done` / `failed` | finished; `failed` is recorded so repeated failures are visible, not just successes |
+| `cancelled` | stopped by someone |
+| `interrupted` | its **process died mid-run** — reaped at the next project open |
+
+Two bugs are why. First, `:cancelled` used to be skipped on the reasoning that "the user aborted — not
+an outcome worth logging". A cancel is also how a task ends when its process is killed, so a
+segmentation twenty minutes in could end leaving *nothing*: no entry, no outcome, and a task log that
+just stopped mid-stream, indistinguishable from a crash. Second, and the reason opening early is not
+optional: **an append-on-finish log cannot record a run that never reaches its finish.** The detached
+runner holds its queue in memory with no spool (`docs/RUNNER.md`), so a Ctrl-C or a crash takes every
+in-flight task with it and no Julia code ever runs again. Only something already on disk can say the
+run happened.
+
+`reap_run_log_for_project!` (`api/src/runner_api.jl`) closes those out at project open, converting
+stale `running` entries to `interrupted`. It reaps only what it can *prove* is dead — a task the
+detached runner is still executing must survive a backend restart untouched, since that is the runner's
+entire purpose — so it skips the reap when the runner is alive but won't list its tasks. See
+`_live_task_ids`.
+
+**Readers must treat `status` as an open set.** `running` on disk is a real state, not a corrupt entry,
+and `cancelled`/`interrupted`/`running` all mean *no output was produced* — never attribute a result to
+one.
 
 ### …and so is the START (`note_task_started!`)
 

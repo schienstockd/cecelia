@@ -482,17 +482,35 @@ function handle_task_run(ws, data)
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
     req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params)
 
-    # Hand it to the detached runner if there is one — then this server can restart without taking the
-    # run with it, and its frames arrive back through the relay into these same sinks. `false` means
-    # "not handled there" (disabled, still precompiling, stopped), and we execute in-process below:
-    # the status quo, not a regression.
-    _submit_to_runner(req) && return
-
-    Threads.@spawn execute_task(req;
+    # Run it in THIS process — the fallback whenever no runner takes it. Dies with this server.
+    run_in_process() = execute_task(req;
         on_log      = line -> ws_log(ws, task_id, line),
         on_progress = (n, t) -> ws_progress(ws, task_id, n, t),
         on_status   = (status, uid, uids) ->
                           ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name),
         on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta))
+
+    # Hand it to the detached runner if there is one — then this server can restart without taking the
+    # run with it, and its frames arrive back through the relay into these same sinks.
+    #
+    # `:unavailable` — the runner is ENABLED but nothing answered — is the interesting case, and it used
+    # to fall straight through to in-process. Silently: a runner that died mid-session then turned every
+    # later run into one that dies with the next restart, which is the single thing enabling it was
+    # meant to prevent, and the only tell was a 20-second-polled label on the Run panel. So we bring it
+    # back instead, and only fall back if we cannot.
+    #
+    # That relaunch is a COLD START (~45 s), and `handle_message` runs INLINE on the WS receive loop —
+    # blocking here would stall this client's entire stream, pings included, and on a set it would do so
+    # once per image. Hence the spawn. The task's row stays `queued` meanwhile, which is exactly true.
+    st = _submit_to_runner(req)
+    st === :accepted && return
+    if st === :unavailable && _runner_enabled()
+        Threads.@spawn begin
+            (_ensure_runner!() && _submit_to_runner(req) === :accepted) || run_in_process()
+        end
+        return
+    end
+    # `:refused` (a live runner said no) or the runner is switched off — neither is worth a relaunch.
+    Threads.@spawn run_in_process()
 end
 

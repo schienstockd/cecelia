@@ -49,13 +49,31 @@ run in the backend and Restart is enough for everything.
 
 ### If it is not there when you press Run
 
-The task **runs in the backend instead** — it works and finishes normally, it just dies with the next
-Restart, which is the one thing you enabled the runner to avoid. That is a surprise worth surfacing, so
-the Run panel shows **"Task runner down"** with a **Start** button whenever the runner is enabled and
-not answering. Nothing else on that page would tell you.
+**It gets started.** A submit that finds the runner enabled but not answering (`:unavailable`)
+relaunches it and submits there; only if the relaunch fails does the task run in the backend. The row
+stays `queued` for the cold start (~45 s), which is what it is.
 
-It cannot go missing while you are working: the idle exit requires **no subscriber**, and the backend
-holds one open. So this only appears after `pixi run stop-runner`, or if the runner crashed.
+That is a change from falling back immediately, and the reason is what falling back cost. It was
+*silent*: a runner that died mid-session turned every later run into one that dies with the next
+restart — the single thing enabling the runner prevents — and the only tell was a 20-second-polled
+**"Task runner down"** label on the Run panel. Nobody queueing six segmentations is watching that
+label. Six were lost to exactly this, and the project held no record that they had ever started.
+
+The label and its **Start** button still exist for the persistent state. What is new alongside them:
+
+- **The death is announced.** `runner_subscribe!` used to swallow the dropped connection and retry
+  forever in silence. It now `@warn`s once on a connected→gone transition (and `@info`s on reconnect),
+  which the server's `BroadcastLogger` tees to the browser as `server:log`. Once, on the transition —
+  the same loop spins while a cold runner precompiles, and a per-retry warning would bury the event
+  under its own noise.
+- **A run that dies anyway is recorded** as `interrupted` — see *What a lost task leaves behind*.
+
+Two things worth knowing about the relaunch: it is behind `_RUNNER_RELAUNCH_LOCK`, because pressing Run
+on a set submits one task per image and six concurrent cold starts racing for one port is not a
+recovery; and it never happens on `:refused`, which is a *live* runner's answer and nothing to repair.
+
+It should not go missing while you are working — the idle exit requires **no subscriber** and the
+backend holds one open — so this means `pixi run stop-runner`, or a crash.
 
 ---
 
@@ -177,8 +195,29 @@ Pluto) straight back up.
 | **Task preview** | must never queue behind a full run — it is on the un-pooled rail by design. `app/src/preview.jl`, plan D7 |
 | **REPL and tests** | `run_task`/`run_chain` stay the library API, usable with no server and no runner |
 
-There is also **no on-disk spool**: a job submitted while the runner is down falls back to in-process,
-and a runner crash loses its in-flight task. Deferred, not dropped — plan D4.
+There is also **no on-disk spool**: a runner crash loses its in-flight task, and a job submitted while
+the runner cannot be brought back runs in-process. Deferred, not dropped — plan D4. (A submit no longer
+*starts* by falling back — it relaunches the runner first; see *If it is not there when you press Run*.
+That narrows the window, it does not close it: nothing survives the runner dying mid-task.)
+
+### What a lost task leaves behind
+
+Because there is no spool, "lost" is a real state and the only defence is that it is *visible*. Two
+things that were once silent:
+
+**The fallback is not exempt from the exit.** A task running in-process (the fallback above) dies with
+the backend on Restart *and* on the worktree switch — both `exit` this process. `_stop_children_for_exit`
+used to skip cancelling in-process tasks on exactly those two paths, gated on the same `stop_runner`
+flag that protects the runner. But the gate never protected anything here: the runner's tasks are not in
+this process's `_TASKS`, so that loop never reached them. All the gate did was decide whether the
+in-process task died *tidily* — and skipping the cancel orphaned its Python child to keep burning GPU
+into a `.partial` nobody would promote, with no terminal status recorded. The cancel is now
+unconditional; `api/test` pins that it is not re-gated.
+
+**And a run that dies anyway is reaped, not forgotten.** The run log is opened when a task starts, so a
+task lost to a runner Ctrl-C or crash leaves a `running` entry that becomes `interrupted` at the next
+project open. That is the difference between "three of my six segmentations are gone" being answerable
+from the project and not — see `docs/SCHEDULER.md` → *a run is logged twice*.
 
 ---
 

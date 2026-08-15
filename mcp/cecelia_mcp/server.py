@@ -207,10 +207,20 @@ def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
 def get_task_history(project_uid: str, limit: int = 100) -> list:
     """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
-    outcome, `"done"` or `"failed"` — and **`params`**, the params that run used (the tuning trail; `{}`
-    on older runs). Pair `params` with get_module_params + get_cohort_qc to suggest a param adjustment
-    on an outlier: what was tried, the valid range, the direction to try. It is "what was tried", not a
-    params→outcome relationship — suggest, don't predict.
+    outcome — and **`params`**, the params that run used (the tuning trail; `{}` on older runs). Pair
+    `params` with get_module_params + get_cohort_qc to suggest a param adjustment on an outlier: what
+    was tried, the valid range, the direction to try. It is "what was tried", not a params→outcome
+    relationship — suggest, don't predict.
+
+    `runStatus` is one of `done` · `failed` · `cancelled` · `interrupted` · `running`. The last three
+    mean **no output was produced**, so never read a result as belonging to one:
+      * `cancelled` — someone stopped it.
+      * `interrupted` — its process died mid-run (a backend/runner Ctrl-C or crash). Nobody chose this
+        and nobody was told; a user staring at a half-finished batch asking "what happened to the other
+        three?" is answered HERE and almost nowhere else.
+      * `running` — live right now, outcome not yet known.
+    A long-running `fun` that keeps coming back `interrupted` is worth raising as a workflow problem
+    (work is being lost to restarts), not as a param problem.
 
     Watch `runStatus`: the same `fun` showing `"failed"` repeatedly on one image is a stuck point worth
     flagging (e.g. "hmm failed 5x on image KDIeEm — want to look at the params?"). **This is the place

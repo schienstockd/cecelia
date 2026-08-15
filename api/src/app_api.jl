@@ -24,17 +24,23 @@
 # calls against the ports `api_diagnostics` reports. The runner is reported there too but is stopped
 # CONDITIONALLY, so it is asserted separately rather than by that count.
 function _stop_children_for_exit(; stop_runner::Bool = true)
-    # In-flight TASK subprocesses. Nothing else kills these: `exit(0)` below just reparents them, so a
+    # In-flight TASK subprocesses. Nothing else kills these: the `exit` below just reparents them, so a
     # Quit during a cellpose run left the Python child alive — finishing, writing its zarr, and never
     # registered, because the Julia post-step (`register_label_files!`, QC, run log) died with us.
     # `cancel_task!` marks the record and kills the process TREE. Only reaches tasks in THIS process;
-    # ones on the detached runner go when the runner does, below.
-    if stop_runner
-        try
-            for t in list_tasks(); cancel_task!(String(t.id)); end
-        catch e
-            @warn "Shutdown: cancelling in-flight tasks failed" exception = e
-        end
+    # ones on the detached runner are not in `_TASKS` at all and go when the runner does, below.
+    #
+    # NOT gated on `stop_runner`. It was, and that was wrong in the one direction that costs work: a
+    # Restart or a worktree switch exits this process either way, so an IN-PROCESS task (the fallback
+    # whenever the runner is down or disabled) dies regardless — the gate only decided whether it died
+    # *tidily*. Skipping the cancel orphaned its Python child to keep burning GPU into a `.partial`
+    # nobody would ever promote, and left its record with no terminal status, so the run vanished with
+    # no cancelled entry and no error. The runner's own tasks are untouched by this loop, which is why
+    # the gate was never what protected them — `stop_runner` below is.
+    try
+        for t in list_tasks(); cancel_task!(String(t.id)); end
+    catch e
+        @warn "Shutdown: cancelling in-flight tasks failed" exception = e
     end
     try
         v = _viewer()

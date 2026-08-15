@@ -206,11 +206,17 @@ Errors in `on_frame` are logged and swallowed: a malformed frame must not kill t
 function runner_subscribe!(h::RunnerHandle, on_frame::Function; on_reconnect::Function = () -> nothing)::Task
     Threads.@spawn begin
         backoff = 1.0
+        # Was there a connection to lose? Only a connected→gone transition is worth saying out loud:
+        # this loop also spins while a COLD runner precompiles (normal, expected, ~45 s of failures),
+        # and warning on every retry would bury the one event that matters in its own noise.
+        connected = false
         while true
             try
                 HTTP.WebSockets.open("ws://127.0.0.1:$(h.port)/events";
                                      maxframesize = WS_MAX_FRAME_SIZE) do ws
                     backoff = 1.0
+                    connected && @info "Task runner reconnected"
+                    connected = true
                     try; Base.invokelatest(on_reconnect); catch e
                         @warn "Runner reconnect hook failed" exception = (e, catch_backtrace())
                     end
@@ -224,6 +230,15 @@ function runner_subscribe!(h::RunnerHandle, on_frame::Function; on_reconnect::Fu
                 end
             catch e
                 e isa InterruptException && rethrow()
+            end
+            # The runner dying used to be entirely silent here — the loop just retried forever while
+            # the backend quietly ran everything in-process, so an hour of work could be attached to a
+            # process the user was about to restart with nothing having said so. The backend's logger
+            # broadcasts this to the browser console (`server:log`), so it is a real notification.
+            if connected
+                @warn "Task runner connection lost — reconnecting. Tasks started meanwhile run in \
+                       this server and will not survive a restart."
+                connected = false
             end
             sleep(backoff)
             backoff = min(backoff * 2, 15.0)     # a stopped runner must not become a hot loop
