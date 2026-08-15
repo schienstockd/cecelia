@@ -14,6 +14,7 @@
 // gap closes: known keys survive, new params get their defaults, params that no longer exist drop out.
 
 import type { TaskDef, ParamValues } from './types'
+import type { CciaImage } from '../stores/project'
 
 /**
  * One entry of a repeatable `group`, reconciled against the group's declared sub-params.
@@ -160,6 +161,51 @@ export const DEFAULT_VALUE_NAME_FIELD: ValueNameField = 'filepaths'
 
 export function isKnownValueNameField(field: string | undefined): boolean {
   return field === undefined || (VALUE_NAME_FIELDS as readonly string[]).includes(field)
+}
+
+/** The names one image carries under `field`. */
+export function imageNamesForField(img: CciaImage, field: string | undefined | null): string[] {
+  if (field === 'labels') return Object.keys(img.labels ?? {})
+  // spatial neighbour graphs (spatialAnalysis.cellNeighbours), keyed by run suffix — the intersection
+  // across the selected images is exactly the set of graphs a pooled analysis can run over.
+  if (field === 'spatialGraphs') return Object.keys(img.spatialGraphs ?? {})
+  // Suggestion-only sources for a `valueNameInput` — plain arrays, listed from disk rather than
+  // registered in ccid.json, so there are no keys to take.
+  if (field === 'statsSuffixes') return img.statsSuffixes ?? []
+  if (field === 'clusterSuffixes') return img.clusterSuffixes ?? []
+  if (field === 'regionSuffixes') return img.regionSuffixes ?? []
+  return Object.keys(img.filepaths ?? { default: '' })
+}
+
+/**
+ * The option list for a value-name picker: the names present on EVERY selected image, plus `extra`.
+ *
+ * The intersection is the point — the form is one config applied to all of them, so a name only one
+ * image has cannot be run.
+ *
+ * `field` is three-valued and the distinction is load-bearing:
+ *   * a known field  → read that field;
+ *   * `undefined`    → image VERSIONS (`DEFAULT_VALUE_NAME_FIELD`). Most task JSON omits it, so this
+ *     is the common case, not an edge one;
+ *   * `null`         → there is NO source (a `valueNameInput` whose namespace has no image field, e.g.
+ *     the global model vault). Only then is an empty list correct.
+ *
+ * Collapsing `undefined` into `null` emptied the version picker on six task specs — cellpose, coastal,
+ * cellposeCorrect, opticalFlow.train, remove and measureLabels all omit `field`. Nothing errored; the
+ * dropdown was simply blank. That is why this lives here with a test on the LIST, rather than inline in
+ * the component where only `preferredValueName` was covered.
+ */
+export function valueNameOptions(
+  images: CciaImage[], field: string | undefined | null, extra: readonly string[] = [],
+): string[] {
+  const base = field === null ? []
+    : images.length === 0 ? ['default']          // nothing selected yet — offer the universal default
+    : (() => {
+        const f = field ?? DEFAULT_VALUE_NAME_FIELD
+        const sets = images.map(img => new Set(imageNamesForField(img, f)))
+        return [...sets[0]].filter(k => sets.every(s => s.has(k)))
+      })()
+  return [...new Set([...base, ...extra])]
 }
 
 /**
