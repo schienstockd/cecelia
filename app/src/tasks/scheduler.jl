@@ -445,8 +445,22 @@ function _execute_job!(job::TaskJob)
         post!(nothing)
         return
     end
+    # target images for the run log — the whole vector on a set-scope job, else the one image
+    log_targets = isnothing(job.imgs) ? [job.img] : job.imgs
+    fun_name    = _fun_name_from_task(job.task)
+    value_name  = string(get(job.params, "valueName", ""))
     try
         _set_status!(rec, :running)
+        # OPEN the run-log entry before the work, not after it. An append-on-finish log cannot record
+        # a run that never reaches its finish — a killed runner takes its in-flight tasks with it and
+        # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
+        try
+            for tgt in log_targets
+                open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id)
+            end
+        catch e
+            @warn "run-log open failed" task_id = job.id exception = e
+        end
         # invokelatest: workers are spawned once at pool init; user-supplied callbacks
         # may be defined in a later world (e.g. in test files or interactive sessions).
         # set-scope job runs _run_task over the whole image vector at once; else single image.
@@ -480,20 +494,22 @@ function _execute_job!(job::TaskJob)
         end
         final = is_cancelled(job.id) ? :cancelled : isnothing(result) ? :failed : :done
         _set_status!(rec, final)
-        # append to each target image's run log — automatic run history for the image table AND the AI
-        # observer. Records BOTH :done and :failed (with status) so repeated failures are visible, not just
-        # successes; :cancelled is skipped (the user aborted — not an outcome worth logging). Never fail the
-        # task over a log write.
-        if final in (:done, :failed)
-            try
-                fn = _fun_name_from_task(job.task)
-                vn = string(get(job.params, "valueName", ""))
-                for tgt in (isnothing(job.imgs) ? [job.img] : job.imgs)
-                    append_run_log!(tgt, fn, vn, string(final), job.params)
-                end
-            catch e
-                @warn "run-log append failed" task_id = job.id exception = e
+        # A cancel kills the subprocess outright, so the task log otherwise just STOPS mid-run and
+        # reads exactly like a crash. Say which it was, in the file the user actually opens.
+        final === :cancelled && try
+            Base.invokelatest(job.on_log, "[INFO] Task cancelled — output is incomplete.")
+        catch; end
+        # CLOSE each target image's run-log entry — automatic run history for the image table AND the AI
+        # observer. Records :done, :failed AND :cancelled (previously cancelled runs were skipped, which
+        # is how a killed segmentation left no trace at all — see run_log.jl). Never fail a task over a
+        # log write.
+        try
+            for tgt in log_targets
+                close_run_log!(tgt, job.id, string(final);
+                               fun_name = fun_name, value_name = value_name, params = job.params)
             end
+        catch e
+            @warn "run-log close failed" task_id = job.id exception = e
         end
         post!(result)
     catch e
@@ -506,6 +522,15 @@ function _execute_job!(job::TaskJob)
             @error "Scheduler job aborted" task_id = job.id exception = (e, catch_backtrace())
         catch; end
         try; _set_status!(rec, :failed); catch; end
+        # …and close the run-log entry opened above, for the same reason the status is set: an entry
+        # left at "running" is indistinguishable from a task still going, and would be reaped as
+        # "interrupted" at the next project open rather than reading as the failure it was.
+        try
+            for tgt in log_targets
+                close_run_log!(tgt, job.id, "failed";
+                               fun_name = fun_name, value_name = value_name, params = job.params)
+            end
+        catch; end
     finally
         post!(nothing)   # no-op if the success path already posted
     end

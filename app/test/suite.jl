@@ -1599,6 +1599,67 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Run log: open → close, and reaping runs whose process died ───────────────
+# The log is written TWICE per run (open at :running, close at the terminal status) for one reason:
+# an append-on-finish log cannot record a run that never reaches its finish. A killed runner takes its
+# in-flight tasks with it, so 22 minutes of segmentation left NOTHING on disk — no entry, no outcome.
+# See run_log.jl's header.
+@testset "Run log open/close and reap" begin
+    proj = create_project!(name="runlog-reap-$(rand(1000:9999))")
+    s    = add_set!(proj; name="set-A")
+    img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
+
+    # open writes a non-terminal entry immediately — before any work happens
+    open_run_log!(img, "segment.cellposeMeasure", "afCorrected",
+                  Dict{String,Any}("cellDiameter" => 10, "_task_id" => "zzz"); task_id = "T1")
+    e = read_run_log(img)[end]
+    @test e["status"] == Cecelia.RUN_LOG_RUNNING
+    @test e["taskId"] == "T1"
+    @test e["params"]["cellDiameter"] == 10        # params are on the OPEN entry, not held until close
+    @test !haskey(e["params"], "_task_id")
+
+    # close patches that entry in place — it does not append a second one
+    close_run_log!(img, "T1", "done")
+    log = read_run_log(img)
+    @test length(log) == 1
+    @test log[end]["status"] == "done"
+    @test log[end]["params"]["cellDiameter"] == 10   # params survive the patch
+    @test !isempty(log[end]["finishedAt"])
+
+    # :cancelled is RECORDED, not skipped. This is the regression that made a killed segmentation
+    # untraceable: it used to be dropped as "the user aborted, not an outcome worth logging".
+    open_run_log!(img, "segment.cellposeMeasure", "afCorrected"; task_id = "T2")
+    close_run_log!(img, "T2", "cancelled")
+    @test read_run_log(img)[end]["status"] == "cancelled"
+    @test length(read_run_log(img)) == 2
+
+    # closing an id that was never opened still records the outcome rather than dropping it
+    close_run_log!(img, "T404", "failed"; fun_name = "tracking.bayesian_tracking")
+    @test read_run_log(img)[end]["status"] == "failed"
+    @test read_run_log(img)[end]["fun"] == "tracking.bayesian_tracking"
+
+    # ── the reap ────────────────────────────────────────────────────────────
+    # T3 is still executing somewhere, T4's process died. Only T4 is interrupted — reaping a task the
+    # detached runner is still running would report LIVE work as lost, which is the whole risk here.
+    open_run_log!(img, "segment.cellposeMeasure", "Neutrophil"; task_id = "T3")
+    open_run_log!(img, "segment.cellposeMeasure", "Tcell";      task_id = "T4")
+    @test reap_run_log!(img, ["T3"]) == 1
+    byid = Dict(e["taskId"] => e for e in read_run_log(img) if !isempty(get(e, "taskId", "")))
+    @test byid["T3"]["status"] == Cecelia.RUN_LOG_RUNNING          # untouched — still live
+    @test byid["T4"]["status"] == Cecelia.RUN_LOG_INTERRUPTED
+    @test byid["T4"]["valueName"] == "Tcell"                       # the reap preserves what it recorded
+
+    # reaping is idempotent, and a closed entry is never re-opened by it
+    @test reap_run_log!(img, ["T3"]) == 0
+    @test reap_run_log!(img, String[]) == 1                        # now T3 too — nothing is live
+    @test read_run_log(img)[1]["status"] == "done"                 # T1 stays done
+
+    # survives reload — this is a durable record, which is the entire point
+    @test read_run_log(init_object(proj.uid, img.uid))[end]["status"] == Cecelia.RUN_LOG_INTERRUPTED
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Session briefing + all_qc_docs (Observer Phase 2 §2) ─────────────────────
 @testset "Session briefing + all_qc_docs" begin
     proj = create_project!(name="brief-$(rand(1000:9999))")
@@ -3925,6 +3986,51 @@ end
     rlog = read_run_log(img)
     @test length(rlog) == 1
     @test String(rlog[end]["fun"]) == fun_name && String(rlog[end]["status"]) == "failed"
+    rm(proj.root; recursive=true)
+end
+
+# ── A cancelled run is RECORDED, and it is recorded before the work starts ───
+# Regression, and the expensive one. The run log used to be appended on finish and only for
+# :done/:failed — `:cancelled` was skipped as "the user aborted, not an outcome worth logging". So a
+# segmentation killed 22 minutes in left NOTHING behind: no run-log entry, no outcome, and a task log
+# that simply stopped mid-stream. "I started six, three are running, what happened to the other three?"
+# had no answer anywhere in the project. Two things are pinned here:
+#   1. the entry exists WHILE the task runs (an append-on-finish log cannot record a run whose process
+#      is killed, which is how the detached runner loses its queue — docs/RUNNER.md), and
+#   2. the cancel is stamped onto that same entry rather than dropped or duplicated.
+@testset "A cancelled run is banked in the run log" begin
+    proj = create_project!(name="rl-cancel-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    _HOLD_TASK_GO[] = Channel{Nothing}(1)
+    tid  = "cancelhold$(rand(1000:9999))"
+    logs = String[]
+    th = Threads.@spawn run_task(_HoldTask(), img, Dict{String,Any}("modelType" => "cyto3",
+                                                                    "diameter"  => 17);
+                                 task_id = tid, on_log = l -> push!(logs, l))
+    try
+        @test timedwait(() -> any(r -> r.id == tid && r.status == "running", list_tasks()), 30.0) === :ok
+        # (1) OPEN — the run is on disk, as "running", while it is still going
+        open_entry = only(filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img)))
+        @test String(open_entry["status"]) == Cecelia.RUN_LOG_RUNNING
+        @test String(open_entry["fun"]) == Cecelia._fun_name_from_task(_HoldTask())
+        cancel_task!(tid)
+    finally
+        put!(_HOLD_TASK_GO[], nothing)
+        timedwait(() -> istaskdone(th), 30.0)
+    end
+
+    # (2) CLOSE — one entry, now terminal. Not skipped (the bug) and not appended twice.
+    rlog = filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img))
+    @test length(rlog) == 1
+    @test String(rlog[end]["status"]) == "cancelled"
+    @test !isempty(String(rlog[end]["finishedAt"]))
+    # …and the task log says so, instead of just stopping — which is indistinguishable from a crash
+    @test any(l -> occursin("cancelled", lowercase(l)), logs)
+    @test occursin("cancelled", lowercase(read(joinpath(img._dir, "logs",
+                                                        Cecelia._fun_name_from_task(_HoldTask()) * ".log"),
+                                               String)))
+    forget_task_start!(tid)
     rm(proj.root; recursive=true)
 end
 

@@ -828,7 +828,14 @@ function api_projects_load(body_bytes::Vector{UInt8})
     end
 
     proj_obj = load_project(uid)
-    sets     = [_set_payload(s) for s in proj_obj._sets]
+
+    # Close out runs abandoned by a process that died (a runner Ctrl-C or crash) — they are still
+    # marked "running" in each image's run log because the code that would have closed them went with
+    # the process. Doing it here means the provenance is already correct by the time the user looks at
+    # it, which is the moment they ask. Safe no-op when nothing was interrupted; see runner_api.jl.
+    reap_run_log_for_project!(proj_obj)
+
+    sets = [_set_payload(s) for s in proj_obj._sets]
 
     # Analysis-canvas boards saved with the project (settings/); null when none saved yet.
     # Animation page: captured view snapshots (settings/animations.json). Sidecar PNGs live in the same
@@ -1612,7 +1619,10 @@ function api_tasks_history(req::HTTP.Request)
     _rl(e, k) = (v = get(e, k, get(e, Symbol(k), nothing)); v === nothing ? "" : String(v))
     rows = Vector{Any}()
     for img in images(proj), e in read_run_log(img)
-        rs = _rl(e, "status")                        # per-RUN outcome; legacy entries have none → "done"
+        # per-RUN outcome; legacy entries have none → "done". An OPEN SET, not just done/failed:
+        # "cancelled" and "interrupted" (a run whose process died — see run_log.jl) both appear here,
+        # and "running" means the run is live right now. Don't assume a terminal value.
+        rs = _rl(e, "status")
         push!(rows, Dict{String,Any}(
             "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,  # image's status
             "runStatus" => (isempty(rs) ? "done" : rs),                              # this run's outcome
