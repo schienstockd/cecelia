@@ -15,8 +15,164 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.3] — 2026-08-15
+
+37 pull requests since `v0.1.2`. Still `0.1.x`.
+
+**Read the first three sections before re-opening old work.** Several changes correct results rather
+than add anything: autofluorescence correction could erase a channel, asking for one segmentation
+could return another's cells, and the store layout `v0.1.1` announced is reversed. Anything derived
+from those paths should be re-checked, and one class of saved canvas layout does not survive the
+upgrade.
+
+### Changed — autofluorescence correction
+
+- **AF correction could erase a channel.** Where one channel leaks into another, the leak was removed
+  by the *dominance weight*, which scales rather than subtracts, so every voxel carrying both channels
+  read as the brighter one's. Measured on `WIaUjL/p6t4mC` (CH3 leaking 2.3% into CH2, ~7x brighter above
+  background): corrected CH2 came out 98-99% zero, and segmenting it found the residue at the bright CH3
+  spots — i.e. it found CH3. The preview was faithful throughout; the correction under it was broken.
+  Bleedthrough is now unmixed as an amount *before* the weight, and a channel identified as a leak
+  source is dropped from the weight's denominator. **Anything AF-corrected before this is wrong, along
+  with what was derived from it** (#555).
+- **The bleedthrough coefficient is estimated per channel combination, and which estimator is right is
+  a question about the specimen.** Each combination carries a **Different cell types** switch, on by
+  default: on → the total slope (with nothing co-labelled, the whole proportional relationship is leak);
+  off → the lower envelope. The previous release used the envelope for everything, which under-corrected
+  mutually exclusive reporters (0.0248 where the slope gives 0.113). The default's cost, tested: a
+  genuinely co-labelled experiment left on it over-subtracts (+80% on synthetic co-positive data) (#559).
+- AF correction reports real progress instead of one number for the whole long stage (#559).
+
+### Changed — store format
+
+- **Chunk keys are always nested now; the flat layout is removed.** A flat-keyed store conforms to no
+  published OME-NGFF version — nested storage is what NGFF 0.2 introduced, so flat keys are 0.1
+  *storage* under the 0.4-shaped metadata written beside them, which is why bioformats2raw stamped `0.1`
+  on such imports while our own writers stamped `0.4`. This reverses the default `v0.1.1` announced.
+  Re-measured, flat saved ~5% on a real 3.5 GB movie (not the ~14% its 81 MB fixture suggested) at
+  identical read time (#551).
+- **Reading is untouched — every existing store still opens and nothing needs re-importing.** The
+  separator is self-describing (v2 `.zarray` `dimension_separator`, v3 `chunk_key_encoding`). Settings →
+  Storage still chooses the layout, now between **zarr v2 · nested keys** and **zarr v3 · sharded**.
+- **Derived stores no longer inherit the separator**, so a correction of a legacy flat image comes out
+  nested; the zarr *format* is still inherited. Flat stores already on disk keep claiming NGFF 0.4, and
+  there is no converter — `rechunk_zarr.py` preserves a store's layout — so a re-import is the only fix
+  if that label matters.
+
+### Changed — segmentation results
+
+- **Asking for one segmentation could return another's cells.** `pop_df` with `pop_type="labels"`
+  ignored the requested populations entirely and always read the image's **active** segmentation, so on
+  a two-segmentation image a request for `Neutrophil` returned `Tcell`'s cells — the wrong data under
+  the right label, with no error. Comparing two label sets was not expressible at all. The value_name
+  prefix now selects the segmentation, several pool in one call, and a value_name absent on a given
+  image is skipped rather than raising. **This is shared code, so it reaches anything reading raw
+  segmentation output, not only the QC plot it was found in** (#564).
+- **A fresh 3D segmentation stitches its z-planes.** Both segmentation tasks shipped
+  `stitchThreshold: 0.0` in the model-group default — the row that seeds a new task — so a new 3D run
+  segmented each plane independently while the Advanced spec said 0.2. **Only new tasks change; a saved
+  task keeps its stored value** (#553).
+- **Segmentation honours the valid box on Y and X**, not just Z, so padded regions introduced by drift
+  correction are no longer segmented (#567).
+- **Every image-version picker now says when a run would read a version the image is not on.** Segmenting
+  `WIaUjL/p6t4mC` on `default` (512×512 raw import) while it was active on `afCorrected` (605×617, the
+  drift-corrected canvas) reported **done**, banked 92 374 cells, and laid a 512×512 label store over a
+  605×617 image — every cell displaced in XY, with nothing in the app saying the run and the view
+  disagreed. The picker now warns, names the active version, and stays silent when only one version
+  exists (#575).
+- **Smoothing offers `gated` as a third temporal statistic**, preserving sharpness where the median
+  smears moving cells: 45% of noise removed at punctum amplitude and motion sharpness 1.00/1.01, against
+  0.85/0.91 for `median(5)`. `median` stays the default — `gated` is measured on 30 s intravital data
+  only, costs ~0.12 s/plane, and the photon-limited case the task was built for is untested with it (#554).
+- Optical-flow training handles a whole set — ragged pool, bounded memory, cropping, z-spacing (#549).
+
+### Changed — saved state and on-disk layout
+
+- **The module summary canvas is scoped to the set, not to whichever image was first in the selection.**
+  The old key tied both the saved layout and what got plotted to the first ticked image, so re-ticking
+  silently swapped the canvas for a different image's plots, and ticking five images showed one.
+  `compareMode` now seeds to **per-image**. **Saved module-page layouts from earlier versions are not
+  ported** — there is no honest merge from N per-image layouts into one, so each set starts from an
+  empty canvas. The stale entries stay on disk, unread. Gating canvases remain per (image, value_name),
+  because a gate does belong to one image (#568).
+- **The task run log records a run twice — at start and at finish — so a killed run leaves a trace.**
+  It was append-on-finish and skipped `:cancelled`, which is also how a task ends when its process is
+  killed, so 22 minutes of GPU segmentation could end with nothing written down anywhere. A new
+  `running` status means "started, outcome not yet known" (#574).
+- **Per-image task subdirectories are created only once something writes to them.** Ten directories were
+  pre-created for every image; six of them (`populations`, `stats`, `shapes`, `models`, `out`, `cl`) were
+  empty on all 30 images in the dev projects dir and have no writer anywhere in the codebase (#579).
+
+### Added
+
+- **A detached task runner** (dev only, off by default). Tasks and chains run in a second process, so a
+  backend restart no longer kills work in flight: Restart leaves it running, Quit takes it. It keeps the
+  code it started with and flags "old code" with the commit when behind (#543).
+- **Output names are a first-class control, and pick their settings back up.** Re-running a segmentation
+  as `Tcell` when the last run was `Neutrophil` meant retyping the output name and every model parameter.
+  A new `SuggestInput` opens on focus showing the names already in use and narrows as you type — for
+  output names, image-attribute values and movie tags — and choosing one restores that name's parameters.
+  Existing projects are covered by falling back to `runlog.json`, which has always recorded each run's
+  params (#573).
+- **Sets can be renamed**, with one duplicate-name guard behind every path that names a set — including
+  the REPL. This also fixes `copyImage` creating a second set with an identical name instead of reusing
+  the existing one (#563).
+- **Plots facet by image.** `Facet by` — None / Image / Series — replaces the on/off toggle; the
+  time-series chart could not facet at all, so five images × two segmentations was ten overlaid curves on
+  one axis. A chart that cannot honour the setting now says so instead of silently ignoring it (#569).
+- **`find_object` resolves a uid to its project in one call**, so a uid quoted in a note or a filename no
+  longer means listing every project until one matches (#571).
+- **The observer briefs its own session** — the MCP server describes what it can do, so the in-app prompt
+  is one line; boards can compare by attribute (#546).
+- **"Close all" on every plot canvas**, armed before firing, scoped to the canvas's current key (#566).
+- Movie comparisons can be **wrapped into a grid** — four movies as 2x2 instead of a wide strip (#558).
+- Optical-flow plots export their contact sheets (#562).
+- Task parameter options can carry a note, and the smoothing methods explain what each is for (#556).
+- The task console shows which project each row belongs to (#547).
+- Imaris `.ims` import repairs soft-linked sources and recovers the frame interval (#548).
+
 ### Fixed
 
+- **Quit, Ctrl-C and `pixi run stop` now actually stop the app.** Four separate pieces of Julia 1.12
+  signal/exit behaviour meant stopping left processes running behind hundreds of lines of backtrace that
+  read like a crash: `exit()` segfaulted with a worker mid-compile and the supervisor read the fault as a
+  crash and **relaunched the app you had just quit**; a SIGTERM did not stop a process whose threads were
+  not at a safepoint, while `pixi run stop` printed "stopped" regardless; Ctrl-C left the task runner
+  orphaned on :7657 every time. The backend now runs detached and is asked to stop first, escalating only
+  if ignored, and the 18 per-OS shell one-liners behind `stop` are one tested Julia file (#580).
+- **Task state survives a backend restart.** The image-table badge picked whichever run sat first in an
+  array rather than rolling up an image's runs; a run that started while the socket was down stayed
+  Queued forever; and the task log came back truncated because the backfill was skipped for any row that
+  already had lines. A **Reload log from disk** button reads a run whole (#577).
+- **Killing an already-finished process segfaulted the server** — the pid came from a raw libuv call that
+  dereferences null once a process is reaped, which is the common case when cancelling a task whose
+  Python just exited, and a segfault is not catchable. The supervisors now also relaunch the backend
+  after a crash instead of treating it as a quit, leaving the runner and viewer for the fresh server to
+  adopt (#560).
+- **Component output is no longer discarded.** `run(cmd; wait = false)` swallows both streams to
+  devnull, so the napari bridge, the preview worker, the task runner and Vite were writing to nowhere —
+  not the console, not the terminal. Every component now logs onto one rail (#572).
+- **The segmentation QC plot's per-timepoint view was unreachable**, and three further defects kept it
+  dark without erroring: the time axis was never offered (the spec named a column renamed long ago), the
+  trend line drew negative counts where LOESS overshot a cliff, and the count axis still read `count`
+  with Fraction on. The x axis now reads `Time (s)`, converted per image, and stays in frames when the
+  interval is unknown rather than assuming 1 s (#564).
+- A task's progress frames could write into a project that was not its own (#550).
+- The live task preview is keyed by the output label name, not the input version (#552).
+- A parameter load that did not happen no longer resets the form to defaults (#559).
+- QC findings say which task raised them (#561).
+- An exported SVG references its raster with `xlink:href`, which SVG 1.1 renderers read (#562).
+- The padded-skip spans are reported per timepoint in the log, which is what they always were — the
+  message just printed frame 0's numbers once. Log only; nothing segments differently (#570).
+
+### Performance
+
+- **Segmentation measurement was `O(cells × volume)`.** `_extended_3d_measures` ran marching cubes over
+  the entire label volume once per cell, which scales the wrong way twice. On `WIaUjL/p6t4mC`,
+  measurement was two-thirds of a `segment.cellposeMeasure` run: 100 253 cells took a projected 3.0 h
+  against 10 min for 5 216. Meshes now come from the shared `mesh_utils.build_label_meshes` — the slow
+  copy was the duplicate. **60.32 s → 1.94 s per timepoint (31x); that image's measureLabels 3.0 h →
+  5.8 min**, with all 21 columns bit-identical over 719 real cells (#567).
 - **The optical-flow module's plots answer the t and z sliders about 3x faster.** Nudging a slider on
   the flow-metrics sheet or the model-probability map took ~3.1 s to redraw and sent a 7.3 MB reply;
   it is now ~1.0 s and 3.6 MB, measured on a 181-frame 4-channel movie at the default 512 px crop.
@@ -25,7 +181,14 @@ _Changes on `main` that have not yet been tagged in a release._
   reading the same pixels directly), and each plane's colour map was expanded to full RGB before the
   PNG was encoded rather than being written as the PNG's own palette. The pictures are unchanged —
   byte-identical once decoded. The coastal segmentation preview read its window the same way and got
-  the same fix.
+  the same fix (#565).
+- Gated smoothing is 3.8x faster: one gate for all channels, which it had to be anyway since the AF
+  weight is a cross-channel ratio (#557).
+
+### Internal
+
+- Both task lists render through `SelectionTable`, the canonical list, instead of two independently
+  hand-rolled ones that shared no markup, selection idiom or selection colour (#576, #578).
 
 ## [0.1.2] — 2026-08-13
 
@@ -405,7 +568,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/schienstockd/cecelia/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/schienstockd/cecelia/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/schienstockd/cecelia/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...v0.1.0
