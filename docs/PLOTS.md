@@ -442,6 +442,33 @@ Data source only changes *how many groups* there are (and whether `image` is a v
 never the chart's shape. Pooled with a single population is legitimately **one** box/bar — labelled
 "pooled (n=…)" so it doesn't read as a lone dot.
 
+### Faceting — what a small multiple is one OF
+
+`Facet by` (in the shared Layout options) has three values, and the distinction matters once several
+images are selected:
+
+| Mode | Panels | Inside each panel |
+|---|---|---|
+| `none` | one plot | every series overlaid |
+| `image` | one per **source image** | that image's segmentations / populations / groups |
+| `series` | one per **series** (image·segmentation·population) | a single series |
+
+`image` is the cross-image comparison. Faceting five movies × two segmentations by *series* gives ten
+single-curve panels you compare by reading titles; by *image* it gives five panels of two curves,
+which is the question actually being asked. Implementation notes, each of which was a bug in
+waiting:
+
+- The **image leaves the series key** in `image` mode (`d.img = false`), so it stops appearing in
+  every legend entry and the remaining dimensions become the colour/position inside each panel.
+- **Only `series` mode collapses the position axis.** `facetSingle` gates that: `image` mode holds
+  several series per panel and still needs a real band scale, or every segmentation stacks on itself
+  at x=0.
+- Marks carry the panel value as **`fkey`** (the series key, or the image), so one channel name
+  serves both modes.
+- The `facetBy` field replaced a boolean `facet`; read it through **`facetMode`**, which migrates
+  saved canvases (`facet: true` → `'series'`). A plot that silently un-facets on upgrade is a
+  regression nobody reports — pinned in `plots/facetMode.test.ts`.
+
 **Many groups.** Every group is its own x position (box/bar/violin/strip) or overlay series
 (histogram/frequency), labelled by all varying dimensions, so nothing collapses. **Auto-facet into
 per-image columns (decision C) is DEFERRED** — for now many groups just share one (denser) axis.
@@ -614,8 +641,8 @@ data extent (so min-only or max-only works). Rotated-X-label clipping fixed via 
 - **Separate axis-title vs axis-label font sizes** — Observable Plot drives text off one base
   `style.fontSize`; we expose a single **Font size** knob rather than two.
 - **Facet for histogram / frequency** — facet (`fx`) is wired for the numeric distribution charts
-  (box / violin / strip / bar); the overlay histogram and stacked/grouped frequency charts don't
-  facet yet (their compositing semantics differ). Follow-up.
+  (box / violin / strip / bar) **and the time-series trend line**; the overlay histogram and
+  stacked/grouped frequency charts don't facet yet (their compositing semantics differ). Follow-up.
 - **`showFacetTitles` toggle** — facet headers show the series key by default; a hide toggle isn't
   wired yet.
 

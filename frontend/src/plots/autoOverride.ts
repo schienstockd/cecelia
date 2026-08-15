@@ -97,6 +97,20 @@ export function xRotationOverride(rotated: boolean, requested: boolean): AutoOve
 }
 
 /**
+ * `Facet by` asked for small multiples on a chart that cannot draw them.
+ *
+ * The overlay histogram and the stacked/grouped frequency charts composite their series into ONE
+ * frame, so there is nothing to split into panels — the setting is simply not applied. Without this
+ * the control sits on `Image`, the plot is a single frame, and nothing anywhere says why; "the option
+ * did nothing" is exactly the silence this module exists to break.
+ */
+export function facetOverride(ignored: boolean, requested: 'none' | 'series' | 'image'): AutoOverride | null {
+  if (!ignored || requested === 'none') return null
+  return { setting: 'Facet by', from: requested === 'image' ? 'Image' : 'Series', to: 'None',
+           why: 'this chart overlays its series in one frame' }
+}
+
+/**
  * Do the x tick labels need rotating to stay readable?
  *
  * Pure and deterministic: each of `n` categories gets an equal band of the plotting area, so a label

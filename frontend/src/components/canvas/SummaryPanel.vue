@@ -18,7 +18,7 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts } from '../../plots/plot'
+import { backendChart, chartsForMeasure, plotDataToCsv, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { useProjectStore } from '../../stores/project'
@@ -31,6 +31,8 @@ import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granula
 import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
+import PlotNotice from './PlotNotice.vue'
+import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -180,6 +182,7 @@ function openExplode() { explodeSel.value = measureOpts.value.filter(m => m !== 
 function toggleExplode(m: string) {
   explodeSel.value = explodeSel.value.includes(m) ? explodeSel.value.filter(x => x !== m) : [...explodeSel.value, m]
 }
+const explodeHeavy = computed(() => explodeLoad(explodeSel.value.length).heavy)
 function applyExplode() {
   if (explodeSel.value.length) emit('explode', measureOpts.value.filter(m => explodeSel.value.includes(m)))
   showExplode.value = false
@@ -558,6 +561,19 @@ const emptyMessage = computed(() => isInteraction.value
   : 'No data for the selected populations.')
 // Named empty series (see emptySeriesLabels): only meaningful for a measure plot — a population summary
 // legitimately reports a zero count, and a matrix has no series.
+// Faceting splits the panel into one small multiple per image/series. Past a dozen they are slivers
+// and the comparison — the whole reason to facet — stops working. Say so; never refuse to draw it
+// (the threshold is a guess about someone else's screen).
+const facetNote = computed(() => {
+  const r = result.value
+  if (!r || facetMode(buildOpts.value) === 'none') return null
+  const panels = new Set(facetMode(buildOpts.value) === 'image'
+    ? r.series.map(s => s.uID ?? '') : r.series.map(s => `${s.value_name}${s.pop}${s.group ?? ''}`)).size
+  const load = facetLoad(panels)
+  return load.heavy
+    ? { text: `${load.n} panels`, tip: `Faceting into ${load.n} small multiples — each is narrow. Select fewer images, or facet by series.` }
+    : null
+})
 const emptyNote = computed(() => {
   const r = result.value
   if (!r || !hasMeasure.value || r.chartType === 'matrix') return ''
@@ -827,6 +843,8 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
           <label v-for="m in measureOpts" :key="m" class="sp-explode-row" v-tooltip.left="'Tick to give this measure its own plot'">
             <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ measureLabel(m) }}
           </label>
+          <PlotNotice v-if="explodeHeavy" class="sp-explode-warn" :text="`${explodeSel.length} new plots`"
+                      :tip="'Each is a real plot on the canvas with its own data — they stay until closed.'" />
           <div class="sp-explode-ft">
             <button class="cc-btn" type="button" @click="showExplode = false">Cancel</button>
             <button class="cc-btn cc-btn-primary" type="button" :disabled="!explodeSel.length"
@@ -836,10 +854,10 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
       </div>
       <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
            a setting the renderer had to substitute, and series the chosen measure has no values for. -->
-      <span v-if="overrideText" class="sp-foot-note cc-muted-warn cc-fs-2xs"
-            v-tooltip.top="overrideTip"><i class="pi pi-exclamation-triangle" /> {{ overrideText }}</span>
-      <span v-else-if="emptyNote" class="sp-foot-note cc-muted cc-fs-2xs"
-            v-tooltip.top="'This measure has no values for those series'">{{ emptyNote }}</span>
+      <PlotNotice v-if="overrideText" class="sp-foot-note" :text="overrideText" :tip="overrideTip" />
+      <PlotNotice v-else-if="facetNote" class="sp-foot-note" :text="facetNote.text" :tip="facetNote.tip" />
+      <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"
+                  tip="This measure has no values for those series" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result || exporting"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
@@ -882,6 +900,7 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg, isBusy: () 
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
   box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: var(--cc-fs-sm); }
 .sp-explode-hd { margin-bottom: 6px; }
+.sp-explode-warn { margin: 4px 0 2px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
 .sp-explode-ft { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 

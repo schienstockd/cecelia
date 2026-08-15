@@ -10,10 +10,10 @@
 -->
 <script setup lang="ts">
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
-import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
+import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
 import { svgToImageURL, svgOf } from '../../plots/export'
 import { legendOverlay, titleOverlay } from '../../plots/overlays'
-import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
+import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import type { PlotDataResponse } from '../../plots/types'
 
@@ -68,8 +68,10 @@ async function render(pass = 0) {
   // report any setting the builder substituted (`_autoRotatedX`) — but only when it actually CHANGED.
   // The host stores this and the board stores the host's readout, so an unconditional emit makes every
   // render a state write, which renders again. See sameOverrides in plots/autoOverride.ts.
-  const overrides = [xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel)]
-    .filter(Boolean) as AutoOverride[]
+  const overrides = [
+    xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel),
+    facetOverride(!!base._facetIgnored, facetMode(props.opts)),
+  ].filter(Boolean) as AutoOverride[]
   if (!lastOverrides || !sameOverrides(overrides, lastOverrides)) {
     lastOverrides = overrides; emit('auto-override', overrides)
   }
